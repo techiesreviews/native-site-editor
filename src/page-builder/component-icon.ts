@@ -9,6 +9,7 @@ import pencil from "@phosphor-icons/core/regular/pencil-simple.svg?raw";
 import linkBreak from "@phosphor-icons/core/regular/link-break.svg?raw";
 import selection from "@phosphor-icons/core/regular/selection-plus.svg?raw";
 import x from "@phosphor-icons/core/regular/x.svg?raw";
+import check from "@phosphor-icons/core/regular/check.svg?raw";
 import plus from "@phosphor-icons/core/regular/plus.svg?raw";
 import caretDown from "@phosphor-icons/core/regular/caret-down.svg?raw";
 import image from "@phosphor-icons/core/regular/image.svg?raw";
@@ -24,6 +25,7 @@ const marks = {
   detach: linkBreak,
   make: selection,
   close: x,
+  done: check,
   add: plus,
   more: caretDown,
   image,

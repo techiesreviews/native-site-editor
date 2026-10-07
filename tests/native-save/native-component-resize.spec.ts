@@ -32,6 +32,8 @@ test("Structure resizes, folds, restores and persists while component slot field
   expect((await sidebar.boundingBox())!.width).toBe(resized);
   await handle.press("ArrowLeft");
   expect((await sidebar.boundingBox())!.width).toBeLessThan(resized);
+  // Resizing moved focus to the handle, which ended editing (keeping the text): the field opens again from its badge.
+  await page.locator('.page-structure__slot-badge').filter({hasText:/^Title$/}).first().press('Enter');
   const title = page.locator('#structure').getByRole('textbox',{name:'Title: Text',exact:true});
   await title.fill('Resized Structure stays editable'); await title.press('Enter');
   await expect(page.frameLocator('.native-preview-frame').locator('project-card [slot=title]').first()).toHaveText('Resized Structure stays editable');

@@ -505,6 +505,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let ready = false;
   let mounted = false;
   let rafHandle = 0;
+  // A structure field's text, set in the page ahead of its render (patchText):
+  // the latest per frame, and what to do when the page could not take it.
+  let pendingPatch: { request: NativeNodeRequest; text: string; miss?: () => void; end?: boolean } | undefined;
+  let patchHandle = 0, patchId = 0;
+  const patchMisses = new Map<number, () => void>();
   let messageId = 0;
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
@@ -644,6 +649,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!Array.isArray(raw.node) || !raw.node.length || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
       if (!Array.isArray(raw.files) || !raw.files.every((file) => file instanceof File)) return;
       handlers.onImageDrop?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined }, raw.files);
+      return;
+    }
+    // A text patch the page could not take: its full update goes now.
+    if (data.type === "patched") {
+      const raw = data as unknown as { id?: unknown; ok?: unknown };
+      const miss = typeof raw.id === "number" ? patchMisses.get(raw.id) : undefined;
+      if (typeof raw.id === "number") patchMisses.delete(raw.id);
+      if (raw.ok !== true) miss?.();
       return;
     }
     // Typed text is checked against the current source, so it counts even
@@ -1143,6 +1156,30 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectNode(request: NativeNodeRequest) {
       if (!mounted) return;
       frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request }, "*");
+    },
+    /**
+     * Sets an element's text in the page at once, ahead of the render its
+     * source change brings (a structure field as it is typed): the latest text
+     * per frame, as text only. `miss` runs when the page cannot take it (no
+     * such element, or one holding more than text). Until a patch with `end`,
+     * the page draws the latest one again over any render of an older source.
+     */
+    patchText(request: NativeNodeRequest, text: string, miss?: () => void, end = false) {
+      if (!mounted || !ready) { miss?.(); return; }
+      const dropped = pendingPatch;
+      pendingPatch = { request, text, miss, end };
+      // A patch replaced before it went needs no answer: the newer one carries the text.
+      if (dropped && dropped.miss !== miss) dropped.miss?.();
+      if (patchHandle) return;
+      patchHandle = requestAnimationFrame(() => {
+        patchHandle = 0;
+        const next = pendingPatch; pendingPatch = undefined;
+        if (!next || !mounted) { next?.miss?.(); return; }
+        const id = ++patchId;
+        if (next.miss) patchMisses.set(id, next.miss);
+        if (patchMisses.size > 64) patchMisses.delete(patchMisses.keys().next().value!);
+        frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "patch-text", id, request: next.request, text: next.text, end: next.end }, "*");
+      });
     },
     /**
      * Elements of the page shown as rendered (box, computed styles, matching

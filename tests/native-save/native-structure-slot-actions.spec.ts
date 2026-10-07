@@ -41,7 +41,7 @@ test('slot actions fade in over the badge, which stays where it is',async({page}
  expect(geo.barLeft).toBeLessThanOrEqual(hovered.x);
  expect(geo.fade).toBe('1');
  expect(geo.overflow).toBeLessThanOrEqual(0);expect(geo.tree).toBeLessThanOrEqual(0);
- await pencil.click();await expect(page.locator('.page-structure__inline[data-slot-editor="title"]')).toHaveCount(1);
+ await pencil.click();await expect(page.locator('.page-structure__row.is-editing[data-slot-editor="title"]')).toHaveCount(1);
  const field=page.getByRole('textbox',{name:'Title: Text'});await field.fill('Renamed');await field.press('Enter');
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.source)).toContain('<span slot="title">Renamed</span>');
 });
@@ -206,7 +206,8 @@ test('accepted real slot Hide and Show post the new source before the eye handle
  expect(shown.posts[0].at).toBeLessThanOrEqual(shown.end);
  expect(shown.posts[0].id).toBeGreaterThan(hidden.posts[0].id);
  expect(shown.posts[0].page).toContain('slot="caption"');
- await expect(eye).toHaveAttribute('aria-pressed','true');
+ // Show opens the caption's editor, which hides the row's actions while it edits: its eye is pressed underneath.
+ await expect(page.locator('.page-structure__row.is-editing[data-slot-editor="caption"] .page-structure__slot-toggle')).toHaveAttribute('aria-pressed','true');
  await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(1);
  await expect(preview.locator('media-card figcaption')).not.toHaveCSS('display','none');
  // An ordinary editor change still waits for the existing coalesced RAF.
@@ -238,7 +239,8 @@ test('rapid real slot Hide and Show keep preview, drafts and Undo/Redo on the sa
  await eye.click();
  const shown=await source();
  expect(shown).toContain('slot="caption"');
- await expect(eye).toHaveAttribute('aria-pressed','true');
+ // Show opens the caption's editor, which hides the row's actions while it edits: its eye is pressed underneath.
+ await expect(page.locator('.page-structure__row.is-editing[data-slot-editor="caption"] .page-structure__slot-toggle')).toHaveAttribute('aria-pressed','true');
  await expect(preview.locator('media-card > [slot="caption"]')).toHaveCount(1);
  expect((await storedDraft(page,'about/index.html'))?.content).toBe(shown);
  await page.evaluate(async()=>{await(await import('/src/components/code-editor.ts')).runVisualHistory('undo','about/index.html');});

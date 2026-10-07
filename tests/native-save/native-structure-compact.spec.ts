@@ -1,5 +1,9 @@
 import {expect,test} from '@playwright/test';
 // Compact Structure: every authored row stays a native treeitem; slot fields open only on an explicit pencil, F2 or badge.
+// A slot's open editor: the row edited in place (text, a link's label) and,
+// for a link or an image, the card attached under it.
+const EDITING_ROW='.page-structure__row.is-editing';
+const OPEN_EDITOR='.page-structure__inline, .page-structure__row.is-editing';
 test.beforeEach(async({page,baseURL})=>{await page.goto(new URL('/tests/slot-ghosts/fixture.html',baseURL!).href);});
 async function harness(page:any) {
  await page.evaluate(async()=>{
@@ -40,7 +44,7 @@ const visibleInputs=(page:any)=>page.locator('.page-structure__tree :is(input:no
 test('every authored row stays a native treeitem in source order with no fields until asked',async({page})=>{
  await harness(page);
  expect(await rows(page)).toEqual(['0','0.0','0.1','0.1.0','0.1.0.0','0.1.1','0.2','0.3','0.4']);
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  expect(await visibleInputs(page)).toBe(0);
  await expect(page.locator('[role=treeitem][data-node="0.0"] .page-structure__slot-badge')).toHaveText('Title');
  await expect(page.locator('[role=treeitem][data-node="0.1.0"] .page-structure__slot-badge')).toHaveCount(0);
@@ -50,7 +54,7 @@ test('every authored row stays a native treeitem in source order with no fields 
  await expect(page.getByRole('button',{name:'Edit Title',exact:true})).toHaveCount(2);
  await page.locator('[role=treeitem][data-node="0.0"]').click();
  expect((await H(page)).selected.at(-1)).toEqual({path:'index.html',node:[0,0]});
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  await page.locator('[role=treeitem][data-node="0.1.1"]').click();await page.locator('[role=treeitem][data-node="0.1.1"]').press('Alt+ArrowUp');
  expect((await H(page)).moves).toEqual([{path:'index.html',node:[0,1,1],direction:'up',tag:'p',same:true}]);
 });
@@ -58,18 +62,19 @@ test('every authored row stays a native treeitem in source order with no fields 
 test('row pencil opens one inline editor that keeps caret, refuses foreign changes and closes to its row',async({page})=>{
  await harness(page);const title=page.locator('[role=treeitem][data-node="0.0"]');
  await title.hover();await title.locator('.page-structure__action[aria-label="Edit Title"]').click();
- await expect(page.locator('.page-structure__inline')).toHaveCount(1);
+ // A text slot is edited in its own row: no card under it.
+ await expect(page.locator('.page-structure__row.is-editing')).toHaveCount(1);await expect(page.locator('.page-structure__inline')).toHaveCount(0);
  const text=page.getByRole('textbox',{name:'Title: Text',exact:true});await expect(text).toBeFocused();
- expect(await page.locator('.page-structure__inline .page-structure__slot-field-label').evaluate(el=>el.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+ await expect(title.locator('.page-structure__edit-field')).toHaveCount(1);
  await text.fill('First');await text.press('End');await text.press('!');
  await expect(text).toBeFocused();await expect(text).toHaveValue('First!');expect(await text.evaluate((el:HTMLInputElement)=>el.selectionStart)).toBe(6);
  expect((await H(page)).closed).toBe(0);
  await page.evaluate(()=>{(window as any).slotHarness.source+='<!-- external -->';});await text.press('!');
  await expect(text).toHaveAttribute('aria-invalid','true');const after=(await H(page)).source;expect(after).toContain('First!');expect(after).not.toContain('First!!');
- await text.press('Escape');await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(title).toBeFocused();
- await title.press('F2');await expect(page.getByRole('textbox',{name:'Title: Text',exact:true})).toBeFocused();await expect(page.locator('.page-structure__inline')).toHaveCount(1);
+ await text.press('Escape');await expect(page.locator('.page-structure__row.is-editing')).toHaveCount(0);await expect(title).toBeFocused();
+ await title.press('F2');await expect(page.getByRole('textbox',{name:'Title: Text',exact:true})).toBeFocused();await expect(page.locator('.page-structure__row.is-editing')).toHaveCount(1);
  await page.locator('[role=treeitem][data-node="0.3"]').press('F2');
- await expect(page.locator('.page-structure__inline')).toHaveCount(1);
+ await expect(page.locator(EDITING_ROW)).toHaveCount(1);
  const button=page.getByRole('textbox',{name:'Cta: Button text',exact:true});await expect(button).toBeFocused();
  await expect(page.getByRole('group',{name:'Link',exact:true})).toBeVisible();
  await expect(page.getByRole('combobox',{name:'Cta: Link / URL',exact:true})).toBeVisible();
@@ -83,7 +88,7 @@ test('the slot badge of a later assigned root selects the first actual root',asy
  await expect(page.locator('[role=treeitem][data-node="0.0"]')).toHaveAttribute('aria-selected','true');
  await expect(page.locator('[role=treeitem][data-node="0.0"]')).toBeFocused();
  // Several roots are content: no empty editor opens, and their rows stay real.
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  expect((await H(page)).movesTo).toEqual([]);
 });
 
@@ -93,8 +98,8 @@ test('a missing optional slot restores from its dim row and focuses its new fiel
  const field=page.getByRole('textbox',{name:'Optional: Text',exact:true});await expect(field).toBeFocused();
  expect((await H(page)).source).toContain('slot="optional"');
  await expect(page.locator('.page-structure__row--empty-slot')).toHaveCount(0);
- await expect(page.locator('.page-structure__inline')).toHaveCount(1);
- const anchor=await page.locator('.page-structure__inline').getAttribute('data-edit-node');
+ await expect(page.locator(EDITING_ROW)).toHaveCount(1);
+ const anchor=await page.locator(EDITING_ROW).getAttribute('data-edit-node');
  await expect(page.locator(`[role=treeitem][data-node="${anchor}"] .page-structure__slot-badge`)).toHaveText('Optional');
  await field.press('Escape');await expect(page.locator(`[role=treeitem][data-node="${anchor}"]`)).toBeFocused();
  const hide=page.getByRole('button',{name:'Show Optional',exact:true});await hide.focus();await page.keyboard.press('Space');expect((await H(page)).source).not.toContain('slot="optional"');
@@ -105,7 +110,7 @@ test('deep canvas selection reveals once without fields or focus theft, and a la
  const deep=page.locator('[role=treeitem][data-node="0.1.0.0"]');await expect(deep).toBeHidden();
  await page.evaluate(()=>{const input=document.createElement('input');input.id='canvas-caret';document.body.append(input);input.focus();(window as any).slotHarness.sidebar.select({path:'index.html',node:[0,1,0,0]});});
  await expect(deep).toBeVisible();await expect(deep).toHaveAttribute('aria-selected','true');await expect(page.locator('#canvas-caret')).toBeFocused();
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('[role=treeitem][tabindex="0"]')).toHaveCount(1);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('[role=treeitem][tabindex="0"]')).toHaveCount(1);
  await page.evaluate(()=>(window as any).slotHarness.sidebar.select({path:'index.html',node:[0,0]}));
  await expect(page.locator('[role=treeitem][data-node="0.0"]')).toHaveAttribute('aria-selected','true');await expect(page.locator('#canvas-caret')).toBeFocused();
  await root.locator('.page-structure__toggle').click();await expect(root).toHaveAttribute('aria-expanded','false');
@@ -154,7 +159,7 @@ test('Attributes opens inline on request and keeps edit, add and remove',async({
  await page.getByRole('textbox',{name:'New attribute name',exact:true}).fill('data-mode');await page.getByRole('textbox',{name:'New attribute value',exact:true}).fill('wide & safe');await page.getByRole('button',{name:'Add attribute',exact:true}).click();
  const result=await page.evaluate(()=>{const element=new DOMParser().parseFromString((window as any).slotHarness.source,'text/html').querySelector('project-card')!;return{title:element.getAttribute('title'),mode:element.getAttribute('data-mode'),note:element.hasAttribute('data-note')};});
  expect(result).toEqual({title:'O"Neil & <tag>!',mode:'wide & safe',note:false});
- await page.getByRole('textbox',{name:'New attribute name',exact:true}).press('Escape');await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(root).toBeFocused();
+ await page.getByRole('textbox',{name:'New attribute name',exact:true}).press('Escape');await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(root).toBeFocused();
 });
 
 test('root Edit opens the shared template and Disconnect stays separate',async({page})=>{
@@ -180,7 +185,7 @@ test('a text-only default fill is an editable slot row, not a missing slot',asyn
  const row=page.locator('.page-structure__row--slot-only');await expect(row).toHaveCount(1);await expect(row).toHaveAttribute('role','treeitem');await expect(row).not.toHaveAttribute('data-node');
  await expect(row).toContainText('Hello');
  await row.focus();await row.press('F2');
- const field=page.locator('.page-structure__inline textarea');await expect(field).toBeFocused();await expect(field).toHaveValue('Hello');
+ const field=page.locator(`${EDITING_ROW} textarea`);await expect(field).toBeFocused();await expect(field).toHaveValue('Hello');
  await field.press('End');await field.press('!');await expect(field).toBeFocused();
  expect((await H(page)).source).toBe('<project-card>Hello!</project-card>');
  await field.press('Enter');await expect(page.locator('.page-structure__row--slot-only')).toBeFocused();
@@ -190,7 +195,7 @@ test('a text-only default fill is an editable slot row, not a missing slot',asyn
 test('a long text field wraps and grows; pasted line breaks become spaces and Shift+Enter commits',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template='<article><slot>Default</slot></article>';s.source='<project-card>Hello</project-card>';s.version++;s.update();});
  const row=page.locator('.page-structure__row--slot-only');await row.focus();await row.press('F2');
- const field=page.locator('.page-structure__inline textarea');await expect(field).toBeFocused();await expect(field).toHaveAttribute('rows','1');
+ const field=page.locator(`${EDITING_ROW} textarea`);await expect(field).toBeFocused();await expect(field).toHaveAttribute('rows','1');
  const one=(await field.boundingBox())!.height;expect(one).toBeLessThanOrEqual(30);
  const long='A long line of text that has to wrap onto several lines in the narrow sidebar field, so that the field grows by more than half its one-line height';
  await field.fill(long);
@@ -216,12 +221,12 @@ test('an optional text-only fill hides, restores and shows again through its rea
  const show=missing.getByRole('button',{name:label!,exact:true});await expect(show).toBeVisible();await expect(show).toHaveAttribute('aria-pressed','false');
  await show.focus();await page.keyboard.press('Space');
  expect((await H(page)).source).toBe('<project-card>Content</project-card>');
- await expect(page.locator('.page-structure__inline')).toHaveCount(1);await expect(page.locator('.page-structure__inline textarea')).toBeFocused();
+ await expect(page.locator(EDITING_ROW)).toHaveCount(1);await expect(page.locator(`${EDITING_ROW} textarea`)).toBeFocused();
  // A manual source swap standing in for Undo/Redo (the real history journal is not used here): the earlier bytes come back without reopening an editor unasked.
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.source='<project-card></project-card>';s.version++;s.update();});
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.source='<project-card>Hello</project-card>';s.version++;s.update();});
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('.page-structure__row--slot-only')).toContainText('Hello');
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('.page-structure__row--slot-only')).toContainText('Hello');
 });
 
 for (const ordering of ['stale paint of the old empty page','same path holding another node']) test(`a Show waits through a ${ordering} and settles once on the fresh paint`,async({page})=>{
@@ -236,9 +241,9 @@ for (const ordering of ['stale paint of the old empty page','same path holding a
   if(ordering.startsWith('stale')) s.sidebar.update({path:'index.html',items:s.itemsOf(old),paintedSource:old});
   else{const items=s.itemsOf(s.source);const at=(node as number[]).reduce((list:any,index:number,depth:number)=>depth?list.children[index]:list[index],items);at.slot='decoy';at.tag='div';s.sidebar.update({path:'index.html',items});}
  },[ordering,old,fresh.nodes[0]] as const);
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.hold=false;s.update();});
- const inline=page.locator('.page-structure__inline');await expect(inline).toHaveCount(1);await expect(inline).toHaveAttribute('data-edit-node',fresh.nodes[0].join('.'));
+ const inline=page.locator(EDITING_ROW);await expect(inline).toHaveCount(1);await expect(inline).toHaveAttribute('data-edit-node',fresh.nodes[0].join('.'));
  await expect(page.locator(`[role=treeitem][data-node="${fresh.nodes[0].join('.')}"] .page-structure__slot-badge`)).toHaveText('Optional');
  await expect(page.locator('#canvas-caret')).toBeFocused();
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.source+='<!-- later -->';s.version++;s.update();});
@@ -251,7 +256,7 @@ test('a refused Show restores the closed state and no later render arms an edito
  await toggleBy(page,'Show Optional');
  await expect(page.getByRole('button',{name:'Show Optional',exact:true})).toHaveAttribute('aria-pressed','false');
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.revision='A';s.source+='<!-- unrelated -->';s.version++;s.update();});
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  expect(await visibleInputs(page)).toBe(0);
  expect((await H(page)).source).toBe(before+'<!-- unrelated -->');
 });
@@ -259,10 +264,11 @@ test('a refused Show restores the closed state and no later render arms an edito
 test('hiding a slot with its editor open forgets the editor so a source swap standing in for Undo does not reopen it',async({page})=>{
  await harness(page);await toggleBy(page,'Show Optional');await expect(page.getByRole('textbox',{name:'Optional: Text',exact:true})).toBeFocused();
  const shown=(await H(page)).source;
- await toggleBy(page,'Show Optional');expect((await H(page)).source).not.toContain('slot="optional"');
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ // The row's actions step aside while it edits: its eye is pressed underneath, as a Hide from elsewhere would.
+ await page.getByRole('button',{name:'Show Optional',exact:true,includeHidden:true}).evaluate((el:HTMLElement)=>el.click());expect((await H(page)).source).not.toContain('slot="optional"');
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  await page.evaluate(src=>{const s=(window as any).slotHarness;s.source=src;s.version++;s.update();},shown);
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
 });
 
 test('Enter applies a field and returns focus to its row',async({page})=>{
@@ -275,15 +281,15 @@ test('rich content slots select their native root without an empty editor',async
  await harness(page);const body=page.locator('[role=treeitem][data-node="0.1"]');
  await expect(body.locator('.page-structure__action[aria-label="Edit Body"]')).toHaveCount(0);
  await body.locator('.page-structure__slot-badge').press('Enter');
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  expect((await H(page)).selected.at(-1)).toEqual({path:'index.html',node:[0,1]});
- await body.focus();await body.press('F2');await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await body.focus();await body.press('F2');await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  expect(await rows(page)).toContain('0.1.0.0');
 });
 
 test('a slot named attributes keeps its own field apart from the Attributes panel',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template='<article><slot name="attributes">A</slot></article>';s.source='<project-card data-x="1"><span slot="attributes">Mine</span></project-card>';s.version++;s.update();});
- await page.locator('[role=treeitem][data-node="0.0"]').press('F2');const field=page.locator('.page-structure__inline textarea');await expect(field).toHaveValue('Mine');
+ await page.locator('[role=treeitem][data-node="0.0"]').press('F2');const field=page.locator(`${EDITING_ROW} textarea`);await expect(field).toHaveValue('Mine');
  await field.fill('Ours');await field.press('Escape');
  const root=page.locator('[role=treeitem][data-node="0"]');await root.hover();await root.getByRole('button',{name:'Attributes',exact:true}).click();
  await expect(page.getByRole('textbox',{name:'Attribute: data-x',exact:true})).toHaveValue('1');
@@ -304,10 +310,10 @@ for (const shape of ['reshaped element','raw whitespace slot name']) test(`a Sho
   if(shape==='reshaped element'){at.slot='';}else at.slot=' optional ';
   s.sidebar.update({path:'index.html',items,paintedSource:s.source});
  },[shape,node] as const);
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
  expect((await H(page)).notices.at(-1)).toBe('The optional slot is shown, but its element could not be found in Structure; select it on the page to edit it.');
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.hold=false;s.update();});
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
 });
 
 // Shared row-action fade: buttons are the overlay's direct children, inert at
@@ -398,7 +404,7 @@ for (const colorScheme of ['light','dark'] as const) test(`the fade ends opaque 
  await title.click({position:{x:4,y:4}});await expect(title).toHaveAttribute('aria-selected','true');
  await gapMatchesRow(page,'0.0');                                          // current, hovered
  await page.mouse.move(0,0);await gapMatchesRow(page,'0.0');               // current, focused
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
 });
 
 test('keyboard focus on a slot badge reveals the row actions without opening an editor',async({page})=>{
@@ -407,9 +413,9 @@ test('keyboard focus on a slot badge reveals the row actions without opening an 
  await expect(pencil).toHaveCSS('opacity','0');
  await title.locator('.page-structure__slot-badge').focus();
  await expect(pencil).toHaveCSS('opacity','1');await expect(pencil).toHaveCSS('pointer-events','auto');
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  const caret=await page.evaluate(()=>{const input=document.createElement('input');input.id='canvas-caret';document.body.append(input);input.focus();return true;});expect(caret).toBe(true);
- await title.hover();await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
+ await title.hover();await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
 });
 
 test.describe('coarse pointer visibility eyes',()=>{test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:800}});
@@ -434,8 +440,11 @@ test('a 280px link editor stacks captions above full-width fields that show the 
  expect(await sidebarGeometry(page)).toEqual({sidebar:280,content:240,tree:260,row:252});
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.source=s.source.replace('href="/before"','href="/about/#contact"').replace('>Go<','>Get in touch<');s.version++;s.update();});
  await page.locator('[role=treeitem][data-node="0.3"]').press('F2');
- for(const [name,value] of [['Cta: Button text','Get in touch'],['Cta: Link / URL','/about/#contact']]){
-  const input=page.getByRole(name.endsWith('URL')?'combobox':'textbox',{name,exact:true});await expect(input).toHaveValue(value);
+ // The button text is the row's own label, edited in place; the URL is in the card under it.
+ const button=page.getByRole('textbox',{name:'Cta: Button text',exact:true});await expect(button).toHaveValue('Get in touch');
+ expect(await button.evaluate((el:HTMLTextAreaElement)=>({row:Boolean(el.closest('.page-structure__row.is-editing')),fits:el.scrollWidth<=el.clientWidth}))).toEqual({row:true,fits:true});
+ for(const [name,value] of [['Cta: Link / URL','/about/#contact']]){
+  const input=page.getByRole('combobox',{name,exact:true});await expect(input).toHaveValue(value);
   const m=await input.evaluate((el:HTMLInputElement)=>{const cap=el.closest('label')!.querySelector('.page-structure__slot-field-label')!.getBoundingClientRect(),box=el.getBoundingClientRect(),editor=el.closest('.page-structure__inline')!.getBoundingClientRect();return{capBottom:cap.bottom,top:box.top,width:box.width,editor:editor.width,fits:el.scrollWidth<=el.clientWidth};});
   expect(m.capBottom).toBeLessThanOrEqual(m.top+0.5);expect(m.width).toBeGreaterThan(m.editor*0.7);expect(m.fits).toBe(true);
  }

@@ -91,7 +91,7 @@ export interface ComponentDeps {
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
   editor: () => CodeEditor | undefined;
-  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void } | undefined;
+  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void; patchText?(request: { path: string; node: number[] }, text: string, miss?: () => void, end?: boolean): void } | undefined;
   /** The file open in the code pane. */
   currentPath: () => string | undefined;
   /** The preview's selection, as the editor last heard it. */
@@ -152,7 +152,19 @@ const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "
 
 export type ComponentSlotPart = "text" | "src" | "alt" | "href";
 export type ComponentAttributeResult = { ok: true } | { error: string; stale?: boolean };
-export interface ComponentFieldSession { write(value: string): boolean; close(): void }
+export interface ComponentFieldSession {
+  write(value: string): boolean;
+  close(): void;
+  /** Takes back everything this session wrote (Escape): no change and no undo step remain. False when it could not. */
+  cancel(): boolean;
+  /**
+   * Shows `value` in the page at once, ahead of its write (a slot's text held
+   * by one element of text alone): true when sent; `miss` runs if the page
+   * could not take it. `end`: the last one, as the field closes (the page
+   * stops redrawing it over renders). Absent where the page cannot be patched.
+   */
+  patch?(value: string, miss: () => void, end?: boolean): boolean;
+}
 export interface ComponentStructureModel {
   host: { path: string; node: readonly number[]; tag: string };
   slots: readonly { name: string; label: string; kind: SlotValue["kind"]; value: Readonly<SlotValue>; shown: boolean; filled: boolean; whenEmpty: SlotState["whenEmpty"]; assignedNodes: readonly number[][] }[];
@@ -1183,7 +1195,7 @@ export function createComponentTools(deps: ComponentDeps) {
       if (!read()) return;
       const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
       if (!initialProof) return;
-      let expected = initial.source, closed = false, wrote = false;
+      let expected = initial.source, closed = false, wrote = false, lastNode: number[] | undefined;
       let proof = initialProof;
       const close = () => {
         if (closed) return;
@@ -1193,7 +1205,20 @@ export function createComponentTools(deps: ComponentDeps) {
         if (ownsGroup) editor.closeActiveEditGroup(path);
       };
       const reject = () => { close(); return false; };
+      const cancel = () => {
+        if (closed) return false;
+        const owns = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+        closed = true;
+        proof.dispose?.();
+        if (!wrote) return true;
+        if (!owns) return false;
+        if (lastNode) deps.preview()?.selectAfterUpdate({ path, node: lastNode });
+        const discarded = typeof editor.discardActiveEditGroup === "function" && editor.discardActiveEditGroup(path);
+        if (!discarded) editor.closeActiveEditGroup(path);
+        return discarded;
+      };
       return {
+        cancel,
         write(value) {
           if (closed) return reject();
           const at = read(expected, proof);
@@ -1204,6 +1229,7 @@ export function createComponentTools(deps: ComponentDeps) {
           const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
           if (next === at.source) return true;
           live(path, edit, message, at.node);
+          lastNode = at.node;
           if (deps.sources()[path] !== next) return reject();
           if (!hostProof.isCurrent()) return reject();
           const nextProof = editor.prepareHistorySources([{ path, expectedSource: next, text: next }]);
@@ -1298,7 +1324,7 @@ export function createComponentTools(deps: ComponentDeps) {
         };
       },
       openField(name, part) {
-        return openSession((at, value) => {
+        const session = openSession((at, value) => {
           const slot = at.slots.find(slot => slot.name === name);
           if (!slot) return;
           if (part === "src" || part === "href") {
@@ -1310,6 +1336,22 @@ export function createComponentTools(deps: ComponentDeps) {
           return part === "text" ? slotTextEdit(at.source, at.template, at.instance, slot, value)
             : slotAttributeEdit(at, slot, part, value);
         }, `${slotLabel(name)} changed`);
+        if (!session || part !== "text") return session;
+        // The text's element in the page, when it holds text alone: typing can show there at once.
+        const at = read();
+        const fill = at?.instance.fills.get(name);
+        const only = fill?.length === 1 && fill[0].type === "element" ? fill[0] : undefined;
+        const node = at && only?.close && only.children.every(child => child.type === "text") ? elementPathAt(at.source, only.start) : undefined;
+        if (!node) return session;
+        return {
+          ...session,
+          patch(value, miss, end) {
+            const preview = deps.preview();
+            if (!preview?.patchText) return false;
+            preview.patchText({ path, node: [...node] }, value, miss, end);
+            return true;
+          },
+        };
       },
       setVisible(name, on) {
         const at = read(), slot = at?.slots.find(slot => slot.name === name);

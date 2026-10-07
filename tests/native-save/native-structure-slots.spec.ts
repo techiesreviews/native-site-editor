@@ -19,12 +19,14 @@ async function harness(page:any) {
 // Native Structure baseline: every assigned root is a real treeitem; one inline
 // editor opens only on an explicit F2, pencil or badge.
 const row=(page:any,node:string)=>page.locator(`[role=treeitem][data-node="${node}"]`);
-const edit=async(page:any,node:string)=>{await row(page,node).press('F2');await expect(page.locator(`.page-structure__inline[data-edit-node="${node}"]`)).toHaveCount(1);};
+// A slot's open editor: the row edited in place and, for a link or an image, the card attached under it.
+const OPEN_EDITOR='.page-structure__inline, .page-structure__row.is-editing';
+const edit=async(page:any,node:string)=>{await row(page,node).press('F2');await expect(page.locator(`.page-structure__row.is-editing[data-edit-node="${node}"]`)).toHaveCount(1);};
 const openAttributes=async(page:any)=>{const root=row(page,'0');await root.hover();await root.getByRole('button',{name:'Attributes',exact:true}).click();await expect(page.getByRole('textbox',{name:'New attribute name',exact:true})).toBeVisible();};
 test('slot fields live in Structure once, keep caret and own typing while refusing external changes',async({page})=>{
  await harness(page);
  await expect(page.locator('.component-panel')).toBeHidden();
- await expect(page.locator('.page-structure__inline')).toHaveCount(0);await expect(page.getByRole('textbox',{name:'Title: Text',exact:true})).toHaveCount(0);
+ await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.getByRole('textbox',{name:'Title: Text',exact:true})).toHaveCount(0);
  await expect(page.getByRole('treeitem',{name:/^span/})).toHaveCount(1);await edit(page,'0.0');
  await expect(page.getByRole('treeitem',{name:/^div Keep unknown/})).toBeVisible();
  const text=page.getByRole('textbox',{name:'Title: Text',exact:true});await text.fill('First');await text.press('End');await text.press('!');
@@ -40,7 +42,7 @@ test('link and image detail fields use exact instance sources and ordinary selec
  await edit(page,'0.2');await page.getByRole('combobox',{name:'Cta: Link / URL',exact:true}).fill('/after?a=1&b=2');await expect(page.getByRole('combobox',{name:'Cta: Link / URL',exact:true})).toBeFocused();await page.keyboard.press('Tab');
  expect(await page.evaluate(()=>(window as any).slotHarness.closed)).toBe(2);
  const source=await page.evaluate(()=>(window as any).slotHarness.source);const values=await page.evaluate(()=>{const dom=new DOMParser().parseFromString((window as any).slotHarness.source,'text/html');return{alt:dom.querySelector('img')!.getAttribute('alt'),href:dom.querySelector('a')!.getAttribute('href')};});expect(values).toEqual({alt:'New & exact',href:'/after?a=1&b=2'});expect(source).toContain('alt="New &amp; exact"');expect(source).toContain('href="/after?a=1&amp;b=2"');
- await row(page,'0.0').click();expect(await page.evaluate(()=>(window as any).slotHarness.selected.at(-1))).toEqual({path:'index.html',node:[0,0]});await expect(page.locator('.page-structure__inline[data-edit-node="0.0"]')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).slotHarness.opened)).toEqual([]);
+ await row(page,'0.0').click();expect(await page.evaluate(()=>(window as any).slotHarness.selected.at(-1))).toEqual({path:'index.html',node:[0,0]});await expect(page.locator('.page-structure__row.is-editing[data-edit-node="0.0"]')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).slotHarness.opened)).toEqual([]);
 });
 test('field sessions reject scope and template changes, and shadow selections require true host proof',async({page})=>{
  await harness(page);
@@ -50,8 +52,10 @@ test('field sessions reject scope and template changes, and shadow selections re
 
 test('optional visibility and root actions remain explicit and keyboard reachable',async({page})=>{
  await harness(page);
- const visible=page.getByRole('button',{name:'Show Optional',exact:true});await expect(visible).toHaveAttribute('aria-pressed','false');await visible.locator('xpath=ancestor::*[@role="treeitem"]').hover();await visible.click();await expect(visible).toHaveAttribute('aria-pressed','true');await expect(page.getByRole("textbox",{name:"Optional: Text",exact:true})).toBeFocused();
- expect(await page.evaluate(()=>(window as any).slotHarness.source)).toContain('slot="optional"');await visible.focus();await page.keyboard.press('Space');await expect(visible).toHaveAttribute('aria-pressed','false');expect(await page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('slot="optional"');
+ const visible=page.getByRole('button',{name:'Show Optional',exact:true});await expect(visible).toHaveAttribute('aria-pressed','false');await visible.locator('xpath=ancestor::*[@role="treeitem"]').hover();await visible.click();await expect(page.locator('.page-structure__row.is-editing[data-slot-editor="optional"] .page-structure__slot-toggle')).toHaveAttribute('aria-pressed','true');await expect(page.getByRole("textbox",{name:"Optional: Text",exact:true})).toBeFocused();
+ expect(await page.evaluate(()=>(window as any).slotHarness.source)).toContain('slot="optional"');
+ // Show opened the field; Enter ends editing (nothing changed), and the row's eye is reachable again.
+ await page.getByRole("textbox",{name:"Optional: Text",exact:true}).press('Enter');await visible.focus();await page.keyboard.press('Space');await expect(visible).toHaveAttribute('aria-pressed','false');expect(await page.evaluate(()=>(window as any).slotHarness.source)).not.toContain('slot="optional"');
  await page.getByRole('treeitem',{name:/^Project card/}).click();expect(await page.evaluate(()=>(window as any).slotHarness.opened)).toEqual([]);
  const edit=page.getByRole('button',{name:'Edit component',exact:true});await edit.focus();await expect(edit).toHaveCSS('opacity','1');await page.keyboard.press('Enter');
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.opened)).toEqual(['components/project-card.html']);
@@ -121,7 +125,7 @@ test('deferred image upload refuses deletion, scope changes and same-source mode
 });
 
 test('slot and attribute fields reopen after own typing, and URL typos remain correctable',async({page})=>{
- await harness(page);await edit(page,'0.0');const title=page.getByRole('textbox',{name:'Title: Text',exact:true});await title.fill('First');await title.press('Tab');await title.focus();await title.fill('Second');await expect(title).not.toHaveAttribute('aria-invalid','true');await title.press('Escape');await expect(row(page,'0.0')).toBeFocused();await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await harness(page);await edit(page,'0.0');const title=page.getByRole('textbox',{name:'Title: Text',exact:true});await title.fill('First');await title.press('Tab');await title.focus();await title.fill('Second');await expect(title).not.toHaveAttribute('aria-invalid','true');await title.press('Escape');await expect(row(page,'0.0')).toBeFocused();await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  await openAttributes(page);const attribute=page.getByRole('textbox',{name:'Attribute: title',exact:true});await attribute.fill('First attribute');await attribute.press('Tab');await attribute.focus();await attribute.fill('Second attribute');await expect(attribute).not.toHaveAttribute('aria-invalid','true');await attribute.press('Tab');
  await edit(page,'0.2');const href=page.getByRole('combobox',{name:'Cta: Link / URL',exact:true});await href.fill('javascript:bad');await expect(href).toHaveAttribute('aria-invalid','true');await href.fill('/corrected');await expect(href).not.toHaveAttribute('aria-invalid','true');expect(await page.evaluate(()=>{const doc=new DOMParser().parseFromString((window as any).slotHarness.source,'text/html');return{title:doc.querySelector('project-card')!.getAttribute('title'),text:doc.querySelector('span')!.textContent,href:doc.querySelector('a')!.getAttribute('href')};})).toEqual({title:'Second attribute',text:'Second',href:'/corrected'});
 });
@@ -130,7 +134,7 @@ test('a refused stale attribute draft can explicitly retry against freshly revie
 });
 
 test('slot selection, link suggestions and narrow Unicode attribute labels retain usable controls',async({page})=>{
- await page.setViewportSize({width:390,height:844});await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.source=s.source.replace('data-note="old"','長い属性名前="old"');s.version++;s.update();s.sidebar.select({path:'index.html',node:[0,1]});});await expect(row(page,'0.1')).toHaveAttribute('aria-selected','true');await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await page.setViewportSize({width:390,height:844});await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.source=s.source.replace('data-note="old"','長い属性名前="old"');s.version++;s.update();s.sidebar.select({path:'index.html',node:[0,1]});});await expect(row(page,'0.1')).toHaveAttribute('aria-selected','true');await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
  await edit(page,'0.2');const link=page.getByRole('combobox',{name:'Cta: Link / URL',exact:true});expect(await link.evaluate(el=>document.getElementById(el.getAttribute('list')!)?.querySelector('option')?.value)).toBe('/about/');await openAttributes(page);await expect(page.getByRole('textbox',{name:'Attribute: 長い属性名前',exact:true})).toBeVisible();expect(await page.locator('aside').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
 });
 test('slot attribute token ambiguity refuses edits and uploads without corrupting outside source',async({page})=>{
@@ -141,5 +145,5 @@ test('a picker detached by Structure rerender explicitly refuses its later file 
  await harness(page);await edit(page,'0.1');const chooser=page.waitForEvent('filechooser');await page.getByRole('button',{name:'Upload image…'}).click();const opened=await chooser;await page.evaluate(()=>(window as any).slotHarness.update());await opened.setFiles({name:'late.png',mimeType:'image/png',buffer:Buffer.from('image')});const result=await page.evaluate(()=>{const s=(window as any).slotHarness;return{calls:s.uploadCalls??0,version:s.version,notices:s.notices};});expect(result.calls).toBe(0);expect(result.version).toBe(0);expect(result.notices).toContain('The image picker changed; reopen Upload image… before choosing a file.');
 });
 test('content-only slot activation consumes its pending focus before a later text field exists',async({page})=>{
- await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template=s.template.replace('<article>','<section>').replace('</article>','</section>').replace('<slot name="optional"></slot>','<slot name="optional"><div><p>One</p><p>Two</p></div></slot>');s.version++;s.update();});const visible=page.getByRole('button',{name:'Show Optional',exact:true});await visible.locator('xpath=ancestor::*[@role="treeitem"]').hover();await visible.click();await expect(page.locator('.page-structure__inline')).toHaveCount(0);const title=page.locator('#canvas-caret');await page.evaluate(()=>{const input=document.createElement('input');input.id='canvas-caret';document.body.append(input);input.focus();});await page.evaluate(()=>{const s=(window as any).slotHarness;s.source=s.source.replace('<div slot="optional"><p>One</p><p>Two</p></div>','<span slot="optional">Now text</span>');s.version++;s.update();});await expect(title).toBeFocused();await expect(page.locator('.page-structure__inline')).toHaveCount(0);
+ await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template=s.template.replace('<article>','<section>').replace('</article>','</section>').replace('<slot name="optional"></slot>','<slot name="optional"><div><p>One</p><p>Two</p></div></slot>');s.version++;s.update();});const visible=page.getByRole('button',{name:'Show Optional',exact:true});await visible.locator('xpath=ancestor::*[@role="treeitem"]').hover();await visible.click();await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);const title=page.locator('#canvas-caret');await page.evaluate(()=>{const input=document.createElement('input');input.id='canvas-caret';document.body.append(input);input.focus();});await page.evaluate(()=>{const s=(window as any).slotHarness;s.source=s.source.replace('<div slot="optional"><p>One</p><p>Two</p></div>','<span slot="optional">Now text</span>');s.version++;s.update();});await expect(title).toBeFocused();await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);
 });

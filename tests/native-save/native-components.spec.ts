@@ -75,7 +75,8 @@ async function selectFirstCard(page: Page) {
 async function expandInstance(page: Page, instance: import('@playwright/test').Locator) {
   if (await instance.getAttribute('aria-expanded') === 'false') await instance.locator('.page-structure__toggle').click();
 }
-const slot = (page: Page, name: string) => panel(page).locator(`.page-structure__slot[data-slot-name="${name}"]:visible`);
+// A slot's open editor: the row whose text is edited in place, and the card under it (a link's URL, an image).
+const slot = (page: Page, name: string) => panel(page).locator(`:is(.page-structure__slot[data-slot-name="${name}"], .page-structure__row[data-slot-editor="${name}"]):visible`);
 async function editSlot(page: Page, name: string) {
   const label = name.charAt(0).toUpperCase() + name.slice(1);
   // On hover the row's action bar covers the badge, so the badge opens its slot from the keyboard.
@@ -101,10 +102,10 @@ test("an instance wears the component accent in the bar, the page structure and 
   await expect(tree(page).locator("[data-slot=title]:visible .page-structure__text").first()).toHaveText("Reusable cards");
   await expect(row(page, /^Paragraph This card/)).toHaveAttribute("data-slot", "body");
   await editSlot(page, "title");
-  await expect(slot(page, "title")).toHaveAttribute("data-slot-name", "title");
+  await expect(slot(page, "title")).toHaveAttribute("data-slot-editor", "title");
   await expect(slot(page, "title").getByRole("textbox", {name:"Title: Text",exact:true})).toHaveValue("Reusable cards");
   await editSlot(page, "body");
-  await expect(slot(page, "body")).toHaveAttribute("data-slot-name", "body");
+  await expect(slot(page, "body")).toHaveAttribute("data-slot-editor", "body");
   await expect(slot(page, "body").getByRole("textbox", {name:"Body: Text",exact:true})).toHaveValue(/^This card/);
   await row(page, "Project card Reusable cards").locator(".page-structure__label").click();
   // The bar's name: the mark and the accent, the tag in its tooltip.
@@ -189,15 +190,19 @@ test("Structure edits an instance's slots and attributes as page source", async 
   // Row actions fade in on hover, like every Structure row action.
   await link.locator("xpath=ancestor::*[@role='treeitem'][1]").hover();
   await link.click();
-  await expect(link).toHaveAttribute("aria-pressed", "true");
+  // Show opens the link's editor, which hides the row's actions while it edits: its eye is pressed underneath.
+  await expect(panel(page).locator(".page-structure__row.is-editing[data-slot-editor=link] .page-structure__slot-toggle")).toHaveAttribute("aria-pressed", "true");
   await expect(frame(page).locator("project-card").first().locator("a[slot='link']")).toHaveText("Link");
   // Show immediately focuses the button text field.
   await expect(slot(page, "link").getByRole("textbox", {name:"Link: Button text"})).toBeFocused();
   await openSlotDetails(page, "link");
   const address = slot(page, "link").getByRole("combobox", { name: "Link: Link / URL" });
   await address.fill("/about/");
+  // Enter commits and ends editing; the button text is edited on the row, opened again.
   await address.press("Enter");
+  await editSlot(page, "link");
   await slot(page, "link").getByRole("textbox", { name: "Link: Button text" }).fill("About the studio");
+  await slot(page, "link").getByRole("textbox", { name: "Link: Button text" }).press("Enter");
   let source = await editorText(page);
   expect(source).toMatch(/<p slot="body">[^\n]*<\/p>\n {6}<a slot="link" href="\/about\/">About the studio<\/a>\n {4}<\/project-card>/);
   await tree(page).locator("[data-slot=link]").first().hover();
@@ -383,6 +388,8 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   await expect(image.getByRole("combobox", { name: "Image: Image" })).toHaveValue("/images/placeholder.svg");
   await image.getByRole("combobox", { name: "Image: Image" }).fill("/images/studio-desk.svg");
   await image.getByRole("combobox", { name: "Image: Image" }).press("Enter");
+  // Enter committed the address and ended editing: the alt text is in the same card, opened again.
+  await openSlotDetails(page, "image");
   await image.getByRole("textbox", { name: "Image: Alt text" }).fill("A desk");
   await image.getByRole("textbox", { name: "Image: Alt text" }).press("Enter");
   expect(await editorText(page)).toContain(`<media-card>\n    <img slot="image" src="/images/studio-desk.svg" alt="A desk">\n  </media-card>`);
@@ -394,7 +401,8 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   // Row actions fade in on hover, like every Structure row action.
   await caption.locator("xpath=ancestor::*[@role='treeitem'][1]").hover();
   await caption.click();
-  await expect(caption).toHaveAttribute("aria-pressed", "true");
+  // Show opens the caption's editor, which hides the row's actions while it edits: its eye is pressed underneath.
+  await expect(panel(page).locator(".page-structure__row.is-editing[data-slot-editor=caption] .page-structure__slot-toggle")).toHaveAttribute("aria-pressed", "true");
   await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).fill("Where it happens");
   await panel(page).getByRole("textbox", { name: "Caption: Text", exact: true }).press("Enter");
   expect(await editorText(page)).toContain(`<span slot="caption">Where it happens</span>`);

@@ -85,6 +85,30 @@ test("range and whole-text edits undo and redo, with text events carrying ranges
   assert.equal(store.canRedo("page"), false);
 });
 
+test("discarding an open group restores its first state and leaves no undo or redo step", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });
+  store.edit({ scope, path: "a.html", history: "h", text: "aXb" });
+  const before = store.get(scope, "a.html")!.revision;
+  const log: string[] = [];
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 2, end: 2, text: "y" }], companion: { undo: () => log.push("undo"), redo: () => log.push("redo") } });
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 3, end: 3, text: "z" }] });
+  assert.equal(store.text(scope, "a.html"), "aXyzb");
+  assert.equal(store.discardGroup("h"), true);
+  assert.equal(store.text(scope, "a.html"), "aXb");
+  assert.equal(store.get(scope, "a.html")!.revision, before);
+  assert.deepEqual(log, ["undo"]);
+  assert.equal(store.canRedo("h"), false);
+  // The step before the group is the next Undo, and still applies.
+  assert.ok((await store.undo("h")).ok);
+  assert.equal(store.text(scope, "a.html"), "ab");
+  // A closed group, or none, is not discarded.
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 0, end: 0, text: "!" }] });
+  store.closeGroup("h");
+  assert.equal(store.discardGroup("h"), false);
+  assert.equal(store.text(scope, "a.html"), "!ab");
+});
+
 test("grouped edits are one step until the group closes; companions follow the step", async () => {
   const { store } = setup();
   store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });

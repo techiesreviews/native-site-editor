@@ -208,6 +208,7 @@ type RangeApi = {
   replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion): void;
   replaceMany(edits: RangeEdit[]): void;
   closeGroup(): void;
+  discardGroup(): boolean;
   reveal(start: number, end: number): void;
   focus(): void;
   highlight(ranges: HighlightRange[]): void;
@@ -502,6 +503,11 @@ export function replaceActiveRanges(edits: RangeEdit[]) {
 export function closeActiveEditGroup(path: string) {
   mounted.get(path)?.range.closeGroup();
 }
+// Takes the open group back (an inline field's Escape): the file returns to
+// where the group began and no undo step is left. False when it could not.
+export function discardActiveEditGroup(path: string) {
+  return mounted.get(path)?.range.discardGroup() ?? false;
+}
 // Scrolls a mounted file to a byte range (e.g. a CSS rule) and selects it.
 export function revealRange(path: string, start: number, end: number) {
   mounted.get(path)?.range.reveal(start, end);
@@ -647,6 +653,9 @@ export function mountSourceEditor(
     },
     closeGroup() {
       store.closeGroup(session);
+    },
+    discardGroup() {
+      return store.discardGroup(session);
     },
     review(on) {
       if ((mode === "review") !== on) render(on ? "review" : "edit");

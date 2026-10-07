@@ -242,7 +242,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // assigned root (else its own slot row), select that real element and
   // focus the editor's first field. Content slots have no fields: the badge
   // only selects their root.
-  function requestSlotEdit(context: SlotRowContext | { model: ComponentStructureModel; slot: SlotRowContext["slot"]; anchor?: undefined }) {
+  function requestSlotEdit(context: SlotRowContext | { model: ComponentStructureModel; slot: SlotRowContext["slot"]; anchor?: undefined }, caret?: number) {
     const { model, slot, anchor } = context;
     const target = anchor ?? model.host.node;
     if (!editable(slot)) {
@@ -256,9 +256,17 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (anchor) foldState.set(owner, false);
     selected = key([...target]);
     handlers.onSelect(model.host.path, [...target]);
-    focusSlotField = { prefix: slotFieldPrefix(model, slot.name), row: owner };
+    focusSlotField = { prefix: slotFieldPrefix(model, slot.name), row: owner, caret };
+    editStarted = performance.now();
     render();
   }
+  // The part a slot's row edits in place: its text (a text slot's, a link's
+  // label). Everything else (URL, image, alt) is in the card under the row.
+  const inPlace = (slot: SlotRowContext["slot"]) => (slot.kind === "text" || slot.kind === "link") && slot.value.editable;
+  // When the open editor began: a double-click's second click then selects all.
+  let editStarted = 0;
+  // The row whose editing just ended, so its first paint eases back.
+  let leftEditing: string | undefined;
   const slotRows = new Map<string, HTMLElement>();
   const rowElement = (id: string) => rows.get(id) ?? slotRows.get(id);
   // An element's kind as its icon. A row with text to tell it apart shows the
@@ -398,9 +406,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   type FieldControl = HTMLInputElement | HTMLTextAreaElement;
   const fieldInputs = new Map<string, FieldControl>();
   const fieldClosers = new Map<FieldControl, () => void>();
+  const fieldCancelers = new Map<FieldControl, () => void>();
   let renderingFields = false;
   // One explicit focus request, consumed by the first render after it.
-  let focusSlotField: { prefix: string; row: string | undefined } | undefined;
+  let focusSlotField: { prefix: string; row: string | undefined; caret?: number } | undefined;
   // The component row whose Attributes were just opened: focus their first field.
   let focusInline: string | undefined;
   const attributeForms = new Map<string, HTMLFormElement>();
@@ -408,7 +417,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const uploadClosers = new Map<HTMLInputElement, () => void>();
   function cleanControls() {
     for (const [input, close] of uploadClosers) if (!tree.contains(input)) { close(); uploadClosers.delete(input); }
-    for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); }
+    for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); fieldCancelers.delete(input); }
     for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
     for (const [id, form] of attributeForms) if (!tree.contains(form)) {
       formClosers.get(form)?.(); formClosers.delete(form); attributeForms.delete(id);
@@ -419,6 +428,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // A field with suggestions (a URL, an image) stays an input, as only an input
   // takes a datalist.
   function guardedField(id: string, label: string, accessible: string, value: string, open: () => ComponentFieldSession | undefined, single = false) {
+    const input = fieldControl(id, accessible, value, open, single);
+    const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "page-structure__slot-field-label", label), input); return wrap;
+  }
+  function fieldControl(id: string, accessible: string, value: string, open: () => ComponentFieldSession | undefined, single = false) {
     const previous = fieldInputs.get(id);
     let input: FieldControl;
     if (previous && previous === document.activeElement) input = previous;
@@ -437,16 +450,51 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           input.value = oneLine(input.value); input.setSelectionRange(caret, caret);
           if (!fieldSizing) fitHeight(input);
         }
-        if (!session?.write(input.value)) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid");
+        // Where the page can take the text at once (patch), it shows there this
+        // frame and the source write (the full render) follows once typing
+        // pauses; elsewhere, or when the page misses it, the write goes now.
+        if (session?.patch?.(input.value, writeNow)) {
+          clearTimeout(pendingWrite);
+          pendingWrite = setTimeout(writeNow, WRITE_PAUSE);
+        } else writeNow();
       });
-      const close = () => { session?.close(); session = undefined; };
+      let pendingWrite: ReturnType<typeof setTimeout> | undefined;
+      function writeNow() {
+        clearTimeout(pendingWrite); pendingWrite = undefined;
+        if (!session) return;
+        if (!session.write(input.value)) input.setAttribute("aria-invalid", "true");
+        else {
+          input.removeAttribute("aria-invalid");
+          // The source this typing made: its paint is the only one held back while typing goes on.
+          if (structure?.path) ownSource = handlers.pageSource?.(structure.path);
+        }
+      }
+      // Closing writes what is still waiting, then ends the session (one undo step).
+      const close = () => {
+        if (pendingWrite !== undefined) writeNow();
+        session?.patch?.(input.value, () => undefined, true);
+        session?.close(); session = undefined;
+      };
+      const initial = input.value;
+      // Escape: what this field wrote is taken back (no change, no undo step) and it shows its first value again,
+      // in the page at once (patch) and then in the source.
+      const cancel = () => {
+        clearTimeout(pendingWrite); pendingWrite = undefined;
+        const current = session; session = undefined;
+        current?.patch?.(initial, () => undefined, true);
+        if (current) { if (typeof current.cancel === "function") current.cancel(); else current.close(); }
+        input.value = initial; input.removeAttribute("aria-invalid");
+      };
       fieldClosers.set(input, close);
+      fieldCancelers.set(input, cancel);
       input.addEventListener("blur", () => { if (!renderingFields) close(); });
       (input as HTMLElement).addEventListener("keydown", event => {
         // Enter (with or without Shift) applies and never adds a line; an IME's Enter stays the IME's.
         if (event.key !== "Enter" && event.key !== "Escape" || event.isComposing) return;
         event.preventDefault();
-        // Enter applies (blur closes the session) and returns to the owning row; Escape also closes the editor.
+        // A slot's editor: Enter keeps the text, Escape takes it back; either ends editing on the row.
+        if (input.closest("[data-slot-editor]")) { event.stopPropagation(); finishEdit(event.key === "Enter" ? "commit" : "cancel", true); return; }
+        // Attributes: Enter applies (blur closes the session) and returns to the owning row; Escape also closes the panel.
         const owner = input.closest<HTMLElement>("[data-edit-node]")?.dataset.editNode;
         input.blur();
         if (event.key === "Enter" && owner !== undefined) { event.stopPropagation(); rowElement(owner)?.focus(); }
@@ -454,9 +502,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       fieldInputs.set(id, input);
     }
     input.setAttribute("aria-label", accessible);
-    const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "page-structure__slot-field-label", label), input); return wrap;
+    return input;
   }
   const fieldSizing = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+  // How long typing pauses before a patched field's text is written to the source (and the page fully drawn).
+  const WRITE_PAUSE = 150;
   const oneLine = (text: string) => text.replace(/\r\n|[\r\n]/g, " ");
   // Only without field-sizing: as tall as the text, borders included (max-height still caps it).
   function fitHeight(area: HTMLTextAreaElement) {
@@ -590,9 +640,17 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const show = visibilityControl(model, slot) ?? (editable(slot) ? iconAction(`Edit ${slot.label}`, "edit", edit) : undefined);
       if (show) addRowActions(el, [show]);
     }
-    el.addEventListener("click", () => { if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); } });
+    const canEdit = editable(slot) && (slot.filled || slot.whenEmpty === "fallback");
+    el.addEventListener("pointerdown", event => notePress(event, el));
+    el.addEventListener("click", event => {
+      if (inEditor(event.target)) return;
+      // A second click on the row (it has focus from the first) edits its text in place.
+      if (canEdit && inPlace(slot) && secondClick(event, el, label)) { requestSlotEdit({ model, slot }, event.detail > 1 ? undefined : caretAt(event, label)); return; }
+      if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); }
+    });
     el.addEventListener("keydown", event => {
-      if ((event.key === "F2" || event.key === "Enter") && editable(slot) && (slot.filled || slot.whenEmpty === "fallback")) { event.preventDefault(); event.stopPropagation(); edit(); return; }
+      if (event.target !== el) return;
+      if ((event.key === "F2" || event.key === "Enter") && canEdit) { event.preventDefault(); event.stopPropagation(); edit(); return; }
       const list = visibleRows(), at = list.indexOf(el);
       const target = event.key === "ArrowDown" ? list[at + 1] : event.key === "ArrowUp" ? list[at - 1] : event.key === "Home" ? list[0] : event.key === "End" ? list[list.length - 1]
         : event.key === "ArrowLeft" ? rows.get(key([...model.host.node])) : undefined;
@@ -608,24 +666,46 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       && (slot.filled || slot.whenEmpty === "fallback")) {
       openSlot.anchor = id;
       if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = id;
-      el.classList.add("is-editing");
-      result.push(inlineEditor(model, slot, id, level));
-    }
+      editInRow(el, label, model, slot, id);
+      const card = inlineEditor(model, slot, id, level);
+      if (card) result.push(card);
+    } else if (leftEditing === id) el.classList.add("was-editing");
     return result;
   }
 
-  // The one inline disclosure: the slot's fields under its anchor row.
+  // The card under an editing row: the slot's fields other than the row's own
+  // text (a link's URL, an image and its alt). Nothing when the row holds them all.
   function inlineEditor(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], owner: string, level: number) {
+    if (slot.kind === "text" && inPlace(slot)) return undefined;
     const inline = node("div", "page-structure__inline"); inline.dataset.editNode = owner; inline.dataset.slotEditor = slot.name;
     // --depth is the owning row's, so the editor lines up with it.
     inline.style.setProperty("--depth", String(level - 1));
-    const close = () => { openSlot = undefined; render(); rowElement(owner)?.focus(); };
-    inline.append(...slotControls({ ...model, slots: [slot] }, level), iconAction(`Close ${slot.label} editor`, "close", close));
-    inline.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
+    inline.append(...slotControls({ ...model, slots: [slot] }, level, true));
     return inline;
   }
+  // An editing row: its text becomes the field, in its own place, and Done
+  // takes the place of the badge and actions.
+  function editInRow(el: HTMLElement, label: HTMLElement, model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], owner: string) {
+    el.classList.add("is-editing");
+    el.dataset.editNode = owner; el.dataset.slotEditor = slot.name;
+    if (inPlace(slot)) {
+      const part: ComponentSlotPart = "text";
+      const name = slot.kind === "link" ? "Button text" : "Text";
+      const field = fieldControl(`${slotFieldPrefix(model, slot.name)}${part}`, `${slot.label}: ${name}`, slot.value.text,
+        () => handlers.componentSlots?.(model.host.path, model.host.node)?.openField(slot.name, part));
+      field.classList.add("page-structure__edit-field");
+      const text = label.querySelector(":scope > .page-structure__text");
+      if (text) text.replaceWith(field); else label.append(field);
+    }
+    const done = iconAction("Done", "done", () => finishEdit("commit", true));
+    done.classList.add("page-structure__done");
+    done.title = "Done (Enter)";
+    // Pressing Done keeps focus in the field until the click, so its value is never lost to a blur first.
+    done.addEventListener("pointerdown", event => event.preventDefault());
+    el.append(done);
+  }
 
-  function slotControls(model: ComponentStructureModel, level: number) {
+  function slotControls(model: ComponentStructureModel, level: number, skipInPlace = false) {
     const result: HTMLElement[] = [];
 
     for (const slot of model.slots) {
@@ -636,7 +716,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         const id = `${slotFieldPrefix(model, slot.name)}${part}`;
         return guardedField(id, label, `${slot.label}: ${label}`, value, () => handlers.componentSlots?.(model.host.path, model.host.node)?.openField(slot.name, part), part === "href" || part === "src");
       }
-      if (slot.kind === "text" && slot.value.editable) block.append(field("text", "Text", slot.value.text));
+      if (slot.kind === "text" && slot.value.editable) { if (!skipInPlace) block.append(field("text", "Text", slot.value.text)); }
       else if (slot.kind === "image" || slot.kind === "link") {
         // The fields as one labelled group (no disclosure header): always open under their row.
         const group = node("div", "page-structure__slot-fields");
@@ -663,7 +743,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
           group.append(image, suggestions, upload, file, field("alt", "Alt text", slot.value.alt ?? ""));
         }
         else {
-          if (slot.value.editable) group.append(field("text", "Button text", slot.value.text));
+          if (slot.value.editable) { if (!skipInPlace) group.append(field("text", "Button text", slot.value.text)); }
           else group.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
           const link = field("href", "Link / URL", slot.value.href ?? "");
           const suggestions = document.createElement("datalist"); suggestions.id = `structure-links-${model.host.node.join("-")}-${result.length}`;
@@ -795,7 +875,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;
-    el.addEventListener("pointerdown", (event) => pressRow(event, item, el));
+    el.addEventListener("pointerdown", (event) => { if (inEditor(event.target)) return; notePress(event, el); pressRow(event, item, el); });
     el.addEventListener("pointermove", moveRow);
     el.addEventListener("pointerup", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(true); });
     el.addEventListener("pointercancel", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(false); });
@@ -805,21 +885,34 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         suppressClick = false;
         return;
       }
+      if (inEditor(event.target)) return;
       if (event.target === toggle && hasChildren) {
         fold(item, el, !isFolded(id));
+        return;
+      }
+      // A second click on the selected row's text edits it in place: the caret
+      // where it was clicked, or everything selected for a double-click.
+      if (slotContext && inPlace(slotContext.slot) && !editing && secondClick(event, el, label)) {
+        requestSlotEdit(slotContext, event.detail > 1 ? undefined : caretAt(event, label));
         return;
       }
       choose(item);
     });
     el.addEventListener("keydown", (event) => {
+      // Keys typed in the row's field or on its Done button are theirs, not the tree's.
+      if (event.target !== el) return;
       if (event.key === "F2" && slotContext) { event.preventDefault(); requestSlotEdit(slotContext); return; }
+      // Enter on a row whose text edits in place starts editing it (everything selected).
+      if (event.key === "Enter" && slotContext && inPlace(slotContext.slot) && !editing) { event.preventDefault(); event.stopPropagation(); requestSlotEdit(slotContext); return; }
       onKey(event, item, el);
     });
     rows.set(id, el);
+    if (editing && slotContext) editInRow(el, label, slotContext.model, slotContext.slot, id);
+    else if (leftEditing === id) el.classList.add("was-editing");
     const inline = editing && slotContext ? inlineEditor(slotContext.model, slotContext.slot, id, level) : undefined;
     if (inline) inline.id = `structure-inline-${id}`;
-    // The row with an editor open and the editor read as one attached block.
-    if (inline || attributes) el.classList.add("is-editing");
+    // A row with Attributes open and its panel read as one attached block.
+    if (attributes) el.classList.add("has-panel");
     if (!hasChildren) return inline ? [el, inline] : [el];
     el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
@@ -953,6 +1046,101 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return current;
   }
 
+  // ---- Editing a row's text in place. ----
+  // What a press on a row looked like: where, and whether the row had focus
+  // (it was chosen by an earlier click or the keyboard), so its click can tell
+  // a second click from a first one or the end of a drag.
+  let press: { row: HTMLElement; x: number; y: number; focused: boolean } | undefined;
+  function notePress(event: PointerEvent, row: HTMLElement) {
+    // A slot-only row is never marked selected (it stands for its instance): its focus is enough.
+    const chosen = row.getAttribute("aria-selected") === "true" || row.dataset.slotRow !== undefined;
+    press = event.button === 0 ? { row, x: event.clientX, y: event.clientY, focused: document.activeElement === row && chosen } : undefined;
+  }
+  const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(".page-structure__edit-field, .page-structure__done"));
+  function secondClick(event: MouseEvent, row: HTMLElement, label: HTMLElement) {
+    const pressed = press; press = undefined;
+    if (!pressed || pressed.row !== row || !pressed.focused) return false;
+    if (Math.hypot(event.clientX - pressed.x, event.clientY - pressed.y) > 4) return false;
+    // On the row's text, not its chevron, badge or actions.
+    const text = label.querySelector(":scope > .page-structure__text") ?? label;
+    const box = text.getBoundingClientRect();
+    return event.clientX >= box.left - 2 && event.clientY >= box.top - 4 && event.clientY <= box.bottom + 4 && event.target instanceof Node && label.contains(event.target);
+  }
+  // The character offset in the row's text under a click (its end when right of it).
+  function caretAt(event: MouseEvent, label: HTMLElement) {
+    const text = label.querySelector<HTMLElement>(":scope > .page-structure__text");
+    if (!text) return undefined;
+    const doc = document as Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
+    const position = doc.caretPositionFromPoint?.(event.clientX, event.clientY);
+    const range = position ? undefined : document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    const at = position ? { node: position.offsetNode, offset: position.offset } : range ? { node: range.startContainer, offset: range.startOffset } : undefined;
+    if (!at || !text.contains(at.node)) return event.clientX > text.getBoundingClientRect().right ? text.textContent?.length : undefined;
+    let offset = 0;
+    const walker = document.createTreeWalker(text, NodeFilter.SHOW_TEXT);
+    for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+      if (current === at.node) return offset + at.offset;
+      offset += current.textContent?.length ?? 0;
+    }
+    return undefined;
+  }
+  // Whether a field of the open editor (row or card) has focus: typing goes on there.
+  function typingInEditor() {
+    const active = document.activeElement;
+    return (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) && tree.contains(active) && Boolean(active.closest("[data-slot-editor]"));
+  }
+  // The structure without its text: equal shapes differ only in what is typed.
+  const shape = (value: NativeStructure) => JSON.stringify(value.items, (name, item) => name === "text" || name === "heading" ? undefined : item);
+  let typingDeferred = false;
+  let ownSource: string | undefined;
+  // Ends editing a row's text: "commit" keeps what was typed (one undo step),
+  // "cancel" takes it all back (no change, no undo step). With `focus`, the
+  // row takes focus again.
+  function finishEdit(how: "commit" | "cancel", focus: boolean) {
+    const open = openSlot;
+    if (!open) return;
+    const fields = [...fieldInputs].filter(([, input]) => tree.contains(input) && input.closest(`[data-slot-editor]`));
+    for (const [, input] of fields) (how === "cancel" ? fieldCancelers.get(input) : fieldClosers.get(input))?.();
+    openSlot = undefined;
+    focusSlotField = undefined;
+    typingDeferred = false;
+    ownSource = undefined;
+    leftEditing = open.anchor;
+    const owner = open.anchor;
+    // The fields go with this render: nothing of theirs may count as focus to keep.
+    if (focus) rowElement(owner)?.focus();
+    render();
+    if (focus) rowElement(owner)?.focus();
+  }
+  // Focus leaving the editing row and its card ends editing, keeping the text,
+  // once the press that moved it is over (so a click on another row lands on
+  // that row). A window losing focus leaves editing open.
+  let pointerDown = false;
+  const onPointerDown = () => { pointerDown = true; };
+  const onPointerUp = () => { pointerDown = false; };
+  window.addEventListener("pointerdown", onPointerDown, true);
+  window.addEventListener("pointerup", onPointerUp, true);
+  window.addEventListener("pointercancel", onPointerUp, true);
+  tree.addEventListener("focusout", event => {
+    // A structure held back while typing is drawn once focus has left the field.
+    if (typingDeferred && !renderingFields) setTimeout(() => { if (typingDeferred && !typingInEditor()) { typingDeferred = false; render(); } });
+    if (!openSlot || renderingFields) return;
+    const owner = openSlot.anchor;
+    const inside = (target: EventTarget | null) => target instanceof Node && [...tree.querySelectorAll(`[data-slot-editor]`)].some(part => part.contains(target));
+    if (!inside(event.target) || inside(event.relatedTarget)) return;
+    const check = () => {
+      if (!openSlot || openSlot.anchor !== owner || !document.hasFocus()) return;
+      if (inside(document.activeElement)) return;
+      finishEdit("commit", false);
+    };
+    if (pointerDown) window.addEventListener("pointerup", () => setTimeout(check), { once: true, capture: true });
+    else setTimeout(check);
+  });
+  // A double-click whose first click began editing selects all of the text.
+  tree.addEventListener("dblclick", event => {
+    const field = event.target instanceof Element ? event.target.closest<HTMLTextAreaElement>(".page-structure__edit-field") : null;
+    if (field && performance.now() - editStarted < 800) field.select();
+  });
+
   function render() {
     // The rows are about to be replaced: a drag in progress has nothing to land on.
     finishDrag(false);
@@ -962,6 +1150,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     inMain.clear();
     const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
     const previousFocus = tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.slotRow : undefined;
+    // A row's button with focus (a badge, an action) is found again on its redrawn row.
+    const active = document.activeElement;
+    const focusedControl = active instanceof HTMLButtonElement && tree.contains(active) ? (() => {
+      const owner = active.closest<HTMLElement>("[role='treeitem']");
+      const id = owner?.dataset.node ?? owner?.dataset.slotRow;
+      return id === undefined ? undefined : { id, name: active.getAttribute("aria-label") ?? active.textContent ?? "" };
+    })() : undefined;
     focusAfterRender = undefined;
     if (!structure || !structure.path) {
       hint.textContent = structure ? HINT_COMPONENT : HINT_NO_PAGE;
@@ -987,8 +1182,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // An editor whose anchor went (Hide, Undo, Redo) or a Show that found
     // nothing to anchor to is forgotten, so no later render reopens it.
     // A paint proven stale proves nothing, and a pending Show waits for a fresh one.
-    if (openSlot && !keepPending && paintFresh !== false && !tree.querySelector(".page-structure__inline[data-slot-editor]")) { openSlot = undefined; }
+    if (openSlot && !keepPending && paintFresh !== false && !tree.querySelector("[data-slot-editor]")) { openSlot = undefined; }
+    leftEditing = undefined;
     setSelected(selected);
+    if (focusedControl && !tree.contains(document.activeElement)) {
+      const again = [...(rowElement(focusedControl.id)?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find(control => (control.getAttribute("aria-label") ?? control.textContent ?? "") === focusedControl.name);
+      again?.focus();
+    }
     if (activeField && tree.contains(activeField)) {
       activeField.focus();
       if (caret && caret[0] !== null) activeField.setSelectionRange(caret[0], caret[1]);
@@ -1006,7 +1207,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const wanted = focusSlotField; focusSlotField = undefined;
       const input = [...fieldInputs].find(([id, input]) => id.startsWith(wanted.prefix) && tree.contains(input) && !input.closest("[hidden]"))?.[1]
         ?? [...fieldInputs].find(([id, input]) => id.startsWith(wanted.prefix) && tree.contains(input))?.[1];
-      if (input) { input.focus(); input.select(); return; }
+      if (input) {
+        input.focus();
+        if (wanted.caret === undefined) input.select();
+        else { const at = Math.min(wanted.caret, input.value.length); input.setSelectionRange(at, at); }
+        return;
+      }
       const owner = wanted.row !== undefined ? rowElement(wanted.row) : undefined;
       if (owner) { focusRowOnly(owner); return; }
     }
@@ -1030,6 +1236,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     /** The page's elements after a render; nothing while no page is on show. */
     update(next: NativeStructure | undefined) {
       const path = next?.path ?? "";
+      const previousStructure = structure;
       if (path !== structure?.path) {
         cancelShared();
         foldState.clear();
@@ -1042,6 +1249,16 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (path && pending) {
         pendingSelection = undefined;
         if (pending.path === path) selected = key(pending.node);
+      }
+      // While a row's text is being typed, the paint of exactly the source that
+      // typing made (text alone changed) is kept but not drawn: the tree stays
+      // as it is, field, caret and all; it is drawn when editing ends. Any other
+      // change (Undo, another edit, a new page) is drawn as ever.
+      if (next && previousStructure && openSlot && path === previousStructure.path && typingInEditor()
+        && ownSource !== undefined && next.paintedSource === ownSource && shape(next) === shape(previousStructure)) {
+        structure = next;
+        typingDeferred = true;
+        return;
       }
       const proof = handlers.componentFieldsRevision?.();
       const nativeProof = handlers.nativeFieldsRevision?.();
@@ -1077,6 +1294,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       formClosers.clear();
       fieldClosers.clear(); fieldInputs.clear(); attributeForms.clear();
       endDrag();
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("pointercancel", onPointerUp, true);
       hint.remove();
       meta.remove();
       tree.remove();

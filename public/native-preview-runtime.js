@@ -2867,6 +2867,17 @@
     e.stopPropagation();
     canvasSelectParent();
   }, true);
+  // A structure field's text set in place (patch-text): only an element that
+  // holds text alone, and only as text. False when there is no such element.
+  var livePatch = null;
+  function patchText(request, text) {
+    var el = typeof text === "string" && text.length <= 100000 ? resolveNodePath(request) : null;
+    if (!el || el === editing || !Array.prototype.every.call(el.childNodes, function (child) { return child.nodeType === 3; })) return false;
+    if (el.childNodes.length === 1) { if (el.firstChild.data !== text) el.firstChild.data = text; }
+    else if (el.textContent !== text) el.textContent = text;
+    if (selected && (selected === el || el.contains(selected) || selected.contains(el))) updateBoxes();
+    return true;
+  }
   window.addEventListener("message", function (e) {
     if (e.source !== parent) return;
     var msg = e.data || {};
@@ -3014,6 +3025,18 @@
       inspectWhenSettled(msg);
       return;
     }
+    // The page structure's text field, as it is typed: the element's text is
+    // set in place at once, ahead of the render the source change brings (which
+    // then finds the same text and leaves it). Only an element holding text
+    // alone is patched, and only as text; anything else is a miss, and the host
+    // sends its full update now instead.
+    if (msg.type === "patch-text") {
+      var textOnly = patchText(msg.request, msg.text);
+      // Until its field ends, the patch is drawn again over any render of an older source.
+      livePatch = textOnly && !msg.end ? { request: msg.request, text: msg.text } : null;
+      emit("patched", { id: msg.id, ok: textOnly });
+      return;
+    }
     if (msg.type === "pins") {
       pins = Array.isArray(msg.pins) ? msg.pins.slice(0, 200) : [];
       lastPins = "";
@@ -3034,6 +3057,7 @@
     }
     if (msg.type !== "update") return;
     apply(msg.payload || {});
+    if (livePatch) patchText(livePatch.request, livePatch.text);
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });
   pageEl = document.getElementById("page");

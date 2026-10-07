@@ -530,6 +530,31 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (last?.kind === "edit") last.group = false;
   }
   /**
+   * Takes back the open typing group on top of `history` (an inline field's
+   * Escape): its file returns to the group's first state, as Undo would put
+   * it, and the step leaves the journal without a Redo. False when the top
+   * step is no open group, or its file moved on since.
+   */
+  function discardGroup(history: string): boolean {
+    const found = journals.get(history);
+    const step = found?.undo.at(-1);
+    if (!found || step?.kind !== "edit" || !step.group || blocked(history) || stepError(step, "undo")) return false;
+    const entry = files.get(step.key)!;
+    const previous = { text: entry.text, revision: entry.revision };
+    const applied = applyChanges(entry.text, step.inverse);
+    entry.text = applied.text;
+    entry.revision = step.before;
+    if (!persist(entry, step.records.before)) {
+      entry.text = previous.text; entry.revision = previous.revision; persist(entry);
+      return false;
+    }
+    found.undo.pop();
+    textEvent(entry, "undo", applied.changes);
+    for (const companion of [...step.companions].reverse()) companion.undo();
+    emitHistory(history);
+    return true;
+  }
+  /**
    * Ties `companion` to the step `step` while it is the latest of `history`
    * and its file is still where the step left it (attachHistoryCompanion).
    */
@@ -928,6 +953,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     text: (scope: DraftScope, path: string) => files.get(draftKey(scope, path))?.text,
     edit: (input: EditInput) => batch(() => edit(input)),
     closeGroup,
+    discardGroup: (history: string) => batch(() => discardGroup(history)),
     attachCompanion,
     applyReceipt: (history: string, label: string, changes: ReceiptFile[], record = true) => batch(() => applyReceipt(history, label, changes, record)),
     recordAction: (history: string, action: Parameters<typeof recordAction>[1]) => batch(() => recordAction(history, action)),
