@@ -49,6 +49,8 @@ Split into small tasks on 2026-10-06 so more run at once (Lex). Started alongsid
 3. Front-end boot steps: parallel drafts load, `findDeletedUpstream` after paint, parallel `@import` levels, image/font wait capped (ticket 05).
 4. On-demand onboarding, agent panel, media, command palette, history; `html-entities` fast path (ticket 06).
 
+**Status 2026-10-07:** phases 1–4 are on `dev` and preview (89b6c73b), full native-save suite 674 passed / 0 failed. Signed-in on preview, medians of 5: Lex's site first paint 1.14 s, repeat 0.74 s, usable = paint, no image bytes before paint; starter 0.94 s / 0.72 s, 332–347 KB before paint. Every remote and local budget target is met. Pushes to `dev` deploy preview only once the `CLOUDFLARE_API_TOKEN` repository secret exists; until then deploy by hand.
+
 **Phase 5: structure**
 1. ★ `@preact/signals-core` store, then `main.ts` split one module per PR, lazy features first (ticket 08). `code-editor.ts` becomes the Monaco-only code pane module.
 2. Monaco contribution trim, last (ticket 06 point 5).
