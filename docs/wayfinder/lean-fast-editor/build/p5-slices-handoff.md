@@ -35,9 +35,10 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `4b08251` | Every chevron in a 2 px ring of its line's exact colour (purple for components and parts, grey otherwise), no fill; rails stop at rings. Fade test samples the plain colour at x = 2 px, left of the ring | structure specs, native-structure-compact 33/33 |
 | `a5c4fe7` | Redesign after Lex found the rings cluttered (Mobbin: Figma, Rive, MagicPath): 8 px per level; 10 px 1 px ring inside each expandable chevron; one 1 px guide per group from under the parent's ring; purple for components, grey otherwise; parts no longer share the component's column | check, 1,054 units, structure specs 105 passed / 2 skipped |
 | `1f080f3` | Lex disliked the rings and guides: Page Structure restored to its `ddd8ed4` (= `c275489`) look. Parts share the component's chevron column, purple rail through that chevron, 4 px per level, no rings, no grey guides | check, structure specs 105 passed / 2 skipped |
+| `260fa94` + `d0e98ca` | Slice 9, boot controller (below) | check, 1,067 units, boot-focused 69, smoke 32, full native-save 708 passed / 85 skipped / 0 failed; budget 345 KB |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
@@ -67,11 +68,37 @@ host (History coupling).
   `.scratch/p5-review/baseline-c275489-native-static.log`. Investigating those
   20 is open work.
 
+## Slice 9: boot controller (merged as `260fa94`, docs `d0e98ca`)
+
+Branch `build/p5-boot-controller`, worktree
+`/home/ubulex/Projects/native-site-editor-p5-boot-controller`. `start()`, the
+drafts promise, install return, auto sign-in, repository list
+fetch/ensure/recover and the workspace-state flags moved to
+`src/controllers/boot-controller.ts`; pure `planRepositoryOpen` came out of
+`loadRepositories`. Host keeps generation bumps, `info`, `repositories`,
+`chooseRepository`, `loadSnapshot`. `main.ts` 8,393 → 8,261 lines. Details and
+gates: [p5-12-boot-controller.md](p5-12-boot-controller.md). Claude Opus 5.5
+review verified, no defects.
+
+## The 20 native-static failures: product regression
+
+Not fixture drift. The fixture is `git archive 6a9ca44` of the starter minus
+`.editor/`, as the specs expect; `64e42a8` passes with it. Bisect: first bad
+commit is the merge `b2ba723` (draft store `926926a` × dev `2ad8600`, both
+pass). 4g (`dcf85bb`) reads only the open page before first paint; until the
+text index arrives `nativeSources()` gives `""` for other pages, and
+`nativeSharedFieldsRevision()` keys on those sources. When the index lands the
+revision moves, so Save shared / linked Edit are refused ("The page or its
+shared files changed. Select the element again."). A user acting within about
+a second of load hits it too. Logs: root `.scratch/p5-review/nsfix/`. Fix in
+progress on `build/p5-shared-index-fix` (worktree
+`/home/ubulex/Projects/native-site-editor-p5-shared-index-fix`): gate shared
+offers on the text index instead of waiting in tests.
+
 ## Next actions
 
-1. Investigate the 20 pre-existing native-static failures (fixture drift or
-   product regression; compare against an older green run).
-2. Slice 9 (rest of boot), then 10 and 12–15 per
+1. Land the shared-index fix (target native-static 40 passed / 0 failed).
+2. Slices 10 and 12–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
    gates.
 3. Ticket 02 timing targets still miss (cold paint about 1.19 s against 1.0 s,
