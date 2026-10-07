@@ -23,7 +23,7 @@ async function harness(page:any) {
   };
   const editor={isMounted:()=>true,captureHistoryHost:()=>{const model=state.model;return{isCurrent:()=>state.model===model};},prepareHistorySources:()=>{const model=state.model,version=state.version;return{isCurrent:()=>state.model===model&&state.version===version,dispose:()=>{}};},replaceActiveRange:(edit:any)=>{expectSource(edit);state.source=state.source.slice(0,edit.start)+edit.text+state.source.slice(edit.end);state.version++;update();},replaceActiveRanges:(edits:any[])=>{for(const edit of [...edits].sort((a,b)=>b.start-a.start)){expectSource(edit);state.source=state.source.slice(0,edit.start)+edit.text+state.source.slice(edit.end);}state.version++;update();},closeActiveEditGroup:()=>state.closed++};
   function expectSource(edit:any){if(state.source.slice(edit.start,edit.end)!==edit.expected)throw Error('stale range');}
-  state.tools=createComponentTools({structureFields:true,site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),revision:()=>state.revision,sources:()=>({'index.html':state.source,[templatePath]:state.template}),editor:()=>editor,preview:()=>({selectNode:(target:any)=>state.selected.push(target),selectAfterUpdate:()=>{}}),currentPath:()=>current,selection:()=>({path:'index.html',node:[0],tag:'project-card',text:'',reason:'click',selectors:[]}),openFile:async(path:string)=>{state.opened.push(path);current=path;return true;},announce:(value:string)=>state.notices.push(value),error:(error:any)=>{throw error;},images:()=>["media/suggested.png"],upload:async()=>{state.uploadCalls=(state.uploadCalls??0)+1;return await new Promise(resolve=>state.finishUpload=resolve);},links:()=>[{label:"About",value:"/about/"}],pageLabel:(path:string)=>path,createFiles:async()=>({error:'Unused'}),panelHost:host,addStrip:(element:any)=>host.append(element),codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
+  state.tools=createComponentTools({structureFields:true,site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),revision:()=>state.revision,sources:()=>({'index.html':state.source,[templatePath]:state.template}),editor:()=>editor,preview:()=>({selectNode:(target:any)=>state.selected.push(target),selectAfterUpdate:()=>{},...(state.patcher??{})}),currentPath:()=>current,selection:()=>({path:'index.html',node:[0],tag:'project-card',text:'',reason:'click',selectors:[]}),openFile:async(path:string)=>{state.opened.push(path);current=path;return true;},announce:(value:string)=>state.notices.push(value),error:(error:any)=>{throw error;},images:()=>["media/suggested.png"],upload:async()=>{state.uploadCalls=(state.uploadCalls??0)+1;return await new Promise(resolve=>state.finishUpload=resolve);},links:()=>[{label:"About",value:"/about/"}],pageLabel:(path:string)=>path,createFiles:async()=>({error:'Unused'}),panelHost:host,addStrip:(element:any)=>host.append(element),codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
   sidebar=createPageStructure(structureHost,{pageSource:()=>state.source,announce:(value:string)=>state.notices.push(value),label:(item:any)=>({kind:item.tag==='project-card'?'Project card':item.tag,text:item.text,component:item.tag==='project-card'}),onSelect:(path:string,node:number[])=>state.selected.push({path,node}),canDrag:(item:any)=>item.tag==="section",onMoveTo:(path:string,item:any,index:number)=>{const find=(items:any[]):any=>items.find(entry=>entry===item)||items.flatMap(entry=>entry.children).length&&find(items.flatMap(entry=>entry.children));state.movesTo.push({path,node:item.node,index,same:!!find(state.items)});return "stayed";},onMove:(path:string,item:any,direction:string)=>{state.moves.push({path,node:item.node,direction,tag:item.tag,same:item===state.items[0].children[1].children[1]});return "stayed";},componentSlots:(path:string,node:number[])=>state.tools.structure(path,node)});state.sidebar=sidebar;state.update=update;state.itemsOf=(source:string)=>{const doc=new DOMParser().parseFromString(source,'text/html');const walk=(el:Element,node:number[]):any=>item(el.localName,node,el.textContent??'',el.getAttribute('slot')??'',[...el.children].map((child,index)=>walk(child,[...node,index])));return [...doc.body.children].map((el,index)=>walk(el,[index]));};update();
  });
 }
@@ -462,4 +462,43 @@ test('the middle-breakpoint 240px sidebar keeps an open link editor and its whol
  const m=await url.evaluate((el:HTMLInputElement)=>{const tree=el.closest('.page-structure__tree')!.getBoundingClientRect(),box=el.getBoundingClientRect();return{left:box.left>=tree.left,right:box.right<=tree.right,fits:el.scrollWidth<=el.clientWidth,width:box.width};});
  expect(m).toMatchObject({left:true,right:true,fits:true});expect(m.width).toBeGreaterThanOrEqual(120);
  const tree=await page.locator('.page-structure').evaluate((el:HTMLElement)=>({scroll:el.scrollWidth,width:el.clientWidth}));expect(tree.scroll).toBeLessThanOrEqual(tree.width);
+});
+
+// A preview that records its text patches (as native-preview.ts takes them): a patch, and how it ended.
+const recordPatches=(page:any)=>page.evaluate(()=>{const s=(window as any).slotHarness;s.patches=[];s.patcher={patchText:(_r:any,text:string)=>s.patches.push(['patch',text]),vouchPatch:()=>{},endPatch:(_p:string,finish:any)=>s.patches.push(['end',finish?finish.text:null])};});
+const patches=async(page:any)=>(await H(page)).patches as [string,string|null][];
+
+test('a template change while patched text waits ends the patch without its text, so the page is drawn from its source',async({page})=>{
+ await harness(page);await recordPatches(page);
+ const title=page.locator('[role=treeitem][data-node="0.0"]');await title.focus();await title.press('F2');
+ const text=page.getByRole('textbox',{name:'Title: Text',exact:true});await expect(text).toBeFocused();
+ await page.keyboard.type('New');
+ await expect.poll(async()=>(await patches(page)).filter(p=>p[0]==='patch').length).toBeGreaterThan(0);
+ // Before the waiting write lands, the instance's template changes (an agent, the code pane): the write is refused.
+ await page.evaluate(()=>{const s=(window as any).slotHarness;s.template+='<!-- changed -->';});
+ await expect(text).toHaveAttribute('aria-invalid','true');
+ expect((await H(page)).source).not.toContain('New');
+ // The patch ended with no text of its own: the preview draws the page again from its sources.
+ expect((await patches(page)).at(-1)).toEqual(['end',null]);
+ // Typing on patches nothing more.
+ const count=(await patches(page)).length;await page.keyboard.type('er');await page.waitForTimeout(250);
+ expect((await patches(page)).length).toBe(count);
+});
+
+test('Escape whose discard is refused, with keystrokes still waiting, says so and ends the patch without its text',async({page})=>{
+ await harness(page);await recordPatches(page);
+ const title=page.locator('[role=treeitem][data-node="0.0"]');await title.focus();await title.press('F2');
+ const text=page.getByRole('textbox',{name:'Title: Text',exact:true});await expect(text).toBeFocused();
+ await page.keyboard.type('AB');
+ await expect.poll(async()=>(await H(page)).source).toContain('>AB<');
+ await page.keyboard.type('C');
+ await expect.poll(async()=>(await patches(page)).some(p=>p[0]==='patch'&&p[1]==='ABC')).toBe(true);
+ // This harness editor cannot discard a group: Escape is refused, said so.
+ await text.press('Escape');
+ await expect(page.locator('.page-structure__row.is-editing')).toHaveCount(0);
+ expect((await H(page)).notices.join(' ')).toContain('use Undo');
+ // The waiting keystroke is never written, and the page is drawn again from its source (which holds AB).
+ expect((await H(page)).source).toContain('>AB<');
+ expect((await H(page)).source).not.toContain('ABC');
+ expect((await patches(page)).at(-1)).toEqual(['end',null]);
 });

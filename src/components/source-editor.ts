@@ -504,6 +504,12 @@ export function replaceActiveRanges(edits: RangeEdit[]) {
 export function closeActiveEditGroup(path: string) {
   mounted.get(path)?.range.closeGroup();
 }
+// A closer for the typing group of the file as mounted now: it closes that
+// session's group later, even once another branch's file is mounted instead.
+export function editGroupCloser(path: string) {
+  const session = mounted.get(path)?.session;
+  return () => { if (session) sourceStore().closeGroup(session); };
+}
 // Whether the file's last undo step is a typing group still open.
 export function hasOpenEditGroup(path: string) {
   return mounted.get(path)?.range.hasOpenGroup() ?? false;

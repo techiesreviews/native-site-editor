@@ -63,8 +63,11 @@ export function createStructureEditing(host: StructureEditingHost) {
   // ---- Suggestion lists (a URL's pages, an image's files), anchored to their fields. ----
   const suggestionLists = new Map<HTMLInputElement, FieldSuggestions>();
   let suggestionsModule: Promise<typeof import("./field-suggestions")> | undefined;
+  // After a failed load (said once), it is tried again with the next row edit, not on every render.
+  let suggestionsFailed = false;
   function suggest(input: HTMLInputElement, entries: readonly FieldSuggestion[], label: string) {
-    suggestionsModule ??= import("./field-suggestions").catch((error) => { suggestionsModule = undefined; void handleChunkLoadFailure(error); throw error; });
+    if (suggestionsFailed) return;
+    suggestionsModule ??= import("./field-suggestions").catch((error) => { suggestionsModule = undefined; suggestionsFailed = true; void handleChunkLoadFailure(error); throw error; });
     void suggestionsModule.then(({ attachFieldSuggestions }) => {
       if (input.isConnected) suggestionLists.set(input, attachFieldSuggestions(input, entries, label));
     }, () => undefined);
@@ -93,6 +96,7 @@ export function createStructureEditing(host: StructureEditingHost) {
   function startMode(model: ComponentStructureModel, slot: Slot, owner: string) {
     if (mode?.owner === owner && mode.name === slot.name && mode.path === model.host.path) return mode;
     if (mode) finish("commit", false, true);
+    suggestionsFailed = false;
     mode = { owner, path: model.host.path, hostNode: [...model.host.node], name: slot.name, label: slot.label, breaks: Boolean(slot.value.breaks),
       prefix: host.fieldPrefix(model, slot.name), fields: new Map(), pending: new Map(), parts: [] };
     return mode;

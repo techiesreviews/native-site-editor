@@ -239,38 +239,59 @@ export function plainText(html: string) {
 // `<br>`: a field editing its text maps each typed line break to one, and each
 // one back to a line break. Nothing else typed ever becomes markup.
 
-/** Elements that take `<br>` among their text. */
-export const BREAK_PARENTS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "a", "span", "li", "button", "label", "em", "strong", "small", "b", "i", "u", "s", "mark", "q", "cite", "abbr", "time", "code", "kbd", "sub", "sup", "dt", "dd", "figcaption", "td", "th", "caption", "legend", "summary", "blockquote", "address", "div"]);
-const BREAK_TAG = /<br(?:\s[^>]*)?\s*\/?>/gi;
+/**
+ * Whether an element takes `<br>` among its text: any whose content is flow
+ * or phrasing (p, h1-h6, a, span, li, button, div, …), not one whose children
+ * are options, rows or list items, nor raw text.
+ */
+export const takesBreaks = (name: string) => !/^(?:option|optgroup|select|datalist|textarea|title|script|style|template|t(?:able|head|body|foot|r)|colgroup|ul|ol|dl|menu)$/.test(name);
 
-/** The source ranges of `inner` between its `<br>` tags. */
+// Only the element's own (direct-child) <br>s are line boundaries: the lines
+// between them hold whole elements, so a line's range never splits a tag.
+const hasBreak = (el: SourceElement): boolean => el.children.some(child => child.type === "element" && (child.name === "br" || hasBreak(child)));
+function breakNodes(inner: string) {
+  const nodes = parseSource(inner);
+  const breaks = nodes.filter((node): node is SourceElement => node.type === "element" && node.name === "br");
+  return { nodes, breaks };
+}
+
+/** Whether `inner` can be edited as lines: no <br> sits inside an inline child (a link, strong, …). */
+export function breaksAllowed(inner: string) {
+  return !breakNodes(inner).nodes.some(node => node.type === "element" && node.name !== "br" && hasBreak(node));
+}
+
+/** The source ranges of `inner` between its own `<br>`s. */
 function breakSegments(inner: string) {
   const segments: { start: number; end: number }[] = [];
   let start = 0;
-  for (const match of inner.matchAll(BREAK_TAG)) {
-    segments.push({ start, end: match.index });
-    start = match.index + match[0].length;
+  for (const br of breakNodes(inner).breaks) {
+    segments.push({ start, end: br.start });
+    start = br.end;
   }
   segments.push({ start, end: inner.length });
   return segments;
 }
 
-/** `inner`'s text as a field shows it: each `<br>` a line break, the text between collapsed as it shows. */
+/** `inner`'s text as a field shows it: each of its own `<br>`s a line break, the text between collapsed as it shows. */
 export function breakText(inner: string) {
   return breakSegments(inner).map(segment => plainText(inner.slice(segment.start, segment.end))).join("\n");
 }
 
-/** How `inner` writes a line break: its first `<br>` as spelled there (`<br/>`, `<br />`), else `<br>`. */
+/** How `inner` writes a line break: as its first own `<br>` is spelled (`<br>`, `<br/>`, `<br />`), never with its attributes. */
 export function breakSpelling(inner: string) {
-  return inner.match(BREAK_TAG)?.[0] ?? "<br>";
+  const first = breakNodes(inner).breaks[0];
+  if (!first) return "<br>";
+  const tag = inner.slice(first.tag.start, first.tag.end);
+  return /\s\/\s*>$/.test(tag) ? "<br />" : /\/\s*>$/.test(tag) ? "<br/>" : "<br>";
 }
 
 /**
  * The edit that makes the text of `source[from, to]` read `after`, each "\n"
  * of it a `<br>` (spelled as the content spells one): a change within one line
  * is the smallest one (keeping formatting around it); a change of lines writes
- * the lines it touches again, as text. Undefined when `after` is what is there,
- * or the change could not be placed.
+ * the lines it touches again, as text, and is refused (undefined) when those
+ * lines hold any element (a link, strong, …) that would be lost. Undefined too
+ * when `after` is what is there, or the change could not be placed.
  */
 export function breakTextEdit(source: string, from: number, to: number, after: string): RangeEdit | undefined {
   const inner = source.slice(from, to);
@@ -287,7 +308,10 @@ export function breakTextEdit(source: string, from: number, to: number, after: s
       if (edit) return edit;
     }
   }
-  // The lines that differ, first to last: written again as text joined by breaks.
+  // The lines that differ, first to last: written again as text joined by breaks,
+  // unless they hold an element (a link, strong, …) that rewriting would drop.
+  const { nodes } = breakNodes(inner);
+  const holdsElement = (start: number, end: number) => nodes.some(node => node.type === "element" && node.name !== "br" && node.start < end && node.end > start);
   let head = 0;
   while (head < before.length && head < next.length && before[head] === next[head]) head++;
   let tail = 0;
@@ -305,8 +329,10 @@ export function breakTextEdit(source: string, from: number, to: number, after: s
     // Only lines taken out (head..last), with the breaks before them.
     const start = head > 0 ? segments[head - 1].end : segments[head].start;
     const end = head > 0 ? segments[last].end : segments[last + 1].start;
+    if (holdsElement(start, end)) return undefined;
     return { start: from + start, end: from + end, text: "" };
   }
+  if (holdsElement(segments[head].start, segments[last].end)) return undefined;
   return { start: from + segments[head].start, end: from + segments[last].end, text: lines.join(spelling) };
 }
 
@@ -558,7 +584,7 @@ export function slotValue(source: string, template: string, instance: Instance, 
       : false;
     if (value.editable && only?.close) {
       const inner = source.slice(only.tag.end, only.close.start);
-      value.breaks = BREAK_PARENTS.has(only.name);
+      value.breaks = takesBreaks(only.name) && breaksAllowed(inner);
       value.lines = value.breaks ? breakText(inner) : value.text;
     } else if (value.editable) value.lines = value.text;
     return value;

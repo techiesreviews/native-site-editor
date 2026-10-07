@@ -1219,6 +1219,10 @@ export function createComponentTools(deps: ComponentDeps) {
       const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
       if (!initialProof) return;
       let expected = initial.source, closed = false, wrote = false, writing = false, lastNode: number[] | undefined;
+      // The instance's template as it was: an edit to it (an agent, the code pane) ends the session too.
+      const templateAtOpen = deps.sources()[initial.templatePath];
+      // Closes this session's undo group in its own scope, even after a branch switch mounted another.
+      const closeOwnGroup = typeof editor.editGroupCloser === "function" ? editor.editGroupCloser(path) : undefined;
       let proof = initialProof;
       const close = () => {
         if (closed) return;
@@ -1226,6 +1230,7 @@ export function createComponentTools(deps: ComponentDeps) {
         const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
         proof.dispose?.();
         if (ownsGroup) editor.closeActiveEditGroup(path);
+        else if (wrote) closeOwnGroup?.();
       };
       const reject = () => { close(); return false; };
       const cancel = () => {
@@ -1234,7 +1239,7 @@ export function createComponentTools(deps: ComponentDeps) {
         closed = true;
         proof.dispose?.();
         if (!wrote) return true;
-        if (!owns) return false;
+        if (!owns) { closeOwnGroup?.(); return false; }
         if (lastNode) deps.preview()?.selectAfterUpdate({ path, node: lastNode });
         const discarded = typeof editor.discardActiveEditGroup === "function" && editor.discardActiveEditGroup(path);
         if (!discarded) editor.closeActiveEditGroup(path);
@@ -1246,7 +1251,8 @@ export function createComponentTools(deps: ComponentDeps) {
         state: () => ({ expected, closed, wrote }),
         /** The source moved on without this session, or its file or scope did. */
         // (Its own write, still under way, is not "moved on": what it starts may look in here before it returns.)
-        stale: () => !writing && (closed || deps.sources()[path] !== expected || !hostProof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor),
+        stale: () => !writing && (closed || deps.sources()[path] !== expected || deps.sources()[initial.templatePath] !== templateAtOpen
+          || !hostProof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor),
         write(value: string, part?: ComponentSlotPart) {
           if (closed) return reject();
           const at = read(expected, proof);
@@ -1397,6 +1403,8 @@ export function createComponentTools(deps: ComponentDeps) {
             touched.add(part);
             const ok = session.write(value, part);
             if (part === "text") textRefused = !ok;
+            // Text the source refused never stays on the page: the patch ends and the page is drawn from its source.
+            if (part === "text" && !ok && patching) { patcher()?.endPatch(path); patching = false; }
             if (ok && patching) patcher()?.vouchPatch(path, session.state().expected);
             return ok;
           },

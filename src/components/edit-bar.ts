@@ -194,8 +194,14 @@ interface Note {
 export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow) {
   let suggestionRows: typeof import("./suggestion-rows") | undefined;
   let suggestionRowsLoad: Promise<void> | undefined;
-  const loadSuggestionRows = () => suggestionRowsLoad ??= import("./suggestion-rows").then((module) => { suggestionRows = module; })
-    .catch((error) => { suggestionRowsLoad = undefined; void handleChunkLoadFailure(error); });
+  // After a failed load (said once), it is tried again only when an address field opens.
+  let suggestionRowsFailed = false;
+  const loadSuggestionRows = (explicit = false) => {
+    if (suggestionRowsFailed && !explicit) return Promise.resolve();
+    suggestionRowsFailed = false;
+    return suggestionRowsLoad ??= import("./suggestion-rows").then((module) => { suggestionRows = module; })
+      .catch((error) => { suggestionRowsLoad = undefined; suggestionRowsFailed = true; void handleChunkLoadFailure(error); });
+  };
   const bar = node("div", "edit-bar");
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Edit bar");
@@ -529,7 +535,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       && !seen.has(entry.value) && Boolean(seen.add(entry.value)));
     // Two lines per page (suggestion-rows.ts, loaded when the bar first shows); the label alone until then.
     const rows = suggestionRows;
-    if (!rows) void loadSuggestionRows().then(() => { if (openAddress === address) renderSuggestions(address); });
+    if (!rows) void loadSuggestionRows().then(() => {
+      if (openAddress !== address || !suggestionRows) return;
+      // An option with keyboard focus keeps it through the redraw.
+      const focused = address.list.contains(document.activeElement) ? (document.activeElement as HTMLElement).getAttribute("aria-label") : undefined;
+      renderSuggestions(address);
+      if (focused) [...address.list.querySelectorAll<HTMLElement>("[role='option']")].find(option => option.getAttribute("aria-label") === focused)?.focus();
+    });
     const siteName = rows?.suggestionSiteName(address.control.suggestions ?? []);
     address.list.replaceChildren(...matches.map((entry) => {
       const option = button(entry.label, () => {
@@ -643,6 +655,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (control.upload) content.push(uploadRow(address));
     openPopover(item, content, "dialog");
     openAddress = address;
+    void loadSuggestionRows(true);
     control.onOpen?.();
     renderSuggestions(address);
     input.focus();

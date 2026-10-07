@@ -381,7 +381,7 @@ test("review: detach retains whitespace and comments between fills, without copy
 });
 
 // ---- Line breaks typed in a Structure field ----
-import { breakSpelling, breakText, breakTextEdit } from "../src/page-builder/component-model.ts";
+import { breakSpelling, breaksAllowed, breakText, breakTextEdit } from "../src/page-builder/component-model.ts";
 
 const applyEdit = (source: string, edit: { start: number; end: number; text: string } | undefined) =>
   edit ? source.slice(0, edit.start) + edit.text + source.slice(edit.end) : source;
@@ -432,4 +432,39 @@ test("typing after a space typed at the end leaves no space behind, and layout w
   const layout = "<p>\n  Fresh\n</p>";
   const kept = textChangeEdit(layout, 3, layout.length - 4, "Fresh t");
   assert.equal(kept && layout.slice(0, kept.start) + kept.text + layout.slice(kept.end), "<p>\n  Fresh t\n</p>");
+});
+
+test("only an element's own <br>s are line boundaries: a break inside a link keeps the field one line", () => {
+  assert.equal(breaksAllowed('Call <a href="/x">us<br>now</a>'), false);
+  assert.equal(breaksAllowed('Call <a href="/x">us</a><br>now'), true);
+  // A slot whose element has a break inside a link is edited as one line, and keeps its link.
+  const template = `<div><slot name="lead"></slot></div>`;
+  const source = `<x-c><p slot="lead">Call <a href="/x">us<br>now</a></p></x-c>`;
+  const instance = readInstance(source, rangeOf(source, "x-c"));
+  const slot = templateSlots(template)[0];
+  const value = slotValue(source, template, instance, slot);
+  assert.equal(value.breaks, false);
+  const edit = slotTextEdit(source, template, instance, slot, `${value.text}!`);
+  assert.ok(!("error" in edit));
+  assert.equal(apply(source, edit), `<x-c><p slot="lead">Call <a href="/x">us<br>now!</a></p></x-c>`);
+});
+
+test("rewriting or taking out lines that hold a link is refused; text-only lines around it change", () => {
+  const source = `<p>Call <a href="/x">us</a><br>now<br>later</p>`;
+  const { from, to } = innerOf(source);
+  // Taking out the line with the link, or merging it into the next, would drop the link: refused.
+  assert.equal(breakTextEdit(source, from, to, "now\nlater"), undefined);
+  assert.equal(breakTextEdit(source, from, to, "Call us now\nlater"), undefined);
+  // Lines of text alone change as usual; the link's line stays as it is.
+  assert.equal(applyEdit(source, breakTextEdit(source, from, to, "Call us\nnow\nlater on")), `<p>Call <a href="/x">us</a><br>now<br>later on</p>`);
+  assert.equal(applyEdit(source, breakTextEdit(source, from, to, "Call us\nlater")), `<p>Call <a href="/x">us</a><br>later</p>`);
+});
+
+test("new breaks copy the content's <br> spelling, never its attributes", () => {
+  assert.equal(breakSpelling('a<br id="x">b'), "<br>");
+  assert.equal(breakSpelling('a<br data-note="a/b>c" />b'), "<br />");
+  assert.equal(breakSpelling("a<BR/>b"), "<br/>");
+  const source = '<p>One<br id="x">Two</p>';
+  const { from, to } = innerOf(source);
+  assert.equal(applyEdit(source, breakTextEdit(source, from, to, "One\nTwo\nThree")), '<p>One<br id="x">Two<br>Three</p>');
 });

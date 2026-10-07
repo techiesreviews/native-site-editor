@@ -260,6 +260,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     handlers.onSelect(model.host.path, [...target]);
     focusSlotField = { prefix: slotFieldPrefix(model, slot.name), row: owner, caret };
     editStarted = performance.now();
+    if (!editingModule) void loadEditing(true);
     render();
   }
   // The part a slot's row edits in place: its text (a text slot's, a link's
@@ -416,7 +417,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // or F2 finds it there; a request before it arrives draws once it has.
   let editingModule: StructureEditing | undefined;
   let editingLoad: Promise<StructureEditing | undefined> | undefined;
-  function loadEditing() {
+  // After a failed load (said once), it is tried again only on an explicit request (pencil, F2, a second click, Attributes).
+  let editingFailed = false;
+  function loadEditing(explicit = false) {
+    if (editingFailed && !explicit) return Promise.resolve(undefined);
+    editingFailed = false;
     editingLoad ??= import("./structure-editing").then(({ createStructureEditing }) => {
       editingModule = createStructureEditing({
         tree,
@@ -432,7 +437,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         fieldPrefix: slotFieldPrefix,
       });
       return editingModule;
-    }).catch((error) => { editingLoad = undefined; void handleChunkLoadFailure(error); return undefined; });
+    }).catch((error) => { editingLoad = undefined; editingFailed = true; void handleChunkLoadFailure(error); return undefined; });
     return editingLoad;
   }
   tree.addEventListener("pointerdown", () => void loadEditing(), { once: true });
@@ -634,6 +639,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const attributesAction = iconAction("Attributes", "content", () => {
           openSlot = undefined;
           openAttributes = openAttributes === id ? undefined : id;
+          if (openAttributes && !editingModule) void loadEditing(true);
           if (openAttributes) { foldState.set(id, false); focusInline = id; }
           render();
           if (!openAttributes) rows.get(id)?.focus();

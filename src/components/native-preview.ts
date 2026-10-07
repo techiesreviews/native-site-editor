@@ -512,7 +512,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The page's live patch: the source it holds good on top of. A full update
   // of any other source (Undo, another edit) drops it first, so the page never
   // shows typed text its source does not have.
-  let livePatch: { path: string; base: string } | undefined;
+  // `others`: every other source as it was when typing began (templates,
+  // masters, shared files): a change to any of them drops the patch too.
+  let livePatch: { path: string; base: string; others: Record<string, string> } | undefined;
   let lastPatchRequest: NativeNodeRequest | undefined;
   const postPatch = (message: Record<string, unknown>) =>
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "patch-text", ...message }, "*");
@@ -550,7 +552,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!site || !ready || !mounted) return;
-    if (livePatch && sources[livePatch.path] !== livePatch.base) dropPatch();
+    if (livePatch && (sources[livePatch.path] !== livePatch.base || othersChanged(livePatch.others, livePatch.path))) dropPatch();
     const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath, master);
     selectNode = undefined;
     selectText = undefined;
@@ -614,6 +616,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (drawn === undefined || drawn === shownRoute) return;
     shownRoute = drawn;
     handlers.onRouteShown?.(drawn);
+  }
+  function othersChanged(others: Record<string, string>, path: string) {
+    // Files that only arrived since (a stylesheet loading) do not count.
+    for (const key of Object.keys(others)) if (key !== path && sources[key] !== others[key]) return true;
+    return false;
   }
   function dropPatch() {
     cancelAnimationFrame(patchHandle); patchHandle = 0;
@@ -1183,7 +1190,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!mounted || !ready) { miss?.(); return; }
       const dropped = pendingPatch;
       pendingPatch = { request, text, miss };
-      livePatch = { path: request.path, base };
+      livePatch = livePatch?.path === request.path ? { ...livePatch, base } : { path: request.path, base, others: { ...sources } };
       lastPatchRequest = request;
       // A patch replaced before it went needs no answer: the newer one carries the text.
       if (dropped && dropped.miss !== miss) dropped.miss?.();
@@ -1205,8 +1212,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /**
      * The field closed: with `finish`, the page shows its text and keeps it
      * until the next render (which brings the same); without, the page stops
-     * redrawing the patch and its next render settles it. Sent at once, ahead
-     * of any render still to come.
+     * redrawing the patch and is drawn again from its sources at once.
      */
     endPatch(path: string, finish?: { text: string }) {
       if (livePatch && livePatch.path !== path) return;
@@ -1216,7 +1222,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const was = livePatch; livePatch = undefined;
       if (!mounted) return;
       if (finish && request && request.path === path) postPatch({ id: ++patchId, request, text: finish.text, end: true });
-      else if (was) postPatch({ drop: true });
+      else if (was) {
+        // Ended without its text written (refused, stale, a refused Escape): the
+        // page is drawn again from its sources, so it shows what they hold.
+        postPatch({ drop: true });
+        schedule();
+      }
     },
     /**
      * Elements of the page shown as rendered (box, computed styles, matching
