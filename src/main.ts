@@ -1,3 +1,4 @@
+import { createMediaController } from "./controllers/media-controller";
 import { createPagesController, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, repositoryReceipt, type ApiReceipt } from "./boot-api-response";
 import { startBootReads } from "./boot-reads";
@@ -83,10 +84,8 @@ import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize"
 import * as sourceEditor from "./components/source-editor";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
-import type { mountMediaLibrary } from "./page-builder/media-picker";
-import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext } from "./page-builder/media-workspace";
+import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
-import { mediaExistingAlt, mediaImageMarkup, type MediaImage } from "./page-builder/media-markup";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
@@ -181,11 +180,9 @@ function lazyModule<T>(load: () => Promise<T>) {
   });
 }
 const loadHistory = lazyModule(() => import("./components/commit-history"));
-let mediaModule: typeof import("./page-builder/media-picker") | undefined;
 const loadMedia = lazyModule(async () => {
   const module = await import("./page-builder/media-picker");
-  module.configureMediaPicker(createMediaWorkspace(mediaWorkspaceContext));
-  mediaModule = module;
+  module.configureMediaPicker(createMediaWorkspace(mediaController.workspaceContext));
   return module;
 });
 const loadChecklist = lazyModule(() => import("./components/setup-checklist"));
@@ -3762,104 +3759,68 @@ function discardUpload(path: string) {
   announce(`Discarded ${path}.`);
 }
 
-// Media's repository seam: binary uploads retain the existing IndexedDB/Save path.
-async function mediaWorkspaceContext(): Promise<MediaWorkspaceContext> {
-  const repo = appStore.repository.value, scope = draftScope(), epoch = generation, workspace = setupScope();
-  if (!repo || !scope || !appStore.snapshot.value) throw new Error("Choose a repository before opening Images.");
-  const assertLive = () => { if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Close Images and open it again."); };
-  const branchPaths = nativeSite ? nativeFiles(scope) : await listRepositoryFiles(repo, appStore.snapshot.value);
-  assertLive();
-  const gone = new Set(draftStore().list(scope).filter((draft) => draft.deleted).map((draft) => draft.path));
-  const paths = [...new Set([...branchPaths, ...draftStore().list(scope).filter((draft) => !draft.deleted).map((draft) => draft.path)])].filter((path) => !gone.has(path));
-  const read = async (path: string) => {
-    assertLive();
-    const held = nativeEffectiveSource(path, scope);
-    if (held !== undefined) return held;
-    if (draftStore().get(scope, path)?.deleted) return undefined;
-    const entry = await findEntry(path); assertLive();
-    if (!entry) return undefined;
-    const text = await readFile(repo.full_name, entry.sha); assertLive();
-    nativeBaseSources.set(path, text); return text;
-  };
-  return {
-    key: `${scope.account}:${scope.repoId}`, scope, drafts: draftStore(), paths,
-    items: paths.filter(isImagePath).map((path) => {
-      const draft = draftStore().get(scope, path), entry = entryAt(path);
-      return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };
-    }),
-    pages: nativeSite ? Object.values(nativeSite.routes) : paths.filter((path) => /(?:^|\/)index\.html$/i.test(path) && !path.startsWith("components/")),
-    components: nativeSite?.components ?? {}, assertLive, read,
-    blob: async (path) => {
-      assertLive();
-      const draft = draftStore().get(scope, path);
-      if (draft?.deleted) throw new Error(`${path} is deleted.`);
-      if (draft?.upload && draft.sourceSha) {
-        const blob = await uploadBytes().get(uploadKey(scope, draft.sourceSha)); assertLive();
-        if (!blob) throw new Error(`${path} is missing from this browser's storage. Upload it again.`);
-        return blob;
-      }
-      const entry = draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path); assertLive();
-      if (!entry) throw new Error(`${path} is unavailable.`);
-      const blob = await readBlob(repo.full_name, entry.sha, path); assertLive();
-      const type = uploadImageType(path);
-      return type && blob.type !== type ? new Blob([blob], { type }) : blob;
-    },
-    assetVersion: path => {
-      const record = draftStore().get(scope, path);
-      return record ? JSON.stringify(record) : entryAt(path)?.sha;
-    },
-    applyBatch: async batch => {
-      const editor = editorModule;
-      if (!editor || !appStore.openFile.value) throw new Error("Open a page before changing images.");
-      const historyPath = appStore.openFile.value, historyHost = editor.captureHistoryHost(appStore.openFile.value);
-      if (!historyHost) throw new Error("Open an editable page before changing images.");
-      await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
-        scope, store: draftStore(), bytes: uploadBytes(), assertLive,
-        paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
-        assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
-        entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
-        modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
-        mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
-        history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
-        refresh: () => { afterFileChanges(); updateNativePreviewSources(); },
-        announce,
-      }));
-    },
-    write: async () => { throw new Error("Use the atomic image transaction."); },
-    changed: () => {},
-    rename: async () => { throw new Error("Use the atomic image transaction."); },
-    remove: async () => { throw new Error("Use the atomic image transaction."); },
-    openPage: async (path) => { assertLive(); await openAfter(path); },
-  };
+// Media context and UI lifecycle use live getters; binary/Undo writes stay here.
+const mediaController = createMediaController({
+  workspace: () => {
+    const repo = appStore.repository.value, scope = draftScope();
+    if (!repo || !scope || !appStore.snapshot.value) return undefined;
+    return { repo: repo.full_name, scope, identity: mediaIdentity(), site: nativeSite,
+      nativePaths: nativeSite ? nativeFiles(scope) : undefined, drafts: draftStore() };
+  },
+  identity: mediaIdentity,
+  generation: () => generation,
+  source: nativeEffectiveSource,
+  listPaths: async () => {
+    const repo = appStore.repository.value, snapshot = appStore.snapshot.value;
+    if (!repo || !snapshot) throw new Error("Choose a repository before opening Images.");
+    return listRepositoryFiles(repo, snapshot);
+  },
+  findEntry,
+  entry: entryAt,
+  readText: readFile,
+  rememberSource: (path, source) => { nativeBaseSources.set(path, source); },
+  uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
+  readBlob,
+  applyBatch: applyMediaBatch,
+  openPage: openAfter,
+  load: loadMedia,
+  isPrivateMasterPath,
+  master: nativeOpenMaster,
+  modelProof: path => { const scope = draftScope(); return scope ? editorModule?.captureFileModelState(scope, path) : undefined; },
+  openFile: () => appStore.openFile.value,
+  viewingVersion: () => Boolean(versionView),
+  restoreFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
+  change: applyNativeChange,
+  galleryHost: () => element("explorer-images"),
+  galleryVisible: () => !element("explorer-images").hidden && element("explorer").matches(":popover-open"),
+  imagesSelected: () => explorerTab === "images",
+  gallerySignature: imagesSignature,
+  announce,
+  error: errorMessage,
+});
+function mediaIdentity() { return `${generation}:${setupScope()}`; }
+function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
+  return mediaController.chooseImage(target, files);
 }
 
-async function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
-  const epoch = generation, workspace = setupScope();
-  const privateMaster = isPrivateMasterPath(target.path), master = nativeOpenMaster();
-  if (privateMaster && master?.masterPath !== target.path) { announce("That master is no longer open. Choose Edit on the section again."); return; }
-  const scope = draftScope(), proof = privateMaster && scope ? editorModule?.captureFileModelState(scope, target.path) : undefined;
-  const currentMaster = () => !privateMaster || nativeOpenMaster()?.session === master?.session && appStore.openFile.value === target.path && proof?.isCurrent() === true;
-  const source = nativeEffectiveSource(target.path);
-  const initial = source === undefined ? undefined : locateNativeElementRange(source, target.node);
-  if (!initial || initial.tag.name !== "img" || versionView) return;
-  const expected = source!.slice(initial.tag.start, initial.tag.end);
-  // The picker offers the replaced image's own alt (empty: decorative) first;
-  // left unchanged, the attribute stays exactly as written.
-  const initialAlt = mediaExistingAlt(expected);
-  const { openMediaPicker } = await loadMedia();
-  if (epoch !== generation || workspace !== setupScope() || !currentMaster() || nativeEffectiveSource(target.path) !== source) return;
-  await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
-    if (epoch !== generation || workspace !== setupScope()) throw new Error("The repository changed. Choose an image again.");
-    if (!currentMaster()) throw new Error("The master changed. Choose an image again.");
-    if (appStore.openFile.value !== target.path) await restoreFile(target.path, epoch, { linkDefaultStyle: false });
-    const latest = nativeEffectiveSource(target.path);
-    const range = latest === undefined ? undefined : locateNativeElementRange(latest, target.node);
-    if (epoch !== generation || workspace !== setupScope() || !currentMaster() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
-    const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
-    if (!applyNativeChange(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
-  } }).catch(errorMessage);
+// Atomic staging, source receipts, upload rollback and one Undo remain host-owned.
+async function applyMediaBatch(scope: DraftScope, assertLive: () => void, batch: MediaWorkspaceBatch) {
+  const editor = editorModule;
+  if (!editor || !appStore.openFile.value) throw new Error("Open a page before changing images.");
+  const historyPath = appStore.openFile.value, historyHost = editor.captureHistoryHost(appStore.openFile.value);
+  if (!historyHost) throw new Error("Open an editable page before changing images.");
+  await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
+    scope, store: draftStore(), bytes: uploadBytes(), assertLive,
+    paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
+    assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
+    entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
+    modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
+    mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
+    history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
+    refresh: () => { afterFileChanges(); updateNativePreviewSources(); },
+    announce,
+  }));
 }
-
 
 // After a successful save, the committed content becomes the new clean baseline.
 // Without this, `reconcilePublished` drops each committed browser draft (a draft
@@ -3897,7 +3858,7 @@ function adoptNativeBaseSources(
 function deactivateNative() {
   pendingNativePageTitles = undefined;
   disposeExplorerImages();
-  mediaModule?.closeMediaPicker();
+  mediaController.closePicker();
   nativeSite = undefined;
   updateExplorerTabs();
   nativeBaseFiles = [];
@@ -4941,60 +4902,14 @@ const explorerTabNames: ExplorerTab[] = ["pages", "files", "images"];
 let explorerTab: ExplorerTab = "pages";
 let pagesTree: ReturnType<typeof createPagesTree> | undefined;
 
-let explorerImages: ReturnType<typeof mountMediaLibrary> | undefined;
-let explorerImagesScope = "", explorerImagesSignature = "", explorerImagesRefreshNeeded = false;
-let explorerImagesObserver: MutationObserver | undefined;
-function disposeExplorerImages() {
-  explorerImagesObserver?.disconnect(); explorerImagesObserver = undefined;
-  explorerImages?.dispose(); explorerImages = undefined;
-  explorerImagesScope = ""; explorerImagesSignature = ""; explorerImagesRefreshNeeded = false;
-}
 function imagesSignature() {
   const scope = draftScope();
   return JSON.stringify([generation, setupScope(), appStore.snapshot.value?.commit, scope ? draftStore().list(scope) : []]);
 }
-let imagesOpening = 0;
-async function ensureExplorerImages() {
-  const opening = ++imagesOpening;
-  if (!nativeSite || !appStore.snapshot.value || !draftScope()) return;
-  const scope = `${generation}:${setupScope()}`;
-  if (explorerImages && explorerImagesScope === scope) { requestExplorerImagesRefresh(); return; }
-  disposeExplorerImages(); explorerImagesScope = scope;
-  explorerImagesSignature = imagesSignature();
-  const { mountMediaLibrary } = await loadMedia();
-  if (opening !== imagesOpening || scope !== `${generation}:${setupScope()}` || explorerTab !== "images") return;
-  explorerImages = mountMediaLibrary(element("explorer-images"), { refreshKey: imagesSignature });
-}
-function explorerImagesVisible() { return !element("explorer-images").hidden && element("explorer").matches(":popover-open"); }
-function requestExplorerImagesRefresh() {
-  if (!explorerImages) return;
-  if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
-  if (!explorerImagesVisible()) { explorerImagesRefreshNeeded = true; return; }
-  const signature = imagesSignature();
-  if (signature === explorerImagesSignature) { if (explorerImagesRefreshNeeded) queueMicrotask(flushExplorerImagesRefresh); return; }
-  explorerImagesSignature = signature; explorerImagesRefreshNeeded = true;
-  queueMicrotask(flushExplorerImagesRefresh);
-}
-function flushExplorerImagesRefresh() {
-  const view = explorerImages;
-  if (!view || !explorerImagesRefreshNeeded || !explorerImagesVisible()) return;
-  if (explorerImagesScope !== `${generation}:${setupScope()}`) { disposeExplorerImages(); return; }
-  if (view.element.getAttribute("aria-busy") === "true") {
-    if (!explorerImagesObserver) {
-      explorerImagesObserver = new MutationObserver(() => {
-        if (view.element.getAttribute("aria-busy") === "true") return;
-        explorerImagesObserver?.disconnect(); explorerImagesObserver = undefined;
-        if (explorerImages === view) flushExplorerImagesRefresh();
-      });
-      explorerImagesObserver.observe(view.element, { attributes: true, attributeFilter: ["aria-busy"] });
-    }
-    return;
-  }
-  explorerImagesRefreshNeeded = false;
-  // A successful operation may already have loaded this exact source revision.
-  if (view.refreshedKey === imagesSignature()) return;
-  void view.refresh();
-}
+function disposeExplorerImages() { mediaController.disposeGallery(); }
+function ensureExplorerImages() { return mediaController.ensureGallery(); }
+function explorerImagesVisible() { return mediaController.galleryVisible(); }
+function requestExplorerImagesRefresh() { mediaController.requestGalleryRefresh(); }
 
 function mountExplorerTabs() {
   const explorer = element("explorer");
