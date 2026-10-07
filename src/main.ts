@@ -1,3 +1,5 @@
+import { readApiReceipt, repositoryReceipt, type ApiReceipt } from "./boot-api-response";
+import { startBootReads } from "./boot-reads";
 import { createHistoryController } from "./controllers/history-controller";
 import { batch } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
@@ -4388,27 +4390,17 @@ class ApiError extends Error {
     super(message);
   }
 }
-async function api<T>(
-  path: string,
-  params?: Record<string, string>,
-): Promise<T> {
+async function apiResponse<T>(path: string, params?: Record<string, string>): Promise<ApiReceipt<T>> {
   apiReadsInFlight++;
-  let response: Response, data: { error?: string };
   try {
-    response = await fetchWithReadRetry(
-      `/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`,
-      { credentials: "same-origin", cache: "no-store" },
-    );
-    data = await response.json();
+    const response = await fetchWithReadRetry(`/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`, { credentials: "same-origin", cache: "no-store" });
+    return await readApiReceipt<T>(response, (status, message) => new ApiError(status, message));
   } finally {
     apiReadsInFlight--;
   }
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      data.error || "Could not load GitHub data.",
-    );
-  return data as T;
+}
+async function api<T>(path: string, params?: Record<string, string>): Promise<T> {
+  return (await apiResponse<T>(path, params)).value;
 }
 async function postApi<T>(
   path: string,
@@ -8530,18 +8522,9 @@ function repositoryOptions() {
 
 /** Read the array endpoint and its onboarding hint without expanding the session. */
 async function fetchRepositoryList(refresh = false): Promise<Repository[]> {
-  apiReadsInFlight++;
-  let response: Response, data: Repository[] & { error?: string };
-  try {
-    response = await fetchWithReadRetry(`/api/repositories${refresh ? "?refresh=1" : ""}`, { credentials: "same-origin", cache: "no-store" });
-    data = await response.json();
-  } finally {
-    apiReadsInFlight--;
-  }
-  if (!response.ok) throw new ApiError(response.status, data.error || "Could not load GitHub data.");
-  const hint = response.headers.get("X-Repository-Onboarding");
-  repositoryOnboarding = hint === "install" || hint === "create" ? hint : undefined;
-  return data as Repository[];
+  const response = await apiResponse<Repository[]>("repositories", refresh ? { refresh: "1" } : undefined);
+  repositoryOnboarding = response.onboarding;
+  return response.value;
 }
 
 function repositoryWorkspaceNeedsRecovery() {
@@ -8692,8 +8675,20 @@ const agentController = createAgentController<HTMLElement>({
 });
 
 async function start() {
+  const bootEpoch = generation;
+  const bootSource = () => `${location.origin}${location.pathname}`;
+  const source = bootSource();
+  const current = () => generation === bootEpoch && bootSource() === source;
+  const reads = startBootReads({
+    readSession: () => apiResponse<SessionInfo>("session"),
+    readRepositories: async () => repositoryReceipt(await apiResponse<Repository[]>("repositories")),
+    scope: { source, epoch: bootEpoch },
+    isCurrent: scope => current() && scope.source === source && scope.epoch === bootEpoch,
+  });
   try {
-    const session = await api<SessionInfo>("session");
+    const sessionResponse = await reads.session;
+    if (!current()) return;
+    const session = sessionResponse.value;
     // Back from installing the App while "Request user authorization during
     // installation" is off: GitHub returns to the setup URL (this page) with an
     // installation_id, which is never trusted. Sign in now; the authorization
@@ -8727,7 +8722,11 @@ async function start() {
         history.replaceState(null, "", returned);
         openNewRepository = true;
       }
-      await loadRepositories(installed ? undefined : info.repositories ?? undefined);
+      const prefetched = installed ? undefined : await reads.takeRepositories(sessionResponse);
+      // Navigation or another boot won while the speculative list was arriving.
+      if (!current()) return;
+      if (prefetched) repositoryOnboarding = prefetched.value.onboarding;
+      await loadRepositories(installed ? undefined : prefetched?.value.repositories ?? info.repositories ?? undefined);
     } else if (
       autoSignInPlan({ configured: session.configured, hasSession: false, pathname: location.pathname, search: location.search, local: storage("local"), session: storage("session") }) === "auto"
     ) {
@@ -8758,6 +8757,7 @@ async function start() {
       history.replaceState(null, "", cleanUrl);
     }
   } catch (error) {
+    if (!current()) return;
     renderLogin("error");
     errorMessage(error);
   }
