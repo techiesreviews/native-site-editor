@@ -31,9 +31,12 @@ tests have deterministic failing-before evidence. History units have failing-
 before evidence; its two strengthened browser cases pass in the integration
 focused run recorded in the prior handoff.
 
-Combined focused, smoke and byte checks are running. A new full native-save run
-is pending. The earlier **691 passed / 85 skipped** belongs only to `679f931`.
-Do not transfer that record to the new head.
+All **64 combined focused checks**, **32 smoke checks**, and the three-run byte
+gate pass. The byte median is **344 KB**, within 350 KB. Cold paint/usable
+medians are 1.165 s / 1.178 s, warm 0.783 s; timing targets still miss.
+A new full native-save run is running on frozen `1cc9cbc` (783 cases). The earlier
+**691 passed / 85 skipped** belongs only to `679f931`. Do not transfer that record
+to the new head.
 
 Logs live in the new candidate's `.scratch/p5-review/`. Previous failed tests,
 traces and screenshots remain in their originating worktrees. The two title
@@ -48,11 +51,18 @@ was stopped. The earlier native T3 4 px screenshot remains in the second handoff
 
 ## Independent follow-up
 
-Claude Opus 5.5 / medium is reviewing only immutable `679f931..1cc9cbc` and
+Claude Opus 5.5 / medium reviewed only immutable `679f931..1cc9cbc` and
 necessary local call sites. Its read-only brief, raw JSON, result and status are
 under the preparation workspace's `.scratch/p5-review/claude-followup/`.
-The review is running; completion and any findings require checking exit status,
-JSON errors, permission denials and exact model usage before recording a result.
+The CLI exited zero, `is_error` is false, errors are empty, no commands were
+denied, and `modelUsage` includes exact `claude-opus-5-5`. The report starts
+`REVIEW_STATUS: complete`, confirms the main fixes, and finds no blocking defects.
+It flags three low-severity remaining paths: History restore completion after a
+new mount or new draft needs visible feedback; pointer release without a click
+can delay titles; title refresh during a native page drag can replace its row.
+The drag issue already existed. These follow-ups are being investigated on
+separate worktrees; the reviewed head and full-suite source remain frozen.
+Review completion does not constitute approval.
 
 The original six reviews' ten denied calls were all recovered and audited;
 their conservative raw runner status is retained. The audit is in
