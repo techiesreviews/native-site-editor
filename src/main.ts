@@ -46,8 +46,8 @@ import { clearWizard, connectionFromOnboarding, openingStep, readWizard, writeWi
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, forgetSignedIn, markAutoSignInTried, rememberSignedIn } from "./auto-signin";
 
 import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
-import type { createSetupChecklist } from "./components/setup-checklist";
-import { readSetupMemory, setupProgress, setupVisible, withSiteSettings, writeSetupMemory, type SetupMemory, type SetupState } from "./setup-checklist";
+import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
+import { withSiteSettings, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker, type PagePickerItem } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
@@ -370,7 +370,7 @@ function mountWorkspace() {
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   const menuPanel = element("repository-actions");
   menuPanel.addEventListener("toggle", () => {
-    if (menuPanel.matches(":popover-open")) { void agentController.ensure().catch(errorMessage); void mountSetupChecklist().catch(errorMessage); }
+    if (menuPanel.matches(":popover-open")) { void agentController.ensure().catch(errorMessage); void setupController.mount().catch(errorMessage); }
   });
   repositorySelect = element<HTMLSelectElement>("repository");
   sidebarResize = mountSidebarResize(
@@ -4527,13 +4527,7 @@ function renderLogin(
   editorPalette?.dispose();
   editorPalette = undefined;
   agentController.destroy();
-  setupChecklist?.close();
-  setupChecklist?.root.remove();
-  setupChecklist = undefined;
-  setupAsked = undefined;
-  if (setupFinishing) clearTimeout(setupFinishing.timer);
-  setupFinishing = undefined;
-  litEntry?.abort();
+  setupController.dispose();
   activeFileContext = null;
   explorerDropdown?.destroy();
   explorerDropdown = undefined;
@@ -4652,113 +4646,39 @@ async function startSitePanel() {
 // Start your site, and for any repository from the project menu. Its items
 // are ticked from the state the editor holds, each time it may have changed.
 
-let setupChecklist: ReturnType<typeof createSetupChecklist> | undefined;
-/** The repository the user asked the checklist for from the menu, for this page load. */
-let setupAsked: number | undefined;
-let setupFinishing: { timer: ReturnType<typeof setTimeout>; scope: string } | undefined;
 /** Account, repository and branch the checklist is of. */
 function setupScope() {
   const scope = draftScope();
   return scope ? JSON.stringify([scope.account, scope.repoId, scope.branch]) : "";
 }
 
-/**
- * Connect an agent (the checklist): says what an agent is for and spotlights
- * the project menu's tile, where the agent connection lives. "Show me" opens
- * the menu with Connect with MCP lit; "Got it" just closes.
- */
-async function spotlightAgentConnection() {
-  const trigger = repositoryMenu?.trigger;
-  const { spotlight } = await loadSpotlight();
-  if (trigger !== repositoryMenu?.trigger) return;
-  spotlight(repositoryMenu?.trigger, {
-    title: "Connect an agent",
-    text: [AGENT_EXPLAINER.join(" "), agentWhere()],
-    actions: [
-      { label: "Show me", primary: true, run: () => void showAgentConnection().catch(errorMessage) },
-      { label: "Got it" },
-    ],
-  });
-}
-
-let litEntry: AbortController | undefined;
-async function showAgentConnection() {
-  const menu = repositoryMenu;
-  await agentController.ensure();
-  if (!menu || menu !== repositoryMenu) return;
-  litEntry?.abort();
-  repositoryMenu?.open();
-  const entry = document.querySelector<HTMLElement>(".agent-menu__action");
-  if (!entry) return;
-  entry.classList.add("is-spotlit");
-  // The highlight goes when the menu closes.
-  const panel = document.getElementById("repository-actions");
-  litEntry = new AbortController();
-  litEntry.signal.addEventListener("abort", () => entry.classList.remove("is-spotlit"));
-  panel?.addEventListener("toggle", () => !panel.matches(":popover-open") && litEntry?.abort(), { signal: litEntry.signal });
-  requestAnimationFrame(() => entry.focus());
-}
-
-let checklistLoading: Promise<void> | undefined;
-function mountSetupChecklist() {
-  if (setupChecklist) return Promise.resolve();
-  const host = element("setup-checklist"), account = info.user?.login;
-  return checklistLoading ??= loadChecklist().then(({ createSetupChecklist }) => {
-    if (!host || host !== element("setup-checklist") || account !== info.user?.login) return;
-    const checklist = createSetupChecklist({
-      start: () => {
-        const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
-        if (choice) choice.focus();
-        else announce("This repository has a home page already.");
-      },
-      save: async () => {
-        // The Save menu sits in the open file's toolbar, there before Monaco is.
-        const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
-        if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
-        trigger.focus();
-        trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-      },
-      saveName: async (name) => {
-        const problem = await writeSiteSettings({ name });
-        if (!problem) setupRemember({ named: true });
-        return problem;
-      },
-      connect: () => void spotlightAgentConnection().catch(errorMessage),
-      dismiss: () => {
-        setupAsked = undefined;
-        setupRemember({ dismissed: true });
-      },
-    });
-    setupChecklist = checklist;
-    host.append(checklist.root);
-    // The project menu's item, above the agent's.
-    // Setup remains available through its progress control.
-    checklist.onRequest(() => {
-      setupAsked = appStore.repository.value?.id;
-      refreshSetup();
-      // After the menu has closed and given its focus back.
-      setTimeout(() => checklist.open(), 0);
-    });
-    refreshSetup();
-  }).finally(() => { checklistLoading = undefined; });
-}
-
-function setupRemember(change: SetupMemory) {
-  if (!info.user || !appStore.repository.value) return undefined;
-  const memory = writeSetupMemory(localStorage, info.user.login, appStore.repository.value.id, change);
-  refreshSetup();
-  return memory;
-}
-
-/** A starting point was applied to repository `repoId`: the checklist shows by itself. */
-function startSetupChecklist(repoId: number) {
-  if (info.user) writeSetupMemory(localStorage, info.user.login, repoId, { auto: true, dismissed: false, finished: false });
-}
-
-function noteSetupAgent(connected: boolean) {
-  if (connected && info.user && appStore.repository.value) writeSetupMemory(localStorage, info.user.login, appStore.repository.value.id, { agent: true });
-  refreshSetup();
-}
+const setupController = createSetupChecklistController({
+  account: () => info.user?.login,
+  repository: () => appStore.repository.value,
+  scope: setupScope,
+  state: setupState,
+  host: () => element("setup-checklist"),
+  menu: () => repositoryMenu,
+  connected: () => agentController.connected(),
+  ensureAgent: () => agentController.ensure(),
+  agentText: () => [AGENT_EXPLAINER.join(" "), agentWhere()],
+  storage: localStorage,
+  loadChecklist,
+  loadSpotlight,
+  onError: errorMessage,
+  start: () => {
+    const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
+    if (choice) choice.focus();
+    else announce("This repository has a home page already.");
+  },
+  save: () => {
+    const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
+    if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  },
+  saveName: name => writeSiteSettings({ name }),
+});
 
 function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
   const repo = appStore.repository.value;
@@ -4774,41 +4694,6 @@ function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
     siteName: settings.name,
     defaultName: siteNameFromRepository(repo.name),
   };
-}
-
-function refreshSetup() {
-  const checklist = setupChecklist;
-  if (!checklist) {
-    if (info.user && appStore.repository.value && setupVisible(readSetupMemory(localStorage, info.user.login, appStore.repository.value.id), setupAsked === appStore.repository.value.id))
-      void mountSetupChecklist().catch(errorMessage);
-    return;
-  }
-  const repo = appStore.repository.value;
-  const state = setupState();
-  const account = info.user?.login;
-  const idle = { progress: setupProgress({ homePage: false, committed: false, homeUnsaved: false, defaultName: "", agent: false }), defaultName: "", visible: false, scope: "" };
-  if (!repo || !account || !state) { checklist.update(idle); return; }
-  let memory = readSetupMemory(localStorage, account, repo.id);
-  if (agentController.connected() && !memory.agent) memory = writeSetupMemory(localStorage, account, repo.id, { agent: true });
-  const progress = setupProgress({ ...state, nameConfirmed: memory.named, agent: Boolean(memory.agent) });
-  // Done by itself: "Your site is set up" for a moment, then gone for good.
-  const finishing = progress.complete && memory.auto && !memory.finished && setupAsked !== repo.id;
-  const scopeKey = setupScope();
-  if (setupFinishing && (!finishing || setupFinishing.scope !== scopeKey)) {
-    clearTimeout(setupFinishing.timer);
-    setupFinishing = undefined;
-  }
-  if (finishing && !setupFinishing) {
-    const timer = setTimeout(() => {
-      setupFinishing = undefined;
-      // Still this repository and branch, and still done (an undo may have undone it).
-      const again = setupState();
-      if (setupScope() === scopeKey && again && setupProgress({ ...again, nameConfirmed: readSetupMemory(localStorage, account, repo.id).named, agent: true }).complete)
-        setupRemember({ finished: true });
-    }, 4000);
-    setupFinishing = { timer, scope: scopeKey };
-  }
-  checklist.update({ progress, siteName: state.siteName, defaultName: state.defaultName, visible: setupVisible(memory, setupAsked === repo.id), scope: setupScope() });
 }
 
 // The site's name or address into `.editor/config.json` as a draft (the
@@ -4958,7 +4843,7 @@ async function writeStartingPoint(point: StartingPoint, partial?: { committed: s
   if (!bound()) return undefined;
   const failure = draftStore().error;
   if (failure) return failure;
-  startSetupChecklist(repo.id);
+  setupController.start(repo.id);
   // Finished: the recovery record and its banner go before the reload below, which would offer them again.
   if (partial) {
     forgetPartialStart(partial.repoId);
@@ -7574,7 +7459,7 @@ async function openComponentLinkedStyle(page: string) {
 
 function updateAgentContext() {
   agentController.changed();
-  refreshSetup();
+  setupController.refresh();
 }
 
 // ---- Agents (src/agent-site.ts): the context shared, and changes applied through the editor's own actions. ----
@@ -8514,7 +8399,7 @@ async function finishWizard(repo: WizardRepo) {
   removeWizard();
   clearWizard(localStorage);
   wizardDismissed = true;
-  startSetupChecklist(repo.id);
+  setupController.start(repo.id);
   history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
   // GitHub may not list a repository it has just made yet: the one made here is added.
   const listed = await fetchRepositoryList(true).catch(() => repositories);
@@ -8674,7 +8559,7 @@ async function loadRepositories(prefetched?: Repository[]) {
     }
     // A wizard that made a site and was interrupted: the checklist still follows it.
     const unfinished = readWizard(localStorage)?.repo;
-    if (unfinished && repositories.some((repo) => repo.id === unfinished.id)) startSetupChecklist(unfinished.id);
+    if (unfinished && repositories.some((repo) => repo.id === unfinished.id)) setupController.start(unfinished.id);
     if (!wizard) clearWizard(localStorage);
     repositoryOptions();
     repositorySelect.disabled = false;
@@ -8912,7 +8797,7 @@ const agentController = createAgentController<HTMLElement>({
     context: agentContext,
     onCommand: applyAgentSiteCommand,
     // Ask agent shows in the edit bar while an agent is connected.
-    onConnection: (connected) => { noteSetupAgent(connected); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
     onRequests: (requests) => nativePreview?.setRequests(requests),
     onQuestions: (count) => repositoryMenu?.setQuestions(count),
     // A question in the selector's list: its pin, card open, answer box focused.
