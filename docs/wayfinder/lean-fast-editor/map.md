@@ -55,7 +55,7 @@ Phase 5 preparation continues from Claude's thread
 `7d475731-adb3-4c9c-9930-edfb1997bdad`. Shared app state, the first agent
 controller extraction and the recovered Monaco trim are prepared on separate
 review branches. A separate fix resolves the deferred title-refresh race found
-by the full browser suite. Claude review is pending; these changes have not been
+by the full browser suite. Claude reports have returned with open findings; these changes have not been
 merged into `dev` or deployed.
 Exact commits, validation evidence and Claude's review scope are in the
 [Phase 5 review handoff](build/p5-review-handoff.md).
@@ -63,9 +63,10 @@ The remaining split is recorded in [the controller plan](build/p5-controller-pla
 The [continuation review handoff](build/p5-second-batch-handoff.md) records the
 setup, History, palette, Pages and media controllers, guarded concurrent startup,
 the requested 4 px structure indentation, and their isolated regression fixes.
-Its corrected second integration candidate passes focused structure, smoke and
-byte checks; a fresh full browser run is in progress. Six read-only Claude review
-scopes are scheduled to begin at 13:00 Europe/Amsterdam.
+Its corrected second integration candidate passes 691 full browser checks,
+focused structure, smoke and byte checks. Six read-only Claude review reports
+returned after the 13:00 Europe/Amsterdam start. The History lifecycle blocker,
+slot-rail spacing and review denial verification remain open in the handoff.
 
 The following note records the earlier P1.4 slice:
 

@@ -2,7 +2,9 @@
 
 Prepared for Claude after the 2026-10-07 13:00 Europe/Amsterdam availability reset.
 This continues thread `7d475731-adb3-4c9c-9930-edfb1997bdad` and Wayfinder tickets
-08, 06, 12 and the build sequence in ticket 15. Claude has not reviewed this batch.
+08, 06, 12 and the build sequence in ticket 15. Claude reports have since returned;
+their verification caveats and open findings are recorded in the
+[continuation handoff](p5-second-batch-handoff.md).
 An additional isolated fix addresses a deferred title-refresh race found by the
 full browser run; it retains the existing page URL assertions.
 

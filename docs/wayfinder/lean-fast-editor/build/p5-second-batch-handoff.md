@@ -1,20 +1,41 @@
 # Phase 5 continuation review handoff
 
 This continues the [first review batch](p5-review-handoff.md), from Claude's
-thread `7d475731-adb3-4c9c-9930-edfb1997bdad`. Review is reserved for Claude Opus
-5.5 at medium effort after 2026-10-07 13:00 Europe/Amsterdam. No Claude review,
-merge to `dev`, or deployment is claimed here.
+thread `7d475731-adb3-4c9c-9930-edfb1997bdad`. Six Claude Opus 5.5 / medium review
+reports have now returned. Findings remain open; the candidate has not been
+merged to `dev` or deployed.
 
 The user subsequently requested that the reviews start automatically at 13:00.
-A one-shot local runner is now scheduled for `2026-10-07T13:00:00+02:00`, with
-PID `2041862` and shell session `54252`. Its six sequential scopes are foundation
+A one-shot local runner started at `2026-10-07T13:00:00+02:00` and finished by
+13:18 Europe/Amsterdam. Its former PID was `2041862`; it is no longer running.
+Its six sequential scopes are foundation
 and agent/title changes, controllers, concurrent boot, Monaco, compact structure
 and combined interactions. It verifies the frozen candidate before each call,
 pins `claude-opus-5-5` / medium, and records CLI exit/errors/permission denials
 and exact model usage. Scheduling is not review completion or approval.
 Live status and results are under
 `/home/ubulex/Projects/native-site-editor/.scratch/p5-review/claude-1300/`;
-`summary.md` gives the queue state, and `status.json` identifies any active job.
+`summary.md` gives the queue state, and `status.json` records each job.
+
+All six CLI calls exited zero, returned `is_error: false`, and recorded the
+exact `claude-opus-5-5` model in `modelUsage`. All six reports say
+`REVIEW_STATUS: complete`. The runner nevertheless marks them incomplete:
+ten compound/piped Git commands or unlisted `git grep` calls were denied by the
+read-only guard, and the visual report places a progress sentence before its
+completion marker. Reviewers describe retries with permitted single commands
+or Read/Grep tools; the controller report explicitly states no assigned scope
+was left uninspected. Preserve the raw denial records and assess recovery before
+recording fully verified review completion. These reports are not approval.
+
+The controller report identifies a blocking History regression: opening another
+file replaces the toolbar button, making its captured-anchor identity check
+disable the still-open site History panel. It also flags restore completion
+being invalidated when the panel closes. The visual report identifies a slot
+rail still using 16 px per depth in `src/page-builder/components.css`, while
+rows use 4 px. The combined report confirms the History issue affects files
+opened through Pages, Media and the palette. Reproduce and fix these findings
+on isolated branches before landing the affected slices. Full reports are the
+six job directories' `result.md` files.
 
 ## Frozen slices
 
@@ -172,9 +193,10 @@ All checks use Node `24.21.0`. Browser suites run serially.
   to this fix. All 67 focused structure checks and 32 smoke checks pass. The
   three-run pre-paint byte median is 343 KB, within the 350 KB gate; cold paint
   and usable medians are 1.194 s / 1.201 s, warm 0.781 s. These local timing
-  targets still miss 1.0 s / 0.4 s. A fresh full native-save run is now running
-  in shell session `90562`, with the `candidate-fixed-` log prefix. The initial
-  full run above must not be recorded as passing.
+  targets still miss 1.0 s / 0.4 s. The fresh full native-save run finished with
+  **691 passed, 85 skipped and no failures** in 28.2 minutes; see
+  `candidate-fixed-native-save.log`. The frozen candidate remains `679f931`
+  and clean. The initial full run above must not be recorded as passing.
 
 The checklist timing median is cold 1.273 s / warm 0.897 s. A separate
 three-run waterfall on the first integration candidate measured cold usable
@@ -194,8 +216,9 @@ and setup ownership remain unchanged. Assess the boot tag and adoption gates
 separately from its future main adapter. Keep low-impact indentation separate
 from behavioral controller changes.
 
-The corrected second-batch candidate still needs its full native-save result.
-Its focused structure, smoke and byte checks pass; timing targets remain open.
+The corrected second-batch candidate passes its full native-save suite,
+focused structure, smoke and byte checks. Review findings and timing targets
+remain open.
 Production Monaco checks passed before the
 CSS-only fallback, which does not change Monaco source or configuration. The native T3
 preview evidence above is a local demo, not signed-in remote or release proof.
