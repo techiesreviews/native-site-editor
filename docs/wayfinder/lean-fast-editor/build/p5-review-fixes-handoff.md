@@ -84,13 +84,19 @@ The final candidate is `build/p5-review-final` at immutable
   remount feedback, no automatic snapshot load, and retention of a new draft.
 
 At this final head, type checks, **1,050 units**, production build and all
-**18 History/title browser checks** pass. The final byte gate and full native-save
-suite are running serially on port 5216. Logs live in this worktree's
+**18 History/title browser checks** pass. The three-run byte gate passes at
+**344 KB**. The full native-save suite is running on port 5216. Logs live in this worktree's
 `.scratch/p5-review/final-*.log`. Browser suites use Chromium; pointer task ordering
 is not separately proved across other engines.
 
-Claude Opus 5.5 / medium is reviewing only `1cc9cbc..ce7ec53`; its records are
+Claude Opus 5.5 / medium reviewed only `1cc9cbc..ce7ec53`; its records are
 in `.scratch/p5-review/claude-final-followup/` under the preparation workspace.
+Exit zero, `is_error: false`, no JSON errors or permission denials, exact
+`claude-opus-5-5` model usage and `REVIEW_STATUS: complete` are verified. All three
+preceding low findings are resolved and no blocking defects are reported. A
+possible delayed touch/pen-click regression from the pointerup fallback is being
+fixed on `build/p5-title-touch-fix`, without changing the running suite's head.
+The conditional lost-dragend scenario remains unverified and optional.
 The final candidate remains separate from the original frozen candidates and
 has not been merged, pushed or deployed.
 
