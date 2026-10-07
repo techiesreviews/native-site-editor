@@ -1,3 +1,4 @@
+import { createHistoryController } from "./controllers/history-controller";
 import { batch } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
 import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
@@ -72,7 +73,6 @@ import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/nativ
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
 import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
-import type { createCommitHistory } from "./components/commit-history";
 import { gridOfItem } from "./page-builder/card-source";
 import { createCards, type Cards } from "./page-builder/cards";
 import { planSidecarPages, routeLinkRewrite } from "./page-builder/sidecar-pages";
@@ -1033,70 +1033,32 @@ function runMasterEdit(controller: { context(): { htmlPath: string } | undefined
   });
 }
 
-let commitHistory: ReturnType<typeof createCommitHistory> | undefined;
-function positionHistory(panel: HTMLElement, anchor: HTMLElement) {
-  const rect = anchor.getBoundingClientRect();
-  const top = Math.max(16, Math.min(rect.bottom + 6, innerHeight - 100));
-  panel.style.top = `${top}px`;
-  panel.style.maxHeight = `min(70vh, ${Math.max(0, innerHeight - top - 16)}px)`;
-  panel.showPopover();
-  const maxRight = Math.max(16, innerWidth - panel.getBoundingClientRect().width - 16);
-  panel.style.right = `${Math.min(maxRight, Math.max(16, innerWidth - rect.right))}px`;
-}
-window.addEventListener("resize", () => {
-  const panel = document.getElementById("changes");
-  const anchor = document.getElementById("history-button");
-  if (panel?.matches(":popover-open") && anchor) positionHistory(panel, anchor);
+const historyController = createHistoryController({
+  capture: () => {
+    const account = info.user?.login, repo = appStore.repository.value, snapshot = appStore.snapshot.value;
+    if (!account || !repo || !snapshot) return undefined;
+    const epoch = generation, path = appStore.openFile.value;
+    const scope = { account, repoId: repo.id, repo: repo.full_name, branch: snapshot.branch };
+    return {
+      key: JSON.stringify([epoch, account, repo.id, snapshot.commit, snapshot.branch, path]),
+      repo: repo.full_name, branch: snapshot.branch, path, empty: Boolean(snapshot.empty),
+      isCurrent: site => generation === epoch && info.user?.login === account && appStore.repository.value?.id === scope.repoId && appStore.snapshot.value?.branch === scope.branch && (site || appStore.openFile.value === path),
+      hasDraft: () => Boolean(path && draftStore().get(scope, path)),
+      viewing: () => { const view = versionView; return view && view.path === path && view.key === versionKey() ? view.commit.sha : undefined; },
+    };
+  },
+  panel: () => document.getElementById("changes") ?? undefined,
+  anchor: () => document.getElementById("history-button") ?? undefined,
+  loadHistory,
+  emptyMessage: () => node("p", "muted commit-history__message", "No commits yet. Save to GitHub makes the first one."),
+  viewport: () => ({ width: innerWidth, height: innerHeight }),
+  onResize: callback => { window.addEventListener("resize", callback); return () => window.removeEventListener("resize", callback); },
+  openFile: (file, commit, head) => void openFileVersion(file, commit, head),
+  view: (commit, head, latest) => latest ? endVersionView() : void viewVersion(commit, head),
+  restored: async (path, result) => { endVersionView(false); await afterRestore(path, result); },
+  expired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
+  onError: errorMessage,
 });
-// History shows the open file's commits, or the whole site's (the tab
-// chosen last).
-let historyScope: "file" | "site" = "file";
-let historyOpening = 0;
-async function openHistory(force = false) {
-  const opening = ++historyOpening;
-  const epochBeforeLoad = generation;
-  const pathBeforeLoad = appStore.openFile.value;
-  const { createCommitHistory } = await loadHistory();
-  if (opening !== historyOpening || generation !== epochBeforeLoad || appStore.openFile.value !== pathBeforeLoad) return;
-  const panel = element("changes");
-  const anchor = document.getElementById("history-button");
-  if (!anchor || !info.user || !appStore.repository.value || !appStore.snapshot.value) return;
-  if (!force && panel.matches(":popover-open")) { panel.hidePopover(); return; }
-  commitHistory?.destroy();
-  commitHistory = undefined;
-  // Before the first save there is no commit to list: the Worker is not asked.
-  if (appStore.snapshot.value.empty) {
-    panel.replaceChildren(node("p", "muted commit-history__message", "No commits yet. Save to GitHub makes the first one."));
-    positionHistory(panel, anchor);
-    return;
-  }
-  const epoch = generation;
-  const path = appStore.openFile.value;
-  const site = historyScope === "site" || !path;
-  const scope = { account: info.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.snapshot.value.branch };
-  const isCurrent = () => generation === epoch && info.user?.login === scope.account &&
-    appStore.repository.value?.id === scope.repoId && appStore.snapshot.value?.branch === scope.branch && (site || appStore.openFile.value === path);
-  commitHistory = createCommitHistory({
-    repo: scope.repo, branch: scope.branch, path, isCurrent,
-    scope: site ? "site" : "file",
-    onScope: (next) => { historyScope = next; void openHistory(true).catch(errorMessage); },
-    onOpenFile: (file, commit, head) => void openFileVersion(file, commit, head),
-    hasDraft: () => Boolean(path && draftStore().get(scope, path)),
-    onExpired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
-    onRestored: async (result) => {
-      if (!isCurrent() || !path) return;
-      endVersionView(false);
-      await afterRestore(path, result);
-    },
-    onView: (commit, head, latest) => (latest ? endVersionView() : void viewVersion(commit, head)),
-    viewing: () => {
-      const view = versionView;
-      return view && view.path === path && view.key === versionKey() ? view.commit.sha : undefined;
-    },
-  });
-  panel.replaceChildren(commitHistory.root);
-  positionHistory(panel, anchor);
-}
 
 // A file from the site's history: it opens, showing its version from that
 // commit unless that is the branch's latest.
@@ -1109,10 +1071,7 @@ async function openFileVersion(path: string, commit: HistoryCommit, head: string
 }
 
 async function afterRestore(path: string, result: RestoreResult) {
-  const panel = element("changes");
-  if (panel.matches(":popover-open")) panel.hidePopover();
-  commitHistory?.destroy();
-  commitHistory = undefined;
+  historyController.destroy();
   if (!result.unchanged) await loadSnapshot(path);
   status(result.unchanged ? "This file already matches that version." : `Restored ${path} in a new commit. Other files are unchanged.`);
 }
@@ -1147,7 +1106,7 @@ async function viewVersion(commit: HistoryCommit, head: string) {
     nativePreview?.setViewing(versionBar(versionView));
     editorModule?.compareVersion(path, { content: revision.content, label: versionLabel(commit) });
     updateNativePreviewSources();
-    commitHistory?.mark();
+    historyController.mark();
   } catch (error) {
     if (request === versionRequest) status(error instanceof Error ? error.message : "That version could not be loaded. Try again.");
   }
@@ -1160,7 +1119,7 @@ function endVersionView(refresh = true) {
   versionView = undefined;
   nativePreview?.setViewing(undefined);
   editorModule?.compareVersion(view.path, undefined);
-  commitHistory?.mark();
+  historyController.mark();
   if (refresh) updateNativePreviewSources();
 }
 
@@ -4530,6 +4489,7 @@ function renderLogin(
   agentController.destroy();
   setupController.dispose();
   setupEntry.remove();
+  historyController.destroy();
   activeFileContext = null;
   explorerDropdown?.destroy();
   explorerDropdown = undefined;
@@ -6147,7 +6107,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   const failure = draftStore().error;
   if (failure) return failure;
   editorModule?.refreshDrafts();
-  commitHistory?.refresh();
+  historyController.refresh();
   if (nativeSite) refreshNativeRoutes();
   updateAgentContext();
   if (resyncNativeSite()) return undefined;
@@ -6431,7 +6391,7 @@ function resyncNativeSite(): boolean {
 function afterFileChanges() {
   forgetDraftedAssets();
   editorModule?.refreshDrafts();
-  commitHistory?.refresh();
+  historyController.refresh();
   if (nativeSite) {
     // Component stylesheets are found again where their components now are.
     nativeComponentStyles.clear();
@@ -7354,7 +7314,7 @@ async function mountSource(
       if (value && appStore.openFile.value === value.path) syncLinkedStyles(value.path, value.content);
       updateAgentContext();
       renderDraftFiles();
-      commitHistory?.refresh();
+      historyController.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
       // The master line shows at once whether the master can update copies.
       if (masterBanner) renderMasterBanner();
@@ -7365,7 +7325,7 @@ async function mountSource(
       // A heading or title typed in the open file renames it in the top bar.
       updateCurrentPageLabel();
     },
-    onHistory: () => void openHistory().catch(errorMessage),
+    onHistory: () => void historyController.open().catch(errorMessage),
     onDiscardAll: () => void discardAllChanges(),
     publishHead: () => (appStore.snapshot.value?.branch === scope.branch && appStore.repository.value?.id === scope.repoId ? (appStore.snapshot.value.empty && (!headSeen || headSeen.commit === EMPTY_COMMIT) ? EMPTY_COMMIT : trustedHead()) : undefined),
     onRefused: () => void checkBranchHead(true),
