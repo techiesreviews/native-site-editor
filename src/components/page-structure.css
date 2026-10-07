@@ -1,7 +1,7 @@
 /* The page structure tree in the sidebar: one row per page element,
    indented by depth, the preview's selection marked. */
 .page-structure {
-  --structure-indent: 8px;
+  --structure-indent: 4px;
   flex: 1;
   min-height: 0;
   margin: 0 -10px;
@@ -117,39 +117,6 @@
 .page-structure__row:hover {
   background: var(--hover);
 }
-/* Hierarchy: each expandable row's chevron sits in a small ring, and one thin
-   guide runs from under that ring down its group (the group's --rail column),
-   through the ring's centre. A level steps in 8 px, so a child's ring always
-   clears its parent's guide. Grey here; components.css makes a component's
-   ring and guide purple. */
-.page-structure {
-  --structure-line: color-mix(in oklch, var(--muted) 35%, transparent);
-}
-.page-structure__group {
-  position: relative;
-  --structure-guide: var(--structure-line);
-}
-.page-structure__group::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  top: calc(4px - var(--size-control) / 2);
-  bottom: 2px;
-  left: calc(12.5px + var(--rail, 0) * var(--structure-indent, 8px));
-  width: 1px;
-  background: var(--structure-guide);
-  pointer-events: none;
-}
-.page-structure__group:not(:has(> .page-structure__row))::before {
-  content: none;
-}
-.page-structure__row[aria-expanded] > .page-structure__toggle::after {
-  content: "";
-  position: absolute;
-  inset: 2px;
-  border: 1px solid var(--structure-ring, var(--structure-line));
-  border-radius: 50%;
-}
 .page-structure__row[aria-selected="true"] {
   background: var(--current);
   color: var(--text);
@@ -164,8 +131,6 @@
   background: var(--current);
 }
 .page-structure__toggle {
-  position: relative;
-  z-index: 2;
   flex: none;
   width: 14px;
   height: 14px;
@@ -175,8 +140,8 @@
 }
 .page-structure__row[aria-expanded] .page-structure__toggle::before {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
   background: currentColor;
   mask: var(--icon-caret-down) center / contain no-repeat;
 }

@@ -802,8 +802,6 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
     group.setAttribute("role", "group");
-    // The group's guide runs down from this row's chevron.
-    group.style.setProperty("--rail", String(level - 1));
     group.hidden = isFolded(id);
     const childInMain = insideMain || item.tag === "main";
     if (inline) group.append(inline);
