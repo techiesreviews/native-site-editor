@@ -339,23 +339,36 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 /* ---- A row's text edited in place (pencil, F2, Enter, a second click or a
    double-click). The text becomes the field where it stood: same font, same
    left edge, same first line, so nothing moves; the row grows downward as the
-   text wraps. Editing is neutral: a slight lift and a thin focus ring, no
+   text wraps. Editing is neutral and raised: a lighter surface lifted above the
+   tree by a soft shadow and a faint inner highlight, no outline and no
    component purple (no rail segment, no role badge, no row actions), and Done
    at the row's end. A link's URL or an image's fields sit in a card attached
-   under the row. ---- */
+   under the row; row and card are one raised block. ---- */
 .page-structure {
   --edit-surface: color-mix(in oklch, var(--text) 7%, var(--structure-surface, var(--surface-subtle)));
-  --edit-ring: color-mix(in oklch, var(--focus) 75%, transparent);
+  --edit-highlight: rgb(0 0 0 / 0.05);
+  --edit-drop: 0 6px 18px -8px rgb(0 0 0 / 0.28), 0 1px 3px rgb(0 0 0 / 0.12);
+  --edit-field: color-mix(in oklch, var(--text) 6%, transparent);
+  --edit-field-edge: color-mix(in oklch, var(--text) 10%, transparent);
+  --edit-field-focus: color-mix(in oklch, var(--text) 28%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  .page-structure {
+    --edit-highlight: rgb(255 255 255 / 0.06);
+    --edit-drop: 0 8px 24px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.35);
+  }
 }
 .page-structure__row.is-editing {
   --row-action-background: var(--edit-surface);
+  position: relative;
+  z-index: 1;
   align-items: flex-start;
   box-sizing: border-box;
   /* The first line where the centred text stood: (row height - one line) / 2. */
   padding-top: calc((var(--size-control) - 1.2em) / 2);
   padding-bottom: calc((var(--size-control) - 1.2em) / 2);
   background: var(--edit-surface);
-  box-shadow: inset 0 0 0 1px var(--edit-ring);
+  box-shadow: inset 0 0 0 1px var(--edit-highlight), var(--edit-drop);
   cursor: text;
 }
 .page-structure__row.is-editing:focus-visible { outline: none; }
@@ -385,7 +398,7 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
   overflow-wrap: anywhere;
   overflow-y: auto;
   outline: none;
-  caret-color: var(--focus);
+  caret-color: var(--text);
   cursor: text;
 }
 .page-structure__edit-field::selection { background: color-mix(in oklch, var(--focus) 40%, transparent); }
@@ -396,25 +409,48 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
   cursor: pointer;
 }
 .page-structure__done:hover { background: var(--hover); }
-/* With a card under it, the row and card are one block. */
+/* With a card under it, row and card are one block: the row's shadow stops at
+   its foot and the card's at its head, so no seam shows where they meet. */
 .page-structure__row.is-editing:has(+ .page-structure__inline[data-slot-editor], + .page-structure__group > .page-structure__inline[data-slot-editor]:first-child) {
   border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow: inset 1px 0 0 var(--edit-ring), inset -1px 0 0 var(--edit-ring), inset 0 1px 0 var(--edit-ring);
+  box-shadow: inset 1px 0 0 var(--edit-highlight), inset -1px 0 0 var(--edit-highlight), inset 0 1px 0 var(--edit-highlight), var(--edit-drop);
+  clip-path: inset(-40px -40px 0 -40px);
 }
 .page-structure__inline[data-slot-editor] {
+  z-index: 1;
   background: var(--edit-surface);
-  box-shadow: inset 1px 0 0 var(--edit-ring), inset -1px 0 0 var(--edit-ring), inset 0 -1px 0 var(--edit-ring), inset 0 1px 0 var(--line);
+  box-shadow: inset 1px 0 0 var(--edit-highlight), inset -1px 0 0 var(--edit-highlight), inset 0 -1px 0 var(--edit-highlight), var(--edit-drop);
+  clip-path: inset(0 -40px -40px -40px);
 }
+/* The card's fields match the row's text: neutral, no outline, no accent
+   (over the shared inline-field underline, ui/inline-field.css). */
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea) {
+  border: 0;
+  background: var(--edit-field);
+  box-shadow: inset 0 0 0 1px var(--edit-field-edge);
+  outline: none;
+}
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea):hover:not(:focus) {
+  background: color-mix(in oklch, var(--text) 9%, transparent);
+  box-shadow: inset 0 0 0 1px var(--edit-field-edge);
+}
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea):focus:not([readonly]) {
+  background: var(--edit-field);
+  box-shadow: inset 0 0 0 1px var(--edit-field-focus);
+  outline: none;
+}
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea)[aria-invalid=true] { box-shadow: inset 0 0 0 1px var(--danger); }
 @media (prefers-reduced-motion: no-preference) {
-  /* Entering and leaving are quick eases of the surface and ring; the card slides in. */
+  /* Entering and leaving are quick eases of the surface and lift; the card slides in. */
   .page-structure__row.is-editing,
   .page-structure__row.was-editing { transition: background-color 140ms ease-out, box-shadow 140ms ease-out; }
   @starting-style {
-    .page-structure__row.is-editing { background-color: var(--current); box-shadow: inset 0 0 0 1px transparent; }
-    .page-structure__row.was-editing { background-color: var(--edit-surface); box-shadow: inset 0 0 0 1px var(--edit-ring); }
+    .page-structure__row.is-editing { background-color: var(--current); box-shadow: inset 0 0 0 1px transparent, 0 0 0 transparent, 0 0 0 transparent; }
+    .page-structure__row.was-editing { background-color: var(--edit-surface); box-shadow: inset 0 0 0 1px var(--edit-highlight), var(--edit-drop); }
   }
   .page-structure__inline[data-slot-editor] { transition: opacity 140ms ease-out, translate 140ms ease-out; }
   @starting-style {
     .page-structure__inline[data-slot-editor] { opacity: 0; translate: 0 -3px; }
   }
+  .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea) { transition: box-shadow 120ms ease-out; }
 }

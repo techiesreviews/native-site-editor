@@ -102,3 +102,45 @@ test("Enter on a selected row edits it with all selected, and Enter in the field
   await row.press("ArrowDown");
   await expect(row).not.toBeFocused();
 });
+
+test("a link's URL suggestions open under the URL field, and Enter and Escape go to the list first", async ({ page }) => {
+  // The first card's optional link, shown: its editor opens with the URL in the card under the row.
+  const show = tree(page).getByRole("button", { name: "Show Link", exact: true }).first();
+  await show.locator("xpath=ancestor::*[@role='treeitem'][1]").hover();
+  await show.click();
+  const editing = tree(page).locator(".page-structure__row.is-editing[data-slot-editor=link]");
+  await expect(editing).toHaveCount(1);
+  const url = tree(page).getByRole("combobox", { name: "Link: Link / URL", exact: true });
+  await url.click();
+  await url.fill("/");
+  const list = page.getByRole("listbox", { name: "Pages of this site" });
+  await expect(list).toBeVisible();
+  await expect(url).toHaveAttribute("aria-expanded", "true");
+  // Directly under the field, from its left edge, at least as wide, starting in the sidebar.
+  const field = (await url.boundingBox())!, box = (await list.boundingBox())!, sidebar = (await page.locator("aside.sidebar").boundingBox())!;
+  expect(Math.abs(box.x - field.x)).toBeLessThanOrEqual(2);
+  expect(box.y - (field.y + field.height)).toBeGreaterThanOrEqual(0);
+  expect(box.y - (field.y + field.height)).toBeLessThanOrEqual(8);
+  expect(box.width).toBeGreaterThanOrEqual(field.width - 1);
+  expect(box.x).toBeGreaterThanOrEqual(sidebar.x);
+  expect(box.x).toBeLessThan(sidebar.x + sidebar.width);
+  // ArrowDown walks the list with focus kept in the field; Enter picks without ending the edit.
+  await url.press("ArrowDown");
+  const first = list.getByRole("option").first();
+  await expect(first).toHaveAttribute("aria-selected", "true");
+  await expect(url).toBeFocused();
+  const picked = (await first.getAttribute("data-value"))!;
+  await url.press("Enter");
+  await expect(list).toBeHidden();
+  await expect(url).toHaveValue(picked);
+  await expect(url).toBeFocused();
+  await expect(editing).toHaveCount(1);
+  // Escape closes the list first; the next Escape ends the edit.
+  await url.press("ArrowDown");
+  await expect(list).toBeVisible();
+  await url.press("Escape");
+  await expect(list).toBeHidden();
+  await expect(editing).toHaveCount(1);
+  await url.press("Escape");
+  await expect(editing).toHaveCount(0);
+});

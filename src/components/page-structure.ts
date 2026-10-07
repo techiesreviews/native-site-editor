@@ -6,6 +6,7 @@ import eyeOpen from "@phosphor-icons/core/regular/eye.svg?raw";
 import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
 import { rowActions } from "./row-actions";
 import { elementIcon } from "./element-icons";
+import { attachFieldSuggestions, type FieldSuggestion, type FieldSuggestions } from "./field-suggestions";
 import "./page-structure.css";
 import { createNativeSharedAuthoring, type NativeSharedAuthoringContext, type NativeSharedAuthoringActions } from "./native-shared-authoring";
 import type { ComponentStructureModel, ComponentSlotPart, ComponentFieldSession } from "../page-builder/components";
@@ -407,6 +408,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const fieldInputs = new Map<string, FieldControl>();
   const fieldClosers = new Map<FieldControl, () => void>();
   const fieldCancelers = new Map<FieldControl, () => void>();
+  // Suggestion lists (a URL's pages, an image's files) anchored to their fields.
+  const suggestionLists = new Map<HTMLInputElement, FieldSuggestions>();
+  function suggest(input: HTMLInputElement, entries: readonly FieldSuggestion[], label: string) {
+    suggestionLists.set(input, attachFieldSuggestions(input, entries, label));
+  }
   let renderingFields = false;
   // One explicit focus request, consumed by the first render after it.
   let focusSlotField: { prefix: string; row: string | undefined; caret?: number } | undefined;
@@ -418,6 +424,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   function cleanControls() {
     for (const [input, close] of uploadClosers) if (!tree.contains(input)) { close(); uploadClosers.delete(input); }
     for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); fieldCancelers.delete(input); }
+    for (const [input, list] of suggestionLists) if (!tree.contains(input)) { list.destroy(); suggestionLists.delete(input); }
     for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
     for (const [id, form] of attributeForms) if (!tree.contains(form)) {
       formClosers.get(form)?.(); formClosers.delete(form); attributeForms.delete(id);
@@ -425,8 +432,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
   // A field is one line of text that wraps: a one-row textarea that grows with
   // its content (CSS field-sizing; on engines without it, sized here as typed).
-  // A field with suggestions (a URL, an image) stays an input, as only an input
-  // takes a datalist.
+  // A field with suggestions (a URL, an image) stays a one-line input, with its
+  // list anchored to it (field-suggestions.ts).
   function guardedField(id: string, label: string, accessible: string, value: string, open: () => ComponentFieldSession | undefined, single = false) {
     const input = fieldControl(id, accessible, value, open, single);
     const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "page-structure__slot-field-label", label), input); return wrap;
@@ -723,10 +730,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         group.setAttribute("role", "group"); group.setAttribute("aria-label", slot.kind === "image" ? "Image" : "Link");
         if (slot.kind === "image") {
           const image = field("src", "Image", slot.value.src ?? "");
-          const suggestions = document.createElement("datalist");
-          suggestions.id = `structure-images-${model.host.node.join("-")}-${result.length}`;
-          for (const value of model.images) { const option = document.createElement("option"); option.value = value; suggestions.append(option); }
-          image.querySelector("input")?.setAttribute("list", suggestions.id);
+          const imageInput = image.querySelector("input");
+          if (imageInput) suggest(imageInput, model.images.map(value => ({ value })), "Images of this site");
           const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true;
           let pending: ReturnType<ComponentStructureModel["openImageUpload"]>;
           uploadClosers.set(file, () => { if (pending) handlers.announce?.("The image picker changed; reopen Upload image… before choosing a file."); pending?.close(); pending = undefined; });
@@ -740,16 +745,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
             const captured = pending, files = [...(file.files ?? [])]; pending = undefined; file.value = "";
             if (!files.length) captured?.close(); else void captured?.upload(files);
           });
-          group.append(image, suggestions, upload, file, field("alt", "Alt text", slot.value.alt ?? ""));
+          group.append(image, upload, file, field("alt", "Alt text", slot.value.alt ?? ""));
         }
         else {
           if (slot.value.editable) { if (!skipInPlace) group.append(field("text", "Button text", slot.value.text)); }
           else group.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
           const link = field("href", "Link / URL", slot.value.href ?? "");
-          const suggestions = document.createElement("datalist"); suggestions.id = `structure-links-${model.host.node.join("-")}-${result.length}`;
-          for (const value of model.links) { const option = document.createElement("option"); option.value = value.value; option.label = value.label; suggestions.append(option); }
-          link.querySelector("input")?.setAttribute("list", suggestions.id);
-          group.append(link, suggestions);
+          const linkInput = link.querySelector("input");
+          if (linkInput) suggest(linkInput, model.links, "Pages of this site");
+          group.append(link);
         }
         block.append(group);
       } else block.append(node("span", "page-structure__slot-summary", `Content${slot.value.text ? `: ${slot.value.text}` : ""}`));
@@ -1294,6 +1298,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       formClosers.clear();
       fieldClosers.clear(); fieldInputs.clear(); attributeForms.clear();
       endDrag();
+      for (const list of suggestionLists.values()) list.destroy();
+      suggestionLists.clear();
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("pointerup", onPointerUp, true);
       window.removeEventListener("pointercancel", onPointerUp, true);
