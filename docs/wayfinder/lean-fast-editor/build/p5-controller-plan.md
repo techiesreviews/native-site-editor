@@ -8,8 +8,8 @@ Extract one controller per branch/PR. Serialize all changes to `src/main.ts`.
 
 Phases 1–4 are complete at `963f569`. The Monaco-free draft store is already
 wired through `source-editor.ts`; `code-editor.ts` is its deferred Monaco view.
-Do not introduce another draft/history implementation. Keep the existing boot
-request ordering, generation/source guards, lazy component imports and chunk
+Do not introduce another draft/history implementation. Keep generation/source
+guards, authenticated response ownership, lazy component imports and chunk
 recovery. The rejected asynchronous HTML entity table stays synchronous.
 
 ## Ordered slices
@@ -43,7 +43,10 @@ recovery. The rejected asynchronous HTML entity table stays synchronous.
 8. **Code panes:** extract load gate, mount and resize orchestration. Keep
    `source-editor.ts` Monaco-free and `code-editor.ts` the Monaco view.
 9. **Boot:** extract session/repository/branch/snapshot orchestration without
-   redoing Phase 4's performance changes. Keep generation invalidation.
+   redoing Phase 4's performance changes. Keep generation invalidation. The
+   separately guarded session/repository concurrency experiment removes their
+   dependency while preserving authenticated receipt ownership; verify timing
+   and installation-return fallback before landing it.
 10. **Preview and selection:** extract bridge, preview readiness and selection
     dispatch, with domain edit handlers injected and source proofs preserved.
 11. **Pages:** extract tree and create/rename/duplicate/delete/URL/move UI;

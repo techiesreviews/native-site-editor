@@ -60,6 +60,10 @@ merged into `dev` or deployed.
 Exact commits, validation evidence and Claude's review scope are in the
 [Phase 5 review handoff](build/p5-review-handoff.md).
 The remaining split is recorded in [the controller plan](build/p5-controller-plan.md).
+The [continuation review handoff](build/p5-second-batch-handoff.md) records the
+setup, History, palette, Pages and media controllers, guarded concurrent startup,
+the requested 4 px structure indentation, and their isolated regression fixes.
+Its second integration candidate is being validated before the 13:00 review.
 
 The following note records the earlier P1.4 slice:
 
