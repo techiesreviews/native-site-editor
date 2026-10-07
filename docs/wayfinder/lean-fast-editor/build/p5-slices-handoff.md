@@ -33,9 +33,10 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `86f3f4b` | Per Lex's mockup: the component's own chevron stays plain; a part with its own chevron sits on the purple rail inside a same-purple ring (box-shadow, so the 14 px toggle and rail centring stay) | structure specs 105 passed / 2 skipped |
 | `d669e07` | Slice 8, code panes controller (below), fast-forwarded onto `86f3f4b` | check, 1,054 units, smoke 28 on `d669e07` |
 | `4b08251` | Every chevron in a 2 px ring of its line's exact colour (purple for components and parts, grey otherwise), no fill; rails stop at rings. Fade test samples the plain colour at x = 2 px, left of the ring | structure specs, native-structure-compact 33/33 |
+| `a5c4fe7` | Redesign after Lex found the rings cluttered (Mobbin: Figma, Rive, MagicPath): 8 px per level; 10 px 1 px ring inside each expandable chevron; one 1 px guide per group from under the parent's ring; purple for components, grey otherwise; parts no longer share the component's column | check, 1,054 units, structure specs 105 passed / 2 skipped |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
