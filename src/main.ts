@@ -8042,11 +8042,12 @@ async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
   return { ok: true };
 }
 
-async function loadRepositories(prefetched?: Repository[]) {
+async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(epoch: number): void }) {
   repositoryWorkspaceState = "loading";
   removeFinishStarter();
   waitingForRepositories = false;
   const epoch = ++generation;
+  hooks?.onStarted(epoch);
   fileGeneration++;
   appStore.reset();
   siteActions?.revalidate();
@@ -8332,6 +8333,7 @@ const agentController = createAgentController<HTMLElement>({
 
 async function start() {
   const bootEpoch = generation;
+  let handoff: { epoch: number; session: SessionInfo } | undefined;
   const bootSource = () => `${location.origin}${location.pathname}`;
   const source = bootSource();
   const current = () => generation === bootEpoch && bootSource() === source;
@@ -8382,7 +8384,10 @@ async function start() {
       // Navigation or another boot won while the speculative list was arriving.
       if (!current()) return;
       if (prefetched) repositoryOnboarding = prefetched.value.onboarding;
-      await loadRepositories(installed ? undefined : prefetched?.value.repositories ?? info.repositories ?? undefined);
+      await loadRepositories(installed ? undefined : prefetched?.value.repositories ?? info.repositories ?? undefined, {
+        // Capture at the increment, before setup callbacks can throw or navigate.
+        onStarted: epoch => { handoff = { epoch, session }; },
+      });
     } else if (
       autoSignInPlan({ configured: session.configured, hasSession: false, pathname: location.pathname, search: location.search, local: storage("local"), session: storage("session") }) === "auto"
     ) {
@@ -8413,7 +8418,10 @@ async function start() {
       history.replaceState(null, "", cleanUrl);
     }
   } catch (error) {
-    if (!current()) return;
+    const ownsFailure = handoff
+      ? generation === handoff.epoch && info === handoff.session && bootSource() === source
+      : current();
+    if (!ownsFailure) return;
     renderLogin("error");
     errorMessage(error);
   }
