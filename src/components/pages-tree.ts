@@ -493,6 +493,7 @@ export function createPagesTree(options: {
         mark(undefined);
         if (dragging && event.dataTransfer?.dropEffect === "none") options.announce(`Cancelled moving ${dragging.label}`);
         dragging = undefined;
+        options.onInteractionEnd?.();
       });
     }
     const over = (event: DragEvent) => {
@@ -788,8 +789,8 @@ export function createPagesTree(options: {
       if (row) setActive(row);
       if (focus || hadFocus) focusRow(row?.dataset.key);
     },
-    /** A menu or in-place edit must finish before deferred titles replace rows. */
-    busy: () => Boolean(menu.isOpen() || editing || renaming || changingUrl),
+    /** A menu, in-place edit or drag must finish before deferred titles replace rows. */
+    busy: () => Boolean(menu.isOpen() || editing || renaming || changingUrl || dragging),
     /** Whether a new row is being typed. */
     editing: () => Boolean(editing),
     /** Drops a new row being typed and closes the menu (the explorer closed). */
