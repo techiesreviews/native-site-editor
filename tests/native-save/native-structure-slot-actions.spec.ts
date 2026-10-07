@@ -165,16 +165,26 @@ async function realConditionalSlot(page:Page,baseURL:string|undefined) {
 // click handler. Restore the real WindowProxy before any message can return.
 async function armEyeSendProbe(eye:import('@playwright/test').Locator) {
  await eye.evaluate(element=>{
-  const frame=document.querySelector<HTMLIFrameElement>('.native-preview-frame')!,target=frame.contentWindow!;
+  const label=element.getAttribute('aria-label');
+  const row=element.closest<HTMLElement>('[role="treeitem"]')!;
+  const proof={node:row.dataset.node,slotRow:row.dataset.slotRow,slot:row.dataset.slot};
   const probe:any=(window as any).visibilitySendProbe={posts:[]};
-  element.addEventListener('click',()=>{
+  // Structure can repaint between arming and clicking. Match the live target,
+  // then bracket its own handler; unrelated clicks must not consume this probe.
+  const capture=(event:MouseEvent)=>{
+   const clicked=event.target instanceof Element?event.target.closest('button'):null;
+   const currentRow=clicked?.closest<HTMLElement>('[role="treeitem"]');
+   if(!clicked||clicked.getAttribute('aria-label')!==label||!document.querySelector('#structure')?.contains(clicked)||!currentRow||currentRow.dataset.node!==proof.node||currentRow.dataset.slotRow!==proof.slotRow||currentRow.dataset.slot!==proof.slot)return;
+   document.removeEventListener('click',capture,true);
+   const frame=document.querySelector<HTMLIFrameElement>('.native-preview-frame')!,target=frame.contentWindow!;
    probe.start=performance.now();
    Object.defineProperty(frame,'contentWindow',{configurable:true,get:()=>({postMessage:(message:any,origin:string)=>{
     if(message.type==='update')probe.posts.push({at:performance.now(),id:message.id,context:message.payload.context,page:message.payload.pages['/about/']});
     target.postMessage(message,origin);
    }})});
-  },{capture:true,once:true});
-  element.addEventListener('click',()=>{probe.end=performance.now();delete (frame as any).contentWindow;},{once:true});
+   clicked.addEventListener('click',()=>{probe.end=performance.now();delete (frame as any).contentWindow;},{once:true});
+  };
+  document.addEventListener('click',capture,true);
  });
 }
 
