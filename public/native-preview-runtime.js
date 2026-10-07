@@ -1080,7 +1080,7 @@
       out.push({
         tag: child.localName,
         node: path,
-        text: (child.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
+        text: textWithBreaks(child).replace(/\s+/g, " ").trim().slice(0, 80),
         heading: heading ? slotAwareText(heading).replace(/\s+/g, " ").trim().slice(0, 80) : "",
         slot: child.getAttribute("slot") || "",
         children: isMaster || textRun(child) ? [] : structureItems(child, depth + 1)
@@ -2867,14 +2867,24 @@
     e.stopPropagation();
     canvasSelectParent();
   }, true);
-  // A structure field's text set in place (patch-text): only an element that
-  // holds text alone, and only as text. False when there is no such element.
+  // Text with each <br> read as a space, as a structure row shows it.
+  function textWithBreaks(el) {
+    var out = "";
+    el.childNodes.forEach(function (c) { out += c.nodeType === 3 ? c.data : c.localName === "br" ? " " : c.nodeType === 1 ? textWithBreaks(c) : ""; });
+    return out;
+  }
+  // patch-text: a structure field's text set in place, ahead of its render;
+  // "\n" becomes <br>, never markup. Only an element of text and <br>s takes it.
   var livePatch = null;
   function patchText(request, text) {
-    var el = typeof text === "string" && text.length <= 100000 ? resolveNodePath(request) : null;
-    if (!el || el === editing || !Array.prototype.every.call(el.childNodes, function (child) { return child.nodeType === 3; })) return false;
-    if (el.childNodes.length === 1) { if (el.firstChild.data !== text) el.firstChild.data = text; }
-    else if (el.textContent !== text) el.textContent = text;
+    var el = typeof text === "string" && text.length <= 1e5 ? resolveNodePath(request) : null;
+    var kids = el ? Array.from(el.childNodes) : [];
+    if (!el || el === editing || kids.some(function (c) { return c.nodeType !== 3 && c.localName !== "br"; })) return false;
+    if (kids.map(function (c) { return c.nodeType === 3 ? c.data : "\n"; }).join("") !== text) {
+      el.replaceChildren.apply(el, text.split("\n").flatMap(function (line, i) {
+        return (i ? [document.createElement("br")] : []).concat(line ? [document.createTextNode(line)] : []);
+      }));
+    }
     if (selected && (selected === el || el.contains(selected) || selected.contains(el))) updateBoxes();
     return true;
   }
@@ -3025,16 +3035,11 @@
       inspectWhenSettled(msg);
       return;
     }
-    // The page structure's text field, as it is typed: the element's text is
-    // set in place at once, ahead of the render the source change brings (which
-    // then finds the same text and leaves it). Only an element holding text
-    // alone is patched, and only as text; anything else is a miss, and the host
-    // sends its full update now instead.
+    // Kept (drawn again after renders) until the host ends or drops it.
     if (msg.type === "patch-text") {
-      var textOnly = patchText(msg.request, msg.text);
-      // Until its field ends, the patch is drawn again over any render of an older source.
-      livePatch = textOnly && !msg.end ? { request: msg.request, text: msg.text } : null;
-      emit("patched", { id: msg.id, ok: textOnly });
+      var ok = !msg.drop && patchText(msg.request, msg.text);
+      livePatch = ok && !msg.end ? { request: msg.request, text: msg.text } : null;
+      if (!msg.drop) emit("patched", { id: msg.id, ok: ok });
       return;
     }
     if (msg.type === "pins") {

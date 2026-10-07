@@ -525,6 +525,11 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     pushStep(history, step);
     return { ok: true, step: step.id };
   }
+  /** Whether the top step of `history` is a typing group still open. */
+  function hasOpenGroup(history: string) {
+    const last = journals.get(history)?.undo.at(-1);
+    return last?.kind === "edit" && last.group;
+  }
   function closeGroup(history: string) {
     const last = journals.get(history)?.undo.at(-1);
     if (last?.kind === "edit") last.group = false;
@@ -953,6 +958,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     text: (scope: DraftScope, path: string) => files.get(draftKey(scope, path))?.text,
     edit: (input: EditInput) => batch(() => edit(input)),
     closeGroup,
+    hasOpenGroup,
     discardGroup: (history: string) => batch(() => discardGroup(history)),
     attachCompanion,
     applyReceipt: (history: string, label: string, changes: ReceiptFile[], record = true) => batch(() => applyReceipt(history, label, changes, record)),

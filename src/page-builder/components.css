@@ -78,27 +78,6 @@
   opacity: 0.45;
   pointer-events: none;
 }
-/* An editor open between the parts keeps the rail running through it, so the
-   row and its fields stay one block within the instance. The instance's own
-   Attributes hang from its chevron: the rail starts there, a column further out. */
-.page-structure__row--component + .page-structure__group > .page-structure__inline:not([data-slot-editor])::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  /* Through the editor's bottom margin to the next row. */
-  bottom: -5px;
-  left: calc(12px + (var(--depth, 1) - 1) * var(--structure-indent, 4px));
-  width: 2px;
-  border-radius: 1px;
-  background: var(--component);
-  opacity: 0.45;
-  pointer-events: none;
-}
-/* Editing a part's text is neutral: its rail segment steps aside. */
-.page-structure__row--component + .page-structure__group > .page-structure__row.is-editing::before { content: none; }
-.page-structure__row--component + .page-structure__group > .page-structure__inline--attributes::before {
-  left: calc(12px + var(--depth, 0) * var(--structure-indent, 4px));
-}
 .page-structure__row--component + .page-structure__group > .page-structure__row[aria-expanded]::before {
   mask: linear-gradient(#000 calc(50% - 8px), transparent 0 calc(50% + 8px), #000 0);
 }

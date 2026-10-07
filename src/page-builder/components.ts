@@ -91,7 +91,7 @@ export interface ComponentDeps {
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
   editor: () => CodeEditor | undefined;
-  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void; patchText?(request: { path: string; node: number[] }, text: string, miss?: () => void, end?: boolean): void } | undefined;
+  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void } & Partial<PreviewTextPatch> | undefined;
   /** The file open in the code pane. */
   currentPath: () => string | undefined;
   /** The preview's selection, as the editor last heard it. */
@@ -151,19 +151,40 @@ const KIND_MARK: Record<SlotValue["kind"], ComponentMark> = { text: "text", imag
 const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "nav", "figure", "div", "form"]);
 
 export type ComponentSlotPart = "text" | "src" | "alt" | "href";
+/** The preview's text patch (native-preview.ts): typed text shown ahead of its write, on top of a source the session vouches for. */
+export interface PreviewTextPatch {
+  patchText(request: { path: string; node: number[] }, text: string, base: string, miss?: () => void): void;
+  vouchPatch(path: string, source: string): void;
+  endPatch(path: string, finish?: { text: string }): void;
+}
 export type ComponentAttributeResult = { ok: true } | { error: string; stale?: boolean };
 export interface ComponentFieldSession {
   write(value: string): boolean;
   close(): void;
   /** Takes back everything this session wrote (Escape): no change and no undo step remain. False when it could not. */
   cancel(): boolean;
+}
+/**
+ * One edit of a slot as a whole (a row's text and its card's URL or image
+ * fields): every write one undo step, which Close keeps and Cancel takes back.
+ */
+export interface ComponentSlotEditSession {
+  /** `part` reads `value` in the source: true when it does (or still holds its first value, untouched). */
+  write(part: ComponentSlotPart, value: string): boolean;
+  /** The slot's text can show in the page ahead of its write (one element holding text and breaks alone). */
+  readonly patchable: boolean;
   /**
-   * Shows `value` in the page at once, ahead of its write (a slot's text held
-   * by one element of text alone): true when sent; `miss` runs if the page
-   * could not take it. `end`: the last one, as the field closes (the page
-   * stops redrawing it over renders). Absent where the page cannot be patched.
+   * Shows `text` in the page at once, ahead of its write: false (nothing sent)
+   * once the session is closed or stale, or its text was refused. `miss` runs
+   * when the page could not take it.
    */
-  patch?(value: string, miss: () => void, end?: boolean): boolean;
+  patch(text: string, miss: () => void): boolean;
+  /** The source moved on without this session (Undo, Redo, another edit): it can no longer write. */
+  stale(): boolean;
+  /** Ends the session, keeping what it wrote. */
+  close(): void;
+  /** Takes back everything it wrote and shows the first text again: false when it could not (said so). */
+  cancel(): boolean;
 }
 export interface ComponentStructureModel {
   host: { path: string; node: readonly number[]; tag: string };
@@ -174,6 +195,8 @@ export interface ComponentStructureModel {
   openAttributeAdd(): { add(name: string, value: string): ComponentAttributeResult; close(): void } | undefined;
   removeAttribute(name: string): boolean;
   openField(name: string, part: ComponentSlotPart): ComponentFieldSession | undefined;
+  /** One session for editing the slot: its text and the card's fields. */
+  openSlotEdit(name: string): ComponentSlotEditSession | undefined;
   images: readonly string[];
   links: readonly {label: string; value: string}[];
   openImageUpload(name: string): { upload(files: File[]): Promise<boolean>; close(): void } | undefined;
@@ -1191,11 +1214,11 @@ export function createComponentTools(deps: ComponentDeps) {
     };
     // The legacy token ranges must describe the browser's actual attributes.
     const attributeSourceSafe = (at: Located) => openingSourceSafe(at.source, at.range.tag);
-    const openSession = (plan: (at: Located, value: string) => RangeEdit | { error: string } | undefined, message: string): ComponentFieldSession | undefined => {
+    const openSession = (plan: (at: Located, value: string, part?: ComponentSlotPart) => RangeEdit | { error: string } | undefined, message: string) => {
       if (!read()) return;
       const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
       if (!initialProof) return;
-      let expected = initial.source, closed = false, wrote = false, lastNode: number[] | undefined;
+      let expected = initial.source, closed = false, wrote = false, writing = false, lastNode: number[] | undefined;
       let proof = initialProof;
       const close = () => {
         if (closed) return;
@@ -1219,16 +1242,24 @@ export function createComponentTools(deps: ComponentDeps) {
       };
       return {
         cancel,
-        write(value) {
+        /** The source this session last wrote (else the one it opened on), and whether it has ended. */
+        state: () => ({ expected, closed, wrote }),
+        /** The source moved on without this session, or its file or scope did. */
+        // (Its own write, still under way, is not "moved on": what it starts may look in here before it returns.)
+        stale: () => !writing && (closed || deps.sources()[path] !== expected || !hostProof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor),
+        write(value: string, part?: ComponentSlotPart) {
           if (closed) return reject();
           const at = read(expected, proof);
           if (!at) return reject();
-          const edit = plan(at, value);
+          const edit = plan(at, value, part);
           if (!edit) return reject();
           if ("error" in edit) { deps.announce(edit.error); return false; }
           const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
           if (next === at.source) return true;
-          live(path, edit, message, at.node);
+          // A session's first write starts an undo step of its own, never one left open before it.
+          if (!wrote && typeof editor.hasOpenEditGroup === "function" && editor.hasOpenEditGroup(path)) editor.closeActiveEditGroup(path);
+          writing = true;
+          try { live(path, edit, message, at.node); } finally { writing = false; }
           lastNode = at.node;
           if (deps.sources()[path] !== next) return reject();
           if (!hostProof.isCurrent()) return reject();
@@ -1241,6 +1272,19 @@ export function createComponentTools(deps: ComponentDeps) {
         },
         close,
       };
+    };
+    // The edit a slot part's new value makes in the page: URLs checked, text only where the slot holds text.
+    const slotPartEdit = (at: Located, name: string, part: ComponentSlotPart, value: string) => {
+      const slot = at.slots.find(slot => slot.name === name);
+      if (!slot) return;
+      if (part === "src" || part === "href") {
+        const problem = nativeElementUrlProblem(value, part === "src" ? ["http", "https"] : ["http", "https", "mailto", "tel"], false);
+        if (problem) return { error: problem };
+      }
+      const descriptor = slotValue(at.source, at.template, at.instance, slot);
+      if ((part === "text" && !descriptor.editable) || (part === "src" || part === "alt") && descriptor.kind !== "image" || part === "href" && descriptor.kind !== "link") return;
+      return part === "text" ? slotTextEdit(at.source, at.template, at.instance, slot, value)
+        : slotAttributeEdit(at, slot, part, value);
     };
     const addAttribute = (rawName: string, value: string, proof?: { isCurrent(): boolean }): ComponentAttributeResult => {
       const at = read(initial.source, proof);
@@ -1324,32 +1368,59 @@ export function createComponentTools(deps: ComponentDeps) {
         };
       },
       openField(name, part) {
-        const session = openSession((at, value) => {
-          const slot = at.slots.find(slot => slot.name === name);
-          if (!slot) return;
-          if (part === "src" || part === "href") {
-            const problem = nativeElementUrlProblem(value, part === "src" ? ["http", "https"] : ["http", "https", "mailto", "tel"], false);
-            if (problem) return { error: problem };
-          }
-          const descriptor = slotValue(at.source, at.template, at.instance, slot);
-          if ((part === "text" && !descriptor.editable) || (part === "src" || part === "alt") && descriptor.kind !== "image" || part === "href" && descriptor.kind !== "link") return;
-          return part === "text" ? slotTextEdit(at.source, at.template, at.instance, slot, value)
-            : slotAttributeEdit(at, slot, part, value);
-        }, `${slotLabel(name)} changed`);
-        if (!session || part !== "text") return session;
-        // The text's element in the page, when it holds text alone: typing can show there at once.
+        const session = openSession((at, value) => slotPartEdit(at, name, part, value), `${slotLabel(name)} changed`);
+        return session && { write: (value: string) => session.write(value), close: session.close, cancel: session.cancel };
+      },
+      openSlotEdit(name) {
         const at = read();
-        const fill = at?.instance.fills.get(name);
+        const slot = at?.slots.find(slot => slot.name === name);
+        if (!at || !slot) return;
+        const session = openSession((at, value, part) => part ? slotPartEdit(at, name, part, value) : undefined, `${slotLabel(name)} changed`);
+        if (!session) return;
+        const opened = slotValue(at.source, at.template, at.instance, slot);
+        const first: Record<ComponentSlotPart, string> = { text: opened.lines ?? opened.text, href: opened.href ?? "", src: opened.src ?? "", alt: opened.alt ?? "" };
+        const touched = new Set<ComponentSlotPart>();
+        // The text's element in the page, when it holds text and breaks alone: typing can show there at once.
+        const fill = at.instance.fills.get(name);
         const only = fill?.length === 1 && fill[0].type === "element" ? fill[0] : undefined;
-        const node = at && only?.close && only.children.every(child => child.type === "text") ? elementPathAt(at.source, only.start) : undefined;
-        if (!node) return session;
+        const node = opened.editable && only?.close && only.children.every(child => child.type === "text" || child.type === "element" && child.name === "br")
+          ? elementPathAt(at.source, only.start) : undefined;
+        const patcher = () => { const preview = deps.preview(); return preview?.patchText && preview.vouchPatch && preview.endPatch ? preview as PreviewTextPatch : undefined; };
+        let textRefused = false, patching = false, shown = first.text;
         return {
-          ...session,
-          patch(value, miss, end) {
-            const preview = deps.preview();
-            if (!preview?.patchText) return false;
-            preview.patchText({ path, node: [...node] }, value, miss, end);
+          patchable: Boolean(node && patcher()),
+          stale: session.stale,
+          write(part, value) {
+            if (session.state().closed) return false;
+            // A part still holding its first value is left as written (byte for byte).
+            if (!touched.has(part) && value === first[part]) return true;
+            touched.add(part);
+            const ok = session.write(value, part);
+            if (part === "text") textRefused = !ok;
+            if (ok && patching) patcher()?.vouchPatch(path, session.state().expected);
+            return ok;
+          },
+          patch(text, miss) {
+            const preview = patcher();
+            if (!node || !preview || textRefused || session.stale()) return false;
+            patching = true;
+            shown = text;
+            preview.patchText({ path, node: [...node] }, text, session.state().expected, miss);
             return true;
+          },
+          close() {
+            // The page keeps the last patch only when its text is what was written; else the next render settles it.
+            const kept = patching && !textRefused && !session.stale();
+            session.close();
+            if (patching) patcher()?.endPatch(path, kept ? { text: shown } : undefined);
+            patching = false;
+          },
+          cancel() {
+            const done = session.cancel();
+            if (patching) patcher()?.endPatch(path, done ? { text: first.text } : undefined);
+            patching = false;
+            if (!done) deps.announce("The edit couldn't be undone; use Undo.");
+            return done;
           },
         };
       },

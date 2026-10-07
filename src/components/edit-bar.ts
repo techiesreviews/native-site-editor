@@ -1,4 +1,4 @@
-import { suggestionLines, suggestionSiteName } from "./field-suggestions";
+import { handleChunkLoadFailure } from "../chunk-recovery";
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
@@ -192,6 +192,10 @@ interface Note {
 }
 
 export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow) {
+  let suggestionRows: typeof import("./suggestion-rows") | undefined;
+  let suggestionRowsLoad: Promise<void> | undefined;
+  const loadSuggestionRows = () => suggestionRowsLoad ??= import("./suggestion-rows").then((module) => { suggestionRows = module; })
+    .catch((error) => { suggestionRowsLoad = undefined; void handleChunkLoadFailure(error); });
   const bar = node("div", "edit-bar");
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-label", "Edit bar");
@@ -523,7 +527,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const matches = (address.control.suggestions ?? []).filter((entry) =>
       (!typed || entry.label.toLowerCase().includes(typed) || entry.value.toLowerCase().includes(typed))
       && !seen.has(entry.value) && Boolean(seen.add(entry.value)));
-    const siteName = suggestionSiteName(address.control.suggestions ?? []);
+    // Two lines per page (suggestion-rows.ts, loaded when the bar first shows); the label alone until then.
+    const rows = suggestionRows;
+    if (!rows) void loadSuggestionRows().then(() => { if (openAddress === address) renderSuggestions(address); });
+    const siteName = rows?.suggestionSiteName(address.control.suggestions ?? []);
     address.list.replaceChildren(...matches.map((entry) => {
       const option = button(entry.label, () => {
         if (openAddress !== address) return;
@@ -537,8 +544,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       // Two lines as in Structure's lists: the title over the muted address. The
       // option keeps the whole label as its name.
       option.setAttribute("aria-label", entry.label);
-      option.classList.add("field-suggestions-row");
-      option.replaceChildren(...suggestionLines(entry, siteName));
+      if (rows) { option.classList.add("field-suggestions-row"); option.replaceChildren(...rows.suggestionLines(entry, siteName)); }
       if (entry.value === address.input.value.trim()) option.setAttribute("aria-selected", "true");
       return option;
     }));
@@ -971,6 +977,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
 
   function show(model: EditBarModel, at: SelectionRect) {
+    void loadSuggestionRows();
     // A drag holds the bar as it is; the newest model waits for its end.
     if (press?.dragging) {
       pending = { model, at };

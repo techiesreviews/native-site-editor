@@ -208,6 +208,7 @@ type RangeApi = {
   replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion): void;
   replaceMany(edits: RangeEdit[]): void;
   closeGroup(): void;
+  hasOpenGroup(): boolean;
   discardGroup(): boolean;
   reveal(start: number, end: number): void;
   focus(): void;
@@ -503,6 +504,10 @@ export function replaceActiveRanges(edits: RangeEdit[]) {
 export function closeActiveEditGroup(path: string) {
   mounted.get(path)?.range.closeGroup();
 }
+// Whether the file's last undo step is a typing group still open.
+export function hasOpenEditGroup(path: string) {
+  return mounted.get(path)?.range.hasOpenGroup() ?? false;
+}
 // Takes the open group back (an inline field's Escape): the file returns to
 // where the group began and no undo step is left. False when it could not.
 export function discardActiveEditGroup(path: string) {
@@ -653,6 +658,9 @@ export function mountSourceEditor(
     },
     closeGroup() {
       store.closeGroup(session);
+    },
+    hasOpenGroup() {
+      return store.hasOpenGroup(session);
     },
     discardGroup() {
       return store.discardGroup(session);

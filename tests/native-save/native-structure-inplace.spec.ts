@@ -144,3 +144,129 @@ test("a link's URL suggestions open under the URL field, and Enter and Escape go
   await url.press("Escape");
   await expect(editing).toHaveCount(0);
 });
+
+// ---- One session per row edit; line breaks; the page never shows text its source does not have. ----
+// Changes index.html in the editor itself (as the code pane or an agent would): `from` becomes `to`.
+async function changeSource(page: Page, from: string, to: string) {
+  await page.evaluate(async ({ from, to }) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const text = editor.getMountedSource("index.html")!;
+    const start = text.indexOf(from);
+    if (start < 0) throw new Error(`not in the source: ${from}`);
+    editor.replaceActiveRange({ path: "index.html", start, end: start + from.length, text: to, expected: from });
+  }, { from, to });
+}
+
+test("Shift+Enter adds a line break, shown in the page at once and written as <br>; Escape takes it back", async ({ page }) => {
+  const original = await source(page);
+  await titleRow(page).locator(".page-structure__text").dblclick();
+  const field = titleField(page);
+  await expect(field).toBeFocused();
+  await field.press("End");
+  await field.press("Shift+Enter");
+  await page.keyboard.type("Two");
+  await expect(field).toHaveValue("Reusable cards\nTwo");
+  // The page shows the break before anything is committed: text, <br>, text.
+  await expect(shownTitle(page).locator("br")).toHaveCount(1);
+  await expect(shownTitle(page)).toHaveText("Reusable cardsTwo");
+  await field.press("Escape");
+  await expect(titleRow(page)).not.toHaveClass(/is-editing/);
+  await expect(shownTitle(page).locator("br")).toHaveCount(0);
+  await expect(shownTitle(page)).toHaveText("Reusable cards");
+  await expect.poll(() => source(page)).toBe(original);
+  // Again, kept this time: Enter commits it as one <br>.
+  await titleRow(page).locator(".page-structure__text").dblclick();
+  await titleField(page).press("End");
+  await titleField(page).press("Shift+Enter");
+  await page.keyboard.type("Two");
+  await titleField(page).press("Enter");
+  expect(await source(page)).toContain('<span slot="title">Reusable cards<br>Two</span>');
+  await expect(shownTitle(page).locator("br")).toHaveCount(1);
+  // The row, at rest, reads the break as a space.
+  await expect(titleRow(page).locator(".page-structure__text")).toHaveText("Reusable cards Two");
+});
+
+test("an existing <br/> keeps its spelling through an unrelated edit, and opening without a change writes nothing", async ({ page }) => {
+  await changeSource(page, '<span slot="title">Reusable cards</span>', '<span slot="title">\n        Reusable<br/>\n        cards\n      </span>');
+  await expect(shownTitle(page).locator("br")).toHaveCount(1);
+  const before = await source(page);
+  await titleRow(page).locator(".page-structure__text").dblclick();
+  const field = titleField(page);
+  await expect(field).toHaveValue("Reusable\ncards");
+  // Open and close without a change: the source stays byte for byte.
+  await field.press("Enter");
+  await expect(titleRow(page)).not.toHaveClass(/is-editing/);
+  expect(await source(page)).toBe(before);
+  // A change on the second line keeps the first line, the <br/> and its spacing.
+  await titleRow(page).locator(".page-structure__text").dblclick();
+  await titleField(page).press("End");
+  await page.keyboard.type("!");
+  await titleField(page).press("Enter");
+  expect(await source(page)).toContain('<span slot="title">\n        Reusable<br/>\n        cards!\n      </span>');
+});
+
+test("Undo pressed while typing ends the edit and the page shows the undone text", async ({ page }) => {
+  await titleRow(page).locator(".page-structure__text").dblclick();
+  const field = titleField(page);
+  await expect(field).toBeFocused();
+  await page.keyboard.type("Typed");
+  await expect(shownTitle(page)).toHaveText("Typed");
+  await expect.poll(() => source(page)).toContain('<span slot="title">Typed</span>');
+  // Undo as the toolbar runs it: focus stays in the field.
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toContain('<span slot="title">Reusable cards</span>');
+  await expect(shownTitle(page)).toHaveText("Reusable cards");
+  await expect(titleRow(page)).not.toHaveClass(/is-editing/);
+  await expect(field).toHaveCount(0);
+});
+
+test("an outside change while typing ends the edit, and the page shows what its source holds", async ({ page }) => {
+  await titleRow(page).locator(".page-structure__text").dblclick();
+  await expect(titleField(page)).toBeFocused();
+  await page.keyboard.type("Lost");
+  // While typing, the file changes elsewhere (an agent, the code pane), whether or not the typing was written yet.
+  await changeSource(page, "<!doctype html>", "<!doctype html><!-- elsewhere -->");
+  await expect(titleRow(page)).not.toHaveClass(/is-editing/);
+  expect(await source(page)).toContain("<!-- elsewhere -->");
+  // The page never shows text its source does not have.
+  const written = (await source(page)).match(/<span slot="title">([^<]*)<\/span>/)![1];
+  await expect(shownTitle(page)).toHaveText(written);
+  await page.keyboard.type("More");
+  await expect(shownTitle(page)).toHaveText(written);
+});
+
+test("a link's text and URL are one edit: one undo step, and Escape from the URL field takes both back; the window losing focus keeps it", async ({ page }) => {
+  const show = tree(page).getByRole("button", { name: "Show Link", exact: true }).first();
+  await show.locator("xpath=ancestor::*[@role='treeitem'][1]").hover();
+  await show.click();
+  const editing = tree(page).locator(".page-structure__row.is-editing[data-slot-editor=link]");
+  await expect(editing).toHaveCount(1);
+  const shown = await source(page);
+  const text = tree(page).getByRole("textbox", { name: "Link: Button text", exact: true });
+  const url = tree(page).getByRole("combobox", { name: "Link: Link / URL", exact: true });
+  await text.fill("Read more");
+  await url.click();
+  // The window losing focus (another app) leaves the edit open.
+  await page.evaluate(() => { (document as unknown as { hasFocus: () => boolean }).hasFocus = () => false; (document.activeElement as HTMLElement).blur(); });
+  await page.waitForTimeout(100);
+  await expect(editing).toHaveCount(1);
+  await page.evaluate(() => { delete (document as unknown as { hasFocus?: unknown }).hasFocus; });
+  await url.click();
+  await url.fill("/about/");
+  await url.press("Escape");
+  if (await editing.count()) await url.press("Escape");
+  await expect(editing).toHaveCount(0);
+  await expect.poll(() => source(page)).toBe(shown);
+  // Kept this time: Done, and one Undo takes back text and URL together.
+  await tree(page).locator(".page-structure__slot-badge").filter({ hasText: /^Link$/ }).first().press("Enter");
+  await expect(editing).toHaveCount(1);
+  await text.fill("Read more");
+  await url.click();
+  await url.fill("/about/");
+  await editing.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(editing).toHaveCount(0);
+  const kept = await source(page);
+  expect(kept).toMatch(/<a slot="link" href="\/about\/">Read more<\/a>/);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(shown);
+});

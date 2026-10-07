@@ -1,0 +1,214 @@
+/* Editing in the Page Structure tree (structure-editing.ts, loaded when
+   first needed): an instance's Attributes panel, a slot's card, and a row's
+   text edited in place. None of it is in the first paint. */
+/* An instance's Attributes panel and its row: one soft block. The row keeps
+   its tint and loses its lower corners; the panel continues it, a lighter tint
+   of the same colour under a hairline seam, with the fields from the row's icon
+   column and Close at the top right. --depth is the owning row's. */
+.page-structure__row.row-action-host.has-panel { --row-action-background: var(--current); }
+.page-structure__row.has-panel {
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--current);
+}
+.page-structure__inline {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  margin: 0 0 4px;
+  padding: 6px 4px 10px calc(20px + var(--depth, 0) * var(--structure-indent, 4px));
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: color-mix(in oklch, var(--primary) 9%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--primary) 18%, transparent);
+}
+/* An instance's Attributes hang under the instance's own row, a column further in. */
+.page-structure__inline--attributes {
+  padding-left: calc(24px + var(--depth, 0) * var(--structure-indent, 4px));
+}
+.page-structure__inline > :first-child { flex: 1; min-width: 0; }
+.page-structure__inline > .page-structure__action { flex: none; }
+.page-structure__slot { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.page-structure__slot-field { display: grid; grid-template-columns: minmax(0, min(35%, 96px)) minmax(0, 1fr); align-items: center; gap: 6px; font-size: var(--type-small); color: var(--muted); }
+.page-structure__slot-field > span { overflow-wrap: anywhere; }
+/* In the narrow sidebar each caption sits above a full-width field. */
+.page-structure__inline .page-structure__slot-field,
+.page-structure__inline .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, 1fr); gap: 3px; font-size: var(--type-badge); }
+/* A lone Text field needs no visible caption; its accessible name stays. */
+.page-structure__slot > .page-structure__slot-field:only-child { grid-template-columns: minmax(0, 1fr); }
+.page-structure__slot > .page-structure__slot-field:only-child > .page-structure__slot-field-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.page-structure__slot-field :is(input, textarea),
+.page-structure__attribute-add input { min-width: 0; width: 100%; box-sizing: border-box; color: var(--text); background: var(--surface-input, var(--panel-surface)); border: 1px solid var(--control-line, var(--line)); border-radius: var(--radius-small, 4px); padding: 4px 6px; font: inherit; font-size: var(--type-small); }
+.page-structure__inline .page-structure__slot-field :is(input, textarea),
+.page-structure__inline .page-structure__attribute-add input { height: 28px; padding: 0 8px; border-radius: var(--radius); }
+/* A text field: one line that wraps and grows with its text, up to 12 lines,
+   then scrolls. Same box as the inputs at one line (28px). */
+.page-structure__slot-field textarea {
+  display: block;
+  field-sizing: content;
+  resize: none;
+  overflow-wrap: anywhere;
+  line-height: 16px;
+}
+.page-structure__inline .page-structure__slot-field textarea {
+  height: auto;
+  min-height: 28px;
+  max-height: calc(12lh + 12px);
+  padding: 5px 8px;
+  overflow-y: auto;
+}
+.page-structure__slot-field :is(input, textarea):focus-visible,
+.page-structure__attribute-add input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.page-structure__slot-field :is(input, textarea)[aria-invalid=true] { border-color: var(--danger); }
+/* A link's or image's fields: a labelled group, always open. */
+.page-structure__slot-fields { display: flex; flex-direction: column; gap: 6px; }
+.page-structure__slot-summary { font-size: var(--type-small); color: var(--muted); }
+.page-structure__attributes { font-size: var(--type-small); }
+.page-structure__attribute { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; margin-top: 6px; }
+.page-structure__attribute:first-child { margin-top: 0; }
+.page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, min(40%, 96px)) minmax(0, 1fr); }
+.page-structure__attribute-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
+.page-structure__attribute-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }
+
+
+/* An editor open between the parts keeps the rail running through it, so the
+   row and its fields stay one block within the instance. The instance's own
+   Attributes hang from its chevron: the rail starts there, a column further out. */
+.page-structure__row--component + .page-structure__group > .page-structure__inline:not([data-slot-editor])::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  /* Through the editor's bottom margin to the next row. */
+  bottom: -5px;
+  left: calc(12px + (var(--depth, 1) - 1) * var(--structure-indent, 4px));
+  width: 2px;
+  border-radius: 1px;
+  background: var(--component);
+  opacity: 0.45;
+  pointer-events: none;
+}
+/* Editing a part's text is neutral: its rail segment steps aside. */
+.page-structure__row--component + .page-structure__group > .page-structure__row.is-editing::before { content: none; }
+.page-structure__row--component + .page-structure__group > .page-structure__inline--attributes::before {
+  left: calc(12px + var(--depth, 0) * var(--structure-indent, 4px));
+}
+/* ---- A row's text edited in place (pencil, F2, Enter, a second click or a
+   double-click). The text becomes the field where it stood: same font, same
+   left edge, same first line, so nothing moves; the row grows downward as the
+   text wraps. Editing is neutral and raised: a lighter surface lifted above the
+   tree by a soft shadow and a faint inner highlight, no outline and no
+   component purple (no rail segment, no role badge, no row actions), and Done
+   at the row's end. A link's URL or an image's fields sit in a card attached
+   under the row; row and card are one raised block. ---- */
+.page-structure {
+  --edit-surface: color-mix(in oklch, var(--text) 7%, var(--structure-surface, var(--surface-subtle)));
+  --edit-highlight: rgb(0 0 0 / 0.05);
+  --edit-drop: 0 6px 18px -8px rgb(0 0 0 / 0.28), 0 1px 3px rgb(0 0 0 / 0.12);
+  --edit-field: color-mix(in oklch, var(--text) 6%, transparent);
+  --edit-field-edge: color-mix(in oklch, var(--text) 10%, transparent);
+  --edit-field-focus: color-mix(in oklch, var(--text) 28%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  .page-structure {
+    --edit-highlight: rgb(255 255 255 / 0.06);
+    --edit-drop: 0 8px 24px -8px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.35);
+  }
+}
+.page-structure__row.is-editing {
+  --row-action-background: var(--edit-surface);
+  position: relative;
+  z-index: 1;
+  align-items: flex-start;
+  box-sizing: border-box;
+  /* The first line where the centred text stood: (row height - one line) / 2. */
+  padding-top: calc((var(--size-control) - 1.2em) / 2);
+  padding-bottom: calc((var(--size-control) - 1.2em) / 2);
+  background: var(--edit-surface);
+  box-shadow: inset 0 0 0 1px var(--edit-highlight), var(--edit-drop);
+  cursor: text;
+}
+.page-structure__row.is-editing:focus-visible { outline: none; }
+.page-structure__row.is-editing > .page-structure__toggle { margin-top: calc((1.2em - 14px) / 2); }
+.page-structure__row.is-editing > .page-structure__label { align-items: flex-start; }
+.page-structure__row.is-editing > .page-structure__label > .page-structure__kind { min-height: 1.2em; }
+.page-structure__row.is-editing > .page-structure__slot-badge,
+.page-structure__row.is-editing > .row-action-overlay { display: none; }
+.page-structure__edit-field {
+  flex: 1 1 auto;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-height: 12lh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  field-sizing: content;
+  resize: none;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  outline: none;
+  caret-color: var(--text);
+  cursor: text;
+}
+.page-structure__edit-field::selection { background: color-mix(in oklch, var(--focus) 40%, transparent); }
+.page-structure__done {
+  flex: none;
+  margin: calc((1.2em - 22px) / 2) 0 0 4px;
+  color: var(--text);
+  cursor: pointer;
+}
+.page-structure__done:hover { background: var(--hover); }
+/* With a card under it, row and card are one block: the row's shadow stops at
+   its foot and the card's at its head, so no seam shows where they meet. */
+.page-structure__row.is-editing:has(+ .page-structure__inline[data-slot-editor], + .page-structure__group > .page-structure__inline[data-slot-editor]:first-child) {
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: inset 1px 0 0 var(--edit-highlight), inset -1px 0 0 var(--edit-highlight), inset 0 1px 0 var(--edit-highlight), var(--edit-drop);
+  clip-path: inset(-40px -40px 0 -40px);
+}
+.page-structure__inline[data-slot-editor] {
+  z-index: 1;
+  background: var(--edit-surface);
+  box-shadow: inset 1px 0 0 var(--edit-highlight), inset -1px 0 0 var(--edit-highlight), inset 0 -1px 0 var(--edit-highlight), var(--edit-drop);
+  clip-path: inset(0 -40px -40px -40px);
+}
+/* The card's fields match the row's text: neutral, no outline, no accent
+   (over the shared inline-field underline, ui/inline-field.css). */
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea) {
+  border: 0;
+  background: var(--edit-field);
+  box-shadow: inset 0 0 0 1px var(--edit-field-edge);
+  outline: none;
+}
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea):hover:not(:focus) {
+  background: color-mix(in oklch, var(--text) 9%, transparent);
+  box-shadow: inset 0 0 0 1px var(--edit-field-edge);
+}
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea):focus:not([readonly]) {
+  background: var(--edit-field);
+  box-shadow: inset 0 0 0 1px var(--edit-field-focus);
+  outline: none;
+}
+:root .page-structure .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea)[aria-invalid=true] { box-shadow: inset 0 0 0 1px var(--danger); }
+@media (prefers-reduced-motion: no-preference) {
+  /* Entering and leaving are quick eases of the surface and lift; the card slides in. */
+  .page-structure__row.is-editing,
+  .page-structure__row.was-editing { transition: background-color 140ms ease-out, box-shadow 140ms ease-out; }
+  @starting-style {
+    .page-structure__row.is-editing { background-color: var(--current); box-shadow: inset 0 0 0 1px transparent, 0 0 0 transparent, 0 0 0 transparent; }
+    .page-structure__row.was-editing { background-color: var(--edit-surface); box-shadow: inset 0 0 0 1px var(--edit-highlight), var(--edit-drop); }
+  }
+  .page-structure__inline[data-slot-editor] { transition: opacity 140ms ease-out, translate 140ms ease-out; }
+  @starting-style {
+    .page-structure__inline[data-slot-editor] { opacity: 0; translate: 0 -3px; }
+  }
+  .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea) { transition: box-shadow 120ms ease-out; }
+}
+

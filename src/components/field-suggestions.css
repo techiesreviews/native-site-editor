@@ -26,30 +26,6 @@
   cursor: pointer;
   text-align: left;
 }
-.field-suggestions__title,
-.field-suggestions__value {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.field-suggestions__title {
-  font-size: var(--type-base);
-  font-weight: 400;
-  line-height: 18px;
-  color: var(--text);
-}
-.field-suggestions__value {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 15px;
-  color: var(--muted);
-}
-.field-suggestions__value--only {
-  font-size: var(--type-small);
-  line-height: 18px;
-  color: var(--text);
-}
 .field-suggestions__option:hover { background: var(--hover); }
 .field-suggestions__option[aria-selected="true"] { background: var(--current); }
 @media (prefers-reduced-motion: no-preference) {

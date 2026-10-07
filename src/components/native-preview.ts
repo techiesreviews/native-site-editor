@@ -507,8 +507,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let rafHandle = 0;
   // A structure field's text, set in the page ahead of its render (patchText):
   // the latest per frame, and what to do when the page could not take it.
-  let pendingPatch: { request: NativeNodeRequest; text: string; miss?: () => void; end?: boolean } | undefined;
+  let pendingPatch: { request: NativeNodeRequest; text: string; miss?: () => void } | undefined;
   let patchHandle = 0, patchId = 0;
+  // The page's live patch: the source it holds good on top of. A full update
+  // of any other source (Undo, another edit) drops it first, so the page never
+  // shows typed text its source does not have.
+  let livePatch: { path: string; base: string } | undefined;
+  let lastPatchRequest: NativeNodeRequest | undefined;
+  const postPatch = (message: Record<string, unknown>) =>
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "patch-text", ...message }, "*");
   const patchMisses = new Map<number, () => void>();
   let messageId = 0;
   const stopTheme = watchEditorTheme(({ colors }) => {
@@ -543,6 +550,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function post() {
     rafHandle = 0;
     if (!site || !ready || !mounted) return;
+    if (livePatch && sources[livePatch.path] !== livePatch.base) dropPatch();
     const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath, master);
     selectNode = undefined;
     selectText = undefined;
@@ -606,6 +614,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (drawn === undefined || drawn === shownRoute) return;
     shownRoute = drawn;
     handlers.onRouteShown?.(drawn);
+  }
+  function dropPatch() {
+    cancelAnimationFrame(patchHandle); patchHandle = 0;
+    pendingPatch = undefined;
+    if (livePatch) { livePatch = undefined; postPatch({ drop: true }); }
   }
   function schedule() {
     if (!site) return;
@@ -1160,26 +1173,50 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /**
      * Sets an element's text in the page at once, ahead of the render its
      * source change brings (a structure field as it is typed): the latest text
-     * per frame, as text only. `miss` runs when the page cannot take it (no
-     * such element, or one holding more than text). Until a patch with `end`,
-     * the page draws the latest one again over any render of an older source.
+     * per frame, as text and line breaks only. `base` is the source the text is
+     * typed on top of; `miss` runs when the page cannot take it (no such
+     * element, or one holding more than text and breaks). Until `endPatch`, the
+     * page draws the latest patch again over renders of a source the field
+     * vouched for (`vouchPatch`), and drops it before any other.
      */
-    patchText(request: NativeNodeRequest, text: string, miss?: () => void, end = false) {
+    patchText(request: NativeNodeRequest, text: string, base: string, miss?: () => void) {
       if (!mounted || !ready) { miss?.(); return; }
       const dropped = pendingPatch;
-      pendingPatch = { request, text, miss, end };
+      pendingPatch = { request, text, miss };
+      livePatch = { path: request.path, base };
+      lastPatchRequest = request;
       // A patch replaced before it went needs no answer: the newer one carries the text.
       if (dropped && dropped.miss !== miss) dropped.miss?.();
       if (patchHandle) return;
       patchHandle = requestAnimationFrame(() => {
         patchHandle = 0;
         const next = pendingPatch; pendingPatch = undefined;
-        if (!next || !mounted) { next?.miss?.(); return; }
+        if (!next || !mounted || !livePatch) { next?.miss?.(); return; }
         const id = ++patchId;
         if (next.miss) patchMisses.set(id, next.miss);
         if (patchMisses.size > 64) patchMisses.delete(patchMisses.keys().next().value!);
-        frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "patch-text", id, request: next.request, text: next.text, end: next.end }, "*");
+        postPatch({ id, request: next.request, text: next.text });
       });
+    },
+    /** The field wrote `source` itself: the live patch holds good on top of it. */
+    vouchPatch(path: string, source: string) {
+      if (livePatch?.path === path) livePatch.base = source;
+    },
+    /**
+     * The field closed: with `finish`, the page shows its text and keeps it
+     * until the next render (which brings the same); without, the page stops
+     * redrawing the patch and its next render settles it. Sent at once, ahead
+     * of any render still to come.
+     */
+    endPatch(path: string, finish?: { text: string }) {
+      if (livePatch && livePatch.path !== path) return;
+      const request = pendingPatch?.request ?? lastPatchRequest;
+      cancelAnimationFrame(patchHandle); patchHandle = 0;
+      pendingPatch = undefined;
+      const was = livePatch; livePatch = undefined;
+      if (!mounted) return;
+      if (finish && request && request.path === path) postPatch({ id: ++patchId, request, text: finish.text, end: true });
+      else if (was) postPatch({ drop: true });
     },
     /**
      * Elements of the page shown as rendered (box, computed styles, matching

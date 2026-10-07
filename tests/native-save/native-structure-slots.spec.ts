@@ -40,7 +40,8 @@ test('link and image detail fields use exact instance sources and ordinary selec
  await harness(page);await edit(page,'0.1');
  await page.getByRole('textbox',{name:'Image: Alt text',exact:true}).fill('New & exact');await expect(page.getByRole('textbox',{name:'Image: Alt text',exact:true})).toBeFocused();await page.keyboard.press('Tab');
  await edit(page,'0.2');await page.getByRole('combobox',{name:'Cta: Link / URL',exact:true}).fill('/after?a=1&b=2');await expect(page.getByRole('combobox',{name:'Cta: Link / URL',exact:true})).toBeFocused();await page.keyboard.press('Tab');
- expect(await page.evaluate(()=>(window as any).slotHarness.closed)).toBe(2);
+ // Tab out of the editing block commits it once the focus has settled.
+ await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.closed)).toBe(2);
  const source=await page.evaluate(()=>(window as any).slotHarness.source);const values=await page.evaluate(()=>{const dom=new DOMParser().parseFromString((window as any).slotHarness.source,'text/html');return{alt:dom.querySelector('img')!.getAttribute('alt'),href:dom.querySelector('a')!.getAttribute('href')};});expect(values).toEqual({alt:'New & exact',href:'/after?a=1&b=2'});expect(source).toContain('alt="New &amp; exact"');expect(source).toContain('href="/after?a=1&amp;b=2"');
  await row(page,'0.0').click();expect(await page.evaluate(()=>(window as any).slotHarness.selected.at(-1))).toEqual({path:'index.html',node:[0,0]});await expect(page.locator('.page-structure__row.is-editing[data-edit-node="0.0"]')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).slotHarness.opened)).toEqual([]);
 });

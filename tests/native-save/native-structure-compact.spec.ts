@@ -192,7 +192,7 @@ test('a text-only default fill is an editable slot row, not a missing slot',asyn
  expect((await H(page)).movesTo).toEqual([]);
 });
 
-test('a long text field wraps and grows; pasted line breaks become spaces and Shift+Enter commits',async({page})=>{
+test('a long text field wraps and grows; pasted line breaks become spaces where no break is allowed, and Enter commits',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template='<article><slot>Default</slot></article>';s.source='<project-card>Hello</project-card>';s.version++;s.update();});
  const row=page.locator('.page-structure__row--slot-only');await row.focus();await row.press('F2');
  const field=page.locator(`${EDITING_ROW} textarea`);await expect(field).toBeFocused();await expect(field).toHaveAttribute('rows','1');
@@ -203,7 +203,8 @@ test('a long text field wraps and grows; pasted line breaks become spaces and Sh
  expect(await field.evaluate((el:HTMLTextAreaElement)=>el.scrollHeight<=el.clientHeight+1)).toBe(true);
  await field.press('End');await page.keyboard.insertText(' one\ntwo');await expect(field).toHaveValue(`${long} one two`);
  expect((await H(page)).source).toBe(`<project-card>${long} one two</project-card>`);
- await field.press('Shift+Enter');await expect(row).toBeFocused();
+ // Text straight in the instance (no element of its own) takes no line break: Shift+Enter does nothing; Enter commits.
+ await field.press('Shift+Enter');await expect(field).toBeFocused();await expect(field).toHaveValue(`${long} one two`);await field.press('Enter');await expect(row).toBeFocused();
  expect((await H(page)).source).toBe(`<project-card>${long} one two</project-card>`);
 });
 

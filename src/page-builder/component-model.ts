@@ -234,6 +234,82 @@ export function plainText(html: string) {
   return collapsed(decodedText(html)).text;
 }
 
+// ---- Line breaks in a run of text. ----
+// An element whose content is phrasing (text and inline markup) can hold a
+// `<br>`: a field editing its text maps each typed line break to one, and each
+// one back to a line break. Nothing else typed ever becomes markup.
+
+/** Elements that take `<br>` among their text. */
+export const BREAK_PARENTS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "a", "span", "li", "button", "label", "em", "strong", "small", "b", "i", "u", "s", "mark", "q", "cite", "abbr", "time", "code", "kbd", "sub", "sup", "dt", "dd", "figcaption", "td", "th", "caption", "legend", "summary", "blockquote", "address", "div"]);
+const BREAK_TAG = /<br(?:\s[^>]*)?\s*\/?>/gi;
+
+/** The source ranges of `inner` between its `<br>` tags. */
+function breakSegments(inner: string) {
+  const segments: { start: number; end: number }[] = [];
+  let start = 0;
+  for (const match of inner.matchAll(BREAK_TAG)) {
+    segments.push({ start, end: match.index });
+    start = match.index + match[0].length;
+  }
+  segments.push({ start, end: inner.length });
+  return segments;
+}
+
+/** `inner`'s text as a field shows it: each `<br>` a line break, the text between collapsed as it shows. */
+export function breakText(inner: string) {
+  return breakSegments(inner).map(segment => plainText(inner.slice(segment.start, segment.end))).join("\n");
+}
+
+/** How `inner` writes a line break: its first `<br>` as spelled there (`<br/>`, `<br />`), else `<br>`. */
+export function breakSpelling(inner: string) {
+  return inner.match(BREAK_TAG)?.[0] ?? "<br>";
+}
+
+/**
+ * The edit that makes the text of `source[from, to]` read `after`, each "\n"
+ * of it a `<br>` (spelled as the content spells one): a change within one line
+ * is the smallest one (keeping formatting around it); a change of lines writes
+ * the lines it touches again, as text. Undefined when `after` is what is there,
+ * or the change could not be placed.
+ */
+export function breakTextEdit(source: string, from: number, to: number, after: string): RangeEdit | undefined {
+  const inner = source.slice(from, to);
+  const segments = breakSegments(inner);
+  const before = segments.map(segment => plainText(inner.slice(segment.start, segment.end)));
+  const next = after.split("\n");
+  if (before.join("\n") === after) return undefined;
+  const spelling = breakSpelling(inner);
+  if (next.length === before.length) {
+    const changed = before.flatMap((line, index) => line === next[index] ? [] : [index]);
+    if (changed.length === 1) {
+      const at = segments[changed[0]];
+      const edit = textChangeEdit(source, from + at.start, from + at.end, next[changed[0]]);
+      if (edit) return edit;
+    }
+  }
+  // The lines that differ, first to last: written again as text joined by breaks.
+  let head = 0;
+  while (head < before.length && head < next.length && before[head] === next[head]) head++;
+  let tail = 0;
+  while (tail < before.length - head && tail < next.length - head && before[before.length - 1 - tail] === next[next.length - 1 - tail]) tail++;
+  const lines = next.slice(head, next.length - tail).map(escapeText);
+  const last = before.length - 1 - tail;
+  if (last < head) {
+    // Only new lines, between line head - 1 and line head: each after a break of
+    // its own, or before the first line each before one.
+    if (head === 0) { const at = from + segments[0].start; return { start: at, end: at, text: lines.map(line => line + spelling).join("") }; }
+    const at = from + segments[head - 1].end;
+    return { start: at, end: at, text: lines.map(line => spelling + line).join("") };
+  }
+  if (!lines.length) {
+    // Only lines taken out (head..last), with the breaks before them.
+    const start = head > 0 ? segments[head - 1].end : segments[head].start;
+    const end = head > 0 ? segments[last].end : segments[last + 1].start;
+    return { start: from + start, end: from + end, text: "" };
+  }
+  return { start: from + segments[head].start, end: from + segments[last].end, text: lines.join(spelling) };
+}
+
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
@@ -455,6 +531,13 @@ export interface SlotValue {
   href?: string;
   /** The page's content can be typed into as one line of text. */
   editable: boolean;
+  /**
+   * The text as a field shows it for editing: like `text`, with each `<br>`
+   * of the page's element as a line break ("\n"). Set for an editable fill.
+   */
+  lines?: string;
+  /** Whether a line break can be typed: the page's element takes `<br>` (phrasing content). */
+  breaks?: boolean;
 }
 
 /** What `slot` holds on `instance`, with what kind of value it is. */
@@ -473,6 +556,11 @@ export function slotValue(source: string, template: string, instance: Instance, 
     value.editable = kind === "text" || kind === "link"
       ? Boolean(only ? only.close && textOnly(only.children) : slot.name === "" && instance.children.length === fill.length && textOnly(fill))
       : false;
+    if (value.editable && only?.close) {
+      const inner = source.slice(only.tag.end, only.close.start);
+      value.breaks = BREAK_PARENTS.has(only.name);
+      value.lines = value.breaks ? breakText(inner) : value.text;
+    } else if (value.editable) value.lines = value.text;
     return value;
   }
   const nodes = slot.element.children;
@@ -512,8 +600,13 @@ export function textChangeEdit(source: string, from: number, to: number, after: 
     if (start > 0) start--;
     else { endBefore++; endAfter++; }
   }
-  const rawStart = index[start];
-  const rawEnd = index[endBefore];
+  let rawStart = index[start];
+  let rawEnd = index[endBefore];
+  // A space typed at either end (not layout: no line break in it) is part of
+  // the text, though the collapsed text leaves it out: an edit reaching that
+  // end takes it along, so it never lingers after (or before) what follows.
+  if (endBefore === before.length && /^[ \t]+$/.test(raw.slice(rawEnd))) rawEnd = raw.length;
+  if (start === 0 && /^[ \t]+$/.test(raw.slice(0, rawStart))) rawStart = 0;
   const span = textRangeInSource(inner, rawStart, rawEnd, raw.slice(rawStart, rawEnd));
   if (!span) return undefined;
   return { start: from + span.start, end: from + span.end, text: escapeText(after.slice(start, endAfter)) };
@@ -663,6 +756,13 @@ export function slotTextEdit(source: string, template: string, instance: Instanc
   const only = value.element;
   const from = only ? only.tag.end : fill[0].start;
   const to = only ? only.close!.start : fill.at(-1)!.end;
+  if (value.breaks) {
+    // Typed line breaks are the element's `<br>`s; everything else stays text.
+    if (breakText(source.slice(from, to)) === text) return { start: from, end: from, text: "" };
+    const edit = breakTextEdit(source, from, to, text);
+    return edit ?? { error: "That change could not be placed in the source. Change text within one formatting at a time." };
+  }
+  text = text.replace(/\r\n|[\r\n]/g, " ");
   if (plainText(source.slice(from, to)) === text) return { start: from, end: from, text: "" };
   const edit = textChangeEdit(source, from, to, text);
   return edit ?? { error: "That change could not be placed in the source. Change text within one formatting at a time." };

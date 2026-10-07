@@ -127,7 +127,8 @@ test("a slot's value: the page's text, else the fallback's; images and links rea
   const [title, body, , link] = templateSlots(projectCard);
   assert.deepEqual(
     { ...slotValue(page, projectCard, instance, title), element: undefined },
-    { kind: "text", text: "Reusable cards", editable: true, element: undefined },
+    // A <span> takes <br>: its text is edited as lines.
+    { kind: "text", text: "Reusable cards", editable: true, element: undefined, breaks: true, lines: "Reusable cards" },
   );
   assert.equal(slotValue(page, projectCard, instance, body).text, "This card and the next one share a template.");
   assert.equal(slotValue(page, projectCard, instance, link).kind, "link");
@@ -377,4 +378,58 @@ test("review: detach retains whitespace and comments between fills, without copy
   assert.equal(detachMarkup(named, `<p><slot></slot></p>`, readInstance(named, rangeOf(named, "x-card"))).markup, `<p><b>Hello</b>  <i>world</i></p>`);
   const slotted = `<x-card><b slot="body">Hello</b> <i slot="body">world</i></x-card>`;
   assert.equal(detachMarkup(slotted, `<p><slot name="body"></slot></p>`, readInstance(slotted, rangeOf(slotted, "x-card"))).markup, `<p><b>Hello</b><i>world</i></p>`);
+});
+
+// ---- Line breaks typed in a Structure field ----
+import { breakSpelling, breakText, breakTextEdit } from "../src/page-builder/component-model.ts";
+
+const applyEdit = (source: string, edit: { start: number; end: number; text: string } | undefined) =>
+  edit ? source.slice(0, edit.start) + edit.text + source.slice(edit.end) : source;
+// The inner range of the only <p> in `source`.
+const innerOf = (source: string) => ({ from: source.indexOf(">") + 1, to: source.lastIndexOf("</p>") });
+
+test("breakText shows each <br> spelling as a line break and collapses the rest", () => {
+  assert.equal(breakText("One<br>Two"), "One\nTwo");
+  assert.equal(breakText("One<br/>Two<br />Three<BR>Four"), "One\nTwo\nThree\nFour");
+  assert.equal(breakText("\n   One  <br>\n   Two &amp; three\n "), "One\nTwo & three");
+  assert.equal(breakText("No break"), "No break");
+  assert.equal(breakSpelling("a<br />b"), "<br />");
+  assert.equal(breakSpelling("a b"), "<br>");
+});
+
+test("breakTextEdit writes typed lines as text joined by the source's own <br>, escaped", () => {
+  const cases: [string, string, string][] = [
+    // source, typed text, expected source
+    ["<p>One</p>", "One\nTwo", "<p>One<br>Two</p>"],
+    ["<p>One<br/>Two</p>", "One\nTwo\nThree", "<p>One<br/>Two<br/>Three</p>"],
+    ["<p>One<br />Two</p>", "One", "<p>One</p>"],
+    ["<p>One<br>Two<br>Three</p>", "One\nThree", "<p>One<br>Three</p>"],
+    ["<p>One<br>Two</p>", "Zero\nOne\nTwo", "<p>Zero<br>One<br>Two</p>"],
+    ["<p>One<br>Two</p>", "One\nTwo & <b>", "<p>One<br>Two &amp; &lt;b&gt;</p>"],
+    ["<p>Cats &amp; dogs</p>", "Cats &\ndogs <3", "<p>Cats &amp;<br>dogs &lt;3</p>"],
+  ];
+  for (const [source, typed, expected] of cases) {
+    const { from, to } = innerOf(source);
+    const after = applyEdit(source, breakTextEdit(source, from, to, typed));
+    assert.equal(after, expected, `${source} + ${JSON.stringify(typed)}`);
+    // Round trip: the written source shows what was typed.
+    assert.equal(breakText(after.slice(innerOf(after).from, innerOf(after).to)), typed);
+  }
+});
+
+test("breakTextEdit keeps formatting outside the changed line and changes nothing for the same text", () => {
+  const source = "<p><strong>Bold</strong> start<br>\n  second line</p>";
+  const { from, to } = innerOf(source);
+  assert.equal(breakTextEdit(source, from, to, "Bold start\nsecond line"), undefined);
+  const after = applyEdit(source, breakTextEdit(source, from, to, "Bold start\nsecond lines"));
+  assert.equal(after, "<p><strong>Bold</strong> start<br>\n  second lines</p>");
+});
+
+test("typing after a space typed at the end leaves no space behind, and layout white space stays", () => {
+  const typed = "<span>Fresh </span>";
+  const edit = textChangeEdit(typed, 6, typed.length - 7, "Fresh t");
+  assert.equal(edit && typed.slice(0, edit.start) + edit.text + typed.slice(edit.end), "<span>Fresh t</span>");
+  const layout = "<p>\n  Fresh\n</p>";
+  const kept = textChangeEdit(layout, 3, layout.length - 4, "Fresh t");
+  assert.equal(kept && layout.slice(0, kept.start) + kept.text + layout.slice(kept.end), "<p>\n  Fresh t\n</p>");
 });
