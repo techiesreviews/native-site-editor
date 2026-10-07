@@ -32,9 +32,10 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `8a02a54` | Every group has a rail through its parent's chevron: grey for elements, purple for a component's parts. Component chevrons sit in a purple ring filled with the row surface. `--depth` is now the row's visual column, set in `page-structure.ts` (parts keep their component's column; other children step in 4 px; groups carry `--rail`) | check, 1,050 units, structure specs 105 passed / 2 skipped |
 | `86f3f4b` | Per Lex's mockup: the component's own chevron stays plain; a part with its own chevron sits on the purple rail inside a same-purple ring (box-shadow, so the 14 px toggle and rail centring stay) | structure specs 105 passed / 2 skipped |
 | `d669e07` | Slice 8, code panes controller (below), fast-forwarded onto `86f3f4b` | check, 1,054 units, smoke 28 on `d669e07` |
+| `4b08251` | Every chevron in a 2 px ring of its line's exact colour (purple for components and parts, grey otherwise), no fill; rails stop at rings. Fade test samples the plain colour at x = 2 px, left of the ring | structure specs, native-structure-compact 33/33 |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
