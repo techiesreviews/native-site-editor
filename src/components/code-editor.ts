@@ -181,7 +181,9 @@ const reported = (shared: SharedModel) => {
 // One Monaco undo stop of a committed typing step, asked for by the store.
 function stepNative(shared: SharedModel, direction: "undo" | "redo", expected: number) {
   const model = shared.model;
-  if (model.isDisposed() || reported(shared) !== expected || !(direction === "undo" ? model.canUndo() : model.canRedo())) return undefined;
+  if (model.isDisposed() || reported(shared) !== expected) return undefined;
+  model.pushStackElement();
+  if (!(direction === "undo" ? model.canUndo() : model.canRedo())) return undefined;
   shared.stepping = true;
   try {
     const result = model[direction]();
@@ -230,7 +232,10 @@ function createSharedModel(host: PaneHost): SharedModel {
   const unsubscribe = store.subscribe((event) => {
     if (model.isDisposed()) return;
     if (event.type === "history") {
-      if (!shared.views && (!shared.stored || !store.hasTyping(shared.scope, shared.path))) shared.dispose();
+      if (!shared.views && (!shared.stored || !store.hasTyping(shared.scope, shared.path))) { shared.dispose(); return; }
+      // The journal moved (a step recorded, run or cleared): Monaco's open undo
+      // group ends here too, so its stops never span two store steps.
+      if (event.history === shared.history) model.pushStackElement();
       return;
     }
     if (event.key !== shared.key) return;
@@ -239,6 +244,9 @@ function createSharedModel(host: PaneHost): SharedModel {
       return;
     }
     if (event.origin !== "typing" && model.getValue() !== event.text) {
+      // A change from outside Monaco's undo stack: typing before it is one stop,
+      // typing after it another (the store has already committed the first).
+      model.pushStackElement();
       shared.applying = true;
       try {
         if (event.changes) model.applyEdits(event.changes.map((change) => ({

@@ -143,6 +143,16 @@ export function setViewLoader(load: () => Promise<PaneViewFactory>) {
 function requestView() {
   if (!viewFactory) void viewLoader?.().then(useView).catch(() => {});
 }
+const textHooks = new Set<(file: { scope: DraftScope; path: string }) => void>();
+/**
+ * A file's text changed in the store while no pane shows it (Undo or Redo of
+ * a stylesheet whose pane has closed): the host draws the preview again.
+ * Mounted files report through their pane's onContextChange.
+ */
+export function onUnmountedText(hook: (file: { scope: DraftScope; path: string }) => void) {
+  textHooks.add(hook);
+  return () => { textHooks.delete(hook); };
+}
 const resetHooks = new Set<() => void>();
 /** The view's kept state goes with the drafts (sign-out, another workspace). */
 export function onReset(hook: () => void) {
@@ -242,7 +252,9 @@ function onStoreEvent(event: DraftEvent) {
     const doc = docs.get(event.key);
     if (doc?.stored && ![...liveMounted].some(editor => editor.doc === doc)) docs.delete(event.key);
   }
-  for (const editor of [...liveMounted]) if (editor.key === event.key) editor.onStore(event);
+  const shown = [...liveMounted].filter(editor => editor.key === event.key);
+  for (const editor of shown) editor.onStore(event);
+  if (event.type === "text" && !shown.length) for (const hook of [...textHooks]) hook({ scope: event.scope, path: event.path });
 }
 /** What a pane of `path` is: for the view's CSS definitions across panes. */
 export function paneOf(path: string) {

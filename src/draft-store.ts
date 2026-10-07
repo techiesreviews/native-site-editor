@@ -427,7 +427,10 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const key = draftKey(input.scope, input.path);
     const entry = files.get(key);
     if (!entry) return { ok: false, error: `${input.path} is not open in the draft store.` };
+    // Typing still open anywhere in this history (or in the file) is an earlier
+    // step: it is committed first, so the journal stays in the order things happened.
     if (typing.get(key)?.start) commitTyping(key);
+    commitHistoryTyping(input.history ?? key);
     let applied: ReturnType<typeof applyChanges>;
     try {
       applied = input.changes ? applyChanges(entry.text, input.changes)
@@ -529,6 +532,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const keys = changes.map(change => draftKey(change.scope, change.path));
     if (new Set(keys).size !== keys.length) return { ok: false, error: "A file appears twice in one change." };
     for (const key of keys) if (typing.get(key)?.start) commitTyping(key);
+    if (record) commitHistoryTyping(history);
     const entries = changes.map(change => load(change.scope, change.path));
     for (const [index, change] of changes.entries()) {
       const entry = entries[index];

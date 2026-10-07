@@ -506,6 +506,21 @@ test("wiring: hasTyping follows a live pane's typing steps; retry writes a faile
   assert.equal(persistence.map.get("a.html")?.content, "xyz");
 });
 
+test("review fix: an edit commits typing still open in another file of its history first, so Undo goes newest first", async () => {
+  const { store } = setup();
+  store.open(scope, "page.html", { text: "p", baseSha: sha("a") });
+  store.open(scope, "site.css", { text: "c", baseSha: sha("b") });
+  const typing = store.beginTyping(scope, "site.css", "h", { version: 1 });
+  typing.input("cX", 2);
+  // A visual page edit before the stylesheet's typing settled.
+  store.edit({ scope, path: "page.html", history: "h", text: "p2" });
+  typing.commit();
+  assert.equal((await store.undo("h")).ok, true);
+  assert.deepEqual([store.text(scope, "page.html"), store.text(scope, "site.css")], ["p", "cX"]);
+  assert.equal((await store.undo("h")).ok, true);
+  assert.deepEqual([store.text(scope, "page.html"), store.text(scope, "site.css")], ["p", "c"]);
+});
+
 test("wiring: Save's drafts are the store's, including a change whose write keeps failing", () => {
   const persistence = records();
   const { store } = setup(persistence);

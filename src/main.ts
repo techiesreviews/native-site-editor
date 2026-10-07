@@ -232,6 +232,13 @@ function editorModuleWhenDue(defer: boolean) {
   setTimeout(() => openEditorGate(), 8000);
   return editorGate.then(loadEditorModule);
 }
+// Undo or Redo of a file no pane shows (a stylesheet whose pane closed) still redraws the preview.
+editorModule.onUnmountedText(({ scope, path }) => {
+  const live = draftScope();
+  if (!live || draftKey(live, path) !== draftKey(scope, path)) return;
+  renderDraftFiles();
+  if (nativeModeActive()) updateNativePreviewSources();
+});
 // A pane that needs the code now (Review, focusing the code) asks for Monaco.
 editorModule.setViewLoader(() => wantEditor().then((module) => module.monacoView));
 let disposeEditor: (() => void) | undefined;
