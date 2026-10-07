@@ -38,7 +38,7 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `260fa94` + `d0e98ca` | Slice 9, boot controller (below) | check, 1,067 units, boot-focused 69, smoke 32, full native-save 708 passed / 85 skipped / 0 failed; budget 345 KB |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
@@ -110,7 +110,7 @@ sources).
 
 1. Slice 10 (preview and selection; plan: `preview-selection-controller.ts`,
    about 170 lines) then 10b (attach the preview frame early, ticket 02).
-2. Slices and 12–15 per
+2. Slices 11–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
    gates.
 3. Ticket 02 timing targets still miss (cold paint about 1.19 s against 1.0 s,
