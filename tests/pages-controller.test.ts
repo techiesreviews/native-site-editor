@@ -150,3 +150,39 @@ test("index hydration is allowed, then newly known source edits during the picke
     else assert.deepEqual(f.errors, []);
   }
 });
+
+test("retitle accepts its own metadata write rebuilding site identity and refreshes all three views", async () => {
+  const f = fixture();
+  let site = f.ports.site()!;
+  f.ports.site = () => site;
+  f.ports.routeForPath = file => Object.entries(site.routes).find(([, path]) => path === file)?.[0];
+  const refreshes: string[] = [];
+  f.ports.refreshMeta = () => { refreshes.push("meta"); };
+  f.ports.refreshPages = () => { refreshes.push("pages"); };
+  f.ports.refreshLabel = () => { refreshes.push("label"); };
+  f.ports.writeMeta = async () => {
+    f.sources.set(target.file, '<head><title>New title</title></head><body><h1>About</h1></body>');
+    site = { ...site, routes: { ...site.routes } };
+    return undefined;
+  };
+  assert.equal(await f.controller.retitle(target.file, "New title"), undefined);
+  assert.deepEqual(refreshes, ["meta", "pages", "label"]);
+});
+
+test("retitle refuses generation, scope or target-route drift after metadata writing", async () => {
+  for (const change of ["generation", "scope", "route", "missing-route"]) {
+    const f = fixture();
+    const refreshes: string[] = [];
+    f.ports.refreshMeta = () => { refreshes.push("meta"); };
+    f.ports.refreshPages = () => { refreshes.push("pages"); };
+    f.ports.refreshLabel = () => { refreshes.push("label"); };
+    f.ports.writeMeta = async () => {
+      if (change === "generation") f.navigate();
+      else if (change === "scope") f.ports.scope = () => "other/site/main";
+      else f.ports.routeForPath = () => change === "route" ? "/moved/" : undefined;
+      return undefined;
+    };
+    assert.match((await f.controller.retitle(target.file, "New title"))!, /repository changed meanwhile/);
+    assert.deepEqual(refreshes, []);
+  }
+});

@@ -105,11 +105,13 @@ export function createPagesController(ports: PagesPorts) {
 
   // A page's title in its head, as the Page block's Title field sets it.
   async function retitleNativePage(file: string, title: string): Promise<string | undefined> {
-    if (!ports.site() || !ports.routeForPath(file)) return "This page has no URL in the site.";
-    const site = ports.site(), epoch = ports.generation(), scope = ports.scope();
+    const route = ports.routeForPath(file);
+    if (!ports.site() || !route) return "This page has no URL in the site.";
+    const epoch = ports.generation(), scope = ports.scope();
     const error = await ports.writeMeta(file, "title", title, false);
     if (error) return error;
-    if (site !== ports.site() || epoch !== ports.generation() || scope !== ports.scope()) return "The repository changed meanwhile. Try again.";
+    // The metadata write legitimately rebuilds the site; guard workspace and target URL.
+    if (epoch !== ports.generation() || scope !== ports.scope() || ports.routeForPath(file) !== route) return "The repository changed meanwhile. Try again.";
     ports.refreshMeta();
     ports.refreshPages();
     ports.refreshLabel();

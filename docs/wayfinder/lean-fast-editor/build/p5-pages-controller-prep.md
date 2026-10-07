@@ -44,8 +44,8 @@ site/routes/files/source drift or target draft changes. Initial proof excludes
 unknown sources so index hydration can succeed. After indexing succeeds, proof
 is recaptured for the dialog/picker phase, including newly hydrated sources.
 Confirmation also passes its opening source map into the subsequent URL change.
-Retitle refresh callbacks refuse a repository/site/generation change while
-metadata writing waits. These are explicit stale-action fixes, not just moves.
+Retitle refresh callbacks refuse generation/scope or target-route drift while
+metadata writing waits; a successful metadata write may rebuild site identity. These are explicit stale-action fixes, not just moves.
 
 ## Validation
 
@@ -63,3 +63,13 @@ npx tsc --ignoreConfig --noEmit --strict --target ES2022 --lib ES2022,DOM,DOM.It
 The controller is not included in the running application until the separate
 main adapter lands. Browser and byte-budget validation belong to that integrated
 stack. No browser, deploy, push or remote writes ran for this preparation.
+
+
+## Retitle host-write correction
+
+Independent correction base: `1fba7788efef08350c89753ae7cf7ac7a6a0c48b`.
+The integrated Rename browser case (`native-file-ops.spec.ts:374`) exposed a false refusal after a successful metadata write: the host rebuilds the site object, so comparing raw site identity after `writeMeta` rejected its own legitimate result. Retitle now captures generation, workspace scope and the target file's route, and checks those after the guarded host metadata write. The host's source/model transaction proofs remain unchanged. No main adapter, browser assertion or other controller policy was altered.
+
+Two new tests were red before the fix: same-route site rebuilding returned `The repository changed meanwhile. Try again.` instead of success, and target-route drift was not refused by the old identity check. They now verify legitimate rebuilding succeeds with all three refresh callbacks, while generation, scope, changed-route and missing-route drift refuse without refreshing.
+
+Correction verification on Node `24.21.0`: `npm run check`, full `npm test` (1,031 passed, zero failures/skips), twelve focused Pages tests, strict test TypeScript check, `npm run build:ui`, and `git diff --check` passed. Logs are `.scratch/p5-review/pages-retitle-*.log`, including red and green results. No browser was run by this worker. The Media worktree under browser test remains frozen at `cf9883f`; this fix is supplied separately for integration.
