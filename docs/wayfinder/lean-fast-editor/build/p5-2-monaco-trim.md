@@ -85,3 +85,12 @@ sticky scroll, Go to Symbol, inlay hints, word-part movement, cursor undo,
 transpose and caret operations, indentation, font zoom and quick-access help.
 The size table above measures this corrected build. Re-ran `npm run check`,
 `npm test` (965 passed), `npm run build:ui` and `git diff --check`: all passed.
+
+The first production run of the restored candidate (`e1194d9`) passed 10 of 11
+new UI tests. The sticky-scroll fixture failed before its feature assertions:
+the short-file `source()` helper only reads virtualized rendered rows, while
+that fixture contains 94 lines. Its setup now verifies the complete text through
+Ctrl+A/C and the Clipboard API, clearing the clipboard before copying so the
+original pasted text cannot produce a false pass. The original short-file helper
+and the existing nine feature contracts remain unchanged. Browser rerun is
+pending; check, 965 unit tests, build and diff whitespace verification passed.

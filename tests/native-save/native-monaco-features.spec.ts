@@ -44,6 +44,20 @@ async function setSource(page: Page, text: string) {
   await expect.poll(() => source(page)).toBe(text.replace(/\n+$/, ""));
 }
 
+// Copy the complete selection for fixtures longer than Monaco's rendered
+// viewport. Clear the clipboard first so a failed copy cannot reuse the paste.
+async function setLongSource(page: Page, text: string) {
+  await page.evaluate((value) => navigator.clipboard.writeText(value), text);
+  await lines(page).click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("ControlOrMeta+v");
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("ControlOrMeta+c");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(text);
+  await page.keyboard.press("ArrowLeft");
+}
+
 // The rendered lines, top to bottom (the files here are short, so all show).
 async function source(page: Page) {
   return lines(page).evaluate((element) => {
@@ -384,7 +398,7 @@ test("the version compare is a read-only diff with both sides", async ({ page, b
 test("sticky scroll and Go to Symbol keep the document outline", async ({ page, baseURL }) => {
   await open(page, baseURL, "components/components.js");
   const body = Array.from({ length: 90 }, (_, index) => `  console.log(${index});`).join("\n");
-  await setSource(page, `function outer() {\n${body}\n}\nfunction target() { return 42; }`);
+  await setLongSource(page, `function outer() {\n${body}\n}\nfunction target() { return 42; }`);
   // The scope header stays visible when its first line leaves the viewport.
   await page.keyboard.press("ControlOrMeta+Home");
   await pane(page).hover();
