@@ -73,8 +73,9 @@
 // Events are delivered after a mutation and its journal move are complete,
 // so a listener that edits the store again builds on a settled history.
 //
-// Shared state for the main.ts split (ticket 08) will wrap `subscribe` in
-// @preact/signals-core signals; the store itself needs no reactive library.
+// Shared state for the main.ts split (ticket 08) wraps `subscribeState` in
+// @preact/signals-core signals, including persistence-only changes and clears.
+// The store itself needs no reactive library.
 
 import { draftKey, type DraftScope, type SavedDraft } from "./drafts";
 import type { DraftAccess } from "./file-changes";
@@ -257,16 +258,43 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   const listeners = new Set<(event: DraftEvent) => void>();
   let revisions = 0, steps = 0, typingOrder = 0;
 
-  const deliver = (event: DraftEvent) => { for (const listener of [...listeners]) try { listener(event); } catch { /* A listener must not break a step. */ } };
+  const stateListeners = new Set<() => void>();
+  let statePending = false, notifyingState = false, delivering = 0;
+  // State subscribers observe the completed mutation, after its public events.
+  // A reentrant mutation schedules another turn instead of nesting notifications.
+  function flushState() {
+    if (deferred || delivering || notifyingState || queued.length) return;
+    while (statePending) {
+      statePending = false;
+      notifyingState = true;
+      try {
+        for (const listener of [...stateListeners]) try { listener(); } catch { /* A listener must not break a step. */ }
+      } finally { notifyingState = false; }
+    }
+  }
+  const stateChanged = () => { statePending = true; flushState(); };
+  const deliver = (event: DraftEvent) => {
+    delivering++;
+    try { for (const listener of [...listeners]) try { listener(event); } catch { /* A listener must not break a step. */ } }
+    finally { delivering--; }
+  };
   // Events wait until a mutation (and its journal move) is complete, so a
   // listener that changes the store again sees, and builds on, a settled state.
   let deferred = 0;
   const queued: DraftEvent[] = [];
-  const emit = (event: DraftEvent) => { if (deferred) queued.push(event); else deliver(event); };
+  const emit = (event: DraftEvent) => {
+    statePending = true;
+    if (deferred) queued.push(event); else { deliver(event); flushState(); }
+  };
   function batch<T>(fn: () => T): T {
     deferred++;
     try { return fn(); }
-    finally { if (--deferred === 0) while (queued.length && !deferred) deliver(queued.shift()!); }
+    finally {
+      if (--deferred === 0) {
+        while (queued.length && !deferred) deliver(queued.shift()!);
+        flushState();
+      }
+    }
   }
   const emitHistory = (history: string) => emit({ type: "history", history });
   const textEvent = (entry: Entry, origin: TextOrigin, changes?: { start: number; end: number; text: string }[]) =>
@@ -296,7 +324,12 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   let persisting = 0;
   /** Writes the entry's draft; `preferred` (a step's own record) is written itself when it says the same. */
   function persist(entry: Entry, preferred?: SavedDraft) {
-    if (!persistence || entry.baseSha === undefined) { entry.persisted = false; return true; }
+    if (!persistence || entry.baseSha === undefined) {
+      const changed = entry.persisted;
+      entry.persisted = false;
+      if (changed) stateChanged();
+      return true;
+    }
     persisting++;
     try { return persistEntry(entry, persistence, preferred); } finally { persisting--; }
   }
@@ -311,7 +344,9 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     // A refresh that changes nothing keeps the exact record, so its identity proves no foreign write.
     const ok = persistence.save(preferred && sameRecord(preferred, draft) ? preferred : existing && sameRecord(existing, draft) ? existing : draft);
     entry.record = persistence.get(entry.scope, entry.path);
+    const changed = entry.persisted !== ok;
     entry.persisted = ok;
+    if (changed) stateChanged();
     return ok;
   }
   function removeRecord(entry: { scope: DraftScope; path: string }) {
@@ -330,7 +365,10 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const key = draftKey(scope, path);
     let entry = files.get(key);
     const record = entry ? undefined : persistence?.get(scope, path);
-    if (!entry && record) files.set(key, entry = entryFromRecord(scope, path, record));
+    if (!entry && record) {
+      files.set(key, entry = entryFromRecord(scope, path, record));
+      stateChanged();
+    }
     return entry;
   }
   /** Removes `key` from every journal that holds a step over it (the file changed outside history). */
@@ -359,6 +397,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (entry.text === start.text && session.version === start.version) {
       // No text or native undo movement: the steps below stay valid.
       entry.revision = start.revision;
+      stateChanged();
       return undefined;
     }
     const end: TypingState = { text: entry.text, revision: entry.revision, version: session.version, record: entry.record };
@@ -409,10 +448,12 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       commit: (commitLabel) => session.ended ? undefined : batch(() => commitTyping(key, commitLabel)),
       dispose() {
         if (session.ended) return;
-        batch(() => commitTyping(key));
-        session.ended = true;
-        session.native = undefined;
-        if (typing.get(key) === session) typing.delete(key);
+        batch(() => {
+          commitTyping(key);
+          session.ended = true;
+          session.native = undefined;
+          if (typing.get(key) === session) typing.delete(key);
+        });
       },
     };
   }
@@ -816,6 +857,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (previous === text && revision === undefined) return { before, after: before };
     entry.text = text;
     entry.revision = revision ?? ++revisions;
+    stateChanged();
     persist(entry);
     if (previous !== text) textEvent(entry, "receipt", [diffRange(previous, text)]);
     return { before, after: entry.revision };
@@ -836,11 +878,13 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       // Pruned as unchanged: the text is GitHub's.
       if (entry.text !== entry.base && entry.baseSha !== null) return false;
       entry.record = undefined;
+      stateChanged();
       return true;
     }
     if (record.deleted || record.content !== entry.text) return false;
     const changedBase = record.original !== entry.base || record.baseSha !== entry.baseSha || !sameFlags(flagsOf(record), entry.flags);
     Object.assign(entry, { base: record.original, baseSha: record.baseSha, flags: flagsOf(record), record, persisted: true });
+    stateChanged();
     if (changedBase) emit({ type: "file", key: entry.key, scope: entry.scope, path, change: "base" });
     return true;
   }
@@ -879,7 +923,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   }
 
   return {
-    open,
+    open: (scope: DraftScope, path: string, source: Parameters<typeof open>[2]) => batch(() => open(scope, path, source)),
     get: (scope: DraftScope, path: string) => { const entry = files.get(draftKey(scope, path)); return entry && view(entry); },
     text: (scope: DraftScope, path: string) => files.get(draftKey(scope, path))?.text,
     edit: (input: EditInput) => batch(() => edit(input)),
@@ -900,21 +944,23 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     drop: (scope: DraftScope, path: string, force = false) => batch(() => drop(scope, path, force)),
     forget: (scope: DraftScope, path: string, force = false) => batch(() => forget(scope, path, force)),
     write: (scope: DraftScope, path: string, text: string, revision?: number) => batch(() => write(scope, path, text, revision)),
-    adopt,
+    adopt: (scope: DraftScope, path: string) => batch(() => adopt(scope, path)),
     hasTyping,
     hasHistory,
-    retry,
-    drafts,
-    markSaved,
-    acceptBase,
+    retry: () => batch(retry),
+    drafts: (scope: DraftScope, list: () => readonly SavedDraft[]) => batch(() => drafts(scope, list)),
+    markSaved: (scope: DraftScope, path: string, saved: Parameters<typeof markSaved>[2]) => batch(() => markSaved(scope, path, saved)),
+    acceptBase: (scope: DraftScope, path: string, base: Parameters<typeof acceptBase>[2]) => batch(() => acceptBase(scope, path, base)),
     reload: (scope: DraftScope, path: string) => batch(() => reload(scope, path)),
     /** Files whose draft differs from GitHub (changedFiles). */
     changed: () => [...files.values()].filter(isChanged).map(view),
     /** Changed files whose last write did not reach persistence (hasUnpersistedEdits). */
     unpersisted: () => [...files.values()].some(entry => isChanged(entry) && !entry.persisted),
-    clearHistory,
+    clearHistory: () => batch(clearHistory),
     /** Forgets every entry and history (clearDrafts: sign-out, workspace switch); persisted drafts stay. */
-    clear() { typing.clear(); clearHistory(); files.clear(); },
+    clear() { batch(() => { typing.clear(); clearHistory(); files.clear(); stateChanged(); }); },
+    /** A settled-state invalidation, including changes that produce no DraftEvent. */
+    subscribeState(listener: () => void) { stateListeners.add(listener); return () => { stateListeners.delete(listener); }; },
     subscribe(listener: (event: DraftEvent) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   };
 }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { batch, effect } from "@preact/signals-core";
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
+import type { SavedDraft } from "../src/drafts.ts";
 import { draftKey } from "../src/drafts.ts";
 import type { Repository } from "../shared/types.ts";
 
@@ -55,20 +56,18 @@ test("draft signals follow edits, undo and saved baselines without owning draft 
   app.dispose();
 });
 
-test("dispose unsubscribes the draft bridge; workspace clear can be explicitly refreshed", () => {
+test("dispose unsubscribes the draft bridge; workspace clear updates cached signals", () => {
   const draft = createDraftStore();
   const app = createAppStore(draft);
   draft.open(scope, "index.html", { text: "one", baseSha: "base" });
   draft.write(scope, "index.html", "two");
   assert.equal(app.drafts.changed.value.length, 1);
   draft.clear();
-  app.drafts.refresh();
   assert.equal(app.drafts.changed.value.length, 0);
   const revision = app.drafts.revision.value;
   app.dispose();
   app.dispose();
   draft.open(scope, "other.html", { text: "other", baseSha: "other" });
-  app.drafts.refresh();
   assert.equal(app.drafts.revision.value, revision);
 });
 
@@ -89,5 +88,84 @@ test("multi-file receipt observers never see only half the draft change", async 
   assert.ok(seen.length > 0);
   assert.ok(seen.every(paths => paths.length === 0));
   stop();
+  app.dispose();
+});
+
+function failingPersistence() {
+  const records = new Map<string, SavedDraft>();
+  const layer = {
+    records, fail: true,
+    get: (_scope: unknown, path: string) => records.get(path),
+    save(record: SavedDraft) { if (layer.fail) return false; records.set(record.path, record); return true; },
+    remove: (_scope: unknown, path: string) => records.delete(path),
+  };
+  return layer;
+}
+
+test("retry refreshes an already cached unpersisted signal without a text change", () => {
+  const persistence = failingPersistence();
+  const draft = createDraftStore({ persistence });
+  const app = createAppStore(draft);
+  draft.open(scope, "index.html", { text: "base", baseSha: "base-sha" });
+  draft.edit({ scope, path: "index.html", text: "draft" });
+  assert.equal(app.drafts.unpersisted.value, true);
+  assert.equal(app.drafts.changed.value[0].persisted, false);
+  persistence.fail = false;
+  draft.retry();
+  assert.equal(draft.unpersisted(), false);
+  assert.equal(app.drafts.unpersisted.value, false);
+  assert.equal(app.drafts.changed.value[0].persisted, true);
+  app.dispose();
+});
+
+test("adopting an outside write with the same base refreshes cached persistence state", () => {
+  const persistence = failingPersistence();
+  const draft = createDraftStore({ persistence });
+  const app = createAppStore(draft);
+  draft.open(scope, "index.html", { text: "base", baseSha: "base-sha" });
+  draft.edit({ scope, path: "index.html", text: "draft" });
+  assert.equal(app.drafts.unpersisted.value, true);
+  persistence.records.set("index.html", { ...scope, path: "index.html", version: 1, original: "base", content: "draft", baseSha: "base-sha", updatedAt: 1 });
+  assert.equal(draft.adopt(scope, "index.html"), true);
+  assert.equal(draft.unpersisted(), false);
+  assert.equal(app.drafts.unpersisted.value, false);
+  app.dispose();
+});
+
+test("clear notifies only after files and every history are gone", () => {
+  const draft = createDraftStore();
+  const app = createAppStore(draft);
+  draft.open(scope, "index.html", { text: "base", baseSha: "base-sha" });
+  draft.edit({ scope, path: "index.html", text: "draft" });
+  const seen: unknown[] = [];
+  const stop = effect(() => { seen.push([app.drafts.changed.value.length, app.drafts.hasHistory.value, app.drafts.unpersisted.value]); });
+  draft.clear();
+  assert.deepEqual(seen, [[1, true, true], [0, false, false]]);
+  stop();
+  app.dispose();
+});
+
+test("revision-only writes invalidate cached draft views without inventing text events", () => {
+  const draft = createDraftStore();
+  const app = createAppStore(draft);
+  draft.open(scope, "index.html", { text: "base", baseSha: "base-sha" });
+  draft.write(scope, "index.html", "draft");
+  const previous = app.drafts.changed.value[0].revision;
+  const events: string[] = [];
+  draft.subscribe(event => { events.push(event.type); });
+  draft.write(scope, "index.html", "draft", previous + 10);
+  assert.equal(app.drafts.changed.value[0].revision, previous + 10);
+  assert.deepEqual(events, []);
+  app.dispose();
+});
+
+test("a refused receipt still notifies the persisted draft entries it loaded", () => {
+  const persistence = failingPersistence();
+  persistence.records.set("index.html", { ...scope, path: "index.html", version: 1, original: "base", content: "draft", baseSha: "base-sha", updatedAt: 1 });
+  const draft = createDraftStore({ persistence });
+  const app = createAppStore(draft);
+  assert.equal(app.drafts.changed.value.length, 0);
+  assert.equal(draft.applyReceipt("h", "Refused", [{ scope, path: "index.html", expected: "different", after: null }]).ok, false);
+  assert.equal(app.drafts.changed.value[0].text, "draft");
   app.dispose();
 });

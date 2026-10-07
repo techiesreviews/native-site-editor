@@ -647,3 +647,76 @@ test("wiring: Save's drafts are the store's, including a change whose write keep
   assert.equal(store.drafts(scope, () => [...persistence.map.values()]).length, 2);
   assert.equal(persistence.map.get("b.html")?.content, "b1");
 });
+
+test("state subscribers observe the final journal after an event listener records a follow-up receipt", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "a", baseSha: sha("a") });
+  store.open(scope, "b.css", { text: "b", baseSha: sha("b") });
+  store.edit({ scope, path: "a.html", history: "h", label: "Visual", text: "a1" });
+  let accepted = false;
+  store.subscribe(event => {
+    if (event.type === "text" && event.origin === "undo") accepted = store.applyReceipt("h", "Follow-up", [
+      { scope, path: "b.css", after: { text: "b2", base: "b", baseSha: sha("b") } },
+    ]).ok;
+  });
+  const seen: unknown[] = [];
+  store.subscribeState(() => { seen.push([store.text(scope, "a.html"), store.text(scope, "b.css"), store.peek("h", "undo"), store.peek("h", "redo")]); });
+  assert.equal((await store.undo("h")).ok, true);
+  assert.equal(accepted, true);
+  assert.deepEqual(seen, [["a", "b2", "Follow-up", undefined]]);
+});
+
+test("state listener mutations notify again without nested delivery or losing their history step", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "a", baseSha: sha("a") });
+  let depth = 0, maxDepth = 0, reacted = false;
+  const seen: unknown[] = [];
+  store.subscribeState(() => {
+    depth++;
+    maxDepth = Math.max(maxDepth, depth);
+    seen.push([store.text(scope, "a.html"), store.peek("h", "undo")]);
+    if (!reacted) {
+      reacted = true;
+      store.edit({ scope, path: "a.html", history: "h", label: "Follow-up", text: "a2" });
+    }
+    depth--;
+  });
+  store.edit({ scope, path: "a.html", history: "h", label: "Visual", text: "a1" });
+  assert.equal(maxDepth, 1);
+  assert.deepEqual(seen, [["a1", "Visual"], ["a2", "Follow-up"]]);
+  assert.equal((await store.undo("h")).ok, true);
+  assert.equal(store.text(scope, "a.html"), "a1");
+});
+
+test("state listeners unsubscribe, isolate exceptions and ignore retries with no state change", () => {
+  const persistence = records();
+  persistence.fail = true;
+  const { store } = setup(persistence);
+  store.subscribeState(() => { throw new Error("listener"); });
+  let count = 0;
+  const off = store.subscribeState(() => { count++; });
+  store.open(scope, "a.html", { text: "a", baseSha: sha("a") });
+  store.edit({ scope, path: "a.html", text: "a1" });
+  assert.equal(count, 2);
+  store.retry();
+  assert.equal(count, 2);
+  persistence.fail = false;
+  store.retry();
+  assert.equal(count, 3);
+  off();
+  store.clear();
+  assert.equal(count, 3);
+});
+
+test("opening a recovered publish preserves event order and count while observers see its settled base", () => {
+  const persistence = records();
+  persistence.map.set("a.html", { ...scope, version: 1, path: "a.html", original: "base", content: "published", baseSha: sha("a"), updatedAt: 1 });
+  const { store } = setup(persistence);
+  const seen: unknown[] = [];
+  store.subscribe(event => { seen.push([event.type, event.type === "file" ? event.change : undefined, store.get(scope, "a.html")?.base]); });
+  let notifications = 0;
+  store.subscribeState(() => { notifications++; });
+  store.open(scope, "a.html", { text: "published", baseSha: sha("b") });
+  assert.deepEqual(seen, [["file", "opened", "published"], ["file", "base", "published"]]);
+  assert.equal(notifications, 1);
+});

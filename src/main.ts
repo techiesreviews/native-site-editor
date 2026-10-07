@@ -4527,7 +4527,6 @@ function renderLogin(
   nativePreview = undefined;
   linkedStyleSourceByPath.clear();
   editorModule?.clearDrafts();
-  appStore.drafts.refresh();
   generation++;
   fileGeneration++;
   repositoryMenu?.destroy();

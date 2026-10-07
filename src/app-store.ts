@@ -15,15 +15,13 @@ export function createAppStore(draftStore: DraftTextStore) {
   const refreshDrafts = () => {
     if (!disposed) draftRevision.value++;
   };
-  const unsubscribe = draftStore.subscribe(refreshDrafts);
+  const unsubscribe = draftStore.subscribeState(refreshDrafts);
   const drafts = {
     store: draftStore,
     revision: computed(() => draftRevision.value),
     changed: computed(() => { draftRevision.value; return draftStore.changed(); }),
     unpersisted: computed(() => { draftRevision.value; return draftStore.unpersisted(); }),
     hasHistory: computed(() => { draftRevision.value; return draftStore.hasHistory(); }),
-    // clear() intentionally emits no event; the host refreshes after a workspace reset.
-    refresh: refreshDrafts,
   };
   return {
     repository, branch, snapshot, selection, openFile, drafts,
