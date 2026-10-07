@@ -1,5 +1,52 @@
 # Phase 5 review fixes
 
+## Resume snapshot: 2026-10-07 14:33 Amsterdam
+
+The user explicitly requested handover to Claude. Codex stops new work after
+saving this snapshot. The following two existing jobs remain running so Claude
+can collect their results; do not launch duplicate jobs or mutate their source.
+No active implementation worker remains; named Codex workers are idle.
+
+1. Full native-save suite on frozen `ce7ec53` in
+   `/home/ubulex/Projects/native-site-editor-p5-review-final` (787 cases).
+   At the snapshot it has reached case 172; no result is claimed. Its command
+   PID is `2157231`, wrapper parent `2156790`, fixture uses port **5216**.
+   Read `.scratch/p5-review/final-full-native-save.log` in that worktree for the
+   final summary. Verify current PID ownership before any process action.
+2. Narrow Claude Opus 5.5 / medium review of `ce7ec53..ce4008f`, CLI PID
+   `2168831`, wrapper `2168827`. Read the preparation workspace's
+   `.scratch/p5-review/claude-touch-followup/{status.json,result.md,stdout.json,stderr.log}`.
+   The wrapper verifies exit/errors/denials/exact model and records `verified`;
+   it is still running at this snapshot.
+
+**Latest complete code stack:** `build/p5-title-touch-fix`, immutable
+`ce4008fe683e05e9ccb73095a0f9e6c4ae95e7f8`, in
+`/home/ubulex/Projects/native-site-editor-p5-title-touch-fix`. It adds only a
+mouse-only pointerup fallback to the previous final candidate, keeping touch/
+pen targets until click, plus delayed-input tests. Its type checks, 1,050 units,
+strict test TypeScript and production build pass. Its browser checks are pending.
+Tests simulate touch/pen ordering; they are not hardware touch proof.
+
+**Next actions, in order:** collect both running jobs; assess the narrow review;
+after the full browser suite releases its server, run the touch tests serially:
+
+- Failing-before tree: `native-site-editor-p5-title-touch-red`, test-only
+  `56cc8a0e78346b3b55a303b532c5c50e91ca29a3`. Run the two delayed touch/pen cases.
+- Fixed tree: `native-site-editor-p5-title-touch-fix`, `ce4008f`. Run all twelve
+  `tests/native-save/native-page-title-refresh.spec.ts` cases, retaining every
+  assertion. Keep full-suite proof attributed to `ce7ec53`, and this added proof
+  to `ce4008f`; do not claim a full run on the later head.
+- Address genuine failures; update this handoff and the map with actual results.
+  Assess the independent review before landing. No merge, push or deploy has
+  happened. The wider Wayfinder timing and main-module split remain open.
+
+Use Node 24; the existing executable directory is
+`/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin`. Existing worktrees
+have dependency symlinks. Follow applicable AGENTS.md and lex-coding. Root
+preparation workspace is on `build/p5-review-handoff`; only the requested CSS
+changes and handoff documentation are integrated there. Preserve all worktrees,
+failure artifacts, original Claude dirty worktree and user configuration.
+
 Continuation of [the second batch](p5-second-batch-handoff.md), following the
 six Claude Opus 5.5 / medium reviews that started at 13:00 Amsterdam.
 
