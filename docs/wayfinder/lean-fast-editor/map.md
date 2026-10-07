@@ -73,7 +73,8 @@ pins the new candidate and records its validation and follow-up review.
 The latest stack, `build/p5-title-touch-grace` at `9d6cb00`, bounds the touch/pen
 title wait with a 1 s fallback and passes the full native-save suite (708 passed,
 85 skipped, 0 failed), all 16 title checks and the 344 KB byte gate. Its narrow
-Claude review reports no defects. It is not merged, pushed or deployed. Startup
+Claude review reports no defects. It is merged into `dev` (`759c888`) and
+deployed to the preview Worker (version `f87d2d31`), not to production. Startup
 timing targets (ticket 02) and the main-module split (ticket 08) remain open.
 
 The following note records the earlier P1.4 slice:

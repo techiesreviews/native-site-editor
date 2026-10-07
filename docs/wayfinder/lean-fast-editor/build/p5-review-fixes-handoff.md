@@ -1,5 +1,21 @@
 # Phase 5 review fixes
 
+## Landed: 2026-10-07 15:25 Amsterdam
+
+On Lex's instruction, `build/p5-title-touch-grace` (`9d6cb00`) was fast-forwarded
+into `dev`, and this handoff branch was merged on top as `759c888` (docs only;
+the non-doc tree equals the tested `9d6cb00`). `dev` was pushed to `origin` and
+deployed by hand with `npm run deploy:preview` (the CI workflow still has no
+`CLOUDFLARE_API_TOKEN`): Worker `native-site-editor-preview`, version
+`f87d2d31-aeae-4567-9474-44b968d20273`. Local screenshots of the real starter on
+that build (Page Structure at 4 px per level, Pages titles, History) are in
+`.scratch/preview-shots/f87d2d31/` of the root workspace. No signed-in remote
+proof. Production (`main`, editor.techies.tools) is untouched.
+
+Next, following [the controller plan](p5-controller-plan.md): slice 8 (code
+panes), the rest of 9 (boot), then 10 and 12–15. Ticket 02 timing targets still
+miss.
+
 ## Current state: 2026-10-07 15:14 Amsterdam
 
 Claude continued from the 14:33 Codex snapshot. Nothing has been merged into
