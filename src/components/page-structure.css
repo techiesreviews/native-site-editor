@@ -117,6 +117,27 @@
 .page-structure__row:hover {
   background: var(--hover);
 }
+/* Each row in a group carries its parent's rail: a rounded line through the
+   middle of the parent's chevron (the group's --rail column), above the row's
+   background but below its own chevron, and never taking the pointer. Only the
+   nearest parent's rail shows. Grey here; components.css colours a
+   component's parts. */
+.page-structure__group > .page-structure__row {
+  position: relative;
+}
+.page-structure__group > .page-structure__row::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: -1px;
+  bottom: -1px;
+  left: calc(12px + var(--rail, 0) * var(--structure-indent, 4px));
+  width: 2px;
+  border-radius: 1px;
+  background: var(--muted);
+  opacity: 0.3;
+  pointer-events: none;
+}
 .page-structure__row[aria-selected="true"] {
   background: var(--current);
   color: var(--text);
@@ -131,6 +152,8 @@
   background: var(--current);
 }
 .page-structure__toggle {
+  position: relative;
+  z-index: 2;
   flex: none;
   width: 14px;
   height: 14px;

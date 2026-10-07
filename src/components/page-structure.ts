@@ -542,7 +542,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // A slot with no element of its own: text the page put straight into the
   // instance (an ordinary, editable row), or nothing at all (a dim
   // restoration row). Either way no node index and no Move.
-  function slotOnlyRow(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], level: number) {
+  function slotOnlyRow(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], level: number, column = level - 1) {
     const id = slotRowKey(model, slot.name);
     const el = node("div", `page-structure__row page-structure__row--slot-only${slot.filled ? "" : " page-structure__row--empty-slot"}`);
     el.setAttribute("role", "treeitem");
@@ -550,7 +550,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.setAttribute("aria-selected", "false");
     el.dataset.slotRow = id;
     el.tabIndex = -1;
-    el.style.setProperty("--depth", String(level - 1));
+    el.style.setProperty("--depth", String(column));
     const kind = slot.kind === "image" ? "img" : slot.kind === "link" ? "a" : "text";
     const label = node("span", "page-structure__label");
     const preview = slot.kind === "image" ? slot.value.alt ?? "" : slot.value.text;
@@ -585,15 +585,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       && (slot.filled || slot.whenEmpty === "fallback")) {
       openSlot.anchor = id;
       if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = id;
-      result.push(inlineEditor(model, slot, id, level));
+      result.push(inlineEditor(model, slot, id, level, column));
     }
     return result;
   }
 
   // The one inline disclosure: the slot's fields under its anchor row.
-  function inlineEditor(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], owner: string, level: number) {
+  function inlineEditor(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], owner: string, level: number, column = level - 1) {
     const inline = node("div", "page-structure__inline"); inline.dataset.editNode = owner; inline.dataset.slotEditor = slot.name;
-    inline.style.setProperty("--depth", String(level - 1));
+    inline.style.setProperty("--depth", String(column));
     const close = () => { openSlot = undefined; render(); rowElement(owner)?.focus(); };
     inline.append(...slotControls({ ...model, slots: [slot] }, level), iconAction(`Close ${slot.label} editor`, "close", close));
     inline.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
@@ -666,7 +666,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
   let sharedMounted = false;
   let rowNameSeq = 0;
-  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext): HTMLElement[] {
+  // `--depth` is a row's visual column: a component's parts share its column
+  // (its rail runs through their chevrons); other children step in by one.
+  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext, column = level - 1): HTMLElement[] {
     const id = key(item.node);
     if (insideMain) inMain.add(id);
     const el = node("div", "page-structure__row");
@@ -675,7 +677,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.setAttribute("aria-selected", String(id === selected));
     el.dataset.node = id;
     el.tabIndex = -1;
-    el.style.setProperty("--depth", String(level - 1));
+    el.style.setProperty("--depth", String(column));
     const toggle = node("span", "page-structure__toggle");
     toggle.setAttribute("aria-hidden", "true");
     const { kind, text, component } = handlers.label(item);
@@ -796,24 +798,27 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       onKey(event, item, el);
     });
     rows.set(id, el);
-    const inline = editing && slotContext ? inlineEditor(slotContext.model, slotContext.slot, id, level + 1) : undefined;
+    const inline = editing && slotContext ? inlineEditor(slotContext.model, slotContext.slot, id, level + 1, column + 1) : undefined;
     if (inline) inline.id = `structure-inline-${id}`;
     if (!hasChildren) return inline ? [el, inline] : [el];
     el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
     group.setAttribute("role", "group");
+    // The group's rail runs through this row's chevron.
+    group.style.setProperty("--rail", String(column));
+    const childColumn = column + (component ? 0 : 1);
     group.hidden = isFolded(id);
     const childInMain = insideMain || item.tag === "main";
     if (inline) group.append(inline);
     if (sharing) {
       const panel = node("div", "page-structure__shared-authoring");
-      panel.style.setProperty("--depth", String(level));
+      panel.style.setProperty("--depth", String(childColumn));
       isolate(panel); panel.append(sharing.form.element); group.append(panel);
       sharedMounted = true;
     }
     if (attributes && slotModel) {
       const panel = node("div", "page-structure__inline"); panel.dataset.editNode = id;
-      panel.style.setProperty("--depth", String(level));
+      panel.style.setProperty("--depth", String(childColumn));
       const close = () => { openAttributes = undefined; render(); rows.get(id)?.focus(); };
       panel.append(attributeControls(slotModel), iconAction("Close Attributes", "close", close));
       panel.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
@@ -827,12 +832,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const missing = slotModel ? slotModel.slots.filter(slot => !slot.assignedNodes.length) : [];
     const slotOrder = (name: string) => { const at = slotModel!.slots.findIndex(slot => slot.name === name); return at < 0 ? slotModel!.slots.length : at; };
     for (const child of item.children) {
-      while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
+      while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1, childColumn));
       const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
       const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
-      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined));
+      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, childColumn));
     }
-    for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1));
+    for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1, childColumn));
     return [el, group];
   }
 
