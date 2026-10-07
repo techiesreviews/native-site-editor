@@ -22,4 +22,18 @@ Node `24.21.0`:
 - `ASE_BUDGET_PORT=5594 npm run test:budget -- --no-build`: 345 KB gzip before first preview paint (budget 350 KB), within.
 - `git diff --check`: passed.
 
-Logs: `.scratch/p5-review/boot-controller-*.log`. Browser suites (`native-boot-parallel.spec.ts`, save/preview smoke) are left to the lead's serial run; no browser other than the budget run was started. No push, merge or deployment.
+Logs: `.scratch/p5-review/boot-controller-*.log`.
+
+Lead's serial browser run on `260fa94` (port 5216, one worker; logs
+`.scratch/p5-review/boot-browser-*.log`):
+
+- Boot-focused native-save specs (`native-boot-parallel`, `native-startup-hash`,
+  `native-boot-requests`, `native-onboarding`, `fake-github-onboarding`,
+  `native-setup-wizard`, `native-setup-checklist`, `native-lazy-panels`,
+  `native-draft-storage`, `native-branch-menu`): 69 passed.
+- `@smoke`: 32 passed.
+- Full native-save: 708 passed, 85 skipped, 0 failed.
+
+Claude Opus 5.5 / medium review (root `.scratch/p5-review/claude-boot-controller/`):
+verified, no defects. Noted test gaps: the auto sign-in timer and cancel,
+`?error=` cleanup and a stale-login `ensureList` refusal have no unit test.
