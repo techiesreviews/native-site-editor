@@ -153,7 +153,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     const linkRow = tree(page).locator("[role=treeitem][data-slot=primary]").filter({ visible: true }).first();
     await linkRow.hover();
     await linkRow.locator(".page-structure__action[aria-label='Edit Primary']").click();
-    await expect(page.locator(".page-structure__inline input").first()).toBeFocused();
+    await expect(page.locator(".page-structure__inline :is(input, textarea)").first()).toBeFocused();
     report.structureLink = await audit(page, ".page-structure__inline");
     expect(report.structureLink.length).toBeGreaterThanOrEqual(2);
     await page.screenshot({ path: `${shots}/fields-structure-link-${name}.png` });

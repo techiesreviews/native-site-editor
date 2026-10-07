@@ -35,7 +35,7 @@ async function pointerDrop(page:any,from:string,before:string) {
 }
 const H=(page:any)=>page.evaluate(()=>(window as any).slotHarness);
 const rows=(page:any)=>page.locator('[role=treeitem][data-node]').evaluateAll((list:Element[])=>list.map(row=>row.getAttribute('data-node')));
-const visibleInputs=(page:any)=>page.locator('.page-structure__tree input:not([type=file]):not([type=checkbox])').evaluateAll((list:HTMLInputElement[])=>list.filter(input=>input.getClientRects().length).length);
+const visibleInputs=(page:any)=>page.locator('.page-structure__tree :is(input:not([type=file]):not([type=checkbox]), textarea)').evaluateAll((list:HTMLElement[])=>list.filter(input=>input.getClientRects().length).length);
 
 test('every authored row stays a native treeitem in source order with no fields until asked',async({page})=>{
  await harness(page);
@@ -71,7 +71,7 @@ test('row pencil opens one inline editor that keeps caret, refuses foreign chang
  await page.locator('[role=treeitem][data-node="0.3"]').press('F2');
  await expect(page.locator('.page-structure__inline')).toHaveCount(1);
  const button=page.getByRole('textbox',{name:'Cta: Button text',exact:true});await expect(button).toBeFocused();
- expect(await button.evaluate(el=>(el.closest('details') as HTMLDetailsElement).open)).toBe(true);
+ await expect(page.getByRole('group',{name:'Link',exact:true})).toBeVisible();
  await expect(page.getByRole('combobox',{name:'Cta: Link / URL',exact:true})).toBeVisible();
 });
 
@@ -180,11 +180,26 @@ test('a text-only default fill is an editable slot row, not a missing slot',asyn
  const row=page.locator('.page-structure__row--slot-only');await expect(row).toHaveCount(1);await expect(row).toHaveAttribute('role','treeitem');await expect(row).not.toHaveAttribute('data-node');
  await expect(row).toContainText('Hello');
  await row.focus();await row.press('F2');
- const field=page.locator('.page-structure__inline input[type=text]');await expect(field).toBeFocused();await expect(field).toHaveValue('Hello');
+ const field=page.locator('.page-structure__inline textarea');await expect(field).toBeFocused();await expect(field).toHaveValue('Hello');
  await field.press('End');await field.press('!');await expect(field).toBeFocused();
  expect((await H(page)).source).toBe('<project-card>Hello!</project-card>');
  await field.press('Enter');await expect(page.locator('.page-structure__row--slot-only')).toBeFocused();
  expect((await H(page)).movesTo).toEqual([]);
+});
+
+test('a long text field wraps and grows; pasted line breaks become spaces and Shift+Enter commits',async({page})=>{
+ await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template='<article><slot>Default</slot></article>';s.source='<project-card>Hello</project-card>';s.version++;s.update();});
+ const row=page.locator('.page-structure__row--slot-only');await row.focus();await row.press('F2');
+ const field=page.locator('.page-structure__inline textarea');await expect(field).toBeFocused();await expect(field).toHaveAttribute('rows','1');
+ const one=(await field.boundingBox())!.height;expect(one).toBeLessThanOrEqual(30);
+ const long='A long line of text that has to wrap onto several lines in the narrow sidebar field, so that the field grows by more than half its one-line height';
+ await field.fill(long);
+ await expect.poll(async()=>(await field.boundingBox())!.height).toBeGreaterThan(one*1.5);
+ expect(await field.evaluate((el:HTMLTextAreaElement)=>el.scrollHeight<=el.clientHeight+1)).toBe(true);
+ await field.press('End');await page.keyboard.insertText(' one\ntwo');await expect(field).toHaveValue(`${long} one two`);
+ expect((await H(page)).source).toBe(`<project-card>${long} one two</project-card>`);
+ await field.press('Shift+Enter');await expect(row).toBeFocused();
+ expect((await H(page)).source).toBe(`<project-card>${long} one two</project-card>`);
 });
 
 test('an optional text-only fill hides, restores and shows again through its real toggle',async({page})=>{
@@ -201,7 +216,7 @@ test('an optional text-only fill hides, restores and shows again through its rea
  const show=missing.getByRole('button',{name:label!,exact:true});await expect(show).toBeVisible();await expect(show).toHaveAttribute('aria-pressed','false');
  await show.focus();await page.keyboard.press('Space');
  expect((await H(page)).source).toBe('<project-card>Content</project-card>');
- await expect(page.locator('.page-structure__inline')).toHaveCount(1);await expect(page.locator('.page-structure__inline input[type=text]')).toBeFocused();
+ await expect(page.locator('.page-structure__inline')).toHaveCount(1);await expect(page.locator('.page-structure__inline textarea')).toBeFocused();
  // A manual source swap standing in for Undo/Redo (the real history journal is not used here): the earlier bytes come back without reopening an editor unasked.
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.source='<project-card></project-card>';s.version++;s.update();});
  await expect(page.locator('.page-structure__inline')).toHaveCount(0);
@@ -268,7 +283,7 @@ test('rich content slots select their native root without an empty editor',async
 
 test('a slot named attributes keeps its own field apart from the Attributes panel',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.template='<article><slot name="attributes">A</slot></article>';s.source='<project-card data-x="1"><span slot="attributes">Mine</span></project-card>';s.version++;s.update();});
- await page.locator('[role=treeitem][data-node="0.0"]').press('F2');const field=page.locator('.page-structure__inline input[type=text]');await expect(field).toHaveValue('Mine');
+ await page.locator('[role=treeitem][data-node="0.0"]').press('F2');const field=page.locator('.page-structure__inline textarea');await expect(field).toHaveValue('Mine');
  await field.fill('Ours');await field.press('Escape');
  const root=page.locator('[role=treeitem][data-node="0"]');await root.hover();await root.getByRole('button',{name:'Attributes',exact:true}).click();
  await expect(page.getByRole('textbox',{name:'Attribute: data-x',exact:true})).toHaveValue('1');

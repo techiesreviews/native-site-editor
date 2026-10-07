@@ -395,14 +395,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     showDrop(current);
   }
 
-  const fieldInputs = new Map<string, HTMLInputElement>();
-  const fieldClosers = new Map<HTMLInputElement, () => void>();
+  type FieldControl = HTMLInputElement | HTMLTextAreaElement;
+  const fieldInputs = new Map<string, FieldControl>();
+  const fieldClosers = new Map<FieldControl, () => void>();
   let renderingFields = false;
   // One explicit focus request, consumed by the first render after it.
   let focusSlotField: { prefix: string; row: string | undefined } | undefined;
   // The component row whose Attributes were just opened: focus their first field.
   let focusInline: string | undefined;
-  const detailOpen = new Map<string, boolean>();
   const attributeForms = new Map<string, HTMLFormElement>();
   const formClosers = new Map<HTMLFormElement, () => void>();
   const uploadClosers = new Map<HTMLInputElement, () => void>();
@@ -414,20 +414,37 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       formClosers.get(form)?.(); formClosers.delete(form); attributeForms.delete(id);
     }
   }
-  function guardedField(id: string, label: string, accessible: string, value: string, open: () => ComponentFieldSession | undefined) {
+  // A field is one line of text that wraps: a one-row textarea that grows with
+  // its content (CSS field-sizing; on engines without it, sized here as typed).
+  // A field with suggestions (a URL, an image) stays an input, as only an input
+  // takes a datalist.
+  function guardedField(id: string, label: string, accessible: string, value: string, open: () => ComponentFieldSession | undefined, single = false) {
     const previous = fieldInputs.get(id);
-    let input: HTMLInputElement;
+    let input: FieldControl;
     if (previous && previous === document.activeElement) input = previous;
     else {
-      input = document.createElement("input"); input.type = "text"; input.value = value;
+      if (single) { input = document.createElement("input"); input.type = "text"; input.value = value; }
+      else {
+        const area = document.createElement("textarea"); area.rows = 1; area.value = oneLine(value); input = area;
+        if (!fieldSizing) { area.addEventListener("input", () => fitHeight(area)); requestAnimationFrame(() => fitHeight(area)); }
+      }
       let session: ComponentFieldSession | undefined;
       input.addEventListener("focus", () => { session ??= open(); });
-      input.addEventListener("input", () => { if (!session?.write(input.value)) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid"); });
+      input.addEventListener("input", () => {
+        // Line breaks (a multi-line paste) become spaces, as these are runs of text; the caret keeps its place.
+        if (input instanceof HTMLTextAreaElement && /[\r\n]/.test(input.value)) {
+          const caret = oneLine(input.value.slice(0, input.selectionStart ?? input.value.length)).length;
+          input.value = oneLine(input.value); input.setSelectionRange(caret, caret);
+          if (!fieldSizing) fitHeight(input);
+        }
+        if (!session?.write(input.value)) input.setAttribute("aria-invalid", "true"); else input.removeAttribute("aria-invalid");
+      });
       const close = () => { session?.close(); session = undefined; };
       fieldClosers.set(input, close);
       input.addEventListener("blur", () => { if (!renderingFields) close(); });
-      input.addEventListener("keydown", event => {
-        if (event.key !== "Enter" && event.key !== "Escape") return;
+      (input as HTMLElement).addEventListener("keydown", event => {
+        // Enter (with or without Shift) applies and never adds a line; an IME's Enter stays the IME's.
+        if (event.key !== "Enter" && event.key !== "Escape" || event.isComposing) return;
         event.preventDefault();
         // Enter applies (blur closes the session) and returns to the owning row; Escape also closes the editor.
         const owner = input.closest<HTMLElement>("[data-edit-node]")?.dataset.editNode;
@@ -439,18 +456,24 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     input.setAttribute("aria-label", accessible);
     const wrap = node("label", "page-structure__slot-field"); wrap.append(node("span", "page-structure__slot-field-label", label), input); return wrap;
   }
+  const fieldSizing = typeof CSS !== "undefined" && CSS.supports("field-sizing", "content");
+  const oneLine = (text: string) => text.replace(/\r\n|[\r\n]/g, " ");
+  // Only without field-sizing: as tall as the text, borders included (max-height still caps it).
+  function fitHeight(area: HTMLTextAreaElement) {
+    area.style.height = "auto";
+    area.style.height = `${area.scrollHeight + area.offsetHeight - area.clientHeight}px`;
+  }
   function attributeControls(model: ComponentStructureModel) {
     const id = `${hostKey(model)}:attr:`;
-    const details = document.createElement("details"); details.className = "page-structure__attributes";
-    details.dataset.detailKey = id; details.open = detailOpen.get(id) ?? true;
-    details.addEventListener("toggle", () => detailOpen.set(id, details.open));
-    const summary = document.createElement("summary"); summary.textContent = "Attributes"; details.append(summary);
+    // A labelled group, no disclosure header: the row it is attached to says whose attributes these are.
+    const group = node("div", "page-structure__attributes");
+    group.setAttribute("role", "group"); group.setAttribute("aria-label", "Attributes");
     for (const attribute of model.attributes) {
       const row = node("div", "page-structure__attribute");
       row.append(guardedField(`${id}:${attribute.name}`, attribute.name, `Attribute: ${attribute.name}`, attribute.value, () => handlers.componentSlots?.(model.host.path, model.host.node)?.openAttribute(attribute.name)),
         button("Remove", () => model.removeAttribute(attribute.name), "text-button"));
       row.lastElementChild?.setAttribute("aria-label", `Remove ${attribute.name}`);
-      details.append(row);
+      group.append(row);
     }
     let form = attributeForms.get(id);
     if (!form) {
@@ -483,8 +506,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       formClosers.set(form, closeDraft);
       form.append(name, value, submit, problem); attributeForms.set(id, form);
     }
-    details.append(form);
-    return details;
+    group.append(form);
+    return group;
   }
 
   function visibilityControl(model: ComponentStructureModel, slot: SlotRowContext["slot"]) {
@@ -585,6 +608,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       && (slot.filled || slot.whenEmpty === "fallback")) {
       openSlot.anchor = id;
       if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = id;
+      el.classList.add("is-editing");
       result.push(inlineEditor(model, slot, id, level));
     }
     return result;
@@ -593,6 +617,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // The one inline disclosure: the slot's fields under its anchor row.
   function inlineEditor(model: ComponentStructureModel, slot: ComponentStructureModel["slots"][number], owner: string, level: number) {
     const inline = node("div", "page-structure__inline"); inline.dataset.editNode = owner; inline.dataset.slotEditor = slot.name;
+    // --depth is the owning row's, so the editor lines up with it.
     inline.style.setProperty("--depth", String(level - 1));
     const close = () => { openSlot = undefined; render(); rowElement(owner)?.focus(); };
     inline.append(...slotControls({ ...model, slots: [slot] }, level), iconAction(`Close ${slot.label} editor`, "close", close));
@@ -609,17 +634,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       block.dataset.slotName = slot.name;
       function field(part: ComponentSlotPart, label: string, value: string) {
         const id = `${slotFieldPrefix(model, slot.name)}${part}`;
-        return guardedField(id, label, `${slot.label}: ${label}`, value, () => handlers.componentSlots?.(model.host.path, model.host.node)?.openField(slot.name, part));
+        return guardedField(id, label, `${slot.label}: ${label}`, value, () => handlers.componentSlots?.(model.host.path, model.host.node)?.openField(slot.name, part), part === "href" || part === "src");
       }
       if (slot.kind === "text" && slot.value.editable) block.append(field("text", "Text", slot.value.text));
       else if (slot.kind === "image" || slot.kind === "link") {
-        const details = document.createElement("details");
-        const detailKey = `${model.host.path}:${key([...model.host.node])}:${slot.name}`;
-        details.dataset.detailKey = detailKey;
-        details.open = detailOpen.get(detailKey) ?? true;
-        details.addEventListener("toggle", () => detailOpen.set(detailKey, details.open));
-        const summary = document.createElement("summary"); summary.textContent = slot.kind === "image" ? "Image" : "Link";
-        details.append(summary);
+        // The fields as one labelled group (no disclosure header): always open under their row.
+        const group = node("div", "page-structure__slot-fields");
+        group.setAttribute("role", "group"); group.setAttribute("aria-label", slot.kind === "image" ? "Image" : "Link");
         if (slot.kind === "image") {
           const image = field("src", "Image", slot.value.src ?? "");
           const suggestions = document.createElement("datalist");
@@ -639,19 +660,18 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
             const captured = pending, files = [...(file.files ?? [])]; pending = undefined; file.value = "";
             if (!files.length) captured?.close(); else void captured?.upload(files);
           });
-          details.append(image, suggestions, upload, file, field("alt", "Alt text", slot.value.alt ?? ""));
+          group.append(image, suggestions, upload, file, field("alt", "Alt text", slot.value.alt ?? ""));
         }
         else {
-          if (slot.value.editable) details.append(field("text", "Button text", slot.value.text));
-          else details.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
+          if (slot.value.editable) group.append(field("text", "Button text", slot.value.text));
+          else group.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
           const link = field("href", "Link / URL", slot.value.href ?? "");
           const suggestions = document.createElement("datalist"); suggestions.id = `structure-links-${model.host.node.join("-")}-${result.length}`;
           for (const value of model.links) { const option = document.createElement("option"); option.value = value.value; option.label = value.label; suggestions.append(option); }
           link.querySelector("input")?.setAttribute("list", suggestions.id);
-          details.append(link, suggestions);
+          group.append(link, suggestions);
         }
-        if (details.contains(document.activeElement)) details.open = true;
-        block.append(details);
+        block.append(group);
       } else block.append(node("span", "page-structure__slot-summary", `Content${slot.value.text ? `: ${slot.value.text}` : ""}`));
       result.push(block);
     }
@@ -796,8 +816,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       onKey(event, item, el);
     });
     rows.set(id, el);
-    const inline = editing && slotContext ? inlineEditor(slotContext.model, slotContext.slot, id, level + 1) : undefined;
+    const inline = editing && slotContext ? inlineEditor(slotContext.model, slotContext.slot, id, level) : undefined;
     if (inline) inline.id = `structure-inline-${id}`;
+    // The row with an editor open and the editor read as one attached block.
+    if (inline || attributes) el.classList.add("is-editing");
     if (!hasChildren) return inline ? [el, inline] : [el];
     el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
@@ -812,8 +834,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       sharedMounted = true;
     }
     if (attributes && slotModel) {
-      const panel = node("div", "page-structure__inline"); panel.dataset.editNode = id;
-      panel.style.setProperty("--depth", String(level));
+      const panel = node("div", "page-structure__inline page-structure__inline--attributes"); panel.dataset.editNode = id;
+      panel.style.setProperty("--depth", String(level - 1));
       const close = () => { openAttributes = undefined; render(); rows.get(id)?.focus(); };
       panel.append(attributeControls(slotModel), iconAction("Close Attributes", "close", close));
       panel.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); } });
@@ -954,9 +976,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     hint.hidden = true;
     renderMeta(structure.path);
     tree.hidden = false;
-    const activeField = document.activeElement instanceof HTMLInputElement && tree.contains(document.activeElement) ? document.activeElement : undefined;
+    const activeField = (document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement) && tree.contains(document.activeElement) ? document.activeElement : undefined;
     const caret = activeField ? [activeField.selectionStart, activeField.selectionEnd] : undefined;
-    for (const details of tree.querySelectorAll<HTMLDetailsElement>("details[data-detail-key]")) detailOpen.set(details.dataset.detailKey!, details.open);
     renderingFields = true;
     const current = structure.paintedSource !== undefined ? handlers.pageSource?.(structure.path) : undefined;
     paintFresh = current === undefined ? undefined : current === structure.paintedSource;
@@ -985,17 +1006,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const wanted = focusSlotField; focusSlotField = undefined;
       const input = [...fieldInputs].find(([id, input]) => id.startsWith(wanted.prefix) && tree.contains(input) && !input.closest("[hidden]"))?.[1]
         ?? [...fieldInputs].find(([id, input]) => id.startsWith(wanted.prefix) && tree.contains(input))?.[1];
-      if (input) {
-        const details = input.closest("details"); if (details) details.open = true;
-        input.focus(); input.select(); return;
-      }
+      if (input) { input.focus(); input.select(); return; }
       const owner = wanted.row !== undefined ? rowElement(wanted.row) : undefined;
       if (owner) { focusRowOnly(owner); return; }
     }
     if (focusInline) {
       const wanted = focusInline; focusInline = undefined;
-      const first = tree.querySelector<HTMLElement>(`.page-structure__inline[data-edit-node="${wanted}"] input:not([type=hidden]):not([type=file])`);
-      if (first) { first.closest("details")?.setAttribute("open", ""); first.focus(); return; }
+      const first = tree.querySelector<HTMLElement>(`.page-structure__inline[data-edit-node="${wanted}"] input:not([type=hidden]):not([type=file]), .page-structure__inline[data-edit-node="${wanted}"] textarea`);
+      if (first) { first.focus(); return; }
     }
     if (activeField) fieldClosers.get(activeField)?.();
     if (focused && rows.has(focused)) focusRowOnly(rows.get(focused)!);
@@ -1057,7 +1075,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       uploadClosers.clear();
       for (const close of formClosers.values()) close();
       formClosers.clear();
-      fieldClosers.clear(); fieldInputs.clear(); detailOpen.clear(); attributeForms.clear();
+      fieldClosers.clear(); fieldInputs.clear(); attributeForms.clear();
       endDrag();
       hint.remove();
       meta.remove();

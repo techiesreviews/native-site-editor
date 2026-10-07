@@ -257,16 +257,29 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row--empty-slot .page-structure__text { opacity: 0.6; font-style: italic; }
 .page-structure__row--empty-slot .page-structure__slot-badge { opacity: 0.7; }
 
-/* The inline editor: one disclosure under its row. */
+/* The inline editor and its row: one soft block. The row keeps its tint and
+   loses its lower corners; the editor continues it, a lighter tint of the same
+   colour under a hairline seam, with the fields from the row's icon column and
+   Close at the top right. --depth is the owning row's. */
+.page-structure__row.row-action-host.is-editing { --row-action-background: var(--current); }
+.page-structure__row.is-editing {
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--current);
+}
 .page-structure__inline {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  margin: 2px 4px 4px calc(6px + var(--depth, 0) * var(--structure-indent, 4px));
-  padding: 6px 4px 6px 8px;
-  border-left: 2px solid var(--component);
-  border-radius: 0 var(--radius) var(--radius) 0;
-  background: var(--component-surface);
+  margin: 0 0 4px;
+  padding: 6px 4px 10px calc(20px + var(--depth, 0) * var(--structure-indent, 4px));
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: color-mix(in oklch, var(--primary) 9%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--primary) 18%, transparent);
+}
+/* An instance's Attributes hang under the instance's own row, a column further in. */
+.page-structure__inline--attributes {
+  padding-left: calc(24px + var(--depth, 0) * var(--structure-indent, 4px));
 }
 .page-structure__inline > :first-child { flex: 1; min-width: 0; }
 .page-structure__inline > .page-structure__action { flex: none; }
@@ -275,24 +288,41 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__slot-field > span { overflow-wrap: anywhere; }
 /* In the narrow sidebar each caption sits above a full-width field. */
 .page-structure__inline .page-structure__slot-field,
-.page-structure__inline .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.page-structure__inline .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, 1fr); gap: 3px; font-size: var(--type-badge); }
 /* A lone Text field needs no visible caption; its accessible name stays. */
 .page-structure__slot > .page-structure__slot-field:only-child { grid-template-columns: minmax(0, 1fr); }
 .page-structure__slot > .page-structure__slot-field:only-child > .page-structure__slot-field-label {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
-.page-structure__slot-field input,
+.page-structure__slot-field :is(input, textarea),
 .page-structure__attribute-add input { min-width: 0; width: 100%; box-sizing: border-box; color: var(--text); background: var(--surface-input, var(--panel-surface)); border: 1px solid var(--control-line, var(--line)); border-radius: var(--radius-small, 4px); padding: 4px 6px; font: inherit; font-size: var(--type-small); }
-.page-structure__slot-field input:focus-visible,
+.page-structure__inline .page-structure__slot-field :is(input, textarea),
+.page-structure__inline .page-structure__attribute-add input { height: 28px; padding: 0 8px; border-radius: var(--radius); }
+/* A text field: one line that wraps and grows with its text, up to 12 lines,
+   then scrolls. Same box as the inputs at one line (28px). */
+.page-structure__slot-field textarea {
+  display: block;
+  field-sizing: content;
+  resize: none;
+  overflow-wrap: anywhere;
+  line-height: 16px;
+}
+.page-structure__inline .page-structure__slot-field textarea {
+  height: auto;
+  min-height: 28px;
+  max-height: calc(12lh + 12px);
+  padding: 5px 8px;
+  overflow-y: auto;
+}
+.page-structure__slot-field :is(input, textarea):focus-visible,
 .page-structure__attribute-add input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-.page-structure__slot-field input[aria-invalid=true] { border-color: var(--danger); }
-.page-structure__slot details { display: flex; flex-direction: column; gap: 4px; }
-.page-structure__slot summary { cursor: pointer; font-size: var(--type-small); font-weight: 600; color: var(--component-text); }
-.page-structure__slot details[open] > :not(summary) { margin-top: 4px; }
+.page-structure__slot-field :is(input, textarea)[aria-invalid=true] { border-color: var(--danger); }
+/* A link's or image's fields: a labelled group, always open. */
+.page-structure__slot-fields { display: flex; flex-direction: column; gap: 6px; }
 .page-structure__slot-summary { font-size: var(--type-small); color: var(--muted); }
 .page-structure__attributes { font-size: var(--type-small); }
-.page-structure__attributes summary { cursor: pointer; font-weight: 600; color: var(--component-text); }
-.page-structure__attribute { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; margin-top: 4px; }
+.page-structure__attribute { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; margin-top: 6px; }
+.page-structure__attribute:first-child { margin-top: 0; }
 .page-structure__attribute .page-structure__slot-field { grid-template-columns: minmax(0, min(40%, 96px)) minmax(0, 1fr); }
 .page-structure__attribute-add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; margin-top: 8px; }
 .page-structure__attribute-error { grid-column: 1 / -1; margin: 0; color: var(--danger); }

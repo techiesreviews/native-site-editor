@@ -67,7 +67,7 @@ test('slot URL writes reject executable protocols without double decoding litera
 
 test('390px Structure details stay within their sidebar',async({page})=>{
  await page.setViewportSize({width:390,height:760});await harness(page);
- for(const node of ['0.1','0.2']){await edit(page,node);await page.locator('.page-structure__inline details').evaluateAll((list:HTMLDetailsElement[])=>list.forEach(d=>d.open=true));
+ for(const node of ['0.1','0.2']){await edit(page,node);
  const dimensions=await page.locator('aside').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth}));expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.width);}
 });
 

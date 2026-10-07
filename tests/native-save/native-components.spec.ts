@@ -83,8 +83,6 @@ async function editSlot(page: Page, name: string) {
 }
 async function openSlotDetails(page: Page, name: string) {
   if (!await slot(page, name).count()) await editSlot(page, name);
-  const details = slot(page, name).locator('details');
-  if (!await details.evaluate(el => (el as HTMLDetailsElement).open)) await details.locator('summary').click();
 }
 async function uploadImage(page: Page) {
   await openSlotDetails(page, 'image');
