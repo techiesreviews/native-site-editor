@@ -24,8 +24,11 @@ ten compound/piped Git commands or unlisted `git grep` calls were denied by the
 read-only guard, and the visual report places a progress sentence before its
 completion marker. Reviewers describe retries with permitted single commands
 or Read/Grep tools; the controller report explicitly states no assigned scope
-was left uninspected. Preserve the raw denial records and assess recovery before
-recording fully verified review completion. These reports are not approval.
+was left uninspected. A read-only audit of these six sessions subsequently
+confirmed all ten denied calls were followed by permitted commands or Read/Grep
+inspection, all sessions ended normally, and no required scope remained omitted.
+The six reports are complete with recovered permission denials; the raw runner
+status remains unchanged as historical evidence. These reports are not approval.
 
 The controller report identifies a blocking History regression: opening another
 file replaces the toolbar button, making its captured-anchor identity check
@@ -35,7 +38,36 @@ rail still using 16 px per depth in `src/page-builder/components.css`, while
 rows use 4 px. The combined report confirms the History issue affects files
 opened through Pages, Media and the palette. Reproduce and fix these findings
 on isolated branches before landing the affected slices. Full reports are the
-six job directories' `result.md` files.
+six job directories' `result.md` files. Fixes are now being validated separately;
+the original candidate stays frozen at `679f931`.
+
+## Review-fix validation in progress
+
+The separate integration branch `build/p5-review-fixes` currently contains the
+slot-rail alignment (`2884cb8`, copied as `6817c8d`), History lifecycle/restore
+ownership (`fe9d52a`, copied as `0dce29f`), and Pages unread-source proof correction
+(`360ade2`, copied as `f6a1fef`). The rail also lands in the user's current workspace
+as `51d8243`; its spacing follows the same 4 px depth increment as the rows.
+
+At frozen integration head `f6a1fef`, the focused browser run passed 108 checks
+and failed one slot-action instrumentation check. Its trace shows the probe was
+attached to a button replaced before Playwright delivered the click; the action
+ran on the replacement button. Three exact reruns passed. Test-only `98362ba`
+instead observes the actual clicked button, preserving every assertion. It still
+requires combined validation. The original failure artifacts are preserved.
+
+Startup error ownership fix `61c1f94` has a deterministic failing-before proof
+and passes all three startup concurrency/late-response/error browser cases.
+Title pointer handling preserves the requested actions, but two title assertions
+need verification after reopening the Pages panel that navigation closes.
+Restoring Monaco's default drop contribution exposes an existing upstream
+standalone bulk-edit issue: a literal `$0` appears in dropped text. The restore
+has not passed and is not in the integration candidate. A narrow local fix is
+being investigated; the original exact-source assertion remains intact.
+
+The new integration candidate has not yet passed the full suite or a follow-up
+Claude review. These partial results must not replace the frozen candidate's
+691-pass record below.
 
 ## Frozen slices
 

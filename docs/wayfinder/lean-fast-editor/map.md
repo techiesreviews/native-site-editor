@@ -65,8 +65,10 @@ setup, History, palette, Pages and media controllers, guarded concurrent startup
 the requested 4 px structure indentation, and their isolated regression fixes.
 Its corrected second integration candidate passes 691 full browser checks,
 focused structure, smoke and byte checks. Six read-only Claude review reports
-returned after the 13:00 Europe/Amsterdam start. The History lifecycle blocker,
-slot-rail spacing and review denial verification remain open in the handoff.
+returned after the 13:00 Europe/Amsterdam start. All ten denied review calls were
+recovered and audited. History, slot-rail and page-move fixes are on a separate
+integration branch; title, startup and Monaco fixes are being checked before
+the next full suite and Claude review. The handoff records the partial results.
 
 The following note records the earlier P1.4 slice:
 
