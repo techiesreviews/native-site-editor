@@ -436,3 +436,20 @@ test("cursor undo and existing editing actions stay available", async ({ page, b
     await page.keyboard.press("Escape");
   }
 });
+
+test("dropping a Files row inserts its plain path into editable source", async ({ page, baseURL }) => {
+  await open(page, baseURL, "robots.txt");
+  await setSource(page, "end");
+  const explorer = page.locator("#explorer");
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  const file = explorer.getByRole("button", { name: "index.html", exact: true });
+  await expect(file).toBeVisible();
+  await expect(file).toHaveAttribute("draggable", "true");
+  // Native dragstart supplies text/plain=index.html through the real Files UI.
+  // Dropping at the first rendered character inserts before it without a
+  // Monaco test API or synthetic DataTransfer bypassing the source widget.
+  const firstLine = page.locator(`${HOST} .view-line`).first();
+  await file.dragTo(firstLine, { targetPosition: { x: 1, y: 8 } });
+  await expect.poll(() => source(page)).toBe("index.htmlend");
+});
