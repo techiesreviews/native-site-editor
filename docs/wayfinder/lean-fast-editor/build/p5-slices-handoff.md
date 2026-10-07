@@ -35,10 +35,11 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `4b08251` | Every chevron in a 2 px ring of its line's exact colour (purple for components and parts, grey otherwise), no fill; rails stop at rings. Fade test samples the plain colour at x = 2 px, left of the ring | structure specs, native-structure-compact 33/33 |
 | `a5c4fe7` | Redesign after Lex found the rings cluttered (Mobbin: Figma, Rive, MagicPath): 8 px per level; 10 px 1 px ring inside each expandable chevron; one 1 px guide per group from under the parent's ring; purple for components, grey otherwise; parts no longer share the component's column | check, 1,054 units, structure specs 105 passed / 2 skipped |
 | `1f080f3` | Lex disliked the rings and guides: Page Structure restored to its `ddd8ed4` (= `c275489`) look. Parts share the component's chevron column, purple rail through that chevron, 4 px per level, no rings, no grey guides | check, structure specs 105 passed / 2 skipped |
+| `043101e` | Slice 10, preview selection controller ([p5-13](p5-13-preview-selection-controller.md)): selection dispatch, refusals, reveal, replay, source intent and selection waiters moved to `src/controllers/preview-selection-controller.ts`; `main.ts` 8,269 → 8,162. Opus review: no defects | check, 1,084 units, focused 152, smoke 32, native-static 40/13/0 (twice; one earlier run 39/1/13, `native-shared-link-host:82`, then 5 passes), full native-save 708 / 85 / 0, budget 345 KB |
 | `260fa94` + `d0e98ca` | Slice 9, boot controller (below) | check, 1,067 units, boot-focused 69, smoke 32, full native-save 708 passed / 85 skipped / 0 failed; budget 345 KB |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix), `3e8e9915` (`043101e`, slice 10, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
@@ -108,8 +109,10 @@ sources).
 
 ## Next actions
 
-1. Slice 10 (preview and selection; plan: `preview-selection-controller.ts`,
-   about 170 lines) then 10b (attach the preview frame early, ticket 02).
+1. Land `build/structure-card-editor` (Page Structure in-place editing; Lex
+   approved the look) after its review fixes, then slice 10b (attach the
+   preview frame early, ticket 02). Watch `native-shared-link-host:82`
+   (one unexplained failure).
 2. Slices 11–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
    gates.
