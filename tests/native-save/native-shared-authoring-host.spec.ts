@@ -81,6 +81,13 @@ test("Save shared on a section and a header writes the private master and JSON a
   expect(await head(".editor/sections/about-hero.html")).toBe(afterSection);
   expect(await head(JSON_PATH)).toContain("site-head");
   for (const path of [PAGE, ...CSS]) expect(await head(path)).toBe(before[path]);
+  // After the save the text index is read again; Structure's shared offers come back once it lands,
+  // and a new Save shared is accepted against the re-read pages.
+  await expect(row(page, /About hero/).getByRole("button", { name: "Edit component" })).toBeAttached();
+  const next = await share(page, /^Section(?! About)/, "section", "about-more", "About more");
+  await next.getByRole("button", { name: "Save shared" }).click();
+  await expect.poll(() => effectiveSource(page, baseURL, ".editor/sections/about-more.html")).toMatch(/^<section[\s\S]*<\/section>$/);
+  await expect(row(page, /About more/).getByRole("button", { name: "Edit component" })).toBeAttached();
 });
 
 const masterBanner = (page: Page, name = "Saved section master") => page.getByRole("region", { name });

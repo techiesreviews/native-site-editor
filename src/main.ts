@@ -2745,7 +2745,7 @@ const nativeSharedContexts = new Map<string, { current: () => boolean; records: 
 function nativeSharedFieldsRevision() {
   const scope = draftScope(), files = nativeFiles().sort();
   const privateSources = files.filter(isPrivateMasterPath).map(path => [path, nativeEffectiveSource(path) ?? null]);
-  const key = JSON.stringify([generation, setupScope(), versionView ? "history" : "", appStore.openFile.value ?? "", nativeMasterEdit()?.session ?? "", files, nativeSources(),
+  const key = JSON.stringify([generation, setupScope(), versionView ? "history" : "", appStore.openFile.value ?? "", nativeMasterEdit()?.session ?? "", nativeTextIndexed, files, nativeSources(),
     nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH) ?? null, privateSources, Boolean(appStore.openFile.value && editorModule?.isMounted(appStore.openFile.value)), Boolean(scope && editorModule)]);
   if (nativeSharedSnapshot?.key === key && nativeSharedSnapshot.proofs.every(proof => proof.isCurrent())) return `shared-${nativeSharedToken}`;
   nativeSharedSnapshot = { key, proofs: scope && editorModule && appStore.openFile.value ? [editorModule.captureFileModelState(scope, appStore.openFile.value)] : [] };
@@ -2778,8 +2778,9 @@ function nativeSharedRoot(path: string, item: NativeStructureItem): NativeShared
   if (tag !== "section" && tag !== "header" && tag !== "footer") return undefined;
   if (!nativeSite || versionView || nativeMasterEdit() || appStore.openFile.value !== path || !editorModule?.isMounted(path) || !Object.values(nativeSite.routes).includes(path)) return undefined;
   // Shared sections span every page: until the text index has read them all, other pages look
-  // empty, so nothing is offered. Ask for the index now; Structure is drawn again once it lands.
-  if (!nativeTextIndexed) { wantNativeTextIndex(); return undefined; }
+  // empty, so nothing is offered. The index is not asked for here (that would read it before the
+  // first paint); Structure is drawn again when it lands.
+  if (!nativeTextIndexed) return undefined;
   const scope = draftScope(), painted = nativeStructurePaintedSources.get(item);
   if (!scope || painted === undefined || nativeEffectiveSource(path) !== painted) return undefined;
   const range = locateNativeElementRange(painted, item.node);
@@ -2964,7 +2965,7 @@ async function nativeStructureEdit(path: string, node: number[], painted: string
 // exact range in the editor JSON), with its record's label; undefined otherwise.
 function nativeLinkedAncestor(path: string, source: string, node: readonly number[]): { node: number[]; label: string } | undefined {
   // Links are resolved against every page, so only once the text index has read them all.
-  if (!nativeTextIndexed) { wantNativeTextIndex(); return undefined; }
+  if (!nativeTextIndexed) return undefined;
   const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
   const catalogs = nativeSharedCatalogs(docText);
   if (docText === undefined || !catalogs) return undefined;
@@ -3928,6 +3929,8 @@ function nativeFiles(scope = draftScope()): string[] {
 // steps are guarded against a superseding navigation (`epoch`).
 async function activateNativeSite(repo: Repository, result: Snapshot, epoch: number, openPath?: string) {
   const request = ++nativeSourcesRequest;
+  // A new read: until its text index lands, nothing counts as indexed.
+  nativeTextIndexed = false;
   const live = () => epoch === generation && request === nativeSourcesRequest;
   const placeholder: NativeSite = { routes: { "/": NATIVE_HOME_PAGE }, components: {} };
   const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
