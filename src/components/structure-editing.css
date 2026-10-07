@@ -211,4 +211,3 @@
   }
   .page-structure__inline[data-slot-editor] .page-structure__slot-field :is(input, textarea) { transition: box-shadow 120ms ease-out; }
 }
-

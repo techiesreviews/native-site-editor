@@ -47,4 +47,3 @@ export function suggestionLines(entry: FieldSuggestion, siteName: string | undef
   top.textContent = named;
   return [top, value];
 }
-
