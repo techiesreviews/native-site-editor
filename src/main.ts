@@ -13,7 +13,7 @@ import {
   rememberWorkspace,
   type WorkspaceLocation,
 } from "./workspace-state";
-import type { createAgentMenu } from "./components/agent-menu";
+import { createAgentController } from "./controllers/agent-controller";
 import { setupPrompt } from "./agent-prompts";
 import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
@@ -247,7 +247,6 @@ editorModule.setViewLoader(() => wantEditor().then((module) => module.monacoView
 let disposeEditor: (() => void) | undefined;
 // The live primary keeps its journal even when a completed operation releases its alias.
 let primaryHistoryScope: { key: string; session: string; proof: { isCurrent(): boolean } } | undefined;
-let agentMenu: ReturnType<typeof createAgentMenu> | undefined;
 let activeFileContext: EditorContext["file"] = null;
 let editorRequest = 0;
 
@@ -371,7 +370,7 @@ function mountWorkspace() {
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   const menuPanel = element("repository-actions");
   menuPanel.addEventListener("toggle", () => {
-    if (menuPanel.matches(":popover-open")) { void ensureAgentMenu().catch(errorMessage); void mountSetupChecklist().catch(errorMessage); }
+    if (menuPanel.matches(":popover-open")) { void agentController.ensure().catch(errorMessage); void mountSetupChecklist().catch(errorMessage); }
   });
   repositorySelect = element<HTMLSelectElement>("repository");
   sidebarResize = mountSidebarResize(
@@ -556,10 +555,9 @@ function mountWorkspace() {
       const outcome = gap && appStore.selection.value ? moveNativeSectionTo(appStore.selection.value, gap.parent, gap.index) : undefined;
       if (!outcome) element("status").textContent = "Section drag cancelled";
     },
-    onDismissRequest: (id) => void agentMenu?.dismiss(id),
+    onDismissRequest: (id) => void agentController.dismiss(id),
     onAnswerRequest: async (id, text) => {
-      if (!agentMenu) throw new Error("No agent is connected.");
-      await agentMenu.answer(id, text);
+      await agentController.answer(id, text);
     },
     // The Add panel docks over the page structure sidebar.
     addPanelDock: () => {
@@ -2132,7 +2130,7 @@ function renderNativeEditBar(selection: NativePreviewSelection) {
   // Edit component, Make component… (src/page-builder/components.ts).
   if (componentTools && !inMaster) controls.push(...componentTools.controls(selection));
   // Ask agent: a request about this element for a connected agent, pinned on it.
-  const menu = agentMenu;
+  const menu = agentController.captureAsk();
   if (node && menu?.connected() && nativeSite) {
     const site = nativeSite;
     controls.push({
@@ -4506,9 +4504,7 @@ function renderLogin(
 ) {
   editorPalette?.dispose();
   editorPalette = undefined;
-  stopAgentProbe();
-  agentMenu?.destroy();
-  agentMenu = undefined;
+  agentController.destroy();
   setupChecklist?.close();
   setupChecklist?.root.remove();
   setupChecklist = undefined;
@@ -4666,7 +4662,7 @@ async function spotlightAgentConnection() {
 let litEntry: AbortController | undefined;
 async function showAgentConnection() {
   const menu = repositoryMenu;
-  await ensureAgentMenu();
+  await agentController.ensure();
   if (!menu || menu !== repositoryMenu) return;
   litEntry?.abort();
   repositoryMenu?.open();
@@ -4771,7 +4767,7 @@ function refreshSetup() {
   const idle = { progress: setupProgress({ homePage: false, committed: false, homeUnsaved: false, defaultName: "", agent: false }), defaultName: "", visible: false, scope: "" };
   if (!repo || !account || !state) { checklist.update(idle); return; }
   let memory = readSetupMemory(localStorage, account, repo.id);
-  if (agentMenu?.connected() && !memory.agent) memory = writeSetupMemory(localStorage, account, repo.id, { agent: true });
+  if (agentController.connected() && !memory.agent) memory = writeSetupMemory(localStorage, account, repo.id, { agent: true });
   const progress = setupProgress({ ...state, nameConfirmed: memory.named, agent: Boolean(memory.agent) });
   // Done by itself: "Your site is set up" for a moment, then gone for good.
   const finishing = progress.complete && memory.auto && !memory.finished && setupAsked !== repo.id;
@@ -7554,15 +7550,12 @@ async function openComponentLinkedStyle(page: string) {
 }
 
 function updateAgentContext() {
-  agentMenu?.changed();
+  agentController.changed();
   refreshSetup();
 }
 
 // ---- Agents (src/agent-site.ts): the context shared, and changes applied through the editor's own actions. ----
 
-function agentRepository() {
-  return appStore.repository.value && appStore.snapshot.value && info.user ? { id: appStore.repository.value.id, fullName: appStore.repository.value.full_name } : undefined;
-}
 // Agents see the whole site (its pages are read after the first paint):
 // the context waits for the complete index of the repository open then.
 function agentContext(): Promise<SharedContext | undefined> {
@@ -8886,71 +8879,25 @@ draftStore().baseline = (scope, path) => {
     : undefined;
 };
 
-let agentMenuLoading: Promise<void> | undefined;
-function ensureAgentMenu() {
-  if (agentMenu || !info?.user) return Promise.resolve();
-  const account = info.user.login;
-  const host = element("agent-menu");
-  return agentMenuLoading ??= loadAgentMenu().then(({ createAgentMenu }) => {
-    if (agentMenu || info.user?.login !== account || host !== element("agent-menu")) return;
-    agentMenu = createAgentMenu({
-      account: account,
-      repository: agentRepository,
-      context: agentContext,
-      onCommand: applyAgentSiteCommand,
-      // Ask agent shows in the edit bar while an agent is connected.
-      onConnection: (connected) => { noteSetupAgent(connected); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
-      onRequests: (requests) => nativePreview?.setRequests(requests),
-      onQuestions: (count) => repositoryMenu?.setQuestions(count),
-      // A question in the selector's list: its pin, card open, answer box focused.
-      onShowRequest: (id) => {
-        repositoryMenu?.close();
-        nativePreview?.showRequest(id);
-      },
-    });
-    host.append(agentMenu.root);
-    stopAgentProbe();
-  }).finally(() => { agentMenuLoading = undefined; });
-}
-let agentProbe: ReturnType<typeof setInterval> | undefined;
-let agentProbeRetry: ReturnType<typeof setTimeout> | undefined;
-let agentProbing = false;
-function stopAgentProbe() {
-  clearInterval(agentProbe);
-  clearTimeout(agentProbeRetry);
-  agentProbe = agentProbeRetry = undefined;
-}
-async function restoreAgentMenu(now = false) {
-  if (agentProbing || agentMenu || !info?.user || (!now && document.visibilityState !== "visible")) return;
-  const account = info.user.login, host = element("agent-menu");
-  agentProbing = true;
-  try {
-    const response = await fetch("/api/agent/hub", { credentials: "same-origin" });
-    if (!response.ok) throw new Error("Could not check the agent connection.");
-    const hub = await response.json() as { grants?: unknown[]; requests?: unknown[] };
-    if (account !== info.user?.login || host !== element("agent-menu")) return;
-    if (hub.grants?.length || hub.requests?.length) await ensureAgentMenu();
-  } finally {
-    agentProbing = false;
-  }
-}
-function startAgentProbe() {
-  stopAgentProbe();
-  agentProbe = setInterval(() => void restoreAgentMenu().catch(() => {}), 30_000);
-  void restoreAgentMenu(true).catch(() => {
-    // A transient boot failure gets one early retry; visible polling continues afterwards.
-    if (agentProbe) agentProbeRetry = setTimeout(() => void restoreAgentMenu().catch(() => {}), 3000);
-  });
-}
-const wakeAgentProbe = () => { if (agentProbe) void restoreAgentMenu().catch(() => {}); };
-window.addEventListener("focus", wakeAgentProbe);
-document.addEventListener("visibilitychange", wakeAgentProbe);
-window.addEventListener("storage", (event) => {
-  if (event.key !== "native-site-editor:agent-connected" || agentMenu || !info?.user) return;
-  const account = info.user.login;
-  void ensureAgentMenu().then(() => {
-    if (info.user?.login === account) agentMenu?.consentGranted();
-  }).catch(errorMessage);
+const agentController = createAgentController<HTMLElement>({
+  account: () => info?.user?.login,
+  host: () => document.getElementById("agent-menu") ?? undefined,
+  appStore,
+  load: loadAgentMenu,
+  onError: errorMessage,
+  createOptions: () => ({
+    context: agentContext,
+    onCommand: applyAgentSiteCommand,
+    // Ask agent shows in the edit bar while an agent is connected.
+    onConnection: (connected) => { noteSetupAgent(connected); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    onRequests: (requests) => nativePreview?.setRequests(requests),
+    onQuestions: (count) => repositoryMenu?.setQuestions(count),
+    // A question in the selector's list: its pin, card open, answer box focused.
+    onShowRequest: (id) => {
+      repositoryMenu?.close();
+      nativePreview?.showRequest(id);
+    },
+  }),
 });
 
 async function start() {
@@ -8978,7 +8925,7 @@ async function start() {
     if (info.user) {
       resumeWorkspaceLink();
       mountWorkspace();
-      startAgentProbe();
+      agentController.start();
       // GitHub sends the user back here after the App was installed or its
       // repositories changed: list them afresh, and tidy the address.
       const returned = new URL(location.href);
