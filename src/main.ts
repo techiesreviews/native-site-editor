@@ -5763,6 +5763,9 @@ async function confirmNativeMove(source: NativePagesTarget, parent: string) {
 
 async function moveNativePageTo(target: NativePagesTarget) {
   if (!pagePicker || !target.file) return;
+  // The choices are labelled by page titles, which come with the site index.
+  const problem = await ensureNativeTextIndex();
+  if (problem) { errorMessage(new Error(problem)); return; }
   const parent = await pagePicker.pick({ title: `Move ${target.label} to…`, items: nativeMoveChoices(target) });
   if (parent === undefined) { announce(`Cancelled moving ${target.label}`); return; }
   await confirmNativeMove(target, parent);
