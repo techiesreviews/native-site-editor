@@ -30,6 +30,9 @@ A decided plan, ready to hand off, for five features: making components (from bu
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Research what insert, drag and move support today](tickets/11-research-insert-drag-today.md): source edits already nest; the UI only drops and drags whole sections between siblings; elements were taken out of Add; instances take no drops; 15 gaps, the largest being nested drop targets and drops into instances
+- [Research variant discovery from component CSS](tickets/06-research-variant-discovery.md): `:host([data-x="v"])` rules in the component CSS, including inside at-rules; an absent attribute is the default; labels from the value or an optional `/* variant … */` comment; a shared parser in `shared/`; no loader change
+
 ## Not yet specified
 
 - **Editing a component's template visually.** Whether a component gets an edit mode in the preview (editing the template rather than the instance), or stays source-only. This depends on direct creation (ticket 04) and on how the builder works inside a template.
