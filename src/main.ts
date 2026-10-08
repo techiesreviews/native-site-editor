@@ -5479,9 +5479,10 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   const guessed = takeBootGuess(appStore.repository.value, requestedBranch);
   const opened = appStore.repository.value;
   const snapshotRead = () => api<Snapshot>("snapshot", { repo: opened.full_name, branch: requestedBranch });
-  let prefetched = guessed ? undefined : snapshotRead();
+  // A rejected guess has already tried a fresh read (takeBootGuess).
+  const prefetched = guessed ?? snapshotRead();
   // A branch lookup may fail first or navigation may supersede this request.
-  void prefetched?.catch(() => {});
+  void prefetched.catch(() => {});
   try {
     const listing = api<string[]>("branches", {
       repo: appStore.repository.value.full_name,
@@ -5489,8 +5490,9 @@ async function chooseRepository(resume?: WorkspaceLocation) {
     void listing.catch(() => {});
     // The remembered branch opens once its snapshot is in, which proves the
     // branch exists; the branch list fills the selector when it comes. A
-    // guess that fails (a deleted branch) takes the normal path below.
-    const guessedSnapshot = guessed && await guessed.catch(() => undefined);
+    // guess that fails (a deleted branch), or a branch list that comes
+    // first, takes the normal path below.
+    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => undefined)]);
     if (epoch !== generation) return;
     if (guessedSnapshot) {
       const branch = requestedBranch;
@@ -5506,7 +5508,6 @@ async function chooseRepository(resume?: WorkspaceLocation) {
       await loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot));
       return;
     }
-    if (guessed) void (prefetched = snapshotRead()).catch(() => {});
     const branches = await listing;
     if (epoch !== generation) return;
     if (!branches.length) {

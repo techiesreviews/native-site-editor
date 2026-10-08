@@ -133,6 +133,7 @@ test('a deleted remembered branch takes the normal path: its message, and anothe
   expect(state.early.some((read) => read.startsWith('/api/snapshot') && read.includes('branch=gone'))).toBe(true);
   await expect(page.locator('#notice')).not.toContainText('could not be opened');
   await expect(page.locator('#branch option[value="main"]')).toBeAttached();
+  await expect(page.locator('#branch')).toBeEnabled();
   await page.locator('#branch').selectOption('main', { force: true });
   await expect(preview(page).locator('.hero h1')).toBeVisible();
 });
@@ -145,4 +146,15 @@ test('a failed branch list on the remembered path still paints, on the remembere
   await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
   await expect(page.locator('#branch')).toHaveValue('main');
   await expect(page.locator('#branch')).toBeEnabled();
+});
+
+test('a stalled guessed snapshot does not hold the branch picker once the branch list is in', async ({ page, baseURL }) => {
+  await firstBoot(page, baseURL);
+  let sessionDone = false;
+  await page.route('**/api/session', async (route) => { const response = await route.fetch(); await route.fulfill({ response }); sessionDone = true; });
+  await page.route(/\/api\/snapshot\?/, (route) => (sessionDone ? route.continue() : undefined));
+  await page.reload();
+  await expect(page.locator('#branch')).toBeEnabled();
+  await expect(page.locator('#branch option[value="main"]')).toBeAttached();
+  await expect(page.locator('#branch option')).not.toHaveCount(0);
 });
