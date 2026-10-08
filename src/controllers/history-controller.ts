@@ -83,7 +83,7 @@ export function createHistoryController(ports: HistoryPorts) {
         repo: context.repo, branch: context.branch, path: context.path,
         scope: site ? "site" : "file", isCurrent: live,
         isRestoreCurrent: restoreCurrent,
-        onScope: next => { if (!live()) return; scope = next; void open(true).catch(ports.onError); },
+        onScope: next => { if (!live()) return; scope = next; void open(true).catch((error: unknown) => ports.onError(error)); },
         onOpenFile: (file, commit, head) => { if (live()) ports.openFile(file, commit, head); },
         hasDraft: () => live() && context.hasDraft(),
         onExpired: () => { if (live()) ports.expired(); },

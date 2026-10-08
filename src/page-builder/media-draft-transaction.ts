@@ -72,7 +72,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
     for (const [path, record] of desired) if (host.store.get(scope, path) === expected.get(path)) write(path, record);
   };
   return {
-    assertLive: host.assertLive, paths: host.paths, source: host.source, assetVersion: host.assetVersion,
+    assertLive: () => host.assertLive(), paths: () => host.paths(), source: (path) => host.source(path), assetVersion: (path) => host.assetVersion(path),
     async snapshot(batch) {
       const before = new Map(pathsOf(batch).map(path => [path, host.store.get(scope, path)]));
       // Renamed drafts can carry a paired origin outside this batch's visible paths.

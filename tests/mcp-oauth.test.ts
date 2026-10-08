@@ -98,7 +98,7 @@ function registerWith(budget: "allow" | "deny" | "unavailable") {
   const deps = {
     session: async () => null,
     html: (body: string) => new Response(body, { headers: { "Content-Type": "text/html" } }),
-    fetcher: fetch,
+    fetcher: (...args: Parameters<typeof fetch>) => fetch(...args),
   } as any;
   const request = new Request(`${origin}/auth/mcp/register`, {
     method: "POST",
@@ -135,7 +135,7 @@ const gzip = (text: string) =>
 const oauthDeps = {
   session: async () => null,
   html: (body: string) => new Response(body, { headers: { "Content-Type": "text/html" } }),
-  fetcher: fetch,
+  fetcher: (...args: Parameters<typeof fetch>) => fetch(...args),
 } as any;
 
 test("the token endpoint bounds a streamed over-limit form through handleOAuth and cancels it early", async () => {
@@ -231,7 +231,7 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
     // The official client discovers, registers and asks for authorization.
     const { provider, saved } = memoryProvider();
     const fetch = workerFetch(worker);
-    let transport = new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { authProvider: provider, fetch });
+    let transport = new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { authProvider: provider, fetch: (...args: Parameters<typeof fetch>) => fetch(...args) });
     client = new Client({ name: "oauth-test", version: "1.0.0" });
     await assert.rejects(() => client!.connect(transport), (error) => error instanceof UnauthorizedError);
     assert.match(saved.client.client_id, /^mcp_[a-f0-9]{32}$/);
@@ -298,7 +298,7 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
     const hub = await tab.hub();
     assert.deepEqual(hub.grants.map((grant: any) => [grant.via, grant.client, grant.repo]), [["oauth", "Test Claude", "lex/starter"]]);
     await tab.share(await siteContext());
-    transport = new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { authProvider: provider, fetch });
+    transport = new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { authProvider: provider, fetch: (...args: Parameters<typeof fetch>) => fetch(...args) });
     client = new Client({ name: "oauth-test", version: "1.0.0" });
     await client.connect(transport);
     const site = payload(await client.callTool({ name: "get_site", arguments: {} }));

@@ -17,10 +17,10 @@ export interface NativeSharedAuthoringContext {
 export type NativeSharedSubmitResult = { success: true } | { error: string };
 export interface NativeSharedAuthoringActions {
   /** Host checks the key again before any write; this form never writes sources. */
-  submit(metadata: NativeSharedMetadata, contextKey: string): Promise<NativeSharedSubmitResult>;
+  submit: (metadata: NativeSharedMetadata, contextKey: string) => Promise<NativeSharedSubmitResult>;
   /** Host validates the offered record and live source/graph/key before writing. */
-  link?(recordId: string, contextKey: string): Promise<NativeSharedSubmitResult>;
-  close(contextKey: string, reason: "cancel" | "saved"): void;
+  link?: (recordId: string, contextKey: string) => Promise<NativeSharedSubmitResult>;
+  close: (contextKey: string, reason: "cancel" | "saved") => void;
 }
 const safeId = /^[a-z][a-z0-9_-]*$/;
 const reserved = new Set(["__proto__", "prototype", "constructor"]);

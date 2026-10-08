@@ -160,7 +160,7 @@ export function createPagesController(ports: PagesPorts) {
     const parent = route === "/" ? "/" : parentRoute(route);
     let target: Checked<NativeNewTarget> | undefined;
     for (let n = 1; n < 100; n++) {
-      target = nativeNewTarget(parent, `${name}-copy${n > 1 ? `-${n}` : ""}`, { route: (r) => site.routes[r], exists: ports.exists });
+      target = nativeNewTarget(parent, `${name}-copy${n > 1 ? `-${n}` : ""}`, { route: (r) => site.routes[r], exists: (path) => ports.exists(path) });
       if (target.ok) break;
     }
     if (!target?.ok) { ports.error(new Error(target?.error ?? "No name is free for the copy.")); return; }
@@ -281,7 +281,7 @@ export function createPagesController(ports: PagesPorts) {
   // Every HTML and CSS file of the site with its text as edited (undefined
   // when it was not read): where links to a page are looked for.
   function nativeLinkSources(): Record<string, string | undefined> {
-    return pageLinkSources(ports.files(), ports.source);
+    return pageLinkSources(ports.files(), (path) => ports.source(path));
   }
 
   // What changing the URL of the page `file` to the typed `value` does: the

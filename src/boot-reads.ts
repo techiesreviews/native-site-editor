@@ -36,8 +36,8 @@ export function startBootReads<S extends BootSession, R>(options: {
   const start = <T>(read: () => Promise<T>): Promise<T> => {
     try { return Promise.resolve(read()); } catch (error) { return Promise.reject(error); }
   };
-  const session = start(options.readSession);
-  const repositories = start(options.readRepositories).then(
+  const session = start(() => options.readSession());
+  const repositories = start(() => options.readRepositories()).then(
     (response) => ({ response }),
     () => ({ response: undefined }),
   );

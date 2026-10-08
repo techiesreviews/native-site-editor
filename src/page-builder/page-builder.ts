@@ -85,7 +85,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   });
 
   const panel = createAddPanel({
-    choices: deps.choices,
+    choices: () => deps.choices(),
     extraChoices: deps.extraChoices,
     notice: deps.notice,
     pointFor: deps.pointFor,
@@ -94,7 +94,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     canvasWidth,
     points: () => points,
     defaultPoint: () => defaultInsertPoint(points, selection),
-    prepare: deps.prepare,
+    prepare: (tags) => deps.prepare(tags),
     insert,
     drag: () => ({
       frame,

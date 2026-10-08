@@ -647,8 +647,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       attributesAction.setAttribute("aria-expanded", String(attributes));
       addRowActions(el, [
         attributesAction,
-        iconAction("Edit component", "edit", slotModel.edit),
-        iconAction("Disconnect this instance", "detach", slotModel.disconnect),
+        iconAction("Edit component", "edit", () => slotModel.edit()),
+        iconAction("Disconnect this instance", "detach", () => slotModel.disconnect()),
       ]);
     }
     if (shared) {

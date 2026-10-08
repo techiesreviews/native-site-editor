@@ -37,7 +37,7 @@ function fixture() {
     async applyBatch(batch) {
       batches.push(batch);
       await applyMediaWorkspaceBatch(batch, {
-        assertLive: context.assertLive, paths: () => [...paths], source: (path) => text.get(path), assetVersion: (path) => versions.get(path),
+        assertLive: () => context.assertLive(), paths: () => [...paths], source: (path) => text.get(path), assetVersion: (path) => versions.get(path),
         async snapshot() { return { text: new Map(text), paths: new Set(paths), bytes: new Map(bytes), versions: new Map(versions), committed: false, owned: [] as string[] }; },
         async stage(batch, state) {
           for (const upload of batch.uploads) { if (!bytes.has(upload.path)) state.owned.push(upload.path); bytes.set(upload.path, upload.blob); if (failStage) throw new Error("Byte storage failed"); }

@@ -295,7 +295,7 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<SharedCo
     openRoute: openRoute ?? null,
     selection: (selection && agentElement(selection, site, native.source(selection.path))) ?? null,
     components,
-    stylesheets: linkedStylesheets(site, native.source),
+    stylesheets: linkedStylesheets(site, (path) => native.source(path)),
     settings: native.exists(NATIVE_CONFIG_PATH) ? { file: NATIVE_CONFIG_PATH, ...clipSettings(nativeSiteSettings(native.source(NATIVE_CONFIG_PATH))) } : null,
     outlines,
     changes: listChanges(input.drafts).slice(0, 5000).map((change) => ({ kind: change.kind, path: change.path, ...(change.from ? { from: change.from } : {}) })),

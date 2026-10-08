@@ -142,7 +142,7 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
     if (selection.reason !== "refresh" && selection.path === pagePath) sourceIntent = undefined;
     const scopePath = selection.reason !== "refresh" && selection.path === pagePath ? pagePath : editableTemplatePath() ?? pagePath;
     if (selection.path && scopePath && site && !masterAt) {
-      const mapped = nativeComponentScopeSelection(selection, scopePath, site.components, sources, ports.tagName, ports.instanceContent);
+      const mapped = nativeComponentScopeSelection(selection, scopePath, site.components, sources, (source, node) => ports.tagName(source, node), (source, node, tag) => ports.instanceContent(source, node, tag));
       if (!mapped) { refuse(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
       if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
         if (!mapped.node || sources[mapped.path] === undefined) { refuse(selection, "The instance is no longer available. Select it again."); return; }

@@ -26,7 +26,8 @@
     "test:browser:page-part-preview": "playwright test --project=native-page-part-preview",
     "test:browser:all": "playwright test",
     "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\"",
-    "test:budget": "tsx tests/perf/byte-budget.ts"
+    "test:budget": "tsx tests/perf/byte-budget.ts",
+    "lint": "eslint"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",
@@ -35,10 +36,13 @@
     "@playwright/test": "^1.63.0",
     "@types/node": "^24",
     "esbuild": "0.28.1",
+    "eslint": "^10.12.0",
     "libsodium-wrappers": "^0.8.4",
     "miniflare": "5.20261001.0-alpha",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
+    "typescript-eslint": "^8.71.1",
+    "typescript-eslint-api": "npm:typescript@~6.0.3",
     "vite": "^8.3.2",
     "wrangler": "^4.146.0"
   },
@@ -53,6 +57,30 @@
   "overrides": {
     "monaco-editor": {
       "dompurify": "3.4.16"
+    },
+    "typescript-eslint": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/eslint-plugin": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/parser": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/project-service": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/tsconfig-utils": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/type-utils": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/utils": {
+      "typescript": "$typescript"
     }
   },
   "cloudflare": {

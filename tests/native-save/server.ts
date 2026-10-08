@@ -986,7 +986,7 @@ function env(): Env {
             const { ipHash } = (await request.json()) as { ipHash: unknown };
             if (!isBudgetKey(ipHash)) return new Response(null, { status: 400 });
             return Response.json(await admitRegistration({
-              get: storage.get,
+              get: (key) => storage.get(key),
               put: async (key, value) => storage.put({ [key]: value }),
               delete: async (key) => { await storage.delete([key]); return true; },
             }, ipHash, Date.now()));

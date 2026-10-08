@@ -276,7 +276,7 @@ test("repository cache persistence failure keeps a successful GitHub listing sig
   const { env, records } = environment();
   const id = "a".repeat(64);
   records.set(id, { kind: "user", token: "token", login: "lex", avatar_url: "", expiresAt: Date.now() + 60000 });
-  const get = env.SESSIONS.get;
+  const get = env.SESSIONS.get.bind(env.SESSIONS);
   env.SESSIONS.get = (key) => ({ fetch: async (request) => new URL(request.url).pathname === "/repository-cache"
     ? new Response(null, { status: 500 }) : get(key).fetch(request) });
   const fetcher: typeof fetch = async (input) => Response.json(String(input).includes("/repositories")

@@ -30,7 +30,7 @@ test("metadata and upload undo together; redo restages swept bytes", async () =>
   h.bytes.map.clear(); assert.equal(await h.redo(), true); assert.equal(h.records.size, 2); assert.equal(h.bytes.map.size, 1);
 });
 test("scope change after byte staging removes only owned bytes without drafts", async () => {
-  const h = harness(), put = h.bytes.put;
+  const h = harness(), put = h.bytes.put.bind(h.bytes);
   h.bytes.put = async (key, blob) => { await put(key, blob); h.stale(); };
   await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /scope changed/);
   assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0);

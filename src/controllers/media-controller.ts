@@ -18,9 +18,9 @@ export interface MediaWorkspaceSnapshot {
   drafts: DraftAccess & { list(scope: DraftScope): SavedDraft[] };
 }
 export interface MediaModule {
-  openMediaPicker(options: MediaPickerOptions): Promise<void>;
-  closeMediaPicker(): void;
-  mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string }): MediaLibraryView;
+  openMediaPicker: (options: MediaPickerOptions) => Promise<void>;
+  closeMediaPicker: () => void;
+  mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
   workspace(): MediaWorkspaceSnapshot | undefined;
@@ -45,7 +45,7 @@ export interface MediaControllerPorts {
   restoreFile(path: string, generation: number): Promise<unknown>;
   change(path: string, source: string, edits: NativeTextEdit[], node: number[], message: string): boolean;
   /** DOM parser seam for source-only controller tests. Production uses the existing locator. */
-  locateElement?(source: string, node: number[]): { tag: { name: string; start: number; end: number } } | undefined;
+  locateElement?: (source: string, node: number[]) => { tag: { name: string; start: number; end: number } } | undefined;
   galleryHost(): HTMLElement;
   galleryVisible(): boolean;
   imagesSelected(): boolean;
@@ -139,7 +139,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       if (epoch !== ports.generation() || identity !== ports.identity() || !currentMaster() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
       const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
       if (!ports.change(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
-    } }).catch(ports.error);
+    } }).catch((error: unknown) => ports.error(error));
   }
 
   let gallery: MediaLibraryView | undefined;
@@ -160,7 +160,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     galleryScope = scope; signature = ports.gallerySignature();
     const { mountMediaLibrary } = await load();
     if (attempt !== opening || scope !== ports.identity() || !ports.imagesSelected()) return;
-    gallery = mountMediaLibrary(ports.galleryHost(), { refreshKey: ports.gallerySignature });
+    gallery = mountMediaLibrary(ports.galleryHost(), { refreshKey: () => ports.gallerySignature() });
   }
   function requestGalleryRefresh() {
     if (!gallery) return;
@@ -196,5 +196,5 @@ export function createMediaController(ports: MediaControllerPorts) {
     void view.refresh();
   }
   return { workspaceContext, chooseImage, ensureGallery, requestGalleryRefresh, disposeGallery,
-    closePicker: () => loaded?.closeMediaPicker(), galleryVisible: ports.galleryVisible };
+    closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

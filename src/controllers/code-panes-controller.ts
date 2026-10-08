@@ -7,11 +7,11 @@ export interface CodePanesPorts<T> {
   onChunkFailure(error: unknown): void;
   mountCodeResize: typeof mountCodeResize;
   mountCodeWidthResize: typeof mountCodeWidthResize;
-  /** Scheduling seams; production uses the browser's. */
-  frame?(callback: () => void): void;
-  idle?(callback: () => void): void;
-  wait?(ms: number): Promise<void>;
-  delay?(callback: () => void, ms: number): void;
+  /** Scheduling seams; production uses the browser's. Free functions: callers pass them without a receiver. */
+  frame?: (callback: () => void) => void;
+  idle?: (callback: () => void) => void;
+  wait?: (ms: number) => Promise<void>;
+  delay?: (callback: () => void, ms: number) => void;
 }
 
 /**

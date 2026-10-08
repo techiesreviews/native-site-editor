@@ -127,7 +127,7 @@ export function planCardPage(input: { routes: Record<string, string>; exists(pat
   const normal = normalizeRoute(request.parent);
   if (!normal.ok || normal.value !== request.parent || !request.parent.endsWith("/")) return { ok: false, error: `${request.parent} is not a folder a page can be in.` };
   if (!input.folders.includes(request.parent)) return { ok: false, error: `There is no folder ${request.parent} in the site.` };
-  const taken = { route: (route: string) => input.routes[route], exists: input.exists };
+  const taken = { route: (route: string) => input.routes[route], exists: (path: string) => input.exists(path) };
   let parent = request.parent;
   if (request.newFolder !== undefined) {
     const name = request.newFolder.trim();
@@ -144,7 +144,7 @@ export function createCards(deps: CardsDeps) {
     const site = deps.site();
     return site ? Object.entries(site.routes).find(([, file]) => file === path)?.[0] : undefined;
   };
-  const context = (route: string): GridContext => ({ route, routes: deps.site()?.routes ?? {}, isSection: deps.isSection });
+  const context = (route: string): GridContext => ({ route, routes: deps.site()?.routes ?? {}, isSection: (tag) => deps.isSection(tag) });
   const template = (tag: string) => {
     const file = deps.site()?.components[tag];
     return file ? deps.source(file) : undefined;
@@ -179,7 +179,7 @@ export function createCards(deps: CardsDeps) {
   function planPage(request: CardPageRequest): Checked<{ route: string; file: string }> {
     const site = deps.site();
     if (!site) return { ok: false, error: "Open a native site first." };
-    return planCardPage({ routes: site.routes, exists: deps.exists, folders: siteFolders() }, request);
+    return planCardPage({ routes: site.routes, exists: (path) => deps.exists(path), folders: siteFolders() }, request);
   }
 
   /**
@@ -437,7 +437,7 @@ export function createCards(deps: CardsDeps) {
       const site = deps.site();
       const found = collectionFor(request.parent);
       if (!site || !found) return `No grid lists the pages under ${request.parent} any more.`;
-      const target = nativeNewTarget(request.parent, request.slug, { route: (route) => site.routes[route], exists: deps.exists });
+      const target = nativeNewTarget(request.parent, request.slug, { route: (route) => site.routes[route], exists: (path) => deps.exists(path) });
       if (!target.ok) return target.error;
       const { source, grid, file, route } = found;
       const title = request.title.trim();

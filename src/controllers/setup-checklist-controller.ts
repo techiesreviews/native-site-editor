@@ -45,7 +45,7 @@ export function createSetupChecklistController(ports: SetupChecklistPorts) {
       title: "Connect an agent",
       text: [...ports.agentText()],
       actions: [
-        { label: "Show me", primary: true, run: () => void showAgentConnection().catch(ports.onError) },
+        { label: "Show me", primary: true, run: () => void showAgentConnection().catch((error: unknown) => ports.onError(error)) },
         { label: "Got it" },
       ],
     });
@@ -84,7 +84,7 @@ export function createSetupChecklistController(ports: SetupChecklistPorts) {
           if (!problem && epoch === lifetime && scope === ports.scope()) setupRemember({ named: true });
           return problem;
         },
-        connect: () => void spotlightAgentConnection().catch(ports.onError),
+        connect: () => void spotlightAgentConnection().catch((error: unknown) => ports.onError(error)),
         dismiss: () => {
           setupAsked = undefined;
           setupRemember({ dismissed: true });
@@ -130,7 +130,7 @@ export function createSetupChecklistController(ports: SetupChecklistPorts) {
     const checklist = setupChecklist, repo = ports.repository(), account = ports.account();
     if (!checklist) {
       if (account && repo && setupVisible(readSetupMemory(ports.storage, account, repo.id), setupAsked === repo.id))
-        void mountSetupChecklist().catch(ports.onError);
+        void mountSetupChecklist().catch((error: unknown) => ports.onError(error));
       return;
     }
     const state = ports.state();

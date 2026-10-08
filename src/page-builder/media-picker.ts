@@ -51,7 +51,7 @@ export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOp
   const adapter = options.adapter ?? host;
   if (!adapter) throw new Error("Open a repository before choosing an image.");
   const view = createMediaLibraryView(container, adapter, options);
-  const dispose = view.dispose;
+  const dispose = view.dispose.bind(view);
   view.dispose = () => { dispose(); panes.delete(view); };
   panes.add(view);
   return view;

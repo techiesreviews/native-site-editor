@@ -42,7 +42,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   host(): { append(root: Root): void } | undefined;
   appStore: AppStore;
   createOptions(account: string): Omit<MenuOptions, "account" | "repository">;
-  load(): Promise<{ createAgentMenu(options: MenuOptions): AgentMenuPort<Root> }>;
+  load(): Promise<{ createAgentMenu: (options: MenuOptions) => AgentMenuPort<Root> }>;
   onError(error: unknown): void;
   environment?: AgentEnvironment;
 }) {
@@ -115,7 +115,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
     if (!account || !host) return;
     void ensure().then(() => {
       if (isCurrent(account, host, revision)) currentMenu()?.consentGranted();
-    }).catch(options.onError);
+    }).catch((error: unknown) => options.onError(error));
   };
   function start() {
     active = true;

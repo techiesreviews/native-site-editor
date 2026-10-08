@@ -26,6 +26,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     const callLine = lines.findIndex((line, index) => index > start && index < start + 7 && /(?:updateBoxes|canvasPaintLabel)\(\);/.test(line)) + 1;
     expect(callLine).toBeGreaterThan(0);
     await frame.locator("html").evaluate((_, [handlerLine, runtimeFile]) => {
+      // eslint-disable-next-line @typescript-eslint/unbound-method -- saved to restore later; every call passes its receiver with .call().
       const originalRAF = window.requestAnimationFrame, originalRect = Element.prototype.getBoundingClientRect;
       const probe = { messages: 0, schedules: 0, rectReads: 0, labelReads: 0 };
       const fromAvoidance = () => (new Error().stack ?? "").includes(`${runtimeFile}:${handlerLine}:`);

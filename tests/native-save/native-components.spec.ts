@@ -431,6 +431,7 @@ test("image upload finishes on the instance that started it", async ({ page, bas
 async function pauseUpload(page: Page) {
   // Uploads stay in IndexedDB until Save; pause reading the file, not /api/blob.
   await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- saved to restore later; called with .call(this).
     const original = File.prototype.arrayBuffer;
     const state = window as typeof window & { uploadStarted?: boolean; releaseUpload?: () => void };
     File.prototype.arrayBuffer = async function () {

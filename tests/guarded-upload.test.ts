@@ -21,7 +21,7 @@ function harness() {
 }
 
 test("a scope switch after byte storage leaves no original-scope draft or owned bytes", async () => {
-  const h = harness(), originalPut = h.options.bytes.put;
+  const h = harness(), originalPut = h.options.bytes.put.bind(h.options.bytes);
   h.options.bytes.put = async (key, blob) => { await originalPut(key, blob); h.setCurrent(false); };
   const result = await addGuardedUpload(h.options);
   assert.match(result.error!, /repository or branch changed/);
@@ -29,7 +29,7 @@ test("a scope switch after byte storage leaves no original-scope draft or owned 
   assert.equal(h.options.bytes.map.size, 0);
 });
 test("path collision at the final save preserves the other draft and drops only owned bytes", async () => {
-  const h = harness(), originalPut = h.options.bytes.put;
+  const h = harness(), originalPut = h.options.bytes.put.bind(h.options.bytes);
   const other: SavedDraft = { ...h.options.scope, path: "images/a.png", version: 1, baseSha: null, original: "", content: "other", updatedAt: 1 };
   h.options.bytes.put = async (key, blob) => { await originalPut(key, blob); h.options.drafts.save(other); };
   const result = await addGuardedUpload(h.options);

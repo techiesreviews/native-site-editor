@@ -238,7 +238,7 @@ export function createSharedSectionsController(ports: SharedSectionsPorts) {
       if (error) { ports.errorMessage(new Error(error)); return false; }
       return true;
     },
-    announce: ports.announce,
+    announce: (message) => ports.announce(message),
   };
   // The one live master session (a saved section or a shared header/footer), or none. A session
   // left by navigation keeps its context (it resumes when its master is opened again), so two may

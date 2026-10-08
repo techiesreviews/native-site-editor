@@ -203,7 +203,7 @@ test("a receipt whose persistence fails is rolled back whole", () => {
   store.open(scope, "a.html", { text: "A", baseSha: sha("a") });
   store.open(scope, "b.html", { text: "B", baseSha: sha("b") });
   let calls = 0;
-  const save = persistence.save;
+  const save = persistence.save.bind(persistence);
   persistence.save = (draft: SavedDraft) => (++calls === 2 ? false : save(draft));
   const result = store.applyReceipt("h", "x", [
     { scope, path: "a.html", after: { text: "A2", base: "A", baseSha: sha("a") } },
