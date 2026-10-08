@@ -192,7 +192,27 @@ export function codeView(label: string, text: string) {
   return figure;
 }
 
-export function nameField(initial: string, onInput: () => void) {
+/**
+ * Variant E: a name as it is typed, made valid instead of warned about: lowercase,
+ * a space becomes a hyphen, anything else invalid is dropped, hyphens collapse,
+ * no leading hyphen or digit. A trailing hyphen stays while typing (`final` trims it).
+ */
+export function normaliseName(value: string, final = false) {
+  const out = value.toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-{2,}/g, "-").replace(/^[^a-z]+/, "");
+  return final ? out.replace(/-+$/, "") : out;
+}
+/** Normalises an input's value in place, keeping the caret where it was in the text. */
+export function normaliseInput(input: HTMLInputElement) {
+  const caret = input.selectionStart ?? input.value.length;
+  const before = normaliseName(input.value.slice(0, caret));
+  const next = normaliseName(input.value);
+  if (next === input.value) return;
+  input.value = next;
+  const at = Math.min(before.length, next.length);
+  input.setSelectionRange(at, at);
+}
+
+export function nameField(initial: string, onInput: () => void, options: { normalise?: boolean } = {}) {
   const wrap = el("label", "cb04-name");
   const label = el("span", "cb04-name__label", "Component name");
   const input = el("input", "cb04-name__input");
@@ -210,7 +230,7 @@ export function nameField(initial: string, onInput: () => void) {
     problem.hidden = !why;
     wrap.classList.toggle("is-error", Boolean(why));
   };
-  input.addEventListener("input", () => { render(); onInput(); });
+  input.addEventListener("input", () => { if (options.normalise) normaliseInput(input); render(); onInput(); });
   render();
   const row = el("span", "cb04-name__row");
   row.append(input, tag);
