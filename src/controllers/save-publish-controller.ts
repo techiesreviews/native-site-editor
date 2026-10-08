@@ -1,5 +1,5 @@
 import type { DraftScope, SavedDraft } from "../drafts";
-import type { DraftAccess, keepAsNewFile, pruneUnchanged, settleDeletedUpstream } from "../file-changes";
+import type { DraftAccess, FileChange, keepAsNewFile, listChanges, pruneUnchanged, settleDeletedUpstream } from "../file-changes";
 import { EMPTY_COMMIT, type PublishResult, type Repository, type Snapshot, type TreeEntry } from "../../shared/types";
 
 type Store = DraftAccess & { list(scope: DraftScope): SavedDraft[] };
@@ -52,6 +52,29 @@ export interface SavePublishPorts {
   startNativeTextIndex(): void;
   status(message: string): void;
   errorMessage(error: unknown): void;
+  listChanges: typeof listChanges;
+  /** The change of `path` in the tree, if any. */
+  change(path: string): FileChange | undefined;
+  openFile(): string | undefined;
+  /** The stylesheet open beside the page, if any. */
+  secondaryPath(): string | undefined;
+  /** Drops the editor's model with the draft; false when the editor did not drop the draft itself. */
+  dropDraft(scope: DraftScope, path: string): boolean;
+  clearEditorHistory(): void;
+  nativeModeActive(): boolean;
+  nativeFallbackPage(path: string): string | undefined;
+  /** The open page's stylesheet opens again as GitHub has it. */
+  reopenLinkedStyle(page: string): void;
+  /** The row menu's question; undefined when there is no dialog. */
+  confirm(question: Question): Promise<boolean> | undefined;
+  /** The top bar's Discard all question; undefined when there is no dialog. */
+  confirmAll(question: Question): Promise<boolean> | undefined;
+}
+
+export interface Question {
+  title: string;
+  notes: string[];
+  action: string;
 }
 
 /** What a step began on; a late answer for another scope is dropped. */
@@ -78,6 +101,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
   let headCheckedAt = 0;
   let headCheck = 0;
   let refresh = 0;
+  let asking = 0;
   // Paths whose drafts are edits of files GitHub deleted since they began.
   let deletedUpstream = new Set<string>();
   // The boot's check, once per snapshot load (`epoch`).
@@ -199,6 +223,88 @@ export function createSavePublishController(ports: SavePublishPorts) {
     ports.announce(keep ? `Kept ${path} as a new file. Saving creates it again.` : `Discarded the draft of ${path}.`);
   }
 
+  /**
+   * Drops the drafts of `paths`, each with the other half of its rename, or
+   * every draft of the branch: the files are GitHub's again. The open file
+   * and the style pane close when among them, and the open file opens again
+   * as GitHub has it (a new page's parent page, a renamed file at its old
+   * path). Returns how many drafts went.
+   */
+  function discardDrafts(paths?: string[]): number {
+    const scope = ports.draftScope();
+    if (!scope) return 0;
+    const store = ports.drafts();
+    const all = store.list(scope);
+    const chosen = new Set(paths ?? all.map((draft) => draft.path));
+    for (const draft of all) {
+      if (!chosen.has(draft.path)) continue;
+      if (draft.movedFrom && store.get(scope, draft.movedFrom)?.movedTo === draft.path) chosen.add(draft.movedFrom);
+      if (draft.movedTo && store.get(scope, draft.movedTo)?.movedFrom === draft.path) chosen.add(draft.movedTo);
+    }
+    const open = ports.openFile();
+    const openDraft = open && chosen.has(open) ? store.get(scope, open) : undefined;
+    const secondary = ports.secondaryPath();
+    const styled = Boolean(secondary && chosen.has(secondary));
+    const opened = ports.releaseFiles(chosen);
+    let count = 0;
+    for (const path of chosen) {
+      if (!store.get(scope, path)) continue;
+      // The model kept for the file goes with its draft.
+      if (!ports.dropDraft(scope, path)) store.remove(scope, path);
+      deletedUpstream.delete(path);
+      count++;
+    }
+    // Undo would replay edits into files that are GitHub's again.
+    ports.clearEditorHistory();
+    afterFileChanges();
+    // The new site's home page was discarded: the project opens again as site-less.
+    if (ports.resyncNativeSite()) return count;
+    if (ports.nativeModeActive()) ports.updateNativePreviewSources();
+    const page = ports.openFile();
+    if (opened) {
+      const back = openDraft?.movedFrom && chosen.has(openDraft.movedFrom) ? openDraft.movedFrom
+        : openDraft?.baseSha === null ? ports.nativeFallbackPage(opened) : opened;
+      void ports.openAfter(back);
+    } else if (styled && page && ports.nativeModeActive()) ports.reopenLinkedStyle(page);
+    return count;
+  }
+  // Discard changes on one file (its row menu in Pages & files).
+  async function discardOneFile(path: string) {
+    const change = ports.change(path);
+    if (!change) return;
+    const was = proof(), token = ++asking;
+    const asked = await ports.confirm({
+      title: `Discard the changes to ${change.from ? `${change.from} → ${path}` : path}?`,
+      notes: [change.kind === "A" ? "It is not on GitHub yet, so this removes it." : "It goes back to GitHub's version. This cannot be undone."],
+      action: "Discard",
+    });
+    if (!asked || token !== asking || !live(was)) return;
+    discardDrafts([path]);
+    ports.announce(`Discarded the changes to ${path}.`);
+  }
+  // Discard changes in the top bar: every draft of the branch, after a question naming them.
+  async function discardAllChanges() {
+    const scope = ports.draftScope();
+    if (!scope) return;
+    const changes = ports.listChanges(ports.drafts().list(scope));
+    if (!changes.length) return;
+    const n = changes.length;
+    const names = changes.map((change) => (change.from ? `${change.from} → ${change.path}` : change.path));
+    const shown = names.length > 12 ? `${names.slice(0, 10).join(", ")} and ${names.length - 10} more` : names.join(", ");
+    const words = `${n} unsaved ${n === 1 ? "change" : "changes"}`;
+    const was = proof(), token = ++asking;
+    const question = ports.confirmAll({
+      title: `Discard ${words}?`,
+      notes: [shown, `Every file goes back to GitHub's version on ${scope.branch}, including changes agents made. This cannot be undone.`],
+      action: "Discard all",
+    });
+    if (!question) return;
+    const asked = await question;
+    if (!asked || token !== asking || !live(was)) return;
+    discardDrafts();
+    ports.announce(`Discarded ${words}.`);
+  }
+
   /** A save of `scope` that `was` opened the editor for went through. */
   function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
     if (!live(was, false)) return;
@@ -238,11 +344,12 @@ export function createSavePublishController(ports: SavePublishPorts) {
     unwake();
     headCheck++;
     refresh++;
+    asking++;
   }
 
   return {
     proof, live, seeHead, trustedHead, publishedHead, checkBranchHead,
-    published, refreshAfterPublish, afterFileChanges, findDeletedUpstream, checkDeletedUpstream, settleDeletedDraft,
+    discardDrafts, discardOneFile, discardAllChanges, published, refreshAfterPublish, afterFileChanges, findDeletedUpstream, checkDeletedUpstream, settleDeletedDraft,
     isDeletedUpstream: (path: string) => deletedUpstream.has(path),
     /** A new snapshot loads: nothing is known deleted until it is checked. */
     resetDeletedUpstream: () => { deletedUpstream = new Set(); },

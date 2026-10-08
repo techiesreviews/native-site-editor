@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSavePublishController, type SavePublishPorts } from "../src/controllers/save-publish-controller.ts";
 import type { DraftScope, SavedDraft } from "../src/drafts.ts";
-import { keepAsNewFile, pruneUnchanged, settleDeletedUpstream } from "../src/file-changes.ts";
+import { keepAsNewFile, listChanges, pruneUnchanged, settleDeletedUpstream } from "../src/file-changes.ts";
 import { EMPTY_COMMIT, type Repository, type Snapshot } from "../shared/types.ts";
 
 function deferred<T>() {
@@ -25,6 +25,8 @@ function fixture(overrides: Partial<SavePublishPorts> = {}) {
   const log: string[] = [];
   const entries = new Map<string, ReturnType<typeof deferred<{ path: string; sha: string; mode: string; type: "blob" } | undefined>>>();
   let resync = false, opened: string | undefined;
+  const asked: ReturnType<typeof deferred<boolean>>[] = [];
+  const questions: string[] = [];
   const scope = (): DraftScope | undefined => state.repository && state.snapshot && state.account
     ? { account: state.account, repoId: state.repository.id, repo: state.repository.full_name, branch: state.snapshot.branch } : undefined;
   const ports: SavePublishPorts = {
@@ -55,13 +57,20 @@ function fixture(overrides: Partial<SavePublishPorts> = {}) {
     trackPublished: () => { log.push("track"); },
     adoptSnapshot: (_r, value) => { state.snapshot = value; log.push(`snapshot ${value.commit.slice(0, 1)}`); },
     setRevision: (commit) => { log.push(`revision ${commit.slice(0, 1)}`); }, startNativeTextIndex: () => { log.push("index"); },
+    listChanges, change: (path) => listChanges([...drafts.values()]).find((change) => change.path === path),
+    openFile: () => opened, secondaryPath: () => undefined,
+    dropDraft: (_s, path) => { log.push(`drop ${path}`); return false; },
+    clearEditorHistory: () => { log.push("clear history"); }, nativeModeActive: () => false,
+    nativeFallbackPage: () => "index.html", reopenLinkedStyle: () => { log.push("style"); },
+    confirm: (question) => { questions.push(question.title); const answer = deferred<boolean>(); asked.push(answer); return answer.promise; },
+    confirmAll: (question) => { questions.push(question.title); const answer = deferred<boolean>(); asked.push(answer); return answer.promise; },
     status: (text) => { log.push(text); }, errorMessage: (error) => { log.push(`error ${String(error)}`); },
     ...overrides,
   };
   const controller = createSavePublishController(ports);
   return {
     controller, state, drafts, calls, answers, log, entries, wake: () => wake?.(), counts: () => ({ loads, unwoken }),
-    open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
+    asked, questions, open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
   };
 }
 
@@ -225,4 +234,60 @@ test("a save refreshes the snapshot once, in order, and only for the scope it be
   failed.answers[0].reject("down");
   await flush();
   assert.deepEqual(failed.log, ["error down"]);
+});
+
+test("discard drops a rename's two halves together, clears editor history and reopens the old path", () => {
+  const f = fixture();
+  f.drafts.set("new.html", draft("new.html", { baseSha: null, movedFrom: "old.html" }));
+  f.drafts.set("old.html", draft("old.html", { deleted: true, movedTo: "new.html" }));
+  f.drafts.set("other.html", draft("other.html"));
+  f.open("new.html");
+  assert.equal(f.controller.discardDrafts(["new.html"]), 2);
+  assert.deepEqual([...f.drafts.keys()], ["other.html"]);
+  assert.equal(f.log.indexOf("clear history") > f.log.indexOf("drop old.html"), true);
+  assert.equal(f.log.at(-1), "open old.html");
+
+  const site = fixture();
+  site.drafts.set("index.html", draft("index.html", { baseSha: null }));
+  site.resyncing(true);
+  site.open("index.html");
+  assert.equal(site.controller.discardDrafts(), 1);
+  assert.equal(site.log.some((line) => line.startsWith("open")), false, "the project opens again instead");
+});
+
+test("a discard confirmed for another scope, or superseded, does nothing; a cancelled one keeps the drafts", async () => {
+  const f = fixture();
+  f.drafts.set("a.html", draft("a.html"));
+  const one = f.controller.discardOneFile("a.html");
+  assert.deepEqual(f.questions, ["Discard the changes to a.html?"]);
+  f.state.snapshot = snap(undefined, "dev");
+  f.asked[0].resolve(true);
+  await one;
+  assert.equal(f.drafts.has("a.html"), true, "the branch changed while asking");
+
+  const all = fixture();
+  all.drafts.set("a.html", draft("a.html"));
+  all.drafts.set("b.html", draft("b.html"));
+  const first = all.controller.discardAllChanges();
+  assert.deepEqual(all.questions, ["Discard 2 unsaved changes?"]);
+  all.asked[0].resolve(false);
+  await first;
+  assert.equal(all.drafts.size, 2, "cancelled");
+  const older = all.controller.discardAllChanges();
+  const newer = all.controller.discardOneFile("a.html");
+  all.asked[1].resolve(true);
+  await older;
+  assert.equal(all.drafts.size, 2, "a newer question supersedes the older");
+  all.asked[2].resolve(true);
+  await newer;
+  assert.deepEqual([...all.drafts.keys()], ["b.html"]);
+  assert.equal(all.log.at(-1), "Discarded the changes to a.html.");
+
+  const done = fixture();
+  done.drafts.set("a.html", draft("a.html"));
+  const last = done.controller.discardAllChanges();
+  done.asked[0].resolve(true);
+  await last;
+  assert.equal(done.drafts.size, 0);
+  assert.equal(done.log.at(-1), "Discarded 1 unsaved change.");
 });
