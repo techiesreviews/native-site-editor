@@ -122,3 +122,27 @@ test('a draft of the page wins over the remembered base', async ({ page, baseURL
   await expect(preview(page).locator('.hero h1[data-draft]')).toBeVisible();
   await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
 });
+
+test('a deleted remembered branch takes the normal path: its message, and another branch can be picked', async ({ page, baseURL }) => {
+  const memory = await firstBoot(page, baseURL);
+  await editMemory(page, (m) => { (m as Memory & { branch: string }).branch = 'gone'; }, memory);
+  const { state } = await watchGuesses(page);
+  await page.goto(`${baseURL}/#repo=501&branch=gone&file=index.html`);
+  await page.reload();
+  await expect(page.locator('#content')).toContainText('The linked branch is no longer available. Choose a branch from Pages & files.');
+  expect(state.early.some((read) => read.startsWith('/api/snapshot') && read.includes('branch=gone'))).toBe(true);
+  await expect(page.locator('#notice')).not.toContainText('could not be opened');
+  await expect(page.locator('#branch option[value="main"]')).toBeAttached();
+  await page.locator('#branch').selectOption('main', { force: true });
+  await expect(preview(page).locator('.hero h1')).toBeVisible();
+});
+
+test('a failed branch list on the remembered path still paints, on the remembered branch', async ({ page, baseURL }) => {
+  await firstBoot(page, baseURL);
+  await watchGuesses(page);
+  await page.route(/\/api\/branches\?/, (route) => route.fulfill({ status: 500, json: { error: 'down' } }));
+  await page.reload();
+  await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
+  await expect(page.locator('#branch')).toHaveValue('main');
+  await expect(page.locator('#branch')).toBeEnabled();
+});

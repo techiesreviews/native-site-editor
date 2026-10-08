@@ -5326,8 +5326,13 @@ async function loadSnapshot(
     // page is on screen (a file opened before then that needs it waits).
     if (isNative && nativeSite) {
       afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(epoch));
-      afterNativePaint(nativeSourcesRequest, () => {
+      const painted = nativeSourcesRequest;
+      let remembered = false;
+      afterNativePaint(painted, () => {
         const login = info.user?.login;
+        // Only after a real paint (not the 10 s fallback), once.
+        if (remembered || nativePaintedRequest !== painted) return;
+        remembered = true;
         if (epoch !== generation || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
         writeBootMemory(storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
           files: nativePaintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
@@ -5472,32 +5477,36 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   // the bookmark or repository metadata. Validate it before using its snapshot.
   const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
   const guessed = takeBootGuess(appStore.repository.value, requestedBranch);
-  const prefetched = guessed ?? api<Snapshot>("snapshot", {
-    repo: appStore.repository.value.full_name,
-    branch: requestedBranch,
-  });
+  const opened = appStore.repository.value;
+  const snapshotRead = () => api<Snapshot>("snapshot", { repo: opened.full_name, branch: requestedBranch });
+  let prefetched = guessed ? undefined : snapshotRead();
   // A branch lookup may fail first or navigation may supersede this request.
-  void prefetched.catch(() => {});
+  void prefetched?.catch(() => {});
   try {
     const listing = api<string[]>("branches", {
       repo: appStore.repository.value.full_name,
     });
-    if (guessed) {
-      // The remembered branch opens now: its snapshot proves it exists. The
-      // branch list fills the selector when it comes.
-      const branch = requestedBranch, opened = appStore.repository.value;
+    void listing.catch(() => {});
+    // The remembered branch opens once its snapshot is in, which proves the
+    // branch exists; the branch list fills the selector when it comes. A
+    // guess that fails (a deleted branch) takes the normal path below.
+    const guessedSnapshot = guessed && await guessed.catch(() => undefined);
+    if (epoch !== generation) return;
+    if (guessedSnapshot) {
+      const branch = requestedBranch;
       options(branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
       appStore.branch.value = branch;
       branchSelect.value = branch;
       branchSelect.disabled = false;
       void listing.then((branches) => {
-        if (appStore.repository.value !== opened || appStore.branch.value !== branch || !branches.includes(branch)) return;
-        options(branchSelect, branches.map((name) => ({ value: name, label: `⑂ ${name}` })));
-        branchSelect.value = appStore.branch.value ?? "";
+        if (appStore.repository.value !== opened || appStore.branch.value !== branch) return;
+        options(branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
+        branchSelect.value = branch;
       }, () => {});
-      await loadSnapshot(resume?.path, prefetched);
+      await loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot));
       return;
     }
+    if (guessed) void (prefetched = snapshotRead()).catch(() => {});
     const branches = await listing;
     if (epoch !== generation) return;
     if (!branches.length) {
@@ -6159,7 +6168,8 @@ const boot = createBootController({
     mountWorkspace();
     agentController.start();
   },
-  loadRepositories,
+  // A guess not taken by the boot's listing is not kept for a later Reload.
+  loadRepositories: (prefetched, hooks) => loadRepositories(prefetched, hooks).finally(() => { bootGuess = undefined; }),
   renderLogin,
   retainLink: retainWorkspaceLink,
   showError: errorMessage,
