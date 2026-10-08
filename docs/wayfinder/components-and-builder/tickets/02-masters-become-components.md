@@ -2,7 +2,7 @@
 title: Decide how masters and page parts become components
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-masters-and-components]
 ---
 
