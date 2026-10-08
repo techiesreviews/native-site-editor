@@ -37,7 +37,7 @@ export default tseslint.config(
         selector: `ObjectExpression > Property > Identifier.value[name=/^(${RECEIVER_GLOBALS})$/]`,
         message: "Wrap this global in an arrow: called as a property it gets the wrong receiver and throws \"Illegal invocation\".",
       }],
-      // tsc covers unused code (scripts/check-unused.mjs).
+      // tsc covers unused code (scripts/check-types.mjs).
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": "off",
     },

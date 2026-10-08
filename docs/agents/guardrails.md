@@ -2,10 +2,9 @@
 
 Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one is mechanical and gives the same result on every run.
 
-## `npm run check` (about 2 s)
+## `npm run check` (about 2 s on an idle machine)
 
-- **Types**: `tsc` over `src`, `shared` and `worker`.
-- **Unused code** (`scripts/check-unused.mjs`): runs `tsc --noUnusedLocals --noUnusedParameters` over `src`, `shared`, `worker` and `tests` (`tests/tsconfig.json`). It fails only on the unused-declaration errors, because the tests have other type errors that are not fixed yet. `src/prototype/` is skipped. To keep a parameter or loop variable that is not used, start its name with `_`.
+- **Types and unused code** (`scripts/check-types.mjs`): runs `tsc --noUnusedLocals --noUnusedParameters` over `src` and `shared` (`tsconfig.json`), `worker` and `tests` (`tests/tsconfig.json`) in parallel. Every error fails in `src`, `shared` and `worker`. In `tests` only unused declarations fail, because the tests have other type errors that are not fixed yet. `src/prototype/` is exempt from the unused checks. To keep a parameter or loop variable that is not used, start its name with `_`.
 - **Clipboard race** (`scripts/check-specs.mjs`): a copy button writes the clipboard asynchronously, so reading straight after the click can return the old text. In `tests/**/*.spec.ts`, every `navigator.clipboard.readText()` must come within three lines after an `expect.poll` on the clipboard:
 
   ```ts
