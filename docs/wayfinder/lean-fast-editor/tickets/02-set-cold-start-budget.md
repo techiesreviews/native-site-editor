@@ -14,7 +14,7 @@ What numbers count as "fast enough"? For example: preview usable within N second
 
 Decided with Lex. Budget on the throttled local profile (100 ms / 20 Mbps, `tests/perf/cold-start.ts`, median of 5):
 
-- at most 350 KB gzip fetched before first preview paint;
+- at most 355 KB gzip fetched before first preview paint (350 KB until 2026-10-08, when Lex raised it to fit the Phase 5 controllers, whose port names do not minify);
 - cold first preview paint at most 1.0 s;
 - warm first preview paint at most 0.4 s.
 

@@ -1,5 +1,5 @@
 // The cold-start byte budget (docs/wayfinder/lean-fast-editor/tickets/02-set-cold-start-budget.md):
-// at most 350 KB gzip fetched before the first preview paint, on the
+// at most 355 KB gzip fetched before the first preview paint, on the
 // throttled local profile (100 ms / 20 Mbps), median of the cold loads.
 //
 //   npm run test:budget                  build dist, measure, fail over budget
@@ -15,7 +15,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const BUDGET = 350 * 1024;
+const BUDGET = 355 * 1024;
 const args = new Set(process.argv.slice(2));
 const reportOnly = args.has("--report-only") || process.env.ASE_BUDGET_REPORT_ONLY === "1";
 const port = Number(process.env.ASE_BUDGET_PORT ?? 5294);
