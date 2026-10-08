@@ -42,15 +42,14 @@ import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } 
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
-import { nativePageTemplate, newFilePath, newFolderPath, renamedPath, routeHeading, type Checked } from "./native-create";
+import { nativePageTemplate, newFilePath, newFolderPath, renamedPath, type Checked } from "./native-create";
 import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import type { FilesResult, OwnerInstallation } from "../shared/types";
 import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "./boot-memory";
-import type { createGetStarted, CreateChoice, CreateOutcome } from "./components/get-started";
-import type { createStartSite } from "./components/start-site";
+import type { CreateChoice, CreateOutcome } from "./components/get-started";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
 import { forgetSignedIn } from "./auto-signin";
@@ -61,11 +60,11 @@ import { withSiteSettings, type SetupState } from "./setup-checklist";
 import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
-import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type FileMove, type RouteChange } from "./native-page-moves";
+import type { FileMove } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
 import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
-import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget } from "./native-pages";
+import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
@@ -82,16 +81,14 @@ import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelect
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
-import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
-import { deriveNativeRoutes, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
+import { deriveNativeRoutes, nativePageRoute } from "../shared/native-routes";
 import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder/page-builder-document";
 import { listSectionChoices, readSectionCatalog } from "./page-builder/static-sections";
-import { resolveNativeSectionLinks } from "./page-builder/native-section-links";
 import { createNativePagePartController } from "./page-builder/native-page-part-controller";
-import { readPagePartCatalog, resolvePagePartLinks } from "./page-builder/native-page-parts";
+import { readPagePartCatalog } from "./page-builder/native-page-parts";
 
 import { createNativeSectionMasterController } from "./page-builder/native-section-master-controller";
 import { createMasterBanner } from "./components/master-banner";
@@ -100,7 +97,7 @@ import { createMasterBanner } from "./components/master-banner";
 
 
 import { descendants, parseSource } from "./page-builder/component-model";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
@@ -668,7 +665,6 @@ function runMasterEdit(...args: Parameters<typeof sharedSections.runMasterEdit>)
 function nativeSectionChoices(...args: Parameters<typeof sharedSections.insertChoices>): ReturnType<typeof sharedSections.insertChoices> { return sharedSections.insertChoices(...args); }
 function nativeElementAddPoint(...args: Parameters<typeof sharedSections.nativeElementAddPoint>): ReturnType<typeof sharedSections.nativeElementAddPoint> { return sharedSections.nativeElementAddPoint(...args); }
 function insertNativeComponent(...args: Parameters<typeof sharedSections.insertNativeComponent>): ReturnType<typeof sharedSections.insertNativeComponent> { return sharedSections.insertNativeComponent(...args); }
-function isStaticSectionTag(...args: Parameters<typeof sharedSections.isStaticSectionTag>): ReturnType<typeof sharedSections.isStaticSectionTag> { return sharedSections.isStaticSectionTag(...args); }
 function nativeStaticSectionChoices(...args: Parameters<typeof sharedSections.nativeStaticSectionChoices>): ReturnType<typeof sharedSections.nativeStaticSectionChoices> { return sharedSections.nativeStaticSectionChoices(...args); }
 function nativeStaticSectionNotice(...args: Parameters<typeof sharedSections.nativeStaticSectionNotice>): ReturnType<typeof sharedSections.nativeStaticSectionNotice> { return sharedSections.nativeStaticSectionNotice(...args); }
 function nativeStaticSectionThumbnail(...args: Parameters<typeof sharedSections.nativeStaticSectionThumbnail>): ReturnType<typeof sharedSections.nativeStaticSectionThumbnail> { return sharedSections.nativeStaticSectionThumbnail(...args); }
@@ -884,14 +880,6 @@ async function restoreVersion(view: VersionView) {
   }
 }
 
-async function showCodeChanges(path: string) {
-  if (appStore.openFile.value !== path) {
-    const epoch = generation;
-    await restoreFile(path, epoch);
-    if (epoch !== generation || appStore.openFile.value !== path) return;
-  }
-  editorModule?.setReviewMode(path, true);
-}
 
 // Side by side with the page: its stylesheet, and after a click in the
 // preview, every rule that styles the selected element in the order the
@@ -1444,9 +1432,6 @@ function renderNativeShownStructure(...args: Parameters<typeof pageStructureCont
 }
 function nativeStructureEdit(...args: Parameters<typeof pageStructureController.nativeStructureEdit>) {
   return pageStructureController.nativeStructureEdit(...args);
-}
-function nativeLinkedAncestor(...args: Parameters<typeof pageStructureController.nativeLinkedAncestor>) {
-  return pageStructureController.nativeLinkedAncestor(...args);
 }
 function repaintNativeStructure(...args: Parameters<typeof pageStructureController.repaintNativeStructure>) {
   return pageStructureController.repaintNativeStructure(...args);
