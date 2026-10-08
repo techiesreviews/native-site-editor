@@ -6,6 +6,41 @@ build one slice per branch; Claude Opus 5.5 / medium reviews read-only through
 the CLI (runner scripts: root `.scratch/p5-review/run-*-review.py`; copy the
 latest one and change worktree, head and prompt).
 
+## Update (2026-10-08, night): plan slices done, warm target met
+
+Preview `1d8c1a1f` (dev `bddbdf9`). Since the evening update:
+
+| Branch | What | Review | Gates |
+| --- | --- | --- | --- |
+| `build/p5-shared-sections-controller` | Slice 12b, shared sections controller ([p5-19](p5-19-shared-sections-controller.md)); main.ts 6786 → 6108 | Sol, no defects | full 729 / 85 / 0; native-static 40 / 13 / 0; harness 22 |
+| `perf/p5-boot-memory` | Ticket 02 warm lever "Remember last boot" ([p5-17](p5-17-boot-memory.md)) | Opus, then five Sol rounds (deleted branch, stalled guess, failed branch list, bounded wait, abandoned guesses); last P3 accepted and recorded in p5-17 | full 740 / 85 / 0; 1,182 units; budget 351 / 355 KB |
+
+Ticket 02 on the merged build (100 ms / 20 Mbps, median of 5): cold first
+paint 941 ms (≤ 1.0 s), warm 341 ms (≤ 0.4 s). Same-sitting A/B before the
+merge: cold dev 941 vs branch 932.5, so boot memory does not slow cold.
+Warm waterfall: snapshot, files, session and repositories in one wave
+(130–243), runtime from cache 276–279, paint 341.
+
+All six slices of [p5-controller-plan.md](p5-controller-plan.md) (11–16)
+are on dev, but main.ts is 6108 lines, not the plan's "about 500" (ticket 08).
+The rest needs a new plan: the planners and builders found most of what
+remains is host state, transactions, DOM wiring and ports that the plan's
+slices left in main.ts on purpose.
+
+Open issues:
+
+- The actual-starter group (`npm run test:browser:actual`) has 11 failures on
+  dev `30a51e0` and later, independent of these slices:
+  `native-card-paths-starter.spec.ts:126` (four themes),
+  `native-slot-published-actual.spec.ts:107`,
+  `native-static-section-save-host.spec.ts:204/276/298/318`,
+  `native-structure-readiness.spec.ts:37` (two variants).
+- On 2026-10-08 at 17:26 a full suite lost its 5216 server mid-run (536
+  connection refusals); no OOM, no server error, not reproduced on two reruns.
+  Cause unknown.
+- CI deploy-preview has no `CLOUDFLARE_API_TOKEN`, so it tests but does not
+  deploy (Lex will set it up later); preview deploys stay manual.
+
 ## Update (2026-10-08, evening)
 
 Landed on dev, preview `a80dfc3b`; main.ts 8095 → 6786:
