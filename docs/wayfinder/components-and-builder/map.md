@@ -34,6 +34,7 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - [Inventory the shared masters, page parts and components in use](tickets/01-research-masters-and-components.md): no real masters exist anywhere (the masters code is dev-only), so retiring them means removing about 4k lines plus tests; live templates already wrap whole elements; header and footer show no links without JS; slotting nav links fixes that at the cost of a nav copy on every page
 - [Research what insert, drag and move support today](tickets/11-research-insert-drag-today.md): source edits already nest; the UI only drops and drags whole sections between siblings; elements were taken out of Add; instances take no drops; 15 gaps, the largest being nested drop targets and drops into instances
 - [Research variant discovery from component CSS](tickets/06-research-variant-discovery.md): `:host([data-x="v"])` rules in the component CSS, including inside at-rules; an absent attribute is the default; labels from the value or an optional `/* variant … */` comment; a shared parser in `shared/`; no loader change
+- [Decide how masters and page parts become components](tickets/02-masters-become-components.md): nav links stay in the header/footer templates (one edit, JS allowed); the skip link moves into each page before `<site-header>` with shared CSS; masters code is removed as its own deletion slice before Make component returns to the edit bar; `site-conventions.ts:52` reworded and `:69`'s register step dropped
 
 ## Not yet specified
 
@@ -41,7 +42,7 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - **Deduplicating on Make component.** Whether Make component offers to replace identical copies of the section on other pages.
 - **Variants on builder blocks.** Whether plain Section/Div blocks get variant-like choices (tone, layout) through site classes or `data-*` attributes, or only components do. This follows the variant contract (ticket 07) and the block set (ticket 10).
 - **Agent tool surface.** Whether MCP gains tools such as `create_component` or `set_variant`, or only better conventions. This follows ticket 05.
-- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention.
+- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02).
 - **Card reorder by drag**, which is a known gap. It may fold into the builder's move interaction.
 - **Test plan.** Which browser checks each feature adds, following the `@smoke`/nightly split from the lean-fast-editor map.
 
