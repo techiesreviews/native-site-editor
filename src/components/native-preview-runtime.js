@@ -3009,6 +3009,8 @@
       updateBoxes();
       return;
     }
+    // PROTOTYPE cb04: element rects by node path, plus one extra stylesheet (src/prototype/cb04-core.ts).
+    if (msg.type === "cb04") { var cb04Style = document.getElementById("cb04-proto-style"); if (typeof msg.css === "string") { if (!cb04Style) { cb04Style = document.createElement("style"); cb04Style.id = "cb04-proto-style"; (document.head || document.documentElement).appendChild(cb04Style); } if (cb04Style.textContent !== msg.css) cb04Style.textContent = msg.css; } parent.postMessage({ source: "cb04-proto", id: msg.id, rects: (msg.nodes || []).map(function (n) { var hit = resolveNodePath({ path: msg.path, node: n }); var r = hit && hit.getBoundingClientRect(); return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; }) }, "*"); return; } // PROTOTYPE cb04
     if (msg.type === "component-focus") {
       focusTag = typeof msg.tag === "string" ? msg.tag : "";
       updateBoxes();
