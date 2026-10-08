@@ -1,6 +1,6 @@
 import type { DraftScope, SavedDraft } from "../drafts";
 import type { DraftAccess, keepAsNewFile, pruneUnchanged, settleDeletedUpstream } from "../file-changes";
-import { EMPTY_COMMIT, type Repository, type Snapshot, type TreeEntry } from "../../shared/types";
+import { EMPTY_COMMIT, type PublishResult, type Repository, type Snapshot, type TreeEntry } from "../../shared/types";
 
 type Store = DraftAccess & { list(scope: DraftScope): SavedDraft[] };
 
@@ -41,6 +41,17 @@ export interface SavePublishPorts {
   releaseFiles(paths: Set<string>): string | undefined;
   openAfter(path?: string): Promise<unknown>;
   announce(text: string): void;
+  /** After a save: the saved native sources become the base, saved uploads' bytes go. */
+  adoptNativeBaseSources(scope: DraftScope, result: PublishResult, submitted: SavedDraft[]): void;
+  sweepUploads(scope: DraftScope): void;
+  /** The save's site action (deploy) is followed, when the host follows one. */
+  trackPublished(scope: DraftScope, result: PublishResult): void;
+  /** Sets the snapshot and seeds the repository index with it. */
+  adoptSnapshot(repository: Repository, snapshot: Snapshot): void;
+  setRevision(commit: string): void;
+  startNativeTextIndex(): void;
+  status(message: string): void;
+  errorMessage(error: unknown): void;
 }
 
 /** What a step began on; a late answer for another scope is dropped. */
@@ -66,6 +77,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
   let headSeen: { commit: string; at: number } | undefined;
   let headCheckedAt = 0;
   let headCheck = 0;
+  let refresh = 0;
   // Paths whose drafts are edits of files GitHub deleted since they began.
   let deletedUpstream = new Set<string>();
   // The boot's check, once per snapshot load (`epoch`).
@@ -187,16 +199,50 @@ export function createSavePublishController(ports: SavePublishPorts) {
     ports.announce(keep ? `Kept ${path} as a new file. Saving creates it again.` : `Discarded the draft of ${path}.`);
   }
 
+  /** A save of `scope` that `was` opened the editor for went through. */
+  function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
+    if (!live(was, false)) return;
+    ports.adoptNativeBaseSources(scope, result, submitted);
+    // Saved uploads are GitHub's now; this browser lets their bytes go.
+    ports.sweepUploads(scope);
+    seeHead(result.commit);
+    void refreshAfterPublish(scope, result.commit);
+    ports.trackPublished(scope, result);
+  }
+  // After a save: the branch as the save left it. `commit` is the save's own
+  // commit, so a GitHub read lagging behind it still gives it (worker/github.ts).
+  async function refreshAfterPublish(scope: DraftScope, commit: string) {
+    const was = proof(), token = ++refresh;
+    try {
+      const result = await ports.api<Snapshot>("snapshot", { repo: scope.repo, branch: scope.branch, commit });
+      const repository = ports.repository();
+      if (token !== refresh || !live(was) || !repository || repository.full_name !== scope.repo || was.branch !== scope.branch) return;
+      ports.adoptSnapshot(repository, result);
+      seeHead(result.commit);
+      const now = { ...was, snapshot: result };
+      await findDeletedUpstream(was.epoch);
+      if (token !== refresh || !live(now)) return;
+      ports.updateAgentContext();
+      ports.setRevision(result.commit);
+      ports.renderFileTree();
+      ports.startNativeTextIndex();
+      ports.status("Selected files saved to GitHub.");
+    } catch (error) {
+      if (was.epoch === ports.generation()) ports.errorMessage(error);
+    }
+  }
+
   const unwake = ports.onWake(() => void checkBranchHead());
 
   function dispose() {
     unwake();
     headCheck++;
+    refresh++;
   }
 
   return {
     proof, live, seeHead, trustedHead, publishedHead, checkBranchHead,
-    afterFileChanges, findDeletedUpstream, checkDeletedUpstream, settleDeletedDraft,
+    published, refreshAfterPublish, afterFileChanges, findDeletedUpstream, checkDeletedUpstream, settleDeletedDraft,
     isDeletedUpstream: (path: string) => deletedUpstream.has(path),
     /** A new snapshot loads: nothing is known deleted until it is checked. */
     resetDeletedUpstream: () => { deletedUpstream = new Set(); },

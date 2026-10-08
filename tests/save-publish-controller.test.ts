@@ -51,6 +51,11 @@ function fixture(overrides: Partial<SavePublishPorts> = {}) {
     releaseFiles: (paths) => { log.push(`release ${[...paths].join(",")}`); return opened && paths.has(opened) ? opened : undefined; },
     openAfter: async (path) => { log.push(`open ${path ?? "-"}`); },
     announce: (text) => { log.push(text); },
+    adoptNativeBaseSources: () => { log.push("adopt"); }, sweepUploads: () => { log.push("sweep"); },
+    trackPublished: () => { log.push("track"); },
+    adoptSnapshot: (_r, value) => { state.snapshot = value; log.push(`snapshot ${value.commit.slice(0, 1)}`); },
+    setRevision: (commit) => { log.push(`revision ${commit.slice(0, 1)}`); }, startNativeTextIndex: () => { log.push("index"); },
+    status: (text) => { log.push(text); }, errorMessage: (error) => { log.push(`error ${String(error)}`); },
     ...overrides,
   };
   const controller = createSavePublishController(ports);
@@ -177,4 +182,47 @@ test("settling a deleted draft keeps it as a new file or drops it, then reopens 
   assert.equal(f.drafts.has("gone.html"), false);
   assert.equal(f.log.at(-1), "Discarded the draft of gone.html.");
   assert.equal(f.log.some((line) => line.startsWith("open")), false);
+});
+
+const scope1 = { account: "lex", repoId: 1, repo: "lex/site1", branch: "main" };
+const result = (commit: string) => ({ commit, url: "u" } as import("../shared/types.ts").PublishResult);
+
+test("a save refreshes the snapshot once, in order, and only for the scope it began on", async () => {
+  const f = fixture();
+  const was = f.controller.proof();
+  f.controller.published(was, scope1, result("f".repeat(40)), []);
+  assert.deepEqual(f.log, ["adopt", "sweep", "track"]);
+  assert.equal(f.controller.trustedHead(), "f".repeat(40));
+  assert.deepEqual(f.calls[0], ["snapshot", { repo: "lex/site1", branch: "main", commit: "f".repeat(40) }]);
+  f.answers[0].resolve(snap("f".repeat(40)));
+  await flush();
+  assert.deepEqual(f.log.slice(3), ["snapshot f", "agent", "revision f", "tree", "index", "Selected files saved to GitHub."]);
+
+  const moved = fixture();
+  const old = moved.controller.proof();
+  moved.state.generation++;
+  moved.controller.published(old, scope1, result("f".repeat(40)), []);
+  assert.deepEqual(moved.log, [], "a save for an old workspace changes nothing");
+
+  const raced = fixture();
+  void raced.controller.refreshAfterPublish(scope1, "f".repeat(40));
+  raced.state.repository = repo(2);
+  raced.answers[0].resolve(snap("f".repeat(40)));
+  await flush();
+  assert.deepEqual(raced.log, [], "another repository keeps its snapshot");
+
+  const twice = fixture();
+  void twice.controller.refreshAfterPublish(scope1, "1".repeat(40));
+  void twice.controller.refreshAfterPublish(scope1, "2".repeat(40));
+  twice.answers[1].resolve(snap("2".repeat(40)));
+  await flush();
+  twice.answers[0].resolve(snap("1".repeat(40)));
+  await flush();
+  assert.equal(twice.state.snapshot?.commit, "2".repeat(40), "an older save's answer never steps back");
+
+  const failed = fixture();
+  void failed.controller.refreshAfterPublish(scope1, "f".repeat(40));
+  failed.answers[0].reject("down");
+  await flush();
+  assert.deepEqual(failed.log, ["error down"]);
 });
