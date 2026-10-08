@@ -89,3 +89,29 @@ The current/base comparison used `flock /tmp/ase-5216.lock env ASE_TEST_PORT=521
 Gate logs are in `.scratch/p5-review/shared-sections-controller/`.
 
 The full native-save suite was not run. Commits are blocked by the sandbox: Git cannot create `/home/ubulex/Projects/native-site-editor/.git/worktrees/native-site-editor-p5-shared-sections-controller/index.lock` (`Read-only file system`). No commits, push, merge or deploy were made. The 12a integration/rebase remains a later branch step.
+
+## Rebase onto dev 30a51e0
+
+The branch was rebased onto dev `30a51e0` (slices 11, 12a, 13, 14, 15) as `eae1ab7`. Conflicts were only in `src/main.ts`:
+
+- Import conflicts were merged, then pruned to what main still uses.
+- One block was dropped from both sides: the shared-root code, which this slice moves, and the structure Edit/linked-ancestor code, which 12a moved into the page structure controller.
+
+The page structure controller's `masterRevision`, `nativeMasterSelection`, `masterController`, `pagePartController`, `runMasterEdit` and `nativeSharedCatalogs` ports are live getters. They read main's hoisted wrappers and controller constants. Those wrappers delegate to this controller, and the constants are declared before the page structure controller is created. This slice's eager function ports (`renderNativeEditBar`, `renderNativeShownStructure`, `nativeStructureEdit`) are hoisted wrappers from 12a, so there is no TDZ. A declaration check of main against dev and the original slice found no stale or duplicated names: every name this slice removed is gone, every name it added is present, and nothing else changed. `src/main.ts`: 6,786 lines on dev, 6,108 after.
+
+Gates after the rebase:
+
+- `npm run check`: passed.
+- `npm test`: 1,175 passed, 0 failed.
+- `git diff --check`: passed.
+- Byte budget: 350 KB before first preview paint (limit 355 KB). Dev `30a51e0` measured the same way is 349 KB. `index.js` gzip grows from 281,459 to 282,272 bytes (+813).
+- Browser runs used `ase-port.sh`, one worker:
+  - Default 16-spec group: 11 passed, 63 skipped, 0 failed.
+  - native-static: 40 passed, 13 skipped, 0 failed.
+  - Harness projects (native-shared-authoring, native-shared-structure, native-page-part-preview): 22 passed.
+  - `@smoke`: 32 passed.
+  - actual: 34 passed, 11 failed, 1 skipped. A clean dev `30a51e0` worktree gives 33 passed, 12 failed, 1 skipped with the same 11 failures, plus `native-static-sections-host.spec.ts:29` (desktop). All 11 are pre-existing on dev:
+    - `native-card-paths-starter.spec.ts:126`, four themes
+    - `native-slot-published-actual.spec.ts:107`
+    - `native-static-section-save-host.spec.ts:204`, `:276`, `:298` and `:318`
+    - `native-structure-readiness.spec.ts:37`, plus its code-pane-hidden variant
