@@ -38,7 +38,9 @@ function runs(project: string) {
 }
 function server(project: string, port: number): WebServer {
   return {
-    command: `ASE_NATIVE_SAVE_PORT=${port} tsx tests/native-save/server.ts`,
+    command: `bash -o pipefail -c 'mkdir -p .scratch/${project}; { echo "server ${project}:${port} started $(date -Is)"; ASE_NATIVE_SAVE_PORT=${port} ./node_modules/.bin/tsx tests/native-save/server.ts; status=$?; echo "server ${project}:${port} exited $status $(date -Is)"; exit $status; } 2>&1 | tee -a .scratch/${project}/server-${port}.log'`,
+    stdout: "pipe",
+    stderr: "pipe",
     url: `http://127.0.0.1:${port}/api/session`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -62,6 +64,10 @@ export default defineConfig({
   testDir: "./tests",
   workers: 1,
   retries: 0,
+  reporter: [
+    ["list"],
+    ["json", { outputFile: `.scratch/${selectedProjects()[0] ?? "native-save"}/results-${selectedProjects()[0] === "native-preview" ? previewPort : savePort}.json` }],
+  ],
   projects: [
     {
       // Native Explicit Save to GitHub: the REAL worker handler over a fake GitHub boundary.
