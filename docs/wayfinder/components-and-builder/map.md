@@ -20,7 +20,7 @@ A decided plan, ready to hand off, for five features: making components (from bu
   - **Add card › existing page**: the new card takes the page's title/h1, meta description, og:image and address. The user edits them afterwards.
   - **The block builder produces plain HTML in the page**, using the site's classes. Make component turns a built section into a component later.
   - **Variants are free per component**: a component declares its own `data-*` attributes and values in its CSS, and the editor discovers them. There is no fixed global set.
-- **Language:** use the terms in `CONTEXT.md`. *Variant* is added (ticket 07); add *Block* once ticket 10 settles it.
+- **Language:** use the terms in `CONTEXT.md`. *Variant*, *Tone* and *Block* are in `CONTEXT.md`.
 - **Reference sites:** `~/Projects/techies-reviews` (real components, OKLCH brand scale, `.btn[data-variant]`, section-cards) and `~/Projects/native-site-editor-starter` (separate project; `fixtures/native-starter` is frozen test data).
 - **Grilling tickets** run as a live conversation with Lex (AskUserQuestion). The agent never answers for Lex.
 - **Research tickets** are resolved by subagents. Findings go on a `research/cb-<ticket>` branch in `docs/wayfinder/components-and-builder/research/`, and a pointer is added to the ticket.
@@ -38,13 +38,13 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - [Decide the variant contract](tickets/07-variant-contract.md): a variant is a `data-*` attribute some CSS styles on the host (component CSS, site CSS naming the tag or `:host()`, global attributes like `data-color-scheme`, nested forms included); absent = default; no editor comments in code, labels from values; picked in the edit bar (dropdowns/checkboxes, a Variants button past two) and suggested in the HTML code pane; `data-layout` and `data-tone` suggested, not enforced
 - [Decide how tone variants keep text accessible](tickets/08-accessible-tone-text.md): `data-tone` on page bands only (sections, header, footer); text, buttons and links adjust automatically; AA guaranteed by nudging the brand surface's OKLCH lightness out of the mid band plus `contrast-color()` with a computed fallback, proven by a sweep test; no editor warning; the starter ships light/dark/brand/accent from one `--brand`
 - [Decide what agents are told about making components](tickets/05-what-agents-are-told.md): the editor's conventions are the one source; tool descriptions only point to it; new sites ship an `AGENTS.md` whose Components chapter is a drift-tested copy; a site's own `AGENTS.md` may add style rules only; new `make_component` tool reusing the editor's logic, `get_site` lists variants, no `set_variant`
+- [Decide the block set and its markup](tickets/10-block-set.md): six blocks (Section, Div, Image, Heading, Paragraph, Button as `<a class="btn">`); Section and Div start empty with a drop area; the builder writes only the conventions' classes `flow`, `cards`, `btn`; heading level from position; Button gets the site's `.btn` variants, Section Tone, Div Stack/Grid; drops into instances only into the unnamed slot; the hidden element catalogue becomes the block set and the rest is deleted
 
 ## Not yet specified
 
 - **Editing a component's template visually.** Whether a component gets an edit mode in the preview (editing the template rather than the instance), or stays source-only. This depends on direct creation (ticket 04) and on how the builder works inside a template.
 - **Deduplicating on Make component.** Whether Make component (and the `make_component` tool, ticket 05) offers to replace identical copies of the section on other pages.
-- **Variants on builder blocks.** Whether plain Section/Div blocks get variant-like choices (tone, layout) through site classes or `data-*` attributes, or only components do. Ticket 07 already offers global site attributes such as `data-color-scheme` on every component, and the same detection can find class variants such as `.btn[data-variant]`; whether plain blocks get them follows the block set (ticket 10).
-- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02); techies-reviews moves its sections from `data-color-scheme` to `data-tone`, and the starter replaces its hard-coded white-on-accent with the tone rules (ticket 08). techies-reviews' `AGENTS.md` drops `data-if` and the registration step and keeps only its own style rules (ticket 05).
+- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02); techies-reviews moves its sections from `data-color-scheme` to `data-tone`, the starter gains `.btn` (ticket 10) and replaces its hard-coded white-on-accent with the tone rules (ticket 08). techies-reviews' `AGENTS.md` drops `data-if` and the registration step and keeps only its own style rules (ticket 05).
 - **Card reorder by drag**, which is a known gap. It may fold into the builder's move interaction.
 - **Test plan.** Which browser checks each feature adds, following the `@smoke`/nightly split from the lean-fast-editor map.
 
@@ -54,3 +54,4 @@ A decided plan, ready to hand off, for five features: making components (from bu
 
 - A style panel or free per-element CSS editing. The lean-fast-editor map removed the style panel. Blocks are styled by site classes and component variants.
 - A brand-colour control (for example in site settings). Ticket 08 keeps the brand colour in `tokens.css`, and the tone rules keep every band AA whatever it is; a control is its own effort.
+- A Span block. A bare `<span>` does nothing visible without a class or a style panel, so ticket 10 dropped it for now.

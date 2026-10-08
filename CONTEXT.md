@@ -22,6 +22,9 @@ A named look of a component, chosen on each use by setting one of its `data-*` a
 **Tone**:
 The colouring of a page band (a section, the header or the footer): light, dark, brand or accent. Everything inside a band takes its colours from the band's tone and stays readable.
 
+**Block**:
+A plain HTML element the user adds to a page by dragging it in: a section, a div, an image, a heading, a paragraph or a button. Blocks are styled by the site's own classes; turning built blocks into a component is done with Make component.
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
