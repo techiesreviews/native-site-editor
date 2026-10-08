@@ -46,7 +46,7 @@ import { createCreateDialog, type CreateKind, type CreateRequest } from "./compo
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
-import { EMPTY_COMMIT, type OwnerInstallation } from "../shared/types";
+import type { OwnerInstallation } from "../shared/types";
 import type { createGetStarted, CreateChoice, CreateOutcome } from "./components/get-started";
 import type { createStartSite } from "./components/start-site";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
@@ -61,7 +61,7 @@ import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type FileMove, type RouteChange } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
-import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, moveFile, pruneUnchanged, restoreFile as restoreDraftFile, settleDeletedUpstream, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
+import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget } from "./native-pages";
@@ -113,6 +113,7 @@ import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loadi
 import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
+import { createSavePublishController } from "./controllers/save-publish-controller";
 import { createComponentTools, type ComponentTools } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
 import type {
@@ -399,7 +400,7 @@ function mountWorkspace() {
     onInteractionEnd: flushPendingNativePageTitles,
     retitle: retitleNativePage,
     changed: (file) => Boolean(treeState().changes.get(file)),
-    discard: (file) => void discardOneFile(file),
+    discard: (file) => void savePublish.discardFile(file),
     duplicate: (file) => void duplicateNativePage(file),
     remove: (target) => void removeNativePagesTarget(target),
     createPage: (route) => void createNativeFolderPage(route),
@@ -3498,8 +3499,6 @@ function openExplorer() {
 let repositories: Repository[] = [];
 // Unset until start() has read the session.
 let info: SessionInfo;
-// Paths whose drafts are edits of files GitHub deleted since they began.
-let deletedUpstream = new Set<string>();
 let generation = 0;
 let fileGeneration = 0;
 
@@ -4854,7 +4853,7 @@ function fileRowItems(target: FileRowTarget): MenuItem[] {
   if (!target.folder) items.push({ label: "Duplicate", run: () => void duplicateFileTarget(target) });
   const change = treeState().changes.get(target.path);
   if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => undoFileChanges({ moveBack: [target.path] }) });
-  if (change && !target.folder) items.push({ label: "Discard changes", run: () => void discardOneFile(target.path) });
+  if (change && !target.folder) items.push({ label: "Discard changes", run: () => void savePublish.discardFile(target.path) });
   items.push(
     { label: "Delete", shortcut: "Delete", run: () => void deleteFileTarget(target) },
     { label: "Copy path", run: () => void copyFilePath(target.path) },
@@ -5210,151 +5209,63 @@ function discardFileChange(change: FileChange) {
   if (change.kind === "A" && change.drafts[0]?.upload) discardUpload(change.path);
   else if (change.kind === "D") undoFileChanges({ restore: [change.path] });
   else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
-  else if (discardDrafts([change.path])) announce(`Discarded the changes to ${change.path}.`);
+  else if (savePublish.discard([change.path])) announce(`Discarded the changes to ${change.path}.`);
 }
 
-/**
- * Drops the drafts of `paths`, each with the other half of its rename, or
- * every draft of the branch: the files are GitHub's again. The open file
- * and the style pane close when among them, and the open file opens again
- * as GitHub has it (a new page's parent page, a renamed file at its old
- * path). Returns how many drafts went.
- */
-function discardDrafts(paths?: string[]): number {
-  const scope = draftScope();
-  if (!scope) return 0;
-  const store = draftStore();
-  const all = store.list(scope);
-  const chosen = new Set(paths ?? all.map((draft) => draft.path));
-  for (const draft of all) {
-    if (!chosen.has(draft.path)) continue;
-    if (draft.movedFrom && store.get(scope, draft.movedFrom)?.movedTo === draft.path) chosen.add(draft.movedFrom);
-    if (draft.movedTo && store.get(scope, draft.movedTo)?.movedFrom === draft.path) chosen.add(draft.movedTo);
-  }
-  const openDraft = appStore.openFile.value && chosen.has(appStore.openFile.value) ? store.get(scope, appStore.openFile.value) : undefined;
-  const styled = Boolean(secondaryPath && chosen.has(secondaryPath));
-  const opened = releaseFiles(chosen);
-  let count = 0;
-  for (const path of chosen) {
-    if (!store.get(scope, path)) continue;
-    // The model kept for the file goes with its draft.
-    if (!editorModule?.dropDraft(scope, path)) store.remove(scope, path);
-    deletedUpstream.delete(path);
-    count++;
-  }
-  // Undo would replay edits into files that are GitHub's again.
-  editorModule?.clearHistory();
-  afterFileChanges();
-  // The new site's home page was discarded: the project opens again as site-less.
-  if (resyncNativeSite()) return count;
-  if (nativeModeActive()) updateNativePreviewSources();
-  if (opened) {
-    const back = openDraft?.movedFrom && chosen.has(openDraft.movedFrom) ? openDraft.movedFrom
-      : openDraft?.baseSha === null ? nativeFallbackPage(opened) : opened;
-    void openAfter(back);
-  } else if (styled && appStore.openFile.value && nativeModeActive()) {
-    // The open page stays; its stylesheet opens again as GitHub has it.
-    if (nativeComponentTagForPath(appStore.openFile.value)) void openComponentLinkedStyle(appStore.openFile.value);
-    else void openDefaultLinkedStyle(appStore.openFile.value);
-  }
-  return count;
-}
-
-// Discard changes on one file (its row menu in Pages & files).
-async function discardOneFile(path: string) {
-  const change = treeState().changes.get(path);
-  if (!change) return;
-  const asked = await confirmDialog?.ask({
-    title: `Discard the changes to ${change.from ? `${change.from} → ${path}` : path}?`,
-    notes: [change.kind === "A" ? "It is not on GitHub yet, so this removes it." : "It goes back to GitHub's version. This cannot be undone."],
-    action: "Discard",
-  });
-  if (!asked) return;
-  discardDrafts([path]);
-  announce(`Discarded the changes to ${path}.`);
-}
-
-// Discard changes in the top bar: every draft of the branch, after a question naming them.
-async function discardAllChanges() {
-  const scope = draftScope();
-  if (!scope || !discardDialog) return;
-  const changes = listChanges(draftStore().list(scope));
-  if (!changes.length) return;
-  const n = changes.length;
-  const names = changes.map((change) => (change.from ? `${change.from} → ${change.path}` : change.path));
-  const shown = names.length > 12 ? `${names.slice(0, 10).join(", ")} and ${names.length - 10} more` : names.join(", ");
-  const words = `${n} unsaved ${n === 1 ? "change" : "changes"}`;
-  const asked = await discardDialog.ask({
-    title: `Discard ${words}?`,
-    notes: [shown, `Every file goes back to GitHub's version on ${scope.branch}, including changes agents made. This cannot be undone.`],
-    action: "Discard all",
-  });
-  if (!asked || draftScope()?.branch !== scope.branch) return;
-  discardDrafts();
-  announce(`Discarded ${words}.`);
-}
-
-// Drafts of files GitHub deleted since they began, found when a snapshot
-// loads (src/file-changes.ts): a deletion is dropped, an edit waits in Save
-// to GitHub and the code editor for Discard draft or Keep as new file.
-// Drafts that are GitHub's version now (a merge, a save elsewhere, an agent
-// writing the same text) are no change and go too, compared by blob SHA.
-// At boot it runs after the first paint (checkDeletedUpstream); every
-// draft's file is looked up at once, so folders listed for one serve all.
-async function findDeletedUpstream(epoch: number) {
-  if (epoch !== generation) return;
-  deletedUpstream = new Set();
-  const scope = draftScope();
-  if (!scope) return;
-  const all = draftStore().list(scope);
-  const drafts = all.filter((draft) => draft.baseSha !== null);
-  const missing = new Set<string>();
-  const entries = new Map<string, TreeEntry | undefined>();
-  try {
-    // New files are looked for only when the whole tree is at hand.
-    const looked = appStore.snapshot.value?.tree ? all : drafts;
-    const found = await Promise.all(looked.map((draft) => findEntry(draft.path)));
-    if (epoch !== generation) return;
-    looked.forEach((draft, index) => {
-      entries.set(draft.path, found[index]);
-      if (!found[index] && draft.baseSha !== null) missing.add(draft.path);
-    });
-  } catch {
-    // Unknown: a save reports it instead.
-    return;
-  }
-  deletedUpstream = new Set(settleDeletedUpstream(draftStore(), scope, drafts, missing));
-  const left = draftStore().list(scope).filter((draft) => entries.has(draft.path) && !deletedUpstream.has(draft.path));
-  const dropped = await pruneUnchanged(draftStore(), scope, left, (path) => entries.get(path)).catch(() => []);
-  if (epoch !== generation) return;
-  for (const path of dropped) editorModule?.forgetDraftModel(scope, path);
-  if (dropped.length || deletedUpstream.size || missing.size) {
+const savePublish = createSavePublishController({
+  generation: () => generation,
+  snapshot: () => appStore.snapshot.value,
+  scope: draftScope, drafts: draftStore, api, findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce, status,
+  fail: errorMessage, fallback: nativeFallbackPage, resync: resyncNativeSite,
+  onWake: (check) => {
+    document.addEventListener("visibilitychange", check);
+    addEventListener("focus", check);
+    return () => { document.removeEventListener("visibilitychange", check); removeEventListener("focus", check); };
+  },
+  visible: () => document.visibilityState === "visible",
+  reload: () => loadSnapshot(),
+  forget: (scope, path) => editorModule?.forgetDraftModel(scope, path),
+  redraw: () => {
     editorModule?.refreshDrafts();
     renderFileTree();
     if (nativeSite) updateNativePreviewSources();
-  }
-}
-// The boot's check, once per snapshot load (`epoch`): run after the first
-// paint, or at once by a file that is opened before then and needs it.
-let deletedUpstreamCheck: { epoch: number; done: Promise<void> } | undefined;
-function checkDeletedUpstream(epoch: number) {
-  if (deletedUpstreamCheck?.epoch !== epoch) deletedUpstreamCheck = { epoch, done: findDeletedUpstream(epoch).catch(() => undefined) };
-  return deletedUpstreamCheck.done;
-}
-
-// Discard draft (`keep` false) or Keep as new file, for an edit of a file
-// GitHub deleted.
-function settleDeletedDraft(path: string, keep: boolean) {
-  const scope = draftScope();
-  if (!scope) return;
-  const opened = releaseFiles(new Set([path]));
-  if (keep) keepAsNewFile(draftStore(), scope, path);
-  else draftStore().remove(scope, path);
-  deletedUpstream.delete(path);
-  afterFileChanges();
-  if (opened) void openAfter(keep ? path : undefined);
-  announce(keep ? `Kept ${path} as a new file. Saving creates it again.` : `Discarded the draft of ${path}.`);
-}
+  },
+  saved: (scope, result, submitted) => {
+    adoptNativeBaseSources(scope, result, submitted);
+    // Saved uploads are GitHub's now; this browser lets their bytes go.
+    void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
+    if (nativeEngaged && !result.unchanged)
+      siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
+        () => appStore.repository.value?.id === scope.repoId && (appStore.snapshot.value?.branch ?? appStore.branch.value) === scope.branch && info.user?.login === scope.account);
+  },
+  adopt: (result) => {
+    appStore.snapshot.value = result;
+    repositoryIndex.seed(appStore.repository.value!, result);
+  },
+  showSaved: (commit) => {
+    updateAgentContext();
+    element("revision").textContent = commit.slice(0, 7);
+    element("revision").title = commit;
+    renderFileTree();
+    if (nativeEngaged && nativeSite) startNativeTextIndex(appStore.repository.value!, nativeSite, draftScope(), generation, nativeSourcesRequest);
+  },
+  change: (path) => treeState().changes.get(path),
+  openFile: () => appStore.openFile.value,
+  secondary: () => secondaryPath,
+  drop: (scope, path) => Boolean(editorModule?.dropDraft(scope, path)),
+  clearHistory: () => editorModule?.clearHistory(),
+  reopen: (opened, back, styled) => {
+    if (nativeModeActive()) updateNativePreviewSources();
+    const page = appStore.openFile.value;
+    if (opened) void openAfter(back);
+    else if (styled && page && nativeModeActive()) {
+      // The open page stays; its stylesheet opens again as GitHub has it.
+      if (nativeComponentTagForPath(page)) void openComponentLinkedStyle(page);
+      else void openDefaultLinkedStyle(page);
+    }
+  },
+  confirm: (question, all) => (all ? discardDialog : confirmDialog)?.ask(question),
+});
 
 async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
   const to = renamedPath(parentOf(target.path), name, target.folder ? "folder" : "file");
@@ -5934,29 +5845,13 @@ async function mountSource(
     repo: appStore.repository.value.full_name,
     branch: appStore.snapshot.value!.branch,
   };
-  const saveEpoch = generation;
+  const saveProof = savePublish.proof();
   await openCodeEditor({
     key: draftKey(scope, path),
     scope,
     baseSha: baseSha,
     saveLabels: nativeEngaged,
-    onPublished: (result, submitted) => {
-      if (
-        generation !== saveEpoch ||
-        appStore.repository.value?.id !== scope.repoId ||
-        appStore.snapshot.value?.branch !== scope.branch ||
-        info.user?.login !== scope.account
-      )
-        return;
-      adoptNativeBaseSources(scope, result, submitted);
-      // Saved uploads are GitHub's now; this browser lets their bytes go.
-      void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
-      seeHead(result.commit);
-      void refreshPublishedSnapshot(scope.repo, scope.branch, result.commit);
-      if (nativeEngaged && !result.unchanged)
-        siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
-          () => appStore.repository.value?.id === scope.repoId && (appStore.snapshot.value?.branch ?? appStore.branch.value) === scope.branch && info.user?.login === scope.account);
-    },
+    onPublished: (result, submitted) => savePublish.published(saveProof, scope, result, submitted),
     onDiscardNew: () => {
       // A discarded page no longer routes; the site shows the page's parent
       // page, else home.
@@ -6002,12 +5897,12 @@ async function mountSource(
       updateCurrentPageLabel();
     },
     onHistory: () => void historyController.open().catch(errorMessage),
-    onDiscardAll: () => void discardAllChanges(),
-    publishHead: () => (appStore.snapshot.value?.branch === scope.branch && appStore.repository.value?.id === scope.repoId ? (appStore.snapshot.value.empty && (!headSeen || headSeen.commit === EMPTY_COMMIT) ? EMPTY_COMMIT : trustedHead()) : undefined),
-    onRefused: () => void checkBranchHead(true),
+    onDiscardAll: () => void savePublish.discardAll(),
+    publishHead: () => savePublish.headFor(scope),
+    onRefused: () => void savePublish.checkHead(true),
     onDiscardChange: discardFileChange,
-    deletedUpstream: (path) => deletedUpstream.has(path),
-    onSettleDeleted: settleDeletedDraft,
+    deletedUpstream: savePublish.isDeleted,
+    onSettleDeleted: savePublish.settleDeleted,
     cssWorkspace: nativeCssWorkspace,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
@@ -6437,9 +6332,9 @@ async function restoreFile(
         return;
       }
       // An edit of a file GitHub deleted: opened to be settled.
-      if (saved && !saved.deleted) await checkDeletedUpstream(epoch);
+      if (saved && !saved.deleted) await savePublish.checkDeleted(epoch);
       if (epoch !== generation || selection !== fileGeneration) return;
-      if (saved && !saved.deleted && deletedUpstream.has(path)) {
+      if (saved && !saved.deleted && savePublish.isDeleted(path)) {
         if (!options.keepExplorer) explorerDropdown?.close();
         setCurrentPage(path);
         await mountSource(path, saved.original, saved.baseSha, false, epoch, selection, options);
@@ -6455,68 +6350,6 @@ async function restoreFile(
   }
 }
 
-// After a save: the branch as the save left it. `commit` is the save's own
-// commit, so a GitHub read lagging behind it still gives it (worker/github.ts).
-async function refreshPublishedSnapshot(repo: string, branch: string, commit: string) {
-  const epoch = generation;
-  try {
-    const result = await api<Snapshot>("snapshot", { repo, branch, commit });
-    if (
-      epoch !== generation ||
-      appStore.repository.value?.full_name !== repo ||
-      appStore.snapshot.value?.branch !== branch
-    )
-      return;
-    appStore.snapshot.value = result;
-    repositoryIndex.seed(appStore.repository.value, result);
-    seeHead(result.commit);
-    await findDeletedUpstream(epoch);
-    if (epoch !== generation) return;
-    updateAgentContext();
-    element("revision").textContent = result.commit.slice(0, 7);
-    element("revision").title = result.commit;
-    renderFileTree();
-    if (nativeEngaged && nativeSite) startNativeTextIndex(appStore.repository.value, nativeSite, draftScope(), generation, nativeSourcesRequest);
-    status("Selected files saved to GitHub.");
-  } catch (error) {
-    if (epoch === generation) errorMessage(error);
-  }
-}
-
-// The branch head as this tab last learned it (a snapshot, a save) and when:
-// trusted over GitHub's answer for a while, as GitHub's reads can lag its
-// writes; after that a branch reset elsewhere is believed.
-let headSeen: { commit: string; at: number } | undefined;
-const headTrust = 5 * 60_000;
-function seeHead(commit: string) {
-  headSeen = { commit, at: Date.now() };
-}
-const trustedHead = () => (headSeen && Date.now() - headSeen.at < headTrust ? headSeen.commit : undefined);
-// Whether GitHub moved the branch on (a pull request merged, a save in
-// another tab): checked when the tab is shown or focused again, at most
-// every 15 seconds, and after a save was refused. A new head loads as
-// Refresh does, the open file opening again.
-let headCheckedAt = 0;
-async function checkBranchHead(force = false) {
-  if (!appStore.repository.value || !appStore.snapshot.value || document.visibilityState !== "visible") return;
-  if (!force && Date.now() - headCheckedAt < 15_000) return;
-  headCheckedAt = Date.now();
-  const epoch = generation, seen = appStore.snapshot.value, repo = appStore.repository.value;
-  try {
-    const { commit } = await api<{ commit: string }>("head", {
-      repo: repo.full_name, branch: seen.branch,
-      ...(trustedHead() ? { commit: trustedHead()! } : {}),
-    });
-    if (epoch !== generation || appStore.snapshot.value !== seen || commit === seen.commit) return;
-    seeHead(commit);
-    await loadSnapshot();
-  } catch {
-    // Checked again on the next focus.
-  }
-}
-document.addEventListener("visibilitychange", () => void checkBranchHead());
-window.addEventListener("focus", () => void checkBranchHead());
-
 async function loadSnapshot(
   resumePath?: string,
   prefetched?: Promise<Snapshot>,
@@ -6527,14 +6360,14 @@ async function loadSnapshot(
     resumePath ??
     (appStore.snapshot.value?.branch === appStore.branch.value ? appStore.openFile.value : undefined);
   // The head this tab saw on the branch: a lagging read never steps back from it.
-  const known = appStore.snapshot.value && appStore.snapshot.value.branch === appStore.branch.value ? trustedHead() : undefined;
+  const known = appStore.snapshot.value && appStore.snapshot.value.branch === appStore.branch.value ? savePublish.trustedHead() : undefined;
   const epoch = ++generation;
   fileGeneration++;
   clearError();
   batch(() => {
     appStore.snapshot.value = undefined;
     repositoryIndex.clear();
-    deletedUpstream = new Set();
+    savePublish.resetDeleted();
     siteActions?.revalidate();
     openFolders.clear();
     folderListings.clear();
@@ -6565,7 +6398,7 @@ async function loadSnapshot(
     if (epoch !== generation) return;
     appStore.snapshot.value = result;
     repositoryIndex.seed(repo, result);
-    seeHead(result.commit);
+    savePublish.seeHead(result.commit);
     updateAgentContext();
     updatePreview();
     // Start reading the file to reopen now, alongside the native site's files.
@@ -6576,8 +6409,8 @@ async function loadSnapshot(
     if (epoch !== generation) return;
     // Drafts of files GitHub deleted or now holds are looked for once the
     // page is on screen (a file opened before then that needs it waits).
-    if (isNative && nativeSite) afterNativePaint(nativeSourcesRequest, () => void checkDeletedUpstream(epoch));
-    else void checkDeletedUpstream(epoch);
+    if (isNative && nativeSite) afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(epoch));
+    else void savePublish.checkDeleted(epoch);
     // A native project opens on its home page when nothing else is selected;
     // its source is already in memory from the site's prefetch.
     const open = reopen ?? (isNative ? nativeSite?.routes["/"] : undefined);
