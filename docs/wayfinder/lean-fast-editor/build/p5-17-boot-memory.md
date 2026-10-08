@@ -53,7 +53,9 @@ Warm waterfall after: snapshot 130–243, files 131–245, session 131–243, re
 - Paths in subfolders are proven only from a snapshot with the full `tree`.
 - A stale guess costs one wasted snapshot and one batch read.
 - The memory holds repository names, branch, paths and SHAs (no contents, no credentials) readable by scripts on the editor origin.
-- Byte budget: 348 KB of 350.
+- A guess taken before the repository selection is cleared, or before access to the repository is removed, is not marked abandoned (only a timeout, hashchange, sign-in screen or another repository choice marks it); if its snapshot then lands it still seeds the file cache. Entries are keyed by repository and SHA, so their content is right; the cost is evicting other entries (Sol review of `1e8c4e0`, P3, accepted).
+- Sign-out clearing the memory and `sessionTag()` have no browser or unit test of their own.
+- Byte budget: 351 KB of 355 (the ceiling was raised from 350 on 2026-10-08).
 
 ## Cold A/B after rebase onto `30a51e0`
 
