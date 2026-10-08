@@ -166,7 +166,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
     deletedUpstream = new Set(settleDeletedUpstream(store, scope, drafts, missing));
     const left = store.list(scope).filter((draft) => entries.has(draft.path) && !deletedUpstream.has(draft.path));
     const dropped = await pruneUnchanged(store, scope, left, (path) => entries.get(path)).catch(() => []);
-    if (!live(was)) return;
+    // A save's refresh may adopt a snapshot meanwhile; pruned drafts are gone either way.
+    if (!live(was, false)) return;
     for (const path of dropped) ports.forget(scope, path);
     if (dropped.length || deletedUpstream.size || missing.size) ports.redraw();
   }
@@ -230,7 +231,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // Asks, then discards only when the answer is yes, the newest question, and for the scope asked about.
   async function confirmed(question: Question, all: boolean, paths?: string[]) {
     const was = proof(), token = ++asking;
-    if (!(await ports.confirm(question, all)) || token !== asking || !live(was)) return false;
+    if (!(await ports.confirm(question, all)) || token !== asking || !live(was, false)) return false;
     discard(paths);
     return true;
   }
@@ -262,9 +263,9 @@ export function createSavePublishController(ports: SavePublishPorts) {
   /** A save of `scope`, from an editor opened on `was`, went through. */
   function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
     if (!live(was, false)) return;
-    ports.saved(scope, result, submitted);
     seeHead(result.commit);
     void refreshAfterPublish(scope, result.commit);
+    ports.saved(scope, result, submitted);
   }
   // After a save: the branch as the save left it. `commit` is the save's own
   // commit, so a GitHub read lagging behind it still gives it (worker/github.ts).

@@ -20,6 +20,8 @@ Base: `a47abed` (dev).
 ## Guards
 
 - A proof is `{ epoch, scope: draftScope(), snapshot }`. `live(proof)` checks the generation, account, repository ID, branch and snapshot identity. A save result passes when only the snapshot moved: a refreshed snapshot of the same branch, which matches the old `onPublished` guard. Every check uses the proof taken before the await. After a refresh adopts its own snapshot, the check uses `{ ...proof, snapshot: result }`.
+- Snapshot identity is not required after a discard question or after the deleted-upstream check's second await (`live(was, false)`). A save's refresh that adopts a snapshot of the same branch meanwhile no longer turns a confirmed discard into a no-op, and no longer skips forgetting and redrawing pruned drafts (review fixes).
+- `published` keeps base order: `seeHead`, then the refresh request, then the host's `saved` steps (adopt native base sources, sweep uploads, track the site action).
 - Operation tokens: a newer head check, refresh or discard question supersedes an older one. Stricter than before:
   - An older save's snapshot answer can no longer overwrite a newer one.
   - The row-menu discard checks the scope again after its question; before, it did not.
@@ -32,9 +34,10 @@ Base: `a47abed` (dev).
 Node `24`:
 
 - `npm run check`: passed.
-- `npm test`: 1,108 passed (1,100 before plus 8 new in `tests/save-publish-controller.test.ts`), 0 failures.
+- `npm test`: 1,119 passed after the rebase onto `311168a` (10 in `tests/save-publish-controller.test.ts`), 0 failures.
 - `npm run build:ui`: passed.
 - `npm run test:budget`: 348 KB gzip (356,286 B) against 347 KB (355,423 B) at `a47abed`. The cost is +863 B, mostly the port object and the controller's API keys. This is still within the 350 KB budget but breaks the "must not grow" target. Short port names already saved about 100 B. Not resolved.
-- Browser (port 5226, one worker, flock): 13 save/publish specs, 62 passed. `@smoke`: 32 passed.
+- Browser (port 5226, one worker, flock): 13 save/publish specs, 62 passed. `@smoke`: 32 passed. After the review fixes: native-discard, native-deleted-upstream, native-save and native-change-status, 23 passed; `@smoke`, 32 passed.
+- Budget after the review fixes, on `311168a`: 356,516 B (348 KB).
 
 `src/main.ts`: 8,215 lines before, 8,048 after (-167).

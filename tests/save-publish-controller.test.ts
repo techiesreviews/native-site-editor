@@ -27,13 +27,14 @@ function fixture() {
   const asked: ReturnType<typeof deferred<boolean>>[] = [];
   const questions: string[] = [];
   const log: string[] = [];
+  const hooks: { get?: () => void } = {};
   let wake: (() => void) | undefined, unwoken = 0, loads = 0, resync = false, opened: string | undefined;
   const ports: SavePublishPorts = {
     generation: () => state.generation,
     snapshot: () => state.snapshot,
     scope: () => state.snapshot ? { account: state.account, repoId: state.repoId, repo: `lex/site${state.repoId}`, branch: state.snapshot.branch } : undefined,
     drafts: () => ({
-      list: () => [...drafts.values()], get: (_s, path) => drafts.get(path),
+      list: () => [...drafts.values()], get: (_s, path) => { hooks.get?.(); return drafts.get(path); },
       save: (value) => { drafts.set(value.path, value); return true; }, remove: (_s, path) => drafts.delete(path),
     }),
     api: <T>(action: string, body: Record<string, string>) => { calls.push([action, body]); const answer = deferred<unknown>(); answers.push(answer); return answer.promise as Promise<T>; },
@@ -64,7 +65,7 @@ function fixture() {
   };
   const controller = createSavePublishController(ports);
   return {
-    controller, state, drafts, calls, answers, entries, asked, questions, log,
+    controller, state, drafts, calls, answers, entries, asked, questions, log, hooks,
     wake: () => wake?.(), counts: () => ({ loads, unwoken }),
     open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
   };
@@ -194,6 +195,7 @@ test("a save refreshes the snapshot once, in order, and only for the scope it be
   const f = fixture();
   f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), []);
   assert.deepEqual(f.log, ["saved"]);
+  assert.equal(f.calls.length, 1, "the refresh request starts before the host's save steps");
   assert.equal(f.controller.trustedHead(), "f".repeat(40));
   assert.deepEqual(f.calls[0], ["snapshot", { repo: "lex/site1", branch: "main", commit: "f".repeat(40) }]);
   f.answers[0].resolve(snap("f".repeat(40)));
@@ -282,4 +284,28 @@ test("a discard confirmed for another scope, or superseded, does nothing; a canc
   await last;
   assert.equal(done.drafts.size, 0);
   assert.equal(done.log.at(-1), "Discarded 1 unsaved change.");
+});
+
+test("a discard confirmed while a save's refresh adopts a snapshot of the same branch still discards", async () => {
+  const f = fixture();
+  f.drafts.set("a.html", draft("a.html"));
+  const one = f.controller.discardFile("a.html");
+  f.state.snapshot = snap("e".repeat(40));
+  f.asked[0].resolve(true);
+  await one;
+  assert.equal(f.drafts.has("a.html"), false);
+  assert.equal(f.log.at(-1), "Discarded the changes to a.html.");
+});
+
+test("pruned drafts are forgotten and redrawn when a save's refresh adopts a snapshot mid-check", async () => {
+  const f = fixture();
+  f.drafts.set("same.html", draft("same.html", { content: "x" }));
+  const check = f.controller.checkDeleted(1);
+  // The blob SHA of "x", so the draft is GitHub's version and is pruned.
+  // The refresh lands while the blob SHAs are worked out (pruneUnchanged reads the draft again).
+  f.hooks.get = () => { f.state.snapshot = snap("e".repeat(40)); };
+  f.entries.get("same.html")!.resolve({ path: "same.html", sha: "c1b0730e0133447badcfd47fd144e254807b06e1", mode: "100644", type: "blob" });
+  await check;
+  assert.equal(f.drafts.has("same.html"), false);
+  assert.deepEqual(f.log, ["forget same.html", "redraw"]);
 });
