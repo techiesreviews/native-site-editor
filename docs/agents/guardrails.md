@@ -31,8 +31,10 @@ typescript-eslint needs the TypeScript compiler API, which TypeScript 7 does not
 
 ## Pre-commit hook
 
-`.githooks/pre-commit` is tracked in the repo. It runs only when the staged files include `src/`, `shared/`, `worker/`, `tests/`, `scripts/` or config files (`package.json`, tsconfig, ESLint, Vite, Playwright, wrangler). It then runs `npm run check` and lints the staged `.ts` files. Commits that change only docs skip it. It never runs browser suites. If the worktree has no `node_modules`, it prints a one-line notice and skips.
+`.githooks/pre-commit` is tracked in the repo. It runs only when the staged files include `src/`, `shared/`, `worker/`, `tests/`, `scripts/` or config files (`package.json`, tsconfig, ESLint, Vite, Playwright, wrangler). It then runs `npm run check` and lints the staged `.ts` files. Commits that change only docs skip it. It never runs browser suites. If the worktree has no `node_modules`, it prints a one-line notice and skips. If ESLint or `typescript-eslint-api` is missing (a shared `node_modules` from before this change), it prints "lint skipped: run npm ci to enable" and still runs `npm run check`, which needs no lint packages.
 
 - Turn it on: `git config core.hooksPath .githooks`. `npm install` does this through `prepare`. The setting applies to every worktree of the clone.
 - Skip it once: `git commit --no-verify`.
 - The hook checks the working tree, not only the staged snapshot.
+
+Browser runs, ports and the full suite: see `docs/agents/agent-scripts.md`.

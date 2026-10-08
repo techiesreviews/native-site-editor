@@ -18,7 +18,9 @@ fi
 
 npm run --silent check
 lint=$(printf '%s\n' "$code" | grep -E '^(src|shared|worker|tests)/.*\.ts$' || true)
-if [ -n "$lint" ]; then
+if [ -n "$lint" ] && { [ ! -x node_modules/.bin/eslint ] || [ ! -d node_modules/typescript-eslint-api ]; }; then
+  echo "pre-commit: lint skipped: run npm ci to enable."
+elif [ -n "$lint" ]; then
   # shellcheck disable=SC2086 # one path per word; repository paths have no spaces.
   npx --no-install eslint $lint
 fi
