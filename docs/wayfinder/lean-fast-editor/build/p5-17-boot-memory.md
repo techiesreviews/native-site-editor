@@ -51,3 +51,14 @@ Warm waterfall after: snapshot 130–243, files 131–245, session 131–243, re
 - A stale guess costs one wasted snapshot and one batch read.
 - The memory holds repository names, branch, paths and SHAs (no contents, no credentials) readable by scripts on the editor origin.
 - Byte budget: 348 KB of 350.
+
+## Cold A/B after rebase onto `30a51e0`
+
+One sitting under the five timing locks, alternating dev, branch, dev, branch (5 runs each, `ASE_COLD_NET=100/20`). Dev served `index-DWAQskzQ.js`, branch `index-BsKjrEHH.js` (both checked against their dist).
+
+| | cold paint (run medians) | cold paint (10 pooled) | warm paint (run medians) | warm paint (10 pooled) |
+| --- | --- | --- | --- | --- |
+| dev `30a51e0` | 942, 912 | 941 | 523, 524 | 523.5 |
+| branch | 939, 928 | 932.5 | 342, 341 | 341 |
+
+Cold does not regress: the branch is within the run-to-run spread and slightly faster pooled. The earlier 904 → 924–937 came from comparing different sittings. Byte budget after rebase: 351 KB of 355.
