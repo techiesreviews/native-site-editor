@@ -7,8 +7,8 @@ set -e
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-# Deletions count: removing an imported module must still run the type check.
-staged=$(git diff --cached --name-only --diff-filter=ACMRD)
+# Deletions and both sides of a rename count: removing a module must still run the check.
+staged=$(git diff --cached --name-only --no-renames --diff-filter=ACMD)
 code=$(printf '%s\n' "$staged" | grep -E '^(src|shared|worker|tests|scripts|tools|\.githooks)/|^(package(-lock)?\.json|tsconfig\.json|eslint\.config\.mjs|vite\.config\.ts|vite-monaco-trim\.ts|playwright\.config\.ts|wrangler[^/]*\.jsonc)$' || true)
 [ -n "$code" ] || exit 0
 
@@ -19,7 +19,7 @@ fi
 
 npm run --silent check
 # Only files that still exist go to ESLint.
-lint=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(src|shared|worker|tests)/.*\.ts$' || true)
+lint=$(git diff --cached --name-only --no-renames --diff-filter=ACM | grep -E '^(src|shared|worker|tests)/.*\.ts$' || true)
 [ -n "$lint" ] || exit 0
 # Every package eslint.config.mjs imports must resolve, or lint is skipped.
 if ! node -e 'for (const name of ["eslint", "typescript-eslint", "typescript-eslint-api"]) require.resolve(name)' 2>/dev/null; then

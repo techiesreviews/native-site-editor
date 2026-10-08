@@ -7,7 +7,7 @@ import { registerHooks } from "node:module";
 // node_modules/.bin. Imports from inside that package resolve normally.
 registerHooks({
   resolve(specifier, context, next) {
-    if (specifier === "typescript" && !context.parentURL?.includes("/typescript-eslint-api/")) return next("typescript-eslint-api", context);
+    if (specifier === "typescript" && !/\/(typescript-eslint-api|tools\/typescript-api)\//.test(context.parentURL ?? "")) return next("typescript-eslint-api", context);
     return next(specifier, context);
   },
 });

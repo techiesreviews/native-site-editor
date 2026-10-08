@@ -24,41 +24,56 @@ const KEY_COPY = /keyboard\.press\(["'](ControlOrMeta|Control|Meta)\+C["']\)/;
 const RETURNS = /^\s*return\b/;
 const OPT_OUT = /\/\/\s*clipboard-ready:\s*\S/;
 
-/** Each expect.poll(...) argument: first and last line (0-based) and whether it reads the clipboard. */
-function polls(text) {
-  const found = [];
-  for (const match of text.matchAll(POLL)) {
-    let depth = 1, quote = "", at = match.index + match[0].length;
-    for (; at < text.length && depth > 0; at++) {
-      const char = text[at];
-      if (quote) { if (char === "\\") at++; else if (char === quote) quote = ""; continue; }
-      if (char === '"' || char === "'" || char === "`") quote = char;
-      else if (char === "(") depth++;
-      else if (char === ")") depth--;
+/** `text` with comments and string contents blanked to spaces; offsets and newlines are kept. */
+function codeOnly(text) {
+  const out = [...text];
+  const blank = (from, to) => { for (let i = from; i < to; i++) if (out[i] !== "\n") out[i] = " "; };
+  for (let at = 0; at < text.length; at++) {
+    const char = text[at], next = text[at + 1];
+    if (char === "/" && next === "/") { const stop = text.indexOf("\n", at); const to = stop < 0 ? text.length : stop; blank(at, to); at = to - 1; }
+    else if (char === "/" && next === "*") { const stop = text.indexOf("*/", at + 2); const to = stop < 0 ? text.length : stop + 2; blank(at, to); at = to - 1; }
+    else if (char === '"' || char === "'" || char === "`") {
+      let to = at + 1;
+      while (to < text.length && text[to] !== char) to += text[to] === "\\" ? 2 : 1;
+      blank(at + 1, to); at = to;
     }
-    const callback = text.slice(match.index, at);
-    const lineOf = (offset) => text.slice(0, offset).split("\n").length - 1;
-    found.push({ start: lineOf(match.index), end: lineOf(at - 1), clipboard: READ.test(callback) });
+  }
+  return out.join("");
+}
+
+/** Each expect.poll(...) call in `code`: its start and end offsets and whether it reads the clipboard. */
+function polls(code) {
+  const found = [];
+  for (const match of code.matchAll(POLL)) {
+    let depth = 1, at = match.index + match[0].length;
+    for (; at < code.length && depth > 0; at++) {
+      if (code[at] === "(") depth++;
+      else if (code[at] === ")") depth--;
+    }
+    found.push({ start: match.index, end: at, clipboard: READ.test(code.slice(match.index, at)) });
   }
   return found;
 }
 
 /** Line numbers (1-based) of clipboard reads in `text` that are not ready. */
 export function unreadyClipboardReads(text) {
+  const code = codeOnly(text);
   const lines = text.split("\n");
-  const ranges = polls(text);
+  const lineOf = (offset) => code.slice(0, offset).split("\n").length - 1;
+  const ranges = polls(code).map((poll) => ({ ...poll, endLine: lineOf(poll.end) }));
   const unready = [];
-  lines.forEach((line, index) => {
-    if (!READ.test(line) || RETURNS.test(line)) return;
-    if (OPT_OUT.test(line) || OPT_OUT.test(lines[index - 1] ?? "")) return;
+  for (const match of code.matchAll(new RegExp(READ.source, "g"))) {
+    const at = match.index, index = lineOf(at), line = lines[index];
+    if (RETURNS.test(line)) continue;
+    if (OPT_OUT.test(line) || OPT_OUT.test(lines[index - 1] ?? "")) continue;
     // Inside a poll callback: the poll retries it.
-    if (ranges.some((poll) => poll.start <= index && index <= poll.end)) return;
+    if (ranges.some((poll) => poll.start < at && at < poll.end)) continue;
     // A keyboard copy (Ctrl/Cmd+C) writes the clipboard before press() resolves.
-    if (lines.slice(Math.max(0, index - WINDOW), index).some((previous) => KEY_COPY.test(previous))) return;
-    // A clipboard poll that closed just before.
-    if (ranges.some((poll) => poll.clipboard && poll.end < index && index - poll.end <= WINDOW)) return;
+    if (lines.slice(Math.max(0, index - WINDOW), index).some((previous) => KEY_COPY.test(previous))) continue;
+    // A clipboard poll that closed before the read, at most three lines up.
+    if (ranges.some((poll) => poll.clipboard && poll.end <= at && index - poll.endLine <= WINDOW)) continue;
     unready.push(index + 1);
-  });
+  }
   return unready;
 }
 

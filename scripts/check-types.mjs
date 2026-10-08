@@ -3,8 +3,9 @@
 // parameters there and in tests. The three tsc runs go in parallel.
 //
 // Every diagnostic fails, except these, which are filtered:
-// - tests/tsconfig.json: errors in files outside the unused-declaration codes (tests have
-//   other type errors not fixed yet);
+// - tests/tsconfig.json: errors other than unused declarations, located in tests/ (not fixed
+//   yet) or in worker/ (that program uses the DOM lib, not the Workers types; the worker
+//   project checks those files fully). Such errors in src/ or shared/ fail;
 // - unused-declaration errors in src/prototype/ (owned by another session).
 // A tsc run that fails without a filterable diagnostic (a missing project, no inputs, a crash
 // or output on stderr) fails the check.
@@ -15,10 +16,10 @@ import { fileURLToPath } from "node:url";
 // TypeScript 7 by path: never a tsc that another package links into node_modules/.bin.
 const TSC = fileURLToPath(new URL("../node_modules/typescript/bin/tsc", import.meta.url));
 const projects = [
-  { config: "tsconfig.json", onlyUnused: false },
-  { config: "worker/tsconfig.json", onlyUnused: false },
-  { config: "tests/tsconfig.json", onlyUnused: true },
-  ...process.argv.slice(2).map((config) => ({ config, onlyUnused: false })),
+  { config: "tsconfig.json", onlyUnusedIn: [] },
+  { config: "worker/tsconfig.json", onlyUnusedIn: [] },
+  { config: "tests/tsconfig.json", onlyUnusedIn: ["tests/", "worker/"] },
+  ...process.argv.slice(2).map((config) => ({ config, onlyUnusedIn: [] })),
 ];
 const LOCATED = /^(.+?)\(\d+,\d+\): error TS(\d+):/;
 const UNUSED = new Set(["6133", "6138", "6192", "6196", "6198", "6199", "6205"]);
@@ -33,7 +34,7 @@ function tsc(config) {
 }
 
 const failures = [];
-await Promise.all(projects.map(async ({ config, onlyUnused }) => {
+await Promise.all(projects.map(async ({ config, onlyUnusedIn }) => {
   const { code, stdout, stderr } = await tsc(config);
   const lines = stdout.split("\n");
   let kept = 0, filtered = 0;
@@ -44,7 +45,7 @@ await Promise.all(projects.map(async ({ config, onlyUnused }) => {
     if (match) {
       const [, file, number] = match;
       if (UNUSED.has(number)) keep = !UNUSED_EXEMPT.some((prefix) => file.startsWith(prefix));
-      else keep = !onlyUnused;
+      else keep = !onlyUnusedIn.some((prefix) => file.startsWith(prefix));
     }
     if (!keep) { filtered++; return; }
     kept++;

@@ -50,3 +50,26 @@ test("a read inside a poll callback, a returned read, a keyboard copy and an opt
     read,
   ]), []);
 });
+
+test("an unmatched paren in a comment inside a poll callback does not stretch the poll over a later read", () => {
+  assert.deepEqual(check([
+    "  await expect.poll(async () => {",
+    "    // waits for the flag (see the copy handler",
+    "    return page.evaluate(() => (window as any).copied);",
+    "  }).toBe(true);",
+    read,
+  ]), [5]);
+});
+
+test("a read before a clipboard poll on the same line fails", () => {
+  assert.deepEqual(check([
+    '  const early = await page.evaluate(() => navigator.clipboard.readText()); await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("x");',
+  ]), [1]);
+});
+
+test("a commented-out read is ignored and a clipboard poll on the same line before the read counts", () => {
+  assert.deepEqual(check([
+    "  // const old = await page.evaluate(() => navigator.clipboard.readText());",
+    '  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("x"); const t = await page.evaluate(() => navigator.clipboard.readText());',
+  ]), []);
+});
