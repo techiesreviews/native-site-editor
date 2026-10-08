@@ -11,7 +11,7 @@
 // - a link-wrapped card becomes a stretched link (`<a slot="link">`);
 // - svg stays fixed; anything unticked stays fixed in the template.
 
-export type SlotKind = "text" | "image" | "link" | "list" | "items" | "instance";
+export type SlotKind = "text" | "image" | "link" | "list" | "items" | "instance" | "content";
 
 export interface PlannedSlot {
   /** Stable key: the element's index path inside the root ("1.0"). */
@@ -58,8 +58,11 @@ function isLinkCard(el: Element) {
 
 interface Found extends PlannedSlot { el: Element; members?: Element[]; linkTarget?: Element }
 
+/** Variant D: names the user chose (by slot key) and elements the user made slots by hand. */
+export interface SlotChoices { names?: ReadonlyMap<string, string>; forced?: ReadonlySet<string> }
+
 /** Finds the would-be slots of `root`, in document order. */
-function findSlots(root: Element, fixed: ReadonlySet<string>): Found[] {
+function findSlots(root: Element, fixed: ReadonlySet<string>, choices: SlotChoices = {}): Found[] {
   const found: Found[] = [];
   const counters = new Map<string, number>();
   const nameFor = (base: string) => {
@@ -94,8 +97,13 @@ function findSlots(root: Element, fixed: ReadonlySet<string>): Found[] {
 
   const handle = (el: Element, path: number[], key: string) => {
     const tag = el.localName;
-    if (SKIP.has(tag)) return;
     const one = (name: string, kind: SlotKind) => add({ key, el, name, kind, count: 1, excerpt: excerptOf(el), paths: [path] });
+    // Made a slot by hand (variant D): the whole element, whatever it is.
+    if (choices.forced?.has(key)) {
+      const kind: SlotKind = tag === "img" || tag === "picture" ? "image" : tag === "a" ? "link" : tag === "ul" || tag === "ol" ? "list" : tag.includes("-") ? "instance" : TEXT.has(tag) ? "text" : "content";
+      return one(nameFor(kind === "text" ? (isHeading(el) ? "title" : "text") : kind === "content" ? (el.classList[0] ?? tag) : kind), kind);
+    }
+    if (SKIP.has(tag)) return;
     if (tag.includes("-")) return one(nameFor(tag.replace(/^(section|card|site)-/, "") || tag), "instance");
     if (tag === "ul" || tag === "ol") return one(nameFor("list"), "list");
     if (tag === "img" || tag === "picture") return one(nameFor("image"), "image");
@@ -114,6 +122,7 @@ function findSlots(root: Element, fixed: ReadonlySet<string>): Found[] {
   };
 
   visit(root, []);
+  for (const slot of found) { const chosen = choices.names?.get(slot.key); if (chosen !== undefined && slot.kind !== "items") slot.name = chosen; }
   return found;
 }
 
@@ -127,10 +136,10 @@ export function dedentTail(text: string) {
 export const indentTail = (text: string, indent: string) => text.split("\n").map((line, i) => (i && line ? indent + line : line)).join("\n");
 
 /** The plan for making `outerHtml` into `<tag>`, leaving the `fixed` slot keys in the template. */
-export function planComponent(outerHtml: string, tag: string, fixed: ReadonlySet<string> = new Set()): ComponentPlan | { error: string } {
+export function planComponent(outerHtml: string, tag: string, fixed: ReadonlySet<string> = new Set(), choices: SlotChoices = {}): ComponentPlan | { error: string } {
   const root = parse(outerHtml);
   if (!root) return { error: "Nothing to make a component from." };
-  const slots = findSlots(root, fixed);
+  const slots = findSlots(root, fixed, choices);
   const doc = root.ownerDocument;
   const entries: string[] = [];
   const notes: string[] = [];

@@ -7,13 +7,21 @@ import type { NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
 import type { ComponentDeps } from "../page-builder/components";
 
-const params = new URLSearchParams(location.search);
+const params = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 export const cb04Active = () => params.get("proto") === "components";
-export type Cb04Variant = "A" | "B" | "C";
+export type Cb04Variant = "A" | "B" | "C" | "D";
 export const cb04Variant = (): Cb04Variant => {
   const v = (params.get("variant") ?? "A").toUpperCase();
-  return v === "B" || v === "C" ? v : "A";
+  return v === "B" || v === "C" || v === "D" ? v : "A";
 };
+
+/** Filled in by the lazy app (variant D): edit bar controls while a component is being made. */
+export const cb04Hooks: { marking?: (selection: NativePreviewSelection) => EditBarControl[]; making?: () => boolean } = {};
+
+/** Variant D's purple Editable toggle (+ slot name) for an element of the section being made. */
+export function cb04MarkingControls(selection: NativePreviewSelection): EditBarControl[] {
+  return cb04Active() ? cb04Hooks.marking?.(selection) ?? [] : [];
+}
 
 export interface Cb04Host {
   deps: ComponentDeps;
@@ -32,7 +40,7 @@ const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "
 
 /** Edit bar buttons for a selected page element (not inside a template). */
 export function cb04EditBarControls(selection: NativePreviewSelection): EditBarControl[] {
-  if (!cb04Active() || selection.host || !selection.node || !CONTAINERS.has(selection.tag) || selection.tag === "main") return [];
+  if (!cb04Active() || cb04Hooks.making?.() || selection.host || !selection.node || !CONTAINERS.has(selection.tag) || selection.tag === "main") return [];
   return [{
     kind: "button",
     label: "Make component",
