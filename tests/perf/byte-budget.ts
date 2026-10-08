@@ -11,7 +11,7 @@
 // ASE_BUDGET_PORT (default 5294), and runs tests/perf/cold-start.ts against it.
 // ASE_BUDGET_RUNS (default 3) sets the number of cold/warm runs.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,8 +42,19 @@ const median = (values: number[]) => {
   return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
 };
 
+// The preview runtime is a classic script Vite must emit as-is under a hashed
+// /assets/ name (native-preview.ts); a bundled or transformed copy fails here.
+function assertRuntimeVerbatim() {
+  const emitted = readdirSync("dist/assets").filter((name) => /^native-preview-runtime-[\w-]+\.js$/.test(name));
+  if (emitted.length !== 1) throw new Error(`Expected one dist/assets/native-preview-runtime-<hash>.js, found ${emitted.length}.`);
+  if (!readFileSync(join("dist/assets", emitted[0])).equals(readFileSync("src/components/native-preview-runtime.js")))
+    throw new Error(`dist/assets/${emitted[0]} differs from src/components/native-preview-runtime.js: Vite transformed the runtime.`);
+  console.log(`Preview runtime emitted verbatim as dist/assets/${emitted[0]}.`);
+}
+
 async function main() {
   if (!args.has("--no-build")) run("npx", ["vite", "build"]);
+  assertRuntimeVerbatim();
   const dir = mkdtempSync(join(tmpdir(), "ase-budget-"));
   const json = join(dir, "cold.json");
   const server = spawn("npx", ["tsx", "tests/native-save/server.ts"], {

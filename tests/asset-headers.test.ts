@@ -9,7 +9,7 @@ test("hashed assets alone receive immutable caching and common security headers"
     assert.equal(headers.get("Cache-Control"), "public, max-age=31536000, immutable");
     assert.equal(headers.get("X-Content-Type-Options"), "nosniff");
   }
-  for (const path of ["/", "/index.html", "/native-preview-runtime.js", "/native-static-starter/index.html", "/assets-other/file.js"]) {
+  for (const path of ["/", "/index.html", "/native-static-starter/index.html", "/assets-other/file.js"]) {
     const headers = staticAssetHeaders(source, path);
     assert.equal(headers.get("Cache-Control"), "public, max-age=0, must-revalidate");
     assert.equal(headers.get("X-Frame-Options"), "DENY");

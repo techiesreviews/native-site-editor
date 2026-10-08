@@ -55,6 +55,11 @@ import "./native-preview.css";
 // by Vite as-is under a content-hashed /assets/ URL, so it is cached as
 // immutable. The URL is absolute so the about:srcdoc frame needs no base URL.
 const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
+// A tab opened before a deploy asks for the previous hash, which is gone: the
+// sandboxed frame's failed <script> never reaches the parent, so the host
+// waits this long for `ready` once the frame is attached and then treats it
+// as a failed chunk load (chunk-recovery: reload, or the update notice).
+const RUNTIME_READY_TIMEOUT_MS = 8000;
 const RUNTIME_DOC = `<!doctype html>
 <html lang="en">
 <head>
@@ -508,6 +513,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // as the click, so clicks during a re-render are not lost.
   let staleClick = false;
   let ready = false;
+  // Armed only while the frame is attached and its document awaits `ready`.
+  let readyWatchdog: ReturnType<typeof setTimeout> | undefined;
+  const disarmReadyWatchdog = () => { clearTimeout(readyWatchdog); readyWatchdog = undefined; };
+  const armReadyWatchdog = () => {
+    disarmReadyWatchdog();
+    readyWatchdog = setTimeout(() => {
+      readyWatchdog = undefined;
+      if (frame.isConnected) void handleChunkLoadFailure(new Error("Loading chunk native-preview-runtime failed"));
+    }, RUNTIME_READY_TIMEOUT_MS);
+  };
   let mounted = false;
   let rafHandle = 0;
   // A structure field's text, set in the page ahead of its render (patchText):
@@ -789,6 +804,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "ready") {
       ready = true;
+      disarmReadyWatchdog();
       sentAssets.clear();
       postedRoutes.clear();
       shownRoute = undefined;
@@ -1122,6 +1138,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         mounted = true;
         host.classList.add("has-preview");
         host.prepend(pane);
+        // Attaching loads the srcdoc document, which must report `ready`.
+        if (!ready) armReadyWatchdog();
         pageBuilder.setActive(true);
       }
       schedule();
@@ -1400,6 +1418,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return mounted;
     },
     destroy() {
+      disarmReadyWatchdog();
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       editBar.destroy();
