@@ -36,6 +36,7 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - [Research variant discovery from component CSS](tickets/06-research-variant-discovery.md): `:host([data-x="v"])` rules in the component CSS, including inside at-rules; an absent attribute is the default; labels from the value or an optional `/* variant … */` comment; a shared parser in `shared/`; no loader change
 - [Decide how masters and page parts become components](tickets/02-masters-become-components.md): nav links stay in the header/footer templates (one edit, JS allowed); the skip link moves into each page before `<site-header>` with shared CSS; masters code is removed as its own deletion slice before Make component returns to the edit bar; `site-conventions.ts:52` reworded and `:69`'s register step dropped
 - [Decide the variant contract](tickets/07-variant-contract.md): a variant is a `data-*` attribute some CSS styles on the host (component CSS, site CSS naming the tag or `:host()`, global attributes like `data-color-scheme`, nested forms included); absent = default; no editor comments in code, labels from values; picked in the edit bar (dropdowns/checkboxes, a Variants button past two) and suggested in the HTML code pane; `data-layout` and `data-tone` suggested, not enforced
+- [Decide how tone variants keep text accessible](tickets/08-accessible-tone-text.md): `data-tone` on page bands only (sections, header, footer); text, buttons and links adjust automatically; AA guaranteed by nudging the brand surface's OKLCH lightness out of the mid band plus `contrast-color()` with a computed fallback, proven by a sweep test; no editor warning; the starter ships light/dark/brand/accent from one `--brand`
 
 ## Not yet specified
 
@@ -43,7 +44,7 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - **Deduplicating on Make component.** Whether Make component offers to replace identical copies of the section on other pages.
 - **Variants on builder blocks.** Whether plain Section/Div blocks get variant-like choices (tone, layout) through site classes or `data-*` attributes, or only components do. Ticket 07 already offers global site attributes such as `data-color-scheme` on every component, and the same detection can find class variants such as `.btn[data-variant]`; whether plain blocks get them follows the block set (ticket 10).
 - **Agent tool surface.** Whether MCP gains tools such as `create_component` or `set_variant`, or only better conventions, and whether `get_site` lists each component's variants (the detection from ticket 07 runs in the Worker too). This follows ticket 05.
-- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02).
+- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02); techies-reviews moves its sections from `data-color-scheme` to `data-tone`, and the starter replaces its hard-coded white-on-accent with the tone rules (ticket 08).
 - **Card reorder by drag**, which is a known gap. It may fold into the builder's move interaction.
 - **Test plan.** Which browser checks each feature adds, following the `@smoke`/nightly split from the lean-fast-editor map.
 
@@ -52,3 +53,4 @@ A decided plan, ready to hand off, for five features: making components (from bu
 <!-- closed tickets ruled beyond the destination, with a one-line reason -->
 
 - A style panel or free per-element CSS editing. The lean-fast-editor map removed the style panel. Blocks are styled by site classes and component variants.
+- A brand-colour control (for example in site settings). Ticket 08 keeps the brand colour in `tokens.css`, and the tone rules keep every band AA whatever it is; a control is its own effort.

@@ -19,6 +19,9 @@ A place in a component where a page supplies content, with optional fallback con
 **Variant**:
 A named look of a component, chosen on each use by setting one of its `data-*` attributes. Leaving the attribute off gives the component's default look. A component's variants are whatever its styles respond to; nothing is registered.
 
+**Tone**:
+The colouring of a page band (a section, the header or the footer): light, dark, brand or accent. Everything inside a band takes its colours from the band's tone and stays readable.
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
