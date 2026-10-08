@@ -13,3 +13,7 @@ The default five roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-
 ### Domain docs
 
 Single context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Review
+
+Reviewing a diff: apply `CODING_STANDARDS.md`.
