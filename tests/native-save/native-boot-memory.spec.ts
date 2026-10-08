@@ -173,9 +173,35 @@ test('a branch list that fails before the guessed snapshot lands does not drop t
   await page.route(/\/api\/branches\?/, async (route) => { await route.fulfill({ status: 500, json: { error: 'down' } }); failed = true; });
   await page.reload();
   await expect.poll(() => failed).toBe(true);
-  await page.waitForTimeout(300);
+  await expect(page.locator('#branch option')).toHaveText(['Loading branches…']);
+  await expect(page.locator('#branch')).toBeDisabled();
   release();
   await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
   await expect(page.locator('#branch')).toBeEnabled();
   await expect(page.locator('#branch')).toHaveValue('main');
+});
+
+test('a failed branch list and a guess that never lands show the branch failure within the bound', async ({ page, baseURL }) => {
+  await firstBoot(page, baseURL);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(/\/api\/snapshot\?/, async (route) => { const response = await route.fetch(); await gate; await route.fulfill({ response }); });
+  await page.route(/\/api\/branches\?/, (route) => route.fulfill({ status: 500, json: { error: 'down' } }));
+  await page.reload();
+  await expect(page.locator('#branch option')).toHaveText(['Branches unavailable'], { timeout: 8_000 });
+  await expect(page.locator('#content')).toContainText('Branches could not be loaded. Reload repositories to retry.');
+  // The guess arriving late neither opens nor paints.
+  release();
+  await page.waitForTimeout(1500);
+  await expect(page.locator('#branch option')).toHaveText(['Branches unavailable']);
+  await expect(preview(page).locator('.hero h1')).toHaveCount(0);
+});
+
+test('a failed branch list and a failed guess take the normal error path', async ({ page, baseURL }) => {
+  await firstBoot(page, baseURL);
+  await page.route(/\/api\/snapshot\?/, (route) => route.fulfill({ status: 404, json: { error: 'Branch not found.' } }));
+  await page.route(/\/api\/branches\?/, (route) => route.fulfill({ status: 500, json: { error: 'down' } }));
+  await page.reload();
+  await expect(page.locator('#branch option')).toHaveText(['Branches unavailable']);
+  await expect(page.locator('#content')).toContainText('Branches could not be loaded. Reload repositories to retry.');
 });

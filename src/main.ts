@@ -5404,6 +5404,8 @@ async function loadSnapshot(
 // first paint read it, is asked for before the session is known. Nothing of it
 // shows until the adopted session, the verified listing and the fresh snapshot
 // prove it; anything else falls back to the normal reads.
+// How long a failed branch list waits for a guessed snapshot (the only read with a bound).
+const GUESS_AFTER_FAILED_LIST_MS = 5000;
 let bootGuess: { memory: BootMemory; source: string; snapshot: Promise<ApiReceipt<Snapshot>>; files?: Promise<ApiReceipt<FilesResult>> } | undefined;
 function startBootGuess() {
   const link = readWorkspaceUrl();
@@ -5492,8 +5494,9 @@ async function chooseRepository(resume?: WorkspaceLocation) {
     // branch exists; the branch list fills the selector when it comes. A
     // guess that fails (a deleted branch), or a branch list that comes
     // first, takes the normal path below. A failed branch list waits for
-    // the guess.
-    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => guessed.catch(() => undefined))]);
+    // the guess, for a while only: past that the failure shows as before,
+    // and a late guess is never used.
+    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => Promise.race([guessed.catch(() => undefined), new Promise<undefined>((resolve) => setTimeout(resolve, GUESS_AFTER_FAILED_LIST_MS))]))]);
     if (epoch !== generation) return;
     if (guessedSnapshot) {
       const branch = requestedBranch;
