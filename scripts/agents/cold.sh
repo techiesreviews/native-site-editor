@@ -16,10 +16,13 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+# Measure this checkout's server only: refuse a port someone else holds.
+if curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:5216/ 2>/dev/null; then echo "Port 5216 is already serving; stop that server first" >&2; exit 1; fi
 ASE_NATIVE_SAVE_DIST=1 ASE_NATIVE_SAVE_PORT=5216 setsid ./node_modules/.bin/tsx tests/native-save/server.ts > "$outprefix.server.log" 2>&1 &
 srv=$!
 ready=false
 for (( i=0; i<100; i++ )); do
+  kill -0 "$srv" 2>/dev/null || { echo "Server exited; see $outprefix.server.log" >&2; exit 1; }
   if curl -fsS --max-time 2 http://127.0.0.1:5216/ -o "$outprefix.index.html" 2>/dev/null; then ready=true; break; fi
   sleep 0.2
 done
