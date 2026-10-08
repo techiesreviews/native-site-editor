@@ -48,16 +48,24 @@ export const frame = () => document.querySelector<HTMLIFrameElement>(".native-pr
 let ids = 0;
 const waiting = new Map<number, (rects: (Rect | null)[]) => void>();
 export interface Rect { x: number; y: number; w: number; h: number }
+/** Variant D: a right-click in the frame (frame viewport coordinates). */
+export const frameEvents: { contextmenu?: (x: number, y: number) => void } = {};
 window.addEventListener("message", (event) => {
-  const data = event.data as { source?: string; id?: number; rects?: (Rect | null)[] } | undefined;
-  if (data?.source !== "cb04-proto" || data.id === undefined) return;
+  const data = event.data as { source?: string; id?: number; type?: string; x?: number; y?: number; rects?: (Rect | null)[] } | undefined;
+  if (data?.source !== "cb04-proto") return;
+  if (data.type === "contextmenu") {
+    const box = frame()?.getBoundingClientRect();
+    if (box) frameEvents.contextmenu?.(box.left + (data.x ?? 0), box.top + (data.y ?? 0));
+    return;
+  }
+  if (data.id === undefined) return;
   waiting.get(data.id)?.(data.rects ?? []);
   waiting.delete(data.id);
 });
 // Shown in the frame while the prototype runs: an empty Section or Div keeps a drop area's height.
 export const FRAME_CSS = "#page section:not(:has(*)), #page div.flow:not(:has(*)) { min-height: 140px; }";
 /** Rects (in the editor's viewport) of elements of `path` by node path. */
-export function frameRects(path: string, nodes: number[][]): Promise<(Rect | null)[]> {
+export function frameRects(path: string, nodes: number[][], extra: Record<string, unknown> = {}): Promise<(Rect | null)[]> {
   const f = frame();
   if (!f?.contentWindow) return Promise.resolve(nodes.map(() => null));
   const id = ++ids;
@@ -68,7 +76,7 @@ export function frameRects(path: string, nodes: number[][]): Promise<(Rect | nul
       clearTimeout(timer);
       resolve(rects.map((r) => (r ? { x: r.x + box.left, y: r.y + box.top, w: r.w, h: r.h } : null)));
     });
-    f.contentWindow!.postMessage({ source: "astro-native-preview-host", type: "cb04", id, path, nodes, css: FRAME_CSS }, "*");
+    f.contentWindow!.postMessage({ source: "astro-native-preview-host", type: "cb04", id, path, nodes, css: FRAME_CSS, ...extra }, "*");
   });
 }
 export const scrollFrame = (dy: number) => frame()?.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy }, "*");
@@ -209,5 +217,5 @@ export function nameField(initial: string, onInput: () => void) {
   return { wrap, input, value: () => input.value.trim(), problem: () => tagProblem(input.value.trim()) };
 }
 
-export const KIND_LABEL: Record<string, string> = { text: "Text", image: "Image", link: "Link", list: "List", items: "Items", instance: "Component" };
-export const KIND_ICON: Record<string, string> = { text: "T", image: "▣", link: "↗", list: "≡", items: "▦", instance: "◇" };
+export const KIND_LABEL: Record<string, string> = { text: "Text", image: "Image", link: "Link", list: "List", items: "Items", instance: "Component", content: "Content" };
+export const KIND_ICON: Record<string, string> = { text: "T", image: "▣", link: "↗", list: "≡", items: "▦", instance: "◇", content: "▢" };
