@@ -22,10 +22,14 @@ No new imports reach the initial chunk: `nativePageTemplate`, `editNavigation`/`
 Node `24.21.0`:
 
 - `npm run check`: passed.
-- `npm test`: 1,107 passed (1,100 + 7 new), zero failures.
-- `tests/pages-controller.test.ts` new cases: tab selection/reset/non-native painting and unmounted tabs; tree render with new drafts, open file, focus, hidden/no-site refusals and pending-title consumption; new-page planning messages, occupied target, typing vs create, unread home; label and address; create refusal on unread site, commit, card path; Add to navigation refusals on generation, scope and source drift during indexing, and the guarded operation; folder page restore, occupied URL, commit and unread refusal. The retitle tests now observe the tree render instead of the removed `refreshPages` port, with the same assertions.
+- `npm test`: 1,109 passed (1,100 + 9 new), zero failures.
+- `tests/pages-controller.test.ts` new cases: tab selection/reset/non-native painting and unmounted tabs; tree render with new drafts, open file, focus, hidden/no-site refusals and pending-title consumption; new-page planning messages, occupied target, typing vs create, unread home; label and address; create refusal on unread site, commit, card path; Add to navigation refusals on generation, scope and source drift during indexing, and the guarded operation; folder page restore, occupied URL, commit and unread refusal; Add card without card grids falls through to the page commit; a folder page is not created when site or draft scope goes during the site read. The retitle tests now observe the tree render instead of the removed `refreshPages` port, with the same assertions.
 - Strict test TypeScript check of `tests/pages-controller.test.ts`: passed.
 - `npm run build:ui`: passed. `npm run test:budget -- --no-build`: 347 KB gzip before first preview paint (budget 350 KB), unchanged from base.
 - `git diff --check`: passed.
 
-Browser: see the slice report.
+Browser (port 5216, one worker, flock):
+
+- Pages specs (11 files: native-file-ops, native-page-urls, native-file-move-race, native-page-title-refresh, native-page-structure, native-lazy-panels, native-create, native-cards, native-card-paths, native-routing, native-images-tab): 95 passed, 0 failed.
+- `@smoke`: 32 passed, 0 failed.
+- Full native-save is the lead's run on the candidate head.

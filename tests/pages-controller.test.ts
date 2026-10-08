@@ -360,3 +360,28 @@ test("a folder URL's Create page restores a deleted draft, refuses an occupied U
   assert.equal(f.errors.at(-1), "unread");
   assert.deepEqual(commits, ["blog/index.html"]);
 });
+
+test("Add card without card grids falls through to the plain page commit", async () => {
+  const f = fixture();
+  const commits: string[] = [];
+  f.ports.commitPage = async (page) => { commits.push(page.file); return undefined; };
+  f.ports.createWithCard = () => undefined;
+  assert.equal(await f.controller.createNew({ parent: "/", title: "News", slug: "news", addCard: true }), undefined);
+  assert.deepEqual(commits, ["news/index.html"]);
+});
+
+test("a folder page is not created when the site or draft scope goes while the site is read", async () => {
+  for (const loss of ["site", "scope"]) {
+    const f = fixture();
+    const commits: string[] = [];
+    f.ports.commitPage = async (page) => { commits.push(page.file); return undefined; };
+    f.ports.siteReadForCreate = async () => {
+      if (loss === "site") f.ports.site = () => undefined;
+      else f.ports.hasDraftScope = () => false;
+      return undefined;
+    };
+    await f.controller.createFolderPage("/blog/");
+    assert.deepEqual(commits, []);
+    assert.deepEqual(f.errors, []);
+  }
+});

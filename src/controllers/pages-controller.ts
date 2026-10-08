@@ -514,7 +514,7 @@ export function createPagesController(ports: PagesPorts) {
     if (!request.slug.trim()) return { ok: false, error: "The title gives no URL: add letters or digits, or change the URL." };
     const target = nativeNewTarget(request.parent, request.slug, {
       route: (route) => site.routes[route],
-      exists: ports.exists,
+      exists: (path) => ports.exists(path),
     });
     if (!target.ok) return target;
     const template = nativeHomeTemplate();
