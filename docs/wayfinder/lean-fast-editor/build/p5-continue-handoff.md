@@ -6,6 +6,40 @@ build one slice per branch; Claude Opus 5.5 / medium reviews read-only through
 the CLI (runner scripts: root `.scratch/p5-review/run-*-review.py`; copy the
 latest one and change worktree, head and prompt).
 
+## Update (2026-10-08, afternoon)
+
+Landed on dev, preview `e7de7159`:
+
+| Commit | What | Gates |
+| --- | --- | --- |
+| `060b406`..`ea213c7` | Slice 11: Pages tree, explorer tabs and new-page creation moved into `pages-controller.ts` ([p5-16](p5-16-pages-tree-create.md)); main.ts 8215 → 8095 | Opus review clean; 1,109 units; 11 pages specs 95 / 0; smoke 32; full native-save 729 / 85 / 0 |
+| `35a2f5d` | Specs wait for the copied prompt before reading the clipboard (the CI deploy-preview smoke run on `a47abed` failed at `native-mcp.spec.ts:62`: the hint shows before the clipboard write ends) | 5 touched specs 50 / 0 |
+
+Ports (Lex, 2026-10-08): full suites and timing on 5216 (`/tmp/ase-5216.lock`);
+focused specs and smoke also on 5226 and 5236 (`/tmp/ase-5226.lock`,
+`/tmp/ase-5236.lock`; each uses port + 1 too). Timing runs take all three
+locks in the order 5226, 5236, 5216 so nothing runs beside them.
+
+Warm lever (Lex chose "Remember last boot"): warm waterfall on `a47abed` is
+0–127 HTML and eval, 127–237 session + repositories, 249–362 snapshot +
+branches + hub, 365–478 page reads, 478–526 render (warm 526, cold 927). Per
+repo id, remember login, full name, branch, commit and the first paint's
+paths and SHAs (no contents); read it at boot start and fire snapshot and
+SHA reads with session/repositories; adopt only after session login,
+repository id → full name, branch, receipts and generation prove it, and a
+file only when the fresh snapshot has the same SHA. Branch
+`perf/p5-boot-memory`, ticket p5-17.
+
+Slice 16 (Monaco trim) is already in dev (`da7cc2b` is an ancestor).
+
+In flight (one worktree each, `native-site-editor-p5-<name>`): slice 12a
+`build/p5-structure-controller` and 12b `build/p5-shared-sections-controller`
+(Sol), 13 `build/p5-cards-controller` (on slice 11), 14
+`build/p5-file-operations-controller` (Sol; owns move/delete/duplicate/restore),
+15 `build/p5-save-publish-controller` (owns discard, deleted upstream, head
+trust, publish refresh). Planner plans in root `.scratch/p5-plan/`. Merge order
+11, 13, 12a, 12b, 14, 15, boot memory; each rebased, reviewed, full suite.
+
 ## Objective
 
 Finish the `src/main.ts` controller split per
