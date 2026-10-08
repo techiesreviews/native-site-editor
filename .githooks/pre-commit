@@ -1,14 +1,15 @@
 #!/bin/sh
 # Runs npm run check, and lints the staged TypeScript, when a commit touches code or
 # config. Docs-only commits skip it. Never runs browser suites. See docs/agents/guardrails.md.
-# Enabled per clone with: git config core.hooksPath .githooks (npm install runs it via prepare).
+# Enable once per clone with: git config core.hooksPath .githooks
 # Skip once with: git commit --no-verify
 set -e
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
-staged=$(git diff --cached --name-only --diff-filter=ACMR)
-code=$(printf '%s\n' "$staged" | grep -E '^(src|shared|worker|tests|scripts|\.githooks)/|^(package(-lock)?\.json|tsconfig\.json|eslint\.config\.mjs|vite\.config\.ts|vite-monaco-trim\.ts|playwright\.config\.ts|wrangler[^/]*\.jsonc)$' || true)
+# Deletions count: removing an imported module must still run the type check.
+staged=$(git diff --cached --name-only --diff-filter=ACMRD)
+code=$(printf '%s\n' "$staged" | grep -E '^(src|shared|worker|tests|scripts|tools|\.githooks)/|^(package(-lock)?\.json|tsconfig\.json|eslint\.config\.mjs|vite\.config\.ts|vite-monaco-trim\.ts|playwright\.config\.ts|wrangler[^/]*\.jsonc)$' || true)
 [ -n "$code" ] || exit 0
 
 if [ ! -d node_modules ]; then
@@ -17,10 +18,13 @@ if [ ! -d node_modules ]; then
 fi
 
 npm run --silent check
-lint=$(printf '%s\n' "$code" | grep -E '^(src|shared|worker|tests)/.*\.ts$' || true)
-if [ -n "$lint" ] && { [ ! -x node_modules/.bin/eslint ] || [ ! -d node_modules/typescript-eslint-api ]; }; then
+# Only files that still exist go to ESLint.
+lint=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(src|shared|worker|tests)/.*\.ts$' || true)
+[ -n "$lint" ] || exit 0
+# Every package eslint.config.mjs imports must resolve, or lint is skipped.
+if ! node -e 'for (const name of ["eslint", "typescript-eslint", "typescript-eslint-api"]) require.resolve(name)' 2>/dev/null; then
   echo "pre-commit: lint skipped: run npm ci to enable."
-elif [ -n "$lint" ]; then
-  # shellcheck disable=SC2086 # one path per word; repository paths have no spaces.
-  npx --no-install eslint $lint
+  exit 0
 fi
+# shellcheck disable=SC2086 # one path per word; repository paths have no spaces.
+npx --no-install eslint $lint

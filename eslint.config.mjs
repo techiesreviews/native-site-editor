@@ -2,10 +2,12 @@
 import { registerHooks } from "node:module";
 
 // typescript-eslint needs the TypeScript compiler API, which TypeScript 7 does not ship.
-// Point its `typescript` imports at the TypeScript 6 copy installed as typescript-eslint-api.
+// Point its `typescript` imports at TypeScript 6, nested inside the local package
+// tools/typescript-api (installed as typescript-eslint-api) so its tsc bin stays out of
+// node_modules/.bin. Imports from inside that package resolve normally.
 registerHooks({
   resolve(specifier, context, next) {
-    if (specifier === "typescript") return next("typescript-eslint-api", context);
+    if (specifier === "typescript" && !context.parentURL?.includes("/typescript-eslint-api/")) return next("typescript-eslint-api", context);
     return next(specifier, context);
   },
 });

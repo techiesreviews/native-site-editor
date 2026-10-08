@@ -1,0 +1,10 @@
+{
+  "name": "typescript-eslint-api",
+  "private": true,
+  "version": "0.0.0",
+  "description": "TypeScript 6 compiler API for typescript-eslint, nested so its tsc bin does not replace TypeScript 7's.",
+  "main": "index.cjs",
+  "dependencies": {
+    "typescript": "6.0.3"
+  }
+}
