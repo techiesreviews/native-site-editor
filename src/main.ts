@@ -1,5 +1,5 @@
 import { createMediaController } from "./controllers/media-controller";
-import { createPagesController, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
+import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
@@ -3010,7 +3010,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
       return error instanceof Error ? error.message : "The page could not be changed.";
     }
     updateCurrentPageLabel();
-    if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree();
+    if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree();
     element("status").textContent = done;
     return undefined;
   }
@@ -3685,7 +3685,7 @@ const mediaController = createMediaController({
   change: applyNativeChange,
   galleryHost: () => element("explorer-images"),
   galleryVisible: () => !element("explorer-images").hidden && element("explorer").matches(":popover-open"),
-  imagesSelected: () => explorerTab === "images",
+  imagesSelected: () => pagesController.explorerTab() === "images",
   gallerySignature: imagesSignature,
   announce,
   error: errorMessage,
@@ -4816,11 +4816,8 @@ function fileRow(path: string) {
   return [...files.querySelectorAll<HTMLButtonElement>(".file-row")].find((row) => row.dataset.path === path);
 }
 
-// The explorer's Pages | Files tabs: a native site shows both, Pages first
-// when the project loads; any other project shows only its files, no tabs.
-type ExplorerTab = "pages" | "files" | "images";
-const explorerTabNames: ExplorerTab[] = ["pages", "files", "images"];
-let explorerTab: ExplorerTab = "pages";
+// The explorer's Pages | Files | Images tabs: tab state and tree rendering
+// live in the Pages controller; the host mounts the DOM and paints the tabs.
 let pagesTree: ReturnType<typeof createPagesTree> | undefined;
 
 function imagesSignature() {
@@ -4837,7 +4834,7 @@ function mountExplorerTabs() {
   explorer.addEventListener("toggle", () => {
     // Closing a popover queues its toggle; session expiry may detach it before dispatch.
     if (!explorer.isConnected) return;
-    if (explorerImagesVisible() && explorerTab === "images") void ensureExplorerImages().catch(errorMessage);
+    if (explorerImagesVisible() && pagesController.explorerTab() === "images") void ensureExplorerImages().catch(errorMessage);
   });
   const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files"), images: element<HTMLButtonElement>("explorer-tab-images") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
@@ -4853,18 +4850,10 @@ function mountExplorerTabs() {
   }
 }
 
-function selectExplorerTab(name: ExplorerTab) {
-  explorerTab = name;
-  updateExplorerTabs();
-  if (name === "pages") renderPagesTree();
-  if (name === "images") void ensureExplorerImages().catch(errorMessage);
-}
-
-function updateExplorerTabs(reset = false) {
-  if (!document.getElementById("explorer-tabs")) return;
-  const native = Boolean(nativeSite);
-  if (reset) explorerTab = "pages";
-  const tab = native ? explorerTab : "files";
+function selectExplorerTab(name: ExplorerTab) { pagesController.selectTab(name); }
+function updateExplorerTabs(reset = false) { pagesController.updateTabs(reset); }
+function renderPagesTree(focus?: { file?: string; route?: string }) { pagesController.renderTree(focus); }
+function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
   element("explorer-tabs").hidden = !native;
   element("site-settings-toggle").hidden = !native;
   for (const name of explorerTabNames) {
@@ -4877,25 +4866,6 @@ function updateExplorerTabs(reset = false) {
     if (native) panel.setAttribute("role", "tabpanel");
     else panel.removeAttribute("role");
   }
-  if (!native) { pagesTree?.reset(); disposeExplorerImages(); }
-}
-
-// The site's pages as a tree, from its routes (new drafts included); labels
-// read each page's `<title>`, else its first heading, from its source.
-function renderPagesTree(focus?: { file?: string; route?: string }) {
-  if (!pagesTree || !nativeSite || element("explorer-pages").hidden) return;
-  pendingNativePageTitles = undefined;
-  const site = nativeSite;
-  const scope = draftScope();
-  // New pages are marked; a renamed or moved one is the same page.
-  const drafted = new Set(scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path) : []);
-  const tree = buildNativePagesTree({
-    routes: site.routes,
-    titles: nativeTitles(site),
-    heading: (file) => firstHeadingText(nativeEffectiveSource(file, scope)),
-    isNew: (file) => drafted.has(file),
-  });
-  pagesTree.render(tree, appStore.openFile.value, focus);
 }
 
 // Whether the repository path (a file, or a folder something is in) is
@@ -4904,41 +4874,9 @@ function nativePathExists(path: string) {
   return nativeFiles().some((file) => file === path || file.startsWith(`${path}/`));
 }
 
-// What a new page typed in the Pages tab writes: `<parent>/<slug>/index.html`,
-// the home page's document with the new title and an empty `<main>`
-// (`nativePageTemplate`); or why it cannot.
-interface NativeNewPlan extends NativeNewTarget {
-  title: string;
-  content: string;
-  note?: string;
-}
-// Typing in the Pages tab checks the target only; creating (`create`) needs
-// the home page's document read (nativeSiteReadForCreate) and makes the page from it.
-function planNativeNew(request: NativeNewRequest, create = false): Checked<NativeNewPlan> {
-  const site = nativeSite;
-  if (!site || !draftScope()) return { ok: false, error: "Open a native site first." };
-  const title = request.title.trim();
-  if (!title) return { ok: false, error: "Enter the page's title." };
-  if (!request.slug.trim()) return { ok: false, error: "The title gives no URL: add letters or digits, or change the URL." };
-  const target = nativeNewTarget(request.parent, request.slug, {
-    route: (route) => site.routes[route],
-    exists: nativePathExists,
-  });
-  if (!target.ok) return target;
-  const template = nativeHomeTemplate();
-  if (!create) return { ok: true, value: { ...target.value, title, content: "" } };
-  if (template === undefined) return { ok: false, error: NATIVE_HOME_UNREAD };
-  return { ok: true, value: { ...target.value, title, content: nativePageTemplate(template, title, nativeAddress(target.value.route)) } };
-}
-
-// The home page's document, which new pages copy (its stylesheets, scripts,
-// header and footer): undefined while it is not read yet, so no page is made
-// from nothing. Creating a page reads the whole site first (it is read after
-// the first paint, and a page opened by its address may not be home).
-const NATIVE_HOME_UNREAD = "The home page is not read yet. Try again in a moment.";
-function nativeHomeTemplate() {
-  return nativeSite ? nativeEffectiveSource(nativeSite.routes["/"]) : undefined;
-}
+// New-page planning and the home template belong to the Pages controller.
+function planNativeNew(request: NativeNewRequest, create = false) { return pagesController.planNew(request, create); }
+function nativeHomeTemplate() { return pagesController.homeTemplate(); }
 // The whole site read for the repository open now: an error message, or nothing.
 async function nativeSiteReadForCreate() {
   const epoch = generation, scope = setupScope();
@@ -4946,12 +4884,6 @@ async function nativeSiteReadForCreate() {
   if (problem) return problem;
   if (epoch !== generation || scope !== setupScope() || !nativeSite) return "The repository changed meanwhile. Try again.";
   return nativeHomeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
-}
-
-// The address of the page at `route` on the live site, from
-// `.editor/config.json`'s `site.url`; none without one.
-function nativeAddress(route: string) {
-  return nativePageUrl(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, route);
 }
 
 // Pages whose URL changes keep their own address: the canonical link and
@@ -4969,71 +4901,9 @@ function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; mo
   }
 }
 
-// The Pages tab's label of the page file `file`.
-function nativePageLabelOf(file: string) {
-  const site = nativeSite;
-  const route = nativeRouteForPath(file);
-  if (!site || !route) return file;
-  return nativePageLabel(file, {
-    routes: site.routes,
-    titles: { [route]: nativeRouteInfo(route, site).title },
-    heading: (path) => firstHeadingText(nativeEffectiveSource(path)),
-  }) ?? file;
-}
-
-// Creates a new page as a new draft; routes are found again, the tree drawn
-// and the page opened (the explorer closes). Undo in the editor right after
-// takes it back, as Discard changes on the new file does.
-async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
-  // The page is made from the home page's document, so that is read first.
-  const unread = await nativeSiteReadForCreate();
-  if (unread) return unread;
-  const planned = planNativeNew(request, true);
-  if (!planned.ok) return planned.error;
-  const plan = planned.value;
-  const epoch = generation, scope = setupScope();
-  const expectedSources = new Map([...nativeSitePaths(nativeSite!)].map((path) => [path, nativeEffectiveSource(path)] as const));
-  // With its card in the grid that lists its siblings: the page made from a sibling's, as one operation.
-  if (request.addCard && cards) return cards.createWithCard(request);
-  if (request.addToNavigation && request.parent === "/") {
-    const problem = await ensureNativeTextIndex();
-    if (problem) return problem;
-    if (epoch !== generation || scope !== setupScope() || [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source)) return "The page template or repository changed. Create the page again.";
-    const nav = nativeNavigationTarget(nativeSite?.routes["/"]);
-    if (!nav) return "No editable header navigation found. Uncheck Add to navigation to create only the page.";
-    let navigation: string;
-    try { navigation = editNavigation(nav.source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }]); }
-    catch (error) { return error instanceof Error ? error.message : "Navigation could not be changed."; }
-    // For a plain header, copy its updated navigation to the new page as well.
-    let page = plan.content;
-    if (!nav.shared) {
-      const list = readNavigation(page);
-      if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }]);
-    }
-    return applyNativeOperation({ expectedSources, creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file, done: `Created ${plan.title} and added it to navigation as drafts.`, undone: `Undid creating ${plan.title} and adding it to navigation.` });
-  }
-  return commitNativePage({ file: plan.file, route: plan.route, title: plan.title, content: plan.content, done: `Created the page ${plan.title} at ${plan.route}.` });
-}
-
-// A URL with subpages and no page of its own gets its page, `index.html` in
-// its folder, made like a new page.
-async function createNativeFolderPage(route: string) {
-  if (!nativeSite || !draftScope()) return;
-  // Made from the home page's document, so that is read first.
-  const unread = await nativeSiteReadForCreate();
-  if (unread) { errorMessage(new Error(unread)); return; }
-  const site = nativeSite;
-  if (!site || !draftScope()) return;
-  const file = nativeRouteFile(route);
-  // Its page deleted in the drafts: Create page brings it back.
-  const scope = draftScope();
-  if (scope && draftStore().get(scope, file)?.deleted) { undoFileChanges({ restore: [file] }); return; }
-  if (site.routes[route] || nativePathExists(file)) { errorMessage(new Error(`The URL ${route} has a page already.`)); return; }
-  const title = routeHeading(route);
-  const content = nativePageTemplate(nativeHomeTemplate(), title, nativeAddress(route));
-  const error = await commitNativePage({ file, route, title, content, done: `Created the page ${title} at ${route}.` });
-  if (error) errorMessage(new Error(error));
-}
+function nativePageLabelOf(file: string) { return pagesController.pageLabel(file); }
+function createNativeNew(request: NativeNewRequest): Promise<string | undefined> { return pagesController.createNew(request); }
+function createNativeFolderPage(route: string) { return pagesController.createFolderPage(route); }
 
 // Writes a new page (a creation or a copy) as a new draft; then routes are
 // found again, the trees drawn, the page opened, and Undo right after takes
@@ -5109,9 +4979,8 @@ const pagesController = createPagesController({
   indexScope: nativeTextIndexScopeKey,
   exists: nativePathExists,
   routeInfo: nativeRouteInfo,
-  pageLabel: nativePageLabelOf,
   titles: nativeTitles,
-  address: nativeAddress,
+  siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
   writeMeta: (file, field, value, flush) => writeNativePageMeta(file, field, value, flush),
   commitPage: commitNativePage,
   operation: operation => applyNativeOperation(operation),
@@ -5123,8 +4992,19 @@ const pagesController = createPagesController({
   confirmation: () => confirmDialog,
   picker: () => pagePicker,
   refreshMeta: () => pageStructure?.refreshMeta(),
-  refreshPages: renderPagesTree,
   refreshLabel: updateCurrentPageLabel,
+  tree: () => pagesTree,
+  pagesHidden: () => Boolean(element("explorer-pages").hidden),
+  openFile: () => appStore.openFile.value,
+  clearPendingTitles: () => { pendingNativePageTitles = undefined; },
+  tabsMounted: () => Boolean(document.getElementById("explorer-tabs")),
+  paintTabs: paintExplorerTabs,
+  resetExplorer: () => { pagesTree?.reset(); disposeExplorerImages(); },
+  showImages: () => void ensureExplorerImages().catch(errorMessage),
+  siteReadForCreate: nativeSiteReadForCreate,
+  createWithCard: request => cards?.createWithCard(request),
+  navigationTarget: nativeNavigationTarget,
+  restoreDeleted: file => undoFileChanges({ restore: [file] }),
   announce,
   error: errorMessage,
 });
@@ -5475,7 +5355,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       await openAfter(path, !initial || !op.open, true);
       if (!live() || !complete(owned)) { announce(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
-      if (explorerDropdown?.isOpen() && explorerTab === "pages") renderPagesTree(initial && op.focus ? op.focus : path ? { file: path } : undefined);
+      if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree(initial && op.focus ? op.focus : path ? { file: path } : undefined);
       if (message && live() && receipt.isCurrent() && element("status").textContent === previousStatus) announce(message);
       return true;
     } finally {
@@ -6269,7 +6149,7 @@ async function moveFileTarget(source: FileRowTarget, to: string, operation: "ren
   requestAnimationFrame(() => {
     for (let part = parentOf(to); part; part = parentOf(part)) openFolders.add(part);
     if (!fileRow(to)) renderFileTree();
-    if (explorerDropdown?.isOpen() && explorerTab === "files") fileRow(to)?.focus();
+    if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "files") fileRow(to)?.focus();
   });
   return undefined;
 }
@@ -6455,7 +6335,7 @@ async function moveFilesWithUrls(source: FileRowTarget, to: string, operation: "
   requestAnimationFrame(() => {
     for (let part = parentOf(to); part; part = parentOf(part)) openFolders.add(part);
     if (!fileRow(to)) renderFileTree();
-    if (explorerDropdown?.isOpen() && explorerTab === "files") fileRow(to)?.focus();
+    if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "files") fileRow(to)?.focus();
   });
   return undefined;
 }
@@ -6518,7 +6398,7 @@ async function deleteFileTarget(target: FileRowTarget, wording?: { title: string
   const error = native ? await applyNativeOperation({ deletes: found.map(file => file.path), ...pins, done, undone: `Undid deleting ${target.path}.` }) : await applyFileOperation(found.map((file) => ({ file })));
   if (error) { errorMessage(new Error(error)); return error; }
   if (!native) announce(done);
-  requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && explorerTab === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });
+  requestAnimationFrame(() => { if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "files") (fileRow(target.path) ?? fileRow(parentOf(target.path)))?.focus(); });
   return undefined;
 }
 

@@ -1,9 +1,10 @@
-import { nativeNewTarget, firstHeadingText, buildNativePagesTree, type NativeNewTarget, type NativePageNode } from "../native-pages";
-import { normalizeRoute, routeHeading, type Checked } from "../native-create";
+import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
+import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
+import { editNavigation, readNavigation } from "../page-builder/site-navigation";
 import { parentRoute, routeSlug, routeFolder, isRouteWithin, movedRoute, planPageMove, rewriteRouteLinks, editNativeRedirects, type PageMovePlan, type FileMove } from "../native-page-moves";
-import { isFolderRoute } from "../../shared/native-routes";
-import { NATIVE_REDIRECTS_PATH, nativePageWithUrl, nativePageWithDetail, type NativeSite } from "../../shared/native-project";
-import type { NativePagesTarget } from "../components/pages-tree";
+import { isFolderRoute, nativeRouteFile } from "../../shared/native-routes";
+import { NATIVE_REDIRECTS_PATH, nativePageUrl, nativePageWithUrl, nativePageWithDetail, nativeSitePaths, type NativeSite } from "../../shared/native-project";
+import type { NativeNewRequest, NativePagesTarget } from "../components/pages-tree";
 import type { PagePickerItem } from "../components/page-picker";
 import type { UrlPlan } from "../components/url-change";
 import type { SavedDraft } from "../drafts";
@@ -12,7 +13,9 @@ export interface PagesOperation {
   expectedSources?: Map<string, string | undefined>;
   moves?: FileMove[];
   deletes?: string[];
+  creates?: { path: string; content: string }[];
   edits?: Map<string, string>;
+  open?: string;
   done: string;
   undone: string;
   focus?: { file?: string; route?: string };
@@ -22,6 +25,19 @@ export interface PagesOperation {
 export interface PagesConfirmation {
   ask(question: { title: string; notes: string[]; action: string }): Promise<boolean>;
   choose(question: { title: string; notes: string[]; actions: { label: string; value: string }[]; option?: { label: string; checked: boolean } }): Promise<{ value?: string; option: boolean }>;
+}
+
+/** The explorer's tabs: a native site shows all three, any other project only its files. */
+export type ExplorerTab = "pages" | "files" | "images";
+export const explorerTabNames: ExplorerTab[] = ["pages", "files", "images"];
+
+export const NATIVE_HOME_UNREAD = "The home page is not read yet. Try again in a moment.";
+
+/** What a new page typed in the Pages tab writes, or why it cannot. */
+export interface NativeNewPlan extends NativeNewTarget {
+  title: string;
+  content: string;
+  note?: string;
 }
 
 export interface PagesPorts {
@@ -37,9 +53,9 @@ export interface PagesPorts {
   indexScope(): string;
   exists(path: string): boolean;
   routeInfo(route: string, site: NativeSite): { title?: string };
-  pageLabel(file: string): string;
   titles(site: NativeSite): Record<string, string | undefined>;
-  address(route: string): string | undefined;
+  /** `.editor/config.json`'s `site.url`, read now. */
+  siteUrl(): string | undefined;
   writeMeta(file: string, field: "title", value: string, flush: false): Promise<string | undefined>;
   commitPage(input: { file: string; route: string; title: string; content: string; done: string }): Promise<string | undefined>;
   operation(operation: PagesOperation): Promise<string | undefined>;
@@ -51,8 +67,24 @@ export interface PagesPorts {
   confirmation(): PagesConfirmation | undefined;
   picker(): { pick(question: { title: string; items: PagePickerItem[] }): Promise<string | undefined> } | undefined;
   refreshMeta(): void;
-  refreshPages(): void;
   refreshLabel(): void;
+  /** The drawn Pages tree; DOM mounting stays in the host. */
+  tree(): { render(tree: NativeSiteTree, currentFile: string | undefined, focus?: { file?: string; route?: string }): void } | undefined;
+  pagesHidden(): boolean;
+  openFile(): string | undefined;
+  /** Rendering consumes queued title work. */
+  clearPendingTitles(): void;
+  tabsMounted(): boolean;
+  paintTabs(tab: ExplorerTab, native: boolean): void;
+  /** Without a native site: reset the Pages tree and dispose the images gallery. */
+  resetExplorer(): void;
+  showImages(): void;
+  /** The whole site read for the repository open now (host guards): an error message, or nothing. */
+  siteReadForCreate(): Promise<string | undefined>;
+  /** Creates the page with its card, when card grids are mounted; else undefined. */
+  createWithCard(request: NativeNewRequest): Promise<string | undefined> | undefined;
+  navigationTarget(pagePath: string | undefined): { path: string; source: string; list: NonNullable<ReturnType<typeof readNavigation>>; shared: boolean } | undefined;
+  restoreDeleted(file: string): void;
   announce(message: string): void;
   error(error: Error): void;
 }
@@ -113,7 +145,7 @@ export function createPagesController(ports: PagesPorts) {
     // The metadata write legitimately rebuilds the site; guard workspace and target URL.
     if (epoch !== ports.generation() || scope !== ports.scope() || ports.routeForPath(file) !== route) return "The repository changed meanwhile. Try again.";
     ports.refreshMeta();
-    ports.refreshPages();
+    renderPagesTree();
     ports.refreshLabel();
     return undefined;
   }
@@ -138,7 +170,7 @@ export function createPagesController(ports: PagesPorts) {
     const title = `${label} (copy)`;
     const error = await ports.commitPage({
       file: target.value.file, route: target.value.route, title,
-      content: nativePageWithUrl(nativePageWithDetail(original, "title", title), ports.address(target.value.route)),
+      content: nativePageWithUrl(nativePageWithDetail(original, "title", title), nativeAddress(target.value.route)),
       done: `Duplicated ${label} as ${title} at ${target.value.route}.`,
     });
     if (error) ports.error(new Error(error));
@@ -275,7 +307,7 @@ export function createPagesController(ports: PagesPorts) {
       if (rewritten.count) links.push({ path: moved.get(path) ?? path, from: path, text: rewritten.text, count: rewritten.count });
     }
     const redirect = move.routes.filter(([route]) => onBranchHere(site.routes[route])).map(([route]) => route);
-    return { ok: true, value: { from, to, label: ports.pageLabel(file), move, links, complete, redirect, live: onBranchHere(file) } };
+    return { ok: true, value: { from, to, label: nativePageLabelOf(file), move, links, complete, redirect, live: onBranchHere(file) } };
   }
 
   // A change's summary, as the URL field and the confirmation say it.
@@ -434,9 +466,150 @@ export function createPagesController(ports: PagesPorts) {
     await confirmNativeMove(target, parent);
   }
 
+  // ---- The explorer's Pages | Files | Images tabs and the Pages tree. ----
+
+  let explorerTab: ExplorerTab = "pages";
+
+  function selectExplorerTab(name: ExplorerTab) {
+    explorerTab = name;
+    updateExplorerTabs();
+    if (name === "pages") renderPagesTree();
+    if (name === "images") ports.showImages();
+  }
+
+  function updateExplorerTabs(reset = false) {
+    if (!ports.tabsMounted()) return;
+    const native = Boolean(ports.site());
+    if (reset) explorerTab = "pages";
+    ports.paintTabs(native ? explorerTab : "files", native);
+    if (!native) ports.resetExplorer();
+  }
+
+  // The site's pages as a tree, from its routes (new drafts included); labels
+  // read each page's `<title>`, else its first heading, from its source.
+  function renderPagesTree(focus?: { file?: string; route?: string }) {
+    const view = ports.tree(), site = ports.site();
+    if (!view || !site || ports.pagesHidden()) return;
+    ports.clearPendingTitles();
+    // New pages are marked; a renamed or moved one is the same page.
+    const drafted = new Set(ports.hasDraftScope() ? ports.drafts().filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path) : []);
+    const tree = buildNativePagesTree({
+      routes: site.routes,
+      titles: ports.titles(site),
+      heading: (file) => firstHeadingText(ports.source(file)),
+      isNew: (file) => drafted.has(file),
+    });
+    view.render(tree, ports.openFile(), focus);
+  }
+
+  // ---- New pages. ----
+
+  // Typing in the Pages tab checks the target only; creating (`create`) needs
+  // the home page's document read (siteReadForCreate) and makes the page from it.
+  function planNativeNew(request: NativeNewRequest, create = false): Checked<NativeNewPlan> {
+    const site = ports.site();
+    if (!site || !ports.hasDraftScope()) return { ok: false, error: "Open a native site first." };
+    const title = request.title.trim();
+    if (!title) return { ok: false, error: "Enter the page's title." };
+    if (!request.slug.trim()) return { ok: false, error: "The title gives no URL: add letters or digits, or change the URL." };
+    const target = nativeNewTarget(request.parent, request.slug, {
+      route: (route) => site.routes[route],
+      exists: ports.exists,
+    });
+    if (!target.ok) return target;
+    const template = nativeHomeTemplate();
+    if (!create) return { ok: true, value: { ...target.value, title, content: "" } };
+    if (template === undefined) return { ok: false, error: NATIVE_HOME_UNREAD };
+    return { ok: true, value: { ...target.value, title, content: nativePageTemplate(template, title, nativeAddress(target.value.route)) } };
+  }
+
+  // The home page's document, which new pages copy (its stylesheets, scripts,
+  // header and footer): undefined while it is not read yet, so no page is made
+  // from nothing.
+  function nativeHomeTemplate() {
+    const site = ports.site();
+    return site ? ports.source(site.routes["/"]) : undefined;
+  }
+
+  // The address of the page at `route` on the live site, from
+  // `.editor/config.json`'s `site.url`; none without one.
+  function nativeAddress(route: string) {
+    return nativePageUrl(ports.siteUrl(), route);
+  }
+
+  // The Pages tab's label of the page file `file`.
+  function nativePageLabelOf(file: string) {
+    const site = ports.site();
+    const route = ports.routeForPath(file);
+    if (!site || !route) return file;
+    return nativePageLabel(file, {
+      routes: site.routes,
+      titles: { [route]: ports.routeInfo(route, site).title },
+      heading: (path) => firstHeadingText(ports.source(path)),
+    }) ?? file;
+  }
+
+  // Creates a new page as a new draft; routes are found again, the tree drawn
+  // and the page opened (the explorer closes). Undo in the editor right after
+  // takes it back, as Discard changes on the new file does.
+  async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
+    // The page is made from the home page's document, so that is read first.
+    const unread = await ports.siteReadForCreate();
+    if (unread) return unread;
+    const planned = planNativeNew(request, true);
+    if (!planned.ok) return planned.error;
+    const plan = planned.value;
+    const epoch = ports.generation(), scope = ports.scope();
+    const expectedSources = new Map([...nativeSitePaths(ports.site()!)].map((path) => [path, ports.source(path)] as const));
+    // With its card in the grid that lists its siblings: the page made from a sibling's, as one operation.
+    if (request.addCard) {
+      const withCard = ports.createWithCard(request);
+      if (withCard) return withCard;
+    }
+    if (request.addToNavigation && request.parent === "/") {
+      const problem = await ports.ensureIndex();
+      if (problem) return problem;
+      if (epoch !== ports.generation() || scope !== ports.scope() || [...expectedSources].some(([path, source]) => ports.source(path) !== source)) return "The page template or repository changed. Create the page again.";
+      const nav = ports.navigationTarget(ports.site()?.routes["/"]);
+      if (!nav) return "No editable header navigation found. Uncheck Add to navigation to create only the page.";
+      let navigation: string;
+      try { navigation = editNavigation(nav.source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }]); }
+      catch (error) { return error instanceof Error ? error.message : "Navigation could not be changed."; }
+      // For a plain header, copy its updated navigation to the new page as well.
+      let page = plan.content;
+      if (!nav.shared) {
+        const list = readNavigation(page);
+        if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }]);
+      }
+      return ports.operation({ expectedSources, creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file, done: `Created ${plan.title} and added it to navigation as drafts.`, undone: `Undid creating ${plan.title} and adding it to navigation.` });
+    }
+    return ports.commitPage({ file: plan.file, route: plan.route, title: plan.title, content: plan.content, done: `Created the page ${plan.title} at ${plan.route}.` });
+  }
+
+  // A URL with subpages and no page of its own gets its page, `index.html` in
+  // its folder, made like a new page.
+  async function createNativeFolderPage(route: string) {
+    if (!ports.site() || !ports.hasDraftScope()) return;
+    // Made from the home page's document, so that is read first.
+    const unread = await ports.siteReadForCreate();
+    if (unread) { ports.error(new Error(unread)); return; }
+    const site = ports.site();
+    if (!site || !ports.hasDraftScope()) return;
+    const file = nativeRouteFile(route);
+    // Its page deleted in the drafts: Create page brings it back.
+    if (ports.drafts().find((draft) => draft.path === file)?.deleted) { ports.restoreDeleted(file); return; }
+    if (site.routes[route] || ports.exists(file)) { ports.error(new Error(`The URL ${route} has a page already.`)); return; }
+    const title = routeHeading(route);
+    const content = nativePageTemplate(nativeHomeTemplate(), title, nativeAddress(route));
+    const error = await ports.commitPage({ file, route, title, content, done: `Created the page ${title} at ${route}.` });
+    if (error) ports.error(new Error(error));
+  }
 
   return { retitle: retitleNativePage, duplicate: duplicateNativePage, remove: removeNativePagesTarget,
     urlPlan: nativeUrlPlan, changeUrl: changeNativeUrl, moveChoices: nativeMoveChoices,
     dropProblem: nativeDropProblem, confirmMove: confirmNativeMove, moveTo: moveNativePageTo,
-    linkSources: nativeLinkSources, onBranchHere, deleteDraftStamp: deleteTargetDraftStamp };
+    linkSources: nativeLinkSources, onBranchHere, deleteDraftStamp: deleteTargetDraftStamp,
+    explorerTab: () => explorerTab, selectTab: selectExplorerTab, updateTabs: updateExplorerTabs, renderTree: renderPagesTree,
+    planNew: planNativeNew, homeTemplate: nativeHomeTemplate, address: nativeAddress, pageLabel: nativePageLabelOf,
+    createNew: createNativeNew, createFolderPage: createNativeFolderPage };
 }
