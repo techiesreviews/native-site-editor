@@ -2,7 +2,7 @@
 title: Decide the variant contract
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [06-research-variant-discovery]
 ---
 
