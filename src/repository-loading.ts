@@ -6,7 +6,7 @@ export type RepositoryApi = <T>(path: string, params?: Record<string, string>) =
 type FileCache = Map<string, Promise<string>>;
 
 const repositoryKey = (repo: string, commit: string) => `${repo}\n${commit}`;
-const fileKey = (repo: string, sha: string) => `${repo}\n${sha}`;
+export const fileKey = (repo: string, sha: string) => `${repo}\n${sha}`;
 const directoryKey = (repo: string, sha: string) => `${repo}\n${sha}`;
 const BATCH_LIMIT = 2;
 const TREE_LIMIT = 4;

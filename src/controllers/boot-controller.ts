@@ -88,6 +88,7 @@ export function createBootController(ports: BootPorts) {
   let state: "uninitialized" | "loading" | "ready" | "failed" = "uninitialized";
   let listRequest: Promise<void> | undefined;
   let cancelAuto: (() => void) | undefined;
+  let sessionTag: string | null | undefined;
 
   /** Read the array endpoint and its onboarding hint without expanding the session. */
   async function fetchList(refresh = false): Promise<Repository[]> {
@@ -158,6 +159,7 @@ export function createBootController(ports: BootPorts) {
         // before a snapshot is in (loadSnapshot waits for them).
         drafts = ports.loadDrafts(session.user.login).then(() => ports.onDraftError());
       }
+      sessionTag = session.user ? sessionResponse.sessionTag : undefined;
       ports.adoptSession(session);
       if (session.user) {
         ports.enterWorkspace();
@@ -235,6 +237,8 @@ export function createBootController(ports: BootPorts) {
       return value;
     },
     onboarding: () => onboarding,
+    /** The adopted signed-in session's correlation tag (src/boot-reads.ts). */
+    sessionTag: () => sessionTag,
     fetchList,
     ensureList,
     recover,
@@ -252,6 +256,7 @@ export function createBootController(ports: BootPorts) {
       state = "uninitialized";
       listRequest = undefined;
       onboarding = undefined;
+      sessionTag = undefined;
     },
   };
 }

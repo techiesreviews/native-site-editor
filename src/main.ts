@@ -47,7 +47,8 @@ import { createCreateDialog, type CreateKind, type CreateRequest } from "./compo
 import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
-import type { OwnerInstallation } from "../shared/types";
+import type { FilesResult, OwnerInstallation } from "../shared/types";
+import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "./boot-memory";
 import type { createGetStarted, CreateChoice, CreateOutcome } from "./components/get-started";
 import type { createStartSite } from "./components/start-site";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
@@ -103,7 +104,7 @@ import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTex
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
-import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
+import { RepositoryIndex, fileKey, readFileText, readFileTexts, rememberFile } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
@@ -2621,6 +2622,8 @@ const nativeTextIndexGate: SiteIndexGate = {
 // page's structure), then for the browser to be idle. A preview that does
 // not paint (an error) holds nothing back for long.
 let nativePaintedRequest = -1;
+// The files read for the last first paint, for the boot memory.
+let nativePaintedPaths: string[] = [];
 let nativePaintWaiters: { request: number; run: () => void }[] = [];
 const whenIdle = (run: () => void) => {
   if (typeof requestIdleCallback === "function") requestIdleCallback(() => run(), { timeout: 300 });
@@ -2635,6 +2638,7 @@ function afterNativePaint(request: number, run: () => void) {
 function noteNativePainted() {
   if (nativePaintedRequest === nativeSourcesRequest) return;
   nativePaintedRequest = nativeSourcesRequest;
+  nativePaintedPaths = [...nativeBaseSources.keys()];
   const due = nativePaintWaiters.filter((waiter) => waiter.request === nativePaintedRequest);
   nativePaintWaiters = [];
   // The runtime reports the structure just before the frame presents it:
@@ -2925,6 +2929,7 @@ function options(
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
+  bootGuess = undefined;
   paletteController.dispose();
   agentController.destroy();
   setupController.dispose();
@@ -5319,8 +5324,18 @@ async function loadSnapshot(
     if (epoch !== generation) return;
     // Drafts of files GitHub deleted or now holds are looked for once the
     // page is on screen (a file opened before then that needs it waits).
-    if (isNative && nativeSite) afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(epoch));
-    else void savePublish.checkDeleted(epoch);
+    if (isNative && nativeSite) {
+      afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(epoch));
+      afterNativePaint(nativeSourcesRequest, () => {
+        const login = info.user?.login;
+        if (epoch !== generation || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
+        writeBootMemory(storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
+          files: nativePaintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
+      });
+    } else {
+      forgetBootMemory(storage("local"), repo.id);
+      void savePublish.checkDeleted(epoch);
+    }
     // A native project opens on its home page when nothing else is selected;
     // its source is already in memory from the site's prefetch.
     const open = reopen ?? (isNative ? nativeSite?.routes["/"] : undefined);
@@ -5380,6 +5395,51 @@ async function loadSnapshot(
   }
 }
 
+// Remember last boot (src/boot-memory.ts): the hash's repository, as its last
+// first paint read it, is asked for before the session is known. Nothing of it
+// shows until the adopted session, the verified listing and the fresh snapshot
+// prove it; anything else falls back to the normal reads.
+let bootGuess: { memory: BootMemory; source: string; snapshot: Promise<ApiReceipt<Snapshot>>; files?: Promise<ApiReceipt<FilesResult>> } | undefined;
+function startBootGuess() {
+  const link = readWorkspaceUrl();
+  const memory = link && readBootMemory(storage("local"), link.repoId);
+  if (!memory || memory.branch !== link.branch) return;
+  const quiet = <T,>(read: Promise<T>) => { void read.catch(() => {}); return read; };
+  bootGuess = {
+    memory,
+    source: location.origin + location.pathname,
+    snapshot: quiet(apiResponse<Snapshot>("snapshot", { repo: memory.fullName, branch: memory.branch })),
+    files: memory.files.length ? quiet(apiResponse<FilesResult>("files", { repo: memory.fullName, shas: memory.files.map((file) => file.sha).join(",") })) : undefined,
+  };
+}
+/** The guessed snapshot for `repo`/`branch`, once only, when this session and listing prove the memory. */
+function takeBootGuess(repo: Repository, branch: string): Promise<Snapshot> | undefined {
+  const guess = bootGuess;
+  bootGuess = undefined;
+  const tag = boot.sessionTag();
+  const link = readWorkspaceUrl();
+  if (!guess || !tag || guess.source !== location.origin + location.pathname || link?.repoId !== repo.id || link.branch !== branch ||
+    !memoryMatches(guess.memory, info.user?.login, repo, branch)) return undefined;
+  // loadSnapshot drops the result if navigation supersedes it meanwhile.
+  const fresh = () => api<Snapshot>("snapshot", { repo: repo.full_name, branch });
+  return guess.snapshot.then((receipt) => {
+    if (receipt.sessionTag !== tag || boot.sessionTag() !== tag || receipt.value.branch !== branch) return fresh();
+    const snapshot = receipt.value;
+    // Content is addressed by SHA: a path with the remembered SHA in this
+    // fresh snapshot has exactly the remembered read's content.
+    for (const { sha } of guess.files ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
+      const key = fileKey(repo.full_name, sha);
+      if (fileContents.has(key)) continue;
+      rememberFile(fileContents, fileContentsLimit, key, guess.files!.then((files) => {
+        const text = files.value.files[sha];
+        if (files.sessionTag !== tag || typeof text !== "string") throw new Error();
+        return text;
+      }).catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
+    }
+    return snapshot;
+  }, fresh);
+}
+
 async function chooseRepository(resume?: WorkspaceLocation) {
   const epoch = ++generation;
   fileGeneration++;
@@ -5411,16 +5471,34 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   // Begin independent work together: the selected branch is already known from
   // the bookmark or repository metadata. Validate it before using its snapshot.
   const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
-  const prefetched = api<Snapshot>("snapshot", {
+  const guessed = takeBootGuess(appStore.repository.value, requestedBranch);
+  const prefetched = guessed ?? api<Snapshot>("snapshot", {
     repo: appStore.repository.value.full_name,
     branch: requestedBranch,
   });
   // A branch lookup may fail first or navigation may supersede this request.
   void prefetched.catch(() => {});
   try {
-    const branches = await api<string[]>("branches", {
+    const listing = api<string[]>("branches", {
       repo: appStore.repository.value.full_name,
     });
+    if (guessed) {
+      // The remembered branch opens now: its snapshot proves it exists. The
+      // branch list fills the selector when it comes.
+      const branch = requestedBranch, opened = appStore.repository.value;
+      options(branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
+      appStore.branch.value = branch;
+      branchSelect.value = branch;
+      branchSelect.disabled = false;
+      void listing.then((branches) => {
+        if (appStore.repository.value !== opened || appStore.branch.value !== branch || !branches.includes(branch)) return;
+        options(branchSelect, branches.map((name) => ({ value: name, label: `⑂ ${name}` })));
+        branchSelect.value = appStore.branch.value ?? "";
+      }, () => {});
+      await loadSnapshot(resume?.path, prefetched);
+      return;
+    }
+    const branches = await listing;
     if (epoch !== generation) return;
     if (!branches.length) {
       // An empty repository opens on its default branch with no files, so
@@ -6027,6 +6105,7 @@ async function disconnect() {
     if (!response.ok) throw new Error("Could not disconnect. Try again.");
     // 204: that was the last account on this browser, so nothing continues by itself next time.
     if (response.status === 204) forgetSignedIn(storage("local"));
+    forgetBootMemory(storage("local"));
     location.assign("/");
   } catch (error) {
     errorMessage(error);
@@ -6103,6 +6182,7 @@ document.addEventListener("click", (event) => {
 });
 // A fragment change before the session has loaded is not lost: once signed
 // in, the repositories load from the location as it is then.
-window.addEventListener("hashchange", boot.onHashChange);
+window.addEventListener("hashchange", () => { bootGuess = undefined; boot.onHashChange(); });
 renderLogin("loading");
+startBootGuess();
 void boot.start();
