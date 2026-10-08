@@ -1,10 +1,10 @@
-// The component mark (Phosphor's diamond, as Figma and Framer mark
-// instances), drawn in the component accent wherever an instance is named:
+// The component mark (Phosphor's diamonds-four, as Figma marks
+// components), drawn in the component accent wherever an instance is named:
 // the edit bar, the page structure, the properties panel, the banner over a
 // component's template. Kept here so the page builder's component work does
 // not touch the shared icon list.
 
-import diamond from "@phosphor-icons/core/regular/diamond.svg?raw";
+import diamondsFour from "@phosphor-icons/core/regular/diamonds-four.svg?raw";
 import pencil from "@phosphor-icons/core/regular/pencil-simple.svg?raw";
 import linkBreak from "@phosphor-icons/core/regular/link-break.svg?raw";
 import selection from "@phosphor-icons/core/regular/selection-plus.svg?raw";
@@ -20,7 +20,7 @@ import arrowCounter from "@phosphor-icons/core/regular/arrow-counter-clockwise.s
 import "./components.css";
 
 const marks = {
-  component: diamond,
+  component: diamondsFour,
   edit: pencil,
   detach: linkBreak,
   make: selection,
@@ -44,7 +44,7 @@ export function mark(name: ComponentMark, size = 14, className = "") {
   return template.content.firstElementChild as SVGSVGElement;
 }
 
-/** The component diamond, in the component accent. */
+/** The component mark (four diamonds), in the component accent. */
 export function componentIcon(size = 14) {
   return mark("component", size, "component-mark");
 }
