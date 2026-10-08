@@ -80,6 +80,7 @@ async function connectAgent(page: Page) {
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   const url = /Server: `(\S+)`/.exec(prompt)![1];
   const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];

@@ -185,6 +185,7 @@ test("the copied agent prompt names the selected organisation, in its instructio
   await page.getByLabel("Repository name").fill("team-site");
   await expect(page.locator(".onboard-agent code")).toHaveText("gh repo create demo-org/team-site --public");
   await page.getByRole("button", { name: "Copy agent prompt" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create demo-org/team-site --public");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   expect(prompt).toContain("gh repo create demo-org/team-site --public");
   expect(prompt).toContain("team-site in my GitHub organisation demo-org");
@@ -192,6 +193,7 @@ test("the copied agent prompt names the selected organisation, in its instructio
   // The personal account keeps the plain command.
   await page.getByLabel("Owner").selectOption("native-demo-user");
   await page.getByRole("button", { name: "Copy agent prompt" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create team-site --public");
   const own = await page.evaluate(() => navigator.clipboard.readText());
   expect(own).toContain("gh repo create team-site --public");
   expect(own).toContain("on my GitHub account");

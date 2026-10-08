@@ -40,6 +40,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   const url = /Server: `(\S+)`/.exec(prompt)![1];
   const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
@@ -223,6 +224,7 @@ test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agen
   }
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Bearer ase_");
   const token = /Bearer (ase_[a-f0-9]{64})/.exec(await page.evaluate(() => navigator.clipboard.readText()))![1];
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();

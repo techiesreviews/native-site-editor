@@ -55,6 +55,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   const url = /Server: `(\S+)`/.exec(prompt)![1];
   const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
