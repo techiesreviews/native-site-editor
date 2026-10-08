@@ -26,7 +26,7 @@ import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from 
 import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
 import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeBootExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -3884,12 +3884,16 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     // A component shown alone is drawn in the home page.
     const shownPages = [...new Set([nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)], currentFile])];
     // Small sites' component templates (with their stylesheets) come with the page in its first read.
-    const extras = nativeBootExtras(site, files, (path) => {
+    const bootSize = (path: string) => {
       if (scope && draftStore().get(scope, path)) return 0;
       const entry = entryAt(path);
       return entry?.type === "blob" ? entry.size : undefined;
-    });
-    await readNativeShownFiles(repo.full_name, site, shownPages, live, [...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : []), ...extras]);
+    };
+    const extras = nativeBootExtras(site, files, bootSize);
+    // So do the site's own stylesheets when small: the sheets the page links and
+    // their imports then need no serial reads before the paint.
+    const styleExtras = nativeBootStyleExtras(site, files, bootSize);
+    await readNativeShownFiles(repo.full_name, site, shownPages, live, [...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : []), ...extras, ...styleExtras]);
     if (!live()) return true;
     // The stylesheets the pages link, and the files those import, render
     // with the first update; one that cannot be read is reported by the

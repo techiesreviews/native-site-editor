@@ -74,9 +74,8 @@ export const NATIVE_BOOT_EXTRA_BYTES = 128 * 1024;
  * Every component template of the site with its stylesheet, read with the
  * page in the first request when together they are small (most sites): the
  * levels of nested components then need no request of their own. Nothing
- * when they are larger than `limit`, or a size is unknown. Stylesheets that
- * are not a component's are never guessed: only those the page links (and
- * their imports) are read before the paint.
+ * when they are larger than `limit`, or a size is unknown. The site's other
+ * stylesheets are predicted separately (nativeBootStyleExtras).
  */
 export function nativeBootExtras(
   site: NativeSite,
@@ -136,4 +135,34 @@ export async function withSiteIndexed<T>(gate: SiteIndexGate, build: () => Promi
     if (gate.key() === key) return value;
   }
   throw new Error("The repository changed meanwhile. Try again.");
+}
+
+/** At most this many bytes of the site's own stylesheets come with the page in one read. */
+export const NATIVE_BOOT_STYLE_BYTES = 24 * 1024;
+
+/**
+ * Every stylesheet of the site that is not a component's, read with the page
+ * in the first request when together they are small, so the sheets the page
+ * links and their imports need no serial reads of their own before the
+ * paint. Skips dot-folders (.editor, .github) and node_modules. Nothing when
+ * they are larger than `limit`, or a size is unknown. A predicted sheet the
+ * page does not link is only read: it never reaches the preview.
+ */
+export function nativeBootStyleExtras(
+  site: NativeSite,
+  files: readonly string[],
+  sizeOf: (path: string) => number | undefined,
+  limit = NATIVE_BOOT_STYLE_BYTES,
+): string[] {
+  const componentCss = new Set(Object.values(site.components).map(nativeComponentCssPath));
+  const out = files.filter((path) => path.endsWith(".css") && !componentCss.has(path) &&
+    !path.split("/").some((part) => part.startsWith(".") || part === "node_modules"));
+  let total = 0;
+  for (const path of out) {
+    const size = sizeOf(path);
+    if (size === undefined) return [];
+    total += size;
+    if (total > limit) return [];
+  }
+  return out;
 }

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { nativeBootExtras, nativeShownFiles, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 
 const site: NativeSite = {
@@ -64,6 +64,20 @@ test("every component template and its stylesheet come with the page when they a
   // Too large together, or a size not known: nothing extra.
   assert.deepEqual(nativeBootExtras(site, paths, size, 50), []);
   assert.deepEqual(nativeBootExtras({ ...site, components: { ...site.components, "new-thing": "components/new-thing/new-thing.html" } }, paths, size), []);
+});
+
+test("the site's own stylesheets come with the page when they are small; never a component's, a dot-folder's or node_modules'", () => {
+  const paths = [...Object.keys(files), ".editor/private.css", ".github/x.css", "node_modules/pkg/a.css", "styles/extra.css"];
+  const sizes: Record<string, number> = { ".editor/private.css": 10, ".github/x.css": 10, "node_modules/pkg/a.css": 10, "styles/extra.css": 100 };
+  const size = (path: string) => (isFile(path) ? files[path].length : sizes[path]);
+  const expected = paths.filter((path) => path.endsWith(".css") && !path.startsWith(".") && !path.startsWith("node_modules") && !path.startsWith("components/"));
+  assert.ok(expected.includes("styles/extra.css") && expected.length > 1);
+  assert.deepEqual(nativeBootStyleExtras(site, paths, size).sort(), expected.sort());
+  // Over the cap together, or a size not known: nothing.
+  const total = expected.reduce((sum, path) => sum + size(path)!, 0);
+  assert.deepEqual(nativeBootStyleExtras(site, paths, size, total - 1), []);
+  assert.deepEqual(nativeBootStyleExtras(site, paths, size, total).sort(), expected.sort());
+  assert.deepEqual(nativeBootStyleExtras(site, [...paths, "styles/unknown.css"], size), []);
 });
 
 // A text index the test drives: `key` is the open repository, `done` whether it read the whole site.

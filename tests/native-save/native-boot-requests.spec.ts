@@ -4,7 +4,7 @@ import { test, expect, type Page } from '@playwright/test';
 // ticket 05, task 4g): its stylesheets and components, never the site's
 // other pages, which the text index reads after the paint.
 
-interface Read { shas: string[]; at: number }
+interface Read { shas: string[]; at: number; end: number }
 
 // Every preview document reports its first contentful paint, and the editor
 // each /api/file and /api/files read with its start, on the browser's clock.
@@ -12,12 +12,12 @@ async function watchReads(page: Page) {
   const paints: number[] = [];
   const reads: Read[] = [];
   await page.exposeBinding('__asePaint', (_source, at: number) => { paints.push(at); });
-  await page.exposeBinding('__aseRead', (_source, url: string, at: number) => {
+  await page.exposeBinding('__aseRead', (_source, url: string, at: number, end: number) => {
     const params = new URL(url).searchParams;
-    reads.push({ shas: [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])], at });
+    reads.push({ shas: [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])], at, end });
   });
   await page.addInitScript(() => {
-    const report = window as unknown as { __asePaint(at: number): void; __aseRead(url: string, at: number): void };
+    const report = window as unknown as { __asePaint(at: number): void; __aseRead(url: string, at: number, end: number): void };
     if (window.top !== window) {
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) if (entry.name === 'first-contentful-paint') report.__asePaint(performance.timeOrigin + entry.startTime);
@@ -26,7 +26,7 @@ async function watchReads(page: Page) {
     }
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries())
-        if (/^\/api\/files?$/.test(new URL(entry.name).pathname)) report.__aseRead(entry.name, performance.timeOrigin + entry.startTime);
+        if (/^\/api\/files?$/.test(new URL(entry.name).pathname)) report.__aseRead(entry.name, performance.timeOrigin + entry.startTime, performance.timeOrigin + (entry as PerformanceResourceTiming).responseEnd);
     }).observe({ type: 'resource', buffered: true });
   });
   return { paints, reads };
@@ -102,4 +102,58 @@ test('a page deep-linked by its address paints without the home page being read'
   const paint = Math.min(...paints);
   const early = reads.filter((read) => read.at < paint);
   expect(early.filter((read) => read.shas.includes(shas['index.html'])), 'the home page read before paint').toEqual([]);
+});
+
+// The site's own stylesheets are predicted from the branch and come with the
+// page's first read (src/native-boot.ts nativeBootStyleExtras), so the sheet
+// the page links needs no serial read of its own before the paint.
+test('the linked stylesheet is read in the first wave, before any pre-paint read ends', async ({ page, baseURL }) => {
+  const { paints, reads } = await watchReads(page);
+  // Each read takes a while, so serial reads cannot overlap by chance.
+  await page.route(/\/api\/files?\?/, async (route) => { await new Promise((resolve) => setTimeout(resolve, 150)); await route.continue(); });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(preview(page).locator('.hero h1')).toBeVisible();
+  await expect.poll(() => paints.length).toBeGreaterThan(0);
+  await page.unroute(/\/api\/files?\?/);
+  const shas = await blobShas(page);
+  const paint = Math.min(...paints);
+  const early = reads.filter((read) => read.at < paint && read.shas.length);
+  const sheet = early.find((read) => read.shas.includes(shas['styles/site.css']));
+  expect(sheet, 'styles/site.css read before paint').toBeTruthy();
+  expect(sheet!.at).toBeLessThan(Math.min(...early.map((read) => read.end)));
+});
+
+const scope = { account: 'native-demo-user', repoId: 501, repo: 'native-demo-user/native-demo', branch: 'main' };
+// Drafts as an older version kept them in localStorage: they move into IndexedDB on load.
+async function seedDrafts(page: Page, drafts: { path: string; baseSha: string | null; original: string; content: string }[]) {
+  await page.evaluate(([scope, drafts]) => {
+    for (const draft of drafts) {
+      const key = 'astro-site-editor:draft:v1:' + JSON.stringify([scope.account, scope.repoId, scope.branch, draft.path]);
+      localStorage.setItem(key, JSON.stringify({ ...scope, version: 1, ...draft, updatedAt: Date.now() }));
+    }
+  }, [scope, drafts] as const);
+}
+const demoFile = async (page: Page, baseURL: string | undefined, path: string) =>
+  (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`)).text();
+const heroColor = (page: Page) => preview(page).locator('.hero h1').evaluate((element) => getComputedStyle(element).color);
+
+test('a drafted page that links a sheet outside the prediction, and a drafted site.css, paint with the drafts', async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(preview(page).locator('.hero h1')).toBeVisible({ timeout: 30_000 });
+  const shas = await blobShas(page);
+  const home = await demoFile(page, baseURL, 'index.html');
+  const site = await demoFile(page, baseURL, 'styles/site.css');
+  await seedDrafts(page, [
+    { path: 'styles/site.css', baseSha: shas['styles/site.css'], original: site, content: `${site}\n.hero h1 { color: rgb(1, 2, 3); }\n` },
+  ]);
+  await page.reload();
+  await expect.poll(() => heroColor(page), { timeout: 30_000 }).toBe('rgb(1, 2, 3)');
+
+  // A sheet in a dot-folder is never predicted: linked only by the drafted page, it is read after.
+  await seedDrafts(page, [
+    { path: '.theme/late.css', baseSha: null, original: '', content: '.hero h1 { color: rgb(4, 5, 6) !important; }\n' },
+    { path: 'index.html', baseSha: shas['index.html'], original: home, content: home.replace('<link rel="stylesheet" href="/styles/site.css">', '<link rel="stylesheet" href="/styles/site.css">\n  <link rel="stylesheet" href="/.theme/late.css">') },
+  ]);
+  await page.reload();
+  await expect.poll(() => heroColor(page), { timeout: 30_000 }).toBe('rgb(4, 5, 6)');
 });
