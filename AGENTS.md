@@ -14,6 +14,10 @@ The default five roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-
 
 Single context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+## Testing
+
+Running tests, timing or a preview deploy: read `docs/agents/local-testing.md`.
+
 ## Review
 
 Reviewing a diff: apply `CODING_STANDARDS.md`.
