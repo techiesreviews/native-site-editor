@@ -1,3 +1,4 @@
+import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController } from "./controllers/media-controller";
 import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
@@ -23,8 +24,8 @@ import { createSetupEntryController } from "./controllers/setup-entry-controller
 import { createAgentController } from "./controllers/agent-controller";
 import { setupPrompt } from "./agent-prompts";
 import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
-import { agentAnswers, agentElement, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
-import { REQUEST_TEXT_LIMIT, type AgentCommand } from "../shared/agent";
+import { agentAnswers, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
+import { type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import { draftKey } from "./drafts";
@@ -33,7 +34,7 @@ import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
-import { createNativePreview, routeStylesheets, type NativeFormat, type NativePreviewSelection, type NativeStructureItem, type NativeTextEdit, type NativeTextSelection } from "./components/native-preview";
+import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem } from "./components/native-preview";
 import { createPageStructure, type NativeSharedRoot, type PageMetaField } from "./components/page-structure";
 import type { NativeSharedMetadata } from "./components/native-shared-authoring";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
@@ -64,19 +65,17 @@ import { CHANGE_WORDS, deleteFile, duplicateFile, keepAsNewFile, listChanges, mo
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "./native-files";
 import { buildNativePagesTree, firstHeadingText, nativeLinkSuggestions, nativeNewTarget, nativePageLabel, type NativeNewTarget } from "./native-pages";
-import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange, type StartTag } from "./native-source-location";
-import type { EditBarControl, EditBarModel } from "./components/edit-bar";
+import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
+import type { EditBarControl } from "./components/edit-bar";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { nativeElementSiblingMove } from "./page-builder/native-move-choices";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
-import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "./page-builder/native-element-fields";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { altFromPath, duplicateEdit, isImagePath, linkWrapEdit, moveEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, structureLabel, swapEdits, unwrapEdits } from "./native-structure";
-import { currentTextSize, textSizeEdit, textSizeScale } from "./native-text-size";
+import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
 import { createCards, type Cards } from "./page-builder/cards";
 import { planSidecarPages, routeLinkRewrite } from "./page-builder/sidecar-pages";
@@ -106,7 +105,7 @@ import type { AddChoice } from "./page-builder/add-catalog";
 import type { ThumbnailInputs } from "./page-builder/thumbnail-doc";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { assetInUseProblem, assetMoves, assetUsers, planAssetReferenceRewrites } from "./page-builder/asset-references";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativePageWithDetail, nativePageWithUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageUrl, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
@@ -447,7 +446,7 @@ function mountWorkspace() {
     },
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
     onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
-    onFormat: (format) => nativeFormatActions[format]?.(),
+    onFormat: (format) => pageStructureController.nativeFormatActions[format]?.(),
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
@@ -481,7 +480,7 @@ function mountWorkspace() {
       nativeShownStructure = shown;
       pageStructure?.update(shown);
     },
-    onMove: (direction) => nativeElementMoveAction?.(direction),
+    onMove: (direction) => pageStructureController.nativeElementMoveAction?.(direction),
     onSectionDrag: (gap) => {
       const outcome = gap && appStore.selection.value ? moveNativeSectionTo(appStore.selection.value, gap.parent, gap.index) : undefined;
       if (!outcome) element("status").textContent = "Section drag cancelled";
@@ -571,7 +570,7 @@ const paletteController = createCommandPaletteController({
     },
     isSectionTag: isNativeSectionTag,
     insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
-    editBar: () => (document.querySelector(".edit-bar[data-model]") ? nativeEditBarModel : undefined),
+    editBar: () => (document.querySelector(".edit-bar[data-model]") ? pageStructureController.nativeEditBarModel : undefined),
     select: (path, node) => nativePreview?.selectNode({ path, node }),
     textSelected: () => { const text = previewSelection.textSelection(); return Boolean(text && !text.caret && text.text); },
     history: (direction) => void editorModule?.runVisualHistory(direction, appStore.openFile.value),
@@ -1478,7 +1477,7 @@ const previewSelection = createPreviewSelectionController({
   openFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
   renderEditBar: (selection) => renderNativeEditBar(selection),
   linkStyles: (selection, reveal) => void linkNativeStyles(selection, reveal),
-  clearMoveAction: () => { nativeElementMoveAction = undefined; },
+  clearMoveAction: () => { pageStructureController.nativeElementMoveAction = undefined; },
   structureSelect: (target) => pageStructure?.select(target),
   hideComponentTools: () => componentTools?.show(undefined),
   agentContext: () => updateAgentContext(),
@@ -1558,775 +1557,103 @@ function wholeWrapper(inner: string, tags: string[]) {
   const openEnd = inner.indexOf(">", open);
   return { open, openEnd: openEnd + 1, closeAt, closeEnd: closeEnd + 1 };
 }
-
-// What B, I and Link do for the current selection, for the keyboard shortcuts.
-let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
-// The edit bar last shown, whose controls the command palette offers while it shows.
-let nativeEditBarModel: EditBarModel | undefined;
-// A link just made from the bar around selected text (`node` is the text
-// element, `link` the new link's index path): its Address opens at once
-// (`shown` once asked), and closing it with the address still empty takes
-// the link away again. The wrap and what is typed are one undo step.
-let nativeNewLink: { path: string; node: number[]; link: number[]; text: { start: number; end: number }; shown?: boolean } | undefined;
 // Elements a link inside can be removed from, keeping its text.
 const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
-
-let nativeElementMoveAction: EditBarModel["onMove"];
 const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | undefined>();
 const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down") => "moved" | "stayed" | undefined>();
 
-// One native field keeps the snapshot captured when its popover opened. The
-// edit bar may replace a live callback while retaining that same input node.
-let nativeAttributeFieldSession: { key: string; path: string; source: string; model: { isCurrent(): boolean }; epoch: number; scope: string } | undefined;
-
-// Controls for the selected element. Structural actions need the element's
-// exact outer source range; when that cannot be told (implied end tags,
-// stray markup) they stay out rather than edit the wrong HTML.
-function renderNativeEditBar(selection: NativePreviewSelection) {
-  nativeElementMoveAction = undefined;
-  const preview = nativePreview;
-  const editor = editorModule;
-  const { path, node, rect } = selection;
-  // The page's `main` container has nothing the bar can do; it stays out of the way.
-  if (!preview || !editor || !path || !rect || appStore.openFile.value !== path || !editor.isMounted(path) || selection.tag === "main") {
-    nativeFormatActions = {};
-    preview?.hideEditBar();
-    componentTools?.show(undefined);
-    return;
-  }
-  const source = nativeEditableSource(path) ?? "";
-  const range = node ? locateNativeElementRange(source, node) : undefined;
-  // In the open master: one plain section, edited in place, never moved, copied or removed.
-  const inMaster = nativeOpenMaster()?.masterPath === path;
-  const kind = nativeElementLabel(selection.tag, Boolean(nativeSite && Object.hasOwn(nativeSite.components, selection.tag)));
-  // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
-  if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
-    editor.closeActiveEditGroup(nativeNewLink.path);
-    nativeNewLink = undefined;
-  }
-  const announce = (text: string) => { element("status").textContent = text; };
-  const masterSession = nativeOpenMaster()?.session, epoch = generation, scopeKey = setupScope();
-  const draft = draftScope(), modelProof = draft ? editor.captureFileModelState(draft, path) : undefined;
-  const currentMaster = () => !inMaster || nativeOpenMaster()?.session === masterSession && generation === epoch && setupScope() === scopeKey && appStore.openFile.value === path;
-  const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
-    if (!currentMaster() || inMaster && modelProof?.isCurrent() === false) { announce("The master or source changed. Select the element again."); return false; }
-    return applyNativeChange(path, source, edits, next, message);
-  };
-  const controls: EditBarControl[] = [];
-  if (range && node && nativeSite) {
-    if (selection.tag === "site-header" || selection.tag === "header" || selection.tag === "nav")
-      controls.push({ kind: "button", label: "Navigation", onPress: () => void openNativeNavigation(path) });
-  }
-  nativeFormatActions = {};
-  if (/^h[1-6]$/.test(selection.tag) && range?.close && range.tag.name === selection.tag) {
-    const close = range.close;
-    const length = range.tag.name.length;
-    controls.push({
-      kind: "select",
-      label: "Heading level",
-      options: [1, 2, 3, 4, 5, 6].map((level) => ({ label: `H${level}`, value: `h${level}` })),
-      value: selection.tag,
-      onChange: (value) => change([
-        { start: range.tag.start + 1, end: range.tag.nameEnd, text: value },
-        { start: close.start + 2, end: close.start + 2 + length, text: value },
-      ], node, `Heading level ${value.toUpperCase()}`),
-    });
-  }
-  // Text size is for elements that carry text themselves, not page containers or components.
-  const containers = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
-  const textual = range?.close && !selection.tag.includes("-") && !containers.has(selection.tag);
-  if (range && textual && nativeSite) {
-    // The site's own sizes (classes, else variables) when its stylesheets define them (`src/native-text-size.ts`).
-    const sources = nativeSources();
-    const scale = textSizeScale(nativePageStyles().map((sheet) => sources[sheet] ?? ""));
-    const value = currentTextSize(source, range.tag, scale);
-    const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
-    if (value === "custom") options.push({ label: "Custom", value: "custom" });
-    controls.push({
-      kind: "select",
-      label: "Text size",
-      options,
-      value,
-      onChange: (next) => {
-        const edit = textSizeEdit(source, range.tag, scale, next);
-        const size = scale.sizes.find((item) => item.value === next);
-        if (edit) change([edit], node, size ? `Text size ${size.label}` : "Default text size");
-      },
-    });
-  }
-  // The link the selected text sits in, inside the selected text element.
-  let textLink: { node: number[]; text: NativeTextSelection } | undefined;
-  if (range?.close && nativeTextTags.has(selection.tag)) {
-    const close = range.close;
-    const inner = source.slice(range.tag.end, close.start);
-    const bound = previewSelection.textSelection();
-    const reported = bound && bound.path === path && node &&
-      bound.node.join(".") === node.join(".") ? bound : undefined;
-    // The caret (reported only inside a link) is no text to format.
-    const text = reported?.caret ? undefined : reported;
-    const caret = reported?.caret ? reported : undefined;
-    for (const format of [
-      { label: "B", name: "Bold", tag: "strong" as const, also: ["strong", "b"] },
-      { label: "I", name: "Italic", tag: "em" as const, also: ["em", "i"] },
-    ]) {
-      // Offsets inside `inner` to insert or delete, keeping the same text selected.
-      const changeInner = (edits: { start: number; end: number; text: string }[], message: string) => {
-        if (text) preview.selectTextAfterUpdate({ start: text.start, end: text.end });
-        change(edits.map((edit) => ({ ...edit, start: range.tag.end + edit.start, end: range.tag.end + edit.end })), node, message);
-      };
-      let pressed: boolean;
-      let action: () => void;
-      if (text) {
-        // Selected text: wrap just that range, or unwrap the wrapper it sits in.
-        const enclosing = text.wrappers.find((name) => format.also.includes(name));
-        pressed = Boolean(enclosing);
-        action = () => {
-          if (enclosing) {
-            const wrapper = wrapperAround(inner, text.start, format.also);
-            if (!wrapper?.close) { announce(`${format.name} could not be removed here.`); return; }
-            changeInner([
-              { start: wrapper.tag.start, end: wrapper.tag.end, text: "" },
-              { start: wrapper.close.start, end: wrapper.close.end, text: "" },
-            ], `${format.name} off`);
-            return;
-          }
-          const span = textRangeInSource(inner, text.start, text.end, text.text);
-          if (!span) { announce(`Select text within one element to make it ${format.name.toLowerCase()}.`); return; }
-          changeInner([
-            { start: span.start, end: span.start, text: `<${format.tag}>` },
-            { start: span.end, end: span.end, text: `</${format.tag}>` },
-          ], `${format.name} on`);
-        };
-      } else {
-        // No text selected: the whole element's content.
-        const wrapper = wholeWrapper(inner, format.also);
-        pressed = Boolean(wrapper);
-        action = () => wrapper
-          ? changeInner([
-            { start: wrapper.open, end: wrapper.openEnd, text: "" },
-            { start: wrapper.closeAt, end: wrapper.closeEnd, text: "" },
-          ], `${format.name} off`)
-          : changeInner([
-            { start: 0, end: 0, text: `<${format.tag}>` },
-            { start: inner.length, end: inner.length, text: `</${format.tag}>` },
-          ], `${format.name} on`);
-      }
-      nativeFormatActions[format.tag] = action;
-      controls.push({
-        kind: "button",
-        label: format.label,
-        ariaLabel: format.name,
-        title: `${format.name} (Ctrl+${format.label})`,
-        pressed,
-        className: `edit-bar__format edit-bar__format--${format.tag}`,
-        onPress: action,
-      });
-    }
-    // Link: selected text in a text element that is not in a link already is
-    // wrapped in `<a href="">` (the Address then opens for it); selected text
-    // inside a link gets that link's Address and Remove link below.
-    if (node && selection.link === undefined && nativeLinkParents.has(selection.tag)) {
-      const span = text ? textRangeInSource(inner, text.start, text.end, text.text) : undefined;
-      const around = text && span ? wrapperAround(inner, text.start, ["a"]) : undefined;
-      const inLink = around?.close && span && span.start >= around.tag.end && span.end <= around.close.start ? around : undefined;
-      // The caret in a link: the link on either side of it.
-      const caretLink = caret ? wrapperAround(inner, caret.start, ["a"]) ?? (caret.start > 0 ? wrapperAround(inner, caret.start - 1, ["a"]) : undefined) : undefined;
-      const found = inLink ?? caretLink;
-      const at = found ? elementPathAt(inner, found.tag.start) : undefined;
-      if ((text || caret) && at) {
-        textLink = { node: [...node, ...at], text: (text ?? caret)! };
-      } else if (text) {
-        const wrap = linkWrapEdit(inner, text.start, text.end, text.text);
-        const linkIt = () => {
-          if (!("edit" in wrap)) {
-            announce(wrap.refused === "nested" ? "The selection already holds a link." : "Select text within one element to link it.");
-            return;
-          }
-          const next = inner.slice(0, wrap.edit.start) + wrap.edit.text + inner.slice(wrap.edit.end);
-          const within = elementPathAt(next, wrap.link);
-          if (!within) { announce("Select text within one element to link it."); return; }
-          const start = range.tag.end + wrap.edit.start;
-          const end = range.tag.end + wrap.edit.end;
-          // One undo group from the wrap through the address typed for it.
-          nativeNewLink = { path, node, link: [...node, ...within], text: { start: text.start, end: text.end } };
-          preview.selectTextAfterUpdate({ start: text.start, end: text.end });
-          preview.selectAfterUpdate({ path, node });
-          try {
-            editor.closeActiveEditGroup(path);
-            editor.replaceActiveRange({ path, start, end, text: wrap.edit.text, expected: source.slice(start, end) }, true);
-            announce("Link added");
-          } catch (error) {
-            nativeNewLink = undefined;
-            preview.selectAfterUpdate(undefined);
-            preview.selectTextAfterUpdate(undefined);
-            errorMessage(error);
-          }
-        };
-        nativeFormatActions.link = linkIt;
-        // No button where it cannot apply (a span cutting through a tag, or
-        // holding a link); Ctrl/⌘+K there says why.
-        if ("edit" in wrap) controls.push({ kind: "button", icon: "link", label: "Link", title: "Link (Ctrl+K)", onPress: linkIt });
-      } else {
-        nativeFormatActions.link = () => announce("Select the text to link first.");
-      }
-    }
-  }
-  // Edits sorted by position, as one undo step.
-  const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
-  const attribute = (name: string) => (range ? startTagAttribute(source, range.tag, name) : undefined);
-  // Links: the selected link, or the nearest link around the selection in
-  // this file, takes an address as it is typed: a page of the site picked
-  // from the suggestions, or any address. Each keystroke rewrites the href
-  // from the source as it is now, in one undo step until the field closes.
-  // (Ctrl/⌘+click in the preview follows a link.)
-  // A live edit from an address field: each keystroke rewrites attributes on
-  // the element at `target` (found again in the source as it is now), grouped
-  // into one undo step until the field closes.
-  const live = (target: number[], tagName: string, build: (latest: string, tag: StartTag) => { start: number; end: number; text: string }[], message: string) => {
-    if (!node || !currentMaster()) return;
-    const latest = nativeEditableSource(path) ?? "";
-    const tag = locateNativeElementRange(latest, target)?.tag;
-    if (!tag || tag.name !== tagName) { announce("The element could not be found in the source."); return; }
-    preview.selectAfterUpdate({ path, node });
-    try {
-      // Later edits first, so earlier offsets stay valid.
-      const built = ordered(build(latest, tag));
-      for (const edit of built.reverse())
-        editor.replaceActiveRange({ path, ...edit, expected: latest.slice(edit.start, edit.end) }, true);
-      announce(message);
-    } catch (error) {
-      preview.selectAfterUpdate(undefined);
-      errorMessage(error);
-    }
-  };
-  const textLinkRange = textLink ? locateNativeElementRange(source, textLink.node) : undefined;
-  const link = selection.link !== undefined && node ? nearestLink(source, node, range)
-    : textLink && textLinkRange?.tag.name === "a" ? { range: textLinkRange, node: textLink.node } : undefined;
-  if (link && node && nativeSite) {
-    const href = startTagAttribute(source, link.range.tag, "href");
-    const current = href?.value.trim() ?? "";
-    const site = nativeSite;
-    // The link just made: its Address opens now, once.
-    const fresh = nativeNewLink && nativeNewLink.path === path && nativeNewLink.link.join(".") === link.node.join(".") ? nativeNewLink : undefined;
-    const open = Boolean(fresh && !fresh.shown);
-    if (fresh) fresh.shown = true;
-    // Text selected in the link stays selected while the address is typed.
-    const keepText = textLink?.text;
-    controls.push({
-      kind: "address",
-      icon: "link",
-      label: "Address",
-      warning: current ? undefined : "No address",
-      value: href?.value ?? "",
-      placeholder: "Page or web address",
-      suggestions: nativeLinkSuggestions(Object.keys(site.routes), (route) => nativeRouteInfo(route).title),
-      open,
-      // Beside the address: a new tab (target and rel) and an optional title.
-      extras: [
-        { kind: "checkbox", label: "Open in new tab", checked: opensInNewTab(source, link.range.tag), onChange: (on) => {
-          if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
-          live(link.node, "a", (latest, tag) => [newTabEdit(latest, tag, on)], on ? "Link opens in a new tab" : "Link opens in the same tab");
-        } },
-        { kind: "text", label: "Title (optional)", value: startTagAttribute(source, link.range.tag, "title")?.value ?? "", placeholder: "Shown when the pointer rests on the link", onInput: (value) => {
-          if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
-          live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "title", value || undefined)], value ? "Link title changed" : "Link title removed");
-        } },
-      ],
-      onInput: (value) => {
-        if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
-        live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", value)], "Link changed");
-      },
-      onClose: () => {
-        editor.closeActiveEditGroup(path);
-        if (fresh && nativeNewLink === fresh) removeEmptyNewLink(fresh);
-      },
-    });
-    // Remove link: a link inside a text element (the one the selected text
-    // sits in, or the selected link itself) loses its tags, keeping its text
-    // and formatting, as one undo step.
-    const parent = link.node.length > 1 ? locateNativeElementRange(source, link.node.slice(0, -1)) : undefined;
-    const unwrap = link.range.tag.name === "a" && parent && nativeLinkParents.has(parent.tag.name) ? unwrapEdits(link.range) : undefined;
-    if (unwrap) {
-      const inText = Boolean(textLink);
-      controls.push({
-        kind: "button",
-        icon: "unlink",
-        label: "Remove link",
-        onPress: () => {
-          if (inText && keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
-          change(unwrap, inText ? node : link.node.slice(0, -1), "Link removed");
-        },
-      });
-    }
-  }
-  // Native media and form attributes use the same guarded source controls.
-  if (range && node) {
-    const fields = nativeElementFields(source, range.tag);
-    const scope = draftScope(), epoch = generation, scopeKey = setupScope();
-    let expectedSource = source;
-    let model = scope && editor.captureFileModelState(scope, path);
-    const writeField = (property: string, value: string, grouped: boolean) => {
-      const key = `${path}:${node.join(".")}:${property}`;
-      const state = grouped ? nativeAttributeFieldSession : model && { key, path, source: expectedSource, model, epoch, scope: scopeKey };
-      if (!scope || !state || state.key !== key || !state.model.isCurrent() || generation !== state.epoch || setupScope() !== state.scope || versionView ||
-          appStore.selection.value?.path !== path || appStore.selection.value.node?.join(".") !== node.join(".") || nativeEffectiveSource(path) !== state.source) {
-        announce("The source or selection changed. Select the element again before editing its fields."); return;
-      }
-      const tag = locateNativeElementRange(state.source, node)?.tag;
-      if (!tag || tag.name !== range.tag.name) { announce("The selected element changed."); return; }
-      const located = locateNativeFieldElement(state.source, tag);
-      if ("error" in located) { announce(located.error); return; }
-      const result = nativeElementAttributeEdits(state.source, located, { [property]: value });
-      if ("error" in result) { announce(result.error); return; }
-      if (!result.edits.length) return;
-      const edit = result.edits[0];
-      const next = state.source.slice(0, edit.start) + edit.text + state.source.slice(edit.end);
-      preview.selectAfterUpdate({ path, node });
-      try {
-        editor.replaceActiveRange({ path, ...edit, expected: state.source.slice(edit.start, edit.end) }, grouped);
-        if (generation !== epoch || setupScope() !== scopeKey || nativeEffectiveSource(path) !== next) throw new Error("The source changed while applying this field.");
-        expectedSource = next;
-        model = editor.captureFileModelState(scope, path);
-        state.source = next;
-        state.model = model;
-        announce(`${fields.find(field => field.property === property)?.label ?? property} changed`);
-      } catch (error) { preview.selectAfterUpdate(undefined); errorMessage(error); }
-    };
-    for (const field of fields) {
-      if (field.kind === "choice") controls.push({ kind: "select", label: field.label, value: field.value,
-        options: [...(field.options ?? [])], onChange: value => writeField(field.property, value, false) });
-      else controls.push({ kind: "address", label: field.label, value: field.value,
-        // A button with no name of its own (no text, label, labelledby, title or image alt) is unnamed.
-        warning: selection.tag === "button" && field.property === "aria-label" && !field.value.trim() && !selection.text.trim() && !attribute("aria-labelledby")?.value.trim()
-          && !attribute("title")?.value.trim() && !(range && nativeNamedDescendant(source, range)) ? "Needs a name" : undefined,
-        placeholder: field.kind === "url" ? "Local path or web address" : field.label,
-        onOpen: () => { if (model) nativeAttributeFieldSession = { key: `${path}:${node.join(".")}:${field.property}`, path, source: expectedSource, model, epoch, scope: scopeKey }; },
-        onInput: value => writeField(field.property, value, true), onClose: () => {
-          editor.closeActiveEditGroup(nativeAttributeFieldSession?.path ?? path);
-          nativeAttributeFieldSession = undefined;
-        } });
-    }
-  }
-  // Heading levels that skip (H2 to H4): one press puts the heading in order.
-  if (range && /^h[2-6]$/.test(selection.tag) && range.close && range.tag.name === selection.tag) {
-    const level = Number(selection.tag[1]);
-    const previous = previousHeadingLevel(source, range.tag.start);
-    if (previous > 0 && level > previous + 1) {
-      const close = range.close;
-      const fixed = `h${previous + 1}`;
-      controls.push({
-        kind: "button",
-        label: `Use ${fixed.toUpperCase()}`,
-        title: `Heading levels skip from H${previous} to H${level}; the next level after H${previous} is H${previous + 1}.`,
-        className: "edit-bar__warning",
-        onPress: () => change([
-          { start: range.tag.start + 1, end: range.tag.nameEnd, text: fixed },
-          { start: close.start + 2, end: close.start + 2 + 2, text: fixed },
-        ], node, `Heading level ${fixed.toUpperCase()}`),
-      });
-    }
-  }
-  // Images use the media chooser and native alternative text.
-  if (range && selection.tag === "img") {
-    const tag = range.tag;
-    const src = attribute("src");
-    const alt = attribute("alt");
-    controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node && currentMaster()) void chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
-    // Alt text applies as typed; opening with no alt written applies the
-    // file's name at once; emptied, the image is decorative (alt="").
-    controls.push({
-      kind: "address",
-      label: "Alt text",
-      // No file at all comes first; only an image that shows something needs its alt text.
-      warning: !src?.value.trim() && !attribute("srcset")?.value.trim() && !(node && nativePictureSources(source, node)) ? "No image" : alt ? undefined : "Alt text missing",
-      value: alt?.value ?? "",
-      initial: alt ? undefined : altFromPath(src?.value ?? ""),
-      placeholder: "What the image shows; empty for decorative",
-      onInput: (value) => { if (node) live(node, "img", (latest, tag) => [setAttributeEdit(latest, tag, "alt", value)], value ? "Alt text updated" : "Image marked decorative"); },
-      onClose: () => editor.closeActiveEditGroup(path),
-    });
-  }
-  // Empty links need an accessible name. Buttons expose the native accessible
-  // label field above, alongside their separate form submission name.
-  if (range && selection.tag === "a" && !selection.text.trim() && !attribute("aria-label")) {
-    controls.push({
-      kind: "address",
-      label: "Name",
-      warning: "Needs a name",
-      value: "",
-      placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} does`,
-      onInput: (value) => { if (node) live(node, selection.tag, (latest, tag) => [setAttributeEdit(latest, tag, "aria-label", value || undefined)], value ? "Name added" : "Name removed"); },
-      onClose: () => editor.closeActiveEditGroup(path),
-    });
-  }
-  if (range?.close && ["section", "nav", "aside"].includes(selection.tag)) {
-    const label = attribute("aria-label");
-    const hasHeading = /<h[1-6][\s>]/i.test(source.slice(range.tag.end, range.close.start));
-    controls.push({
-      kind: "address",
-      label: "Label",
-      warning: !label && !hasHeading ? "No heading or label" : undefined,
-      value: label?.value ?? "",
-      placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} is about`,
-      onInput: (value) => { if (node) live(node, selection.tag, (latest, tag) => [setAttributeEdit(latest, tag, "aria-label", value || undefined)], value ? "Label updated" : "Label removed"); },
-      onClose: () => editor.closeActiveEditGroup(path),
-    });
-  }
-  // Whole sections (a <section> or a section component) move, duplicate and
-  // remove from icon buttons always in the bar, as one undo step each.
-  // Nothing else can be removed this way. Alt+Up/Down move the section too,
-  // from the bar, the preview or the page structure (`moveNativeSection`),
-  // as do plain Up/Down on the bar's grip, whose drag moves it in the page.
-  let onMove: EditBarModel["onMove"];
-  let draggable = false;
-  if (range && node && isNativeSectionTag(selection.tag) && !inMaster) {
-    const parent = node.slice(0, -1);
-    const index = node[node.length - 1];
-    const before = index > 0 ? locateNativeElementRange(source, [...parent, index - 1]) : undefined;
-    const after = locateNativeElementRange(source, [...parent, index + 1]);
-    // Only the source this selection was painted from moves; a newer one, or another selection, refuses.
-    const proof = selection.paintedSource === source ? sectionMoveProof(source, node, true) : undefined;
-    const move = (direction: "up" | "down") => proof ? moveNativeSection(selection, direction, proof) : (announce(SECTION_MOVE_STALE), "stayed" as const);
-    onMove = move;
-    draggable = true;
-    controls.push({
-      kind: "button",
-      icon: "up",
-      label: "Move up",
-      disabled: !before,
-      onPress: () => move("up"),
-    });
-    controls.push({
-      kind: "button",
-      icon: "down",
-      label: "Move down",
-      disabled: !after,
-      onPress: () => move("down"),
-    });
-    controls.push({
-      kind: "button",
-      icon: "duplicate",
-      label: "Duplicate",
-      onPress: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
-    });
-    controls.push({
-      kind: "button",
-      icon: "remove",
-      label: "Remove",
-      // The previous sibling is selected next, else the next one, which takes this index.
-      onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : after ? node : undefined, `${kind} removed`),
-    });
-  }
-  // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
-  // Only a whole section moves from the bar or the keyboard (Lex: "remove
-  // this on not the sections"), so a card's own move arrows are left out and
-  // no element move is offered here; the page structure still moves rows.
-  if (cards && !isNativeSectionTag(selection.tag) && !inMaster) {
-    controls.push(...cards.controls(selection, source).filter((control) =>
-      !(control.kind === "button" && (control.icon === "up" || control.icon === "down" || control.icon === "left" || control.icon === "right"))));
-  }
-  nativeElementMoveAction = onMove;
-  // Edit component, Make component… (src/page-builder/components.ts).
-  if (componentTools && !inMaster) controls.push(...componentTools.controls(selection));
-  // Ask agent: a request about this element for a connected agent, pinned on it.
-  const menu = agentController.captureAsk();
-  if (node && menu?.connected() && nativeSite) {
-    const site = nativeSite;
-    controls.push({
-      kind: "prompt",
-      label: "Ask agent",
-      placeholder: "Ask the agent…",
-      maxLength: REQUEST_TEXT_LIMIT,
-      onSend: async (text) => {
-        const about = agentElement({ ...selection, route: preview.route() }, site, nativeSources()[path]);
-        if (!about) return "This element cannot be pointed out to an agent.";
-        try {
-          await menu.ask(text, about);
-        } catch (error) {
-          return (error as Error).message;
-        }
-        announce("Sent to the agent");
-        return undefined;
-      },
-    });
-  }
-  const master = inMaster ? activeMaster()?.context : undefined;
-  const masterRoot = Boolean(master && node?.length === 1);
-  const model: EditBarModel = {
-    origin: { path, source, revision: `${setupScope()}:${generation}`, node: node?.slice() },
-    kind: masterRoot ? master!.label : kind, controls, onFormat: (format) => nativeFormatActions[format]?.(),
-    onMove: inMaster ? undefined : onMove, draggable: inMaster ? false : draggable,
-    ...(inMaster ? {} : { ...componentTools?.identity(selection), ...nativeMasterIdentity(selection) }),
-    // Inside the master: "Intro › Heading", the chip selecting the master's section.
-    ...(master && !masterRoot ? { context: { label: master.label, title: `In the ${master.label} master: select its section`, onSelect: () => { if (currentMaster()) nativePreview?.selectNode({ path, node: [0] }); } } } : {}),
-  };
-  // A child of a linked page copy, outside any master: "Shared hero › Heading", the chip selecting
-  // that copy's root. Never set over an identity's own context; the child gets no Edit from it.
-  if (!inMaster && !model.context && node && node.length > 1) {
-    const linked = nativeLinkedAncestor(path, source, node);
-    if (linked) {
-      const scope = draftScope(), proof = scope && editorModule?.captureFileModelState(scope, path), epoch = generation, scopeKey = setupScope();
-      model.context = { label: linked.label, title: `In a linked copy of ${linked.label}: select it`, onSelect: () => {
-        if (proof?.isCurrent() && epoch === generation && scopeKey === setupScope() && appStore.openFile.value === path && nativeEffectiveSource(path) === source) nativePreview?.selectNode({ path, node: linked.node });
-        else announce("The page changed. Select the element again.");
-      } };
-    }
-  }
-  nativeEditBarModel = model;
-  preview.showEditBar(model, rect, previewSelection.textSelection());
-  componentTools?.show(selection);
+const pageStructureController = createPageStructureController({
+  get nativePreview() { return nativePreview; },
+  get editorModule() { return editorModule; },
+  get appStore() { return appStore; },
+  get componentTools() { return componentTools; },
+  get nativeEditableSource() { return nativeEditableSource; },
+  get nativeOpenMaster() { return nativeOpenMaster; },
+  get nativeSite() { return nativeSite; },
+  get element() { return element; },
+  get generation() { return generation; },
+  get setupScope() { return setupScope; },
+  get draftScope() { return draftScope; },
+  get openNativeNavigation() { return openNativeNavigation; },
+  get nativeSources() { return nativeSources; },
+  get nativePageStyles() { return nativePageStyles; },
+  get nativeTextTags() { return nativeTextTags; },
+  get previewSelection() { return previewSelection; },
+  get wholeWrapper() { return wholeWrapper; },
+  get nativeLinkParents() { return nativeLinkParents; },
+  get errorMessage() { return errorMessage; },
+  get nearestLink() { return nearestLink; },
+  get nativeRouteInfo() { return nativeRouteInfo; },
+  get versionView() { return versionView; },
+  get nativeEffectiveSource() { return nativeEffectiveSource; },
+  get nativeNamedDescendant() { return nativeNamedDescendant; },
+  get chooseMediaForImage() { return chooseMediaForImage; },
+  get nativePictureSources() { return nativePictureSources; },
+  get cards() { return cards; },
+  get agentController() { return agentController; },
+  get activeMaster() { return activeMaster; },
+  get nativeMasterIdentity() { return nativeMasterIdentity; },
+  get isPrivateMasterPath() { return isPrivateMasterPath; },
+  get announce() { return announce; },
+  get nativeMasterEdit() { return nativeMasterEdit; },
+  get restoreFile() { return restoreFile; },
+  get updateNativePreviewSources() { return updateNativePreviewSources; },
+  get nativeEditableTemplatePath() { return nativeEditableTemplatePath; },
+  get applyNativeOperation() { return applyNativeOperation; },
+  get nativePageLabelOf() { return nativePageLabelOf; },
+  get nativeShownStructure() { return nativeShownStructure; },
+  get pageStructure() { return pageStructure; },
+  get masterRevision() { return masterRevision; },
+  get nativeMasterSelection() { return nativeMasterSelection; },
+  get pagePartController() { return pagePartController; },
+  get masterController() { return masterController; },
+  get runMasterEdit() { return runMasterEdit; },
+  get nativeTextIndexed() { return nativeTextIndexed; },
+  get nativeSharedCatalogs() { return nativeSharedCatalogs; },
+  get nativeFiles() { return nativeFiles; },
+  get locateNativeElementRange() { return locateNativeElementRange; },
+  get startTagAttribute() { return startTagAttribute; },
+  get elementPathAt() { return elementPathAt; },
+  get textRangeInSource() { return textRangeInSource; },
+  get wrapperAround() { return wrapperAround; },
+});
+function renderNativeEditBar(...args: Parameters<typeof pageStructureController.renderNativeEditBar>) {
+  return pageStructureController.renderNativeEditBar(...args);
 }
 
-// The Address of a link just made closed with no address: the link goes
-// again, by undoing its undo group (the wrap and anything typed), so the
-// source is as it was before Link and no empty undo step is left behind.
-function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
-  nativeNewLink = undefined;
-  const editor = editorModule;
-  const latest = nativeEditableSource(fresh.path) ?? "";
-  const found = locateNativeElementRange(latest, fresh.link);
-  if (!editor || found?.tag.name !== "a" || startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
-  const selected = appStore.selection.value?.path === fresh.path && appStore.selection.value.node?.join(".") === fresh.node.join(".");
-  if (selected) nativePreview?.selectTextAfterUpdate(fresh.text);
-  void editor.runVisualHistory("undo", fresh.path).then((undone) => {
-    element("status").textContent = undone ? "Empty link removed" : "The empty link could not be removed; undo removes it.";
-  });
+function applyNativeChange(...args: Parameters<typeof pageStructureController.applyNativeChange>) {
+  return pageStructureController.applyNativeChange(...args);
+}
+function isNativeSectionTag(...args: Parameters<typeof pageStructureController.isNativeSectionTag>) {
+  return pageStructureController.isNativeSectionTag(...args);
+}
+function sectionMoveProof(...args: Parameters<typeof pageStructureController.sectionMoveProof>) {
+  return pageStructureController.sectionMoveProof(...args);
+}
+function moveNativeSection(...args: Parameters<typeof pageStructureController.moveNativeSection>) {
+  return pageStructureController.moveNativeSection(...args);
+}
+function moveNativeSectionAfterOpening(...args: Parameters<typeof pageStructureController.moveNativeSectionAfterOpening>) {
+  return pageStructureController.moveNativeSectionAfterOpening(...args);
+}
+function moveNativeSectionTo(...args: Parameters<typeof pageStructureController.moveNativeSectionTo>) {
+  return pageStructureController.moveNativeSectionTo(...args);
+}
+function applyNativeTextEdit(...args: Parameters<typeof pageStructureController.applyNativeTextEdit>) {
+  return pageStructureController.applyNativeTextEdit(...args);
 }
 
-// `next` is the element to select once the preview has rendered it.
-function applyNativeChange(path: string, source: string, edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) {
-  const preview = nativePreview;
-  const editor = editorModule;
-  if (!preview || !editor) return false;
-  // A master file is written only as the open file of its live session (a control from a closed
-  // session, or for another file, writes nothing).
-  if (isPrivateMasterPath(path) && nativeOpenMaster()?.masterPath !== path) {
-    announce("That master is no longer open. Choose Edit on the section again.");
-    return false;
-  }
-  if (nativeEditableSource(path) !== source) {
-    announce("The source changed. Select the element again and try again.");
-    return false;
-  }
-  preview.selectAfterUpdate(next ? { path, node: next } : undefined);
-  try {
-    editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
-    element("status").textContent = message;
-    return true;
-  } catch (error) {
-    preview.selectAfterUpdate(undefined);
-    errorMessage(error);
-    return false;
-  }
+function renderNativeShownStructure(...args: Parameters<typeof pageStructureController.renderNativeShownStructure>) {
+  return pageStructureController.renderNativeShownStructure(...args);
 }
-
-// A whole section: a <section>, or a component whose template is one.
-function isNativeSectionTag(tag: string) {
-  return tag === "section" || (tag.includes("-") && isSectionTemplate(nativeSources()[nativeSite?.components[tag] ?? ""] ?? ""));
+function nativeStructureEdit(...args: Parameters<typeof pageStructureController.nativeStructureEdit>) {
+  return pageStructureController.nativeStructureEdit(...args);
 }
-
-// Moves a whole section one sibling position, as one undo step, keeping it
-// selected: the Move up/down buttons and Alt+Up/Down from the bar, the
-// preview and the page structure all come here. "stayed" at the first or
-// last position; nothing for anything but a section, when the page is not
-// the mounted file, or when the edit could not be made.
-// What a section move was offered against: the exact source painted for it,
-// the setup it was painted in, and (from the bar) the selection it was for.
-type SectionMoveProof = { source: string; epoch: number; scope: ReturnType<typeof setupScope>; node: readonly number[]; model?: { isCurrent(): boolean }; selected: boolean };
-const SECTION_MOVE_STALE = "The source or selection changed. Select the section again before moving it.";
-
-function sectionMoveProof(source: string, node: readonly number[], selected: boolean): SectionMoveProof {
-  const scope = draftScope();
-  return { source, epoch: generation, scope: setupScope(), node: [...node], selected,
-    model: scope && editorModule ? editorModule.captureFileModelState(scope, appStore.openFile.value ?? "") : undefined };
+function nativeLinkedAncestor(...args: Parameters<typeof pageStructureController.nativeLinkedAncestor>) {
+  return pageStructureController.nativeLinkedAncestor(...args);
 }
-
-function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down", proof: SectionMoveProof): "moved" | "stayed" | undefined {
-  const { path, node } = target;
-  if (!path || !node?.length || appStore.openFile.value !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-  const selected = appStore.selection.value;
-  if (proof.epoch !== generation || proof.scope !== setupScope() || versionView || nativeSources()[path] !== proof.source
-    || proof.node.join(".") !== node.join(".") || (proof.model && !proof.model.isCurrent())
-    || (proof.selected && (selected?.path !== path || selected.node?.join(".") !== node.join(".")))) {
-    announce(SECTION_MOVE_STALE); return "stayed";
-  }
-  const source = proof.source;
-  const range = locateNativeElementRange(source, node);
-  if (!range) return undefined;
-  const parent = node.slice(0, -1);
-  const index = node[node.length - 1] + (direction === "up" ? -1 : 1);
-  const other = index >= 0 ? locateNativeElementRange(source, [...parent, index]) : undefined;
-  if (!other) return "stayed";
-  const edits = direction === "up" ? swapEdits(source, other, range) : swapEdits(source, range, other);
-  return applyNativeChange(path, source, edits, [...parent, index], direction === "up" ? "Moved up" : "Moved down") ? "moved" : undefined;
-}
-
-// Alt+Up/Down on a page structure row while another file is open (a
-// component chosen in the preview, a file from the explorer): the page
-// file opens first, as an insert does, then the section moves. A move that
-// still cannot be made is said so rather than passed off as the end of the
-// list.
-async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
-  // Never while a master is on show: opening the page would end it.
-  if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return; }
-  const epoch = generation, scope = setupScope(), draft = draftScope();
-  const cachedModel = draft ? editorModule?.captureFileModelState(draft, target.path, true) : undefined;
-  await restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === generation && scope === setupScope() && nativeEffectiveSource(target.path) === paintedSource && !nativeMasterEdit() });
-  if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return; }
-  if (epoch !== generation || scope !== setupScope() || appStore.openFile.value !== target.path || nativeEffectiveSource(target.path) !== paintedSource) {
-    if (epoch !== generation || scope !== setupScope()) return;
-    if (draft && nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !editorModule?.isMounted(target.path)) editorModule?.forgetDraftModel(draft, target.path);
-    updateNativePreviewSources();
-    announce("The source changed while its editor opened. Select the section again before moving it."); return;
-  }
-  if (!moveNativeSection(target, direction, sectionMoveProof(paintedSource, target.node, false))) element("status").textContent = "The section could not be moved";
-}
-
-// Moves a whole section to another gap among its siblings (`index` counted
-// as the insert points are: before the sibling at that index, or the count
-// for the end), as one undo step, keeping it selected: a drag in the page
-// structure or the canvas ends here. "stayed" when the gap is the one the
-// section already fills (announced, nothing recorded); nothing for another
-// parent, for anything but a section, or when the ranges cannot be told.
-function moveNativeSectionTo(target: { path: string; node?: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined {
-  const { path, node } = target;
-  if (!path || !node?.length || appStore.openFile.value !== path || !editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-  const own = node.slice(0, -1);
-  if (own.length !== parent.length || own.some((step, at) => step !== parent[at])) return undefined;
-  const source = nativeSources()[path] ?? "";
-  const range = locateNativeElementRange(source, node);
-  if (!range) return undefined;
-  const from = node[node.length - 1];
-  if (index === from || index === from + 1) {
-    element("status").textContent = "Section stayed in place";
-    return "stayed";
-  }
-  const edits = moveEdit(source, range, from, index, (at) => locateNativeElementRange(source, [...parent, at]));
-  if (!edits.length) return undefined;
-  return applyNativeChange(path, source, edits, [...parent, index > from ? index - 1 : index], "Section moved") ? "moved" : undefined;
-}
-
-// Writes text typed into a preview element into its source, as one undo
-// step: only the changed stretch of text is replaced, so formatting around
-// it stays. A change that cannot be placed exactly (it crosses a tag) is
-// dropped and the preview shows the source again.
-// The edit goes into the page's draft (the source editor's store) at once,
-// Monaco or not. Text edits apply one at a time, in the order they were
-// typed: while the page's file is still being read, a later commit (A→AB,
-// then AB→ABC) waits for the earlier one instead of racing it.
-let nativeTextEditQueue: Promise<void> = Promise.resolve();
-function applyNativeTextEdit(edit: NativeTextEdit) {
-  const run = prepareNativeTextEdit(edit);
-  if (!run) return Promise.resolve();
-  const next = nativeTextEditQueue.then(run, run);
-  nativeTextEditQueue = next.catch(() => {});
-  return next;
-}
-// The source edit for text typed in the preview: only the changed stretch,
-// placed inside the element's own content. Undefined when it cannot be placed.
-function nativeTextSourceEdit(source: string, node: NativeTextEdit["node"], before: string, after: string) {
-  const range = locateNativeElementRange(source, node);
-  // Common prefix and suffix; the rest of `before` becomes the rest of `after`.
-  let start = 0;
-  while (start < before.length && start < after.length && before[start] === after[start]) start++;
-  let endBefore = before.length;
-  let endAfter = after.length;
-  while (endBefore > start && endAfter > start && before[endBefore - 1] === after[endAfter - 1]) {
-    endBefore--;
-    endAfter--;
-  }
-  // A pure insertion takes one neighbouring character along, so the source
-  // range is never empty and lands beside that character.
-  if (endBefore === start) {
-    if (start > 0) start--;
-    else { endBefore++; endAfter++; }
-  }
-  const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
-  const span = inner !== undefined ? textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
-  if (!range || !span) return undefined;
-  // Typed spaces arrive as no-break spaces where the browser needs them to stay visible.
-  const text = after.slice(start, endAfter).replace(/\u00a0/g, " ")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
-}
-function prepareNativeTextEdit({ path, node, before, after, masterSession }: NativeTextEdit) {
-  if (!nativePreview) return undefined;
-  const openingEpoch = generation, openingScope = setupScope();
-  // While a master is on show, only text typed in that very session's master is taken; it is
-  // the open file, with the bytes the preview painted. Page text is read-only meanwhile.
-  const masterAt = nativeMasterEdit();
-  const masterPainted = masterAt ? nativeEffectiveSource(masterAt.masterPath) : undefined;
-  // Pinned through every await: the same session, and the master still exactly as painted
-  // (never a fresher source blessing an older edit).
-  const masterAllowed = () => {
-    const now = nativeMasterEdit();
-    return Boolean(masterAt && now && masterSession === masterAt.session && now.session === masterAt.session
-      && path === now.masterPath && appStore.openFile.value === path && !versionView && nativeEffectiveSource(path) === masterPainted);
-  };
-  // A page edit stays a page edit only while no master is on show, checked live: a master opened
-  // meanwhile refuses it, and it can neither write the page nor leave the master.
-  const allowed = () => openingEpoch === generation && openingScope === setupScope() && (masterAt || masterSession !== undefined
-    ? masterAllowed()
-    : !nativeMasterEdit() && (path === nativeSite?.routes[nativePreview?.route() ?? ""] || path === nativeEditableTemplatePath()));
-  if (!allowed() || masterAt && masterPainted !== masterAt.masterSource) {
-    announce(masterAt || masterSession !== undefined ? "While the master is open, edit the master's section; choose Done to edit the page." : "Edit the page instance in Structure, or choose Edit for its shared template.");
-    updateNativePreviewSources();
-    return undefined;
-  }
-  // A page's text committed before its file was mounted, whose page was then
-  // left (another page opened): it goes into that page's draft as one
-  // operation rather than being lost. Same account, repository and branch
-  // only, never a master's.
-  const page = !masterAt && masterSession === undefined && Boolean(nativeSite && Object.values(nativeSite.routes).includes(path));
-  const draftLeftPage = async () => {
-    if (!page || versionView || openingEpoch !== generation || openingScope !== setupScope()) return;
-    // Back on the page meanwhile: the edit goes in there.
-    if (appStore.openFile.value === path && editorModule.isMounted(path) && allowed()) { applyInEditor(); return; }
-    const source = nativeEffectiveSource(path);
-    const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, before, after);
-    if (source === undefined || !edit) { errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time.")); return; }
-    const problem = await applyNativeOperation({
-      expectedSources: new Map([[path, source]]),
-      edits: new Map([[path, source.slice(0, edit.start) + edit.text + source.slice(edit.end)]]),
-      done: `Text changed on ${nativePageLabelOf(path)}.`,
-      undone: `Undid the text change on ${nativePageLabelOf(path)}.`,
-    });
-    if (problem) errorMessage(new Error(problem));
-  };
-  return async () => {
-  // The click that selected the element may still be opening its file.
-  for (let waited = 0; appStore.openFile.value === path && !editorModule?.isMounted(path) && waited < 10_000 && allowed(); waited += 50)
-    await new Promise((done) => setTimeout(done, 50));
-  if (!allowed()) { await draftLeftPage(); return; }
-  if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) {
-    const epoch = generation;
-    await restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: allowed });
-    if (epoch === generation && !allowed()) { await draftLeftPage(); return; }
-    if (epoch !== generation || appStore.openFile.value !== path || !editorModule?.isMounted(path) || !allowed()) return;
-  }
-  applyInEditor();
-  };
-  function applyInEditor() {
-  const editor = editorModule;
-  const preview = nativePreview;
-  if (!editor || !preview || !allowed()) return;
-  const source = (masterAt ? nativeEffectiveSource(path) : nativeSources()[path]) ?? "";
-  const edit = nativeTextSourceEdit(source, node, before, after);
-  if (!edit) {
-    preview.refresh();
-    errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time."));
-    return;
-  }
-  preview.selectAfterUpdate({ path, node });
-  try {
-    editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
-    element("status").textContent = "Text changed";
-  } catch (error) {
-    preview.selectAfterUpdate(undefined);
-    preview.refresh();
-    errorMessage(error);
-  }
-  }
+function repaintNativeStructure(...args: Parameters<typeof pageStructureController.repaintNativeStructure>) {
+  return pageStructureController.repaintNativeStructure(...args);
 }
 
 // Components that fit between page sections: those whose template is a
@@ -2841,56 +2168,6 @@ async function nativeSharedDisconnect(current: () => boolean, plan: () => { oper
   updateNativePreviewSources();
   renderNativeShownStructure();
 }
-function renderNativeShownStructure() {
-  if (nativeShownStructure) pageStructure?.update(nativeShownStructure);
-}
-// Structure's Edit selects nothing by itself: it asks the preview for a real selection of the
-// root, waits for that selection as painted, and only then opens the master from it.
-async function nativeStructureEdit(path: string, node: number[], painted: string, part: boolean) {
-  const scope = draftScope(), revision = masterRevision();
-  const refuse = () => announce("The page changed. Select the element again.");
-  if (!scope || !editorModule || !nativePreview || nativeMasterEdit() || appStore.openFile.value !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
-  // The page model as Edit was pressed: the same proof is checked after the selection, never retaken.
-  const proof = editorModule.captureFileModelState(scope, path, true);
-  const selected = previewSelection.waitFor(path, node, 5000);
-  nativePreview.selectNode({ path, node });
-  const selection = await selected;
-  if (!selection || !proof.isCurrent() || selection.paintedSource !== painted || appStore.selection.value !== selection || masterRevision() !== revision || nativeMasterEdit() || appStore.openFile.value !== path || nativeEffectiveSource(path) !== painted) { refuse(); return; }
-  const at = nativeMasterSelection(selection);
-  const identity = at && (part ? pagePartController.identity(at) : masterController.identity(at));
-  if (!at || !identity || !identity.linked) { refuse(); return; }
-  runMasterEdit(part ? pagePartController : masterController, identity.onEdit, proof, path, revision);
-}
-
-// The innermost whole section/header/footer around `node` that is a resolved linked copy (by its
-// exact range in the editor JSON), with its record's label; undefined otherwise.
-function nativeLinkedAncestor(path: string, source: string, node: readonly number[]): { node: number[]; label: string } | undefined {
-  // Links are resolved against every page, so only once the text index has read them all.
-  if (!nativeTextIndexed) return undefined;
-  const docText = nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-  const catalogs = nativeSharedCatalogs(docText);
-  if (docText === undefined || !catalogs) return undefined;
-  const sources: Record<string, string | undefined> = { ...nativeSources(), [path]: source };
-  for (const file of nativeFiles().filter(isPrivateMasterPath)) sources[file] = nativeEffectiveSource(file);
-  let sections: ReturnType<typeof resolveNativeSectionLinks> | undefined, parts: ReturnType<typeof resolvePagePartLinks> | undefined;
-  for (let depth = node.length - 1; depth >= 1; depth--) {
-    const at = node.slice(0, depth), range = locateNativeElementRange(source, at), tag = range?.tag.name.toLowerCase();
-    if (!range || (tag !== "section" && tag !== "header" && tag !== "footer")) continue;
-    const exact = (link: { page: string; start: number; end: number }) => link.page === path && link.start === range.start && link.end === range.end;
-    if (tag === "section") {
-      sections ??= resolveNativeSectionLinks({ documentText: docText, sources });
-      const own = "error" in sections ? [] : sections.links.filter(exact);
-      const label = own.length === 1 ? catalogs.sections[own[0].link.recordId]?.label : undefined;
-      if (label) return { node: at, label };
-    } else {
-      parts ??= resolvePagePartLinks({ documentText: docText, sources });
-      const own = "error" in parts ? [] : parts.links.filter(exact);
-      const record = own.length === 1 ? catalogs.parts[own[0].link.recordId] : undefined;
-      if (record?.rootTag === tag) return { node: at, label: record.label };
-    }
-  }
-  return undefined;
-}
 
 // Whether an element inside `range` names it: a non-empty aria-label (an svg role="img", say) or
 // an image's non-empty alt, read from the parsed start tags (not a data-alt or other lookalike).
@@ -2910,12 +2187,6 @@ let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
 // The last painted structure, refreshed when shared-section controls change.
 let nativeShownStructure: Parameters<NonNullable<typeof pageStructure>["update"]>[0];
-
-function repaintNativeStructure() {
-  const shown = nativeShownStructure;
-  if (!shown?.path || shown.path !== appStore.openFile.value || shown.paintedSource === undefined || nativeEffectiveSource(shown.path) !== shown.paintedSource) return;
-  pageStructure?.update(shown);
-}
 // Card grids: Add card, New page and card, and their edit bar (src/page-builder/cards.ts).
 let cards: Cards | undefined;
 // The loaded native site: its pages by route and its components by tag,
@@ -4172,7 +3443,6 @@ async function ensureNativeTextIndex() {
   }
   return ready ? undefined : "The site's links could not be fully read. Refresh the repository and try again.";
 }
-
 
 function updatePreview() {
   updateNativePreview();
