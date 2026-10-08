@@ -49,10 +49,11 @@ let ids = 0;
 const waiting = new Map<number, (rects: (Rect | null)[]) => void>();
 export interface Rect { x: number; y: number; w: number; h: number }
 /** Variant D: a right-click in the frame (frame viewport coordinates). */
-export const frameEvents: { contextmenu?: (x: number, y: number) => void } = {};
+export const frameEvents: { contextmenu?: (x: number, y: number) => void; hover?: (path: string | null, node: number[] | null) => void } = {};
 window.addEventListener("message", (event) => {
-  const data = event.data as { source?: string; id?: number; type?: string; x?: number; y?: number; rects?: (Rect | null)[] } | undefined;
+  const data = event.data as { source?: string; id?: number; type?: string; x?: number; y?: number; path?: string | null; node?: number[] | null; rects?: (Rect | null)[] } | undefined;
   if (data?.source !== "cb04-proto") return;
+  if (data.type === "hover") { frameEvents.hover?.(data.path ?? null, data.node ?? null); return; }
   if (data.type === "contextmenu") {
     const box = frame()?.getBoundingClientRect();
     if (box) frameEvents.contextmenu?.(box.left + (data.x ?? 0), box.top + (data.y ?? 0));

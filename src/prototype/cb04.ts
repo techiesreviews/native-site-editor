@@ -9,10 +9,10 @@ import type { ComponentDeps } from "../page-builder/components";
 
 const params = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 export const cb04Active = () => params.get("proto") === "components";
-export type Cb04Variant = "A" | "B" | "C" | "D";
+export type Cb04Variant = "A" | "B" | "C" | "D" | "E";
 export const cb04Variant = (): Cb04Variant => {
   const v = (params.get("variant") ?? "A").toUpperCase();
-  return v === "B" || v === "C" || v === "D" ? v : "A";
+  return v === "B" || v === "C" || v === "D" || v === "E" ? v : "A";
 };
 
 /** Filled in by the lazy app (variant D): edit bar controls while a component is being made. */

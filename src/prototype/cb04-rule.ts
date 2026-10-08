@@ -104,6 +104,8 @@ function findSlots(root: Element, fixed: ReadonlySet<string>, choices: SlotChoic
       return one(nameFor(kind === "text" ? (isHeading(el) ? "title" : "text") : kind === "content" ? (el.classList[0] ?? tag) : kind), kind);
     }
     if (SKIP.has(tag)) return;
+    // A fixed element with a part made a slot by hand inside it: walk in (the element stays fixed).
+    if (fixed.has(key) && el.children.length && [...(choices.forced ?? [])].some((k) => k.startsWith(`${key}.`))) return visit(el, path);
     if (tag.includes("-")) return one(nameFor(tag.replace(/^(section|card|site)-/, "") || tag), "instance");
     if (tag === "ul" || tag === "ol") return one(nameFor("list"), "list");
     if (tag === "img" || tag === "picture") return one(nameFor("image"), "image");
