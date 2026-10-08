@@ -2,7 +2,7 @@
 title: Prototype the two ways to make a component
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [03-default-editables]
 ---
 
