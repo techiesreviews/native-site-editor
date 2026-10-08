@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { handle, type Env, type StoredSession } from "../worker/app.ts";
 import { repositoryCacheRequest } from "./session-cache-fake.ts";
 
-function fixture() {
+function fixture(answer?: (url: string) => Response | undefined) {
   const records = new Map<string, StoredSession>();
   const env: Env = {
     GITHUB_CLIENT_ID: "client", GITHUB_CLIENT_SECRET: "secret", GITHUB_APP_SLUG: "editor",
@@ -18,7 +18,7 @@ function fixture() {
       } }),
     },
   };
-  const fetcher: typeof fetch = async (input) => Response.json(String(input).includes("/repositories")
+  const fetcher: typeof fetch = async (input) => answer?.(String(input)) ?? Response.json(String(input).includes("/repositories")
     ? { repositories: [{ id: 1, name: "site", full_name: "lex/site", private: true, default_branch: "main", owner: { login: "lex", type: "User" } }] }
     : { installations: [{ id: 1, account: { login: "lex", type: "User" } }] });
   const read = (path: string, id?: string) => handle(new Request(`https://editor.example${path}`, {
@@ -69,4 +69,18 @@ test("signed-out and expired sessions expose no boot tag and cannot list reposit
     assert.equal(repos.status, 401);
     assert.equal(repos.headers.has("X-Editor-Session"), false);
   }
+});
+
+test("batch file reads carry the same boot tag as the session (a warm boot's guesses)", async () => {
+  const { records, read } = fixture((url) =>
+    url.includes("graphql") ? new Response("{}", { status: 404 })
+      : url.includes("/git/blobs/") ? Response.json({ content: btoa("hi"), encoding: "base64", size: 2 }) : undefined);
+  const id = "e".repeat(64), sha = "f".repeat(40);
+  records.set(id, { kind: "user", token: "private-token", login: "lex", avatar_url: "", expiresAt: Date.now() + 60000 });
+  const session = await read("/api/session", id);
+  const files = await read(`/api/files?repo=lex%2Fsite&shas=${sha}`, id);
+  assert.equal(files.status, 200);
+  assert.deepEqual(await files.json(), { files: { [sha]: "hi" } });
+  assert.equal(files.headers.get("X-Editor-Session"), session.headers.get("X-Editor-Session"));
+  assert.equal((await read(`/api/files?repo=lex%2Fsite&shas=${sha}`)).status, 401);
 });

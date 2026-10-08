@@ -985,9 +985,12 @@ async function route(
     ));
     if (path === "/api/branches") return json(await github.branches(repo));
     // `commit`: the head the tab already saw, so a lagging read is not a step back.
+    // Snapshot and batch reads carry the boot tag too: a warm boot asks for
+    // them before its session is known (src/boot-memory.ts).
     if (path === "/api/snapshot")
-      return json(
+      return Response.json(
         await github.snapshot(repo, url.searchParams.get("branch") ?? "", url.searchParams.get("commit") ?? undefined),
+        { headers: await bootSessionHeaders(user) },
       );
     if (path === "/api/head")
       return json({
@@ -1022,12 +1025,12 @@ async function route(
     if (path === "/api/blob")
       return blobResponse(await github.bytes(repo, url.searchParams.get("sha") ?? ""), url.searchParams.get("type"));
     if (path === "/api/files")
-      return json({
+      return Response.json({
         files: await github.files(
           repo,
           (url.searchParams.get("shas") ?? "").split(",").filter(Boolean),
         ),
-      });
+      }, { headers: await bootSessionHeaders(user) });
     return json({
       content: await github.file(repo, url.searchParams.get("sha") ?? ""),
     });
