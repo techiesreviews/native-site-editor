@@ -39,7 +39,7 @@ Claude Opus 5.5 / medium reviews read-only through the CLI.
 | `260fa94` + `d0e98ca` | Slice 9, boot controller (below) | check, 1,067 units, boot-focused 69, smoke 32, full native-save 708 passed / 85 skipped / 0 failed; budget 345 KB |
 
 Preview deploys: `f87d2d31` (review-fix stack), `7ea25f46` (`c275489`),
-`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix), `3e8e9915` (`043101e`, slice 10), `88bd8546` (`44f7524`, Page Structure in-place editing, current). Screenshots: root `.scratch/preview-shots/<version>/`.
+`0ab351bc` (`8a02a54`), `a4f4d1a9` (`d669e07`), `4ca6cf7d` (`4b08251`), `9f95d45f` (`a5c4fe7`, guide redesign), `9211e120` (`1f080f3`, restored look), `de28abae` (`d0e98ca`, slice 9), `72f7e692` (`d2d9f6e`, shared-index fix), `3e8e9915` (`043101e`, slice 10), `88bd8546` (`44f7524`, Page Structure in-place editing), `5c9990a1` (`7acbc17`, hashed runtime, current). Screenshots: root `.scratch/preview-shots/<version>/`.
 Lex asked for: subitems further left; the line through the middle of the
 chevron; grey lines for non-component groups; then a mockup: plain component
 chevron, ringed chevrons only for parts sitting on the purple rail. Each rail shows only the nearest parent's line (continuous ancestor
@@ -143,9 +143,25 @@ the first; `<br>` allowance does not list SVG/MathML or obsolete raw-text
 elements; the browser specs for live patching use a stub, not the real
 preview runtime.
 
+## Preview runtime cached long-term (merged as `7acbc17`)
+
+Lex approved long-term caching. The runtime moved to
+`src/components/native-preview-runtime.js` and is referenced as
+`new URL(..., import.meta.url)`, so Vite emits it verbatim (the budget step
+asserts byte identity) under a hashed `/assets/` URL, covered by the immutable
+rule. `/native-preview-runtime.js` is gone. A tab opened before a deploy that
+asks for an old hash gets no `ready`: an 8 s watchdog hands that to chunk
+recovery (spec `native-runtime-recovery`). Timing (median of 5, 100 ms /
+20 Mbps): warm paint 779 → 671 ms, cold 1199 → 1210 ms (noise). Gates on
+`7acbc17`: check, 1,092 units, budget 346 KB, smoke 32, native-static
+40/13/0, full native-save 721 / 85 / 0. Opus review: the 404 blank-preview
+defect, fixed by the watchdog. Details: [p5-14](p5-14-runtime-cache.md).
+
 ## Next actions
 
-1. Slice 10b (attach the preview frame early, ticket 02). Watch `native-shared-link-host:82`
+1. Slice 10b (attach the preview frame early, ticket 02): plan done (preload at
+   `nativeEngaged = true`, park instead of remove, reload in place); re-arm the
+   ready watchdog on every frame reload. Watch `native-shared-link-host:82`
    (one unexplained failure).
 2. Slices 11–15 per
    [the controller plan](p5-controller-plan.md); one slice per branch, same
