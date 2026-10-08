@@ -12,7 +12,6 @@ import { EDITOR_PAGE_BUILDER_PATH } from "../page-builder/page-builder-document"
 import { resolveNativeSectionLinks } from "../page-builder/native-section-links";
 import { resolvePagePartLinks } from "../page-builder/native-page-parts";
 import { type ComponentTools } from "../page-builder/components";
-import { type Cards } from "../page-builder/cards";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
 import { type createNativeSectionMasterController, type MasterSelection } from "../page-builder/native-section-master-controller";
@@ -52,7 +51,8 @@ export interface PageStructurePorts {
   readonly nativeNamedDescendant: (source: string, range: { start: number; end: number; }) => boolean;
   readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
   readonly nativePictureSources: (source: string, node: readonly number[]) => boolean;
-  readonly cards: Cards | undefined;
+  /** The card grid controls for a selection, move arrows already left out (cards controller). */
+  cardControls(selection: NativePreviewSelection, source: string): EditBarControl[];
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "captureAsk">;
   readonly activeMaster: () => { context: { label: string } } | undefined;
   readonly nativeMasterIdentity: (selection: NativePreviewSelection) => { kind: string; component: { tag: string; onEdit: () => void; }; } | undefined;
@@ -542,10 +542,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // Only a whole section moves from the bar or the keyboard (Lex: "remove
     // this on not the sections"), so a card's own move arrows are left out and
     // no element move is offered here; the page structure still moves rows.
-    if (ports.cards && !isNativeSectionTag(selection.tag) && !inMaster) {
-      controls.push(...ports.cards.controls(selection, source).filter((control) =>
-        !(control.kind === "button" && (control.icon === "up" || control.icon === "down" || control.icon === "left" || control.icon === "right"))));
-    }
+    if (!isNativeSectionTag(selection.tag) && !inMaster) controls.push(...ports.cardControls(selection, source));
     nativeElementMoveAction = onMove;
     // Edit component, Make component… (src/page-builder/components.ts).
     if (ports.componentTools && !inMaster) controls.push(...ports.componentTools.controls(selection));

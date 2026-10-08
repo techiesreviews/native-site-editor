@@ -1,5 +1,6 @@
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController } from "./controllers/media-controller";
+import { createCardsController } from "./controllers/cards-controller";
 import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
@@ -76,7 +77,6 @@ import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/nativ
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
-import { createCards, type Cards } from "./page-builder/cards";
 import { planSidecarPages, routeLinkRewrite } from "./page-builder/sidecar-pages";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import * as sourceEditor from "./components/source-editor";
@@ -411,7 +411,7 @@ function mountWorkspace() {
     moveTo: (target) => void moveNativePageTo(target),
     dropProblem: nativeDropProblem,
     drop: (source, parent) => void confirmNativeMove(source, parent),
-    cardOffer: (parent) => cards?.cardOffer(parent),
+    cardOffer: cardsController.cardOffer,
   });
   element("explorer-pages").append(pagesTree.root);
   mountExplorerTabs();
@@ -424,7 +424,7 @@ function mountWorkspace() {
     }
   });
   codePanes.mountResize(element("main"), element("code-split"), element("secondary-pane"));
-  cards = mountCards();
+  cardsController.mount();
   // A selection inside a component's template gets Select card once the runtime says which card.
   // A remount must not leave the old pane (parked or shown) behind.
   nativePreview?.destroy();
@@ -438,12 +438,7 @@ function mountWorkspace() {
       void loadNativeAssets(nativeRouteShownSources(route));
       void loadNativeShownFiles(route);
     },
-    cards: {
-      describe: (grid) => cards?.describe(grid),
-      plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: "Open a native site first." },
-      addCard: (grid) => void cards?.addCard(grid),
-      addPage: (grid, title) => cards?.addPage(grid, title) ?? Promise.resolve("Open a native site first."),
-    },
+    cards: cardsController.preview,
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
     onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
     onFormat: (format) => pageStructureController.nativeFormatActions[format]?.(),
@@ -1589,7 +1584,8 @@ const pageStructureController = createPageStructureController({
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   get chooseMediaForImage() { return chooseMediaForImage; },
   get nativePictureSources() { return nativePictureSources; },
-  get cards() { return cards; },
+  // cardsController is declared later in this module: read it at call time.
+  cardControls: (selection, source) => cardsController.controls(selection, source),
   get agentController() { return agentController; },
   get activeMaster() { return activeMaster; },
   get nativeMasterIdentity() { return nativeMasterIdentity; },
@@ -2187,8 +2183,6 @@ let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
 // The last painted structure, refreshed when shared-section controls change.
 let nativeShownStructure: Parameters<NonNullable<typeof pageStructure>["update"]>[0];
-// Card grids: Add card, New page and card, and their edit bar (src/page-builder/cards.ts).
-let cards: Cards | undefined;
 // The loaded native site: its pages by route and its components by tag,
 // read from the repository's files (shared/native-project.ts).
 let nativeSite: NativeSite | undefined;
@@ -4189,49 +4183,47 @@ async function commitNativePage(page: {
 }
 
 // ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
-
-function mountCards() {
-  return createCards({
-    site: () => nativeSite,
-    source: (path) => nativeEffectiveSource(path),
-    isSection: isNativeSectionTag,
-    editor: () => editorModule,
-    preview: () => nativePreview,
-    ensureOpen: async (path) => {
-      // A card's page copies a sibling page or the home page: the site is read first.
-      if (await nativeSiteReadForCreate()) return false;
-      if (appStore.openFile.value === path && editorModule?.isMounted(path)) return true;
-      const epoch = generation;
-      await restoreFile(path, epoch, { linkDefaultStyle: false });
-      return epoch === generation && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
-    },
-    openPage: (file) => void restoreFile(file, generation),
-    change: applyNativeChange,
-    exists: nativePathExists,
-    siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
-    saveNewDraft: (path, content) => {
-      const scope = draftScope();
-      if (!scope) return "Open a repository first.";
-      draftStore().save({ ...scope, version: 1, path, baseSha: null, original: "", content, updatedAt: Date.now() });
-      const failure = draftStore().error;
-      if (failure) {
-        draftStore().remove(scope, path);
-        return failure;
-      }
-      afterFileChanges();
-      return undefined;
-    },
-    dropNewDraft: (path) => {
-      const scope = draftScope();
-      if (!scope || draftStore().get(scope, path)?.baseSha !== null) return;
-      if (!editorModule?.discardNewFile(path)) editorModule?.dropDraft(scope, path);
-      afterFileChanges();
-    },
-    operation: applyNativeOperation,
-    pageLabel: nativePageLabelOf,
-    announce,
-  });
-}
+// Lifecycle and adapters live in the cards controller; draft and transaction ports stay host-owned.
+const cardsController = createCardsController({
+  site: () => nativeSite,
+  source: (path) => nativeEffectiveSource(path),
+  isSection: isNativeSectionTag,
+  editor: () => editorModule,
+  preview: () => nativePreview,
+  ensureOpen: async (path) => {
+    // A card's page copies a sibling page or the home page: the site is read first.
+    if (await nativeSiteReadForCreate()) return false;
+    if (appStore.openFile.value === path && editorModule?.isMounted(path)) return true;
+    const epoch = generation;
+    await restoreFile(path, epoch, { linkDefaultStyle: false });
+    return epoch === generation && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
+  },
+  openPage: (file) => void restoreFile(file, generation),
+  change: applyNativeChange,
+  exists: nativePathExists,
+  siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+  saveNewDraft: (path, content) => {
+    const scope = draftScope();
+    if (!scope) return "Open a repository first.";
+    draftStore().save({ ...scope, version: 1, path, baseSha: null, original: "", content, updatedAt: Date.now() });
+    const failure = draftStore().error;
+    if (failure) {
+      draftStore().remove(scope, path);
+      return failure;
+    }
+    afterFileChanges();
+    return undefined;
+  },
+  dropNewDraft: (path) => {
+    const scope = draftScope();
+    if (!scope || draftStore().get(scope, path)?.baseSha !== null) return;
+    if (!editorModule?.discardNewFile(path)) editorModule?.dropDraft(scope, path);
+    afterFileChanges();
+  },
+  operation: applyNativeOperation,
+  pageLabel: nativePageLabelOf,
+  announce,
+});
 
 // Pages policy belongs to the controller; guarded writes remain host transactions.
 const pagesController = createPagesController({
@@ -4256,7 +4248,7 @@ const pagesController = createPagesController({
   readRedirects: readNativeRedirects,
   withMovedPageUrls,
   pageLinks,
-  cardsLinkingTo: (route, excluding) => cards?.cardsLinkingTo(route, excluding),
+  cardsLinkingTo: cardsController.cardsLinkingTo,
   confirmation: () => confirmDialog,
   picker: () => pagePicker,
   refreshMeta: () => pageStructure?.refreshMeta(),
@@ -4270,7 +4262,7 @@ const pagesController = createPagesController({
   resetExplorer: () => { pagesTree?.reset(); disposeExplorerImages(); },
   showImages: () => void ensureExplorerImages().catch(errorMessage),
   siteReadForCreate: nativeSiteReadForCreate,
-  createWithCard: request => cards?.createWithCard(request),
+  createWithCard: cardsController.createWithCard,
   navigationTarget: nativeNavigationTarget,
   restoreDeleted: file => undoFileChanges({ restore: [file] }),
   announce,
