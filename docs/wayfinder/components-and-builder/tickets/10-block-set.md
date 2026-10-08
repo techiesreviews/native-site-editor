@@ -2,7 +2,7 @@
 title: Decide the block set and its markup
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 
