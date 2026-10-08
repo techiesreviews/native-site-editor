@@ -2929,7 +2929,7 @@ function options(
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
-  bootGuess = undefined;
+  dropBootGuess();
   paletteController.dispose();
   agentController.destroy();
   setupController.dispose();
@@ -5406,6 +5406,13 @@ async function loadSnapshot(
 // prove it; anything else falls back to the normal reads.
 // How long a failed branch list waits for a guessed snapshot (the only read with a bound).
 const GUESS_AFTER_FAILED_LIST_MS = 5000;
+// A taken guess, until it is abandoned: then its files never enter the cache.
+let takenGuess: { abandoned: boolean } | undefined;
+function dropBootGuess() {
+  bootGuess = undefined;
+  if (takenGuess) takenGuess.abandoned = true;
+  takenGuess = undefined;
+}
 let bootGuess: { memory: BootMemory; source: string; snapshot: Promise<ApiReceipt<Snapshot>>; files?: Promise<ApiReceipt<FilesResult>> } | undefined;
 function startBootGuess() {
   const link = readWorkspaceUrl();
@@ -5420,21 +5427,23 @@ function startBootGuess() {
   };
 }
 /** The guessed snapshot for `repo`/`branch`, once only, when this session and listing prove the memory. */
-function takeBootGuess(repo: Repository, branch: string): Promise<Snapshot> | undefined {
+function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Snapshot>; token: { abandoned: boolean } } | undefined {
   const guess = bootGuess;
-  bootGuess = undefined;
+  // A new repository choice makes any earlier guess irrelevant.
+  dropBootGuess();
   const tag = boot.sessionTag();
   const link = readWorkspaceUrl();
   if (!guess || !tag || guess.source !== location.origin + location.pathname || link?.repoId !== repo.id || link.branch !== branch ||
     !memoryMatches(guess.memory, info.user?.login, repo, branch)) return undefined;
   // loadSnapshot drops the result if navigation supersedes it meanwhile.
   const fresh = () => api<Snapshot>("snapshot", { repo: repo.full_name, branch });
-  return guess.snapshot.then((receipt) => {
+  const token = takenGuess = { abandoned: false };
+  const snapshot = guess.snapshot.then((receipt) => {
     if (receipt.sessionTag !== tag || boot.sessionTag() !== tag || receipt.value.branch !== branch) return fresh();
     const snapshot = receipt.value;
     // Content is addressed by SHA: a path with the remembered SHA in this
     // fresh snapshot has exactly the remembered read's content.
-    for (const { sha } of guess.files ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
+    for (const { sha } of guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
       const key = fileKey(repo.full_name, sha);
       if (fileContents.has(key)) continue;
       rememberFile(fileContents, fileContentsLimit, key, guess.files!.then((files) => {
@@ -5445,6 +5454,7 @@ function takeBootGuess(repo: Repository, branch: string): Promise<Snapshot> | un
     }
     return snapshot;
   }, fresh);
+  return { snapshot, token };
 }
 
 async function chooseRepository(resume?: WorkspaceLocation) {
@@ -5478,7 +5488,8 @@ async function chooseRepository(resume?: WorkspaceLocation) {
   // Begin independent work together: the selected branch is already known from
   // the bookmark or repository metadata. Validate it before using its snapshot.
   const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
-  const guessed = takeBootGuess(appStore.repository.value, requestedBranch);
+  const taken = takeBootGuess(appStore.repository.value, requestedBranch);
+  const guessed = taken?.snapshot;
   const opened = appStore.repository.value;
   const snapshotRead = () => api<Snapshot>("snapshot", { repo: opened.full_name, branch: requestedBranch });
   // A rejected guess has already tried a fresh read (takeBootGuess).
@@ -5496,7 +5507,13 @@ async function chooseRepository(resume?: WorkspaceLocation) {
     // first, takes the normal path below. A failed branch list waits for
     // the guess, for a while only: past that the failure shows as before,
     // and a late guess is never used.
-    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => Promise.race([guessed.catch(() => undefined), new Promise<undefined>((resolve) => setTimeout(resolve, GUESS_AFTER_FAILED_LIST_MS))]))]);
+    let timer: ReturnType<typeof setTimeout> | undefined, decided = false;
+    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => decided ? undefined : Promise.race([
+      guessed.catch(() => undefined),
+      new Promise<undefined>((resolve) => { timer = setTimeout(() => { taken!.token.abandoned = true; resolve(undefined); }, GUESS_AFTER_FAILED_LIST_MS); }),
+    ]))]);
+    decided = true;
+    clearTimeout(timer);
     if (epoch !== generation) return;
     if (guessedSnapshot) {
       const branch = requestedBranch;
@@ -6197,7 +6214,7 @@ document.addEventListener("click", (event) => {
 });
 // A fragment change before the session has loaded is not lost: once signed
 // in, the repositories load from the location as it is then.
-window.addEventListener("hashchange", () => { bootGuess = undefined; boot.onHashChange(); });
+window.addEventListener("hashchange", () => { dropBootGuess(); boot.onHashChange(); });
 renderLogin("loading");
 startBootGuess();
 void boot.start();
