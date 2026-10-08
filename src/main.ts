@@ -1,3 +1,4 @@
+import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createSharedSectionsController } from "./controllers/shared-sections-controller";
 import { createMediaController } from "./controllers/media-controller";
@@ -62,7 +63,7 @@ import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import type { FileMove } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
-import { CHANGE_WORDS, deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type ChangeKind, type FileChange, type MovableFile } from "./file-changes";
+import { deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
@@ -3293,14 +3294,6 @@ function showDirectory(directory: Directory, path = "") {
   content.replaceChildren(panel);
 }
 
-// Folders open in the file tree, by path, so drawing it again (a file
-// created or discarded, a save) keeps them open; and the folder listings
-// read, by tree sha.
-const openFolders = new Set<string>();
-const folderListings = new Map<string, TreeEntry[]>();
-// The changes the tree was last drawn with.
-let drawnNewFiles = "";
-
 // Paths of the new files (drafts with no base blob) in the current scope.
 function newDraftPaths(scope = draftScope()) {
   return scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : [];
@@ -3322,73 +3315,21 @@ function treeState(scope = draftScope()): TreeState {
     drafted: drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path),
   };
 }
-const treeSignature = (state: TreeState) => [...state.changes.values()].map((change) => `${change.kind} ${change.from ?? ""} ${change.path}`).join("\n");
-// A file renamed or moved away in the drafts: its new path shows it.
-function movedAway(state: TreeState, path: string) {
-  const marker = state.deleted.get(path);
-  return Boolean(marker?.movedTo && state.changes.get(marker.movedTo)?.from === path);
-}
-// A folder on the branch every file of which is deleted ("deleted") or moved
-// away ("moved") in the drafts, with no new file in it; known with the
-// whole-commit tree only.
-function folderGone(state: TreeState, folder: string): "deleted" | "moved" | undefined {
-  if (!appStore.snapshot.value?.tree) return undefined;
-  const prefix = `${folder}/`;
-  if (state.drafted.some((path) => path.startsWith(prefix))) return undefined;
-  const inside = appStore.snapshot.value.tree.filter((entry) => entry.type === "blob" && entry.path.startsWith(prefix));
-  if (!inside.length) return undefined;
-  let moved = true;
-  for (const entry of inside) {
-    if (!state.deleted.has(entry.path)) return undefined;
-    if (!movedAway(state, entry.path)) moved = false;
-  }
-  return moved ? "moved" : "deleted";
-}
-
-// A tree row: an entry of the branch, or a new file drafted in this browser,
-// or a folder only such files are in; neither of the last two has a sha.
-type FileTreeEntry = TreeEntry & { isNew?: boolean };
-
-// The folder `parentPath`'s entries with the new files drafted under it: one
-// directly in it as a file, one deeper as the folder it is in.
-function withNewFiles(entries: TreeEntry[], parentPath: string, drafted: string[]): FileTreeEntry[] {
-  const prefix = parentPath ? `${parentPath}/` : "";
-  const names = new Set(entries.map((entry) => entry.path));
-  const added = new Map<string, FileTreeEntry>();
-  for (const path of drafted) {
-    if (!path.startsWith(prefix)) continue;
-    const [name, ...rest] = path.slice(prefix.length).split("/");
-    if (names.has(name) || added.has(name)) continue;
-    added.set(name, rest.length
-      ? { path: name, type: "tree", mode: "040000", sha: "", isNew: true }
-      : { path: name, type: "blob", mode: "100644", sha: "", isNew: true });
-  }
-  if (!added.size) return entries;
-  return [...entries, ...added.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-}
-
-// Draws the file tree from the snapshot, new files in place, each change marked.
-function renderFileTree() {
-  if (!appStore.snapshot.value) return;
-  const state = treeState();
-  drawnNewFiles = treeSignature(state);
-  const focused = document.activeElement instanceof HTMLElement && files.contains(document.activeElement)
-    ? document.activeElement.closest<HTMLElement>(".file-row")?.dataset.path
-    : undefined;
-  files.replaceChildren(renderEntries(appStore.snapshot.value.entries, "", generation, state));
-  if (focused) fileRow(focused)?.focus();
-}
-
-// Draws the tree again when a change appeared, went, or was saved.
-function renderDraftFiles() {
-  requestExplorerImagesRefresh();
-  if (appStore.snapshot.value && treeSignature(treeState()) !== drawnNewFiles) renderFileTree();
-}
-
-// The Files tree's row for `path`, when it is drawn.
-function fileRow(path: string) {
-  return [...files.querySelectorAll<HTMLButtonElement>(".file-row")].find((row) => row.dataset.path === path);
-}
+const filesTreeController = createFilesTreeController({
+  ui: { node, button, setIcon },
+  snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
+  openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
+  state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
+  load: input => api<Directory>("tree", input), images: () => requestExplorerImagesRefresh(),
+  clearError, error: errorMessage, status, announce, intent: recordNativeSourceIntent,
+  openDraft: openNewDraft, openEntry, restore: target => restoreFileTarget(target),
+  create: openCreate, actions: () => fileActions,
+  visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
+});
+function renderFileTree() { filesTreeController.render(); }
+function renderDraftFiles() { filesTreeController.refresh(); }
+function fileRow(path: string) { return filesTreeController.row(path); }
+const treeSignature = (state: TreeState) => filesTreeController.signature(state);
 
 // The explorer's Pages | Files | Images tabs: tab state and tree rendering
 // live in the Pages controller; the host mounts the DOM and paints the tabs.
@@ -4053,10 +3994,10 @@ async function branchPathProblem(path: string) {
     const at = parts.slice(0, index + 1).join("/");
     if (index === parts.length - 1) return `${at} already exists on GitHub.`;
     if (entry.type !== "tree") return `${at} is a file, so nothing can go in it.`;
-    let listing = folderListings.get(entry.sha);
+    let listing = filesTreeController.listings().get(entry.sha);
     if (!listing) {
       listing = (await api<Directory>("tree", { repo: appStore.repository.value.full_name, sha: entry.sha })).entries;
-      folderListings.set(entry.sha, listing);
+      filesTreeController.listings().set(entry.sha, listing);
     }
     entries = listing;
   }
@@ -4092,7 +4033,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   if (creation.folder) {
     // The new folder shows open in the tree, with the dialog's focus returned to it.
     const parts = creation.folder.split("/");
-    parts.forEach((_, index) => openFolders.add(parts.slice(0, index + 1).join("/")));
+    parts.forEach((_, index) => filesTreeController.openFolder(parts.slice(0, index + 1).join("/")));
     renderFileTree();
     const row = [...files.querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === creation.folder);
     if (row) createDialog?.returnFocusTo(row);
@@ -4125,19 +4066,6 @@ let pagePicker: ReturnType<typeof createPagePicker> | undefined;
 
 function announce(text: string) {
   element("status").textContent = text;
-}
-
-// The change marker a tree row carries: the letter shown, the word read.
-function statusMarker(kind: ChangeKind) {
-  // A new file's name says New, as before; the other kinds are in the row's
-  // description (the row's title says each in words).
-  const marker = node("span", `file-status is-${kind}`);
-  const letter = node("span", "", kind);
-  letter.setAttribute("aria-hidden", "true");
-  marker.append(letter);
-  if (kind === "A") marker.append(node("span", "sr-only", "New"));
-  else marker.setAttribute("aria-hidden", "true");
-  return marker;
 }
 
 const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
@@ -4209,8 +4137,8 @@ const fileOperationsController = createFileOperationsController({
   applyNativeOperation, applyFileOperation, undoFileChanges,
   duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
   afterFileChanges, announce, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
-  openFolder: path => { openFolders.add(path); }, fileRow, renderFileTree,
-  filesTabOpen: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
+  openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
+  filesTabOpen: () => filesTreeController.visible(),
 });
 const { moveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
 function pageLinks(...args: Parameters<typeof fileOperationsController.pageLinks>) { return fileOperationsController.pageLinks(...args); }
@@ -4503,144 +4431,6 @@ async function dropFileTarget(source: FileRowTarget, folder: string) {
   if (problem) { announce(problem); return; }
   const error = await moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
   if (error) errorMessage(new Error(error));
-}
-
-function renderEntries(
-  entries: TreeEntry[],
-  parentPath: string,
-  epoch: number,
-  state = treeState(),
-): HTMLUListElement {
-  const list = node("ul", "file-list");
-  for (const entry of withNewFiles(entries, parentPath, state.drafted)) {
-    const path = parentPath ? `${parentPath}/${entry.path}` : entry.path;
-    const directory = entry.type === "tree";
-    // Renamed or moved away: the file shows where it went.
-    const gone = entry.isNew ? undefined : directory ? folderGone(state, path) : state.deleted.has(path) ? (movedAway(state, path) ? "moved" : "deleted") : undefined;
-    if (gone === "moved") continue;
-    const item = node("li");
-    const row = button("", () => {}, "file-row");
-    const icon = node("span", `file-icon ${directory ? "folder" : ""}`);
-    setIcon(icon, directory ? "folder" : entry.type === "commit" ? "package" : entry.mode === "120000" ? "link-simple" : "file", 14);
-    icon.setAttribute("aria-hidden", "true");
-    row.append(icon, node("span", "filename", entry.path));
-    // A new file, or a folder only new files are in, is not on GitHub yet;
-    // a renamed, edited or deleted one is marked as git marks it.
-    const change = directory ? undefined : state.changes.get(path);
-    const kind: ChangeKind | undefined = gone ? "D"
-      : entry.isNew ? (directory ? (state.drafted.filter((file) => file.startsWith(`${path}/`)).every((file) => state.changes.get(file)?.kind === "R") ? "R" : "A") : change?.kind === "R" ? "R" : "A")
-      : change?.kind;
-    if (kind) row.append(statusMarker(kind));
-    if (gone) row.classList.add("is-deleted");
-    row.title = kind === "R" && change?.from ? `${path} (renamed from ${change.from}, not saved to GitHub yet)`
-      : kind === "A" ? `${path} (new, not saved to GitHub yet)`
-      : kind === "D" ? `${path} (deleted, not saved to GitHub yet)`
-      : kind === "M" ? `${path} (changed, not saved to GitHub yet)` : path;
-    if (kind) row.setAttribute("aria-description", kind === "R" && change?.from ? `renamed from ${change.from}, not saved to GitHub yet` : `${CHANGE_WORDS[kind].toLowerCase()}, not saved to GitHub yet`);
-    row.dataset.path = path;
-    if (!directory && path === appStore.openFile.value) row.classList.add("selected");
-    if (directory) row.setAttribute("aria-expanded", "false");
-    let childList: HTMLUListElement | undefined;
-    const show = (children: TreeEntry[]) => {
-      childList = renderEntries(children, path, epoch, state);
-      if (!childList.children.length)
-        childList.append(node("li", "muted empty-folder", "Empty folder"));
-      item.append(childList);
-      setIcon(icon, "folder-open", 14);
-      row.setAttribute("aria-expanded", "true");
-      openFolders.add(path);
-    };
-    // A folder's listing: none for a folder only new files are in, else read once.
-    const cached = () => (entry.sha ? folderListings.get(entry.sha) : []);
-    const load = async () => {
-      if (!appStore.repository.value) return undefined;
-      const result = await api<Directory>("tree", {
-        repo: appStore.repository.value.full_name,
-        sha: entry.sha,
-      });
-      folderListings.set(entry.sha, result.entries);
-      return result.entries;
-    };
-    row.addEventListener("click", async () => {
-      if (epoch !== generation || !appStore.repository.value) return;
-      clearError();
-      // A folder only opens or closes in the tree; the open file, the preview
-      // and the linked stylesheet stay as they are.
-      if (directory) {
-        if (childList) {
-          childList.hidden = !childList.hidden;
-          setIcon(icon, childList.hidden ? "folder" : "folder-open", 14);
-          row.setAttribute("aria-expanded", String(!childList.hidden));
-          if (childList.hidden) openFolders.delete(path);
-          else openFolders.add(path);
-          return;
-        }
-        const known = cached();
-        if (known) {
-          show(known);
-          status(`Opened ${path}.`);
-          return;
-        }
-        row.disabled = true;
-        status(`Loading ${path}…`);
-        try {
-          const children = await load();
-          if (epoch !== generation || !children) return;
-          show(children);
-          status(`Opened ${path}.`);
-        } catch (error) {
-          if (epoch === generation) errorMessage(error);
-        } finally {
-          row.disabled = false;
-        }
-      } else {
-        if (gone) {
-          announce(`${path} is deleted. Restore it to open it.`);
-          return;
-        }
-        files
-          .querySelectorAll(".selected")
-          .forEach((el) => el.classList.remove("selected"));
-        row.classList.add("selected");
-        recordNativeSourceIntent(path);
-        const scope = draftScope();
-        const draft = entry.isNew && scope ? draftStore().get(scope, path) : undefined;
-        if (draft) await openNewDraft(draft);
-        else if (!entry.isNew) await openEntry(entry, path, epoch);
-      }
-    });
-    const line = node("div", `file-row-line${directory ? " is-folder" : ""}`);
-    line.append(row);
-    if (gone) {
-      const restore = button("Restore", () => void restoreFileTarget({ path, name: entry.path, folder: directory, gone: true }), "file-restore");
-      restore.setAttribute("aria-label", `Restore ${path}`);
-      line.append(restore);
-    }
-    if (directory && !gone) {
-      const add = node("button", "file-add");
-      setIcon(add, "plus");
-      add.type = "button";
-      add.setAttribute("aria-label", `New in ${path}`);
-      add.title = `New file or folder in ${path}`;
-      add.setAttribute("aria-haspopup", "dialog");
-      add.addEventListener("click", () => openCreate(path, add));
-      line.append(add);
-    }
-    fileActions?.attach(row, line, { path, name: entry.path, folder: directory, gone: Boolean(gone) });
-    item.append(line);
-    list.append(item);
-    // A folder open before the tree was drawn again opens again.
-    if (directory && openFolders.has(path)) {
-      const known = cached();
-      if (known) show(known);
-      else
-        void load().then(
-          (children) => { if (children && epoch === generation && !childList && row.isConnected) show(children); },
-          () => openFolders.delete(path),
-        );
-    }
-  }
-  return list;
 }
 
 async function openEntry(
@@ -5269,8 +5059,7 @@ async function loadSnapshot(
     repositoryIndex.clear();
     savePublish.resetDeleted();
     siteActions?.revalidate();
-    openFolders.clear();
-    folderListings.clear();
+    filesTreeController.reset();
     deactivateNative();
     setCurrentPage();
     appStore.selection.value = undefined;
