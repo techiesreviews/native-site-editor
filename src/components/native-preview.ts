@@ -28,6 +28,7 @@ import { linkCodeToCanvas } from "../page-builder/code-link";
 import { composeNativeMasterEdit, type NativeMasterComposition, type NativeMasterEditInput } from "./native-master-preview";
 export type { NativeMasterEditInput } from "./native-master-preview";
 import { composeNativePagePartEdit, type NativePagePartComposition, type NativePagePartEditInput } from "./native-page-part-preview";
+import { createPreviewFrameState } from "./preview-frame-state";
 export type NativePagePartMasterEditInput = NativePagePartEditInput & { kind: "page-part"; rootTag: "header" | "footer" };
 type NativeEditingInput = NativeMasterEditInput | NativePagePartMasterEditInput;
 type NativeEditingComposition = NativeMasterComposition | NativePagePartComposition;
@@ -439,7 +440,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let slotSelection: { path: string; node: number[]; tag?: string; exact: boolean } | undefined;
   const slotGhosts = mountSlotGhosts(pane, frame, {
     onFill: target => handlers.onSlotGhostFill?.(target),
-    expectedIsCurrent: report => Boolean(mounted && !viewing && site && report.context === context &&
+    expectedIsCurrent: report => Boolean(frameState.active && !viewing && site && report.context === context &&
       report.pagePath === site.routes[route] && report.templatePath === site.components[report.tag] &&
       slotSelection?.path === report.pagePath && report.hostNode.every((index, i) => slotSelection!.node[i] === index) &&
       (!slotSelection.exact || (slotSelection.node.length === report.hostNode.length && slotSelection.tag === report.tag))),
@@ -489,7 +490,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // place (its images and stylesheets) without drawing the page again, so the
   // Page structure it reported stays current. A render on its way takes them.
   function postAssets() {
-    if (!site || !ready || !mounted || rafHandle) return;
+    if (!site || !frameState.ready || !frameState.active || rafHandle) return;
     const changes = assetChanges();
     if (!Object.keys(changes.set).length && !changes.drop.length) return;
     const { styles, componentStyles: styled } = composeStyles(site, sources, componentStyles, assets, route, alone);
@@ -512,8 +513,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // selection as a refresh after the next update, and that refresh then counts
   // as the click, so clicks during a re-render are not lost.
   let staleClick = false;
-  let ready = false;
-  // Armed only while the frame is attached and its document awaits `ready`.
+  // Armed while the frame is attached (parked or shown) and its document awaits `ready`.
   let readyWatchdog: ReturnType<typeof setTimeout> | undefined;
   const disarmReadyWatchdog = () => { clearTimeout(readyWatchdog); readyWatchdog = undefined; };
   const armReadyWatchdog = () => {
@@ -523,8 +523,42 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (frame.isConnected) void handleChunkLoadFailure(new Error("Loading chunk native-preview-runtime failed"));
     }, RUNTIME_READY_TIMEOUT_MS);
   };
-  let mounted = false;
   let rafHandle = 0;
+  // Parked: attached early (preload) so the runtime loads alongside the boot
+  // reads, but hidden, inert and out of the accessibility tree.
+  const park = () => {
+    pane.classList.add("is-parked");
+    pane.inert = true;
+    pane.setAttribute("aria-hidden", "true");
+  };
+  let frameLoads = 0;
+  const frameState = createPreviewFrameState({
+    attach: () => host.prepend(pane),
+    park,
+    unpark: () => {
+      pane.classList.remove("is-parked");
+      pane.inert = false;
+      pane.removeAttribute("aria-hidden");
+    },
+    // A fresh document for the next site: nothing of the old page or its assets
+    // survives. The comment changes the srcdoc so the frame really navigates.
+    reload: () => {
+      sentAssets.clear();
+      postedRoutes.clear();
+      lastAvoid = "";
+      if (rafHandle) cancelAnimationFrame(rafHandle);
+      rafHandle = 0;
+      frame.setAttribute("srcdoc", `${RUNTIME_DOC}<!--${++frameLoads}-->`);
+    },
+    armWatchdog: () => armReadyWatchdog(),
+    disarmWatchdog: () => disarmReadyWatchdog(),
+    resync: () => {
+      postTheme();
+      lastAvoid = "";
+      postAvoid();
+      postFocus();
+    },
+  });
   // A structure field's text, set in the page ahead of its render (patchText):
   // the latest per frame, and what to do when the page could not take it.
   let pendingPatch: { request: NativeNodeRequest; text: string; miss?: () => void } | undefined;
@@ -543,7 +577,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
     componentColor = colors.component;
-    if (ready) postTheme();
+    if (frameState.ready) postTheme();
   });
   // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
@@ -571,7 +605,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
 
   function post() {
     rafHandle = 0;
-    if (!site || !ready || !mounted) return;
+    if (!site || !frameState.ready || !frameState.active) return;
     if (livePatch && (sources[livePatch.path] !== livePatch.base || othersChanged(livePatch.others, livePatch.path))) dropPatch();
     const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath, master);
     selectNode = undefined;
@@ -788,7 +822,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return;
     }
     if (data.type === "slot-ghosts") {
-      const report = site && mounted && !viewing && !master && readSlotGhostReport((data as { report?: unknown }).report,
+      const report = site && frameState.active && !viewing && !master && readSlotGhostReport((data as { report?: unknown }).report,
         { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
       if (report) slotGhosts.update(report); else slotGhosts.clear(false);
       return;
@@ -803,11 +837,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return;
     }
     if (data.type === "ready") {
-      ready = true;
-      disarmReadyWatchdog();
       sentAssets.clear();
       postedRoutes.clear();
       shownRoute = undefined;
+      // A parked frame only records it; activate() sends the rest.
+      if (!frameState.markReady()) return;
       postTheme();
       lastAvoid = "";
       postAvoid();
@@ -1108,7 +1142,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   avoidWatch.observe(editBar.element, { attributes: true, attributeFilter: ["style", "hidden"], childList: true });
 
   const codeLink = linkCodeToCanvas({
-    owns: (path) => Boolean(site && mounted && ready && !viewing && (nativeSitePaths(site).includes(path) || path === masterPath())),
+    owns: (path) => Boolean(site && frameState.active && frameState.ready && !viewing && (nativeSitePaths(site).includes(path) || path === masterPath())),
     hint: (request) => toCanvas({ type: "canvas-hint", request: request ?? null }),
     select: (request) => toCanvas({ type: "canvas-code-select", request }),
   });
@@ -1134,12 +1168,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         route = nativeDefaultRoute(next);
         alone = undefined;
       }
-      if (!mounted) {
-        mounted = true;
+      if (frameState.activate()) {
         host.classList.add("has-preview");
-        host.prepend(pane);
-        // Attaching loads the srcdoc document, which must report `ready`.
-        if (!ready) armReadyWatchdog();
         pageBuilder.setActive(true);
       }
       schedule();
@@ -1155,7 +1185,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (input.assets) assets = input.assets;
       if (Object.hasOwn(input, "component") && (input.component ?? "") !== focusTag) {
         focusTag = input.component ?? "";
-        if (ready) postFocus();
+        if (frameState.ready) postFocus();
       }
       if (site && input.component && Object.hasOwn(site.components, input.component)) {
         // The page already on show wins; then any page that uses the component; else the component alone.
@@ -1197,7 +1227,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** Select an element of the rendered page now, as a click would, and bring it into the middle of the frame. */
     selectNode(request: NativeNodeRequest) {
-      if (!mounted) return;
+      if (!frameState.active) return;
       frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request }, "*");
     },
     /**
@@ -1210,7 +1240,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * vouched for (`vouchPatch`), and drops it before any other.
      */
     patchText(request: NativeNodeRequest, text: string, base: string, miss?: () => void) {
-      if (!mounted || !ready) { miss?.(); return; }
+      if (!frameState.active || !frameState.ready) { miss?.(); return; }
       const dropped = pendingPatch;
       pendingPatch = { request, text, miss };
       livePatch = livePatch?.path === request.path ? { ...livePatch, base } : { path: request.path, base, others: { ...sources } };
@@ -1221,7 +1251,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       patchHandle = requestAnimationFrame(() => {
         patchHandle = 0;
         const next = pendingPatch; pendingPatch = undefined;
-        if (!next || !mounted || !livePatch) { next?.miss?.(); return; }
+        if (!next || !frameState.active || !livePatch) { next?.miss?.(); return; }
         const id = ++patchId;
         if (next.miss) patchMisses.set(id, next.miss);
         if (patchMisses.size > 64) patchMisses.delete(patchMisses.keys().next().value!);
@@ -1243,7 +1273,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       cancelAnimationFrame(patchHandle); patchHandle = 0;
       pendingPatch = undefined;
       const was = livePatch; livePatch = undefined;
-      if (!mounted) return;
+      if (!frameState.active) return;
       if (finish && request && request.path === path) postPatch({ id: ++patchId, request, text: finish.text, end: true });
       else if (was) {
         // Ended without its text written (refused, stale, a refused Escape): the
@@ -1258,7 +1288,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * a selector, or the selection. Measured after any pending render.
      */
     async inspect(request: { path?: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown> {
-      if (!mounted || !site || !ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
+      if (!frameState.active || !site || !frameState.ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
       // A scheduled render is posted on the next frame, before this request.
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
       const id = ++inspectionId;
@@ -1330,7 +1360,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     attachAddButton(addButton: HTMLButtonElement) {
       addButtonEl = addButton;
       pageBuilder.attachAddButton(addButton);
-      pageBuilder.setActive(mounted);
+      pageBuilder.setActive(frameState.active);
       if (addLocked) pageBuilder.setViewing(true);
       syncAddLock();
     },
@@ -1390,9 +1420,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       assets = next;
       postAssets();
     },
+    /** Attach the frame parked so its runtime loads before the first page is known. */
+    preload() {
+      frameState.preload();
+    },
     deactivate() {
-      if (!mounted) return;
-      mounted = false;
+      // Parks the pane and reloads its frame: the pane never leaves the host.
+      if (!frameState.deactivate()) return;
       site = undefined;
       shownRoute = undefined;
       postedRoutes.clear();
@@ -1408,17 +1442,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       cardGrids?.clear();
       clearSelection();
       handlers.onStructure?.(undefined);
-      pane.remove();
       host.classList.remove("has-preview");
       showBanner(undefined, false);
       warningBox.replaceChildren();
       warningBox.hidden = true;
     },
     isActive() {
-      return mounted;
+      return frameState.active;
     },
     destroy() {
-      disarmReadyWatchdog();
+      frameState.destroy();
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       editBar.destroy();

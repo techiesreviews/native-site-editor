@@ -427,6 +427,8 @@ function mountWorkspace() {
   codePanes.mountResize(element("main"), element("code-split"), element("secondary-pane"));
   cards = mountCards();
   // A selection inside a component's template gets Select card once the runtime says which card.
+  // A remount must not leave the old pane (parked or shown) behind.
+  nativePreview?.destroy();
   nativePreview = createNativePreview(element("main"), {
     ...previewSelection.handlers(),
     // The images of a page shown by following a link are read when it shows.
@@ -875,7 +877,7 @@ function renderMasterBanner() {
   // One line only: over the code, or, while the person keeps Code hidden, at the foot of the
   // preview, so Done and Update copies stay reachable without reopening Code.
   if (!content) return;
-  const main = content.closest("main"), preview = main?.querySelector<HTMLElement>(":scope > .preview-pane");
+  const main = content.closest("main"), preview = main?.querySelector<HTMLElement>(":scope.has-preview > .preview-pane");
   if (main && !masterBannerObserved.has(main)) {
     masterBannerObserved.add(main);
     new MutationObserver(() => { if (masterBanner) renderMasterBanner(); }).observe(main, { attributes: true, attributeFilter: ["class"] });
@@ -3840,6 +3842,8 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   const draftedHome = scope ? draftStore().get(scope, NATIVE_HOME_PAGE) : undefined;
   if (!result.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") && !(draftedHome && draftedHome.baseSha === null && !draftedHome.deleted)) return false;
   nativeEngaged = true;
+  // Load the preview runtime, parked, alongside the file listing and page reads.
+  nativePreview?.preload();
   nativeSite = undefined;
   try {
     nativeBaseFiles = await listRepositoryFiles(repo, result);

@@ -69,6 +69,8 @@ export function hasEditableRecoveryState(document: Document): boolean {
     if (document.activeElement === field || field.value && field.getClientRects().length > 0) return true;
   }
   for (const frame of document.querySelectorAll("iframe")) {
+    // A parked preview frame (inert, not yet showing a page) holds no edits.
+    if (frame.closest?.("[inert]")) continue;
     try {
       if (!frame.contentDocument || hasEditableRecoveryState(frame.contentDocument)) return true;
     } catch {

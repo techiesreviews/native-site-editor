@@ -66,7 +66,7 @@ test("unavailable session storage never causes a reload loop", async () => {
 function editableDocument({ dialog = false, fields = [], frames = [], activeElement = null }: {
   dialog?: boolean;
   fields?: Partial<HTMLInputElement>[];
-  frames?: { contentDocument: Document | null }[];
+  frames?: { contentDocument: Document | null; closest?: (selector: string) => unknown }[];
   activeElement?: unknown;
 } = {}): Document {
   return {
@@ -85,6 +85,8 @@ test("open forms, focused fields, inline edits and inaccessible previews block r
   assert.equal(hasEditableRecoveryState(editableDocument({ fields: [field] })), false);
   assert.equal(hasEditableRecoveryState(editableDocument({ frames: [{ contentDocument: null }] })), true);
   assert.equal(hasEditableRecoveryState(editableDocument({ frames: [{ contentDocument: editableDocument({ dialog: true }) }] })), true);
+  // A parked preview frame (inside an inert pane) holds no edits.
+  assert.equal(hasEditableRecoveryState(editableDocument({ frames: [{ contentDocument: null, closest: () => ({}) }] })), false);
 });
 test("session guard write failures and rejected draft flushes keep current edits", async () => {
   const f = fixture();

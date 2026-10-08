@@ -141,3 +141,13 @@ main.has-preview .code-editor {
 main.has-preview.code-collapsed > .code-split > :not(.code-resize) { display: none; }
 /* The small collapsed restore target must remain above canvas overlay controls. */
 main.has-preview.code-collapsed > .code-split { z-index: 30; }
+
+/* Attached early so the runtime loads during boot, but out of sight and
+   reach until the first native page. Never display:none: the frame must load. */
+.native-preview-pane.is-parked {
+  position: fixed;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}

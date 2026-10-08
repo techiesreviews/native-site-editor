@@ -31,7 +31,7 @@
 // Network: ASE_COLD_NET=none (default) or "<latency ms>/<down Mbps>", e.g.
 // 100/20, applied through CDP to the page (workers are not throttled).
 // ASE_COLD_JSON=path writes every run's raw numbers.
-// ASE_COLD_WATERFALL=1 lists the /api requests before paint (first cold and warm run).
+// ASE_COLD_WATERFALL=1 lists the /api requests and the preview runtime before paint (first cold and warm run).
 import { chromium, type BrowserContext, type Page, type Request } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 
@@ -140,8 +140,8 @@ async function measure(page: Page, resources: Res[], load: () => Promise<unknown
     requestsBeforePaint: before.length,
     bytesTotal: resources.reduce((sum, r) => sum + r.bytes, 0),
     top,
-    // The editor's own data requests (/api/…) that finished before paint, in start order.
-    waterfall: before.filter((r) => new URL(r.url).pathname.startsWith("/api/")).sort((a, b) => a.start - b.start)
+    // The editor's own data requests (/api/…) and the preview runtime that finished before paint, in start order.
+    waterfall: before.filter((r) => /^\/api\/|native-preview-runtime/.test(new URL(r.url).pathname)).sort((a, b) => a.start - b.start)
       .map((r) => ({ name: short(r.url) + new URL(r.url).search.slice(0, 60), start: r.start - origin, end: r.end - origin, bytes: r.bytes })),
   };
 }
@@ -182,10 +182,10 @@ async function main() {
   }
   console.log("\nTop bytes before first preview paint (cold, run 1):");
   for (const r of cold[0].top) console.log(`  ${kb(r.bytes).padStart(8)}  ${r.name}`);
-  // ASE_COLD_WATERFALL=1: the /api requests before paint of the first cold and warm runs.
+  // ASE_COLD_WATERFALL=1: the /api requests and the runtime before paint of the first cold and warm runs.
   if (process.env.ASE_COLD_WATERFALL === "1")
     for (const [label, run] of [["cold", cold[0]], ["warm", warm[0]]] as const) {
-      console.log(`\n/api requests before first preview paint (${label}, run 1): start–end ms, bytes`);
+      console.log(`\n/api requests and runtime before first preview paint (${label}, run 1): start–end ms, bytes`);
       for (const r of run.waterfall) console.log(`  ${ms(r.start).padStart(6)}–${ms(r.end).padEnd(6)} ${kb(r.bytes).padStart(7)}  ${r.name}`);
     }
   if (process.env.ASE_COLD_JSON) writeFileSync(process.env.ASE_COLD_JSON, JSON.stringify({ base, net, cold, warm }, null, 2));
