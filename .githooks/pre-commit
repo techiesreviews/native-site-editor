@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs npm run check, and lints the staged TypeScript, when a commit touches code or
+# config. Docs-only commits skip it. Never runs browser suites. See docs/agents/guardrails.md.
+# Enabled per clone with: git config core.hooksPath .githooks (npm install runs it via prepare).
+# Skip once with: git commit --no-verify
+set -e
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+code=$(printf '%s\n' "$staged" | grep -E '^(src|shared|worker|tests|scripts|\.githooks)/|^(package(-lock)?\.json|tsconfig\.json|eslint\.config\.mjs|vite\.config\.ts|vite-monaco-trim\.ts|playwright\.config\.ts|wrangler[^/]*\.jsonc)$' || true)
+[ -n "$code" ] || exit 0
+
+if [ ! -d node_modules ]; then
+  echo "pre-commit: no node_modules in this worktree, skipping check and lint."
+  exit 0
+fi
+
+npm run --silent check
+lint=$(printf '%s\n' "$code" | grep -E '^(src|shared|worker|tests)/.*\.ts$' || true)
+if [ -n "$lint" ]; then
+  # shellcheck disable=SC2086 # one path per word; repository paths have no spaces.
+  npx --no-install eslint $lint
+fi
