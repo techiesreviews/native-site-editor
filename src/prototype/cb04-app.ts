@@ -10,11 +10,11 @@ import { registerCommand } from "../page-builder/commands";
 import type { NativePreviewSelection } from "../components/native-preview";
 import { makeDialog, makeInPreview, makeDrawer } from "./cb04-make";
 import { newDialog, newBuildFirst, newCanvas } from "./cb04-new";
-import { installD, startMakingD, newComponentD, decorateAddPanelD, openContextMenu } from "./cb04-d";
+import { installD, startMakingD, startMakingE, newComponentD, decorateAddPanelD, openContextMenu } from "./cb04-d";
 import "./cb04.css";
 
-const NAMES: Record<Cb04Variant, string> = { A: "A (Dialog)", B: "B (In-preview)", C: "C (Drawer · Canvas)", D: "D (Slot marking)" };
-const ORDER: Cb04Variant[] = ["A", "B", "C", "D"];
+const NAMES: Record<Cb04Variant, string> = { A: "A (Dialog)", B: "B (In-preview)", C: "C (Drawer · Canvas)", D: "D (Slot marking)", E: "E (Chips)" };
+const ORDER: Cb04Variant[] = ["A", "B", "C", "D", "E"];
 let mounted = false;
 
 export function install(host: Cb04Host) {
@@ -26,7 +26,7 @@ export function install(host: Cb04Host) {
   watchAddPanel();
   watchStructure();
   watchFilesRoot();
-  if (cb04Variant() === "D") installD();
+  if (cb04Variant() === "D" || cb04Variant() === "E") installD();
   registerCommand({
     id: "cb04.make", title: "Make component from selection", group: "Selection", icon: "component", keywords: ["prototype", "component"],
     when: () => Boolean(selectionTarget()),
@@ -84,6 +84,7 @@ export async function makeFromSelection(selection: NativePreviewSelection, _from
   if (variant === "A") return makeDialog(target);
   if (variant === "B") return makeInPreview(target);
   if (variant === "D") return startMakingD(target);
+  if (variant === "E") return startMakingE(target);
   return makeDrawer(target);
 }
 
@@ -92,7 +93,7 @@ export async function newComponent(_from: "add" | "palette" | "files", _folder =
   const variant = cb04Variant();
   if (variant === "A") return newDialog();
   if (variant === "B") return newBuildFirst();
-  if (variant === "D") return newComponentD();
+  if (variant === "D" || variant === "E") return newComponentD();
   return newCanvas();
 }
 
@@ -101,7 +102,7 @@ function watchAddPanel() {
   let watched: HTMLElement | undefined;
   const decorate = () => {
     const panel = document.querySelector<HTMLElement>(".pb-add-panel");
-    if (panel && cb04Variant() === "D") {
+    if (panel && (cb04Variant() === "D" || cb04Variant() === "E")) {
       // Variant D: the entry sits at the top of the components group, which the panel rebuilds.
       if (watched !== panel) { watched = panel; new MutationObserver(() => decorateAddPanelD(panel)).observe(panel, { childList: true, subtree: true }); }
       decorateAddPanelD(panel);
@@ -122,7 +123,7 @@ function watchAddPanel() {
 
 // Variant C: the selected Structure row gets a ⋯ menu with Make component.
 function watchStructure() {
-  if (cb04Variant() !== "C" && cb04Variant() !== "D") return;
+  if (cb04Variant() === "A" || cb04Variant() === "B") return;
   let menu: HTMLElement | undefined;
   const closeMenu = () => { menu?.remove(); menu = undefined; };
   const decorate = () => {
@@ -131,7 +132,7 @@ function watchStructure() {
     if (!row || row.querySelector(".cb04-row-more") || (cb04Variant() === "C" && !selectionTarget())) return;
     const open = () => {
       closeMenu();
-      if (cb04Variant() === "D") { const box = more.getBoundingClientRect(); openContextMenu(box.left, box.bottom + 2); return; }
+      if (cb04Variant() !== "C") { const box = more.getBoundingClientRect(); openContextMenu(box.left, box.bottom + 2); return; }
       menu = el("div", "cb04-row-menu");
       menu.setAttribute("role", "menu");
       const item = btn("Make component…", () => { closeMenu(); const s = deps().selection(); if (s) void makeFromSelection(s, "structure"); }, "cb04-row-menu__item");

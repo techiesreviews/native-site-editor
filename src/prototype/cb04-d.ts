@@ -11,7 +11,7 @@
 //   a tiny form (name + tag), then a blank component placed and opened in Edit
 //   component mode.
 
-import { cb04Hooks } from "./cb04";
+import { cb04Hooks, cb04Variant } from "./cb04";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
 import { planComponent, suggestName, instanceFromTemplate, type ComponentPlan, type PlannedSlot } from "./cb04-rule";
@@ -41,6 +41,7 @@ export function installD() {
   cb04Hooks.making = () => Boolean(making);
   cb04Hooks.marking = markingControls;
   frameEvents.contextmenu = (x, y) => void setTimeout(() => openContextMenu(x, y), 150);
+  frameEvents.hover = (path, node) => onHover?.(path, node);
   // The frame forwards right-clicks once asked (and again after it reloads).
   const ping = () => { const path = deps().currentPath(); if (path) void frameRects(path, [], { contextmenu: true }); };
   setInterval(ping, 1500);
@@ -239,6 +240,8 @@ export function startMakingD(target: Target) {
 
 // ---------------------------------------------------------------- edit bar: the purple Editable toggle.
 function markingControls(selection: NativePreviewSelection): EditBarControl[] {
+  // Variant E: no toggle in the edit bar (the chips on the page are the toggle).
+  if (cb04Variant() === "E") { barRel = undefined; return []; }
   const rel = relOf(selection);
   barRel = rel;
   if (!rel) return [];
@@ -308,7 +311,7 @@ function decorateStructure() {
         event.preventDefault();
         event.stopPropagation();
         const now = making?.plan?.slots.find((s) => s.key === badge!.dataset.key);
-        if (now && now.kind !== "items") openRename(now, badge!.getBoundingClientRect());
+        if (now && now.kind !== "items") renameSlot(now, badge!.getBoundingClientRect());
       });
       row.append(badge);
     }
@@ -327,7 +330,7 @@ function watchStructureD() {
     if (!row || !slot || slot.kind === "items") return;
     event.preventDefault();
     event.stopPropagation();
-    openRename(slot, row.querySelector(".cb04-sbadge")!.getBoundingClientRect());
+    renameSlot(slot, row.querySelector(".cb04-sbadge")!.getBoundingClientRect());
   }, true);
 }
 
@@ -379,11 +382,11 @@ export function openContextMenu(x: number, y: number) {
     items.push(
       { label: "Make editable (slot)", slot: true, disabled: on || Boolean(hit.inside), run: () => setEditable(hit, true) },
       { label: "Keep fixed", slot: true, disabled: !on || Boolean(hit.inside), run: () => setEditable(hit, false) },
-      { label: "Rename slot…", slot: true, disabled: !on || hit.slot?.kind === "items", run: () => { const now = hitFor(rel).slot; if (now) openRename(now, { left: x, top: y }); } },
+      { label: "Rename slot…", slot: true, disabled: !on || hit.slot?.kind === "items", run: () => { const now = hitFor(rel).slot; if (now) renameSlot(now, { left: x, top: y }); } },
       "-",
     );
   } else if (!making && canMake(selection)) {
-    items.push({ label: "Make component…", run: () => { const t = selection && targetOf(selection); if (t) startMakingD(t); } }, "-");
+    items.push({ label: "Make component…", run: () => { const t = selection && targetOf(selection); if (t) (cb04Variant() === "E" ? startMakingE : startMakingD)(t); } }, "-");
   }
   const node = selection?.host?.node ?? selection?.node;
   const path = selection?.host?.path ?? selection?.path;
@@ -480,4 +483,250 @@ export function decorateAddPanelD(panel: HTMLElement) {
   open.append(el("span", "cb04-dnew__plus", "+"), el("span", "cb04-dnew__text", "New component"));
   entry.append(open);
   title.after(entry);
+}
+
+// ======================================================================
+// Variant E, "Chips" (Lex: "B is more subtle and feels integrated"):
+// B's framing, chips and slim bar; D's Structure panel and context menus;
+// nothing in the edit bar. A click on a chip toggles slot / fixed; a
+// double-click renames (the single click waits a moment, so a double-click
+// never flips the toggle); hovering a non-default part offers "+ slot".
+
+let onHover: ((path: string | null, node: number[] | null) => void) | undefined;
+
+/** Rename from Structure or the context menu: D's floating field, E's chip + Structure fields. */
+function renameSlot(slot: PlannedSlot, at: { left: number; top: number }) {
+  if (cb04Variant() === "E") startChipRename?.(slot.key);
+  else openRename(slot, at);
+}
+let startChipRename: ((key: string) => void) | undefined;
+
+export function startMakingE(target: Target) {
+  making?.stop();
+  document.querySelector(".cb04-toast")?.remove();
+  const layer = el("div", "cb04-mode cb04-mode--e");
+  const clip = el("div", "cb04-mode__clip");
+  const frameBox = el("div", "cb04-mode__frame");
+  frameBox.append(el("span", "cb04-mode__frame-label", `Making a component from this <${target.tag}>`));
+  clip.append(frameBox);
+  const plus = btn("+ slot", () => {
+    if (!plusKey || !making) return;
+    making.forced.add(plusKey);
+    plusKey = undefined;
+    plus.hidden = true;
+    replan();
+  }, "cb04-mode__plus");
+  plus.hidden = true;
+  plus.title = "Make this part a slot";
+  clip.append(plus);
+  layer.append(clip);
+  // B's slim bar.
+  const bar = el("div", "cb04-mode__bar cb04-mode__bar--e");
+  const name = nameField(suggestName(target.outer, takenTags()), () => replan());
+  name.wrap.classList.add("cb04-name--inline");
+  const count = el("span", "cb04-mode__summary");
+  const create = btn("Create", () => void submit(), "button primary");
+  bar.append(name.wrap, count, el("span", "cb04-mode__hint", "click a chip to toggle · double-click to rename"), btn("Cancel", () => stop(true), "button secondary"), create);
+  document.body.append(layer, bar);
+
+  const boxes = new Map<string, { box: HTMLElement; chip: HTMLButtonElement }>();
+  let alive = true;
+  let hoverNode: number[] | undefined;
+  let hoverSeen = 0;
+  let plusKey: string | undefined;
+  onHover = (path, node) => {
+    if (path === target.path && node && node.length > target.node.length && target.node.every((n, i) => node[i] === n)) { hoverNode = node; hoverSeen = Date.now(); }
+  };
+
+  // ---- Rename: the chip's field and the Structure badge's field, as one.
+  let renaming: { key: string; original: string; chipInput: HTMLInputElement; treeInput: HTMLInputElement } | undefined;
+  const renameKey = (key: string) => {
+    if (!making) return;
+    let slot = making.plan?.slots.find((s) => s.key === key);
+    if (!slot || slot.kind === "items") return;
+    if (slot.fixed) { setEditable({ key, slot }, true); slot = making.plan?.slots.find((s) => s.key === key); }
+    if (!slot) return;
+    endRename(false);
+    const original = slot.name;
+    const make = (cls: string) => {
+      const input = el("input", `cb04-chip-field ${cls}`);
+      input.value = original;
+      input.spellcheck = false;
+      input.setAttribute("aria-label", "Slot name");
+      return input;
+    };
+    const chipInput = make("cb04-chip-field--chip");
+    const treeInput = make("cb04-chip-field--tree");
+    const sync = (from: HTMLInputElement, to: HTMLInputElement) => {
+      to.value = from.value;
+      const name = from.value.trim();
+      const why = !SLOT_NAME.test(name) ? "Use lowercase letters, digits and single dashes" : making?.plan?.slots.some((s) => s.key !== key && !s.fixed && s.name === name) ? `“${name}” is used already` : "";
+      for (const input of [chipInput, treeInput]) { input.classList.toggle("is-warning", Boolean(why)); input.title = why; }
+    };
+    for (const [from, to] of [[chipInput, treeInput], [treeInput, chipInput]] as const) {
+      from.addEventListener("input", () => sync(from, to));
+      from.addEventListener("keydown", (event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") { event.preventDefault(); endRename(true); }
+        if (event.key === "Escape") { event.preventDefault(); endRename(false); }
+      });
+      from.addEventListener("blur", () => setTimeout(() => {
+        if (renaming?.key === key && document.activeElement !== chipInput && document.activeElement !== treeInput) endRename(true);
+      }, 120));
+    }
+    renaming = { key, original, chipInput, treeInput };
+    clip.append(chipInput);
+    document.body.append(treeInput);
+    place();
+    chipInput.focus();
+    chipInput.select();
+    // The Structure field shows the same text, selected, at the same moment.
+    treeInput.classList.add("is-mirror");
+  };
+  startChipRename = renameKey;
+  function endRename(commit: boolean) {
+    if (!renaming) return;
+    const { key, original, chipInput, treeInput } = renaming;
+    renaming = undefined;
+    chipInput.remove();
+    treeInput.remove();
+    const slot = making?.plan?.slots.find((s) => s.key === key);
+    if (slot && commit && chipInput.value.trim() !== original) rename(slot, chipInput.value);
+    else replan();
+  }
+
+  // ---- Chips, positioned on the page.
+  let clickTimer: ReturnType<typeof setTimeout> | undefined;
+  const toggleKey = (key: string) => {
+    const slot = making?.plan?.slots.find((s) => s.key === key);
+    if (slot) setEditable({ key, slot }, slot.fixed);
+  };
+  const union = (rects: (Rect | null)[]) => {
+    const hits = rects.filter((r): r is Rect => Boolean(r));
+    if (!hits.length) return undefined;
+    const x = Math.min(...hits.map((r) => r.x)), y = Math.min(...hits.map((r) => r.y));
+    return { x, y, w: Math.max(...hits.map((r) => r.x + r.w)) - x, h: Math.max(...hits.map((r) => r.y + r.h)) - y };
+  };
+  const put = (node: HTMLElement, r: Rect | undefined, pad = 0) => {
+    node.hidden = !r;
+    if (r) Object.assign(node.style, { left: `${r.x - pad}px`, top: `${r.y - pad}px`, width: `${r.w + pad * 2}px`, height: `${r.h + pad * 2}px` });
+  };
+  // The rename fields follow their chip and their Structure badge.
+  function place() {
+    if (!renaming) return;
+    const parts = boxes.get(renaming.key);
+    if (parts) {
+      const clipBox = clip.getBoundingClientRect(), chip = parts.chip.getBoundingClientRect();
+      Object.assign(renaming.chipInput.style, { left: `${chip.left - clipBox.left}px`, top: `${chip.top - clipBox.top}px` });
+    }
+    const slot = making?.plan?.slots.find((s) => s.key === renaming!.key);
+    const badge = slot && document.querySelector<HTMLElement>(`.page-structure__row[data-node="${rowKeyFor(slot)}"] .cb04-sbadge`);
+    renaming.treeInput.hidden = !badge;
+    if (badge) {
+      const r = badge.getBoundingClientRect();
+      Object.assign(renaming.treeInput.style, { left: `${r.right - 120}px`, top: `${r.top - 2}px` });
+    }
+  }
+  async function follow() {
+    if (!alive || !making) return;
+    const slots = making.plan?.slots ?? [];
+    const hoverRel = hoverNode && Date.now() - hoverSeen < 4000 ? hoverNode.slice(target.node.length) : undefined;
+    const nodes = [target.node, ...slots.flatMap((slot) => slot.paths.map((p) => [...target.node, ...p]))];
+    if (hoverRel) nodes.push([...target.node, ...hoverRel]);
+    const rects = await frameRects(target.path, nodes, { contextmenu: true, hover: true });
+    if (!alive || !making) return;
+    const f = document.querySelector(".native-preview-frame")?.getBoundingClientRect();
+    if (!f) { setTimeout(() => void follow(), 150); return; }
+    put(clip, { x: f.left, y: f.top, w: f.width, h: f.height });
+    const offset = (r: Rect | null | undefined) => (r ? { ...r, x: r.x - f.left, y: r.y - f.top } : undefined);
+    put(frameBox, offset(rects[0]), 6);
+    const seen = new Set<string>();
+    let at = 1;
+    for (const slot of slots) {
+      const own = rects.slice(at, at + slot.paths.length);
+      at += slot.paths.length;
+      seen.add(slot.key);
+      let parts = boxes.get(slot.key);
+      if (!parts) {
+        const box = el("div", `cb04-mode__slot cb04-mode__slot--${slot.kind}`);
+        const key = slot.key;
+        const chip = btn("", () => {
+          clearTimeout(clickTimer);
+          clickTimer = setTimeout(() => toggleKey(key), 230);
+        }, "cb04-mode__chip");
+        chip.addEventListener("dblclick", (event) => { event.preventDefault(); clearTimeout(clickTimer); renameKey(key); });
+        box.append(chip);
+        clip.append(box);
+        parts = { box, chip };
+        boxes.set(slot.key, parts);
+      }
+      const r = offset(union(own));
+      put(parts.box, r, 2);
+      const problem = nameProblem(slot);
+      parts.box.classList.toggle("is-fixed", slot.fixed);
+      parts.box.classList.toggle("is-warning", !slot.fixed && Boolean(problem));
+      parts.box.classList.toggle("chip-left", Boolean(r && r.x > 96));
+      parts.box.classList.toggle("is-renaming", renaming?.key === slot.key);
+      parts.chip.textContent = `${slot.fixed ? "○" : "✓"} ${slot.kind === "items" ? `items ×${slot.count}` : slot.name}${problem && !slot.fixed ? " ⚠" : ""}`;
+      parts.chip.title = slot.fixed ? "Fixed in the template: click to make it a slot" : slot.kind === "items" ? "The page's repeated items (the unnamed slot): click to keep them fixed" : `${problem ? `${problem}. ` : ""}Click: keep fixed · double-click: rename`;
+    }
+    for (const [key, parts] of boxes) if (!seen.has(key)) { parts.box.remove(); boxes.delete(key); }
+    // "+ slot" on a hovered part that is not a slot and not inside one.
+    const hoverRect = hoverRel ? rects[rects.length - 1] : undefined;
+    const hit = hoverRel ? hitFor(hoverRel) : undefined;
+    if (hoverRel && hoverRect && hit && !hit.slot && (!hit.inside || hit.inside.fixed)) {
+      plusKey = hit.key;
+      const r = offset(hoverRect)!;
+      plus.hidden = false;
+      Object.assign(plus.style, { left: `${r.x + r.w - 4}px`, top: `${r.y + 2}px` });
+    } else if (!plus.matches(":hover")) { plus.hidden = true; plusKey = undefined; }
+    place();
+    Object.assign(bar.style, { left: `${f.left + f.width / 2}px`, top: `${f.top + 12}px` });
+    setTimeout(() => void follow(), 120);
+  }
+
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || renaming || (event.target as Element).closest?.(".cb04-rename, .cb04-menu")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stop(true);
+  };
+  document.addEventListener("keydown", onKey, true);
+  function stop(reselect: boolean) {
+    alive = false;
+    endRename(false);
+    layer.remove();
+    bar.remove();
+    document.removeEventListener("keydown", onKey, true);
+    making = undefined;
+    onHover = undefined;
+    startChipRename = undefined;
+    decorateStructure();
+    if (reselect) deps().preview()?.selectNode({ path: target.path, node: target.node });
+  }
+  making = { target, fixed: new Set(), forced: new Set(), names: new Map(), name, count, create, stop: () => stop(false) };
+  replan();
+  deps().preview()?.selectNode({ path: target.path, node: target.node });
+  void follow();
+
+  async function submit() {
+    if (!making) return;
+    endRename(true);
+    if (name.problem()) { name.input.focus(); return; }
+    const bad = (making.plan?.slots ?? []).find((slot) => !slot.fixed && nameProblem(slot));
+    if (bad) { toast(`Slot “${bad.name}”: ${nameProblem(bad)}`); return; }
+    const tag = name.value();
+    const now = targetAt(target.path, target.node);
+    const choices = { names: making.names, forced: making.forced };
+    const fixed = making.fixed;
+    stop(false);
+    if (!now || now.outer !== target.outer) { toast("The section changed meanwhile; select it again."); return; }
+    const made = planComponent(now.outer, tag, fixed, choices);
+    if ("error" in made || !(await makeInPlace(now, tag, made))) return;
+    for (let i = 0; i < 40 && !takenTags().includes(tag); i++) await new Promise((r) => setTimeout(r, 100));
+    await state.host?.editComponent(tag);
+    toast(`Made <${tag}> · Edit component mode: its template is in the code pane`);
+  }
+  name.input.focus();
+  name.input.select();
 }
