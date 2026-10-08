@@ -266,7 +266,7 @@ function sectionLinksOnce(documentText: string | undefined): () => NativeSection
   return () => links ??= readNativeSectionLinks(documentText);
 }
 /** Ranges another editor feature already owns on a page: section links. */
-function otherOwnedRanges(document: PageBuilderDocument, sectionLinks: () => NativeSectionLinks, page: string, source: string): { start: number; end: number; what: string }[] {
+function otherOwnedRanges(sectionLinks: () => NativeSectionLinks, page: string, source: string): { start: number; end: number; what: string }[] {
   const out: { start: number; end: number; what: string }[] = [];
   for (const [key, link] of Object.entries(sectionLinks()[page] ?? {})) {
     const located = locateSectionTarget(source, link.target);
@@ -277,9 +277,9 @@ function otherOwnedRanges(document: PageBuilderDocument, sectionLinks: () => Nat
 }
 const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start < b.end && b.start < a.end;
 
-function resolvePage(document: PageBuilderDocument, sectionLinks: () => NativeSectionLinks, page: string, source: string, entries: Record<string, PagePartLink>): ResolvedPagePartLink[] {
+function resolvePage(sectionLinks: () => NativeSectionLinks, page: string, source: string, entries: Record<string, PagePartLink>): ResolvedPagePartLink[] {
   const found: ResolvedPagePartLink[] = [];
-  const owned = otherOwnedRanges(document, sectionLinks, page, source);
+  const owned = otherOwnedRanges(sectionLinks, page, source);
   for (const [key, link] of Object.entries(entries)) {
     const located = locateSectionTarget(source, link.target);
     if ("error" in located) fail(`Page part link ${key} on ${page}: ${located.error} Relink it.`);
@@ -295,13 +295,13 @@ function resolvePage(document: PageBuilderDocument, sectionLinks: () => NativeSe
 /** Every page part link, located in the loaded page bytes. Any unloaded page, missing, ambiguous or overlapping link refuses. */
 export function resolvePagePartLinks(input: { documentText: string | undefined; sources: Sources }): { links: ResolvedPagePartLink[] } | { error: string } {
   return result(() => {
-    const document = readPageBuilderDocument(input.documentText);
+    readPageBuilderDocument(input.documentText); // Throws on a malformed document.
     const links: ResolvedPagePartLink[] = [];
     const sectionLinks = sectionLinksOnce(input.documentText);
     for (const [page, entries] of Object.entries(readPagePartLinks(input.documentText))) {
       const source = sourceOf(input.sources, page);
       if (source === undefined) fail(`Load ${page} before using its page parts.`);
-      links.push(...resolvePage(document, sectionLinks, page, source, entries));
+      links.push(...resolvePage(sectionLinks, page, source, entries));
     }
     return { links };
   });
@@ -339,11 +339,11 @@ function addLink(document: PageBuilderDocument, page: string, source: string, el
   return chosen;
 }
 /** A new link must not land on, in or around anything already linked or owned on its page. */
-function checkFree(document: PageBuilderDocument, documentText: string | undefined, page: string, source: string, element: SourceElement): void {
+function checkFree(documentText: string | undefined, page: string, source: string, element: SourceElement): void {
   const existing = readPagePartLinks(documentText)[page] ?? {};
   const sectionLinks = sectionLinksOnce(documentText);
-  for (const link of resolvePage(document, sectionLinks, page, source, existing)) if (overlaps(link, element)) fail(`This ${element.name} on ${page} is already linked (${link.key}).`);
-  for (const other of otherOwnedRanges(document, sectionLinks, page, source)) if (overlaps(other, element)) fail(`This ${element.name} on ${page} overlaps ${other.what}.`);
+  for (const link of resolvePage(sectionLinks, page, source, existing)) if (overlaps(link, element)) fail(`This ${element.name} on ${page} is already linked (${link.key}).`);
+  for (const other of otherOwnedRanges(sectionLinks, page, source)) if (overlaps(other, element)) fail(`This ${element.name} on ${page} overlaps ${other.what}.`);
 }
 const sorted = (graph: Set<string>) => [...graph].sort();
 
@@ -395,7 +395,7 @@ export function planSavePagePart(input: SavePagePartInput): (PagePartPlan & { ht
     const rootClass = input.rootClass.toLowerCase();
     if (Object.values(catalog).some((record) => record.rootClass.toLowerCase() === rootClass)) fail(`Another page part already uses ${input.rootClass}.`);
     if (Object.values(readSectionCatalog(input.documentText)).some((record) => record.rootClass.toLowerCase() === rootClass)) fail(`A saved section already uses ${input.rootClass}.`);
-    checkFree(document, input.documentText, input.pagePath, source, element);
+    checkFree(input.documentText, input.pagePath, source, element);
 
     const container = (plain(document.reusablePageParts) ? document.reusablePageParts : { version: 1, records: {} }) as { version: number; records: Record<string, JsonValue> };
     container.records[input.id] = { id: input.id, label: input.label, rootTag: element.name.toLowerCase(), rootClass: input.rootClass, htmlPath, stylesheetPath: input.stylesheetPath };
@@ -463,7 +463,7 @@ export function planLinkPagePartCopies(input: LinkPagePartInput): (PagePartPlan 
       const element = partAt(source, copy.range);
       if (element.name.toLowerCase() !== record.rootTag) fail(`${record.label} is a ${record.rootTag}; that is a ${element.name}.`);
       const text = writePageBuilderDocument(document, input.documentText);
-      checkFree(document, text, copy.pagePath, source, element);
+      checkFree(text, copy.pagePath, source, element);
       const chain = provenChain(graph, input.sources, copy.pagePath, source, record.stylesheetPath);
       const key = addLink(document, copy.pagePath, source, element, record.id, basis, copy.key);
       keys.push({ page: copy.pagePath, key, unchanged: source.slice(element.start, element.end) === basis });

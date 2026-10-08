@@ -36,7 +36,6 @@ test.afterEach(() => {
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const explorer = (page: Page) => page.locator("#explorer");
 const row = (page: Page, name: string) => explorer(page).getByRole("button", { name, exact: true });
-const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = indexPath) {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);

@@ -1,4 +1,4 @@
-import { NOTE_GAP, PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
+import { PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 export { NOTE_GAP, PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";

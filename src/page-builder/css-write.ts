@@ -54,7 +54,6 @@ function commentRanges(source: string) {
   }
   return ranges;
 }
-const trimCssWhitespace = (value: string) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
 
 function withoutComments(source: string) {
   for (const range of commentRanges(source).reverse()) source = source.slice(0, range.start) + " " + source.slice(range.end);

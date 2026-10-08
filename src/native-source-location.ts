@@ -9,7 +9,7 @@
 // parser the preview uses, so implied elements and auto-closed tags line up
 // exactly; walking the indexes then yields the tag's position in the source.
 
-import { MARK, VOID_ELEMENTS, elementEnd, startTags, type ElementRange, type StartTag } from "../shared/html-source";
+import { MARK, elementEnd, startTags, type ElementRange, type StartTag } from "../shared/html-source";
 import { nativePageBody } from "../shared/native-project";
 
 export * from "../shared/html-source";

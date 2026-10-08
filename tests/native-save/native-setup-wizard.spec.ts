@@ -67,7 +67,7 @@ async function createStarterSite(page: Page) {
   await toReady(page);
 }
 
-test("signed out: one Continue with GitHub, the install trip by itself, a site saved as its first commit, the celebration page, then the editor with the Setup checklist", async ({ page, baseURL, context }) => {
+test("signed out: one Continue with GitHub, the install trip by itself, a site saved as its first commit, the celebration page, then the editor with the Setup checklist", async ({ page, baseURL }) => {
   await startSignedOut(page, baseURL!);
   // Signed in and installed on the way: sign-in (one authorization) and one install, no stop between.
   const trip = await state(page, baseURL!);

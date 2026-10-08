@@ -454,9 +454,9 @@ test.describe("native static starter", () => {
     await expect.poll(() => mounted(page)).toBe(four);
     expect(await storedDraft(page, CSS)).toBeUndefined();
     expect(await file(page, baseURL, CSS)).toBe(fourCss);
-    for (const name of ["Contact", "Split", "Features", "Intro"]) await page.locator(".code-editor__undo").first().click();
+    for (const _name of ["Contact", "Split", "Features", "Intro"]) await page.locator(".code-editor__undo").first().click();
     await expect.poll(() => mounted(page)).toBe(before);
-    for (const name of ["Intro", "Features", "Split", "Contact"]) await page.locator(".code-editor__redo").first().click();
+    for (const _name of ["Intro", "Features", "Split", "Contact"]) await page.locator(".code-editor__redo").first().click();
     await expect.poll(() => mounted(page)).toBe(four);
     await publishButton(page).click();
     await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });

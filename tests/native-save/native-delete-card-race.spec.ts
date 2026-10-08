@@ -1,4 +1,3 @@
-import { openPageSettingsFromPages } from "./settings-entry";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { storedDraft, storedDrafts } from "./drafts";

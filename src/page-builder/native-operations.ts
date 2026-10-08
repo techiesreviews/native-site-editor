@@ -288,7 +288,7 @@ function structuralIndent(markup: string, newline: string, indent: string, remov
     const match = close.exec(markup);
     if (match) protectedRanges.push([tag.end, match.index]);
   }
-  return markup.replace(/(\r\n?|\n)([ \t]*)/g, (match, linebreak: string, spaces: string, offset: number) => {
+  return markup.replace(/(\r\n?|\n)([ \t]*)/g, (match, _linebreak: string, spaces: string, offset: number) => {
     if (protectedRanges.some(([start, end]) => offset >= start && offset < end)) return match;
     return `${newline}${indent}${remove && spaces.startsWith(remove) ? spaces.slice(remove.length) : spaces}`;
   });

@@ -42,7 +42,7 @@ async function undo(page: Page) {
   await page.locator("#content [role='textbox']").first().focus();
   await page.keyboard.press("ControlOrMeta+Z");
 }
-const centre = async (page: Page, selector: ReturnType<Page["locator"]>) => {
+const centre = async (selector: ReturnType<Page["locator"]>) => {
   const box = (await selector.boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, top: box.y, bottom: box.y + box.height };
 };
@@ -50,8 +50,8 @@ const centre = async (page: Page, selector: ReturnType<Page["locator"]>) => {
 test("a sidebar row dragged onto a sibling gap reorders the page as one undo step", async ({ page }) => {
   await expect(page.locator(".page-structure__hint")).toHaveCount(0);
   const cards = row(page, "Section");
-  const from = await centre(page, cards);
-  const hero = await centre(page, row(page, "Section A native browser preview"));
+  const from = await centre(cards);
+  const hero = await centre(row(page, "Section A native browser preview"));
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(from.x, from.y - 20, { steps: 4 });
@@ -77,8 +77,8 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
 
   // Dropping below the last sibling's subtree (its last child row) puts it at the end.
   await row(page, "Section Scroll to verify").locator(".page-structure__toggle").click();
-  const last = await centre(page, tree(page).getByRole("treeitem", { name: /^Paragraph Paragraph five/ }));
-  const from2 = await centre(page, row(page, "Section"));
+  const last = await centre(tree(page).getByRole("treeitem", { name: /^Paragraph Paragraph five/ }));
+  const from2 = await centre(row(page, "Section"));
   await page.mouse.move(from2.x, from2.y);
   await page.mouse.down();
   await page.mouse.move(last.x, last.bottom - 2, { steps: 6 });
@@ -94,7 +94,7 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
 test("6 px is a click, 7 px is a drag; Escape, a same-position release and a drop outside the siblings change nothing", async ({ page }) => {
   await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
   const cards = row(page, "Section");
-  const from = await centre(page, cards);
+  const from = await centre(cards);
   // 6 px: no drag; the release still selects the row.
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -128,7 +128,7 @@ test("6 px is a click, 7 px is a drag; Escape, a same-position release and a dro
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
 
   // A heading row is not a section: it does not drag.
-  const heading = await centre(page, row(page, "Heading A native browser preview"));
+  const heading = await centre(row(page, "Heading A native browser preview"));
   await page.mouse.move(heading.x, heading.y);
   await page.mouse.down();
   await page.mouse.move(heading.x, heading.y + 60, { steps: 4 });
@@ -137,7 +137,7 @@ test("6 px is a click, 7 px is a drag; Escape, a same-position release and a dro
 
   // Dropped on another parent's row (the footer, outside main's group): nothing.
   await clearStatus(page);
-  const footer = await centre(page, row(page, "Site footer"));
+  const footer = await centre(row(page, "Site footer"));
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(footer.x, footer.y, { steps: 6 });
@@ -173,7 +173,7 @@ const grip = (page: Page) => bar(page).getByRole("button", { name: "Drag to move
 const dragging = (page: Page) => page.locator(".insert-layer");
 // Presses the selected section's grip; returns where it was pressed.
 async function pressGrip(page: Page) {
-  const at = await centre(page, grip(page));
+  const at = await centre(grip(page));
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   return at;

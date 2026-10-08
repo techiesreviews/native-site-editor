@@ -10,7 +10,6 @@
 // only the ones of the repository the tab shows.
 import {
   OPEN_REQUESTS_LIMIT,
-  REQUEST_HTML_LIMIT,
   REQUEST_TEXT_LIMIT,
   THREAD_LIMIT,
   THREAD_TEXT_LIMIT,

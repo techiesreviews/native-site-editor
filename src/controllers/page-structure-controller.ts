@@ -450,7 +450,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     // Images use the media chooser and native alternative text.
     if (range && selection.tag === "img") {
-      const tag = range.tag;
       const src = attribute("src");
       const alt = attribute("alt");
       controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node && currentMaster()) void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } });

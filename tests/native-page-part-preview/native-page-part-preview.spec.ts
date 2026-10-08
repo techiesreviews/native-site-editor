@@ -13,11 +13,8 @@ let server: Server;
 const copy = `<section class="intro"><h2>Hello</h2><p>Copy text</p></section>`;
 const page = `<!doctype html><html><head><title>T</title><link rel="stylesheet" href="styles/site.css"></head><body>\n<!-- shell -->\n<header><p class="top">Top</p></header>\n<main class="page">\n  <p class="before">Before</p>\n  ${copy}\n  <!-- after -->\n</main>\n</body></html>\n`;
 const css = `.intro h2 { color: rgb(200, 0, 0); }\n`;
-const master = (h2: string, extra = "") => `<!-- intro master -->\n<section class="intro"><h2>${h2}</h2><p>Master text${extra}</p></section>\n`;
-const masterPath = ".editor/sections/intro.html";
 const sources = { "components/x-note.html": `<p>Note</p>`, "index.html": page, "about/index.html": page.replace("Before", "About"), "styles/site.css": css };
 const site = { routes: { "/": "index.html", "/about/": "about/index.html" }, components: { "x-note": "components/x-note.html" } };
-const input = (masterSource: string, session = "s1") => ({ session, pagePath: "index.html", pageSource: page, node: [1, 1], basis: copy, masterPath, masterSource });
 
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: [`${root}tests/native-page-part-preview/harness.ts`], bundle: true, write: false, format: "esm", loader: { ".css": "empty", ".svg": "text" }, logLevel: "silent" });
@@ -42,7 +39,6 @@ async function open(page: Page) {
 }
 const events = (page: Page, type: string) => page.evaluate((type) => (window as any).events.filter((e: any) => e.type === type), type);
 const clearEvents = (page: Page) => page.evaluate(() => { (window as any).events.length = 0; });
-const pageHtml = (inner: Frame) => inner.evaluate(() => document.getElementById("page")!.innerHTML);
 
 for (const tag of ["header", "footer"] as const) {
   test(`${tag} bridge preserves root, maps local selection/typing/Code, locks outside and restores copy`, async ({ page }) => {

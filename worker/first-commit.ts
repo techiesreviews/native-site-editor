@@ -89,7 +89,7 @@ export async function commitStartingPoint(
   if (!head) throw new HttpError(502, "GitHub did not say which commit it made.");
   const rest = files.filter((file) => file !== first);
   try {
-    head = await addRest(github, repo, base, branch, head, rest, message);
+    head = await addRest(github, base, branch, head, rest, message);
   } catch (error) {
     const reason = error instanceof HttpError ? error.message : "GitHub could not add the rest of the files.";
     throw new StartingPointError(error instanceof HttpError ? error.status : 502, reason, [first.path], rest.map((file) => file.path));
@@ -98,7 +98,7 @@ export async function commitStartingPoint(
 }
 
 /** The tree and commit that add `rest` on top of `head`; the new head. */
-async function addRest(github: GitHub, repo: Repository, base: string, branch: string, head: string, rest: StarterFile[], message: string): Promise<string> {
+async function addRest(github: GitHub, base: string, branch: string, head: string, rest: StarterFile[], message: string): Promise<string> {
   if (rest.length) {
     const entries: { path: string; mode: "100644"; type: "blob"; content?: string; sha?: string }[] = [];
     for (const file of rest) {

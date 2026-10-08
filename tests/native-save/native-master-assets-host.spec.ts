@@ -52,7 +52,7 @@ async function seed(page: Page, baseURL: string | undefined) {
 
 test("a nested page's image/link/alt controls write only the master", { tag: "@native-static" }, async ({ page, baseURL }) => {
   const originalPage = await seed(page, baseURL);
-  const css = await effectiveSource(page, baseURL, "styles/site.css");
+  await effectiveSource(page, baseURL, "styles/site.css");
   await frame(page).locator(".master-image").click();
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   const alt = page.getByRole("textbox", { name: "Alt text", exact: true });

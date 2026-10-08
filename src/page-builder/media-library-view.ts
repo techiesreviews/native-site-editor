@@ -2,10 +2,9 @@ import { setIcon } from "../icons";
 import { rowActions } from "../components/row-actions";
 import { button, node } from "../ui/dom";
 import { formatBytes, uploadImageType, WARN_IMAGE_BYTES } from "../uploads";
-import { cleanMediaTags, type MediaMetadata, type MediaMetadataMap } from "./media-metadata";
+import { cleanMediaTags, type MediaMetadata } from "./media-metadata";
 import { mediaImageMarkup, mediaVariants, type MediaImage } from "./media-markup";
 import { DEFAULT_MEDIA_OPTIMISE, mediaSavings, optimiseMedia, type MediaOptimiseOptions, type MediaOptimiseResult } from "./media-optimise";
-import type { MediaUsage } from "./media-references";
 import "./media-picker.css";
 import type { MediaLibrary, MediaPickerHost, MediaPickerOptions, MediaImportRequest } from "./media-picker";
 

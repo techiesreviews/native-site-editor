@@ -45,7 +45,6 @@ async function expandRow(page: Page, name: string) {
   if ((await treeRow.getAttribute("aria-expanded")) === "false") await page.keyboard.press("ArrowRight");
   await expect(treeRow).toHaveAttribute("aria-expanded", "true");
 }
-const saveTrigger = publishButton;
 
 async function open(page: Page, baseURL: string | undefined, repo: number, file = "index.html") {
   await page.goto(`${baseURL}/#repo=${repo}&branch=main&file=${encodeURIComponent(file)}`);

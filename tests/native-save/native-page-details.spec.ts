@@ -33,7 +33,6 @@ const item = (page: Page, name: string) => explorer(page).getByRole("treeitem", 
 const status = (page: Page) => page.locator("#status");
 const undo = (page: Page) => page.locator(".code-editor__undo").first();
 const tree = (page: Page) => page.getByRole("tree", { name: "Page structure" });
-const code = (page: Page) => page.locator("#content .view-lines");
 const saveTrigger = publishButton;
 const follow = (page: Page, name: string) =>
   frame(page).locator("site-header a", { hasText: name }).click({ modifiers: ["ControlOrMeta"] });

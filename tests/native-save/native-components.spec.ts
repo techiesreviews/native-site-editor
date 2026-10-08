@@ -70,9 +70,9 @@ async function selectFirstCard(page: Page) {
   await row(page, "Section").locator(".page-structure__toggle").click();
   await row(page, "Project card Reusable cards").locator(".page-structure__label").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
-  await expandInstance(page, row(page, "Project card Reusable cards"));
+  await expandInstance(row(page, "Project card Reusable cards"));
 }
-async function expandInstance(page: Page, instance: import('@playwright/test').Locator) {
+async function expandInstance(instance: import('@playwright/test').Locator) {
   if (await instance.getAttribute('aria-expanded') === 'false') await instance.locator('.page-structure__toggle').click();
 }
 // A slot's open editor: the row whose text is edited in place, and the card under it (a link's URL, an image).
@@ -379,7 +379,7 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, "about/index.html");
   await row(page, "Media card").click();
-  await expandInstance(page, row(page, "Media card"));
+  await expandInstance(row(page, "Media card"));
   await expect(panel(page)).toBeVisible();
   const image = slot(page, "image");
   await expect(frame(page).locator("media-card img")).toHaveAttribute("alt", "Placeholder");
@@ -419,7 +419,7 @@ test("image upload finishes on the instance that started it", async ({ page, bas
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
   await open(page, baseURL, "about/index.html");
   await row(page, "Media card").first().click();
-  await expandInstance(page, row(page, "Media card").first());
+  await expandInstance(row(page, "Media card").first());
   await pauseUpload(page);
   await uploadImage(page);
   await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
@@ -452,7 +452,7 @@ for (const action of ["delete", "reorder"] as const) {
     await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: source } });
     await open(page, baseURL, "about/index.html");
     await row(page, "Media card").first().click();
-    await expandInstance(page, row(page, "Media card").first());
+    await expandInstance(row(page, "Media card").first());
     await pauseUpload(page);
     await uploadImage(page);
     await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
