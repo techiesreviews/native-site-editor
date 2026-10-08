@@ -11,7 +11,7 @@
     "dev": "wrangler dev --port 8787 --local-upstream 127.0.0.1:8787",
     "dev:ui": "vite --host 127.0.0.1",
     "build:ui": "vite build",
-    "check": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit && node scripts/check-unused.mjs",
+    "check": "tsc --noEmit && tsc -p worker/tsconfig.json --noEmit && node scripts/check-unused.mjs && node scripts/check-specs.mjs",
     "deploy": "wrangler deploy",
     "deploy:techies": "wrangler deploy --config wrangler.techies.jsonc",
     "test": "tsx --test tests/*.test.ts",

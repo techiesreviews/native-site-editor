@@ -314,6 +314,7 @@ test("Build it with an agent copies a prompt that connects an agent and starts w
   await page.getByLabel("What is the site about?").fill("a pottery studio in Bristol");
   await page.getByRole("button", { name: "Copy agent prompt" }).click();
   await expect(page.locator(".start-site__agent .onboard-message")).toContainText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("get_site");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   expect(prompt).toContain("get_site");
   expect(prompt).toContain("/mcp");
