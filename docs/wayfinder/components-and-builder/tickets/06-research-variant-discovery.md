@@ -2,7 +2,7 @@
 title: Research variant discovery from component CSS
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 

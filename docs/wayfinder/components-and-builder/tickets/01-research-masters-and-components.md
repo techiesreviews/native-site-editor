@@ -2,7 +2,7 @@
 title: Inventory the shared masters, page parts and components in use
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 

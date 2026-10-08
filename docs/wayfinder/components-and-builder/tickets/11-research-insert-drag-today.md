@@ -2,7 +2,7 @@
 title: Research what insert, drag and move support today
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 
