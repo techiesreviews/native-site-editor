@@ -41,7 +41,7 @@ preview paint ≤ 1.0 s, warm ≤ 0.4 s, 100 ms / 20 Mbps, median of 5).
 
 ## State on dev (`origin/dev`, after this file)
 
-`main.ts` 8,164 lines. Preview `64761767` is current. Landed this session:
+Preview `07a7e5d2` is current; `main.ts` 8215 lines. Landed this session:
 
 | Commit | What | Gates |
 | --- | --- | --- |
@@ -51,45 +51,43 @@ preview paint ≤ 1.0 s, warm ≤ 0.4 s, 100 ms / 20 Mbps, median of 5).
 | `44f7524` | Page Structure in-place editing (Lex designed it via a prototype; see p5-slices-handoff) | full 719 / 85 / 1 (spec fixed) |
 | `7acbc17` | Preview runtime hashed under `/assets/`, immutable; 8 s ready watchdog ([p5-14](p5-14-runtime-cache.md)) | full 721 / 85 / 0; live headers verified |
 | `43100c4` | Component icon is Phosphor `diamonds-four` (Lex) | structure/edit-bar specs 157 / 9 / 0 |
+| `91cf8ab` | Slice 10b ([p5-15](p5-15-preview-preload.md)): preview frame attached early, parked (`preview-frame-state.ts`), reloaded in place with a load-numbered `ready`; the site's own stylesheets (≤ 24 KB, best-effort, `live()`-guarded) read with the page in the first wave | full native-save 728 / 85 / 0 on `d0fdafa`; guard fix `cfff8fd`: focused 89 / 7, smoke 32, native-static 40 / 13 / 0 (full skipped by Lex's call); three Opus rounds, last defect fixed |
 
-Baselines now: 1,092 units; full native-save 721 passed / 85 skipped / 0
-failed; native-static 40 / 13 / 0; budget 346 KB of 350 KB.
+Baselines now: 1,100 units; full native-save 728 passed / 85 skipped / 0
+failed; native-static 40 / 13 / 0; budget 347 KB of 350 KB.
 
 ## Not merged
 
-- `build/p5-preview-preload` (`09f59c3`, worktree
-  `native-site-editor-p5-preview-preload`): slice 10b, parks the preview frame
-  and preloads the runtime at `nativeEngaged = true`. Measured no gain (cold
-  1020 → 1030 ms, warm 630 → 634 ms): the runtime request cannot start before
-  `/api/snapshot` proves the repo native, and the old code already loaded it
-  then; warm loads hit the immutable cache. Lead decision: do not merge (adds
-  lifecycle complexity; touches the code behind the `native-canvas:195` flake).
-  Its doc `p5-15-preview-preload.md` and raw timings stay on the branch.
 - `proto/structure-sidebar` (`d3df960`): the four-look Page Structure prototype.
   Keep, do not push or merge.
 
 ## Timing (median of 5, 100 ms / 20 Mbps, `tests/perf/cold-start.ts`)
 
-Latest dev baseline on this machine (2026-10-08): cold paint about 1,020 ms,
-warm about 630 ms (earlier runs measured 1,199 / 779 before the runtime cache;
-the machine varies, so always measure before and after in one sitting).
-Remaining levers named in reviews, unmeasured: the 300 ms font wait
-(`main.ts` near the font race in `activateNativeSite`, only for pages with
-fonts), the serial page/style reads after the snapshot, and the snapshot
-itself. Investigate with `ASE_COLD_WATERFALL=1` before building.
+After slice 10b: default fixture cold paint about 936 ms, warm about 534 ms;
+real starter (`ASE_NATIVE_SAVE_FIXTURE=~/Projects/native-site-editor-starter`)
+cold about 918 ms, warm about 535 ms. Cold meets the 1.0 s target; warm misses
+0.4 s. What remains before warm paint: the session and snapshot reads, one
+page-read wave, about 95 ms of render, and the preview runtime (now just on
+the critical path, about 15 ms; the dropped boot-time runtime fetch, signal A
+in p5-15, could win that back). Always measure before and after in one
+sitting, each run confirmed to serve its own `index-*.js`.
 
 ## Watch list
 
-- Flaky specs: `native-shared-link-host.spec.ts:82` (1 in about 6 runs),
-  `native-canvas.spec.ts:195` (code-hover hint; 1 failure in each of two full
-  runs, passes alone).
+- Flaky specs, all pre-existing on dev: `native-shared-link-host.spec.ts:82`
+  (1 in about 6 runs), `native-canvas.spec.ts:195` (dev 3/30: the hover lands
+  before Monaco paints the line), `native-shared-authoring-host.spec.ts:282`
+  (dev 9/10; fixed 1.5 s wait).
+- Slice 10b known limits (p5-15): a deploy can auto-reload a tab showing a
+  non-native repo after a native one (drafts flushed, loop-guarded); the
+  stale-predicted-read regression test passes with or without the fix.
 - Page Structure editor known limits (p5-slices-handoff "Page Structure
   in-place editing").
 
 ## Next actions
 
-1. Ticket 02: waterfall the current dev build (cold and warm) and pick the
-   biggest remaining gap; propose it to Lex before building.
+1. Ticket 02 warm target (0.4 s): waterfall the warm load on dev and propose
+   the biggest remaining lever to Lex before building.
 2. Slices 11–15 of the controller plan (pages, structure and shared sections,
    cards, multi-file operations, save/publish), then 16 (Monaco trim). Plan
    each with a read-only planner first; one branch and worktree per slice.
@@ -99,7 +97,7 @@ itself. Investigate with `ASE_COLD_WATERFALL=1` before building.
 Worktrees that are merged and can be removed when Lex says done:
 `native-site-editor-p5-boot-controller`, `-p5-shared-index-fix`,
 `-p5-preview-selection`, `-p5-runtime-cache`, `-structure-card-editor`,
-`-component-icon`. Keep `-p5-preview-preload` and `-proto-sidebar` until Lex
+`-component-icon`, `-p5-preview-preload`. Keep `-proto-sidebar` until Lex
 decides.
 
 ## Memory worth loading
