@@ -2,7 +2,7 @@
 title: Decide how tone variants keep text accessible
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [07-variant-contract]
 ---
 
