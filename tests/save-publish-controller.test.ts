@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSavePublishController, type SavePublishPorts } from "../src/controllers/save-publish-controller.ts";
 import type { DraftScope, SavedDraft } from "../src/drafts.ts";
+import { keepAsNewFile, pruneUnchanged, settleDeletedUpstream } from "../src/file-changes.ts";
 import { EMPTY_COMMIT, type Repository, type Snapshot } from "../shared/types.ts";
 
 function deferred<T>() {
@@ -11,6 +12,8 @@ function deferred<T>() {
 }
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const repo = (id = 1): Repository => ({ id, name: "site", full_name: `lex/site${id}`, private: false } as Repository);
+const draft = (path: string, over: Partial<SavedDraft> = {}): SavedDraft =>
+  ({ version: 1, account: "lex", repoId: 1, repo: "lex/site1", branch: "main", path, baseSha: "b".repeat(40), original: "old", content: "new", updatedAt: 1, ...over });
 const snap = (commit = "a".repeat(40), branch = "main", extra: Partial<Snapshot> = {}): Snapshot => ({ commit, branch, entries: [], ...extra } as Snapshot);
 
 function fixture(overrides: Partial<SavePublishPorts> = {}) {
@@ -19,6 +22,9 @@ function fixture(overrides: Partial<SavePublishPorts> = {}) {
   const calls: unknown[][] = [];
   const answers: ReturnType<typeof deferred<unknown>>[] = [];
   let wake: (() => void) | undefined, unwoken = 0, loads = 0;
+  const log: string[] = [];
+  const entries = new Map<string, ReturnType<typeof deferred<{ path: string; sha: string; mode: string; type: "blob" } | undefined>>>();
+  let resync = false, opened: string | undefined;
   const scope = (): DraftScope | undefined => state.repository && state.snapshot && state.account
     ? { account: state.account, repoId: state.repository.id, repo: state.repository.full_name, branch: state.snapshot.branch } : undefined;
   const ports: SavePublishPorts = {
@@ -32,10 +38,26 @@ function fixture(overrides: Partial<SavePublishPorts> = {}) {
     visible: () => state.visible,
     onWake: (check) => { wake = check; return () => { wake = undefined; unwoken++; }; },
     loadSnapshot: async () => { loads++; },
+    findEntry: (path) => { const answer = deferred<{ path: string; sha: string; mode: string; type: "blob" } | undefined>(); entries.set(path, answer); return answer.promise; },
+    settleDeletedUpstream, pruneUnchanged, keepAsNewFile,
+    nativeSite: () => true,
+    forgetDraftModel: (_s, path) => { log.push(`forget ${path}`); },
+    refreshDrafts: () => { log.push("drafts"); }, renderFileTree: () => { log.push("tree"); },
+    updateNativePreviewSources: () => { log.push("preview"); },
+    forgetDraftedAssets: () => { log.push("assets"); }, refreshHistory: () => { log.push("history"); },
+    refreshNativeSite: () => { log.push("routes"); }, updateAgentContext: () => { log.push("agent"); },
+    updateCurrentPageLabel: () => { log.push("label"); }, resyncNativeSite: () => { log.push("resync"); return resync; },
+    requestExplorerImagesRefresh: () => { log.push("images"); },
+    releaseFiles: (paths) => { log.push(`release ${[...paths].join(",")}`); return opened && paths.has(opened) ? opened : undefined; },
+    openAfter: async (path) => { log.push(`open ${path ?? "-"}`); },
+    announce: (text) => { log.push(text); },
     ...overrides,
   };
   const controller = createSavePublishController(ports);
-  return { controller, state, drafts, calls, answers, wake: () => wake?.(), counts: () => ({ loads, unwoken }) };
+  return {
+    controller, state, drafts, calls, answers, log, entries, wake: () => wake?.(), counts: () => ({ loads, unwoken }),
+    open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
+  };
 }
 
 test("the proof holds only for the same generation, account, repository, branch and snapshot", () => {
@@ -103,4 +125,56 @@ test("a head check loads a moved branch once, throttled, and drops answers for a
   assert.equal(hidden.calls.length, 0);
   hidden.controller.dispose();
   assert.equal(hidden.counts().unwoken, 1);
+});
+
+test("deleted upstream: a missing edit waits to be settled, a missing deletion goes, a late answer for another scope is dropped", async () => {
+  const f = fixture();
+  f.drafts.set("gone.html", draft("gone.html"));
+  f.drafts.set("removed.html", draft("removed.html", { deleted: true }));
+  f.drafts.set("kept.html", draft("kept.html"));
+  const done = f.controller.checkDeletedUpstream(1);
+  assert.equal(f.controller.checkDeletedUpstream(1), done, "once per snapshot load");
+  f.entries.get("gone.html")!.resolve(undefined);
+  f.entries.get("removed.html")!.resolve(undefined);
+  f.entries.get("kept.html")!.resolve({ path: "kept.html", sha: "c".repeat(40), mode: "100644", type: "blob" });
+  await done;
+  assert.equal(f.controller.isDeletedUpstream("gone.html"), true);
+  assert.equal(f.drafts.has("removed.html"), false);
+  assert.equal(f.drafts.has("kept.html"), true);
+  assert.deepEqual(f.log, ["drafts", "tree", "preview"]);
+
+  const g = fixture();
+  g.drafts.set("gone.html", draft("gone.html"));
+  const late = g.controller.findDeletedUpstream(1);
+  g.state.snapshot = snap("e".repeat(40));
+  g.entries.get("gone.html")!.resolve(undefined);
+  await late;
+  assert.equal(g.controller.isDeletedUpstream("gone.html"), false);
+  assert.deepEqual(g.log, []);
+
+  const stale = fixture();
+  stale.drafts.set("gone.html", draft("gone.html"));
+  await stale.controller.findDeletedUpstream(0);
+  assert.equal(stale.entries.size, 0, "an old epoch looks nothing up");
+});
+
+test("settling a deleted draft keeps it as a new file or drops it, then reopens what was open", async () => {
+  const f = fixture();
+  f.drafts.set("gone.html", draft("gone.html"));
+  f.entries.clear();
+  const check = f.controller.findDeletedUpstream(1);
+  f.entries.get("gone.html")!.resolve(undefined);
+  await check;
+  f.log.length = 0;
+  f.open("gone.html");
+  f.controller.settleDeletedDraft("gone.html", true);
+  assert.equal(f.drafts.get("gone.html")?.baseSha, null);
+  assert.equal(f.controller.isDeletedUpstream("gone.html"), false);
+  assert.deepEqual(f.log, ["release gone.html", "assets", "drafts", "history", "routes", "tree", "agent", "label", "resync", "images", "open gone.html", "Kept gone.html as a new file. Saving creates it again."]);
+  f.log.length = 0;
+  f.open(undefined);
+  f.controller.settleDeletedDraft("gone.html", false);
+  assert.equal(f.drafts.has("gone.html"), false);
+  assert.equal(f.log.at(-1), "Discarded the draft of gone.html.");
+  assert.equal(f.log.some((line) => line.startsWith("open")), false);
 });
