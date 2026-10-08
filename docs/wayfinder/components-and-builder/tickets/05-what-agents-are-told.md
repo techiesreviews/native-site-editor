@@ -2,7 +2,7 @@
 title: Decide what agents are told about making components
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-default-editables, 07-variant-contract]
 ---
 
