@@ -65,12 +65,14 @@ const RUNTIME_DOC = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="ase-frame-load" content="__FRAME_LOAD__" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Native preview</title>
 <script src="${RUNTIME_URL}" defer></script>
 </head>
 <body><div id="root" data-key="root"><div id="page" data-key="page"></div></div></body>
 </html>`;
+const runtimeDoc = (load: number) => RUNTIME_DOC.replace("__FRAME_LOAD__", String(load));
 
 interface UpdateInput {
   sources?: Record<string, string>;
@@ -371,7 +373,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // Scripts run so the runtime can render, but never same-origin: the frame
   // cannot reach the editor's origin, cookies, or storage.
   frame.setAttribute("sandbox", "allow-scripts");
-  frame.setAttribute("srcdoc", RUNTIME_DOC);
+  frame.setAttribute("srcdoc", runtimeDoc(0));
   frameHost.append(frame);
   // The canvas around the frame: breakpoints and breadcrumb (canvas-bar.ts).
   const toCanvas = (message: Record<string, unknown>) =>
@@ -541,18 +543,20 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pane.removeAttribute("aria-hidden");
     },
     // A fresh document for the next site: nothing of the old page or its assets
-    // survives. The comment changes the srcdoc so the frame really navigates.
+    // survives. The load number changes the srcdoc so the frame really navigates.
     reload: () => {
       sentAssets.clear();
       postedRoutes.clear();
       lastAvoid = "";
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
-      frame.setAttribute("srcdoc", `${RUNTIME_DOC}<!--${++frameLoads}-->`);
+      frame.setAttribute("srcdoc", runtimeDoc(++frameLoads));
     },
     armWatchdog: () => armReadyWatchdog(),
     disarmWatchdog: () => disarmReadyWatchdog(),
     resync: () => {
+      // A frame that became ready while parked has not had the pins yet.
+      pins?.reset();
       postTheme();
       lastAvoid = "";
       postAvoid();
@@ -837,6 +841,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return;
     }
     if (data.type === "ready") {
+      // A late `ready` from the document the last reload replaced.
+      const load = (data as { load?: unknown }).load;
+      if (load !== undefined && load !== String(frameLoads)) return;
       sentAssets.clear();
       postedRoutes.clear();
       shownRoute = undefined;

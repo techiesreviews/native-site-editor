@@ -3069,5 +3069,8 @@
   new MutationObserver(function () { scheduleSlotGhosts(); }).observe(pageEl, { childList: true, subtree: true, attributes: true });
   // Layout can shift without a render (fonts, component CSS arriving).
   if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); scheduleSlotGhosts(); }).observe(pageEl);
-  parent.postMessage({ source: "astro-native-preview", type: "ready" }, "*");
+  // Which load of the host's frame this document is, so a late `ready` from
+  // the document it replaced is not taken for this one's.
+  var frameLoad = document.querySelector('meta[name="ase-frame-load"]');
+  parent.postMessage({ source: "astro-native-preview", type: "ready", load: frameLoad ? frameLoad.getAttribute("content") : undefined }, "*");
 })();

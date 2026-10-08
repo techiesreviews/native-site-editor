@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { storedDraft } from "./drafts";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -586,6 +586,38 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     await expect.poll(async () => (await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests.length).toBe(0);
     // The pins are the editor's: nothing of them is in the page's draft.
     expect((await draft(page, indexPath)).content).not.toContain("agent-pin");
+    // Reading the branch again reloads the preview in place, parked until the
+    // page is back. Its reads are held until the new frame is ready, so it
+    // turns ready while parked: the pins still reach it.
+    // A commit on GitHub meanwhile, so the page's files are read again.
+    const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
+    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "styles/site.css", content: `${css}\n/* Refreshed. */\n` } });
+    const heldReads: Route[] = [];
+    let holding = true;
+    await page.route(/\/api\/files?\?/, (route) => { if (holding) heldReads.push(route); else void route.continue(); });
+    await page.evaluate(() => {
+      const seen = window as unknown as { __pinRects: number; __readies: number };
+      seen.__pinRects = 0;
+      seen.__readies = 0;
+      addEventListener("message", (event) => {
+        const type = (event.data as { type?: string })?.type;
+        if (type === "pin-rects" && (event.data as { rects?: { rect: unknown }[] }).rects?.some((item) => item.rect)) seen.__pinRects++;
+        if (type === "ready") seen.__pinRects = 0;
+        if (type === "ready") seen.__readies++;
+      });
+      (document.getElementById("refresh") as HTMLButtonElement).click();
+    });
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __readies: number }).__readies), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect(page.locator(".native-preview-pane")).toHaveClass(/is-parked/);
+    holding = false;
+    for (const route of heldReads.splice(0)) void route.continue();
+    await page.unroute(/\/api\/files?\?/);
+    await expect(page.locator(".native-preview-pane")).not.toHaveClass(/is-parked/, { timeout: 30_000 });
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    // The reloaded frame was told where the pins go: it reports their places.
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __pinRects: number }).__pinRects), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect(pins).toHaveCount(1);
+    await expect(pins.first()).toBeVisible();
   } finally {
     await client.close();
   }

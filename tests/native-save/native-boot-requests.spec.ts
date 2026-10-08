@@ -157,3 +157,26 @@ test('a drafted page that links a sheet outside the prediction, and a drafted si
   await page.reload();
   await expect.poll(() => heroColor(page), { timeout: 30_000 }).toBe('rgb(4, 5, 6)');
 });
+
+// One predicted sheet that cannot be read (in GitHub: not UTF-8) fails its
+// own batch only: the page still paints, styled by the sheet it links.
+test('an unreadable stylesheet no page links does not hold the preview back', async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'styles/unused.css', content: '.unused { color: red; }\n' } });
+  const shas = await blobShas(page);
+  const unused = shas['styles/unused.css'];
+  expect(unused).toBeTruthy();
+  let refused = 0;
+  await page.route(/\/api\/files?\?/, async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const asked = [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])];
+    if (asked.includes(unused)) { refused++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'This file is not UTF-8 text.' }) }); return; }
+    await route.continue();
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(preview(page).locator('.hero h1')).toBeVisible({ timeout: 30_000 });
+  expect(refused).toBeGreaterThan(0);
+  // Styled by styles/site.css: its body background, not the browser's white.
+  await expect.poll(() => preview(page).locator('body').evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(246, 247, 243)');
+  await expect(page.locator('.native-preview-error')).toBeHidden();
+});

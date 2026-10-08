@@ -32,20 +32,20 @@ test("ready while parked is recorded; activate then resyncs", () => {
   state.preload();
   assert.equal(state.markReady(), false);
   assert.equal(armed(), false);
-  assert.equal(state.canPost, false);
+  assert.equal((state.active && state.ready), false);
   calls.length = 0;
   assert.equal(state.activate(), true);
   assert.deepEqual(calls, ["unpark", "resync"]);
-  assert.equal(state.canPost, true);
+  assert.equal((state.active && state.ready), true);
 });
 
 test("activate without preload attaches, then unparks; ready later reports active", () => {
   const { state, calls } = setup();
   assert.equal(state.activate(), true);
   assert.deepEqual(calls, ["attach", "park", "arm", "unpark"]);
-  assert.equal(state.canPost, false);
+  assert.equal((state.active && state.ready), false);
   assert.equal(state.markReady(), true);
-  assert.equal(state.canPost, true);
+  assert.equal((state.active && state.ready), true);
   assert.equal(state.activate(), false);
 });
 
@@ -58,7 +58,7 @@ test("deactivate parks, reloads, resets ready and re-arms", () => {
   assert.deepEqual(calls, ["park", "reload", "arm"]);
   assert.equal(state.ready, false);
   assert.equal(state.active, false);
-  assert.equal(state.canPost, false);
+  assert.equal((state.active && state.ready), false);
   assert.equal(armed(), true);
 });
 
@@ -77,14 +77,14 @@ test("deactivate while parked does not reload", () => {
 test("posts only when active and ready, in any order", () => {
   const { state } = setup();
   state.markReady();
-  assert.equal(state.canPost, false);
+  assert.equal((state.active && state.ready), false);
   state.activate();
-  assert.equal(state.canPost, true);
+  assert.equal((state.active && state.ready), true);
   state.deactivate();
   state.activate();
-  assert.equal(state.canPost, false);
+  assert.equal((state.active && state.ready), false);
   state.markReady();
-  assert.equal(state.canPost, true);
+  assert.equal((state.active && state.ready), true);
 });
 
 test("destroy disarms the watchdog", () => {

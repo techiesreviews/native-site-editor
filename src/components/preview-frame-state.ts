@@ -22,7 +22,7 @@ export interface PreviewFramePorts {
   reload(): void;
   armWatchdog(): void;
   disarmWatchdog(): void;
-  /** Shown over a frame that was already ready: send avoid/theme/focus again. */
+  /** Shown over a frame that was already ready: send pins, avoid, theme and focus again. */
   resync(): void;
 }
 
@@ -40,8 +40,6 @@ export function createPreviewFrameState(ports: PreviewFramePorts) {
     get attached() { return attached; },
     get active() { return active; },
     get ready() { return ready; },
-    /** Whether messages that draw the page may be sent. */
-    get canPost() { return active && ready; },
     /** Load the runtime early, parked. No-op once attached. */
     preload: attach,
     /** Show the pane. Returns false when it was already active. */

@@ -3360,7 +3360,7 @@ async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => 
 // are taken up by readNativeStyleFiles and component stylesheets by
 // `nativeComponentStyles`. True when anything was read.
 const nativeShownRequests = new Set<string>();
-async function readNativeShownFiles(repo: string, site: NativeSite, pages: string[], live: () => boolean, extra: string[] = []) {
+async function readNativeShownFiles(repo: string, site: NativeSite, pages: string[], live: () => boolean, extra: string[] = [], predicted: string[] = []) {
   const scope = draftScope();
   const held = (path: string) => nativeBaseSources.has(path) || Boolean(scope && draftStore().get(scope, path));
   const fileSet = new Set(nativeFiles(scope));
@@ -3373,8 +3373,18 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
     for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
     const wanted = [...new Set([...shown.files, ...(first ? extra : [])])].filter((path) =>
       !held(path) && !nativeMissingStyleFiles.has(path) && !nativeShownRequests.has(path));
+    // Predicted files (the site's own stylesheets) come in the same wave but
+    // apart: one that cannot be read (not UTF-8) fails only its own batch,
+    // and a sheet a page links is then read in a later round as usual.
+    const guessed = round === 0 ? predicted.filter((path) => !wanted.includes(path) && !held(path) && !nativeShownRequests.has(path)) : [];
     first = false;
-    if (!wanted.length) break;
+    if (!wanted.length && !guessed.length) break;
+    const guessing = guessed.length ? readNativePredicted(repo, guessed) : Promise.resolve(false);
+    if (!wanted.length) {
+      if (await guessing) loaded = true;
+      if (!live()) return false;
+      continue;
+    }
     wanted.forEach((path) => nativeShownRequests.add(path));
     try {
       const entries = await Promise.all(wanted.map((path) => findEntry(path)));
@@ -3389,6 +3399,8 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
         nativeBaseSources.set(file.path, contents[file.sha]);
         loaded = true;
       }
+      if (await guessing) loaded = true;
+      if (!live()) return false;
       // Files that are not in the branch are not asked for again.
       if (!found.length) break;
     } finally {
@@ -3396,6 +3408,28 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
     }
   }
   return loaded;
+}
+
+// Best effort: whether any predicted file was read. A failure leaves them unread.
+async function readNativePredicted(repo: string, paths: string[]) {
+  paths.forEach((path) => nativeShownRequests.add(path));
+  try {
+    const entries = await Promise.all(paths.map((path) => findEntry(path)));
+    const found = paths.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
+    if (!found.length) return false;
+    const contents = await readFiles(repo, found.map((file) => file.sha));
+    let read = false;
+    for (const file of found) {
+      if (nativeBaseSources.has(file.path) || contents[file.sha] === undefined) continue;
+      nativeBaseSources.set(file.path, contents[file.sha]);
+      read = true;
+    }
+    return read;
+  } catch {
+    return false;
+  } finally {
+    paths.forEach((path) => nativeShownRequests.delete(path));
+  }
 }
 
 // The page on show, before the text index has read the whole site: what it
@@ -3893,7 +3927,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     // So do the site's own stylesheets when small: the sheets the page links and
     // their imports then need no serial reads before the paint.
     const styleExtras = nativeBootStyleExtras(site, files, bootSize);
-    await readNativeShownFiles(repo.full_name, site, shownPages, live, [...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : []), ...extras, ...styleExtras]);
+    await readNativeShownFiles(repo.full_name, site, shownPages, live, [...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : []), ...extras], styleExtras);
     if (!live()) return true;
     // The stylesheets the pages link, and the files those import, render
     // with the first update; one that cannot be read is reported by the

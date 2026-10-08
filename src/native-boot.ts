@@ -155,7 +155,7 @@ export function nativeBootStyleExtras(
   limit = NATIVE_BOOT_STYLE_BYTES,
 ): string[] {
   const componentCss = new Set(Object.values(site.components).map(nativeComponentCssPath));
-  const out = files.filter((path) => path.endsWith(".css") && !componentCss.has(path) &&
+  const out = files.filter((path) => /\.css$/i.test(path) && !componentCss.has(path) &&
     !path.split("/").some((part) => part.startsWith(".") || part === "node_modules"));
   let total = 0;
   for (const path of out) {
