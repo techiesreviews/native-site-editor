@@ -52,7 +52,7 @@ ordinary editable markup.
 ## The rules
 
 **What a grid is** (`src/page-builder/card-grid.ts`, mirrored in
-`public/native-preview-runtime.js` "Repeated items"). An element of the page
+`src/components/native-preview-runtime.js` "Repeated items"). An element of the page
 (not the page root, `<main>` or `<body>`) whose element children include at
 least two of one kind: the same custom element, or the same tag and classes
 for an `article`, `li`, `div`, `figure`, `a`, `blockquote` or `dd`. The kind
@@ -122,7 +122,7 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
   events over the canvas; it sits above overlapping section insertion buttons.
   The popup prefers available space beside its anchor and scrolls internally
   when the frame cannot fit its height.
-- `public/native-preview-runtime.js`, block "Repeated items": reports the grid
+- `src/components/native-preview-runtime.js`, block "Repeated items": reports the grid
   under the pointer and around the selection, with where the ghost goes.
   `item-grid-track` keeps the open popup's grid live while the pointer is in
   host controls. Scroll, resize, and layout changes refresh its viewport

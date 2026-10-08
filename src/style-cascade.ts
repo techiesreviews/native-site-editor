@@ -1,5 +1,5 @@
 // The rules behind a selected preview element as the runtime reports them
-// (public/native-preview-runtime.js, `matchingRules`), read defensively from
+// (src/components/native-preview-runtime.js, `matchingRules`), read defensively from
 // its messages and resolved with the pure cascade in shared/cascade.ts.
 import {
   compareSpecificity,

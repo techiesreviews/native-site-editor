@@ -85,7 +85,7 @@ Mac and Ctrl elsewhere; key caps are drawn per platform.
   selected element's edit bar model (`nativeEditBarModel`, set in `renderNativeEditBar`)
   for the Selection group. Publish, Review changes, Show history and Ask agent… press the
   editor's own buttons. `SidebarResize` gained `toggle()`.
-- `public/native-preview-runtime.js`, block "Editor shortcuts": keys pressed in the
+- `src/components/native-preview-runtime.js`, block "Editor shortcuts": keys pressed in the
   preview frame never reach the editor, so the runtime forwards ⌘K, ⌘P, ?, undo/redo and
   the section keys as `shortcut` messages (only when not typing; ⌘K with text selected
   still links). The editor accepts them only from a preview frame's window.

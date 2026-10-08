@@ -19,14 +19,16 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
     const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
     const before = await source(), drafts = await storedDrafts(page), barBefore = (await bar.boundingBox())!;
     // Attribute work to this exact runtime handler, independently of ordinary wheel work.
-    const runtime = await (await page.request.get(`${baseURL}/native-preview-runtime.js`)).text();
+    const runtimeUrl = await frame.locator("script[src]").first().getAttribute("src");
+    const runtimeFile = new URL(runtimeUrl!, baseURL).pathname.split("/").pop()!;
+    const runtime = await (await page.request.get(new URL(runtimeUrl!, baseURL).href)).text();
     const lines = runtime.split("\n"), start = lines.findIndex(line => line.includes('msg.type === "canvas-avoid"'));
     const callLine = lines.findIndex((line, index) => index > start && index < start + 7 && /(?:updateBoxes|canvasPaintLabel)\(\);/.test(line)) + 1;
     expect(callLine).toBeGreaterThan(0);
-    await frame.locator("html").evaluate((_, handlerLine) => {
+    await frame.locator("html").evaluate((_, [handlerLine, runtimeFile]) => {
       const originalRAF = window.requestAnimationFrame, originalRect = Element.prototype.getBoundingClientRect;
       const probe = { messages: 0, schedules: 0, rectReads: 0, labelReads: 0 };
-      const fromAvoidance = () => (new Error().stack ?? "").includes(`native-preview-runtime.js:${handlerLine}:`);
+      const fromAvoidance = () => (new Error().stack ?? "").includes(`${runtimeFile}:${handlerLine}:`);
       window.requestAnimationFrame = function (callback) { if (fromAvoidance()) probe.schedules++; return originalRAF.call(window, callback); };
       Element.prototype.getBoundingClientRect = function () {
         if (fromAvoidance()) { probe.rectReads++; if ((new Error().stack ?? "").includes("canvasDrawLabel")) probe.labelReads++; }
@@ -35,7 +37,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       const receive = (event: MessageEvent) => { if (event.source === parent && event.data?.source === "astro-native-preview-host" && event.data.type === "canvas-avoid") probe.messages++; };
       window.addEventListener("message", receive);
       (window as any).avoidanceProbe = { probe, stop: () => { window.requestAnimationFrame = originalRAF; Element.prototype.getBoundingClientRect = originalRect; window.removeEventListener("message", receive); return probe; } };
-    }, callLine);
+    }, [callLine, runtimeFile] as const);
     for (let index = 0; index < 6; index++) { await page.mouse.wheel(0, 10); await page.waitForTimeout(60); }
     await expect.poll(async () => (await bar.boundingBox())!.y).toBeLessThan(barBefore.y - 30);
     await expect.poll(() => frame.locator("html").evaluate(() => (window as any).avoidanceProbe.probe.messages)).toBeGreaterThan(0);

@@ -1,6 +1,6 @@
 // The CSS cascade for one element, as plain data: which declaration wins each
 // property and which ones lose. The preview runtime reads the rules that match
-// the selected element from the CSSOM (public/native-preview-runtime.js).
+// the selected element from the CSSOM (src/components/native-preview-runtime.js).
 // This module supports code pane rule chips, static section selectors and
 // slotted CSS. Matched rules are resolved following the browser's cascade
 // across layers, multiple files, `@import`, conditions, nesting, shadow DOM

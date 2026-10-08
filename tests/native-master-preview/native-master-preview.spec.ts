@@ -22,7 +22,7 @@ const input = (masterSource: string, session = "s1") => ({ session, pagePath: "i
 test.beforeAll(async () => {
   const bundle = await build({ entryPoints: [`${root}tests/native-master-preview/harness.ts`], bundle: true, write: false, format: "esm", loader: { ".css": "empty", ".svg": "text" }, logLevel: "silent" });
   const js = bundle.outputFiles[0].text;
-  const runtime = readFileSync(`${root}public/native-preview-runtime.js`, "utf8");
+  const runtime = readFileSync(`${root}src/components/native-preview-runtime.js`, "utf8");
   server = createServer((request, response) => {
     if (request.url === "/native-preview-runtime.js") return response.writeHead(200, { "content-type": "text/javascript" }).end(runtime);
     if (request.url === "/harness.js") return response.writeHead(200, { "content-type": "text/javascript" }).end(js);

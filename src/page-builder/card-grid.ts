@@ -9,7 +9,7 @@
 // classes for an element that can be an item (article, li, div, figure, a,
 // blockquote, dd). Sections are never items; they have their own insert
 // points. The preview runtime applies the same rule to the rendered page
-// (public/native-preview-runtime.js, "Repeated items").
+// (src/components/native-preview-runtime.js, "Repeated items").
 //
 // The source is the collection: a grid whose items link to pages under one
 // parent URL (`/work/fern-and-kettle/`, `/work/harbour-lane-pottery/`) is a

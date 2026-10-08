@@ -60,7 +60,7 @@ plus buttons between sections used to open.
   frame (editor chrome, never part of the page).
 - `src/page-builder/page-builder.ts`: wires these to the preview; `native-preview.ts` passes on
   insert points and selections and exposes `attachAddButton`.
-- Runtime (`public/native-preview-runtime.js`): insert points also carry their container's
+- Runtime (`src/components/native-preview-runtime.js`): insert points also carry their container's
   `tag`, and the end-of-`<main>` point says `empty` (no element and no text) with its `height`;
   an empty `<main>` gets a preview-only `min-height` so the empty state has room; a
   `scroll-by` message scrolls the page (smooth unless reduced motion).

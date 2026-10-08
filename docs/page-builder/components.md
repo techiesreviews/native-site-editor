@@ -25,7 +25,7 @@ everything that is a component, in both schemes:
   the template elements. While a component's template is open,
   every instance of it on the page has that dashed outline, since an edit
   there changes them all. (Runtime: the `Components` block after
-  `updateBoxes` in `public/native-preview-runtime.js`; the theme message
+  `updateBoxes` in `src/components/native-preview-runtime.js`; the theme message
   carries `component`, and `component-focus` names the open component.)
 - **Edit bar.** An instance's name wears the diamond mark in violet, its tag in
   the tooltip. An element inside an instance starts with a chip

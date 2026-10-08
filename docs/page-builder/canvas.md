@@ -50,7 +50,7 @@ page click, so every edit that follows is still one readable source edit.
 | Offset in a source → element index path | `src/page-builder/canvas-source.ts` (reverse of `native-source-location.ts`, same parse) |
 | Code pane → canvas, debounced (hover 40 ms, cursor 120 ms) | `src/page-builder/code-link.ts`; the editor reports through a `native-code-pointer` window event from `linkToCanvas` in `src/components/code-editor.ts` |
 | Wiring | `src/components/native-preview.ts` (bar created with the pane; crumbs from each `select`; `canvas-clear`) |
-| Labels, dashed hint box, crumbs, Esc/Ctrl+↑ | the "Canvas" block in `public/native-preview-runtime.js`, called from `updateBoxes` and `emitSelection` |
+| Labels, dashed hint box, crumbs, Esc/Ctrl+↑ | the "Canvas" block in `src/components/native-preview-runtime.js`, called from `updateBoxes` and `emitSelection` |
 
 Runtime messages: the host sends `canvas-crumb` (`action` `hover`/`select`, `index` into
 the last crumbs sent, -1 for the body), `canvas-hint` (`request` `{path, node}` or null),

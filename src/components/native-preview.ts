@@ -50,13 +50,18 @@ import "./native-preview.css";
 // The frame uses `srcdoc` so project-wide X-Frame-Options/`frame-ancestors` do
 // not block it, but loads its runtime from a same-origin external script.
 // Production CSP keeps `script-src` free of `unsafe-inline`.
+//
+// The runtime (native-preview-runtime.js, a plain classic script) is emitted
+// by Vite as-is under a content-hashed /assets/ URL, so it is cached as
+// immutable. The URL is absolute so the about:srcdoc frame needs no base URL.
+const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
 const RUNTIME_DOC = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Native preview</title>
-<script src="/native-preview-runtime.js" defer></script>
+<script src="${RUNTIME_URL}" defer></script>
 </head>
 <body><div id="root" data-key="root"><div id="page" data-key="page"></div></div></body>
 </html>`;

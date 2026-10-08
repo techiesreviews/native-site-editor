@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { staticAssetHeaders } from "./native-save/production-headers.ts";
 const source = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
 test("hashed assets alone receive immutable caching and common security headers", () => {
-  for (const path of ["/assets/index-abc.js", "/assets/editor-abc.css", "/assets/ts.worker-abc.js"]) {
+  for (const path of ["/assets/index-abc.js", "/assets/editor-abc.css", "/assets/ts.worker-abc.js", "/assets/native-preview-runtime-abc.js"]) {
     const headers = staticAssetHeaders(source, path);
     assert.equal(headers.get("Cache-Control"), "public, max-age=31536000, immutable");
     assert.equal(headers.get("X-Content-Type-Options"), "nosniff");

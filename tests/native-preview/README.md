@@ -15,7 +15,7 @@ site (see `docs/adr/0001-the-repository-is-the-site.md`):
   with a sibling `.css`, rendered in shadow DOM the way the site's own loader
   renders them.
 
-The runtime is `public/native-preview-runtime.js`; the host side is
+The runtime is `src/components/native-preview-runtime.js`; the host side is
 `src/components/native-preview.ts`.
 
 ## Supported

@@ -8,7 +8,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 //
 // Keys pressed in the preview frame never reach this document: the preview
 // runtime forwards the ones the editor answers as `shortcut` messages
-// (public/native-preview-runtime.js, "Editor shortcuts").
+// (src/components/native-preview-runtime.js, "Editor shortcuts").
 import type { AddChoice } from "./add-catalog";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./native-operations";
 import { nativeChoiceMarkup } from "./native-elements";

@@ -80,7 +80,7 @@ test("renders native pages, components and shared chrome without a build", { tag
   await expect(frame.getByText(/Shared footer across every route/)).toBeVisible();
   // srcdoc is set, and the frame never navigates via src.
   expect(await page.locator(".native-preview-frame").getAttribute("src")).toBeNull();
-  expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toContain("/native-preview-runtime.js");
+  expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toMatch(/native-preview-runtime(-[\w-]+)?\.js/);
 });
 
 test("HTML and CSS edits patch the live preview in place, same window, scroll kept", { tag: "@smoke" }, async ({ page }) => {

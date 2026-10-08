@@ -3,7 +3,7 @@
  * site tools: the `native-site://conventions` resource and the `edit_site`
  * prompt. Mirrors docs/adr/0001-the-repository-is-the-site.md,
  * shared/native-routes.ts, shared/native-project.ts, src/native-insert.ts,
- * public/native-preview-runtime.js and the starter's AGENTS.md and
+ * src/components/native-preview-runtime.js and the starter's AGENTS.md and
  * components/components.js; keep them in step.
  */
 export const siteConventions = `# Native site conventions
