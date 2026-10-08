@@ -1,6 +1,6 @@
 # Phase 5.15: Preview frame attached early, parked
 
-Base: `8003608` (dev).
+Base: `8003608` (dev), rebased onto `da31ccc`.
 
 ## What changed
 
@@ -20,11 +20,22 @@ Base: `8003608` (dev).
 
 ## Measurements
 
-`tests/perf/cold-start.ts`, dist served by `tests/native-save/server.ts`, `ASE_COLD_NET=100/20`, median of 5, same machine and session:
+`tests/perf/cold-start.ts`, dist served by `tests/native-save/server.ts`, `ASE_COLD_NET=100/20`, median of 5, all in one sitting on one machine. "Before" is this slice's parked frame (`4068e53`, rebased on dev); A and B are the earlier signals tried on top of it.
 
 | | cold paint | cold usable | warm paint | warm usable |
 | --- | --- | --- | --- | --- |
-| before (8003608) | 1020 | 1040 | 630 | 633 |
-| after | 1030 | 1047 | 634 | 638 |
+| before (parked frame only) | 1030 | 1038 | 632 | 632 |
+| A only | 1029 | 1043 | 643 | 646 |
+| B only | 1037 | 1058 | 630 | 638 |
+| A + B | 1017 | 1037 | 636 | 638 |
 
-No gain; the difference is noise. The waterfall shows why: the runtime request starts at about the same moment in both (cold run 1: 725 ms before, 704 ms after), right after `/api/snapshot`. `nativeEngaged` needs the snapshot's tree (it checks for `index.html`), and in the baseline the placeholder `activate()` already ran at that point, in parallel with the page reads. Preloading only moves the start earlier than that if the signal comes before the snapshot (for example, a cached "this repo is native" hint), which is out of scope here. Targets (cold 1.0 s, warm 0.4 s) are not met.
+- A: once boot sees a workspace link (`#repo=` or a link kept across sign-in), the main document fetches the runtime URL. The sandboxed srcdoc frame does reuse that HTTP cache entry: in the cold waterfall the frame's request took 4 ms (688–692) after the main fetch (393–522), against 726–846 without it. `<link rel=preload>` also worked but warns "preloaded but not used" in the console.
+- B: a per-account list of repositories that opened as native (localStorage) calls `preload()` when the workspace opens the repository, before the snapshot. The warm frame then requested the runtime at 271 ms instead of after the snapshot.
+- Neither moved paint. The runtime is off the critical path: paint waits for the page's reads, which are serial. Cold: snapshot (566–676), then the page and its first files (681–794), then a second `/api/files` for what those reveal (798–907), then the render (~95 ms). The runtime already finished by 846 in the baseline. Both signals were dropped; the code is not in this commit.
+- Note: an earlier pair of measurements (cold 1020/1030) left a server from one checkout on port 5293, so one of those runs may have measured the wrong build. The table above was re-measured with each run checked to serve its own `index-*.js`.
+
+The targets (cold 1.0 s, warm 0.4 s) are not met. The next lever is that second serial `/api/files` round trip (about 110 ms cold and warm): read the open page's stylesheets and components with the page itself, or from the snapshot.
+
+## Flaky test
+
+`native-canvas.spec.ts:195` (hover a code line, the canvas hint shows) failed once in the first full run. With `--repeat-each`: this branch 1/10, 0/30, plus 0/52 for the whole file; dev (`origin/dev`) 0/10, 3/30. It fails on dev as well and was there before this slice. The failure screenshot shows the code pane's lines rendered with no text, so the hover likely lands before Monaco has painted the line.
