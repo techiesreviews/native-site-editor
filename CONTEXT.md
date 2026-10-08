@@ -16,6 +16,9 @@ A reusable custom element with a shared template and optional styles, used by on
 **Slot**:
 A place in a component where a page supplies content, with optional fallback content from the component. The page supplies a whole element (a heading, a link, an image), not only its text. Inside a component, the slots are what a page can edit; everything else in its template is fixed.
 
+**Variant**:
+A named look of a component, chosen on each use by setting one of its `data-*` attributes. Leaving the attribute off gives the component's default look. A component's variants are whatever its styles respond to; nothing is registered.
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 

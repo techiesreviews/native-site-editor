@@ -20,7 +20,7 @@ A decided plan, ready to hand off, for five features: making components (from bu
   - **Add card › existing page**: the new card takes the page's title/h1, meta description, og:image and address. The user edits them afterwards.
   - **The block builder produces plain HTML in the page**, using the site's classes. Make component turns a built section into a component later.
   - **Variants are free per component**: a component declares its own `data-*` attributes and values in its CSS, and the editor discovers them. There is no fixed global set.
-- **Language:** use the terms in `CONTEXT.md`. Add *Variant* and *Block* there once tickets 07 and 10 settle them.
+- **Language:** use the terms in `CONTEXT.md`. *Variant* is added (ticket 07); add *Block* once ticket 10 settles it.
 - **Reference sites:** `~/Projects/techies-reviews` (real components, OKLCH brand scale, `.btn[data-variant]`, section-cards) and `~/Projects/native-site-editor-starter` (separate project; `fixtures/native-starter` is frozen test data).
 - **Grilling tickets** run as a live conversation with Lex (AskUserQuestion). The agent never answers for Lex.
 - **Research tickets** are resolved by subagents. Findings go on a `research/cb-<ticket>` branch in `docs/wayfinder/components-and-builder/research/`, and a pointer is added to the ticket.
@@ -35,13 +35,14 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - [Research what insert, drag and move support today](tickets/11-research-insert-drag-today.md): source edits already nest; the UI only drops and drags whole sections between siblings; elements were taken out of Add; instances take no drops; 15 gaps, the largest being nested drop targets and drops into instances
 - [Research variant discovery from component CSS](tickets/06-research-variant-discovery.md): `:host([data-x="v"])` rules in the component CSS, including inside at-rules; an absent attribute is the default; labels from the value or an optional `/* variant … */` comment; a shared parser in `shared/`; no loader change
 - [Decide how masters and page parts become components](tickets/02-masters-become-components.md): nav links stay in the header/footer templates (one edit, JS allowed); the skip link moves into each page before `<site-header>` with shared CSS; masters code is removed as its own deletion slice before Make component returns to the edit bar; `site-conventions.ts:52` reworded and `:69`'s register step dropped
+- [Decide the variant contract](tickets/07-variant-contract.md): a variant is a `data-*` attribute some CSS styles on the host (component CSS, site CSS naming the tag or `:host()`, global attributes like `data-color-scheme`, nested forms included); absent = default; no editor comments in code, labels from values; picked in the edit bar (dropdowns/checkboxes, a Variants button past two) and suggested in the HTML code pane; `data-layout` and `data-tone` suggested, not enforced
 
 ## Not yet specified
 
 - **Editing a component's template visually.** Whether a component gets an edit mode in the preview (editing the template rather than the instance), or stays source-only. This depends on direct creation (ticket 04) and on how the builder works inside a template.
 - **Deduplicating on Make component.** Whether Make component offers to replace identical copies of the section on other pages.
-- **Variants on builder blocks.** Whether plain Section/Div blocks get variant-like choices (tone, layout) through site classes or `data-*` attributes, or only components do. This follows the variant contract (ticket 07) and the block set (ticket 10).
-- **Agent tool surface.** Whether MCP gains tools such as `create_component` or `set_variant`, or only better conventions. This follows ticket 05.
+- **Variants on builder blocks.** Whether plain Section/Div blocks get variant-like choices (tone, layout) through site classes or `data-*` attributes, or only components do. Ticket 07 already offers global site attributes such as `data-color-scheme` on every component, and the same detection can find class variants such as `.btn[data-variant]`; whether plain blocks get them follows the block set (ticket 10).
+- **Agent tool surface.** Whether MCP gains tools such as `create_component` or `set_variant`, or only better conventions, and whether `get_site` lists each component's variants (the detection from ticket 07 runs in the Worker too). This follows ticket 05.
 - **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02).
 - **Card reorder by drag**, which is a known gap. It may fold into the builder's move interaction.
 - **Test plan.** Which browser checks each feature adds, following the `@smoke`/nightly split from the lean-fast-editor map.
