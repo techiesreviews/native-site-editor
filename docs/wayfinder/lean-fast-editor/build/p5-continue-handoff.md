@@ -6,6 +6,34 @@ build one slice per branch; Claude Opus 5.5 / medium reviews read-only through
 the CLI (runner scripts: root `.scratch/p5-review/run-*-review.py`; copy the
 latest one and change worktree, head and prompt).
 
+## Update (2026-10-08, evening)
+
+Landed on dev, preview `a80dfc3b`; main.ts 8095 → 6786:
+
+| Slice | What | Built / reviewed | Gates |
+| --- | --- | --- | --- |
+| 12a | Page structure controller ([p5-18](p5-18-page-structure-controller.md)), main.ts −730 | Sol / Opus | full 729 / 85 / 0 |
+| 15 | Save/publish controller ([p5-22](p5-22-save-publish-controller.md)); two discard/deleted-upstream review fixes | Claude / Opus | integration full 729 / 85 / 0 |
+| 14 | File operations controller ([p5-21](p5-21-file-operations-controller.md)), −403 | Sol / Opus, rebase by Sol review | integration full |
+| 13 | Cards controller ([p5-20](p5-20-cards-controller.md)), small; edit bar reaches it through a `cardControls` port | Claude / Opus, rebase by Sol review | integration full |
+| — | Byte budget raised to 355 KB (Lex: controller port names do not minify); now 349 KB | | |
+
+Lex's rules from this evening:
+
+- Code review is always GPT-6.1 Sol, read-only:
+  `codex exec -m gpt-6.1-sol -c model_reasoning_effort=medium -s read-only -C <worktree> -o result.md - < brief.txt`
+  (replaces the Opus CLI review above).
+- Sol cannot commit from `-s workspace-write`; the lead commits its work with a
+  Sol co-author line after checking the diff.
+- More test ports while resources allow: root `.scratch/p5-perf/ase-port.sh <cmd>`
+  runs on the first free of 5226, 5236, 5246, 5256 (lock per port, needs 4 GB
+  free); full suites on 5216 under `/tmp/ase-5216.lock`; timing with
+  `.scratch/p5-perf/ase-timing.sh <cmd>` (all five locks).
+
+Not merged yet: `perf/p5-boot-memory` (warm 347 ms, cold 926; last fix for a
+stalled guess blocking the branch picker, then Sol review and full suite) and
+slice 12b `build/p5-shared-sections-controller` (Sol building).
+
 ## Update (2026-10-08, afternoon)
 
 Landed on dev, preview `e7de7159`:
