@@ -22,3 +22,7 @@ measures 351 KB. Further controller slices will run out of room.
 - Fewer, shorter ports per controller (slice 15's builder won back only about
   100 B this way).
 - Raise the budget again.
+
+## Comments
+
+- 2026-10-08: after slices 17 and 18, dev measures 352 KB of 355.

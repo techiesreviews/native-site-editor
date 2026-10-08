@@ -44,3 +44,13 @@ runtime/transaction modules. Lex chose quick wins only on 2026-10-08.
 
 The target for ticket 08: the realistic floor, the architecture change, or
 accept the size after the quick wins.
+
+## Comments
+
+- 2026-10-08: quick wins landed (preview `bcf25a6b`): slice 17 dead code
+  ([p5-23](../../../wayfinder/lean-fast-editor/build/p5-23-dead-code.md), −15:
+  most candidate wrappers are live or keep TDZ safety) and slice 18 Files tab
+  tree controller ([p5-24](../../../wayfinder/lean-fast-editor/build/p5-24-files-tree-controller.md),
+  −211, +562 B). main.ts 6,220 → 5,994; budget 352 of 355 KB. Both reviewed by
+  Sol (no defects); full native-save 740 / 85 / 0 on the stack. Next decision
+  is Lex's.

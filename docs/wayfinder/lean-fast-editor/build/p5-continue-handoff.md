@@ -6,6 +6,20 @@ build one slice per branch; Claude Opus 5.5 / medium reviews read-only through
 the CLI (runner scripts: root `.scratch/p5-review/run-*-review.py`; copy the
 latest one and change worktree, head and prompt).
 
+## Update (2026-10-08, late): quick wins landed
+
+Lex chose "quick wins only" for ticket 08 after the planner judged about 500
+lines out of reach within the budget (realistic floor 1,200–1,800; see
+[tech debt 01](../../../work/tech-debt/issues/01-main-ts-size.md)). Landed,
+preview `bcf25a6b`, main.ts 6,220 → 5,994, budget 352 of 355 KB:
+
+- Slice 17, dead code ([p5-23](p5-23-dead-code.md)): −15; Claude, Sol review clean.
+- Slice 18, Files tab tree controller ([p5-24](p5-24-files-tree-controller.md)): −211, +562 B; Sol, Sol review clean.
+- Stack: 1,198 units, full native-save 740 / 85 / 0.
+
+Tech debt is recorded in [docs/work/tech-debt](../../../work/tech-debt/spec.md)
+(10 tickets). Phase 5 stops here until Lex picks the next step.
+
 ## Update (2026-10-08, night): plan slices done, warm target met
 
 Preview `1d8c1a1f` (dev `bddbdf9`). Since the evening update:
