@@ -17,7 +17,7 @@ import type { EditBarControl } from "../components/edit-bar";
 import { planComponent, suggestName, instanceFromTemplate, type ComponentPlan, type PlannedSlot } from "./cb04-rule";
 import {
   state, deps, el, btn, toast, takenTags, nameField, makeInPlace, makeAndPlace, targetAt, targetOf,
-  frameRects, frameEvents, scrollFrame, type Rect, type Target,
+  frameRects, frameEvents, scrollFrame, normaliseName, normaliseInput, type Rect, type Target,
 } from "./cb04-core";
 
 const SLOT_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
@@ -81,7 +81,7 @@ function replan() {
 
 function nameProblem(slot: PlannedSlot) {
   if (slot.kind === "items") return undefined;
-  if (!SLOT_NAME.test(slot.name)) return "Use lowercase letters, digits and single dashes";
+  if (cb04Variant() !== "E" && !SLOT_NAME.test(slot.name)) return "Use lowercase letters, digits and single dashes";
   if (making?.plan?.slots.some((other) => other !== slot && !other.fixed && other.name === slot.name)) return `“${slot.name}” is used twice`;
   return undefined;
 }
@@ -301,7 +301,13 @@ function decorateStructure() {
   for (const row of document.querySelectorAll<HTMLElement>(".page-structure__row[data-node]")) {
     const slot = want.get(row.dataset.node!);
     row.classList.toggle("cb04-srow", Boolean(slot));
-    row.classList.toggle("cb04-srow--root", Boolean(making && row.dataset.node === making.target.node.join(".")));
+    const root = Boolean(making && row.dataset.node === making.target.node.join("."));
+    row.classList.toggle("cb04-srow--root", root);
+    // One outline around the section's row and its child rows (the group after it).
+    const group = row.nextElementSibling instanceof HTMLElement && row.nextElementSibling.classList.contains("page-structure__group") && !row.nextElementSibling.hidden && row.nextElementSibling.childElementCount ? row.nextElementSibling : undefined;
+    row.classList.toggle("cb04-srow--root-alone", root && !group);
+    if (group) group.classList.toggle("cb04-sgroup", root);
+    else if (!root && row.nextElementSibling?.classList.contains("cb04-sgroup")) row.nextElementSibling.classList.remove("cb04-sgroup");
     let badge = row.querySelector<HTMLButtonElement>(":scope > .cb04-sbadge");
     if (!slot) { badge?.remove(); continue; }
     if (!badge) {
@@ -522,12 +528,15 @@ export function startMakingE(target: Target) {
   layer.append(clip);
   // B's slim bar.
   const bar = el("div", "cb04-mode__bar cb04-mode__bar--e");
-  const name = nameField(suggestName(target.outer, takenTags()), () => replan());
+  const name = nameField(suggestName(target.outer, takenTags()), () => replan(), { normalise: true });
   name.wrap.classList.add("cb04-name--inline");
+  // Not shown in E (Lex: no count); replan still writes to it.
   const count = el("span", "cb04-mode__summary");
   const create = btn("Create", () => void submit(), "button primary");
-  bar.append(name.wrap, count, el("span", "cb04-mode__hint", "click a chip to toggle · double-click to rename"), btn("Cancel", () => stop(true), "button secondary"), create);
+  bar.append(name.wrap, btn("Cancel", () => stop(true), "button secondary"), create);
   document.body.append(layer, bar);
+  // No edit bar while a component is being made.
+  document.documentElement.classList.add("cb04-moding");
 
   const boxes = new Map<string, { box: HTMLElement; chip: HTMLButtonElement }>();
   let alive = true;
@@ -558,9 +567,10 @@ export function startMakingE(target: Target) {
     const chipInput = make("cb04-chip-field--chip");
     const treeInput = make("cb04-chip-field--tree");
     const sync = (from: HTMLInputElement, to: HTMLInputElement) => {
+      normaliseInput(from);
       to.value = from.value;
-      const name = from.value.trim();
-      const why = !SLOT_NAME.test(name) ? "Use lowercase letters, digits and single dashes" : making?.plan?.slots.some((s) => s.key !== key && !s.fixed && s.name === name) ? `“${name}” is used already` : "";
+      const name = normaliseName(from.value, true);
+      const why = making?.plan?.slots.some((s) => s.key !== key && !s.fixed && s.name === name) ? `“${name}” is used already` : "";
       for (const input of [chipInput, treeInput]) { input.classList.toggle("is-warning", Boolean(why)); input.title = why; }
     };
     for (const [from, to] of [[chipInput, treeInput], [treeInput, chipInput]] as const) {
@@ -591,7 +601,8 @@ export function startMakingE(target: Target) {
     chipInput.remove();
     treeInput.remove();
     const slot = making?.plan?.slots.find((s) => s.key === key);
-    if (slot && commit && chipInput.value.trim() !== original) rename(slot, chipInput.value);
+    const next = normaliseName(chipInput.value, true);
+    if (slot && commit && next && next !== original) rename(slot, next);
     else replan();
   }
 
@@ -655,6 +666,7 @@ export function startMakingE(target: Target) {
           clickTimer = setTimeout(() => toggleKey(key), 230);
         }, "cb04-mode__chip");
         chip.addEventListener("dblclick", (event) => { event.preventDefault(); clearTimeout(clickTimer); renameKey(key); });
+        if (slot.kind === "items") box.classList.add("is-items-group");
         box.append(chip);
         clip.append(box);
         parts = { box, chip };
@@ -665,10 +677,12 @@ export function startMakingE(target: Target) {
       const problem = nameProblem(slot);
       parts.box.classList.toggle("is-fixed", slot.fixed);
       parts.box.classList.toggle("is-warning", !slot.fixed && Boolean(problem));
-      parts.box.classList.toggle("chip-left", Boolean(r && r.x > 96));
+      parts.box.classList.toggle("chip-left", Boolean(r && r.x > 96) && slot.kind !== "items");
       parts.box.classList.toggle("is-renaming", renaming?.key === slot.key);
       parts.chip.textContent = `${slot.fixed ? "○" : "✓"} ${slot.kind === "items" ? `items ×${slot.count}` : slot.name}${problem && !slot.fixed ? " ⚠" : ""}`;
-      parts.chip.title = slot.fixed ? "Fixed in the template: click to make it a slot" : slot.kind === "items" ? "The page's repeated items (the unnamed slot): click to keep them fixed" : `${problem ? `${problem}. ` : ""}Click: keep fixed · double-click: rename`;
+      // The unnamed slot: no rename; a note says why.
+      if (slot.kind === "items") parts.chip.append(el("span", "cb04-mode__chip-note", "Repeated items: no name, so Add card works"));
+      parts.chip.title = slot.kind === "items" ? (slot.fixed ? "Fixed in the template: click to make the repeated items a slot again" : "The page's repeated items (the unnamed slot): click to keep them fixed in the template") : slot.fixed ? "Fixed in the template: click to make it a slot" : `${problem ? `${problem}. ` : ""}Click: keep fixed · double-click: rename`;
     }
     for (const [key, parts] of boxes) if (!seen.has(key)) { parts.box.remove(); boxes.delete(key); }
     // "+ slot" on a hovered part that is not a slot and not inside one.
@@ -697,6 +711,7 @@ export function startMakingE(target: Target) {
     endRename(false);
     layer.remove();
     bar.remove();
+    document.documentElement.classList.remove("cb04-moding");
     document.removeEventListener("keydown", onKey, true);
     making = undefined;
     onHover = undefined;

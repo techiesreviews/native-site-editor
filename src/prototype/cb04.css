@@ -284,3 +284,31 @@ html.cb04-moding .edit-bar, html.cb04-wip-on .edit-bar { display: none !importan
 .cb04-chip-field.is-warning { border-color: #ea580c; color: #c2410c; }
 /* The Structure twin shows its text as selected while the chip's field has the caret. */
 .cb04-chip-field--tree.is-mirror:not(:focus) { background: #ddd6fe; box-shadow: 0 0 0 3px rgb(124 58 237 / .25); }
+
+/* ======== Variant E, revised (E2): readable in light and dark. ======== */
+/* Chips: solid fills with white text at AA (white on #6d28d9 7.1:1, #be185d 5.6:1, #475569 7.6:1, #c2410c 5.2:1). */
+.cb04-mode--e .cb04-mode__chip { background: #6d28d9; color: #fff; }
+.cb04-mode--e .cb04-mode__slot { border-color: #8b5cf6; }
+.cb04-mode--e .cb04-mode__slot--items { border-color: #db2777; }
+.cb04-mode--e .cb04-mode__slot--items > .cb04-mode__chip { background: #be185d; }
+.cb04-mode--e .cb04-mode__slot.is-fixed { border-color: #94a3b8; }
+.cb04-mode--e .cb04-mode__slot.is-fixed > .cb04-mode__chip { background: #475569; }
+.cb04-mode--e .cb04-mode__slot.is-warning > .cb04-mode__chip { background: #c2410c; }
+.cb04-mode--e .cb04-mode__frame-label { background: #6d28d9; }
+.cb04-mode__chip-note { margin-left: 8px; padding-left: 8px; border-left: 1px solid rgb(255 255 255 / .45); font: 500 10.5px/1.5 system-ui, sans-serif; text-decoration: none; display: inline-block; }
+.cb04-mode__slot.is-fixed .cb04-mode__chip-note { text-decoration: none; }
+.cb04-mode--e .cb04-mode__slot.is-fixed > .cb04-mode__chip { text-decoration: none; }
+
+/* Structure: slot rows keep the normal row colour; badges are solid purple; one outline around the group. */
+.page-structure__row.cb04-srow { color: inherit; box-shadow: none; }
+.page-structure__row.cb04-srow:not([aria-selected="true"]) { background: none; }
+.page-structure__row.cb04-srow .page-structure__kind, .page-structure__row.cb04-srow .page-structure__text { color: inherit; }
+.page-structure__row.cb04-srow--root { box-shadow: none; border: 2px solid #8b5cf6; border-bottom: 0; border-radius: 8px 8px 0 0; }
+.page-structure__row.cb04-srow--root-alone { border-bottom: 2px solid #8b5cf6; border-radius: 8px; }
+.page-structure__group.cb04-sgroup { border: 2px solid #8b5cf6; border-top: 0; border-radius: 0 0 8px 8px; padding-bottom: 4px; }
+.cb04-sbadge { background: #6d28d9; color: #fff; }
+.cb04-sbadge.is-warning { background: #c2410c; }
+.cb04-chip-field { color: #4c1d95; }
+.cb04-chip-field.is-warning { border-color: #c2410c; color: #9a3412; }
+/* The items chip (with its note) sits inside its box's top-left corner. */
+.cb04-mode--e .cb04-mode__slot.is-items-group > .cb04-mode__chip { top: 6px; left: 6px; transform: none; border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / .25); }
