@@ -5491,8 +5491,9 @@ async function chooseRepository(resume?: WorkspaceLocation) {
     // The remembered branch opens once its snapshot is in, which proves the
     // branch exists; the branch list fills the selector when it comes. A
     // guess that fails (a deleted branch), or a branch list that comes
-    // first, takes the normal path below.
-    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => undefined)]);
+    // first, takes the normal path below. A failed branch list waits for
+    // the guess.
+    const guessedSnapshot = guessed && await Promise.race([guessed.catch(() => undefined), listing.then(() => undefined, () => guessed.catch(() => undefined))]);
     if (epoch !== generation) return;
     if (guessedSnapshot) {
       const branch = requestedBranch;

@@ -158,3 +158,24 @@ test('a stalled guessed snapshot does not hold the branch picker once the branch
   await expect(page.locator('#branch option[value="main"]')).toBeAttached();
   await expect(page.locator('#branch option')).not.toHaveCount(0);
 });
+
+test('a branch list that fails before the guessed snapshot lands does not drop the proven guess', async ({ page, baseURL }) => {
+  await firstBoot(page, baseURL);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let failed = false;
+  await watchGuesses(page);
+  await page.route(/\/api\/snapshot\?/, async (route) => {
+    const response = await route.fetch();
+    await gate;
+    await route.fulfill({ response });
+  });
+  await page.route(/\/api\/branches\?/, async (route) => { await route.fulfill({ status: 500, json: { error: 'down' } }); failed = true; });
+  await page.reload();
+  await expect.poll(() => failed).toBe(true);
+  await page.waitForTimeout(300);
+  release();
+  await expect(preview(page).locator('.hero h1[data-guess]')).toBeVisible();
+  await expect(page.locator('#branch')).toBeEnabled();
+  await expect(page.locator('#branch')).toHaveValue('main');
+});
