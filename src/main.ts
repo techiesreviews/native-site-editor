@@ -3359,7 +3359,9 @@ async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => 
 // level in one request; `extra` comes with the first. Stylesheets read here
 // are taken up by readNativeStyleFiles and component stylesheets by
 // `nativeComponentStyles`. True when anything was read.
-const nativeShownRequests = new Set<string>();
+// Paths being read, with the read that owns them: a read left over from a
+// previous load (cleared with the rest of its state) never clears a newer one's.
+const nativeShownRequests = new Map<string, object>();
 async function readNativeShownFiles(repo: string, site: NativeSite, pages: string[], live: () => boolean, extra: string[] = [], predicted: string[] = []) {
   const scope = draftScope();
   const held = (path: string) => nativeBaseSources.has(path) || Boolean(scope && draftStore().get(scope, path));
@@ -3379,13 +3381,14 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
     const guessed = round === 0 ? predicted.filter((path) => !wanted.includes(path) && !held(path) && !nativeShownRequests.has(path)) : [];
     first = false;
     if (!wanted.length && !guessed.length) break;
-    const guessing = guessed.length ? readNativePredicted(repo, guessed) : Promise.resolve(false);
+    const guessing = guessed.length ? readNativePredicted(repo, guessed, live) : Promise.resolve(false);
     if (!wanted.length) {
       if (await guessing) loaded = true;
       if (!live()) return false;
       continue;
     }
-    wanted.forEach((path) => nativeShownRequests.add(path));
+    const owner = {};
+    wanted.forEach((path) => nativeShownRequests.set(path, owner));
     try {
       const entries = await Promise.all(wanted.map((path) => findEntry(path)));
       if (!live()) return false;
@@ -3404,20 +3407,24 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
       // Files that are not in the branch are not asked for again.
       if (!found.length) break;
     } finally {
-      wanted.forEach((path) => nativeShownRequests.delete(path));
+      wanted.forEach((path) => { if (nativeShownRequests.get(path) === owner) nativeShownRequests.delete(path); });
     }
   }
   return loaded;
 }
 
-// Best effort: whether any predicted file was read. A failure leaves them unread.
-async function readNativePredicted(repo: string, paths: string[]) {
-  paths.forEach((path) => nativeShownRequests.add(path));
+// Best effort: whether any predicted file was read. A failure leaves them
+// unread; so does a newer load (`live` false), whose sources it must not touch.
+async function readNativePredicted(repo: string, paths: string[], live: () => boolean) {
+  const owner = {};
+  paths.forEach((path) => nativeShownRequests.set(path, owner));
   try {
     const entries = await Promise.all(paths.map((path) => findEntry(path)));
+    if (!live()) return false;
     const found = paths.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
     if (!found.length) return false;
     const contents = await readFiles(repo, found.map((file) => file.sha));
+    if (!live()) return false;
     let read = false;
     for (const file of found) {
       if (nativeBaseSources.has(file.path) || contents[file.sha] === undefined) continue;
@@ -3428,7 +3435,7 @@ async function readNativePredicted(repo: string, paths: string[]) {
   } catch {
     return false;
   } finally {
-    paths.forEach((path) => nativeShownRequests.delete(path));
+    paths.forEach((path) => { if (nativeShownRequests.get(path) === owner) nativeShownRequests.delete(path); });
   }
 }
 
@@ -3755,6 +3762,7 @@ function deactivateNative() {
   nativeStyleFiles.clear();
   nativeMissingStyleFiles.clear();
   nativeStyleFileRequests.clear();
+  nativeShownRequests.clear();
   nativeTextIndexing = undefined;
   nativeTextIndexed = false;
   releaseNativeTextIndex = undefined;
@@ -3903,6 +3911,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   nativeStyleFiles.clear();
   nativeMissingStyleFiles.clear();
   nativeStyleFileRequests.clear();
+  nativeShownRequests.clear();
   nativeAssets.clear();
   nativeMissingAssets.clear();
   nativeAssetRequests.clear();

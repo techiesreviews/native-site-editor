@@ -25,6 +25,7 @@ Base: `8003608` (dev), rebased onto `da31ccc`.
 - Predicted stylesheets are read in their own request in the same wave (`readNativePredicted` in `src/main.ts`), best effort: one that cannot be read (GitHub refuses non-UTF-8 text, which fails a whole batch) fails only that request, and a sheet a page links is then read in the next round as before. The page's own batch never carries a guess.
 - Each frame load is numbered (`<meta name="ase-frame-load">` in the srcdoc; the runtime echoes it in `ready`), so a late `ready` from the replaced document cannot disarm the new load's watchdog. Other harnesses that load the runtime send no number and are unaffected.
 - `canPost` removed (unused); the stylesheet prediction matches `.css` case-insensitively.
+- Second review: `readNativePredicted` wrote into `nativeBaseSources` without a `live()` check, and an early return in `readNativeShownFiles` left it running. A branch switch or refresh during the boot read could then put the old commit's stylesheet into the next load's sources. It now checks `live` after `findEntry` and after `readFiles`, before writing. `nativeShownRequests` maps each path to the read that owns it, is cleared with the rest of the native state, and a read only removes its own entries, so an old read in flight cannot delay or unmark a newer one.
 
 ## Tests
 
@@ -38,6 +39,7 @@ Base: `8003608` (dev), rebased onto `da31ccc`.
 - `tests/native-save/native-settings-final-proof.spec.ts` holds a stylesheet that "only the background text index reads". The prediction now read it in the boot wave, which blocked the first paint (6 failures). Its proof stylesheets are padded past the 24 KB cap so they stay index-only.
 
 - `tests/native-save/native-mcp.spec.ts` (Ask agent pins): after the pins are shown, a commit on GitHub and Refresh, with the page's reads held until the reloaded frame is ready (so it turns ready parked); the new frame then reports pin places. Fails without the `pins.reset()` in `resync`.
+- `native-boot-requests.spec.ts`: main's predicted read is held while the editor switches to a branch whose `styles/site.css` differs, and released inside that branch's load. The heading only ever shows the branch's colour and the opened sheet's code is the branch's. A trace without the fix showed the stale write landing after the new load cleared its sources, but the test still passed (something, probably the text index, rereads the sheet before anything shows). It guards the behaviour without reproducing the bug.
 - `native-boot-requests.spec.ts`: a predicted `styles/unused.css` whose reads fail (500) still lets the page paint, styled by `styles/site.css`, with no load error. Fails when the predicted sheets share the page's batch.
 
 ## Measurements
@@ -77,6 +79,10 @@ Measured on top of the parked frame, before the style prediction:
 `native-shared-authoring-host.spec.ts:282` (same-bytes stylesheet replacement refuses Save shared) failed once in a native-static run. `--repeat-each=10`: branch 10/10 passed, `origin/dev` 9/10. It waits a fixed 1.5 s before asserting.
 
 `native-canvas.spec.ts:195` (hover a code line, the canvas hint shows) failed once in the first full run. With `--repeat-each`: this branch 1/10, 0/30, plus 0/52 for the whole file; dev (`origin/dev`) 0/10, 3/30. It fails on dev as well and was there before this slice. The failure screenshot shows the code pane's lines rendered with no text, so the hover likely lands before Monaco has painted the line.
+
+## Gates (second review fix)
+
+check clean; `npm test` 1,100 passed; `build:ui` ok; byte budget 347 KB of 350. On port 5216: focused set with boot-requests, conventions, draft-storage, MCP and final-proof 89 passed, 7 skipped; smoke 32 passed; native-static 40 passed, 13 skipped. Full native-save was not re-run for this guard-only change (it passed on `d0fdafa`).
 
 ## Gates (`d0fdafa`)
 

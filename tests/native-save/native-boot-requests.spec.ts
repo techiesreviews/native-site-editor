@@ -33,12 +33,12 @@ async function watchReads(page: Page) {
 }
 
 // The blob SHA of each file on the branch, as the editor's snapshot lists them.
-async function blobShas(page: Page) {
-  return page.evaluate(async () => {
-    const response = await fetch('/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main', { credentials: 'same-origin' });
+async function blobShas(page: Page, branch = 'main') {
+  return page.evaluate(async (branch) => {
+    const response = await fetch(`/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=${branch}`, { credentials: 'same-origin' });
     const snapshot = await response.json() as { tree?: { path: string; sha: string; type: string }[] };
     return Object.fromEntries((snapshot.tree ?? []).filter((entry) => entry.type === 'blob').map((entry) => [entry.path, entry.sha]));
-  });
+  }, branch);
 }
 
 const preview = (page: Page) => page.frameLocator('.native-preview-frame');
@@ -179,4 +179,57 @@ test('an unreadable stylesheet no page links does not hold the preview back', as
   // Styled by styles/site.css: its body background, not the browser's white.
   await expect.poll(() => preview(page).locator('body').evaluate((element) => getComputedStyle(element).backgroundColor)).toBe('rgb(246, 247, 243)');
   await expect(page.locator('.native-preview-error')).toBeHidden();
+});
+
+// A predicted read still under way when the branch is read again belongs to
+// the old commit: it must not land in the new load's sources.
+test('a predicted stylesheet read from before a branch switch does not outlive it', async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  const shas = await blobShas(page);
+  const old = shas['styles/site.css'];
+  const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
+  // Another branch whose sheet says something else.
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'styles/site.css', content: `${css}\n.hero h1 { color: rgb(7, 8, 9); }\n` } });
+  const fresh = (await blobShas(page, 'feature'))['styles/site.css'];
+  expect(fresh).not.toBe(old);
+  // main's predicted read is held; once the editor has moved to feature, its
+  // read of feature's sheet waits until main's read has landed, so that lands
+  // inside feature's load (after its sources were cleared).
+  let releaseOld!: () => void;
+  const oldHeld = new Promise<void>((resolve) => { releaseOld = resolve; });
+  let holding = 0, switched = false, featureReads = 0;
+  let releaseFeature!: () => void;
+  const featureHeld = new Promise<void>((resolve) => { releaseFeature = resolve; });
+  await page.route(/\/api\/files?\?/, async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const asked = [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])];
+    if (asked.includes(old) && !holding++) await oldHeld;
+    else if (switched && asked.includes(fresh)) { featureReads++; await featureHeld; }
+    await route.continue();
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect.poll(() => holding, { timeout: 30_000 }).toBeGreaterThan(0);
+  switched = true;
+  await page.evaluate(() => { location.hash = '#repo=501&branch=feature&file=index.html'; });
+  await expect.poll(() => featureReads, { timeout: 30_000 }).toBeGreaterThan(0);
+  releaseOld();
+  await page.waitForTimeout(500);
+  releaseFeature();
+  // Every colour the heading shows from feature's first paint on: never main's.
+  const colors: string[] = [];
+  const color = () => preview(page).locator('.hero h1').evaluate((element) => getComputedStyle(element).color);
+  const deadline = Date.now() + 5_000;
+  await expect(preview(page).locator('.hero h1')).toBeVisible({ timeout: 30_000 });
+  while (Date.now() < deadline) {
+    colors.push(await color().catch(() => ''));
+    if (colors.at(-1) === 'rgb(7, 8, 9)' && colors.length > 3) break;
+    await page.waitForTimeout(50);
+  }
+  const shown = colors.filter(Boolean);
+  expect(shown.length).toBeGreaterThan(0);
+  expect(new Set(shown)).toEqual(new Set(['rgb(7, 8, 9)']));
+  // The sheet's code, opened on feature, is feature's.
+  await page.evaluate(() => { location.hash = '#repo=501&branch=feature&file=styles/site.css'; });
+  await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'styles/site.css', { timeout: 30_000 });
+  await expect.poll(() => page.evaluate(async () => (await import('/src/components/code-editor.ts')).getMountedSource('styles/site.css')), { timeout: 15_000 }).toContain('rgb(7, 8, 9)');
 });
