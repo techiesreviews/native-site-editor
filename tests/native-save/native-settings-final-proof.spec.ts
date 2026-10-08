@@ -8,14 +8,17 @@ async function open(page: Page, baseURL: string | undefined, branch = 'main') {
   await expect(page.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
   await editorMounted(page);
 }
+// Over the boot's stylesheet prediction cap (src/native-boot.ts NATIVE_BOOT_STYLE_BYTES),
+// so only the background text index reads these stylesheets, not the first paint.
+const unpredicted = (text: string) => `${text}/* ${'x'.repeat(25 * 1024)} */\n`;
 const errors: string[] = [];
 test.beforeEach(({ page }) => { expect(fixtureKind()).toBe('default'); errors.length = 0; page.on('pageerror', error => errors.push(error.message)); });
 test.afterEach(() => expect(errors).toEqual([]));
 
 test('Files Delete waiting for the real text index cannot write into a newly selected branch', async ({ page, baseURL }) => {
   await page.goto(baseURL!);
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-unread.css', content: '/* Unimported stylesheet: only the background text index reads this. */\n' } });
-  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'proof-unread.css', content: '/* Feature branch unimported stylesheet. */\n' } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-unread.css', content: unpredicted('/* Unimported stylesheet: only the background text index reads this. */\n') } });
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'proof-unread.css', content: unpredicted('/* Feature branch unimported stylesheet. */\n') } });
   const snapshot = await (await page.request.get(`${baseURL}/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main`)).json();
   const featureBefore = await (await page.request.get(`${baseURL}/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=feature`)).json();
   const unread = snapshot.tree.find((entry: { path: string }) => entry.path === 'proof-unread.css');
@@ -55,7 +58,7 @@ test('Files Delete waiting for the real text index cannot write into a newly sel
 for (const tab of ['Pages', 'Files'] as const) {
   test(`${tab} Delete waiting for the index refuses a newer target edit before opening confirmation`, async ({ page, baseURL }) => {
     await page.goto(baseURL!);
-    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-target-unread.css', content: '/* Hold deletion before its source proof. */\n' } });
+    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-target-unread.css', content: unpredicted('/* Hold deletion before its source proof. */\n') } });
     const snapshot = await (await page.request.get(`${baseURL}/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main`)).json();
     const unread = snapshot.tree.find((entry: { path: string }) => entry.path === 'proof-target-unread.css');
     let release!: () => void; let captured = false;
@@ -98,8 +101,8 @@ for (const tab of ['Pages', 'Files'] as const) {
 for (const [tab, change] of [['Pages', 'branch'], ['Pages', 'resync'], ['Files', 'resync']] as const) {
   test(`${tab} pending Delete refuses ${change} before the held index completes`, async ({ page, baseURL }) => {
     await page.goto(baseURL!);
-    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-scope-unread.css', content: '/* Pending delete scope proof. */\n' } });
-    await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'proof-scope-unread.css', content: '/* Feature. */\n' } });
+    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-scope-unread.css', content: unpredicted('/* Pending delete scope proof. */\n') } });
+    await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'proof-scope-unread.css', content: unpredicted('/* Feature. */\n') } });
     const snapshot = await (await page.request.get(`${baseURL}/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main`)).json();
     const unread = snapshot.tree.find((entry: { path: string }) => entry.path === 'proof-scope-unread.css');
     let release!: () => void; let captured = false;
@@ -119,7 +122,7 @@ for (const [tab, change] of [['Pages', 'branch'], ['Pages', 'resync'], ['Files',
         await open(page, baseURL, 'feature');
         await expect(page.locator('#status')).toContainText('Up to date with feature');
       } else {
-        await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-scope-unread.css', content: '/* New commit while deletion waited. */\n' } });
+        await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: 'proof-scope-unread.css', content: unpredicted('/* New commit while deletion waited. */\n') } });
         const reloaded = page.waitForResponse(response => response.url().includes('/api/snapshot?') && response.status() === 200);
         await page.evaluate(() => window.dispatchEvent(new Event('focus')));
         await reloaded;
