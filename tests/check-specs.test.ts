@@ -73,3 +73,23 @@ test("a commented-out read is ignored and a clipboard poll on the same line befo
     '  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("x"); const t = await page.evaluate(() => navigator.clipboard.readText());',
   ]), []);
 });
+
+test("a read inside a template interpolation without a poll fails", () => {
+  assert.deepEqual(check(["  const message = `Copied: ${await page.evaluate(() => navigator.clipboard.readText())}`;"]), [1]);
+});
+
+test("nested templates keep their interpolations as code", () => {
+  assert.deepEqual(check([
+    "  const outer = `a ${`b ${await page.evaluate(() => navigator.clipboard.readText())} c`} d`;",
+    "  const text = `navigator.clipboard.readText() in template text is not a read`;",
+  ]), [1]);
+  assert.deepEqual(check([
+    '  const label = `${await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`x ${"y"}`)}`;',
+    read,
+  ]), []);
+});
+
+test("two emoji in a comment directly before a read keep the read's position", () => {
+  assert.deepEqual(check(["  /* 📋📋 */ const t = await page.evaluate(() => navigator.clipboard.readText());"]), [1]);
+  assert.deepEqual(check(["  // 📋📋", read]), [2]);
+});

@@ -24,18 +24,36 @@ const KEY_COPY = /keyboard\.press\(["'](ControlOrMeta|Control|Meta)\+C["']\)/;
 const RETURNS = /^\s*return\b/;
 const OPT_OUT = /\/\/\s*clipboard-ready:\s*\S/;
 
-/** `text` with comments and string contents blanked to spaces; offsets and newlines are kept. */
+/**
+ * `text` with comments, string contents and template text blanked to spaces. `${...}`
+ * expressions stay code, nested to any depth. Offsets are UTF-16 indices, as everywhere
+ * else in this file, and newlines are kept.
+ */
 function codeOnly(text) {
-  const out = [...text];
+  const out = text.split("");
   const blank = (from, to) => { for (let i = from; i < to; i++) if (out[i] !== "\n") out[i] = " "; };
+  const braces = []; // open `${` levels: braces opened inside each that are not closed yet
+  let inTemplate = false;
   for (let at = 0; at < text.length; at++) {
     const char = text[at], next = text[at + 1];
-    if (char === "/" && next === "/") { const stop = text.indexOf("\n", at); const to = stop < 0 ? text.length : stop; blank(at, to); at = to - 1; }
-    else if (char === "/" && next === "*") { const stop = text.indexOf("*/", at + 2); const to = stop < 0 ? text.length : stop + 2; blank(at, to); at = to - 1; }
-    else if (char === '"' || char === "'" || char === "`") {
+    if (inTemplate) {
+      if (char === "\\") { blank(at, at + 2); at++; }
+      else if (char === "`") inTemplate = false;
+      else if (char === "$" && next === "{") { braces.push(0); inTemplate = false; at++; }
+      else blank(at, at + 1);
+    } else if (char === "/" && next === "/") {
+      const stop = text.indexOf("\n", at); const to = stop < 0 ? text.length : stop; blank(at, to); at = to - 1;
+    } else if (char === "/" && next === "*") {
+      const stop = text.indexOf("*/", at + 2); const to = stop < 0 ? text.length : stop + 2; blank(at, to); at = to - 1;
+    } else if (char === '"' || char === "'") {
       let to = at + 1;
-      while (to < text.length && text[to] !== char) to += text[to] === "\\" ? 2 : 1;
+      while (to < text.length && text[to] !== char && text[to] !== "\n") to += text[to] === "\\" ? 2 : 1;
       blank(at + 1, to); at = to;
+    } else if (char === "`") inTemplate = true;
+    else if (char === "{" && braces.length) braces[braces.length - 1]++;
+    else if (char === "}" && braces.length) {
+      if (braces[braces.length - 1] === 0) { braces.pop(); inTemplate = true; }
+      else braces[braces.length - 1]--;
     }
   }
   return out.join("");
