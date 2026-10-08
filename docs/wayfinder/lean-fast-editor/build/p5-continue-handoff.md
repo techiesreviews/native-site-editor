@@ -22,7 +22,7 @@ Warm waterfall: snapshot, files, session and repositories in one wave
 (130–243), runtime from cache 276–279, paint 341.
 
 All six slices of [p5-controller-plan.md](p5-controller-plan.md) (11–16)
-are on dev, but main.ts is 6108 lines, not the plan's "about 500" (ticket 08).
+are on dev, but main.ts is 6220 lines (6108 after 12b, +112 for boot memory), not the plan's "about 500" (ticket 08).
 The rest needs a new plan: the planners and builders found most of what
 remains is host state, transactions, DOM wiring and ports that the plan's
 slices left in main.ts on purpose.
