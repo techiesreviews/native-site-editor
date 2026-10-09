@@ -1,7 +1,7 @@
 ---
 title: The preview reports nested containers
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -21,3 +21,9 @@ Research 11 gaps 1, 2 and 15 (`git show research/cb-11-insert-drag-today:docs/wa
 
 - Unit tests for any pure part (axis detection from child rects).
 - Nightly spec: on a page with a Section › Div (grid) › items, the report lists the nested containers with the grid's sideways axis.
+
+## Done (2026-10-09)
+
+- The runtime answers a `drop-probe` (x, y, moving path) with `drop-containers`: main, section, div and items-slot containers under the point, innermost first, with paths, boxes, children's boxes, layout and emptiness; sealed instances stay closed except through items slots, named slots come back as `slot`. `src/page-builder/drop-report.ts` validates it and derives the axis (`flowAxis`); `probeDrop` on the preview sends it.
+- Commits `4b9c589`, `c10f7f9`.
+- Tests: `tests/drop-report.test.ts` (axis, parsing); `tests/native-save/native-drop-containers.spec.ts` (Section › grid Div › cards with the row axis, probe settling, items-slot seal).
