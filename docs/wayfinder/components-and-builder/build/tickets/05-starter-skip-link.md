@@ -1,7 +1,7 @@
 ---
 title: "Starter: move the skip link into each page"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -22,3 +22,9 @@ Ticket [02](../../tickets/02-masters-become-components.md) §1:
 
 - With JavaScript off, Tab on any page shows the skip link and it jumps to `<main>`; with JavaScript on the page looks as before.
 - One commit on the starter's `dev` branch; screenshots of the focused skip link on the real starter.
+
+## Done (2026-10-09)
+
+- Starter `dev` commit `4b07b09`: every page carries `<a class="skip" href="#main">` right before `<site-header>`; the `.skip` rules moved from `site-header.css` to `styles/utilities.css` (z-index above the sticky header); `AGENTS.md` updated.
+- Checked in Chromium on all six pages, JavaScript on and off: Tab shows the link above the header, Enter goes to `#main`; the unfocused home page is pixel-identical to before. Sol review: no defects.
+- Left open: the editor's Page Structure now lists "Skip to content" as a top-level row above Site header.
