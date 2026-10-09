@@ -21,3 +21,9 @@ From the suite fix (branch build/cb-fix-suite-1): `tests/native-save/native-site
 **Also (2026-10-09, from slice 83):** in `tests/native-save/native-cards.spec.ts`, two different tests each failed once in five runs (one waiting on Undo, one on a popover), passing alone. Find which and treat them the same way, after the two above.
 
 **Also (2026-10-09, from slice 47):** `native-component-structure-host.spec.ts:101` and `native-shadow-scroll.spec.ts:45` fail under load on unchanged dev; `native-component-edit-overlay.spec.ts:16` failed once then passed 3/3. Same treatment.
+
+## Done (2026-10-09)
+
+- `native-site-settings.spec.ts:216`: product. Background indexing filled `about/index.html` after first paint; the edit bar's render key held every source, so `editBar.show` rebuilt the controls and restored focus onto a new Heading level combobox. The key now covers only the selected file, the shown page, templates and styles (`src/components/edit-bar-sources.ts`, 5 unit tests). 20/20.
+- `native-card-paths-starter.spec.ts:143`: test. The same late indexing rebuilds Page Structure and moves the focused Title field into a new row; `evaluateAll` had captured the old, emptied row. The audit now queries and measures in one `page.evaluate`, polled until the expected field is focused; two fixed sleeps became observable waits. 80/80 (20 per variant).
+- Commits: "Keep the edit bar when another page's source is indexed" and "Make the starter fields audit wait for the rebuilt Structure row". native-cards, component-structure-host, shadow-scroll and component-edit-overlay still to do.

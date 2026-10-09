@@ -85,7 +85,7 @@ test("starter: a page in a new folder and its card, then one Undo restores the h
 
 // Every text-like field shown in `root`: its class and the box it draws.
 async function audit(page: Page, root: string) {
-  return page.locator(root).evaluateAll((roots) => [...new Set(roots.flatMap((rootEl) => [...rootEl.querySelectorAll("input, textarea")]))]
+  return page.evaluate((selector) => [...new Set([...document.querySelectorAll(selector)].flatMap((rootEl) => [...rootEl.querySelectorAll("input, textarea")]))]
     .filter((field) => (field as HTMLElement).getClientRects().length && ["text", "url", "email", "tel", "number", "textarea", "search"].includes((field as HTMLInputElement).type))
     .map((field) => {
       const style = getComputedStyle(field);
@@ -94,7 +94,7 @@ async function audit(page: Page, root: string) {
         type: (field as HTMLInputElement).type, focused: field === document.activeElement, border: style.borderTopColor, borderWidth: style.borderTopWidth,
         background: style.backgroundColor, outline: style.outlineStyle, shadow: style.boxShadow, height: Math.round(field.getBoundingClientRect().height), rows: (field as HTMLTextAreaElement).rows ?? null,
       };
-    }));
+    }), root);
 }
 type Field = Awaited<ReturnType<typeof audit>>[number];
 const clear = (color: string) => color === "rgba(0, 0, 0, 0)" || color === "transparent";
@@ -132,6 +132,17 @@ function structureFields(group: string, fields: Field[]) {
   }
 }
 
+// A late source-index refresh moves the focused field into a new row. Query and
+// measure together, then retain the same snapshot that proves the editor is ready.
+async function auditStructure(page: Page, slot: string, focusedLabel: string, minimum: number) {
+  let fields: Field[] = [];
+  await expect.poll(async () => {
+    fields = await audit(page, `.page-structure__tree [role=treeitem][data-slot=${slot}], .page-structure__inline`);
+    return { ready: fields.length >= minimum, focused: fields.filter(field => field.focused).map(field => field.label) };
+  }).toEqual({ ready: true, focused: [focusedLabel] });
+  return fields;
+}
+
 const tree = (page: Page) => page.locator(".page-structure__tree");
 async function showPages(page: Page) {
   if (!await page.locator("#explorer").evaluate((el) => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
@@ -158,7 +169,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     await titleRow.locator(".page-structure__action[aria-label='Edit Title']").click();
     const titleText = page.getByRole("textbox", { name: "Title: Text", exact: true });
     await expect(titleText).toBeFocused();
-    report.structureSlot = await audit(page, ".page-structure__tree [role=treeitem][data-slot=title], .page-structure__inline");
+    report.structureSlot = await auditStructure(page, "title", "Title: Text", 1);
     await page.screenshot({ path: `${shots}/fields-structure-slot-${name}.png` });
     await titleText.fill("Inline & exact");
     await titleText.press("Tab");
@@ -173,7 +184,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     // The link's text is edited in place in its row; its address stays in the card attached below.
     await expect(page.getByRole("textbox", { name: "Primary: Button text", exact: true })).toBeFocused();
     await expect(page.getByRole("combobox", { name: "Primary: Link / URL", exact: true })).toBeVisible();
-    report.structureLink = await audit(page, ".page-structure__tree [role=treeitem][data-slot=primary], .page-structure__inline");
+    report.structureLink = await auditStructure(page, "primary", "Primary: Button text", 2);
     expect(report.structureLink.length).toBeGreaterThanOrEqual(2);
     await page.screenshot({ path: `${shots}/fields-structure-link-${name}.png` });
     await page.keyboard.press("Escape");
@@ -204,7 +215,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     const about = page.locator("#explorer").getByRole("treeitem", { name: /About/ }).first();
     await about.focus();
     await about.press("F2");
-    await page.waitForTimeout(300);
+    await expect(about.getByRole("textbox")).toBeFocused();
     report.pages = await audit(page, "#explorer");
     await page.screenshot({ path: `${shots}/fields-pages-rename-${name}.png` });
     await page.keyboard.press("Escape");
@@ -216,7 +227,6 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     await frame(page).locator("card-project a[slot=link]").first().click();
     const linkButton = page.locator(".edit-bar").getByRole("button", { name: /^(Link|Address|Edit link)/ }).first();
     if (await linkButton.isVisible().catch(() => false)) await linkButton.click();
-    await page.waitForTimeout(300);
     // At rest: the pointer leaves the field it clicked through, so no hover fill is measured.
     await page.mouse.move(0, 0);
     // The hover fill fades out (120 ms); wait until no resting field keeps one.
