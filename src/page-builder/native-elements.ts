@@ -2,22 +2,26 @@
 import { decodeHtmlEntities } from "./html-entities";
 import type { AddChoice } from "./add-catalog";
 
-export type NativeElementKind = "heading" | "text" | "image" | "link-button" | "list" | "columns" | "grid" | "video" | "embed" | "divider" | "form" | "input" | "textarea" | "select" | "checkbox" | "submit";
+export type NativeElementKind = "section" | "div" | "heading" | "paragraph" | "image" | "button";
 export interface NativeElementOptions {
   text?: string;
-  className?: string;
   level?: 1 | 2 | 3 | 4 | 5 | 6;
   src?: string;
   href?: string;
   alt?: string;
-  title?: string;
-  items?: readonly string[];
-  action?: string;
-  method?: "get" | "post";
-  name?: string;
-  label?: string;
-  type?: "text" | "email" | "tel" | "number" | "date";
 }
+export const PLACEHOLDER_IMAGE_PATH = "images/placeholder.svg";
+export const PLACEHOLDER_IMAGE_WIDTH = 640;
+export const PLACEHOLDER_IMAGE_HEIGHT = 400;
+/** Site asset written on first image insertion; neutral colours work in any page tone. */
+export const placeholderImageSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PLACEHOLDER_IMAGE_WIDTH} ${PLACEHOLDER_IMAGE_HEIGHT}" width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}">
+  <rect x="1" y="1" width="638" height="398" rx="12" fill="#808080" fill-opacity=".12" stroke="#808080" stroke-width="2"/>
+  <g fill="none" stroke="#808080" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="240" y="140" width="160" height="120" rx="12"/>
+    <circle cx="285" cy="175" r="14"/>
+    <path d="m248 248 45-45 30 30 30-45 39 60"/>
+  </g>
+</svg>`;
 const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 /** Validate a raw attribute value without changing the value written to HTML. */
 export function nativeElementUrlProblem(raw: string, allowed: readonly string[] = ["http", "https", "mailto", "tel", "about:blank"], decodeSourceEntities = true): string | undefined {
@@ -36,45 +40,27 @@ function url(value: string) {
   return escape(decoded);
 }
 export const nativeElementChoices: readonly AddChoice[] = [
-  ["heading", "Heading", "Elements"], ["text", "Text", "Elements"], ["image", "Image", "Elements"],
-  ["link-button", "Link button", "Elements"], ["list", "List", "Elements"], ["video", "Video", "Elements"],
-  ["embed", "Iframe embed", "Elements"], ["divider", "Divider", "Elements"],
-  ["columns", "Columns", "Layout"], ["grid", "Grid", "Layout"],
-  ["form", "Form", "Forms"], ["input", "Input field", "Forms"], ["textarea", "Text area", "Forms"],
-  ["select", "Select field", "Forms"], ["checkbox", "Checkbox", "Forms"], ["submit", "Submit button", "Forms"],
-].map(([kind, label, group]) => ({ tag: `native:${kind}`, label, group, kind: "native" }));
+  ["section", "Section"], ["div", "Div"], ["heading", "Heading"],
+  ["paragraph", "Paragraph"], ["image", "Image"], ["button", "Button"],
+].map(([kind, label]) => ({ tag: `native:${kind}`, label, group: "Blocks", kind: "native" }));
 
-/** No generated CSS/classes, backend, runtime, or editor metadata. */
+/** Portable HTML styled by the site's own flow and btn classes. */
 export function nativeElementMarkup(kind: NativeElementKind, options: NativeElementOptions = {}): string {
-  const text = escape(options.text ?? (kind === "heading" ? "Heading" : "Text"));
-  const cls = options.className ? ` class="${escape(options.className)}"` : "";
-  const name = escape(options.name ?? "field");
-  const label = escape(options.label ?? "Label");
   switch (kind) {
+    case "section": return '<section class="flow"></section>';
+    case "div": return '<div class="flow"></div>';
     case "heading": {
       const level = options.level ?? 2;
       if (![1, 2, 3, 4, 5, 6].includes(level)) throw new Error("Invalid heading level.");
-      return `<h${level}${cls}>${text}</h${level}>`;
+      return `<h${level}>${escape(options.text ?? "Heading")}</h${level}>`;
     }
-    case "text": return `<p${cls}>${text}</p>`;
-    case "image": return `<img${cls} src="${url(options.src ?? "image.jpg")}" alt="${escape(options.alt ?? "")}">`;
-    case "link-button": return `<a${cls} href="${url(options.href ?? "#")}">${escape(options.text ?? "Learn more")}</a>`;
-    case "list": return `<ul${cls}>\n${(options.items ?? ["First item", "Second item"]).map((item) => `  <li>${escape(item)}</li>`).join("\n")}\n</ul>`;
-    case "columns": return `<div${cls} style="display: flex; flex-wrap: wrap; gap: 1rem">\n  <div style="flex: 1 1 16rem"><p>First column</p></div>\n  <div style="flex: 1 1 16rem"><p>Second column</p></div>\n</div>`;
-    case "grid": return `<div${cls} style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem">\n  <div><p>First item</p></div>\n  <div><p>Second item</p></div>\n</div>`;
-    case "video": return `<video${cls} controls src="${url(options.src ?? "video.mp4")}"></video>`;
-    case "embed": return `<iframe${cls} src="${url(options.src ?? "about:blank")}" title="${escape(options.title ?? "Embedded content")}" sandbox="" loading="lazy"></iframe>`;
-    case "divider": return `<hr${cls}>`;
-    case "form": return `<form${cls} action="${url(options.action ?? "")}" method="${options.method === "get" ? "get" : "post"}">\n  <label>${label} <input type="text" name="${name}"></label>\n  <button type="submit">Submit</button>\n</form>`;
-    case "input": {
-      const type = options.type ?? "text";
-      if (!["text", "email", "tel", "number", "date"].includes(type)) throw new Error("Invalid input type.");
-      return `<label${cls}>${label} <input type="${type}" name="${name}"></label>`;
+    case "paragraph": return `<p>${escape(options.text ?? "Text")}</p>`;
+    case "image": {
+      // The placeholder's own size; another src has its size set when it is chosen.
+      const size = options.src === undefined ? ` width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"` : "";
+      return `<img src="${url(options.src ?? `/${PLACEHOLDER_IMAGE_PATH}`)}" alt="${escape(options.alt ?? "")}"${size}>`;
     }
-    case "textarea": return `<label${cls}>${label} <textarea name="${name}">${escape(options.text ?? "")}</textarea></label>`;
-    case "select": return `<label${cls}>${label} <select name="${name}">${(options.items ?? ["Choose an option"]).map((item) => `<option>${escape(item)}</option>`).join("")}</select></label>`;
-    case "checkbox": return `<label${cls}><input type="checkbox" name="${name}"> ${label}</label>`;
-    case "submit": return `<button${cls} type="submit">${escape(options.text ?? "Submit")}</button>`;
+    case "button": return `<a class="btn" href="${url(options.href ?? "#")}">${escape(options.text ?? "Button")}</a>`;
     default: throw new Error("Unknown native element.");
   }
 }

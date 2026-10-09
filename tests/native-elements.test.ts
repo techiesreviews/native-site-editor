@@ -1,28 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeElementChoices, nativeElementMarkup, nativeChoiceMarkup } from "../src/page-builder/native-elements.ts";
+import { nativeElementChoices, nativeElementMarkup, nativeChoiceMarkup, PLACEHOLDER_IMAGE_PATH, PLACEHOLDER_IMAGE_WIDTH, PLACEHOLDER_IMAGE_HEIGHT, placeholderImageSvg } from "../src/page-builder/native-elements.ts";
 import { addCatalog, filterCatalog } from "../src/page-builder/add-catalog.ts";
 import { applyGuardedSourceEdit, nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit, nativeMoveToEdit } from "../src/page-builder/native-operations.ts";
 const apply = (source: string, parent: number[], index: number, markup: string) => {
   const edit = nativeMarkupInsertEdit(source, parent, index, markup);
   return edit && applyGuardedSourceEdit(source, edit);
 };
-test("native catalogue joins components, searches groups, and writes portable escaped HTML", () => {
+test("six blocks join components and write exact portable HTML", () => {
   const groups = addCatalog([{ tag: "feature-block", label: "Feature block" }, ...nativeElementChoices]);
-  assert.deepEqual(groups.map((group) => group.name), ["Elements", "Forms", "Layout", "More sections"]);
-  assert.equal(filterCatalog(groups, "Forms")[0].items.length, 6);
-  assert.equal(nativeChoiceMarkup("missing"), undefined);
-  assert.equal(nativeElementMarkup("heading", { text: '<img onerror="x"> &', className: 'site" onclick="x' }), '<h2 class="site&quot; onclick=&quot;x">&lt;img onerror=&quot;x&quot;&gt; &amp;</h2>');
-  assert.equal(nativeElementMarkup("link-button", { href: "/contact", className: "site-cta" }), '<a class="site-cta" href="/contact">Learn more</a>');
-  assert.throws(() => nativeElementMarkup("image", { src: "java\nscript:alert(1)" }));
-  assert.throws(() => nativeElementMarkup("embed", { src: "data:text/html,x" }));
-  assert.match(nativeElementMarkup("form"), /action="" method="post"/);
-  assert.match(nativeElementMarkup("form", { action: "/send?a=1&b=2", method: "get" }), /action="\/send\?a=1&amp;b=2" method="get"/);
-  for (const choice of nativeElementChoices) {
-    const markup = nativeChoiceMarkup(choice.tag)!;
-    assert.ok(apply("<main></main>", [0], 0, markup), choice.tag);
+  assert.deepEqual(groups.map((group) => group.name), ["Blocks", "More sections"]);
+  assert.equal(filterCatalog(groups, "Blocks")[0].items.length, 6);
+  const blocks = [
+    ["section", "Section", '<section class="flow"></section>'],
+    ["div", "Div", '<div class="flow"></div>'],
+    ["heading", "Heading", '<h2>Heading</h2>'],
+    ["paragraph", "Paragraph", '<p>Text</p>'],
+    ["image", "Image", '<img src="/images/placeholder.svg" alt="" width="640" height="400">'],
+    ["button", "Button", '<a class="btn" href="#">Button</a>'],
+  ];
+  assert.deepEqual(nativeElementChoices.map(({ tag, label, group, kind }) => [tag, label, group, kind]), blocks.map(([kind, label]) => [`native:${kind}`, label, "Blocks", "native"]));
+  for (const [kind, , markup] of blocks) {
+    assert.equal(nativeChoiceMarkup(`native:${kind}`), markup);
+    assert.ok(apply("<main></main>", [0], 0, markup), kind);
     assert.doesNotMatch(markup, /data-native|data-key|<script/);
   }
+  for (const kind of ["text", "link-button", "list", "video", "embed", "divider", "form", "input", "textarea", "select", "checkbox", "submit", "columns", "grid", "missing"]) {
+    assert.equal(nativeChoiceMarkup(`native:${kind}`), undefined, kind);
+  }
+  assert.equal(nativeChoiceMarkup("missing"), undefined);
+});
+test("heading levels and block options validate and escape", () => {
+  for (const level of [1, 2, 3, 4, 5, 6] as const) assert.equal(nativeElementMarkup("heading", { level }), `<h${level}>Heading</h${level}>`);
+  // Exercise invalid values arriving from untyped callers.
+  for (const level of [0, 7, 2.5]) assert.throws(() => nativeChoiceMarkup("native:heading", JSON.parse(JSON.stringify({ level }))), /Invalid heading level/);
+  assert.equal(nativeElementMarkup("heading", { text: '<img onerror="x"> &' }), '<h2>&lt;img onerror=&quot;x&quot;&gt; &amp;</h2>');
+  assert.equal(nativeElementMarkup("paragraph", { text: "<Text>" }), '<p>&lt;Text&gt;</p>');
+  assert.equal(nativeElementMarkup("button", { href: '/contact?a=1&b="x"', text: "<'&" }), '<a class="btn" href="/contact?a=1&amp;b=&quot;x&quot;">&lt;&#39;&amp;</a>');
+  assert.equal(nativeElementMarkup("image", { src: '/photo?a=1&b=2', alt: '<"&' }), '<img src="/photo?a=1&amp;b=2" alt="&lt;&quot;&amp;">');
+  for (const url of ["java\nscript:alert(1)", "data:text/html,x", "javascript:alert(1)"]) {
+    assert.throws(() => nativeElementMarkup("button", { href: url }));
+    assert.throws(() => nativeElementMarkup("image", { src: url }));
+  }
+});
+test("placeholder site SVG defines matching intrinsic dimensions and a neutral image mark", () => {
+  assert.equal(PLACEHOLDER_IMAGE_PATH, "images/placeholder.svg");
+  assert.match(placeholderImageSvg, new RegExp(`^<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PLACEHOLDER_IMAGE_WIDTH} ${PLACEHOLDER_IMAGE_HEIGHT}" width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}">`));
+  assert.match(placeholderImageSvg, /<rect\b/);
+  assert.match(placeholderImageSvg, /<circle\b/);
+  assert.match(placeholderImageSvg, /<path\b/);
+  assert.match(placeholderImageSvg, /<\/svg>$/);
+  assert.doesNotMatch(placeholderImageSvg, /PROTOTYPE|prefers-color-scheme|<script|&/);
+  assert.match(nativeElementMarkup("image"), new RegExp(`width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"`));
 });
 test("markup insertion preserves text, comments, neighbours and exact bounds", () => {
   const source = '<main><section>intro <!--keep--><p>A</p> between <p>B</p> tail</section></main>';
@@ -100,11 +129,11 @@ test("all native URL inputs decode HTML5 attributes before scheme validation", (
     for (const attribute of ['href', 'src', 'action', 'formaction']) {
       assert.equal(apply('<main></main>', [0], 0, `<a ${attribute}="${value}">x</a>`), undefined, `${attribute}: ${value}`);
     }
-    for (const kind of ['image', 'video', 'embed', 'link-button', 'form'] as const) {
-      assert.throws(() => nativeElementMarkup(kind, { src: value, href: value, action: value }), `${kind}: ${value}`);
+    for (const kind of ['image', 'button'] as const) {
+      assert.throws(() => nativeElementMarkup(kind, { src: value, href: value }), `${kind}: ${value}`);
     }
   }
-  assert.equal(nativeElementMarkup('link-button', { href: '/?a=1&amp;b=2' }), '<a href="/?a=1&amp;b=2">Learn more</a>');
+  assert.equal(nativeElementMarkup('button', { href: '/?a=1&amp;b=2' }), '<a class="btn" href="/?a=1&amp;b=2">Button</a>');
   assert.ok(apply('<main></main>', [0], 0, '<a href="/?x=&notit;">x</a>'));
   assert.ok(apply('<main></main>', [0], 0, '<a href="/?x=&amp;colon;">x</a>'));
 });

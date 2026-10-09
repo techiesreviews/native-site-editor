@@ -10,7 +10,7 @@ async function open(page: Page, baseURL: string | undefined) {
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
 }
 
-// Single HTML elements (Heading, List, Image, Grid) left the Add panel when it
+// Single HTML elements (Section, Div, Heading, Paragraph, Image, Button) left the Add panel when it
 // became sections-only; plain HTML sections show whole, like components.
 test("section thumbnails show the whole section at the canvas's width, with no code peek", async ({ page, baseURL }) => {
   await open(page, baseURL);
@@ -29,7 +29,7 @@ test("section thumbnails show the whole section at the canvas's width, with no c
       return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole);
     })).toBe(true);
   }
-  await expect(add.getByRole("option", { name: /^(Heading|List|Image|Grid) HTML$/ })).toHaveCount(0);
+  await expect(add.getByRole("option", { name: /^(Section|Div|Heading|Paragraph|Image|Button) HTML$/ })).toHaveCount(0);
   await expect(add.locator(".pb-add-panel__code-toggle,.pb-add-item__code,.pb-add-panel__peek")).toHaveCount(0);
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(before);
 });
@@ -48,7 +48,7 @@ async function probe(page: Page, baseURL: string | undefined) {
     document.body.append(canvas);
     const view = createAddPanel({
       choices: () => [], extraChoices: () => nativeElementChoices,
-      pointFor: choice => { calls++; if (choice.tag === "native:grid") return undefined; return nativeMarkupInsertEdit(effectiveSource, point.parent, point.index, nativeChoiceMarkup(choice.tag)!) ? { ...point } : undefined; },
+      pointFor: choice => { calls++; if (choice.tag === "native:div") return undefined; return nativeMarkupInsertEdit(effectiveSource, point.parent, point.index, nativeChoiceMarkup(choice.tag)!) ? { ...point } : undefined; },
       preview: tag => { const markup = nativeChoiceMarkup(tag)!; return { markup, doc: `<html><body><main>${markup}</main></body></html>` }; },
       canvasWidth: () => 1000, points: () => [point], defaultPoint: () => point,
       prepare() {}, insert() { inserts++; },
@@ -99,34 +99,34 @@ test("a refused drag drop explains the destination visibly without inserting", a
 
 test("destination warnings follow current pointer or focus and reset for hidden items and new gaps", async ({ page, baseURL }) => {
   await probe(page, baseURL);
-  const add = panel(page), grid = add.getByRole("option", { name: /^Grid HTML$/ });
+  const add = panel(page), div = add.getByRole("option", { name: /^Div HTML$/ });
   const position = add.locator(".pb-add-panel__position"), search = add.getByRole("searchbox");
-  await grid.hover();
-  await expect(position).toContainText("cannot accept Grid");
+  await div.hover();
+  await expect(position).toContainText("cannot accept Div");
   await page.mouse.move(850, 300);
   await page.evaluate(() => (window as any).addUXProbe.view.retarget());
   await expect(position).toBeHidden();
   await expect(add).not.toHaveClass(/has-no-place/);
 
   // Leaving the pointer keeps the keyboard's current item active.
-  await grid.focus();
-  await grid.dispatchEvent("pointerenter"); await grid.dispatchEvent("pointerleave");
-  await expect(position).toContainText("cannot accept Grid");
-  await expect(grid).toBeFocused();
+  await div.focus();
+  await div.dispatchEvent("pointerenter"); await div.dispatchEvent("pointerleave");
+  await expect(position).toContainText("cannot accept Div");
+  await expect(div).toBeFocused();
   await search.focus();
   await expect(position).toBeHidden();
 
   // Moving keyboard focus keeps a still-hovered item active.
-  await grid.focus(); await grid.dispatchEvent("pointerenter");
+  await div.focus(); await div.dispatchEvent("pointerenter");
   await search.focus();
-  await expect(position).toContainText("cannot accept Grid");
+  await expect(position).toContainText("cannot accept Div");
   await search.fill("Heading");
-  await expect(grid).toBeHidden();
+  await expect(div).toBeHidden();
   await expect(position).toBeHidden();
   await expect(add).not.toHaveClass(/has-no-place/);
 
-  await search.fill(""); await grid.dispatchEvent("pointerenter");
-  await expect(position).toContainText("cannot accept Grid");
+  await search.fill(""); await div.dispatchEvent("pointerenter");
+  await expect(position).toContainText("cannot accept Div");
   await page.evaluate(() => { (window as any).addUXProbe.view.close(false); (window as any).addUXProbe.openGap(); });
   await expect(search).toBeFocused();
   await expect(position).toBeHidden();

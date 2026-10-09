@@ -60,7 +60,7 @@ test('ordinary section containing components moves across islands without changi
   expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(source);
 });
 test('inside and partial island paths refuse insertion/move and leave source/history untouched',async({page})=>{
-  const result=await page.evaluate(()=>{const h=(window as any).elementCompat;return {insertions:[[1,0],[1,0,0],[1,1],[1,1,0],[1,4,0],[1,4,0,1]].map(path=>h.insert(path,0,'<hr>')),moves:[h.move([1,0],[1],6),h.move([1,4,0,1],[1,3],0),h.move([1,3,0],[1,4,0],0)],source:h.state.source};});
+  const result=await page.evaluate(()=>{const h=(window as any).elementCompat;return {insertions:[[1,0],[1,0,0],[1,1],[1,1,0],[1,4,0],[1,4,0,1]].map(path=>h.insert(path,0,'<p>Text</p>')),moves:[h.move([1,0],[1],6),h.move([1,4,0,1],[1,3],0),h.move([1,3,0],[1,4,0],0)],source:h.state.source};});
   expect(result.insertions).toEqual([false,false,false,false,false,false]);expect(result.moves).toEqual([false,false,false]);expect(result.source).toBe(source);
   expect(await page.evaluate(()=>(window as any).elementCompat.history('undo'))).toBe(false);
 });
@@ -83,16 +83,16 @@ test('a slash consumed by an unquoted foreign attribute cannot cause a wrong-pat
   await expect.poll(()=>page.evaluate(()=>(window as any).elementCompat.state.structure?.items[0].children.map((item:any)=>item.tag))).toEqual(['svg','div']);
   const actualPath=await page.evaluate(()=>(window as any).elementCompat.state.structure.items[0].children[1].node);
   expect(actualPath).toEqual([0,1]);
-  expect(await page.evaluate(path=>(window as any).elementCompat.insert(path,0,'<hr>'),actualPath)).toBe(false);
+  expect(await page.evaluate(path=>(window as any).elementCompat.insert(path,0,'<p>Text</p>'),actualPath)).toBe(false);
   expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(malformed);
-  await expect(page.frameLocator('.native-preview-frame').locator('#island hr')).toHaveCount(0);
+  await expect(page.frameLocator('.native-preview-frame').locator('#island p')).toHaveCount(0);
 });
 test('valid inline SVG foreignObject block content leaves the following section editable',async({page})=>{
   const valid='<main><p><svg><foreignObject><div>Label</div></foreignObject></svg></p><section id="target">Target</section></main>';
   await page.evaluate(valid=>{const h=(window as any).elementCompat;const before=h.state.source;h.code.replaceActiveRange({path:'index.html',start:0,end:before.length,expected:before,text:valid});},valid);
   await expect(page.frameLocator('.native-preview-frame').locator('#target')).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>(window as any).elementCompat.state.structure?.items[0].children.map((item:any)=>item.tag))).toEqual(['p','section']);
-  expect(await page.evaluate(()=>(window as any).elementCompat.insert([0,1],0,'<hr id="outside-proof">'))).toBe(true);
+  expect(await page.evaluate(()=>(window as any).elementCompat.insert([0,1],0,'<p id="outside-proof">Text</p>'))).toBe(true);
   await expect(page.frameLocator('.native-preview-frame').locator('#target #outside-proof')).toHaveCount(1);
   expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toContain('<p><svg><foreignObject><div>Label</div></foreignObject></svg></p>');
 });
@@ -107,8 +107,32 @@ for(const [name,char] of [['NBSP','\u00a0'],['VT','\u000b'],['BOM','\ufeff']]) t
     const live=await page.evaluate(()=>(window as any).elementCompat.state.source);
     // Monaco preserves these value/name characters; the operation must fail closed.
     expect(live).toBe(malformed);
-    expect(await page.evaluate(()=>(window as any).elementCompat.insert([0,1],0,'<hr id="wrong-edit">'))).toBe(false);
+    expect(await page.evaluate(()=>(window as any).elementCompat.insert([0,1],0,'<p id="wrong-edit">Text</p>'))).toBe(false);
     expect(await page.evaluate(()=>(window as any).elementCompat.state.source)).toBe(malformed);
     await expect(frame.locator('#wrong-edit')).toHaveCount(0);
+  }
+});
+
+test('six catalogue blocks insert into the real starter and undo exactly; placeholder parses as SVG', async ({ page }) => {
+  const blocks = await page.evaluate(async () => {
+    const { nativeElementChoices, nativeChoiceMarkup, placeholderImageSvg, PLACEHOLDER_IMAGE_PATH, PLACEHOLDER_IMAGE_WIDTH, PLACEHOLDER_IMAGE_HEIGHT } = await import('/src/page-builder/native-elements.ts');
+    const svg = new DOMParser().parseFromString(placeholderImageSvg, 'image/svg+xml');
+    if (svg.querySelector('parsererror')) throw new Error('Invalid placeholder SVG');
+    const root = svg.documentElement;
+    if (root.localName !== 'svg' || root.namespaceURI !== 'http://www.w3.org/2000/svg' || root.getAttribute('width') !== String(PLACEHOLDER_IMAGE_WIDTH) || root.getAttribute('height') !== String(PLACEHOLDER_IMAGE_HEIGHT) || root.getAttribute('viewBox') !== `0 0 ${PLACEHOLDER_IMAGE_WIDTH} ${PLACEHOLDER_IMAGE_HEIGHT}`) throw new Error('Placeholder dimensions or namespace mismatch');
+    const image = new DOMParser().parseFromString(nativeChoiceMarkup('native:image')!, 'text/html').querySelector('img')!;
+    if (image.getAttribute('src') !== `/${PLACEHOLDER_IMAGE_PATH}` || image.width !== PLACEHOLDER_IMAGE_WIDTH || image.height !== PLACEHOLDER_IMAGE_HEIGHT || image.alt !== '') throw new Error('Image placeholder mismatch');
+    return nativeElementChoices.map(choice => ({ key: choice.tag, markup: nativeChoiceMarkup(choice.tag)! }));
+  });
+  expect(blocks.map(block => block.key)).toEqual(['native:section', 'native:div', 'native:heading', 'native:paragraph', 'native:image', 'native:button']);
+  for (const block of blocks) {
+    expect(await page.evaluate(markup => (window as any).elementCompat.insert([1], 6, markup), block.markup)).toBe(true);
+    const last = page.frameLocator('.native-preview-frame').locator('#page > main > :last-child');
+    await expect(last).toHaveCount(1);
+    await expect.poll(() => last.evaluate(element => element.outerHTML)).toBe(block.markup);
+    expect(await page.evaluate(() => (window as any).elementCompat.state.source)).toContain(islands);
+    expect(await page.evaluate(() => (window as any).elementCompat.history('undo'))).toBe(true);
+    expect(await page.evaluate(() => (window as any).elementCompat.state.source)).toBe(source);
+    await expect(page.frameLocator('.native-preview-frame').locator('#page > main > *')).toHaveCount(6);
   }
 });

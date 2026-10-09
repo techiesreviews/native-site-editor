@@ -17,7 +17,7 @@ const panel = createAddPanel({
   canvasWidth: () => 800,
   points: () => [destination().point],
   defaultPoint: () => destination().point,
-  pointFor: (choice, fallback) => choice.tag === 'native:form' ? undefined : fallback,
+  pointFor: (choice, fallback) => choice.tag === 'native:div' ? undefined : fallback,
   destinationText: () => destination().description,
   prepare: () => {},
   insert: (point, choice) => {

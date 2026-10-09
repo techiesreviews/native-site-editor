@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-// Only the plain sections group drops its visible heading; Elements, Layout and
-// Forms keep theirs, and the plain section cards stay addable.
+// Only the plain sections group drops its visible heading; Blocks keeps its
+// heading, and the plain section cards stay addable.
 test("plain sections lose only their heading; other groups keep headings and names", async ({ page, baseURL }) => {
   await page.goto(new URL("/tests/fixtures/native-elements-panel.html", baseURL!).href);
   await page.evaluate(async () => {
@@ -25,7 +25,7 @@ test("plain sections lose only their heading; other groups keep headings and nam
   const plain = panel.getByRole("group", { name: "Page sections", exact: true });
   await expect(plain).toHaveCount(1);
   await expect(plain.getByRole("option", { name: "Custom saved section HTML", exact: true })).toHaveCount(1);
-  for (const name of ["Elements", "Layout", "Forms"]) {
+  for (const name of ["Blocks"]) {
     await expect(panel.getByRole("heading", { name, exact: true })).toBeVisible();
     await expect(panel.getByRole("group", { name, exact: true })).toHaveCount(1);
   }

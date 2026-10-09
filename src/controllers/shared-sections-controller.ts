@@ -341,7 +341,6 @@ export function createSharedSectionsController(ports: SharedSectionsPorts) {
     const staticPreview = isStatic ? nativeStaticSectionPreview(choice.tag) : undefined;
     if (isStatic && !staticPreview) return;
     const markup = staticPreview?.html ?? nativeChoiceMarkup(choice.tag);
-    if (/native:(?:grid|columns)$/.test(choice.tag)) return;
     if (!markup) return fallback;
     if (ports.versionView() || !ports.site()) return;
     const selected = ports.store.selection.value;

@@ -3,8 +3,8 @@ import { seedSavedSections } from "./static-sections";
 
 // Add offers whole sections only: the site's saved page sections (Intro,
 // Features, Split, Contact; seeded on the branch, since Add no longer offers
-// unsaved defaults) and the section components. No single elements (Heading,
-// Text, Image, Grid) and no "Plain HTML sections" heading. A chosen section is
+// unsaved defaults) and the section components. No catalogue blocks (Section,
+// Div, Heading, Paragraph, Image, Button) and no "Plain HTML sections" heading. A chosen section is
 // written into the page as ordinary HTML, as one undo step.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
@@ -75,7 +75,7 @@ test("Add offers only sections, writes ordinary HTML after the selection's secti
   await expect(add(page).getByRole("group", { name: "Page sections" }).getByRole("option")).toHaveText([/^Intro/, /^Features/, /^Split/, /^Contact/]);
   await expect(add(page).getByRole("group", { name: "More sections" }).getByRole("option")).toHaveText([/^Feature block/]);
   // No single elements, no plain-HTML heading.
-  for (const name of [/^Heading/, /^Text/, /^Image/, /^Grid/, /^Link/, /^Button/]) await expect(add(page).getByRole("option", { name })).toHaveCount(0);
+  for (const name of [/^Section HTML$/, /^Div HTML$/, /^Heading/, /^Paragraph/, /^Image/, /^Button/]) await expect(add(page).getByRole("option", { name })).toHaveCount(0);
   await expect(add(page)).not.toContainText("Plain HTML sections");
   // Searching for an element finds nothing to add.
   await add(page).getByRole("searchbox").fill("Heading");
