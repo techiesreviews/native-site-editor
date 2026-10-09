@@ -49,11 +49,13 @@ function walkStyleRules(css: string, visit: (rule: StyleRule) => void) {
     const prelude = css.slice(pos, stop);
     const text = selectorText(prelude).trim();
     if (text.startsWith("@")) {
-      const name = /^@([\w-]+)/.exec(text)?.[1].toLowerCase() ?? "";
+      // A comment separates tokens here (`@media/**/print`).
+      const rule = withoutComments(prelude).replace(/\s+/g, " ").trim();
+      const name = /^@([\w-]+)/.exec(rule)?.[1].toLowerCase() ?? "";
       if (!GROUPING.has(name)) { pos = blockEnd(css, stop); continue; }
       stack.push(context);
-      context = { ...context, conditions: name === "media" || name === "container" ? [...context.conditions, text] : context.conditions };
-    } else if (context.style && /^--[\w-]*\s*:/.test(text)) {
+      context = { ...context, conditions: name === "media" || name === "container" ? [...context.conditions, rule] : context.conditions };
+    } else if (context.style && /^--(?:[\w-]|\\[\da-f]{1,6}\s?|\\[\s\S]|[^\x00-\x7f])*\s*:/i.test(text)) {
       pos = blockEnd(css, stop);
       continue;
     } else {
@@ -175,8 +177,8 @@ function identifierEnd(text: string, pos: number) {
   return pos;
 }
 
-interface Attribute { name: string; operator: string; value?: string; absent: boolean; raw: string }
-function readAttribute(raw: string): Omit<Attribute, "absent"> | undefined {
+interface Attribute { name: string; operator: string; value?: string; absent: boolean; negated: boolean; raw: string }
+function readAttribute(raw: string): Omit<Attribute, "absent" | "negated"> | undefined {
   const text = raw.slice(1, -1).trim();
   let pos = identifierEnd(text, 0);
   if (!pos) return undefined;
@@ -207,7 +209,7 @@ function readCompoundAttributes(text: string, negated = false): CompoundAttribut
       const end = closing(text, pos);
       const attribute = readAttribute(text.slice(pos, end + 1));
       if (attribute?.name.startsWith("data-")) {
-        state = { attributes: [{ ...attribute, absent: negated && !attribute.operator }], canBeTrue: false, canBeFalse: true };
+        state = { attributes: [{ ...attribute, absent: negated && !attribute.operator, negated }], canBeTrue: false, canBeFalse: true };
       } else state = { attributes: [], canBeTrue: true, canBeFalse: true };
       pos = end + 1;
     } else if (text[pos] === ":") {
@@ -263,14 +265,16 @@ export function componentVariants(css: string, options: { scriptAttributes?: Ite
       if (!host) { defaultLook = true; continue; }
       const functional = compound[5] === "(";
       const close = functional ? closing(compound, 5) : 4;
-      const outside = readCompoundAttributes(compound.slice(close + 1)).attributes;
-      if (outside.length) {
-        for (const attribute of outside) {
+      const rest = compound.slice(close + 1);
+      if (rest && !rest.startsWith("::")) {
+        // The host is featureless: only a pseudo-element may follow `:host` or
+        // `:host(…)`; `:host[data-x]`, `:host.foo` and `:host:hover` never match.
+        const argument = functional ? compound.slice(6, close) : "";
+        for (const attribute of readCompoundAttributes(rest).attributes) {
           const key = `${offset}:${authored}:${attribute.name}`;
           if (warned.has(key)) continue;
           warned.add(key);
-          const argument = functional ? compound.slice(6, close) : "";
-          warnings.push({ kind: "host-without-parentheses", selector: authored, attribute: attribute.name, fix: `:host(${argument}${attribute.raw}) { … }`, offset });
+          warnings.push({ kind: "host-without-parentheses", selector: authored, attribute: attribute.name, fix: `:host(${argument}${rest}) { … }`, offset });
         }
         continue;
       }
@@ -292,7 +296,7 @@ export function componentVariants(css: string, options: { scriptAttributes?: Ite
       }
     }
     for (const host of hosts) for (const attribute of host.attributes) {
-      if (attribute.operator !== "=" || !attribute.value) continue;
+      if (attribute.operator !== "=" || !attribute.value || attribute.negated) continue;
       const axis = axes.get(attribute.name);
       if (axis && axis.defaultValue === undefined && hosts.some((other) => other !== host && (other.bare || other.attributes.some((absent) => absent.name === attribute.name && absent.absent))))
         axis.defaultValue = attribute.value;

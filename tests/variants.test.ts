@@ -172,3 +172,22 @@ test("many variants have no cap and calls share no mutable state", () => {
   assert.deepEqual(parse("h2 {}"), []);
   assert.equal(parse(css).length, 100);
 });
+
+test("only a pseudo-element may follow the host; other trailing parts never match", () => {
+  const css = `:host[data-tone=dark][data-size=large] {}`;
+  assert.deepEqual(componentVariants(css).warnings.map(({ fix }: { fix?: string }) => fix), [
+    ":host([data-tone=dark][data-size=large]) { … }", ":host([data-tone=dark][data-size=large]) { … }",
+  ]);
+  for (const broken of [":host.foo {}", ":host:hover {}", ":host([data-x=a]):hover {}"])
+    assert.deepEqual(componentVariants(`${broken} :host([data-tone=dark]) {}`).warnings, [{ kind: "no-default-look" }]);
+  assert.deepEqual(values(":host([data-x=a]):hover {} :host([data-y=b])::before {}"), [["data-y", ["b"]]]);
+});
+
+test("a negated value never names the default", () => {
+  assert.equal(parse(":host(:not([data-tone])), :host(:not([data-tone=light])) {}")[0].defaultValue, undefined);
+});
+
+test("comments separate at-rule tokens; escaped and non-ASCII custom properties hold blocks", () => {
+  assert.deepEqual(parse("@media/**/print { :host([data-tone=dark]) {} }")[0].conditions, ["@media print"]);
+  assert.deepEqual(values(":host { --é: { :host([data-fake=x]) & {} }; --\\61 b: { :host([data-fake=y]) & {} }; } :host([data-tone=dark]) {}"), [["data-tone", ["dark"]]]);
+});

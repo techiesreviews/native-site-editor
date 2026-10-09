@@ -27,5 +27,5 @@ One pure function in `shared/` (for example `shared/variants.ts`) over CSS sourc
 ## Done (2026-10-09)
 
 - `shared/variants.ts`: `componentVariants(css, { scriptAttributes })` reads a component's own CSS (at-rules, both nested forms) into choice and yes-no variants with conditions, `defaultValue`, exclusions and the two warnings; `variantLabel` / `valueLabel`. The walker helpers of `shared/slotted-css.ts` are now exported for it.
-- Built by Sol, checked and fixed by Claude (`[data-x=""]` reads as presence).
-- Tests: `tests/variants.test.ts` (21 tests: research 06 edge cases, nesting, conditions, exclusions, warnings, labels, twins).
+- Built by Sol, checked and fixed by Claude (`[data-x=""]` reads as presence) and after review (featureless host, negated defaults, at-rule comments, escaped custom properties).
+- Tests: `tests/variants.test.ts` (24 tests: research 06 edge cases, nesting, conditions, exclusions, warnings, labels, twins).
