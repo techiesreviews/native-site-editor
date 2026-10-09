@@ -1,7 +1,7 @@
 ---
 title: Drop target model
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [32-nested-container-geometry]
 builder: claude ★
@@ -21,3 +21,9 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §5 and §9, [10](../..
 ## Done when
 
 - Unit tests: innermost wins; the edge escape; level up and down; sideways index in a grid; refusals with reasons; the label text.
+
+## Done (2026-10-09)
+
+- `src/page-builder/drop-target.ts`: `dropTarget(containers, pointer, block, level)` (innermost valid container, 8 px edge escape, levels up from there, a named slot refuses in place, index along the axis), `dropRefusal` (ticket 10 §5 with the 04 amendment) and `dropLabel` ("Into Div (stack) › after Paragraph", the reason, or "Stays where it is"). The probe now also reports each child's `tag`/`cls` and the container's child `count`.
+- Commits `8a22577`, `1718a9e`.
+- Tests: `tests/drop-target.test.ts`; `tests/drop-report.test.ts` (new fields); `native-drop-containers.spec.ts` checks the slot refusal and a grid label on the real probe.
