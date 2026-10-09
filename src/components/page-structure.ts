@@ -595,7 +595,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const hasChildren = item.children.length > 0 || !!slotModel;
     const label = node("span", "page-structure__label");
     const named = component;
-    const kindName = named ? node("span", "page-structure__kind", kind) : kindMark(item.tag, kind, Boolean(text));
+    // A Button block (an <a class="btn">) takes the button icon, not the link one.
+    const iconTag = item.tag === "a" && kind === "Button" ? "button" : item.tag;
+    const kindName = named ? node("span", "page-structure__kind", kind) : kindMark(iconTag, kind, Boolean(text));
     if (named) {
       if (component) el.classList.add("page-structure__row--component");
       kindName.prepend(componentIcon(12));

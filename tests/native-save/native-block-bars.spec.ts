@@ -47,6 +47,8 @@ test("Button offers site Variant and Size, retains Address, Default removes attr
   const row = page.getByRole("treeitem", { name: "Button Button", exact: true });
   await expect(row).toHaveAttribute("aria-selected", "true");
   await expect(row.locator(".page-structure__kind")).toHaveAttribute("title", "Button");
+  const icon = (name: string) => page.getByRole("treeitem", { name, exact: true }).locator(".page-structure__kind svg").innerHTML();
+  expect(await icon("Button Button")).not.toBe(await icon("Link Plain link"));
   const variant = bar(page).getByRole("combobox", { name: "Variant", exact: true });
   const size = bar(page).getByRole("combobox", { name: "Size", exact: true });
   await expect(variant.locator("option")).toHaveText(["Default", "Secondary", "Ghost"]);
