@@ -1,7 +1,7 @@
 ---
 title: Put Make component back on the edit bar
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [01-remove-masters-and-save-shared]
 builder: sol
@@ -20,3 +20,8 @@ The second slice of [02](../../tickets/02-masters-become-components.md) §2: Mak
 
 - Selecting a section, a card or a div shows Make component…; `<main>`, the header, the footer and elements inside an instance don't. It makes a component as before, one undo step.
 - The Make component tests in `tests/native-save/native-components.spec.ts` run again, with a case for each refusal (nightly; the smoke for Make component comes with slice 22).
+
+## Done (2026-10-09)
+
+- "Make component…" is offered on any page element with an end tag (section, card, div, heading…); refused on `<main>`, `<body>`, the page's own `<header>`/`<footer>` (not inside sectioning content or `<main>`), void elements (the dialog needs an end tag), components (Edit component instead) and anything inside an instance. Pure rule `makeComponentOffered` in `component-model.ts`.
+- Commit a84590d (Sol). Tests: `tests/make-component-offer.test.ts` (3 unit tests); `native-components.spec.ts` brings back the two Make component tests removed in 7856813 and adds the refusal and card/card-header cases.
