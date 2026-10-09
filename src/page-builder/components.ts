@@ -69,6 +69,8 @@ import {
   type TemplateSlot,
 } from "./component-model";
 import { componentIcon, mark, type ComponentMark } from "./component-icon";
+import type { EditComponentFrameMode } from "../components/native-preview";
+import type { EditComponentMode } from "./edit-component-mode";
 import "../components/create-dialog.css";
 
 type CodeEditor = typeof import("../components/source-editor");
@@ -106,7 +108,7 @@ export interface ComponentDeps {
   /** Current site scripts, read lazily for instance variants; late reads refresh the bar. */
   scripts: () => { path: string; source: string }[];
   editor: () => CodeEditor | undefined;
-  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void } & Partial<PreviewTextPatch> | undefined;
+  preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void; editComponent?(mode: EditComponentFrameMode | undefined): void } & Partial<PreviewTextPatch> | undefined;
   /** The file open in the code pane. */
   currentPath: () => string | undefined;
   /** The preview's selection, as the editor last heard it. */
@@ -530,14 +532,23 @@ export function createComponentTools(deps: ComponentDeps) {
    * in the instance on show, else the template's first element.
    */
   let explicitTemplate: { path: string; revision: string } | undefined;
-  async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }) {
+  async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }, instance?: { path: string; node: readonly number[] }) {
     const template = templateOf(tag);
     if (!template) return;
     const from = deps.selection();
     const openingRevision = deps.revision();
+    // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
+    const framed = instance ?? instanceOf(from, tag);
+    const modeLoad = framed && loadEditMode().catch((error: unknown) => { deps.error(error); return undefined; });
     if (!(await deps.openFile(template.path))) return;
     if (deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) return;
-    explicitTemplate = { path: template.path, revision: deps.revision() };
+    const opened = explicitTemplate = { path: template.path, revision: deps.revision() };
+    if (framed && modeLoad) void modeLoad.then((mode) => {
+      // Still this template, opened by this Edit component, over the instance's page.
+      if (!mode || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path || deps.previewPage() !== framed.path) return;
+      mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path });
+      renderBar();
+    });
     // The template's code takes the caret straight away: typing edits it at once.
     deps.editor()?.focusEditor?.(template.path);
     const source = deps.sources()[template.path] ?? template.source;
@@ -566,6 +577,25 @@ export function createComponentTools(deps: ComponentDeps) {
     if (deps.currentPath() === template.path) deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
   }
 
+  /** The instance on the page shown that a selection is, or is in (as its template's part), when it is a `tag`. */
+  function instanceOf(selection: NativePreviewSelection | undefined, tag: string) {
+    const page = deps.previewPage();
+    if (!selection || !page) return undefined;
+    const host = selection.host;
+    if (host) return host.tag === tag && host.path === page && host.node ? { path: page, node: [...host.node] } : undefined;
+    const at = locate(selection);
+    return at && at.tag === tag && at.path === page ? { path: page, node: [...at.node] } : undefined;
+  }
+
+  // Edit component mode (edit-component-mode.ts), loaded on its first use.
+  let editMode: EditComponentMode | undefined;
+  let editModeLoad: Promise<EditComponentMode> | undefined;
+  const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode }) => editMode = createEditComponentMode({
+    frame: (mode) => deps.preview()?.editComponent?.(mode),
+    changed: () => { barKey = ""; renderBar(); },
+    announce: (text) => deps.announce(text),
+  })).catch((error: unknown) => { editModeLoad = undefined; throw error; });
+
   // ---- The canvas bar over a component's template. ----
 
   // While a component's template is open (whether the code pane shows or
@@ -574,6 +604,10 @@ export function createComponentTools(deps: ComponentDeps) {
   let barTag = "";
   function renderBar() {
     if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
+    // The mode lasts while its template stays open over its page; another file (Files, a page's element) ends it.
+    const moded = editMode?.active();
+    if (moded && (explicitTemplate?.path !== moded.templatePath || deps.previewPage() !== moded.path)) editMode!.leave();
+    const inMode = editMode?.active();
     const tag = tagOfFile(deps.currentPath());
     deps.codeTitle.classList.toggle("code-pane__title--component", Boolean(tag));
     if (!tag || !site()) {
@@ -583,26 +617,28 @@ export function createComponentTools(deps: ComponentDeps) {
       return;
     }
     const found = usage(tag);
-    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}`;
+    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}\n${inMode ? inMode.show : ""}`;
     if (key === barKey) return;
     barKey = key;
     barTag = tag;
     const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
     const where = [found.pages.length ? count(found.pages.length, "page") : "", found.components.length ? count(found.components.length, "component") : ""].filter(Boolean);
-    usedOnLabel.textContent = where.length ? `Used on ${where.join(", ")}` : "Not used yet";
+    usedOnLabel.textContent = where.length ? `${inMode ? "used" : "Used"} on ${where.join(", ")}` : "Not used yet";
     usedOnButton.disabled = !where.length;
     if (!where.length) usedOnDropdown.close();
     else if (usedOn.matches(":popover-open")) renderUsedOn(tag);
-    deps.canvasComponent({ tag, lead: [usedOnButton], end: [doneButton] });
+    deps.canvasComponent({ tag, ...(inMode && editMode ? editMode.parts(usedOnButton, doneButton) : { lead: [usedOnButton], end: [doneButton] }) });
   }
 
   /** Back from a template to the page the preview shows, the instance worked on selected. */
   async function backToPage() {
-    const page = deps.previewPage() ?? Object.values(site()?.routes ?? {})[0];
-    const host = deps.selection()?.host;
+    // Done in Edit component mode only leaves it: every change was made as it went.
+    const edited = editMode?.leave();
+    const page = edited?.path ?? deps.previewPage() ?? Object.values(site()?.routes ?? {})[0];
+    const host = edited ?? deps.selection()?.host;
     if (!page || !(await deps.openFile(page))) return;
     explicitTemplate = undefined;
-    if (host?.path === page && host.node) deps.preview()?.selectNode({ path: page, node: host.node });
+    if (host?.path === page && host.node) deps.preview()?.selectNode({ path: page, node: [...host.node] });
   }
 
   /** Used on: the pages (and components) showing `tag`. */
@@ -1649,7 +1685,7 @@ export function createComponentTools(deps: ComponentDeps) {
         const element = at.instance.fills.get(name)?.find(part => part.type === "element");
         deps.preview()?.selectNode({ path, node: element ? elementPathAt(at.source, element.start) ?? at.node : at.node });
       },
-      edit() { if (read()) void editComponent(initial.tag); },
+      edit() { if (read()) void editComponent(initial.tag, undefined, undefined, { path, node: initial.node }); },
       disconnect() { const at = read(); if (at) void openDetach(at); },
     };
   }
@@ -1689,6 +1725,7 @@ export function createComponentTools(deps: ComponentDeps) {
       destroyResize?.();
       panel.remove();
       if (barKey) deps.canvasComponent(undefined);
+      editMode?.leave();
       usedOnDropdown.destroy();
       usedOn.remove();
       dialog.remove();

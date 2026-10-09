@@ -257,7 +257,10 @@
         scrollRoots.add(root);
         root.addEventListener("scroll", refreshScroll, true);
       }
-      reconcileChildren(root, freshContent(html));
+      var content = freshContent(html);
+      // Edit component mode with placeholders: its slots take none of the page's content.
+      if (placeholdersOn(host)) placeholderSlots(content);
+      reconcileChildren(root, content);
       markCurrentPage(root);
       syncRootStyles(root);
       watchSlots(root);
@@ -521,7 +524,10 @@
       var requested = resolveNodePath(payload.selectNode);
       if (requested) {
         selected = requested;
-        if (requested.scrollIntoView) requested.scrollIntoView({ block: payload.selectNode.reveal === "center" ? revealBlock(requested) : "nearest" });
+        // In Edit component mode the part edited stays in view below the site's sticky header.
+        var edited = editHost();
+        if (edited && editContains(edited, requested)) revealEdited(requested, false);
+        else if (requested.scrollIntoView) requested.scrollIntoView({ block: payload.selectNode.reveal === "center" ? revealBlock(requested) : "nearest" });
       }
     }
     if (wasEditing && !editing && selected) startEditing(selected);
@@ -692,7 +698,8 @@
     if (!contextBox) contextBox = componentBox(true);
     outline(contextBox);
     var around = selected && selected.isConnected ? enclosingInstance(selected) : null;
-    drawBox(contextBox, around);
+    // Edit component mode's frame already stands round the instance edited.
+    drawBox(contextBox, around && around !== editHost() ? around : null);
     var shown = [];
     if (focusTag && pageEl) {
       Array.from(instances).forEach(function (el) {
@@ -704,6 +711,169 @@
       outline(box);
       drawBox(box, shown[index] || null);
     });
+    drawEditMode();
+  }
+
+  // ---- Edit component mode (src/page-builder/edit-component-mode.ts) ----
+  // One instance on the page shows its template where it sits, inside a
+  // frame in the component accent; the rest of the page is shaded, visible
+  // but not clickable. Clicks inside the frame select the template's parts
+  // (the page content a slot shows stands for the part around the slot).
+  // With placeholders on, its slots are renamed as the instance renders, so
+  // nothing the page wrote is assigned and the template's fallbacks show;
+  // the renaming is part of the render, so a render never flickers between
+  // the two. Nothing here changes the page's source.
+  var editMode = null;
+  var editFrame = null;
+  var editShades = [];
+  var PLACEHOLDER_SLOT = "ase-placeholder";
+  /** The instance edited, by its place on the page shown; `null` when there is none. */
+  function editHostElement() {
+    if (!editMode || !state || !pageEl || state.pagePaths[state.route] !== editMode.path) return null;
+    var el = pageEl;
+    for (var i = 0; el && i < editMode.node.length; i++) {
+      var child = el.firstElementChild, seen = 0;
+      while (child && (injectedStyle(child) || seen++ < editMode.node[i])) child = child.nextElementSibling;
+      el = child;
+    }
+    return el && el !== pageEl && el.localName === editMode.tag ? el : null;
+  }
+  function editHost() {
+    var el = editHostElement();
+    return el && el.shadowRoot ? el : null;
+  }
+  function placeholdersOn(host) {
+    return !!editMode && editMode.show === "placeholders" && !!host && host === editHostElement();
+  }
+  // Renames every slot of a template's fresh copy: the page's content stays
+  // out, the fallbacks show. Its own name is kept beside it.
+  function placeholderSlots(content) {
+    content.querySelectorAll("slot").forEach(function (slot) {
+      var name = slot.getAttribute("name") || "";
+      slot.setAttribute("data-ase-slot", name);
+      slot.setAttribute("name", PLACEHOLDER_SLOT + (name ? ":" + name : ""));
+    });
+  }
+  // The edited instance's box: its own, or its template's when it has none (display: contents).
+  function editRect(host) {
+    var r = host.getBoundingClientRect();
+    if (r.width || r.height) return r;
+    var out = null;
+    Array.prototype.forEach.call(host.shadowRoot.children, function (el) {
+      var b = el.getBoundingClientRect();
+      if (!b.width && !b.height) return;
+      out = out ? { left: Math.min(out.left, b.left), top: Math.min(out.top, b.top), right: Math.max(out.right, b.right), bottom: Math.max(out.bottom, b.bottom) } : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+    });
+    return out ? { left: out.left, top: out.top, width: out.right - out.left, height: out.bottom - out.top } : r;
+  }
+  function editLayer(kind) {
+    var el = document.createElement("div");
+    // A selection box to every lookup: never selected, hovered or measured.
+    el.setAttribute("data-native-selection-box", kind);
+    el.style.position = "absolute";
+    el.style.display = "none";
+    el.style.boxSizing = "border-box";
+    document.documentElement.appendChild(el);
+    return el;
+  }
+  function drawEditMode() {
+    var host = editHost();
+    if (!host) {
+      if (editFrame) editFrame.style.display = "none";
+      editShades.forEach(function (shade) { shade.style.display = "none"; });
+      return;
+    }
+    if (!editFrame) {
+      editFrame = editLayer("edit-frame");
+      editFrame.style.pointerEvents = "none";
+      editFrame.style.zIndex = "2147483646";
+      editFrame.style.borderRadius = "6px";
+      for (var i = 0; i < 4; i++) {
+        var shade = editLayer("edit-shade");
+        // Visible, not clickable: it takes the pointer, and wheels scroll the page under it.
+        shade.style.zIndex = "2147483645";
+        shade.style.background = "rgb(18 16 28 / 0.42)";
+        shade.style.cursor = "default";
+        editShades.push(shade);
+      }
+    }
+    editFrame.style.border = "2px solid " + componentColor;
+    editFrame.style.boxShadow = "0 0 0 4px color-mix(in srgb, " + componentColor + " 22%, transparent)";
+    var r = editRect(host);
+    var x = r.left + window.scrollX, y = r.top + window.scrollY, w = r.width, h = r.height;
+    var root = document.documentElement;
+    var W = Math.max(root.scrollWidth, window.innerWidth), H = Math.max(root.scrollHeight, window.innerHeight);
+    var pad = 4;
+    place(editFrame, x - pad, y - pad, w + pad * 2, h + pad * 2);
+    var top = Math.max(0, y - pad), bottom = Math.min(H, y + h + pad);
+    place(editShades[0], 0, 0, W, top);
+    place(editShades[1], 0, bottom, W, Math.max(0, H - bottom));
+    place(editShades[2], 0, top, Math.max(0, x - pad), bottom - top);
+    place(editShades[3], x + w + pad, top, Math.max(0, W - x - w - pad), bottom - top);
+    function place(el, left, topAt, width, height) {
+      el.style.display = width > 0 && height > 0 ? "block" : "none";
+      el.style.left = left + "px";
+      el.style.top = topAt + "px";
+      el.style.width = width + "px";
+      el.style.height = height + "px";
+    }
+  }
+  // In the mode, what a press at `path` selects: a part of the edited
+  // template, the template's root for the instance's own box, nothing
+  // outside the frame. `undefined` when the mode is off.
+  function editModeTarget(path) {
+    var host = editHost();
+    if (!host) return undefined;
+    var at = path.indexOf(host);
+    if (at < 0) return null;
+    for (var i = 0; i < at; i++) {
+      var n = path[i];
+      // Slots show; the page's own content in one stands for the part around it.
+      if (!(n instanceof Element) || n instanceof HTMLSlotElement || n.getRootNode() === document) continue;
+      // A nested instance's template is not this one's: the instance stands for it.
+      if (templateLocked(n)) continue;
+      return n;
+    }
+    return editTemplateRoot(host);
+  }
+  function editTemplateRoot(host) {
+    var child = host.shadowRoot.firstElementChild;
+    while (child && (injectedStyle(child) || child instanceof HTMLSlotElement)) child = child.nextElementSibling;
+    return child;
+  }
+  function editContains(host, el) {
+    for (var at = el; at; at = canvasUp(at)) if (at === host) return true;
+    return false;
+  }
+  // Brings `el` into view below the site's own sticky header (topInset), or
+  // to the top of the frame when it is taller than what is left.
+  function revealEdited(el, smooth) {
+    var r = el.getBoundingClientRect();
+    var inset = topInset(el), gap = 12;
+    var room = window.innerHeight - inset - gap * 2;
+    var dy = 0;
+    if (r.top < inset + gap || r.height > room) dy = r.top - inset - gap;
+    else if (r.bottom > window.innerHeight - gap) dy = r.bottom - window.innerHeight + gap;
+    if (!dy) return;
+    var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollBy({ top: dy, behavior: smooth && !calm ? "smooth" : "auto" });
+  }
+  function setEditMode(next) {
+    var before = editHostElement();
+    var valid = next && typeof next.path === "string" && Array.isArray(next.node) && next.node.length &&
+      next.node.every(function (i) { return typeof i === "number" && i >= 0; }) && typeof next.tag === "string";
+    var wasOn = !!editMode;
+    editMode = valid ? { path: next.path, node: next.node.slice(), tag: next.tag, show: next.show === "page" ? "page" : "placeholders" } : null;
+    var after = editHostElement();
+    // Each instance renders again as it now should: its fallbacks or the page's content.
+    if (before && before !== after && typeof before.render === "function") before.render();
+    if (after && typeof after.render === "function") after.render();
+    // What is selected outside the frame is left.
+    if (after && selected && !editContains(after, selected)) { stopEditing(true); selected = null; }
+    hovered = null;
+    updateBoxes();
+    var host = editHost();
+    if (host && !wasOn) revealEdited(host, false);
   }
 
   // Places a section can be inserted: every gap between the children of a
@@ -1254,7 +1424,8 @@
     var inset = 0;
     [0.1, 0.5, 0.9].forEach(function (fraction) {
       var x = width * fraction;
-      var hit = document.elementFromPoint(x, 1);
+      // Past Edit component mode's shade, which takes the pointer over the page.
+      var hit = document.elementsFromPoint(x, 1).find(function (el) { return !el.hasAttribute("data-native-selection-box"); }) || null;
       while (hit && hit.shadowRoot) {
         var inner = hit.shadowRoot.elementFromPoint(x, 1);
         if (!inner || inner === hit) break;
@@ -1422,7 +1593,9 @@
       var tag = Object.keys(state.componentPaths || {}).find(function (t) { return state.componentPaths[t] === path; });
       if (!tag) return null;
       var current = selected && selected.getRootNode && selected.getRootNode();
-      if (current instanceof ShadowRoot && current.host && current.host.localName === tag) root = current;
+      var edited = editHost();
+      if (edited && edited.localName === tag) root = edited.shadowRoot;
+      else if (current instanceof ShadowRoot && current.host && current.host.localName === tag) root = current;
       else {
         var host = selectedInstanceOf(tag) || Array.from(instances).find(function (el) { return el.localName === tag && el.isConnected && el.shadowRoot; });
         root = host ? host.shadowRoot : null;
@@ -1453,6 +1626,8 @@
   }
 
   function deepestElementFromPath(path, target, forHover) {
+    var inMode = editModeTarget(path);
+    if (inMode !== undefined) return inMode;
     var from = 0;
     // Text is never an event's target: a press on text lands on the element
     // that shows it, which for text a slot shows is the slot. Text the page
@@ -2037,7 +2212,7 @@
       }
       slotGhostHost = host;
     }
-    if (host instanceof Element && host.isConnected && pageEl.contains(host) && ownerPath(host) === state.pagePaths[state.route]) {
+    if (host instanceof Element && host.isConnected && pageEl.contains(host) && ownerPath(host) === state.pagePaths[state.route] && host !== editHostElement()) {
       var hostNode = elementIndexPath(host);
       var hostRect = rectOf(host);
       if (hostNode && hostNode.length <= 64 && hostRect.width > 0 && hostRect.height > 0 &&
@@ -2079,6 +2254,8 @@
   function slotConditionUnmet(slot) {
     var root = slot.getRootNode();
     if (!(root instanceof ShadowRoot) || !sectionLike(root.host) || !fillsAnySlot(root.host)) return false;
+    // Placeholders show every fallback.
+    if (placeholdersOn(root.host)) return false;
     return (slot.getAttribute("name") || "").split(/\s+/).some(function (name) {
       var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
       return !named || !slotAssigned(named);
@@ -2814,6 +2991,13 @@
   // The element a click would select around `el`: past slots and a section
   // component's root (the instance stands for it), up to the page root.
   function canvasParent(el) {
+    // In Edit component mode the template's root is the top: its instance is the page's.
+    var host = editHost();
+    if (host && el !== host && editContains(host, el)) {
+      var up = canvasUp(el);
+      while (up && up instanceof HTMLSlotElement) up = canvasUp(up);
+      return up && up !== host ? up : null;
+    }
     var next = canvasUp(el);
     while (next && (next instanceof HTMLSlotElement || canvasSectionRoot(next))) next = canvasUp(next);
     if (!next || next === pageEl) return null;
@@ -2924,6 +3108,8 @@
   function canvasSelectParent() {
     var parentEl = canvasParent(selected);
     if (parentEl) { canvasSelect(parentEl, "click"); return; }
+    var host = editHost();
+    if (host && editContains(host, selected)) return;
     stopEditing(true);
     selected = null;
     updateBoxes();
@@ -3095,6 +3281,10 @@
       updateBoxes();
       return;
     }
+    if (msg.type === "edit-component") {
+      setEditMode(msg.mode);
+      return;
+    }
     if (msg.type === "clear-selection") {
       clearSelectionState();
       return;
@@ -3108,7 +3298,9 @@
       selected = wanted;
       updateBoxes();
       var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (wanted.scrollIntoView) wanted.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+      var editedHost = editHost();
+      if (editedHost && editContains(editedHost, wanted)) revealEdited(wanted, true);
+      else if (wanted.scrollIntoView) wanted.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
       emitSelection(wanted, "click");
       return;
     }
@@ -3154,7 +3346,7 @@
   pageEl = document.getElementById("page");
   new MutationObserver(function () { scheduleSlotGhosts(); }).observe(pageEl, { childList: true, subtree: true, attributes: true });
   // Layout can shift without a render (fonts, component CSS arriving).
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); scheduleSlotGhosts(); }).observe(pageEl);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); scheduleSlotGhosts(); drawEditMode(); }).observe(pageEl);
   // Which load of the host's frame this document is, so a late `ready` from
   // the document it replaced is not taken for this one's.
   var frameLoad = document.querySelector('meta[name="ase-frame-load"]');

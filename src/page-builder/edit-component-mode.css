@@ -1,0 +1,79 @@
+/* Edit component mode's slim bar (edit-component-mode.ts): the canvas bar's
+   crumbs step aside for "Editing <tag> · used on N pages · Show this page's
+   content / Show placeholders · Done". */
+.canvas-bar--component:has(.edit-mode__title) .canvas-crumbs {
+  display: none;
+}
+.edit-mode__title {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  color: var(--component-text);
+}
+.edit-mode__title > .icon {
+  flex: none;
+  margin: 0;
+}
+.edit-mode__verb {
+  font-weight: 600;
+}
+.edit-mode__tag {
+  font: 600 var(--type-small) / 1 var(--font-mono);
+}
+.edit-mode__dot {
+  color: color-mix(in oklch, var(--component-text) 55%, transparent);
+}
+.edit-mode__show {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 2px;
+  border-radius: calc(var(--radius) + 2px);
+  background: color-mix(in oklch, var(--component) 12%, transparent);
+}
+.edit-mode__show-item {
+  overflow: hidden;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--component-text);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.edit-mode__show-item:hover {
+  background: color-mix(in oklch, var(--component) 14%, transparent);
+}
+.edit-mode__show-item[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.edit-mode__show-item:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* The page's own controls over the frame (section gaps, grid items) are the
+   page's, not the template's: they stay away in the mode. */
+.native-preview-pane.is-editing-component :is(.insert-layer, .card-grid-layer) {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edit-mode__show-item {
+    transition: none;
+  }
+}
+
+/* Done says so in the mode: it is the way out. */
+.canvas-bar--component:has(.edit-mode__title) .canvas-component__done-label {
+  max-width: 48px;
+  margin: 0 2px 0 5px;
+  opacity: 1;
+}

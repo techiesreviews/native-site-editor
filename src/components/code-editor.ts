@@ -4,6 +4,7 @@ import { monaco } from "./monaco";
 import type { DraftScope } from "../drafts";
 import type { TypingSession } from "../draft-store";
 import { node } from "../ui/dom";
+import { NATIVE_COMPONENTS_DIR } from "../../shared/native-project";
 import { CODE_POINTER_EVENT, type CodePointer } from "../page-builder/canvas-model";
 import { languageFor, mountSourceEditor, onReset, paneOf, useView, type PaneHost, type PaneRender, type PaneViewFactory, type SourceFile } from "./source-editor";
 
@@ -460,7 +461,8 @@ export const monacoView: PaneViewFactory = (host) => {
       editor.onDidChangeCursorSelection(reportSoon);
       if (model.getLanguageId() === "html") linkToCanvas(editor, host.path, model);
       if (shared.viewState) editor.restoreViewState(shared.viewState);
-      else if (model.getLanguageId() === "html") {
+      // A component's template opens whole: its root is the component (Edit component shows it beside the page).
+      else if (model.getLanguageId() === "html" && !host.path.startsWith(NATIVE_COMPONENTS_DIR)) {
         const lines = defaultFoldLines(model.getValue());
         if (lines.length)
           void editor.getAction("editor.fold")?.run({ selectionLines: lines, levels: 1 });

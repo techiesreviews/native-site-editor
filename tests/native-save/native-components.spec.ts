@@ -261,12 +261,14 @@ test("Edit component from its root opens the template, says what an edit changes
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   const banner = page.locator(".canvas-bar--component");
   await expect(banner).toBeVisible();
-  await expect(banner.locator(".canvas-crumb--editing")).toHaveText("Editing<project-card>");
+  // Edit component mode: the slim bar names the component; the instance shows its template in place.
+  await expect(banner.locator(".edit-mode__title")).toHaveText("Editing<project-card>");
   await expect(banner.getByRole("button", { name: "Used on 1 page" })).toBeVisible();
   await expect(page.locator(".code-pane__title--component")).toBeVisible();
-  // The template root is selected, and every instance is outlined.
+  // The template root is selected, the instance edited is framed and every other one outlined.
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
-  await expect(frame(page).locator("[data-native-selection-box='instance']:visible")).toHaveCount(3);
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  await expect(frame(page).locator("[data-native-selection-box='instance']:visible")).toHaveCount(2);
   await expect(status(page)).toHaveText("Editing the Project card component: changes apply to 3 instances on 1 page.");
   // Used on opens on hover and lists the pages, with no summary or heading above them.
   await banner.getByRole("button", { name: "Used on 1 page" }).hover();

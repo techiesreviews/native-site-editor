@@ -1,0 +1,150 @@
+import { readFileSync } from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+
+// Edit component mode, in place (build slice 41): the starter's Recent work
+// made a section component, opened from its edit bar. The instance shows its
+// template where it sits, framed, the page shaded; placeholders first, then
+// this page's content; Done leaves. The preview's document is never replaced.
+// ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
+// ASE_EDIT_MODE_SHOTS=<dir> saves screenshots there.
+test.skip(!process.env.ASE_NATIVE_SAVE_FIXTURE?.endsWith("actual-starter"), "Set ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.");
+const frame = (page: Page) => page.frameLocator(".native-preview-frame");
+const toolbar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
+const canvasBar = (page: Page) => page.locator(".canvas-bar");
+const shots = process.env.ASE_EDIT_MODE_SHOTS;
+const TEMPLATE = "components/section-work/section-work.html";
+
+// Recent work as a section component: a title slot, and an items slot whose fallback is one card-project.
+const workTemplate = `<section class="flow">
+  <slot name="title"><h2>Section title</h2></slot>
+  <div class="cards">
+    <slot name="items">
+      <card-project></card-project>
+    </slot>
+  </div>
+</section>
+`;
+const workCss = `:host {
+  display: block;
+}
+`;
+function homeWithWork() {
+  const home = readFileSync(`${process.env.ASE_NATIVE_SAVE_FIXTURE}/index.html`, "utf8");
+  const start = home.indexOf(`<section class="flow" id="work">`);
+  const end = home.indexOf("</section>", start) + "</section>".length;
+  expect(start).toBeGreaterThan(0);
+  const cards = home.slice(start, end).match(/<card-project>[\s\S]*?<\/card-project>/g)!;
+  expect(cards).toHaveLength(3);
+  const items = cards.map((card) => card.replace("<card-project>", `<card-project slot="items">`)).join("\n      ");
+  return `${home.slice(0, start)}<section-work id="work">
+      <h2 slot="title">Recent work</h2>
+      ${items}
+    </section-work>${home.slice(end)}`;
+}
+
+async function seed(page: Page, baseURL: string | undefined) {
+  await page.goto(baseURL!);
+  for (const [path, content] of [[TEMPLATE, workTemplate], ["components/section-work/section-work.css", workCss], ["index.html", homeWithWork()]])
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Recent work", { timeout: 30_000 });
+  await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
+}
+
+// A mark on the frame's window: still there only if the document was never replaced.
+const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as unknown as { aseMark: string }).aseMark = "slice-41"; });
+const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as unknown as { aseMark?: string }).aseMark);
+
+test("Edit component opens Recent work in place: placeholders, this page's content, Done, with no preview reload", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await markFrame(page);
+  const loads = await page.locator(".native-preview-frame").getAttribute("srcdoc");
+
+  // Select the instance through Structure, then Edit component on its edit bar.
+  await page.getByRole("treeitem", { name: /^Section work/ }).first().locator(".page-structure__label").click();
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+
+  // The slim bar.
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
+  await expect(canvasBar(page).getByRole("button", { name: /^used on 1 page/ })).toBeVisible();
+  const showPage = canvasBar(page).getByRole("button", { name: "Show this page's content", exact: true });
+  const showPlaceholders = canvasBar(page).getByRole("button", { name: "Show placeholders", exact: true });
+  await expect(showPlaceholders).toHaveAttribute("aria-pressed", "true");
+  await expect(showPage).toHaveAttribute("aria-pressed", "false");
+  await expect(canvasBar(page).locator(".canvas-crumbs")).toBeHidden();
+
+  // Placeholders: the template's fallbacks show, not the page's cards; the frame and the shade are drawn.
+  const work = frame(page).locator("section-work");
+  // The fallback card (each page card has its own fallback title too, hidden under the page's).
+  const fallbackCard = work.locator("h3:visible", { hasText: "Untitled project" });
+  await expect(work.getByText("Section title", { exact: true })).toBeVisible();
+  await expect(fallbackCard).toHaveCount(1);
+  await expect(work.getByText("Fern & Kettle", { exact: true })).toBeHidden();
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  await expect(frame(page).locator("[data-native-selection-box='edit-shade']:visible")).not.toHaveCount(0);
+  if (shots) await page.screenshot({ path: `${shots}/placeholders.png` });
+
+  // A click inside the frame selects the template's part; one on the shaded page selects nothing.
+  await work.getByText("Section title", { exact: true }).click();
+  await expect(toolbar(page)).toBeVisible();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+  await expect.poll(() => page.evaluate(() => document.querySelector(".edit-bar__label")?.textContent ?? "")).toContain("Heading");
+  const framed = (await frame(page).locator("[data-native-selection-box='edit-frame']").boundingBox())!;
+  const canvas = (await page.locator(".native-preview-frame").boundingBox())!;
+  expect(framed.y + framed.height + 40).toBeLessThan(canvas.y + canvas.height);
+  await page.mouse.click(framed.x + 40, framed.y + framed.height + 30);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+  await expect(page.locator(".edit-bar__label")).toContainText("Heading");
+
+  // This page's content: the page's cards and title in the template's slots.
+  await showPage.click();
+  await expect(showPage).toHaveAttribute("aria-pressed", "true");
+  await expect(work.getByText("Fern & Kettle", { exact: true })).toBeVisible();
+  await expect(work.getByText("Recent work", { exact: true })).toBeVisible();
+  // Still in view, below the site's sticky header.
+  const header = (await frame(page).locator("site-header").boundingBox())!;
+  const shown = (await work.getByText("Recent work", { exact: true }).boundingBox())!;
+  expect(shown.y).toBeGreaterThanOrEqual(header.y + header.height);
+  expect(shown.y + shown.height).toBeLessThanOrEqual(canvas.y + canvas.height);
+  await expect(fallbackCard).toHaveCount(0);
+  if (shots) await page.screenshot({ path: `${shots}/page-content.png` });
+  await showPlaceholders.click();
+  await expect(fallbackCard).toHaveCount(1);
+
+  // Done only leaves: the page again, the instance selected, its content shown.
+  await canvasBar(page).getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveCount(0);
+  await expect(frame(page).locator("[data-native-selection-box='edit-shade']:visible")).toHaveCount(0);
+  await expect(work.getByText("Fern & Kettle", { exact: true })).toBeVisible();
+  await expect(fallbackCard).toHaveCount(0);
+  await expect(toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true })).toBeVisible();
+
+  // The same document all along: no preview reload.
+  expect(await frameMark(page)).toBe("slice-41");
+  expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toBe(loads);
+});
+
+test("Structure's Edit component opens the mode on that row's instance; a page row leaves it", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await markFrame(page);
+  const row = page.getByRole("treeitem", { name: /^Section work/ }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "Edit component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  // The edited instance is the one on that row, not just any section-work.
+  const framed = (await frame(page).locator("[data-native-selection-box='edit-frame']").boundingBox())!;
+  const host = (await frame(page).locator("section-work").boundingBox())!;
+  expect(Math.abs(framed.y + 4 - host.y)).toBeLessThan(2);
+
+  // Selecting a page element (here through Structure) opens the page, which ends the mode.
+  await page.getByRole("treeitem", { name: /^Section contact/ }).first().locator(".page-structure__label").click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveCount(0);
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeHidden();
+  await expect(frame(page).locator("section-work").getByText("Fern & Kettle", { exact: true })).toBeVisible();
+  expect(await frameMark(page)).toBe("slice-41");
+});

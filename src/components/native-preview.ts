@@ -72,6 +72,14 @@ const RUNTIME_DOC = `<!doctype html>
 </html>`;
 const runtimeDoc = (load: number) => RUNTIME_DOC.replace("__FRAME_LOAD__", String(load));
 
+/** Edit component mode as the frame takes it. */
+export interface EditComponentFrameMode {
+  path: string;
+  node: number[];
+  tag: string;
+  show: "placeholders" | "page";
+}
+
 interface UpdateInput {
   sources?: Record<string, string>;
   componentStyles?: Record<string, string>;
@@ -378,8 +386,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus, component: componentColor }, "*");
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
-  const postFocus = () =>
+  const postFocus = () => {
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "component-focus", tag: focusTag }, "*");
+    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "edit-component", mode: editMode }, "*");
+  };
+  // Edit component mode (src/page-builder/edit-component-mode.ts): the instance edited in place.
+  let editMode: EditComponentFrameMode | undefined;
   // The bar keeps clear of the selection's pins, and Ask agent's note goes after them.
   let editBarRenderKey = "";
   const editBar = createEditBar(pane, frame, {
@@ -1125,6 +1137,17 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!rafHandle) return;
       cancelAnimationFrame(rafHandle);
       post();
+    },
+    /**
+     * Edit component mode: the instance at `node` on `path` shows its template
+     * in place, framed, the rest of the page shaded; `show` picks the
+     * template's placeholders or the page's own content. `undefined` ends it.
+     * Sent as it is, with no render: the frame's document stays.
+     */
+    editComponent(mode: EditComponentFrameMode | undefined) {
+      editMode = mode && { ...mode, node: [...mode.node] };
+      pane.classList.toggle("is-editing-component", Boolean(mode));
+      if (frameState.ready) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "edit-component", mode: editMode }, "*");
     },
     /** The component whose template is open, shown in the canvas bar (canvas-bar.ts). */
     setCanvasComponent(parts: { tag: string; lead: Element[]; end: Element[] } | undefined) {

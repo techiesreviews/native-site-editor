@@ -66,6 +66,9 @@ test("shadow scroll tracking survives template rerenders and replacement instanc
   expect(await frame(page).locator(".probe-shadow-scroll").first().evaluate(element => element.getRootNode() === (document.documentElement as HTMLElement & { probeRoot?: Node }).probeRoot)).toBe(true);
   const changedSource = await source(page, templatePath), drafts = await storedDrafts(page);
   await scrollAndTrack(page, false);
+  // Edit component mode shades the page around the instance: Done before following the header's link.
+  await page.locator(".canvas-bar--component").getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await frame(page).getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
   await expect(frame(page).locator(".probe-shadow-scroll")).toHaveCount(0);
   expect(await frame(page).locator("html").evaluate(element => !(element as HTMLElement & { probeRoot: ShadowRoot }).probeRoot.host.isConnected)).toBe(true);

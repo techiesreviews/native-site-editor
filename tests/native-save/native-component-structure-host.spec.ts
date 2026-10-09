@@ -160,11 +160,16 @@ test("a refused painted selection clears the old edit target before scrolling or
   await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
 });
 
-test("clicking a real page element leaves explicit template scope and opens that page", async ({ page }) => {
+test("the page around Edit component mode is not clickable; after Done a page element opens that page", async ({ page }) => {
   await firstCard(page).getByRole("button", { name: "Edit component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
-  await frame(page).locator(".hero h1").click({ position: { x: 5, y: 5 } });
+  await expect(frame(page).locator("[data-native-selection-box='edit-shade']:visible")).not.toHaveCount(0);
+  // The shade takes the click.
+  await frame(page).locator(".hero h1").click({ position: { x: 5, y: 5 }, force: true });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await page.locator(".canvas-bar--component").getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await frame(page).locator(".hero h1").click({ position: { x: 5, y: 5 } });
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Heading");
 });
 
