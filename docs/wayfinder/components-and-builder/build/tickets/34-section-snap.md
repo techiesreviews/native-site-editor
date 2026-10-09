@@ -22,5 +22,5 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §8: a dragged Section 
 ## Done (2026-10-09)
 
 - `src/page-builder/section-snap.ts`: `snapIndex(bands, y)` (after the last shown band whose midpoint is above y, else before the first; empty `<main>` → 0) for the canvas and Structure, and `sectionSnap(main, y)` giving a `<main>` drop target for `dropLabel`. A `bands` drop probe (`probeDrop(at, moving, true)`) reports `<main>` with every band whatever the point, so the header and footer give the first and last gap; a band without a box (display: contents) spans what it shows.
-- Commits `84e5643`, `df64f74`.
+- Commits `0070cb2`, `d152cd4`.
 - Tests: `tests/section-snap.test.ts`; `native-drop-containers.spec.ts` (bands probe over header and footer on the cards fixture, a box-less band through the preview).
