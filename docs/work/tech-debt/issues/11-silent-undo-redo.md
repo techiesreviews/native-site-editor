@@ -32,3 +32,11 @@ Low: a user cannot tell "nothing left to undo here" from a stuck editor.
 
 Whether Undo/Redo should say why it did nothing (a status line or notice),
 and in which cases.
+
+## Comments
+
+- 2026-10-09: the triage's "silent second Undo" was a probe mistake (Monaco
+  undoes typing in word stops; once all typing is undone the next Undo
+  reverts the whole Add). Only Redo is silent, and only after new typing
+  replaced the redo step: the usual linear-history behaviour. Suggest
+  `wontfix` unless Lex wants a "nothing to redo" notice.
