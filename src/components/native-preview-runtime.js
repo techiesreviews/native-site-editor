@@ -1248,10 +1248,11 @@
     return slot.assignedElements().filter(function (child) { return child.parentElement === host && !injectedStyle(child); });
   }
   // The card slot grid around `el`: the item of a card slot it is or is in,
-  // else an instance with a card slot that it is or is inside its template
-  // (its last item counts, as a grid's gap does), else an instance with an
-  // empty card slot it is anywhere in.
-  function cardSlotGridOf(el) {
+  // else an instance with a card slot that it is or is inside the template
+  // of (its last item counts, as a grid's gap does; of several card slots,
+  // the one nearest `point`, the pointer, else the first), else an instance
+  // with an empty card slot it is anywhere in.
+  function cardSlotGridOf(el, point) {
     var current = el;
     var fromTemplate = false;
     while (pageEl && current && current !== pageEl) {
@@ -1262,7 +1263,7 @@
       if (current.shadowRoot && pageEl.contains(current)) {
         var slots = Array.prototype.filter.call(current.shadowRoot.querySelectorAll("slot"), cardSlot);
         var empty = slots.filter(function (slot) { return !cardSlotItems(current, slot).length; })[0];
-        var chosen = current === el || fromTemplate ? slots[0] : empty;
+        var chosen = current === el || fromTemplate ? nearestCardSlot(current, slots, point) : empty;
         if (chosen) {
           var items = cardSlotItems(current, chosen);
           return { container: current, item: items[items.length - 1] || null, items: items, slot: chosen };
@@ -1279,14 +1280,31 @@
     }
     return null;
   }
+  // Of an instance's card slots, the one whose area is nearest `point`: its
+  // own wrapper in the template, else its items. The first without a point.
+  function nearestCardSlot(host, slots, point) {
+    if (!point || slots.length < 2) return slots[0];
+    var best = slots[0];
+    var bestDistance = Infinity;
+    slots.forEach(function (slot) {
+      var wrapper = slot.parentElement;
+      var own = wrapper && Array.prototype.filter.call(wrapper.querySelectorAll("slot"), cardSlot).length === 1;
+      var area = own ? dropRect(wrapper) : dropUnion(cardSlotItems(host, slot));
+      if (!area || !area.width || !area.height) return;
+      var dx = Math.max(area.left - point.x, 0, point.x - area.left - area.width);
+      var dy = Math.max(area.top - point.y, 0, point.y - area.top - area.height);
+      if (dx + dy < bestDistance) { best = slot; bestDistance = dx + dy; }
+    });
+    return best;
+  }
   // Whether `outer` holds `inner`, across shadow roots.
   function holds(outer, inner) {
     for (var at = inner; at; at = at.parentNode || (at instanceof ShadowRoot ? at.host : null)) if (at === outer) return true;
     return false;
   }
   // The nearest grid around `el`: a card slot's, unless a grid of repeated items sits inside it.
-  function gridItemOf(el) {
-    var slotted = cardSlotGridOf(el);
+  function gridItemOf(el, point) {
+    var slotted = cardSlotGridOf(el, point);
     var repeated = repeatedGridOf(el);
     if (!slotted || !repeated) return slotted || repeated;
     return repeated.container !== slotted.container && holds(slotted.item || slotted.container, repeated.container) ? repeated : slotted;
@@ -1335,14 +1353,14 @@
         rowGap = Math.max(0, rects[i].top - rects[i - 1].bottom);
       }
     }
-    // One card in a slot: its slot's box lays it out in a row when it is a grid of columns or a flex row.
-    var holder = found.slot && rects.length === 1 ? found.slot.parentElement : null;
-    if (holder) {
+    // A slot's cards are laid out by the slot's parent in the template, not by the instance.
+    var holder = found.slot ? found.slot.parentElement : null;
+    if (holder) box = holder.getBoundingClientRect();
+    // One card: that box lays it out in a row when it is a grid of columns or a flex row.
+    if (holder && rects.length === 1) {
       var layout = dropLayout(holder);
-      var held = getComputedStyle(holder);
       row = (/grid/.test(layout.display) && layout.cols > 1) || (/flex/.test(layout.display) && layout.dir.indexOf("row") === 0);
-      gap = row ? parseFloat(held.columnGap) || 0 : 0;
-      box = holder.getBoundingClientRect();
+      gap = row ? parseFloat(getComputedStyle(holder).columnGap) || 0 : 0;
     }
     var ghost;
     var beside = row && last.right + gap + last.width <= box.right + 1;
@@ -1465,7 +1483,7 @@
     if (gridFrame || !state) return;
     gridFrame = requestAnimationFrame(function () {
       gridFrame = 0;
-      var underPointer = hovered && hovered.isConnected ? gridItemOf(hovered) : null;
+      var underPointer = hovered && hovered.isConnected ? gridItemOf(hovered, hoverPointer) : null;
       if (underPointer) recentGrid = underPointer;
       if (trackedGrid && (!trackedGrid.container.isConnected || !pageEl.contains(trackedGrid.container))) trackedGrid = null;
       var report = {

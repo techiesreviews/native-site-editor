@@ -136,8 +136,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function current(): ItemGridReport | undefined {
     if (open) return open.grid;
-    // Just after the pointer left the grid (on its way to the button), the grid it left.
-    return reports.hover ?? (hoverGone ? lastHover : undefined) ?? reports.selected ?? undefined;
+    // Just after the pointer left the grid (on its way to the button), the grid it left;
+    // the selection's report of that grid is newer (the card just added is selected in it).
+    const left = hoverGone && lastHover && !(reports.selected && gridKey(reports.selected) === gridKey(lastHover)) ? lastHover : undefined;
+    return reports.hover ?? left ?? reports.selected ?? undefined;
   }
 
   function layout() {

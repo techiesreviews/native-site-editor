@@ -81,3 +81,42 @@ test("with one card, Add card adds a fresh card from the fallback beside it, not
   await expect(frame(page).locator("section-work > card-project").nth(1).locator(":scope > h3")).toHaveText("Untitled project");
   await expect(frame(page).locator("section-work > card-project").first().locator(":scope > h3")).toHaveText("Fern & Kettle");
 });
+
+test("of two named card slots, the one whose part of the template is under the pointer gets the card", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+  await edit("components/section-pair/section-pair.html", '<section>\n  <slot name="title"><h2>Pair</h2></slot>\n  <div class="first"><slot name="first"><card-project></card-project></slot></div>\n  <div class="second"><slot name="second"><card-project></card-project></slot></div>\n</section>\n');
+  await edit("components/section-pair/section-pair.css", ":host { display: block; }\n.first, .second { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 32px 0 48px; }\n");
+  const home = (await source(page))!;
+  const made = home.replace(/<section class="flow" id="work">[\s\S]*?<\/div>\n {4}<\/section>/, [
+    '<section-pair id="work">',
+    '      <h2 slot="title">Pair</h2>',
+    '      <card-project slot="first">',
+    '        <h3 slot="title">One</h3>',
+    "      </card-project>",
+    '      <card-project slot="second">',
+    '        <h3 slot="title">Two</h3>',
+    "      </card-project>",
+    "    </section-pair>",
+  ].join("\n"));
+  expect(made).toContain("</section-pair>");
+  await edit("index.html", made);
+  await page.reload();
+  await expect(frame(page).locator("section-pair > h2")).toBeVisible({ timeout: 30_000 });
+  await editorMounted(page);
+  await expect.poll(() => source(page)).toBe(made);
+  // The second list's padding below its card: its template part, not a card.
+  const second = frame(page).locator("section-pair > card-project[slot=second]");
+  await second.evaluate((el) => el.scrollIntoView({ block: "start" }));
+  const box = (await second.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height + 24);
+  await expect(addCard(page)).toBeVisible();
+  await addCard(page).click();
+  await expect.poll(() => source(page)).toContain('<h3 slot="title">Two</h3>\n      </card-project>\n      <card-project slot="second">\n        <p slot="note">Project</p>');
+  await expect(frame(page).locator("section-pair > card-project[slot=first]")).toHaveCount(1);
+  // Its ghost sat beside the second list's card, in that list's own grid.
+  await expect(frame(page).locator("section-pair > card-project[slot=second]")).toHaveCount(2);
+  const [a, b] = await Promise.all([0, 1].map((n) => frame(page).locator("section-pair > card-project[slot=second]").nth(n).boundingBox()));
+  expect(Math.abs(a!.y - b!.y)).toBeLessThan(2);
+});

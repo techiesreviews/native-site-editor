@@ -26,9 +26,11 @@ export function cardSlotOf(tag: string, templateOf: TemplateOf): CardSlot[] {
   const template = templateOf(tag);
   if (template === undefined) return [];
   return templateSlots(template, templateOf).flatMap((entry) => {
-    // Card components only, as the preview tells an items slot (the unnamed one may hold anything).
-    const cards = entry.element.children.flatMap((node) => (node.type === "element" ? [node.name] : []));
-    return entry.items && cards.length && cards.every((tag) => isCardComponent(tag, templateOf)) ? [{ slot: decodeHtmlEntities(entry.name, true), card: cards[0] }] : [];
+    // Card components only, as the preview tells one: blank text between them, the unnamed slot too.
+    const nodes = entry.element.children;
+    const cards = nodes.flatMap((node) => (node.type === "element" ? [node.name] : []));
+    const blank = nodes.every((node) => node.type === "element" || !/[^\t\n\f\r ]/.test(decodeHtmlEntities(template.slice(node.start, node.end))));
+    return entry.items && blank && cards.length && cards.every((tag) => isCardComponent(tag, templateOf)) ? [{ slot: decodeHtmlEntities(entry.name, true), card: cards[0] }] : [];
   });
 }
 

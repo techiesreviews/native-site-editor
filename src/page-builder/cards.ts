@@ -244,18 +244,26 @@ export function createCards(deps: CardsDeps) {
     return nativePageMovedUrl(detailed, from.route, route, siteUrl);
   }
 
-  /** Add card on an instance's card slot (card-slot.ts): the fresh card's edit, and what the slot is called, while its page's text is the same. */
-  let slotCache: { key: string; source: string; add: ReturnType<typeof slotAdd> } | undefined;
-  function slotAdd(source: string, parent: number[], slot: string) {
-    const add = cardSlotAddEdit(source, parent, template, slot);
+  /** Add card on an instance's card slot (card-slot.ts): the fresh card's edit, and what the slot is called, while its page's text and the templates read are the same. */
+  let slotCache: { key: string; source: string; templates: Map<string, string | undefined>; add: ReturnType<typeof slotAdd> } | undefined;
+  function slotAdd(source: string, parent: number[], slot: string, templateOf: (tag: string) => string | undefined) {
+    const add = cardSlotAddEdit(source, parent, templateOf, slot);
     return add && { ...add, noun: itemNoun(add.card), label: instanceLabel(source, parent) ?? "" };
   }
   function slotAddFor(path: string, parent: number[], slot: string) {
     const source = deps.source(path);
     if (source === undefined) return undefined;
     const key = `${path}|${parent.join(".")}|${slot}`;
-    if (slotCache?.key !== key || slotCache.source !== source) slotCache = { key, source, add: slotAdd(source, parent, slot) };
-    return slotCache.add;
+    const fresh = slotCache?.key === key && slotCache.source === source && [...slotCache.templates].every(([tag, text]) => template(tag) === text);
+    if (!fresh) {
+      const templates = new Map<string, string | undefined>();
+      const add = slotAdd(source, parent, slot, (tag) => {
+        if (!templates.has(tag)) templates.set(tag, template(tag));
+        return templates.get(tag);
+      });
+      slotCache = { key, source, templates, add };
+    }
+    return slotCache!.add;
   }
 
   /** The grid on the page shown that `report` names, as the source has it now. */

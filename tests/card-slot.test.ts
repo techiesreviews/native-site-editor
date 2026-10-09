@@ -11,6 +11,9 @@ const templates: Record<string, string> = {
   "section-pair": '<section><slot name="title"><h2>Two</h2></slot><slot name="quotes"><card-quote></card-quote></slot><slot name="notes"><card-note></card-note></slot></section>',
   "section-plain": "<section><slot></slot></section>",
   "section-mixed": "<section><slot><card-project></card-project><p>Or this</p></slot></section>",
+  "section-said": "<section><slot>Intro <card-project></card-project></slot></section>",
+  "card-photo": '<figure><slot name="image"><img src="/a.jpg" srcset="/a.jpg 1x, /a@2x.jpg 2x" alt=""></slot><figcaption><slot name="title"><h3>Photo</h3></slot></figcaption></figure>',
+  "section-photos": '<section><slot name="photos"><card-photo></card-photo></slot></section>',
 };
 const templateOf = (tag: string) => templates[tag];
 
@@ -34,6 +37,7 @@ test("a card slot is an items slot whose fallback is a card component; plain and
   assert.deepEqual(cardSlotOf("card-project", templateOf), []);
   assert.deepEqual(cardSlotOf("section-plain", templateOf), []);
   assert.deepEqual(cardSlotOf("section-mixed", templateOf), []);
+  assert.deepEqual(cardSlotOf("section-said", templateOf), []);
 });
 
 test("Add card takes the card from the slot's fallback, after the last item, with 0, 1 and many items", () => {
@@ -81,11 +85,18 @@ test("an instance insert takes one bare instance of plain markup, and opens an i
   const source = work();
   const items = (tag: string, slot: string) => tag === "section-work" && slot === "";
   assert.ok(nativeInstanceInsertEdit(source, [0, 0], 1, "<card-project></card-project>", items));
-  for (const markup of ['<card-project class="x"></card-project>', "<card-project></card-project><card-project></card-project>", "<p>x</p>", "<card-project><card-note></card-note></card-project>", "<card-project><script>x()</script></card-project>"])
+  for (const markup of ['<card-project class="x"></card-project>', "<card-project></card-project><card-project></card-project>", "<p>x</p>", "<card-project><script>x()</script></card-project>", "<card-project><style>p{}</style></card-project>"])
     assert.equal(nativeInstanceInsertEdit(source, [0, 0], 1, markup, items), undefined, markup);
   // The seal holds at a slot that is not an items slot, and with no rule at all.
   assert.equal(nativeInstanceInsertEdit(source, [0, 0], 1, "<card-project></card-project>", items, "title"), undefined);
   assert.equal(nativeInstanceInsertEdit(source, [0, 0], 1, "<card-project></card-project>"), undefined);
   // Outside instances it goes as a block does.
   assert.ok(nativeInstanceInsertEdit(page("<section><h2>A</h2></section>"), [0, 0], 1, "<card-project></card-project>"));
+});
+
+test("an image fallback is copied as written, a srcset included", () => {
+  const source = page("<section-photos></section-photos>");
+  const result = cardSlotAddEdit(source, [0, 0], templateOf);
+  assert.ok(result);
+  assert.equal(applyGuardedSourceEdit(source, result.edit), page('<section-photos>\n      <card-photo slot="photos">\n        <img slot="image" src="/a.jpg" srcset="/a.jpg 1x, /a@2x.jpg 2x" alt="">\n        <h3 slot="title">Photo</h3>\n      </card-photo>\n    </section-photos>'));
 });

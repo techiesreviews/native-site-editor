@@ -358,12 +358,12 @@ export function nativeMarkupInsertEdit(source: string, parentPath: readonly numb
   return { ...edit, original: source.slice(edit.start, edit.end), source };
 }
 /**
- * A new component instance (`markup`: one custom element, no attributes,
- * whose content is plain markup as nativeMarkupInsertEdit takes, its lines
- * after the first indented relative to the first) at `index` of the element
- * at `parentPath`, as nativeMarkupInsertEdit places blocks: into an instance
- * only at an items slot (`slot`, written on it), the instance's content
- * indented to its line.
+ * A new component instance at `index` of the element at `parentPath`, as
+ * nativeMarkupInsertEdit places blocks: into an instance only at an items
+ * slot (`slot`, written on it). `markup` is one custom element with no
+ * attributes holding a copy of its template's fallbacks (`slotMarkup`), its
+ * lines after the first indented relative to the first; they are indented
+ * to its line.
  */
 export function nativeInstanceInsertEdit(source: string, parentPath: readonly number[], index: number, markup: string, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
   const root = tree(source);
@@ -373,9 +373,11 @@ export function nativeInstanceInsertEdit(source: string, parentPath: readonly nu
   if (!parent || !fragment || fragment.children.length !== 1 || !only || !isInstance(only) || !Number.isInteger(index) || index < 0 || index > parent.children.length) return undefined;
   const open = markup.slice(only.start, only.openEnd);
   if (only.start !== 0 || only.end !== markup.length || open !== `<${only.name}>`) return undefined;
+  // The content is a copy of the site's own template's fallbacks (card-slot.ts), which render there
+  // already: read exactly and free of document parts, as written (a `srcset` included).
   const content = markup.slice(only.openEnd, only.closeStart);
   const inner = tree(content);
-  if (!inner || !validFragment(inner, content)) return undefined;
+  if (!inner || startTags(content).some((tag) => ["script", "style", "html", "head", "body", "meta", "link", "base"].includes(tag.name))) return undefined;
   const instance = isInstance(parent);
   if (instance && !items?.(parent.name, slot)) return undefined;
   if (!canContain(parent, [only], instance)) return undefined;
