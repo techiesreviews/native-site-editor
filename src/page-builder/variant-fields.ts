@@ -8,15 +8,17 @@
 // Loaded when an instance is first selected (src/page-builder/components.ts),
 // so the variant parser stays out of the boot bundle.
 
-import { siteVariants, valueLabel, variantsForComponent, type Variant } from "../../shared/variants";
+import { scriptsSetAttributes, siteVariants, valueLabel, variantsForComponent, type Variant } from "../../shared/variants";
 
 export interface VariantField {
   attribute: string;
   label: string;
   kind: "choice" | "yes-no";
+  /** How checking a yes/no field writes the attribute. */
+  form?: "bare" | "true";
   /** Choice options: `""` leaves the attribute off, `=value` writes it. None for yes/no. */
   options: { label: string; value: string }[];
-  /** The option the instance has now; for yes/no, `"on"` (the attribute is there, whatever its value: a presence rule styles it) or `""`. */
+  /** Current option; yes/no is `"on"` by presence for bare rules, or only by `="true"` for true rules. */
   value: string;
   /** Where the whole variant shows, when only somewhere ("wide screens only"). */
   note?: string;
@@ -53,7 +55,7 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
     const set = attributes.find((attribute) => attribute.name === variant.attribute);
     const note = conditionsNote(variant.conditions);
     if (variant.kind === "yes-no") {
-      return { attribute: variant.attribute, label: variant.label, kind: "yes-no", options: [], value: set ? "on" : "", ...(note ? { note } : {}) };
+      return { attribute: variant.attribute, label: variant.label, kind: "yes-no", form: variant.form, options: [], value: (variant.form === "true" ? set?.value === "true" : Boolean(set)) ? "on" : "", ...(note ? { note } : {}) };
     }
     const options = [{ label: variant.defaultValue === undefined ? "Default" : `${valueLabel(variant.defaultValue)} (default)`, value: "" }];
     for (const { value, label, conditions } of variant.values) {
@@ -68,16 +70,17 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
   });
 }
 
-/** The fields of instance `tag` with `attributes`, read from its component's CSS and the page's sheets (imports expanded). */
-export function instanceVariantFields(tag: string, css: string, sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
-  return variantFields(variantsForComponent(tag, { css, site: siteVariants(sheets) }).variants, attributes);
+/** Instance fields from component/page CSS, excluding script-set names only from the component CSS. */
+export function instanceVariantFields(tag: string, css: string, sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[], scripts: readonly { path: string; source: string }[] = []) {
+  return variantFields(variantsForComponent(tag, { css, site: siteVariants(sheets), scriptAttributes: scriptsSetAttributes(scripts) }).variants, attributes);
 }
 
 /**
- * What picking `choice` writes: a value, `true` for a bare yes/no attribute,
+ * What picking `choice` writes: a choice value, `true` for a bare yes/no
+ * attribute or `"true"` for rules matching that value,
  * `undefined` to remove it.
  */
 export function variantAttribute(field: VariantField, choice: string): string | true | undefined {
-  if (field.kind === "yes-no") return choice ? true : undefined;
+  if (field.kind === "yes-no") return choice ? field.form === "true" ? "true" : true : undefined;
   return choice.startsWith("=") ? choice.slice(1) : undefined;
 }

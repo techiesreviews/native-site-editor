@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { componentVariants, siteVariants, variantsForComponent } from "../shared/variants.ts";
 import { startTags } from "../shared/html-source.ts";
 import { attributeEdit } from "../src/page-builder/component-model.ts";
-import { conditionsNote, variantAttribute, variantFields } from "../src/page-builder/variant-fields.ts";
+import { conditionsNote, instanceVariantFields, variantAttribute, variantFields } from "../src/page-builder/variant-fields.ts";
 
 const fields = (css: string, attributes: { name: string; value: string }[] = []) => variantFields(componentVariants(css).variants, attributes);
 
@@ -27,7 +27,7 @@ test("a value no rule knows shows as Custom and stays an option", () => {
 
 test("a yes/no variant is on when the attribute is there, whatever its value, as its presence rule matches", () => {
   const css = `:host {} :host([data-featured]) {}`;
-  assert.deepEqual(fields(css)[0], { attribute: "data-featured", label: "Featured", kind: "yes-no", options: [], value: "" });
+  assert.deepEqual(fields(css)[0], { attribute: "data-featured", label: "Featured", kind: "yes-no", form: "bare", options: [], value: "" });
   assert.equal(fields(css, [{ name: "data-featured", value: "" }])[0].value, "on");
   assert.equal(fields(css, [{ name: "data-featured", value: "surprise" }])[0].value, "on");
 });
@@ -95,4 +95,28 @@ test("attributeEdit writes a bare attribute, and replaces or removes one", () =>
   assert.equal(apply(`<card-tip data-featured="false">x</card-tip>`, true), `<card-tip data-featured>x</card-tip>`);
   assert.equal(apply(`<card-tip data-featured class="a">x</card-tip>`, undefined), `<card-tip class="a">x</card-tip>`);
   assert.equal(apply(`<card-tip data-featured>x</card-tip>`, "yes"), `<card-tip data-featured="yes">x</card-tip>`);
+});
+
+test("explicit true checkboxes check only true and write the string true", () => {
+  const css = ':host {} :host([data-pinned="true"]) {} :host([data-pinned="false"]) {}';
+  for (const value of ["", "false", "surprise", "true"]) {
+    const [field] = fields(css, [{ name: "data-pinned", value }]);
+    assert.equal(field.value, value === "true" ? "on" : "");
+    assert.equal(variantAttribute(field, "on"), "true");
+    assert.equal(variantAttribute(field, ""), undefined);
+  }
+  assert.equal(fields(css)[0].value, "");
+});
+
+test("edit bar excludes script-set own CSS names but keeps site and global names", () => {
+  const css = ':host {} :host([data-open]) {} :host([data-ready]) {} :host([data-tone=dark]) {}';
+  const sheets = [{ path: "site.css", source: 'card-tip[data-ready="true"] {} [data-color-scheme=dark] {}' }];
+  const scripts = [{ path: "tips.mjs", source: 'tip.toggleAttribute("data-open"); tip.dataset.ready = ""; document.documentElement.dataset.colorScheme = "dark";' }];
+  const read = () => instanceVariantFields("card-tip", css, sheets, [], scripts);
+  assert.deepEqual(read().map(field => field.attribute), ["data-tone", "data-ready", "data-color-scheme"]);
+  assert.equal(read().find(field => field.attribute === "data-ready")?.form, "true");
+  // A draft replacing the same path must invalidate the script scan.
+  scripts[0].source = 'tip.dataset.tone = "dark";';
+  assert.deepEqual(read().map(field => field.attribute), ["data-open", "data-ready", "data-color-scheme"]);
+  assert.equal(instanceVariantFields("card-tip", css, sheets, [], []).some(field => field.attribute === "data-open"), true);
 });

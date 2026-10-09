@@ -101,7 +101,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
           { value: "split", label: "Split", conditions: [] },
           { value: "centered", label: "Centered", conditions: ["@media (min-width: 60rem)"] },
         ], conditions: [] },
-        { attribute: "data-wide", label: "Wide", kind: "yes-no", values: [], conditions: [] },
+        { attribute: "data-wide", label: "Wide", kind: "yes-no", form: "bare", values: [], conditions: [] },
         { attribute: "data-color-scheme", label: "Color scheme", kind: "choice", values: [{ value: "dark", label: "Dark", conditions: ["@media (min-width: 40rem)"] }], conditions: ["@media (min-width: 40rem)"] },
         { attribute: "data-tone", label: "Tone", kind: "choice", values: [{ value: "dark", label: "Dark", conditions: [] }], conditions: [] },
       ],

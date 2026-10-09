@@ -32,11 +32,30 @@ export function scriptSetAttributes(source: string): string[] {
   return [...names];
 }
 
+// The latest scan of each script path, so the edit bar and the code pane
+// rescan only scripts whose content changed; paths no longer passed drop out.
+const scriptCache = new Map<string, { source: string; names: string[] }>();
+
+/** `scriptSetAttributes` over a site's scripts, cached per path and content. */
+export function scriptsSetAttributes(scripts: Iterable<{ path: string; source: string }>): string[] {
+  const seen = new Set<string>(), names = new Set<string>();
+  for (const { path, source } of scripts) {
+    seen.add(path);
+    let cached = scriptCache.get(path);
+    if (cached?.source !== source) scriptCache.set(path, cached = { source, names: scriptSetAttributes(source) });
+    for (const name of cached.names) names.add(name);
+  }
+  for (const path of scriptCache.keys()) if (!seen.has(path)) scriptCache.delete(path);
+  return [...names];
+}
+
 export interface VariantValue { value: string; label: string; conditions: string[] }
 export interface Variant {
   attribute: string;
   label: string;
   kind: "choice" | "yes-no";
+  /** Yes/no writes presence when any rule uses it; otherwise the value "true". */
+  form?: "bare" | "true";
   values: VariantValue[];
   conditions: string[];
   defaultValue?: string;
@@ -269,6 +288,7 @@ interface Occurrences { unconditional: boolean; conditions: string[] }
 // Parsed site sheets are cached and shared, so callers only get read-only views.
 interface ReadOccurrences { readonly unconditional: boolean; readonly conditions: readonly string[] }
 interface ReadAxis {
+  readonly presence: boolean;
   readonly values: ReadonlyMap<string, ReadOccurrences>;
   readonly rules: ReadOccurrences;
   readonly choices: ReadOccurrences;
@@ -285,6 +305,7 @@ const newOccurrences = (): Occurrences => ({ unconditional: false, conditions: [
 const conditionsOf = (occurrences: ReadOccurrences) => occurrences.unconditional ? [] : occurrences.conditions;
 
 interface Axis {
+  presence: boolean;
   values: Map<string, Occurrences>;
   rules: Occurrences;
   choices: Occurrences;
@@ -306,9 +327,10 @@ function readVariantAxes(css: string, read: SubjectReader, excluded: ReadonlySet
       for (const attribute of subject.attributes) {
         if (!allowedAttribute(attribute.name) || excluded.has(attribute.name) || attribute.absent || (attribute.operator && attribute.operator !== "=")) continue;
         let axis = axes.get(attribute.name);
-        if (!axis) { axis = { values: new Map(), rules: newOccurrences(), choices: newOccurrences() }; axes.set(attribute.name, axis); }
+        if (!axis) { axis = { presence: false, values: new Map(), rules: newOccurrences(), choices: newOccurrences() }; axes.set(attribute.name, axis); }
         recordCondition(axis.rules, conditions);
         // `[data-x=""]` matches the bare attribute, so it reads as presence.
+        if (!attribute.value) axis.presence = true;
         if (attribute.value) {
           recordCondition(axis.choices, conditions);
           let occurrences = axis.values.get(attribute.value);
@@ -334,7 +356,7 @@ function variantsOf(axes: ReadonlyMap<string, ReadAxis>): Variant[] {
     const choice = [...axis.values.keys()].some((value) => value !== "true" && value !== "false");
     const values = choice ? [...axis.values].map(([value, occurrences]) => ({ value, label: valueLabel(value), conditions: [...conditionsOf(occurrences)] })) : [];
     const conditions = [...conditionsOf(choice ? axis.choices : axis.rules)];
-    return { attribute, label: variantLabel(attribute), kind: choice ? "choice" : "yes-no", values, conditions, ...(axis.defaultValue === undefined ? {} : { defaultValue: axis.defaultValue }) };
+    return { attribute, label: variantLabel(attribute), kind: choice ? "choice" : "yes-no", values, conditions, ...(choice ? {} : { form: axis.presence ? "bare" as const : "true" as const }), ...(axis.defaultValue === undefined ? {} : { defaultValue: axis.defaultValue }) };
   });
 }
 
@@ -507,7 +529,8 @@ function mergeAxes(sources: readonly ReadonlyMap<string, ReadAxis>[]) {
   const merged: Axes = new Map();
   for (const axes of sources) for (const [attribute, source] of axes) {
     let target = merged.get(attribute);
-    if (!target) { target = { values: new Map(), rules: newOccurrences(), choices: newOccurrences() }; merged.set(attribute, target); }
+    if (!target) { target = { presence: false, values: new Map(), rules: newOccurrences(), choices: newOccurrences() }; merged.set(attribute, target); }
+    target.presence ||= source.presence;
     mergeOccurrences(target.rules, source.rules);
     mergeOccurrences(target.choices, source.choices);
     target.defaultValue ??= source.defaultValue;

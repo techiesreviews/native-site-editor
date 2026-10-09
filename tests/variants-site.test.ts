@@ -173,3 +173,19 @@ test("a repeated compound in one selector is not a default alternative", () => {
   const [alias] = variantsForClass("btn", site(".btn, .btn[data-variant=primary] {}"));
   assert.equal(alias.defaultValue, "primary");
 });
+
+test("yes/no presence wins across component and site sources in either order", () => {
+  for (const [css, shared, form] of [
+    [':host([data-pinned="true"]) {}', 'section-hero[data-pinned="false"] {}', "true"],
+    [':host([data-pinned="true"]) {}', 'section-hero[data-pinned] {}', "bare"],
+    [':host([data-pinned=""]) {}', ':host([data-pinned="true"]) {}', "bare"],
+    ['', 'section-hero[data-pinned="true"] {} [data-pinned=""] {}', "bare"],
+  ]) {
+    assert.equal(variantsForComponent("section-hero", { css, site: site(shared) }).variants[0].form, form);
+  }
+  const merged = siteVariants([
+    { path: "a.css", source: 'section-hero[data-pinned="true"] {}' },
+    { path: "b.css", source: 'section-hero[data-pinned] {}' },
+  ]);
+  assert.equal(variantsForComponent("section-hero", { css: "", site: merged }).variants[0].form, "bare");
+});

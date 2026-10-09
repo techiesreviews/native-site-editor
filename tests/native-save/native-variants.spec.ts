@@ -1,13 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Variants in the edit bar (ticket 07 §5, src/page-builder/components.ts):
+// Default fixture group. Variants in the edit bar (tickets 07 §5 and 71):
 // a dropdown per variant and a checkbox per yes/no variant on a selected
 // instance, read from its component's CSS and the site's (shared/variants.ts);
 // past two, behind one Variants button. The fixture `native-variants`
 // (id 541, fixtures/native-variants): a section-split with Layout (its
 // content-left only on wide screens) and the global Color scheme; two
-// card-tips with Size, Tone (site CSS), Featured (wide screens only) and
-// Color scheme, the first written with a size no rule knows.
+// card-tips with Size, Tone (site CSS), Featured (wide screens only), Pinned and
+// Color scheme, the first written with a size no rule knows. The site script
+// owns Open, so the edit bar excludes it; Pinned must be written as "true".
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
@@ -75,6 +76,9 @@ test("past two variants they sit behind Variants: Custom kept, a yes/no checkbox
   await expect(fields.getByRole("combobox", { name: "Tone", exact: true }).locator("option")).toHaveText(["Default", "Accent"]);
   await expect(fields.getByRole("combobox", { name: "Color scheme", exact: true })).toBeVisible();
 
+  await expect(fields.getByRole("checkbox", { name: "Pinned", exact: true })).toBeVisible();
+  await expect(fields.getByRole("checkbox", { name: "Open", exact: true })).toHaveCount(0);
+
   // The yes/no variant: a checkbox, written bare; the popover stays open on it.
   const featured = fields.getByRole("checkbox", { name: "Featured (wide screens only)" });
   await expect(fields.getByText("wide screens only")).toBeVisible();
@@ -104,4 +108,24 @@ test("past two variants they sit behind Variants: Custom kept, a yes/no checkbox
     await undo(page);
     await expect.poll(() => source(page)).toBe(step);
   }
+});
+
+test("script-set Open is excluded and Pinned writes true then removes the attribute", async ({ page }) => {
+  await selectInstance(page, "Water early", "Card tip");
+  await bar(page).getByRole("button", { name: "Variants", exact: true }).click();
+  const fields = page.getByRole("dialog", { name: "Variants" });
+  await expect(fields).toBeVisible();
+  await expect(fields.getByRole("checkbox", { name: "Open", exact: true })).toHaveCount(0);
+  const pinned = fields.getByRole("checkbox", { name: "Pinned", exact: true });
+  await expect(pinned).not.toBeChecked();
+  const before = await source(page);
+  await pinned.check();
+  const on = before.replace('<card-tip data-size="huge">', '<card-tip data-size="huge" data-pinned="true">');
+  await expect.poll(() => source(page)).toBe(on);
+  await expect(frame(page).locator("card-tip").first()).toHaveAttribute("data-pinned", "true");
+  await expect(pinned).toBeChecked();
+  await pinned.uncheck();
+  await expect.poll(() => source(page)).toBe(before);
+  await expect(frame(page).locator("card-tip").first()).not.toHaveAttribute("data-pinned", /.*/);
+  await expect(pinned).not.toBeChecked();
 });

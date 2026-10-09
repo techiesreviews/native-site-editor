@@ -15,3 +15,12 @@
     box-shadow: inset 0 0 0 1px #b45309;
   }
 }
+
+/* Script state is excluded; the author-controlled checkbox writes "true". */
+:host([data-open]) {
+  border-style: dashed;
+}
+
+:host([data-pinned="true"]) {
+  border-color: #15803d;
+}

@@ -84,7 +84,7 @@ test("media and container chains merge per option, unconditional occurrences win
     ],
   });
   assert.deepEqual(variants[1], {
-    attribute: "data-reverse", label: "Reverse", kind: "yes-no", values: [],
+    attribute: "data-reverse", label: "Reverse", kind: "yes-no", form: "bare", values: [],
     conditions: ["@media (width > 56rem)", "@container (width > 30rem)"],
   });
 });
@@ -214,4 +214,19 @@ test("comments separate at-rule tokens; escaped and non-ASCII custom properties 
   assert.deepEqual(parse("@media/**/print { :host([data-tone=dark]) {} }")[0].conditions, ["@media print"]);
   assert.deepEqual(parse(`@container style(--mode: "/* a */") { :host([data-tone=dark]) {} }`)[0].conditions, [`@container style(--mode: "/* a */")`]);
   assert.deepEqual(values(":host { --é: { :host([data-fake=x]) & {} }; --\\61 b: { :host([data-fake=y]) & {} }; } :host([data-tone=dark]) {}"), [["data-tone", ["dark"]]]);
+});
+
+
+test("yes/no form follows presence or explicit true rules", () => {
+  for (const [selector, form] of [
+    ["[data-active]", "bare"], ['[data-active=""]', "bare"],
+    ['[data-active="true"]', "true"],
+    ['[data-active="true"]), :host([data-active="false"]', "true"],
+    ['[data-active="true"]), :host([data-active]', "bare"],
+  ]) {
+    const [variant] = parse(`:host {} :host(${selector}) {}`);
+    assert.equal(variant.kind, "yes-no");
+    assert.equal(variant.form, form, selector);
+  }
+  assert.equal(parse(':host([data-tone=dark]) {}')[0].form, undefined);
 });

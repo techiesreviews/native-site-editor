@@ -28,7 +28,8 @@ import { staticAssetHeaders } from "./production-headers";
 // `fixtures/native-cards` is `native-cards` (id 540), a home page whose
 // card grid links to subpages under /work/ (the page builder's cards).
 // `fixtures/native-variants` is `native-variants` (id 541), components whose
-// own CSS and the site's style them by `data-*` attributes (variants).
+// own CSS and the site's style them by `data-*` attributes (variants), including
+// bare and true-valued yes/no rules and a script-owned attribute (ticket 71).
 //
 // Onboarding controls (per browser session, like the other /__demo/ controls;
 // send them after the first page load has minted the session cookie, with

@@ -99,6 +99,8 @@ export interface ComponentDeps {
   revision: () => string;
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
+  /** Current site scripts, read lazily for instance variants; late reads refresh the bar. */
+  scripts: () => { path: string; source: string }[];
   editor: () => CodeEditor | undefined;
   preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void } & Partial<PreviewTextPatch> | undefined;
   /** The file open in the code pane. */
@@ -497,7 +499,7 @@ export function createComponentTools(deps: ComponentDeps) {
         : value === undefined ? `${field.label}: default` : `${field.label}: ${option}`;
       change(at.path, [attributeEdit(at.source, at.range.tag, field.attribute, value)], message, at.node);
     };
-    const fields = reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(at.templatePath)] ?? "", sheets, at.instance.attributes).map((field): SelectControl | CheckboxControl => {
+    const fields = reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(at.templatePath)] ?? "", sheets, at.instance.attributes, deps.scripts()).map((field): SelectControl | CheckboxControl => {
       const note = field.note ? { note: field.note } : {};
       return field.kind === "yes-no"
         ? { kind: "checkbox", label: field.label, checked: field.value === "on", ...note, onChange: (on) => pick(field, on ? "on" : "") }

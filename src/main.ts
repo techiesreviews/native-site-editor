@@ -578,6 +578,7 @@ function mountComponentTools() {
   return createComponentTools({
     site: () => nativeSite,
     sources: () => nativeSources(),
+    scripts: () => Object.entries(nativeVariantSources(/\.(?:m?js)$/i)).map(([path, source]) => ({ path, source })),
     structureFields: true,
     editor: () => editorModule,
     preview: () => nativePreview,
@@ -1239,30 +1240,39 @@ const previewSelection = createPreviewSelectionController({
 
 // Variant discovery uses effective sources, cached independently of HTML typing.
 let variantCache: { key: string; lookup: VariantLookup } | undefined;
-let variantReadKey = "";
-function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined {
-  const site = nativeSite, scope = draftScope();
-  if (!site || !scope || versionView) return;
-  const paths = nativeFiles(scope).filter(path => /\.(?:css|js)$/i.test(path) && !/(?:^|\/)node_modules\//.test(path));
+const variantReads = new Set<string>();
+/** Discovery sources shared by the code pane and the edit bar, with drafts applied. */
+function nativeVariantSources(extension: RegExp): Record<string, string> {
+  const scope = draftScope();
+  if (!nativeSite || !scope || versionView) return {};
+  const paths = nativeFiles(scope).filter(path => extension.test(path) && !/(?:^|\/)node_modules\//.test(path));
   const sources: Record<string, string> = {};
   for (const path of paths) {
     const source = nativeEffectiveSource(path, scope);
     if (source !== undefined) sources[path] = source;
   }
-  // Read the remaining discovery inputs only when a code pane needs them.
-  const missing = paths.filter(path => sources[path] === undefined);
-  const readKey = JSON.stringify([generation, setupScope(), missing]);
-  if (missing.length && readKey !== variantReadKey && appStore.repository.value) {
-    variantReadKey = readKey;
-    const epoch = generation, scopeKey = setupScope();
+  // Each path has one in-flight read in this scope, even when both consumers
+  // need it. Settle failures without refreshing; the next request retries.
+  const epoch = generation, scopeKey = setupScope();
+  const key = (path: string) => JSON.stringify([epoch, scopeKey, path]);
+  const missing = paths.filter(path => sources[path] === undefined && !variantReads.has(key(path)));
+  if (missing.length && appStore.repository.value) {
+    missing.forEach(path => variantReads.add(key(path)));
     const live = () => epoch === generation && scopeKey === setupScope();
     void readNativePredicted(appStore.repository.value.full_name, missing, live).then((read) => {
-      if (!live()) return;
-      // A read shows at once; a failed one is tried again on the next request.
-      if (read) editorModule.refreshVariants();
-      else if (variantReadKey === readKey) variantReadKey = "";
+      missing.forEach(path => variantReads.delete(key(path)));
+      if (!live() || !read) return;
+      editorModule?.refreshVariants();
+      if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
     });
   }
+  return sources;
+}
+
+function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined {
+  const site = nativeSite;
+  if (!site || !draftScope() || versionView) return;
+  const sources = nativeVariantSources(/\.(?:css|m?js)$/i);
   const key = JSON.stringify([generation, setupScope(), site.components, sources]);
   if (variantCache?.key === key) return variantCache.lookup;
   const lookup = build(sources, Object.fromEntries(Object.entries(site.components).map(([tag, file]) => [tag, nativeComponentCssPath(file)])));
