@@ -150,11 +150,22 @@ test("a companion's ready refuses the move whole while history waits; the step s
   assert.deepEqual(await redoing, { ok: false, error: "x.html already exists." });
   assert.equal(store.text(scope, "a.html"), "ab");
   assert.equal(store.canRedo("h"), true);
+  // An edit made while Redo is asked takes the step's place: the Redo goes no further.
   reason = undefined;
+  const late = store.redo("h");
+  store.edit({ scope, path: "a.html", history: "h", changes: [{ start: 0, end: 0, text: "!" }] });
+  release();
+  assert.deepEqual(await late, { ok: false, error: "The history changed meanwhile." });
+  assert.equal(store.text(scope, "a.html"), "!ab");
+  assert.equal((await store.undo("h")).ok, true);
+  store.edit({ scope, path: "a.html", history: "h", changes: [{ start: 1, end: 1, text: "x" }], companion });
+  const undoingAgain = store.undo("h"); release();
+  assert.equal((await undoingAgain).ok, true);
+  log.length = 0;
   const again = store.redo("h"); release();
   assert.equal((await again).ok, true);
   assert.equal(store.text(scope, "a.html"), "axb");
-  assert.deepEqual(log, ["ready undo", "undo", "ready redo", "ready redo", "redo"]);
+  assert.deepEqual(log, ["ready redo", "redo"]);
 });
 
 test("a companion refusing as it runs takes back those that ran, and the text does not move", async () => {

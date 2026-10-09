@@ -79,9 +79,9 @@ export async function createComponentFileDrafts(
     transaction.refresh();
     return undefined;
   };
-  // Undo takes every file back or none: each is still the draft written here, and none is open.
+  // Undo takes every file back or none: each it still owns is the draft written here, and none is open.
+  // (One already gone, after a failed write, leaves nothing behind.)
   const undoProblem = () => {
-    if (own.size !== made.length) return "The component's files changed since; Undo would leave some of them.";
     for (const [path, record] of own) {
       if (store.get(scope, path) !== record) return `${path} changed since the component was made; Undo would leave it.`;
       if (transaction.isOpen(scope, path)) return `${path} is open; close it before undoing the component.`;
@@ -93,7 +93,23 @@ export async function createComponentFileDrafts(
   if (problem) return { error: problem };
   const companion: ComponentFilesCompanion = {
     ready: async direction => refuse(direction === "undo" ? undoProblem() : await check()),
-    undo: () => { const problem = refuse(undoProblem()); if (!problem) undo(); return problem; },
+    undo: () => {
+      const problem = undoProblem();
+      if (problem) return refuse(problem);
+      const dropped: SavedDraft[] = [];
+      for (const [path, record] of own) {
+        if (!transaction.drop(scope, path)) {
+          // Put back the exact drafts taken so far: all of them stay, with the page.
+          for (const back of dropped) if (store.save(back)) own.set(back.path, back);
+          if (transaction.isCurrent()) transaction.refresh();
+          return refuse(`${path} could not be taken back; the component was kept.`);
+        }
+        own.delete(path);
+        dropped.push(record);
+      }
+      if (transaction.isCurrent()) transaction.refresh();
+      return undefined;
+    },
     redo: () => refuse(write()),
   };
   return { receipt: {

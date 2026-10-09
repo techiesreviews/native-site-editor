@@ -118,3 +118,18 @@ test("an open component model prevents cleanup of its exact draft", async () => 
   h.transaction.drop = () => false; receipt!.undo();
   assert.equal(h.records.size, 2); assert.match(h.messages[0], /is open/);
 });
+
+test("Undo that cannot drop a file puts back the ones it took and refuses; files already gone leave nothing behind", async () => {
+  const h = harness(); const { receipt } = await createComponentFileDrafts(files, h.transaction);
+  const { companion } = receipt!;
+  h.transaction.drop = (scope, path) => path !== files[1].path && h.records.delete(h.key(scope, path));
+  assert.match(companion.undo()!, /could not be taken back/);
+  assert.equal(h.records.size, 2); assert.equal(receipt!.isCurrent(), true);
+  h.transaction.drop = (scope, path) => h.records.delete(h.key(scope, path));
+  // A Redo whose write failed took its files back: Undo then takes the page back alone.
+  assert.equal(companion.undo(), undefined);
+  h.failOn(4);
+  assert.equal(companion.redo(), "storage failed"); assert.equal(h.records.size, 0);
+  h.transaction.store.error = null; h.failOn(0);
+  assert.equal(await companion.ready!("undo"), undefined); assert.equal(companion.undo(), undefined);
+});
