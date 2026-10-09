@@ -84,6 +84,8 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [73 Edit bar: update the controls spec for Make component; call a.btn a Button](tickets/73-edit-bar-spec-and-button-label.md) | sol | – |
 | [36 Blocks drag themselves](tickets/36-drag-existing-blocks.md) | claude ★ | 35 |
 | [79 Click selects, double-click edits, everywhere on the page](tickets/79-click-selects-double-click-edits.md) | claude ★ | 36 |
+| [81 Delete key removes the selected element; no delete icon on Structure rows](tickets/81-delete-key-and-no-row-delete.md) | sol | 79 |
+| [82 Move any element anywhere HTML allows](tickets/82-move-any-element.md) | claude ★ | 36, 37 |
 | [37 Structure mirrors drags and takes depth from x](tickets/37-structure-mirror-and-x-depth.md) | claude ★ | 35 |
 | [38 Folded Structure rows spring open](tickets/38-spring-open-rows.md) | sol | 37 |
 | [39 Alt+←/→ move out of and into containers](tickets/39-alt-arrow-depth-keys.md) | sol | – |
