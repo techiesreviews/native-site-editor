@@ -124,7 +124,7 @@ function findSlots(root: Element, fixed: ReadonlySet<string>, choices: SlotChoic
   };
 
   visit(root, []);
-  for (const slot of found) { const chosen = choices.names?.get(slot.key); if (chosen !== undefined && slot.kind !== "items") slot.name = chosen; }
+  for (const slot of found) { const chosen = choices.names?.get(slot.key); if (chosen !== undefined) slot.name = chosen; }
   return found;
 }
 
@@ -154,7 +154,10 @@ export function planComponent(outerHtml: string, tag: string, fixed: ReadonlySet
       if (slot.name) holder.setAttribute("name", slot.name);
       slot.members[0].before(holder);
       for (const member of slot.members) {
-        entries.push(dedentTail(member.outerHTML));
+        // A named group: each item on the page carries slot="name".
+        const item = member.cloneNode(true) as Element;
+        if (slot.name) item.setAttribute("slot", slot.name);
+        entries.push(dedentTail(item.outerHTML));
         const prev = member.previousSibling;
         if (prev?.nodeType === Node.TEXT_NODE && !prev.textContent?.trim()) prev.remove();
         member.remove();
