@@ -106,12 +106,19 @@ test("of two named card slots, the one whose part of the template is under the p
   await expect(frame(page).locator("section-pair > h2")).toBeVisible({ timeout: 30_000 });
   await editorMounted(page);
   await expect.poll(() => source(page)).toBe(made);
-  // The second list's padding below its card: its template part, not a card.
+  // With a card of the first list selected, the second list's padding below its card (its template part) still names the second.
+  await frame(page).locator("section-pair > card-project[slot=first]").click();
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true })).toBeVisible();
   const second = frame(page).locator("section-pair > card-project[slot=second]");
   await second.evaluate((el) => el.scrollIntoView({ block: "start" }));
   const box = (await second.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height + 24);
   await expect(addCard(page)).toBeVisible();
+  // On its way to the button the pointer leaves the list; the ghost stays with the second.
+  const ghostAt = (await page.locator(".card-ghost").boundingBox())!;
+  expect(ghostAt.y).toBeGreaterThan(box.y - 2);
+  await addCard(page).hover();
+  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBe(ghostAt.y);
   await addCard(page).click();
   await expect.poll(() => source(page)).toContain('<h3 slot="title">Two</h3>\n      </card-project>\n      <card-project slot="second">\n        <p slot="note">Project</p>');
   await expect(frame(page).locator("section-pair > card-project[slot=first]")).toHaveCount(1);

@@ -84,7 +84,8 @@ export interface CardGridHandlers {
 /** The least height of a ghost below a grid: its button, and a little more. */
 const STRIP = 32;
 
-const gridKey = (grid: ItemGridReport) => `${grid.path}|${grid.parent.join(".")}`;
+// A card slot is its own grid: an instance can hold several (`slot`).
+const gridKey = (grid: ItemGridReport) => `${grid.path}|${grid.parent.join(".")}${grid.slot === undefined ? "" : `|${grid.slot}`}`;
 const sameReport = (a: ItemGridReport | null | undefined, b: ItemGridReport | null | undefined) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
