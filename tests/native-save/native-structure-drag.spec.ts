@@ -177,3 +177,44 @@ test("a block from the rail drops in Structure at the depth the pointer's x pick
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
 });
+
+test("a card's row in a section component's items slot drags below the other card, one undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  // Recent work made a section component: its cards fill the unnamed (items) slot.
+  const edit = async (path: string, content: string) => {
+    const response = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+    expect(response.ok()).toBe(true);
+  };
+  await edit("components/section-work/section-work.html", '<section class="flow">\n  <slot name="title"><h2>Recent work</h2></slot>\n  <div class="cards"><slot><card-project></card-project></slot></div>\n</section>\n');
+  await edit("components/section-work/section-work.css", ":host { display: block; }\n.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }\n");
+  const made = (await source(page))!.replace('<section class="flow" id="work">', '<section-work id="work">').replace('<h2>Recent work</h2>\n      <div class="cards">', '<h2 slot="title">Recent work</h2>')
+    .replace(/<\/card-project>\n      <\/div>\n    <\/section>/, "</card-project>\n    </section-work>");
+  expect(made).toContain("</card-project>\n    </section-work>");
+  await edit("index.html", made);
+  await page.reload();
+  const titles = frame(page).locator('section-work > card-project h3[slot="title"]');
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await editorMounted(page);
+  await unfold(page, "1.1");
+  const original = await source(page);
+  // The title fills a named slot: its row stays sealed.
+  await expect(row(page, "1.1.0")).toBeVisible();
+  const title = await box(row(page, "1.1.0"));
+  await page.mouse.move(title.x, title.y);
+  await page.mouse.down();
+  await page.mouse.move(title.x, title.y + 20, { steps: 4 });
+  await expect(ghost(page)).toBeHidden();
+  await page.mouse.up();
+  // The first card's row, to the gap below the second card at its own depth (level 3, the instance's items).
+  const first = await box(row(page, "1.1.1"));
+  await pressAndMove(page, { x: first.x, y: first.y }, { x: first.x, y: first.y + 12 });
+  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
+  await expect(row(page, "1.1.1")).toHaveClass(/is-drag-source/);
+  await page.mouse.move(await levelX(page, 3), (await box(row(page, "1.1.2"))).bottom - 3, { steps: 4 });
+  await expect(where(page)).toHaveText("Into Section work › items › after Card project");
+  await page.mouse.up();
+  await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  await expect.poll(async () => flat(await source(page))).toMatch(/Harbour Lane Pottery<\/h3>.*Fern &amp; Kettle<\/h3>.*<\/section-work>/);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});

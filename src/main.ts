@@ -580,6 +580,7 @@ function mountWorkspace() {
       return "pending";
     },
     // A row drags as its block does on the page: the same targets, in the tree as well.
+    itemsSlots: nativeMoveItems,
     onRowDrag: (press, item) => dragPageBlock(press, {
       node: item.node, tag: item.tag, cls: item.className ?? "", band: isNativeSectionTag(item.tag), painted: nativeStructurePaintedSources.get(item),
     }),
@@ -1555,6 +1556,7 @@ const pageStructureController = createPageStructureController({
   get elementPathAt() { return elementPathAt; },
   get textRangeInSource() { return textRangeInSource; },
   get wrapperAround() { return wrapperAround; },
+  itemsSlots: nativeMoveItems,
 });
 function renderNativeEditBar(...args: Parameters<typeof pageStructureController.renderNativeEditBar>) {
   return pageStructureController.renderNativeEditBar(...args);

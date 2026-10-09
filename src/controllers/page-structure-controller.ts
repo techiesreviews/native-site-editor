@@ -10,7 +10,7 @@ import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { agentElement } from "../agent-site";
 import { isSectionTemplate } from "../native-insert";
-import { nativeMovableBlock } from "../page-builder/native-operations";
+import { nativeMovableBlock, type ItemsSlotRule } from "../page-builder/native-operations";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
@@ -62,6 +62,8 @@ export interface PageStructurePorts {
   readonly elementPathAt: (html: string, start: number) => number[] | undefined;
   readonly textRangeInSource: (inner: string, start: number, end: number, text: string) => import("../../shared/html-source").SourceSpan | undefined;
   readonly wrapperAround: (inner: string, at: number, names: string[]) => ElementRange | undefined;
+  /** Which slots of a component are items slots: blocks in them drag by the bar's name as page blocks do. */
+  readonly itemsSlots: () => ItemsSlotRule;
 }
 
 export function createPageStructureController(ports: PageStructurePorts) {
@@ -494,7 +496,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // as do plain Up/Down on the bar's name. Any block of the page's <main>
     // drags by its name in the bar (ticket 12 §10).
     let onMove: EditBarModel["onMove"];
-    const draggable = Boolean(node && nativeMovableBlock(source, node));
+    const draggable = Boolean(node && nativeMovableBlock(source, node, ports.itemsSlots()));
     if (range && node && isNativeSectionTag(selection.tag)) {
       const parent = node.slice(0, -1);
       const index = node[node.length - 1];

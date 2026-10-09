@@ -108,6 +108,8 @@ export interface PageStructureHandlers {
    * page's block drag, insert-drag.ts `trackDrag`); none when it cannot.
    */
   onRowDrag?: (press: DragPress, item: NativeStructureItem) => { justDragged(): boolean } | undefined;
+  /** Which slots of a component are items slots (block-insert.ts `itemsSlotRule`): their rows drag as page blocks do. */
+  itemsSlots?: () => (tag: string, slot: string) => boolean;
   /** Status text for the screen reader. */
   announce?: (text: string) => void;
   /**
@@ -507,7 +509,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // Opened rows unfolded once each time they open.
   const unfoldedOpen = new Set<string>();
   let rowNameSeq = 0;
-  // `sealed`: inside a component instance, whose parts move with it. `template`: Edit component
+  // This render's items-slot rule; an instance's rows stay sealed except in its items slots.
+  let itemsSlot: ((tag: string, slot: string) => boolean) | undefined;
+  // `sealed`: inside a component instance, whose parts move with it (its items slots' rows excepted). `template`: Edit component
   // mode's rows of the template shown (never the page's: no drags, drops or moves).
   function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext, sealed = false, template?: TemplateRows): HTMLElement[] {
     const own = template && (item as TemplateStructureItem);
@@ -732,7 +736,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
       const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
       const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
-      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, sealed || Boolean(component), modeRows ?? template));
+      const items = Boolean(component) && Boolean(itemsSlot?.(item.tag, child.slot.trim()));
+      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, sealed || (Boolean(component) && !items), modeRows ?? template));
     }
     for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1));
     return framed([el, group]);
@@ -943,6 +948,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     paintFresh = current === undefined ? undefined : current === structure.paintedSource;
     keepPending = false;
     editorWaiting = false;
+    itemsSlot = handlers.itemsSlots?.();
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
     const pendingTemplate = pendingSelection && [...rows.values()].some(row => row.dataset.templatePath === pendingSelection!.path);
     if (pendingTemplate && pendingSelection) {
