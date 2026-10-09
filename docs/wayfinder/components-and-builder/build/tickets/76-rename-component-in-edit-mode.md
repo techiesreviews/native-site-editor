@@ -26,3 +26,5 @@ Lex (2026-10-09): Make component names the component automatically (slice 22), s
 
 - Unit tests for the plan: folder and files moved; the tag in the component's CSS; instances on two pages, one with attributes and one with two instances; a page not open; another template using it as a fallback; text that merely contains the old name left alone; a taken and a reserved name refused; the same name no change; the prefix for a name typed without a hyphen.
 - Nightly spec: with two pages using the component, in Edit component mode double-click the tag, type "showcase", Enter: the tag reads `<section-showcase>`, the files are at the new path and gone from the old, both pages' instances renamed and still rendered, the mode still open; one undo restores everything and redo applies it again; Esc cancels; a taken name is refused.
+
+**Decided (Lex, 2026-10-09):** exact tag selectors that name the old tag in the site's own stylesheets are renamed too, in the same undo step; the bar notes which files changed. (This replaces the earlier "leave them and list them".)

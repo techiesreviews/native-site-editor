@@ -85,6 +85,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [37 Structure mirrors drags and takes depth from x](tickets/37-structure-mirror-and-x-depth.md) | claude ★ | 35 |
 | [38 Folded Structure rows spring open](tickets/38-spring-open-rows.md) | sol | 37 |
 | [39 Alt+←/→ move out of and into containers](tickets/39-alt-arrow-depth-keys.md) | sol | – |
+| [78 Alt+↑/↓ moves any block among its siblings on the canvas](tickets/78-alt-up-down-siblings-on-canvas.md) | sol | 39 |
 | [40 Drops into an instance's items slots](tickets/40-items-slot-drops.md) | claude ★ | 30, 33 |
 
 ### Phase 5: Edit component mode, in place
@@ -125,6 +126,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [69 Tone: cap the band surface's chroma to sRGB](tickets/69-tone-chroma-cap.md) | sol | 59 |
 | [60 Starter: four tones from one brand colour](tickets/60-starter-tone-rules.md) | claude ★ | 59, 69 |
 | [75 Starter: pages follow the visitor's light or dark setting](tickets/75-starter-follows-visitor-scheme.md) | sol | 60 |
+| [77 Conventions: a band with no tone follows the page](tickets/77-chapter-tone-default.md) | sol | 75 |
 | [61 Tone in the edit bar, on page bands only](tickets/61-tone-on-bands-only.md) | sol | 13 |
 | [62 Browser check of the starter's tones](tickets/62-tone-contrast-browser-check.md) | sol | 60 |
 | [63 Vendor the new starter for the preview editor](tickets/63-vendor-starter-for-preview.md) | sol | 05, 06, 15, 17, 58, 60, 65 |
