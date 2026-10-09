@@ -1,7 +1,7 @@
 ---
 title: + New component in Add
 type: task (AFK)
-status: open
+status: closed
 assignee: sol (runner: claude)
 blocked_by: [21-name-normalising]
 builder: sol
@@ -19,3 +19,9 @@ Ticket [04](../../tickets/04-prototype-making-components.md) §11–12.
 ## Done when
 
 - `@smoke` spec: + New component, name it "services" (the tag reads `section-services`), Create: the files are drafted and the instance is on the page; one undo removes both.
+
+## Done (2026-10-09)
+
+- "+ New component" heads the Add panel's list: an inline form (name normalised as typed, `<section-…>` tag preview, taken/reserved names refused in the form, Escape/Cancel keep Add open). Create drafts `components/<tag>/<tag>.html` and `.css` (`blankComponentFiles`, `src/page-builder/blank-component.ts`) and inserts the instance at the default insert point or the gap's, one undo step (`newComponent` in `components.ts`), then opens Edit component in the code pane (slice 49 switches it). Boot JS +1.3 KB gzip.
+- Commit `967c9f9` (built by Sol). Tests: `tests/blank-component.test.ts`; `tests/native-save/native-new-component.spec.ts` (`@smoke` main path with undo/redo, normalising and refusals, gap insert).
+- Open: redo re-creates the files asynchronously after the page edit is redone (same as `makeComponent`); a failed re-creation leaves the instance without files. A shared fix belongs with the history companion, not this slice.
