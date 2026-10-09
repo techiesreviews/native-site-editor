@@ -208,6 +208,9 @@ test("starter tones keep text and filled controls accessible across brands and s
                   // no DOM text node, but both the number and fill must pass.
                   const before = getComputedStyle(element, "::before");
                   if (before.content !== "none" && before.content !== "normal" && before.display !== "none") {
+                    if (before.opacity !== "1" || before.filter !== "none" || before.mixBlendMode !== "normal") {
+                      unsupported.push(`${bandName} tone=${tone} brand=${brand} scheme=${scheme} ${describe(element, text)} ::before has opacity ${before.opacity}, filter ${before.filter}, blend ${before.mixBlendMode}`);
+                    }
                     add("text", before.color, [pixel(before.backgroundColor), ...backgrounds(element)], `${text} ::before ${before.content}`);
                     if (pixel(before.backgroundColor).rgba[3] > 0) add("fill", before.backgroundColor, backgrounds(element), `${text} ::before`);
                   }
