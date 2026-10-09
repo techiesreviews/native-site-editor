@@ -782,6 +782,18 @@ test("make component: a link-wrapped card loses its wrapping link; the title slo
   assert.ok(!("error" in ranked));
   assert.equal(ranked.template, `<article><slot name="text"><p class="kicker">New</p></slot><slot name="title"><h3 class="primary"><a href="/x" download hreflang="en" type="text/html" ping="/p" referrerpolicy="no-referrer">X</a></h3></slot><slot name="title-2"><h4 class="secondary">Y</h4></slot></article>\n`);
   assert.deepEqual(ranked.notes, ["The whole card stays clickable through its title link."]);
+  // A line named "title" by its class steps aside for the card's title.
+  const classed = `<a href="/x"><p class="title">Intro</p><p class="kicker">New</p><h3>Main</h3></a>`;
+  const stepped = makeComponentPlan(classed, rangeOf(classed, "a"), "card-x");
+  assert.ok(!("error" in stepped));
+  assert.deepEqual(stepped.slots.map(({ path, name }) => [path.join("."), name]), [["0", "title-2"], ["1", "kicker"], ["2", "title"]]);
+  assert.deepEqual(stepped.notes, ["The whole card stays clickable through its title link."]);
+  // Choices inside the title name the element's own parts, before the link went in; so do the plan's paths.
+  const rich = `<a href="/x"><h3><strong>Main</strong> tail</h3><p>Body</p></a>`;
+  const inner = makeComponentPlan(rich, rangeOf(rich, "a"), "card-x", { fixed: [[0]], slots: [[0, 0]], names: [{ path: [0, 0], name: "lead" }] });
+  assert.ok(!("error" in inner));
+  assert.equal(inner.template, `<article><h3><a href="/x"><slot name="lead"><strong>Main</strong></slot> tail</a></h3><slot name="text"><p>Body</p></slot></article>\n`);
+  assert.deepEqual(inner.slots.map(({ path, name, fixed }) => [path.join("."), name, fixed]), [["0", "title", true], ["0.0", "lead", false], ["1", "text", false]]);
   // Renamed, the title no longer matches the card link rule: nothing stretches.
   const renamed = makeComponentPlan(kicker, rangeOf(kicker, "a"), "card-x", { names: [{ path: [1], name: "heading" }] });
   assert.ok(!("error" in renamed));
@@ -816,6 +828,11 @@ test("make component: a link wrapper with no text is one whole slot, at the root
   assert.deepEqual(plan.slots.map(({ path, name, kind, byDefault }) => ({ path, name, kind, byDefault })), [{ path: [], name: "link", kind: "content", byDefault: true }]);
   assert.deepEqual(plan.notes, []);
   assert.equal(plan.css, ":host {\n  display: block;\n}\n");
+  // It is a named slot, so it can be renamed.
+  const logo = makeComponentPlan(source, rangeOf(source, "a"), "block-logo", { names: [{ path: [], name: "logo" }] });
+  assert.ok(!("error" in logo));
+  assert.equal(logo.template, `<slot name="logo"><a class="logo" href="/"><img src="/logo.svg" alt="Home"></a></slot>\n`);
+  assert.match(logo.instance, /<a slot="logo" class="logo"/);
 
   // Inside: the link is the slot, its image not one of its own; it shares the link role with a text link beside it.
   const brand = `<div><a href="/"><img src="/logo.svg" alt="Home"></a><p>Since 1999</p><a href="/shop/">Shop</a></div>`;

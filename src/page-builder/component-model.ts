@@ -1199,8 +1199,21 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   if (!root?.close) return { error: "The element's end tag could not be found in the source." };
 
   const key = (path: readonly number[]) => path.join(".");
-  const fixed = new Set((choices.fixed ?? []).map(key));
-  const forced = new Set((choices.slots ?? []).map(key));
+  // A link-wrapped card's title, once found, gains the link as its one child: the paths inside it gain a step
+  // (`inPlan`) for the walk, and lose it again (`inElement`) in the plan's slots.
+  let card: { title: number[] } | undefined;
+  const under = (path: readonly number[], depth: number) => Boolean(card && path.length > depth && card.title.every((step, index) => path[index] === step));
+  const inPlan = (path: readonly number[]) => (card && under(path, card.title.length) ? [...card.title, 0, ...path.slice(card.title.length)] : [...path]);
+  const inElement = (path: number[]) => (card && under(path, card.title.length + 1) ? [...card.title, ...path.slice(card.title.length + 1)] : path);
+  const fixed = new Set<string>();
+  const forced = new Set<string>();
+  const choose = () => {
+    fixed.clear();
+    forced.clear();
+    for (const path of choices.fixed ?? []) fixed.add(key(inPlan(path)));
+    for (const path of choices.slots ?? []) forced.add(key(inPlan(path)));
+  };
+  choose();
   const forcedInside = (path: number[]) => [...forced].some((other) => !path.length ? other !== "" : other.startsWith(`${key(path)}.`));
   // `whole`: the element itself made a named slot, whole (a link wrapper with no title).
   interface Part { el: SourceElement; path: number[]; kind: SlotKind; byDefault: boolean; whole?: boolean; items?: { el: SourceElement; path: number[] }[] }
@@ -1262,8 +1275,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       visit(child, at, inText || TEXT_BLOCKS.has(child.name), onlyForced);
     });
   };
-  // A link-wrapped card's title: the line of text that carries its link (paths stay the element's, but for parts inside it).
-  let card: { title: number[] } | undefined;
+  // A link-wrapped card's title: the line of text that carries its link.
   if (root.name === "a" && !textOnly(root.children)) {
     // The title is the first heading the rule makes a slot, else the first line of text it does.
     visit(root, [], false);
@@ -1274,6 +1286,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       html = withLinkInTitle(html, root, title.el);
       root = elements(parseSource(html))[0];
       card = { title: title.path };
+      choose();
       visit(root, [], false);
     } else {
       // A link wrapper with no line of text to carry the link: one whole slot.
@@ -1313,12 +1326,13 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   }
   for (const part of parts) if (!names.has(part)) names.set(part, roleOf(part));
   // Renames, for named slots only: the element's own unnamed slot stays unnamed.
-  const renames = new Map((choices.names ?? []).filter(({ path }) => path.length).map(({ path, name }) => [key(path), name.trim()]));
-  const renamed = (part: Part) => Boolean(renames.get(key(part.path)));
+  const renames = new Map((choices.names ?? []).map(({ path, name }) => [key(inPlan(path)), name.trim()]));
+  const renamed = (part: Part) => Boolean((part.path.length || part.whole) && renames.get(key(part.path)));
   for (const part of parts) if (renamed(part)) names.set(part, renames.get(key(part.path))!);
-  // Each name once, in source order: renamed slots first, the others step aside.
+  // Each name once, in source order: renamed slots first, then a card's title, the others step aside.
   const used = new Set<string>();
-  for (const part of [...parts.filter(renamed), ...parts.filter((part) => !renamed(part))]) {
+  const order = [...parts.filter(renamed), ...parts.filter((part) => !renamed(part) && isTitle(part)), ...parts.filter((part) => !renamed(part) && !isTitle(part))];
+  for (const part of order) {
     const name = names.get(part)!;
     let free = name;
     for (let n = 2; free && used.has(free); n++) free = `${name}-${n}`;
@@ -1332,7 +1346,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       ? (() => { const img = el.name === "img" ? el : [...descendants([el])].find((inner) => inner.name === "img"); return img ? attribute(html, img, "alt") || attribute(html, img, "src") || "" : ""; })()
       : el.close ? plainText(html.slice(el.tag.end, el.close.start)) : "";
     return {
-      path: part.path, name: names.get(part)!, kind: part.kind, text, byDefault: part.byDefault, fixed: fixed.has(key(part.path)),
+      path: inElement(part.path), name: names.get(part)!, kind: part.kind, text, byDefault: part.byDefault, fixed: fixed.has(key(part.path)),
       ...(part.items ? { items: part.items.map((item) => item.path) } : {}),
     };
   });
