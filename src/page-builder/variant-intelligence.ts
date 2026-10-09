@@ -1,5 +1,5 @@
 import { expandStyleImports } from "../../shared/css-imports";
-import { componentVariants, scriptAttributes, siteVariants, variantsForComponent, valueLabel, type Variant } from "../../shared/variants";
+import { componentVariants, scriptSetAttributes, siteVariants, variantsForComponent, valueLabel, type Variant } from "../../shared/variants";
 
 export interface VariantLookup {
   forTag(tag: string): Variant[] | undefined;
@@ -14,7 +14,7 @@ export function createVariantLookup(sources: Record<string, string>, components:
   const expanded = expandStyleImports(sharedPaths, path => sources[path]);
   const roots = sharedPaths.filter(path => !expanded.imported.includes(path));
   const site = siteVariants(expandStyleImports(roots.length ? roots : sharedPaths, path => sources[path]).sheets);
-  const scripted = Object.entries(sources).filter(([path]) => /\.js$/i.test(path)).flatMap(([, text]) => scriptAttributes(text));
+  const scripted = Object.entries(sources).filter(([path]) => /\.js$/i.test(path)).flatMap(([, text]) => scriptSetAttributes(text));
   const byTag = new Map(Object.keys(components).map(tag => [tag,
     variantsForComponent(tag, { css: own.get(tag)!.sheets.map(sheet => sheet.source).join("\n"), site, scriptAttributes: scripted }).variants]));
   return { forTag: tag => byTag.get(tag.toLowerCase()), isComponentCss: path => componentPaths.has(path) };

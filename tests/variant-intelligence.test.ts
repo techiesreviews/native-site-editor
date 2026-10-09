@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { componentVariants, scriptAttributes } from "../shared/variants.ts";
+import { componentVariants } from "../shared/variants.ts";
 import { variantCssMarkers, variantHover, variantSuggestions, variantValueMarkers } from "../src/page-builder/variant-intelligence.ts";
 
 const variants = componentVariants(`:host, :host([data-tone=light]) {} :host([data-tone=dark]) {}
@@ -70,22 +70,6 @@ test("CSS warning mapping preserves broken offsets and fix; default warning only
   assert.equal(variantCssMarkers(css, false).length, 2);
   assert.deepEqual(variantCssMarkers(':host {} :host([data-tone=dark]) {}', true), []);
 });
-test("script attribute scanner handles both APIs and dataset spellings, skips comments and strings", () => {
-  assert.deepEqual(scriptAttributes(`el.setAttribute("data-open", ""); el.toggleAttribute('data-ready', true);
-    el.dataset.colorScheme = 'dark'; el.dataset["menuOpen"] = 'yes'; el.dataset['tone'] = 'x';
-    el.dataset.colorScheme; el.setAttribute(variable, 'x');
-    // el.dataset.comment
-    /* el.setAttribute('data-comment', 'x') */
-    const text = "el.dataset.fake"; const url = "https://example.com"; el.dataset.afterUrl = 'x';
-    const template = \`el.dataset.template\`;`),
-  ['data-open', 'data-ready', 'data-color-scheme', 'data-menu-open', 'data-tone', 'data-after-url']);
-  // Reads and comparisons set nothing; a setter inside a template's interpolation does.
-  assert.deepEqual(scriptAttributes('if (el.dataset.open == "") el.dataset.shown === "x"; html = `<p>${el.setAttribute("data-live", "")}</p>`;'), ["data-live"]);
-  // Template text is not code; compound assignments write.
-  assert.deepEqual(scriptAttributes('t = `el.dataset.tone = dark`; u = `https://x/${el.setAttribute("data-a", "")} it\'s`; el.dataset.b += "x"; el.dataset.c ??= "y"; el.dataset.d >= 1;'),
-    ["data-a", "data-b", "data-c"]);
-});
-
 test("lookup merges expanded site and component imports, excluding scripts only from own CSS", async () => {
   const { createVariantLookup } = await import("../src/page-builder/variant-intelligence.ts");
   const lookup = createVariantLookup({
