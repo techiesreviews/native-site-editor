@@ -715,11 +715,19 @@ test("make component: a nested instance becomes one ordinary whole slot, named f
   assert.match(kept.template, /\n  <card-note><p slot="text">Cafe · 2025<\/p><\/card-note>\n/);
   assert.deepEqual(kept.slots.map(({ path, name, fixed }) => [path.join("."), name, fixed]), [["0", "title", false], ["1", "note", true]]);
   // Two different instances side by side are two slots; a section-… or block-… tag loses its prefix too.
-  const pair = `<div><block-quote></block-quote><section-cta><h2 slot="title">Hi</h2></section-cta></div>`;
+  const pair = `<div><block-quote></block-quote><section-cta><h2 slot="title">Hi</h2></section-cta><site-badge></site-badge></div>`;
   const both = makeComponentPlan(pair, rangeOf(pair, "div"), "block-pair");
   assert.ok(!("error" in both));
-  assert.deepEqual(both.slots.map(({ name, items }) => [name, items]), [["quote", undefined], ["cta", undefined]]);
-  assert.equal(both.template, `<div><slot name="quote"><block-quote></block-quote></slot><slot name="cta"><section-cta><h2 slot="title">Hi</h2></section-cta></slot></div>\n`);
+  assert.deepEqual(both.slots.map(({ name, items }) => [name, items]), [["quote", undefined], ["cta", undefined], ["badge", undefined]]);
+  assert.equal(both.template, `<div><slot name="quote"><block-quote></block-quote></slot><slot name="cta"><section-cta><h2 slot="title">Hi</h2></section-cta></slot><slot name="badge"><site-badge></site-badge></slot></div>\n`);
+  // A group of instances kept fixed stays as written: nothing inside an instance is made a slot, the first item not twice.
+  const notes = `<div><card-note><p slot="text">X</p></card-note><card-note><p slot="text">Y</p></card-note></div>`;
+  for (const slots of [[[0, 0]], [[1, 0]], [[0]]]) {
+    const fixedGroup = makeComponentPlan(notes, rangeOf(notes, "div"), "block-notes", { fixed: [[0]], slots });
+    assert.ok(!("error" in fixedGroup));
+    assert.equal(fixedGroup.template, `${notes}\n`);
+    assert.deepEqual(fixedGroup.slots.map(({ path, fixed }) => [path.join("."), fixed]), [["0", true]]);
+  }
 });
 
 test("make component: a link-wrapped card loses its wrapping link; the title slot holds the link and the card stays clickable", () => {
@@ -766,6 +774,30 @@ test("make component: a link-wrapped card loses its wrapping link; the title slo
   const tile = makeComponentPlan(plain, rangeOf(plain, "a"), "card-tile");
   assert.ok(!("error" in tile));
   assert.equal(tile.template, `<article class="tile"><slot name="title"><p><a href="/about/">About us</a></p></slot><slot name="text"><p>Who we are.</p></slot></article>\n`);
+
+  // The title is the first heading, even after a line of text, and keeps its name against the other headings' classes;
+  // every link attribute moves with it.
+  const kicker = `<a href="/x" download hreflang="en" type="text/html" ping="/p" referrerpolicy="no-referrer"><p class="kicker">New</p><h3 class="primary">X</h3><h4 class="secondary">Y</h4></a>`;
+  const ranked = makeComponentPlan(kicker, rangeOf(kicker, "a"), "card-x");
+  assert.ok(!("error" in ranked));
+  assert.equal(ranked.template, `<article><slot name="text"><p class="kicker">New</p></slot><slot name="title"><h3 class="primary"><a href="/x" download hreflang="en" type="text/html" ping="/p" referrerpolicy="no-referrer">X</a></h3></slot><slot name="title-2"><h4 class="secondary">Y</h4></slot></article>\n`);
+  assert.deepEqual(ranked.notes, ["The whole card stays clickable through its title link."]);
+  // Renamed, the title no longer matches the card link rule: nothing stretches.
+  const renamed = makeComponentPlan(kicker, rangeOf(kicker, "a"), "card-x", { names: [{ path: [1], name: "heading" }] });
+  assert.ok(!("error" in renamed));
+  assert.match(renamed.template, /<slot name="heading"><h3 class="primary"><a href="\/x"/);
+  assert.deepEqual([renamed.css, renamed.notes], [":host {\n  display: block;\n}\n", []]);
+  // Only a line the rule makes a slot carries the link: not a summary, which stays in place.
+  const folded = `<a href="/x"><details><summary>X</summary><p>Body</p></details></a>`;
+  const details = makeComponentPlan(folded, rangeOf(folded, "a"), "card-x");
+  assert.ok(!("error" in details));
+  assert.equal(details.template, `<article><details><summary>X</summary><slot name="title"><p><a href="/x">Body</a></p></slot></details></article>\n`);
+  // Lines of text only inside repeated rows, which move to the page whole: no title, so the link wrapper is one slot.
+  const rows = `<a class="card" href="/x"><div class="row"><h3>Title</h3></div><div class="row"><p>Text</p></div></a>`;
+  const grouped = makeComponentPlan(rows, rangeOf(rows, "a"), "card-x");
+  assert.ok(!("error" in grouped));
+  assert.equal(grouped.template, `<slot name="link">${rows}</slot>\n`);
+  assert.deepEqual(grouped.notes, []);
 
   // The title kept fixed: the link stays in the template, so nothing stretches and nothing is said.
   const kept = makeComponentPlan(source, range, "card-fern", { fixed: [[1, 0]] });

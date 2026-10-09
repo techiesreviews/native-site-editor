@@ -1092,7 +1092,7 @@ export interface PlannedSlot {
 export interface MakeComponentPlan {
   /** components/<tag>/<tag>.html */
   template: string;
-  /** components/<tag>/<tag>.css: the host made a block, nothing else. */
+  /** components/<tag>/<tag>.css: the host made a block (and positioned, for a card's stretched title link). */
   css: string;
   /** What replaces the element in the page. */
   instance: string;
@@ -1126,41 +1126,21 @@ const roleName = (el: SourceElement, kind: SlotKind) =>
     : el.name === "a" ? "link"
       : kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : LISTS.has(el.name) ? "list" : kind);
 
-/** Whether `el` is one line of text: a text element holding text and inline formatting only. */
-const isTextElement = (html: string, el: SourceElement) =>
-  Boolean(TEXT_BLOCKS.has(el.name) && el.close && textOnly(el.children) && plainText(html.slice(el.tag.end, el.close.start)));
-
 // The attributes that make an `<a>` a link: on a link-wrapped card they move to its title.
 const LINK_ATTRIBUTES = new Set(["href", "target", "rel", "download", "hreflang", "type", "ping", "referrerpolicy"]);
 
 /**
  * A link-wrapped card (`<a class="card" href>…</a>`) with its wrapping link
- * gone: the card is an `<article>` with the link's other attributes, and its
- * title (the first heading, else the first line of text) holds the link
- * around its text, so a page's title slot carries the address. Undefined
- * when `root` is no such card or has no title to carry the link.
+ * gone: the card is an `<article>` with the link's other attributes, and
+ * `title`, a line of text inside it, holds the link around its text, so a
+ * page's title slot carries the address.
  */
-function unwrapLinkCard(html: string, root: SourceElement): { html: string; title: number[] } | undefined {
-  if (root.name !== "a" || !root.close || textOnly(root.children)) return undefined;
-  // The lines of text that could be slots, outside instances, lists, fixed parts and table rows.
-  const lines: { el: SourceElement; path: number[] }[] = [];
-  const walk = (el: SourceElement, path: number[]) => elements(el.children).forEach((child, index) => {
-    const at = [...path, index];
-    if (isTextElement(html, child)) lines.push({ el: child, path: at });
-    else if (!child.name.includes("-") && !LISTS.has(child.name) && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)) walk(child, at);
-  });
-  walk(root, []);
-  const title = lines.find(({ el }) => /^h[1-6]$/.test(el.name)) ?? lines[0];
-  const close = title?.el.close;
-  if (!close) return undefined;
-  const attributes = startTagAttributes(html, root.tag);
+function withLinkInTitle(html: string, card: SourceElement, title: SourceElement) {
+  const attributes = startTagAttributes(html, card.tag);
   const written = (link: boolean) => attributes.filter(({ name }) => LINK_ATTRIBUTES.has(name) === link).map(({ start, end }) => html.slice(start, end)).join("");
-  const opened = title.el.tag.end;
-  return {
-    html: `<article${written(false)}${html.slice(attributes.at(-1)?.end ?? root.tag.nameEnd, root.tag.end)}${html.slice(root.tag.end, opened)}`
-      + `<a${written(true)}>${html.slice(opened, close.start)}</a>${html.slice(close.start, root.close.start)}</article>${html.slice(root.close.end)}`,
-    title: title.path,
-  };
+  const opened = title.tag.end, closed = title.close?.start ?? opened;
+  return `<article${written(false)}${html.slice(attributes.at(-1)?.end ?? card.tag.nameEnd, card.tag.end)}${html.slice(card.tag.end, opened)}`
+    + `<a${written(true)}>${html.slice(opened, closed)}</a>${html.slice(closed, card.close?.start)}</article>${card.close ? html.slice(card.close.end) : ""}`;
 }
 
 /** A part's own class as a slot name (`lead`, `card__title` → `title`), to tell parts of one role apart. */
@@ -1214,10 +1194,8 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   // The id goes to the instance, where links to it still find it; the template and any copy of the element keep the rest.
   const id = startTagAttribute(written, element.tag, "id");
   const unkeyed = id ? written.slice(0, id.start) + written.slice(id.end) : written;
-  // A link-wrapped card: its title carries the link (paths stay the element's, but for parts inside the title).
-  const card = unwrapLinkCard(unkeyed, elements(parseSource(unkeyed))[0]);
-  const html = card?.html ?? unkeyed;
-  const root = elements(parseSource(html))[0];
+  let html = unkeyed;
+  let root = elements(parseSource(html))[0];
   if (!root?.close) return { error: "The element's end tag could not be found in the source." };
 
   const key = (path: readonly number[]) => path.join(".");
@@ -1228,7 +1206,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   interface Part { el: SourceElement; path: number[]; kind: SlotKind; byDefault: boolean; whole?: boolean; items?: { el: SourceElement; path: number[] }[] }
   const parts: Part[] = [];
   const kindOf = (el: SourceElement) => contentKind(html, [el]) ?? "content";
-  const isText = (el: SourceElement) => isTextElement(html, el);
+  const isText = (el: SourceElement) => Boolean(TEXT_BLOCKS.has(el.name) && el.close && textOnly(el.children) && plainText(html.slice(el.tag.end, el.close.start)));
   const isLink = (el: SourceElement) => Boolean(el.name === "a" && el.close && textOnly(el.children));
   // What a would-be item is (`itemKind`: a custom element's tag, else its tag and first class); none for a
   // part that is a slot of its own (a line of text, a standalone link), except a list's items.
@@ -1263,8 +1241,8 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
         parts.push({ el: child, path: at, kind: "content", byDefault: true, items });
         // Kept fixed, the items stay in the template: the later ones can still be made slots by hand, whole or inside.
         if (fixed.has(key(at))) for (const item of items) {
-          if (item.path !== at && forced.has(key(item.path))) parts.push({ el: item.el, path: item.path, kind: kindOf(item.el), byDefault: false });
-          else if (forcedInside(item.path)) visit(item.el, item.path, false, true);
+          if (key(item.path) !== key(at) && forced.has(key(item.path))) parts.push({ el: item.el, path: item.path, kind: kindOf(item.el), byDefault: false });
+          else if (forcedInside(item.path) && !item.el.name.includes("-")) visit(item.el, item.path, false, true);
         }
         return;
       }
@@ -1284,11 +1262,24 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       visit(child, at, inText || TEXT_BLOCKS.has(child.name), onlyForced);
     });
   };
-  if (card) visit(root, [], false);
-  else if (root.name === "a" && !textOnly(root.children)) {
-    // A link wrapper with no line of text to carry the link: one whole slot.
-    parts.push({ el: root, path: [], kind: kindOf(root), byDefault: true, whole: true });
-    if (fixed.has("") && forcedInside([])) visit(root, [], false, true);
+  // A link-wrapped card's title: the line of text that carries its link (paths stay the element's, but for parts inside it).
+  let card: { title: number[] } | undefined;
+  if (root.name === "a" && !textOnly(root.children)) {
+    // The title is the first heading the rule makes a slot, else the first line of text it does.
+    visit(root, [], false);
+    const lines = parts.filter((part) => part.byDefault && !part.items && part.kind === "text" && TEXT_BLOCKS.has(part.el.name));
+    const title = lines.find(({ el }) => /^h[1-6]$/.test(el.name)) ?? lines[0];
+    parts.length = 0;
+    if (title) {
+      html = withLinkInTitle(html, root, title.el);
+      root = elements(parseSource(html))[0];
+      card = { title: title.path };
+      visit(root, [], false);
+    } else {
+      // A link wrapper with no line of text to carry the link: one whole slot.
+      parts.push({ el: root, path: [], kind: kindOf(root), byDefault: true, whole: true });
+      if (fixed.has("") && forcedInside([])) visit(root, [], false, true);
+    }
   } else if (isText(root) || (isLink(root) && plainText(html.slice(root.tag.end, root.close.start)))) {
     // A single line of text (or a link's): it fills the unnamed slot, inside the element.
     parts.push({ el: root, path: [], kind: "text", byDefault: true });
@@ -1300,8 +1291,11 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   for (const part of parts) if (!part.path.length && !part.whole) names.set(part, "");
   // Repeated groups: the first is the unnamed slot, later ones `items-2`, `items-3`.
   parts.filter((part) => part.items).forEach((part, index) => names.set(part, index ? `items-${index + 1}` : ""));
-  // A link-wrapped card's title is the "title", even a paragraph: the card link rule stretches that slot's link.
-  const roleOf = (part: Part) => (card && key(part.path) === key(card.title) ? "title" : roleName(part.el, part.kind));
+  // A link-wrapped card's title is the "title", even a paragraph, whatever other headings there are: the card
+  // link rule stretches that slot's link.
+  const isTitle = (part: Part) => Boolean(card && key(part.path) === key(card.title));
+  for (const part of parts) if (isTitle(part)) names.set(part, "title");
+  const roleOf = (part: Part) => (isTitle(part) ? "title" : roleName(part.el, part.kind));
   const roles = new Map<string, Part[]>();
   for (const part of parts) {
     if (!part.byDefault || names.has(part)) continue;
@@ -1386,7 +1380,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   // A card's title link stretches over the card by the site's card link rule (`[slot="title"] > a:only-child::after`),
   // bounded by the host: component CSS can't reach a link inside a slotted heading.
   const title = card && slots.find((slot) => key(slot.path) === key(card.title));
-  const stretched = Boolean(title && !title.fixed);
+  const stretched = Boolean(title && !title.fixed && title.name === "title");
   return {
     template,
     css: `:host {\n  display: block;\n${stretched ? "  position: relative;\n" : ""}}\n`,
