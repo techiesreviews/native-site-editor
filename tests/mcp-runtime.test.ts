@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { INSPECTION_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
 import { requestOperation } from "../worker/agent-requests.ts";
+import { componentsChapter } from "../worker/site-conventions.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 
 test("applyReplacements needs each old text exactly once, or all", () => {
@@ -109,6 +110,59 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.match(conventions, /_redirects/);
     assert.match(conventions, /\.editor\/config\.json/);
     assert.doesNotMatch(conventions, /src\/(?:pages|components|styles|public)|page comment|native\.json/);
+    // The Components chapter, from its heading to the next `## `, is the one
+    // source of how components are made; the starter's AGENTS.md copies it.
+    const chapter = componentsChapter(((await client.readResource({ uri: "native-site://conventions" })).contents[0] as { text: string }).text)!;
+    assert.ok(chapter.startsWith("## Components\n"));
+    assert.doesNotMatch(chapter.slice(1), /^## /m);
+    assert.match(chapter, /```html\n<section>[\s\S]*<\/section>\n```$/, "the chapter ends with its example template");
+    for (const rule of [
+      // File layout: a template plus optional CSS, nothing registered.
+      /A new component is just its files\*\*: its template, `components\/<tag>\/<tag>\.html`, and, when it has styles of its own, the sibling `components\/<tag>\/<tag>\.css`\. Nothing is registered/,
+      // Whole-element slots and the default editables rule.
+      /`<slot name="title"><h2>Headline<\/h2><\/slot>`, not `<h2><slot name="title">Headline<\/slot><\/h2>`/,
+      /Inline `a`, `strong`, `em` and `br` stay inside it as rich text/,
+      /a link is a slot of its own only when it stands alone/,
+      /every `<img>` and `<picture>`, whatever its alt text\. Inline `<svg>` icons and CSS backgrounds stay fixed/,
+      /a `<ul>` or `<ol>` is one slot, `list`/,
+      /the first heading is `title`, a paragraph `text`, then `image`, `link` and `list`, numbered on repeats \(`text-2`\)/,
+      /a nested instance is one whole slot/,
+      /In a section component that the page fills at all, each slot the page leaves out is hidden/,
+      // A repeated item is its own card component, in an items slot.
+      /A repeated item [^\n]* is a component of its own, `card-…`/,
+      /\*\*items slot\*\*: the unnamed slot, or a slot whose fallback is `card-…` instances/,
+      /<slot><card-project><\/card-project><\/slot>/,
+      /Add card adds a fresh instance of the items slot's card component/,
+      // Card links: a link slot, or the title's link stretched by the shared card link rule.
+      /through a link slot/,
+      /the title's whole content is one link/,
+      /Card components set `:host \{ position: relative; \}`/,
+      /\.cards > \* :is\(h2, h3, h4, \[slot="title"\]\) > a:only-child::after/,
+      /There is no `stretched` class/,
+      // Variants.
+      /:host\(\[data-layout="image-left"\]\) \{ \.media \{ order: 2; \} \}/,
+      /\.media \{ :host\(\[data-layout="image-left"\]\) & \{ order: 2; \} \}/,
+      /Never `:host\[data-layout="…"\]` or `:host \{ &\[data-layout="…"\] \{ … \} \}`/,
+      /written bare on the instance: `<section-split data-reverse>`/,
+      /`data-layout` \(`content-left`, `image-left`, `centered`\)/,
+      // Tones on page bands only.
+      /`data-tone` colours a page band: a section component, a plain `<section>`, the header or the footer/,
+      /`light` \(the default: no attribute\), `dark`, `brand` and `accent`/,
+      /plain `\[data-tone="…"\]` rules \(never in a component's CSS\)/,
+      /`contrast-color\(\)` of the surface under `@supports`/,
+      // The header, footer and skip link.
+      /The header and footer are components with no slots/,
+      // What add_section copies (src/native-insert.ts, slotMarkup).
+      /add_section writes the tag with a copy of each named slot's fallback that is one element holding only text and inline markup/,
+      /is copied inside a `<span slot="…">`\. It copies nothing for the unnamed slot or for any other fallback/,
+    ]) assert.match(chapter, rule);
+    // The tool descriptions and the server's instructions point to the
+    // chapter and state no component rules of their own.
+    const described = (name: string) => listing.find((tool) => tool.name === name)!.description!;
+    for (const text of [client.getInstructions()!, described("write_file"), described("add_section"), described("get_site")])
+      assert.match(text, /Components chapter/);
+    for (const text of [client.getInstructions()!, ...listing.map((tool) => tool.description ?? "")])
+      assert.doesNotMatch(text, /<slot\b|slot=|whole element|::slotted|registered|data-(?:layout|tone)|card-/);
     const prompt = await client.getPrompt({ name: "edit_site", arguments: { goal: "Add a team page" } });
     assert.match(JSON.stringify(prompt), /Add a team page/);
 

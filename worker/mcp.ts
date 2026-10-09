@@ -309,7 +309,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "get_site",
     {
       description:
-        "Start here. The site as the user's editor tab shows it: repository, branch, the open file and page, the element selected in the preview (get_selection gives all of it), how many requests the user asked in the editor wait for an agent (openRequests; wait_for_requests returns them), the site's name and address (.editor/config.json), pages as a tree by URL (file, and the title and description from each page's <head>), the not-found page (404.html), components (template, stylesheet, whether it is a section component that can go between page sections, and its slots: the parts a page fills), the stylesheets the pages link with the files they @import, and unsaved draft changes.",
+        "Start here. The site as the user's editor tab shows it: repository, branch, the open file and page, the element selected in the preview (get_selection gives all of it), how many requests the user asked in the editor wait for an agent (openRequests; wait_for_requests returns them), the site's name and address (.editor/config.json), pages as a tree by URL (file, and the title and description from each page's <head>), the not-found page (404.html), components (template, stylesheet, whether it is a section component that can go between page sections, and its slots: the parts a page fills; how components work is the Components chapter of the native-site://conventions resource), the stylesheets the pages link with the files they @import, and unsaved draft changes.",
       inputSchema: z.object({}),
       annotations: readOnly,
     },
@@ -477,7 +477,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "write_file",
     {
       description:
-        "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing a component (components/<tag>/<tag>.html, plus an optional components/<tag>/<tag>.css), read the native-site://conventions resource and follow its section component pattern. Those files are all a component needs: the loader, components/components.js, finds components by tag, so nothing is registered anywhere else.",
+        "Create a text file, or replace a whole file's text, as an unsaved draft in the editor. Replacing needs the file's hash from read_file; creating needs the path to be free (omit expectedHash). A new page is better made with create_page. Before writing or changing a component, read the Components chapter of the native-site://conventions resource and follow it.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
         content: z.string().max(AGENT_TEXT_LIMIT),
@@ -697,7 +697,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "add_section",
     {
       description:
-        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance with a copy of each slot's fallback as a whole element (<h2 slot=\"title\">…</h2>), which you can then change with edit_file. Without before/after it goes at the end. Needs the page hash from get_page.",
+        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance carrying copies of its template's fallbacks, which you can then change with edit_file (what is copied: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page.",
       inputSchema: z.object({
         page: pageRef,
         component: z.string().min(1).max(100).describe("A component tag get_site marks as a section component."),
