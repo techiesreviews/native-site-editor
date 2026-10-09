@@ -168,7 +168,7 @@ export interface EditBarModel {
   draggable?: boolean;
   // The selection is a component instance: its name wears the component
   // mark and accent (src/page-builder/components.ts), `tag` in its tooltip.
-  component?: { tag: string; onEdit?: () => void };
+  component?: { tag: string; open?: boolean; onEdit?: () => void };
   // The selection sits inside an instance (what the page slots in, or the
   // template's own): a chip before the name selects that instance.
   context?: { label: string; title: string; onSelect: () => void; onEdit?: () => void };
@@ -895,11 +895,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       const nameButton = chip ?? button("", onEdit, "edit-bar__component-name");
       if (chip) chip.classList.add("edit-bar__component-name");
       else { kindName.replaceWith(nameButton); nameButton.append(kindName); }
-      nameButton.setAttribute("aria-label", `Edit ${model.kind} component`);
-      nameButton.title = `Edit ${model.kind} component${chip ? "; drag to move" : ""}`;
-      const overlay = node("span", "edit-bar__component-edit");
+      const verb = model.component?.open ? "Open" : "Edit";
+      nameButton.setAttribute("aria-label", `${verb} ${model.kind} component`);
+      nameButton.title = `${verb} ${model.kind} component${chip ? "; drag to move" : ""}`;
+      const overlay = node("span", model.component?.open ? "edit-bar__component-caret" : "edit-bar__component-edit");
       overlay.setAttribute("aria-hidden", "true");
-      overlay.append(mark("edit", 16, "edit-bar__icon"));
+      overlay.append(model.component?.open ? "›" : mark("edit", 16, "edit-bar__icon"));
       nameButton.append(overlay);
     }
     if (model.context) {

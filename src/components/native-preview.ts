@@ -78,6 +78,7 @@ export interface EditComponentFrameMode {
   node: number[];
   tag: string;
   show: "placeholders" | "page";
+  nested?: { node: number[]; tag: string }[];
 }
 
 interface UpdateInput {
@@ -1147,7 +1148,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * Sent as it is, with no render: the frame's document stays.
      */
     editComponent(mode: EditComponentFrameMode | undefined) {
-      editMode = mode && { ...mode, node: [...mode.node] };
+      editMode = mode && { ...mode, node: [...mode.node], nested: mode.nested?.map((step) => ({ ...step, node: [...step.node] })) };
       pane.classList.toggle("is-editing-component", Boolean(mode));
       if (frameState.ready) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "edit-component", mode: editMode }, "*");
     },

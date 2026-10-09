@@ -12,11 +12,17 @@
 // preview is never reloaded for any of it: the frame gets the mode as a
 // message and renders the instance again in place.
 //
+// Nested instances add levels to the chain; crumbs return to earlier templates.
+// The page instance stays the target for Done; placeholders show every
+// level's own fallbacks, and this page's content is refused while it would
+// hide the instance opened.
+//
 // Selecting a part of the template shows its slot chip after the element's
 // name in the edit bar label (slot-chip.ts). The chip reports a click, and a
 // slot renamed in place, to the mode's owner as a window event,
 // SLOT_CHIP_EVENT.
 
+import { drillChain, backChain, type EditComponentLevel } from "./edit-component-chain";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { mountDropdown } from "../components/dropdown";
@@ -55,10 +61,13 @@ export interface EditComponentModePorts {
   /** The slim bar changed: the canvas bar takes its parts again. */
   changed: () => void;
   announce: (text: string) => void;
+  back: (index: number) => void;
+  /** Why the slots can't show `next` now (it would hide the instance opened), if so. */
+  refuseShow: (next: EditComponentShow) => string | undefined;
 }
 
 export function createEditComponentMode(ports: EditComponentModePorts) {
-  let now: (EditComponentTarget & { show: EditComponentShow }) | undefined;
+  let now: (EditComponentTarget & { show: EditComponentShow; chain: EditComponentLevel[] }) | undefined;
   // The chip shown, kept while it says the same of the same part.
   let shownChip: { key: string; element: HTMLElement } | undefined;
   let notes: string[] = [];
@@ -109,11 +118,21 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   note.append(noteButton, dismiss);
 
   function send() {
-    ports.frame(now && { path: now.path, node: [...now.node], tag: now.tag, show: now.show });
+    ports.frame(now && { path: now.path, node: [...now.node], tag: now.tag, show: now.show,
+      nested: now.chain.slice(1).map(({ tag, node }) => ({ tag, node: [...node] })) });
   }
   function render() {
     if (!now) return;
-    title.replaceChildren(componentIcon(12), node("span", "edit-mode__verb", "Editing"), node("code", "edit-mode__tag", `<${now.tag}>`));
+    title.replaceChildren(componentIcon(12), node("span", "edit-mode__verb", "Editing"));
+    now.chain.forEach((level, index) => {
+      if (index) title.append(node("span", "edit-mode__separator", "›"));
+      const current = index === now!.chain.length - 1;
+      const crumb = current ? node("code", "edit-mode__tag", `<${level.tag}>`)
+        : button(`<${level.tag}>`, () => ports.back(index), "edit-mode__tag edit-mode__crumb");
+      if (current) crumb.setAttribute("aria-current", "true");
+      else crumb.setAttribute("aria-label", `Back to <${level.tag}>`);
+      title.append(crumb);
+    });
     for (const [value, choice] of choices) choice.setAttribute("aria-pressed", String(now.show === value));
     noteLabel.textContent = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0] ?? "";
     noteButton.title = notes.join("\n");
@@ -121,6 +140,8 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   }
   function setShow(next: EditComponentShow) {
     if (!now || now.show === next) return;
+    const refused = ports.refuseShow(next);
+    if (refused) { ports.announce(refused); return; }
     now.show = next;
     render();
     send();
@@ -131,7 +152,7 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   return {
     /** Starts the mode on `target`, its placeholders showing, with `notes` to tell in the bar. */
     enter(target: EditComponentTarget, withNotes: readonly string[] = []) {
-      now = { path: target.path, node: [...target.node], tag: target.tag, templatePath: target.templatePath, show: "placeholders" };
+      now = { path: target.path, node: [...target.node], tag: target.tag, templatePath: target.templatePath, show: "placeholders", chain: [{ tag: target.tag, templatePath: target.templatePath, node: [...target.node] }] };
       notes = [...withNotes];
       render();
       send();
@@ -148,8 +169,24 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       return { path: was.path, node: [...was.node], tag: was.tag, templatePath: was.templatePath };
     },
     /** The mode now, or `undefined` when it is off. */
-    active(): Readonly<EditComponentTarget & { show: EditComponentShow }> | undefined {
-      return now && { ...now, node: [...now.node] };
+    active() {
+      const level = now?.chain.at(-1);
+      return now && level && { ...now, tag: level.tag, templatePath: level.templatePath,
+        node: [...now.node], chain: now.chain.map((step) => ({ ...step, node: [...step.node] })) };
+    },
+    drill(step: EditComponentLevel) {
+      if (!now) return;
+      now.chain = drillChain(now.chain, step);
+      render();
+      send();
+      ports.changed();
+    },
+    back(index: number) {
+      if (!now) return;
+      now.chain = backChain(now.chain, index);
+      render();
+      send();
+      ports.changed();
     },
     setShow,
     /** An operation refused its optimistic rename: draw the name from source again. */
@@ -157,7 +194,7 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     /** The slot chip of the template's part at `node`, for the edit bar label. */
     chip(at: readonly number[], state: SlotChipState) {
       if (!now) return undefined;
-      const template = now.templatePath;
+      const template = now.chain.at(-1)!.templatePath;
       const key = JSON.stringify([template, at, state]);
       if (shownChip?.key !== key) {
         const report = (detail: SlotChipReport) => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail, cancelable: detail.action === "rename" }));

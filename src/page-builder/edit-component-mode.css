@@ -143,3 +143,18 @@
 .edit-mode__notes-item + .edit-mode__notes-item {
   margin-top: 6px;
 }
+
+.edit-mode__crumb {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.edit-mode__crumb:hover {
+  text-decoration: underline;
+}
+.edit-mode__crumb:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}

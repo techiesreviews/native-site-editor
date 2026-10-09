@@ -228,6 +228,7 @@ export interface ComponentStructureModel {
   openImageUpload(name: string): { upload(files: File[]): Promise<boolean>; close(): void } | undefined;
   setVisible(name: string, on: boolean): boolean;
   selectSlot(name: string): void;
+  opens?: boolean;
   edit(): void;
   disconnect(): void;
 }
@@ -429,7 +430,8 @@ export function createComponentTools(deps: ComponentDeps) {
         void editComponent(tag, within);
       };
     };
-    if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag) };
+    if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag),
+      open: selection.path === editMode?.active()?.templatePath };
     // The instance around the selection: in the same file, else (for an
     // element of a template) the instance on the page it renders in.
     const at = locate(selection, true);
@@ -457,7 +459,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const kept = chip?.state === "fixed" ? keptNames.get(keptKey(moded!.templatePath, template!, selection.node!)) : undefined;
     if (chip && kept) chip = { ...chip, name: kept };
     // Showing this page's content, an items slot counts what it shows there: the page's items, its fallback's, or none.
-    const page = chip?.state === "items" && moded!.show === "page" ? instanceAt(moded!.path, [...moded!.node]) : undefined;
+    const page = chip?.state === "items" && moded!.show === "page" ? levelInstance(moded!, moded!.chain.length - 1) : undefined;
     const state = page && chip ? page.states.get(chip.name) : undefined;
     if (state && chip?.state === "items" && (state.filled || !state.shown))
       chip = { ...chip, count: (page!.instance.fills.get(chip.name) ?? []).filter((item) => item.type === "element").length };
@@ -563,10 +565,92 @@ export function createComponentTools(deps: ComponentDeps) {
    * whether Edit component mode opened (with `notes` in its bar).
    */
   let explicitTemplate: { path: string; revision: string } | undefined;
+  let modeOpening = false;
+
+  type ModeNow = NonNullable<ReturnType<EditComponentMode["active"]>>;
+  /** What fills the slots of the mode's level `k`: the page's instance, else the instance in the level above's template. */
+  function levelInstance(moded: ModeNow, k: number) {
+    return k === 0 ? instanceAt(moded.path, [...moded.node]) : instanceAt(moded.chain[k - 1].templatePath, [...moded.chain[k].node]);
+  }
+  /** Whether the element at `node` of level `k`'s template sits in a slot that what fills the level fills (so it is not shown). */
+  function hiddenAt(moded: ModeNow, k: number, node: readonly number[]) {
+    const slots = elementChain(deps.sources()[moded.chain[k].templatePath] ?? "", node)?.filter((el) => el.localName === "slot");
+    if (!slots?.length) return false;
+    const filler = levelInstance(moded, k);
+    return slots.some((slot) => filler?.states.get(slot.getAttribute("name") ?? "")?.filled);
+  }
+  /** Why this page's content can't show while drilled: it would hide an opened instance. */
+  function pageContentRefusal(): string | undefined {
+    const moded = editMode?.active();
+    if (!moded) return undefined;
+    const at = moded.chain.findIndex((level, j) => j > 0 && hiddenAt(moded, j - 1, level.node));
+    return at < 0 ? undefined
+      : `This page's content would hide <${moded.chain[at].tag}>: go back to <${moded.chain[at - 1].tag}> to show it.`;
+  }
+
+  /**
+   * Opens the template of a nested instance in the mode (`step`), or goes back to the chain's
+   * level `index`, on the same framed page instance. Resolves to whether it did.
+   */
+  async function navigateMode(index: number | undefined, step?: { tag: string; templatePath: string; node: readonly number[] }): Promise<boolean> {
+    const mode = editMode;
+    const before = mode?.active();
+    if (!mode || !before || modeOpening) return false;
+    const level = index === undefined ? step : before.chain[index];
+    if (!level) return false;
+    const template = templateOf(level.tag);
+    if (!template || template.path !== level.templatePath) return false;
+    const revision = deps.revision(), editor = deps.editor();
+    const sources = before.chain.map((entry) => [entry.templatePath, deps.sources()[entry.templatePath]] as const);
+    const pageSource = deps.sources()[before.path];
+    const proof = JSON.stringify(before);
+    const fromPath = deps.currentPath();
+    // A fallback instance inside a filled slot is hidden until placeholders show.
+    const needsPlaceholders = index === undefined && !!step && before.show === "page" && hiddenAt(before, before.chain.length - 1, step.node);
+    // A nested template's edits are undo steps of the framed page too (shared before it opens, as the mode's first).
+    const release = index === undefined ? deps.shareHistory?.(template.path, before.path) : undefined;
+    let done = false;
+    modeOpening = true;
+    try {
+      if (fromPath !== before.templatePath || !(await deps.openFile(template.path))) return false;
+      if (deps.revision() !== revision || deps.editor() !== editor || deps.currentPath() !== template.path
+        || deps.previewPage() !== before.path || deps.sources()[before.path] !== pageSource
+        || deps.sources()[template.path] !== template.source || JSON.stringify(mode.active()) !== proof
+        || sources.some(([path, source]) => deps.sources()[path] !== source)) return false;
+      explicitTemplate = { path: template.path, revision };
+      if (needsPlaceholders) {
+        mode.setShow("placeholders");
+        deps.announce(`Showing placeholders because this page fills the slot containing <${level.tag}>.`);
+      }
+      if (index === undefined && step) { mode.drill(step); if (release) levelShares.push(release); }
+      else if (index !== undefined) { mode.back(index); letGoLevels(index); }
+      done = true;
+      deps.editor()?.focusEditor?.(template.path);
+      // Back selects the instance we opened from, ready to offer Open again.
+      deps.preview()?.selectNode({ path: template.path, node: index === undefined ? [0] : [...(before.chain[index + 1]?.node ?? [0])] });
+      if (!needsPlaceholders) deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`);
+      return true;
+    } finally {
+      if (!done) release?.();
+      modeOpening = false;
+      barKey = "";
+      renderBar();
+      deps.refreshBar();
+    }
+  }
+
   async function editComponent(tag: string, slot?: string, instance?: { path: string; node: readonly number[] }, notes: readonly string[] = []): Promise<boolean> {
     const template = templateOf(tag);
     if (!template) return false;
     const from = deps.selection();
+    const moded = editMode?.active();
+    const nested = instance ?? (from?.tag === tag && from.node ? { path: from.path, node: from.node } : undefined);
+    if (moded && nested?.path === moded.templatePath) {
+      const source = deps.sources()[nested.path];
+      if (source === undefined || locateNativeElementRange(source, [...nested.node])?.tag.name !== tag) return false;
+      const index = moded.chain.findIndex((level) => level.tag === tag);
+      return navigateMode(index < 0 ? undefined : index, { tag, templatePath: template.path, node: nested.node });
+    }
     const openingRevision = deps.revision();
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
     const framed = instance ?? instanceOf(from, tag);
@@ -601,6 +685,7 @@ export function createComponentTools(deps: ComponentDeps) {
         || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return false; }
       if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return false; }
       // A mode already on (another instance) gives way: its share goes, the frame is told only the new mode.
+      letGoLevels(0);
       modeShare?.();
       modeShare = undefined;
       if (share && entryShare === share) { entryShare = undefined; modeShare = share.release; }
@@ -706,10 +791,17 @@ export function createComponentTools(deps: ComponentDeps) {
     entryShare = undefined;
     share.release();
   }
+  // The page's history shared with each opened nested level's template (level 1 first).
+  const levelShares: (() => void)[] = [];
+  /** Lets go of the shares of the levels after the first `keep` nested ones. */
+  function letGoLevels(keep: number) {
+    for (const release of levelShares.splice(keep)) release();
+  }
   /** Ends the mode, if it is on; the instance it was on. */
   function leaveMode() {
     const was = editMode?.leave();
     keptNames.clear();
+    letGoLevels(0);
     modeShare?.();
     modeShare = undefined;
     return was;
@@ -722,6 +814,8 @@ export function createComponentTools(deps: ComponentDeps) {
       // The slot chip of an items slot counts what the slots now show.
       changed: () => { barKey = ""; renderBar(); deps.refreshBar(); },
       announce: (text) => deps.announce(text),
+      back: (index) => { void navigateMode(index); },
+      refuseShow: (next) => next === "page" ? pageContentRefusal() : undefined,
     });
   }).catch((error: unknown) => { editModeLoad = undefined; throw error; });
 
@@ -736,7 +830,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (entryShare?.opened && entryShare.opened !== explicitTemplate) letGo(entryShare);
     // The mode lasts while its template stays open over its page; another file (Files, a page's element) ends it.
     const moded = editMode?.active();
-    if (moded && (explicitTemplate?.path !== moded.templatePath || deps.previewPage() !== moded.path)) leaveMode();
+    if (!modeOpening && moded && (explicitTemplate?.path !== moded.templatePath || deps.previewPage() !== moded.path)) leaveMode();
     const inMode = editMode?.active();
     const tag = tagOfFile(deps.currentPath());
     deps.codeTitle.classList.toggle("code-pane__title--component", Boolean(tag));
@@ -747,7 +841,7 @@ export function createComponentTools(deps: ComponentDeps) {
       return;
     }
     const found = usage(tag);
-    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}\n${inMode ? inMode.show : ""}`;
+    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}\n${inMode ? JSON.stringify([inMode.show, inMode.chain]) : ""}`;
     if (key === barKey) return;
     barKey = key;
     barTag = tag;
@@ -1775,6 +1869,7 @@ export function createComponentTools(deps: ComponentDeps) {
         const element = at.instance.fills.get(name)?.find(part => part.type === "element");
         deps.preview()?.selectNode({ path, node: element ? elementPathAt(at.source, element.start) ?? at.node : at.node });
       },
+      opens: path === editMode?.active()?.templatePath,
       edit() { if (read()) void editComponent(initial.tag, undefined, { path, node: initial.node }); },
       disconnect() { const at = read(); if (at) void openDetach(at); },
     };

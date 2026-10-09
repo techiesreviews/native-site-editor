@@ -626,7 +626,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       attributesAction.setAttribute("aria-expanded", String(attributes));
       addRowActions(el, [
         attributesAction,
-        iconAction("Edit component", "edit", () => slotModel.edit()),
+        slotModel.opens ? (() => {
+          const open = button("Open ›", () => slotModel.edit(), "page-structure__action page-structure__action--open");
+          open.setAttribute("aria-label", `Open ${kind} component`);
+          open.title = `Open ${kind} component`;
+          return open;
+        })() : iconAction("Edit component", "edit", () => slotModel.edit()),
         iconAction("Disconnect this instance", "detach", () => slotModel.disconnect()),
       ]);
     }

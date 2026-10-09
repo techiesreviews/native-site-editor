@@ -260,7 +260,10 @@
         scrollRoots.add(root);
         root.addEventListener("scroll", refreshScroll, true);
       }
-      reconcileChildren(root, freshContent(html));
+      var content = freshContent(html);
+      // Edit component mode with placeholders: a nested instance opened takes none of this template's content.
+      placeholderNested(host, content);
+      reconcileChildren(root, content);
       markCurrentPage(root);
       syncRootStyles(root);
       watchSlots(root);
@@ -727,7 +730,7 @@
   var editShades = [];
   var PLACEHOLDER_SLOT = "ase-placeholder";
   /** The instance edited, by its place on the page shown; `null` when there is none. */
-  function editHostElement() {
+  function editPageHostElement() {
     if (!editMode || !state || !pageEl || state.pagePaths[state.route] !== editMode.path) return null;
     var el = pageEl;
     for (var i = 0; el && i < editMode.node.length; i++) {
@@ -737,21 +740,55 @@
     }
     return el && el !== pageEl && el.localName === editMode.tag ? el : null;
   }
+  /** The chain's instances, outermost first: the page's, then each nested one found in the one before's shadow root. */
+  function editLevelHosts() {
+    var el = editPageHostElement();
+    var out = el ? [el] : [];
+    var levels = editMode && editMode.nested || [];
+    for (var level = 0; el && level < levels.length; level++) {
+      var step = levels[level], parent = el.shadowRoot;
+      for (var i = 0; parent && i < step.node.length; i++) {
+        var child = parent.firstElementChild, seen = 0;
+        while (child && (injectedStyle(child) || seen++ < step.node[i])) child = child.nextElementSibling;
+        parent = child;
+      }
+      el = parent && parent.localName === step.tag ? parent : null;
+      if (el) out.push(el);
+    }
+    return out;
+  }
+  /** The instance edited (the chain's innermost); `null` when there is none. */
+  function editHostElement() {
+    var hosts = editLevelHosts();
+    return editMode && hosts.length === 1 + editMode.nested.length ? hosts[hosts.length - 1] : null;
+  }
   function editHost() {
     var el = editHostElement();
     return el && el.shadowRoot ? el : null;
   }
   function placeholdersOn(host) {
-    return !!editMode && editMode.show === "placeholders" && !!host && host === editHostElement();
+    return !!editMode && editMode.show === "placeholders" && !!host && editLevelHosts().indexOf(host) >= 0;
   }
   // In the page's fresh copy, the edited instance's own content goes to no
   // slot: each child's `slot` names one no template has, and its text is
   // left out. Elements keep their identity (markupOf was taken before).
+  // Opened nested instances take none of their template's content either
+  // (placeholderNested), so every level shows its own fallbacks.
   function placeholderContent(content) {
     if (!editMode || editMode.show !== "placeholders" || !state || state.pagePaths[state.route] !== editMode.path) return;
     var el = content;
     for (var i = 0; el && i < editMode.node.length; i++) el = el.children[editMode.node[i]] || null;
-    if (!el || el === content || el.localName !== editMode.tag) return;
+    if (el && el !== content && el.localName === editMode.tag) toPlaceholders(el);
+  }
+  function placeholderNested(host, content) {
+    if (!editMode || editMode.show !== "placeholders" || !editMode.nested.length) return;
+    var at = editLevelHosts().indexOf(host), step = at >= 0 ? editMode.nested[at] : null;
+    if (!step) return;
+    var el = content;
+    for (var i = 0; el && i < step.node.length; i++) el = el.children[step.node[i]] || null;
+    if (el && el !== content && el.localName === step.tag) toPlaceholders(el);
+  }
+  function toPlaceholders(el) {
     // Text, even blank, would fill the unnamed slot: it is left out.
     Array.prototype.slice.call(el.childNodes).forEach(function (n) {
       if (n.nodeType === 1) n.setAttribute("slot", PLACEHOLDER_SLOT + ":" + (n.getAttribute("slot") || ""));
@@ -878,9 +915,12 @@
   function setEditMode(next) {
     var before = editHostElement();
     var valid = next && typeof next.path === "string" && Array.isArray(next.node) && next.node.length &&
-      next.node.every(function (i) { return typeof i === "number" && i >= 0; }) && typeof next.tag === "string";
-    var wasOn = !!editMode;
-    editMode = valid ? { path: next.path, node: next.node.slice(), tag: next.tag, show: next.show === "page" ? "page" : "placeholders" } : null;
+      next.node.every(function (i) { return Number.isInteger(i) && i >= 0; }) && typeof next.tag === "string";
+    valid = valid && (!next.nested || Array.isArray(next.nested) && next.nested.every(function (step) {
+      return step && typeof step.tag === "string" && Array.isArray(step.node) && step.node.length &&
+        step.node.every(function (i) { return Number.isInteger(i) && i >= 0; });
+    }));
+    editMode = valid ? { path: next.path, node: next.node.slice(), tag: next.tag, nested: (next.nested || []).map(function (step) { return { tag: step.tag, node: step.node.slice() }; }), show: next.show === "page" ? "page" : "placeholders" } : null;
     var after = editHostElement();
     // The page renders again as it now should: the instance's fallbacks or its page content.
     if ((before || after) && state) renderPage();
@@ -893,7 +933,7 @@
     hovered = null;
     updateBoxes();
     var host = editHost();
-    if (host && !wasOn) revealEdited(host, false);
+    if (host && host !== before) revealEdited(host, false);
   }
 
   // Places a section can be inserted: every gap between the children of a

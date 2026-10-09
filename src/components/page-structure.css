@@ -258,3 +258,10 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row--empty-slot .page-structure__slot-badge { opacity: 0.7; }
 
 /* Native shared roots reuse the compact component affordance without slot rails. */
+
+.page-structure__action--open {
+  width: auto;
+  padding: 0 4px;
+  font: inherit;
+  white-space: nowrap;
+}

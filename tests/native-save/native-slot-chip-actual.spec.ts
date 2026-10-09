@@ -100,7 +100,7 @@ test("Edit component mode shows each part's slot chip after its name; a click re
   await work.locator("h3:visible", { hasText: "Untitled project" }).click();
   await expect(chip(page)).toHaveText("items ×1");
   const items = await shown(page);
-  expect(items).toMatchObject({ before: "Card project", last: true, kind: "slot-chip--items", pressed: "true", struck: "none" });
+  expect(items).toMatchObject({ before: "Card project›", last: true, kind: "slot-chip--items", pressed: "true", struck: "none" });
   expect(items.background).not.toBe(title.background);
   if (shots) await page.screenshot({ path: `${shots}/items-slot.png` });
   // Showing this page's content, the items slot counts the page's cards.
