@@ -2,7 +2,7 @@
 title: Prototype drag and drop for nested blocks
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [10-block-set, 11-research-insert-drag-today]
 ---
 
