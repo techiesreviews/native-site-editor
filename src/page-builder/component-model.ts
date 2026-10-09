@@ -19,6 +19,7 @@
 
 import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 import { itemKind } from "./card-grid";
+import { decodeHtmlEntities } from "./html-entities";
 
 export interface RangeEdit {
   start: number;
@@ -340,8 +341,7 @@ export function breakTextEdit(source: string, from: number, to: number, after: s
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
-// As the browser reads it: character references decoded, only ASCII white space blank.
-const blank = (html: string, node: SourceNode) => node.type === "text" && !/[^\t\n\f\r ]/.test(decodeEntities(html.slice(node.start, node.end)));
+const blank = (html: string, node: SourceNode) => node.type === "text" && !html.slice(node.start, node.end).trim();
 /** Elements and text that is not just white space. */
 const meaningful = (html: string, nodes: SourceNode[]) => nodes.filter((node) => !blank(html, node));
 
@@ -418,9 +418,13 @@ export function isCardComponent(tag: string, templateOf: TemplateOf) {
   return template !== undefined && hasHeadingSlot(template);
 }
 
-/** Whether `nodes` are card component instances only, at least one. */
+/**
+ * Whether `nodes` are card component instances only, at least one. Text in
+ * between counts as the preview's drop report reads it (character references
+ * decoded, only ASCII white space blank).
+ */
 function cardsOnly(html: string, nodes: SourceNode[], templateOf: TemplateOf) {
-  const parts = meaningful(html, nodes);
+  const parts = nodes.filter((node) => node.type !== "text" || /[^\t\n\f\r ]/.test(decodeHtmlEntities(html.slice(node.start, node.end))));
   return parts.length > 0 && parts.every((node) => node.type === "element" && isCardComponent(node.name, templateOf));
 }
 

@@ -11,7 +11,8 @@
 //                               into the last Section, or a new one made for them
 // Pure: the caller inserts (block-insert-controller.ts) and selects the result.
 
-import { decodeEntities, templateSlots, type TemplateOf } from "./component-model";
+import { templateSlots, type TemplateOf } from "./component-model";
+import { decodeHtmlEntities } from "./html-entities";
 import { nativeElementMarkup, type NativeElementKind } from "./native-elements";
 import { nativeHeadingLevel, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
@@ -30,7 +31,7 @@ const isInstance = (node: NativeOutline) => node.opaque && node.name.includes("-
 /** A component's items slots by name as the browser reads them (decoded), in template order. */
 const itemsSlots = (tag: string, templateOf: TemplateOf) => {
   const template = templateOf(tag);
-  return template === undefined ? [] : templateSlots(template, templateOf).filter((entry) => entry.items).map((entry) => decodeEntities(entry.name));
+  return template === undefined ? [] : templateSlots(template, templateOf).filter((entry) => entry.items).map((entry) => decodeHtmlEntities(entry.name, true));
 };
 /** The items slots of the site's components (component-model.ts `templateSlots`), from their templates. */
 export function itemsSlotRule(templateOf: TemplateOf): ItemsSlotRule {
