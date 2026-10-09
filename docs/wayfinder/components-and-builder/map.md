@@ -2,6 +2,7 @@
 label: wayfinder:map
 title: Components, variants and a block builder
 charted: 2026-10-08
+graduated: 2026-10-09
 tracker: local markdown (tickets live in tickets/ with a blocked_by line in each)
 ---
 
@@ -43,11 +44,10 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - [Prototype Add card with an existing page](tickets/09-prototype-add-existing-page.md): card first, link after: Add card places the slot's card with a "Link to a page…" combobox (every page, the cards' folder first; an unknown address offers Create page); the card fills title/description/og:image/address plus matching slots, an info strip shows sources; non-link grids get a stretched link; a split Add card ▾ and a look chip on the card pick any card component or variant, keeping content by slot role
 - [Prototype drag and drop for nested blocks](tickets/12-prototype-drag-and-drop.md): an icon rail beside Structure (names on hover); click inserts by selection and keeps building; Image and Button go in as placeholders; canvas drags show a line and label (innermost wins, edge escapes, Alt steps up), Structure mirrors it and folded rows spring open; Sections always snap between page bands; blocks drag themselves (no grip, no Move to…); Alt+arrows; cards reorder the same way
 - [Prototype editing a component's template visually](tickets/14-prototype-edit-component-visually.md): Edit component mode in place on the page (purple frame, rest dimmed, placeholders or this page's content); fixed text edited in place, blocks via the rail; one slot chip after the element name, same as the Structure badge (purple = slot, grey struck = fixed; click toggles, double-click renames); Structure shows the end result; on the page fixed parts are locked with an Edit component hint; no flicker in the build
+- [Write the handoff plan](tickets/13-handoff-plan.md): seven phases (removals → component model → Make component → builder → Edit component mode → Add card → tone) in small slices in build/, straight into `dev` and preview; Sol builds mechanical slices, Claude ★ the rest, Sol reviews; unit tests plus one @smoke spec per feature; starter changes on its own `dev` branch; nothing to production until Lex says
 
 ## Not yet specified
 
-- **Starter updates.** Example components with variants and tone tokens in the separate starter project, and whether techies-reviews adopts the variant convention. Both sites also move the skip link out of the header into each page (ticket 02); techies-reviews moves its sections from `data-color-scheme` to `data-tone`, the starter gains `.btn` (ticket 10) and replaces its hard-coded white-on-accent with the tone rules (ticket 08). techies-reviews' `AGENTS.md` drops `data-if` and the registration step and keeps only its own style rules (ticket 05).
-- **Test plan.** Which browser checks each feature adds, following the `@smoke`/nightly split from the lean-fast-editor map.
 
 ## Out of scope
 
@@ -57,3 +57,5 @@ A decided plan, ready to hand off, for five features: making components (from bu
 - A brand-colour control (for example in site settings). Ticket 08 keeps the brand colour in `tokens.css`, and the tone rules keep every band AA whatever it is; a control is its own effort.
 - A Span block. A bare `<span>` does nothing visible without a class or a style panel, so ticket 10 dropped it for now.
 - [Decide what counts as an identical copy on Make component](tickets/15-dedup-on-make-component.md): replacing copies on other pages is too risky for now; Make component converts only the selected section (reverses ticket 04 rule 5)
+- techies-reviews follow-ups (`data-tone` instead of `data-color-scheme`, the skip link into each page, its `AGENTS.md` keeping only its own style rules): a separate effort after this build (ticket 13).
+- Touch drag for the rail and the canvas: click-insert works on touch; drag gets touch support later (ticket 13).
