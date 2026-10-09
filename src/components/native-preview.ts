@@ -256,7 +256,8 @@ export function routeStylesheets(site: NativeSite, sources: Record<string, strin
 }
 
 /** A selection queued for the next render; `reveal: "center"` brings a just-added element fully into view. */
-type QueuedSelection = NativeNodeRequest & { reveal?: "center" };
+// `source`: the page's bytes the request belongs to; renders of other bytes leave it waiting.
+type QueuedSelection = NativeNodeRequest & { reveal?: "center"; source?: string };
 
 // The page's stylesheets and the components' own, each `url()` naming an
 // asset the host has read shown from it.
@@ -581,8 +582,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     rafHandle = 0;
     if (!site || !frameState.ready || !frameState.active) return;
     if (livePatch && (sources[livePatch.path] !== livePatch.base || othersChanged(livePatch.others, livePatch.path))) dropPatch();
-    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath);
-    selectNode = undefined;
+    const held = selectNode?.source !== undefined && sources[selectNode.path] !== selectNode.source ? selectNode : undefined;
+    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, held ? undefined : selectNode, selectText, scrollHash, editableTemplatePath);
+    selectNode = held;
     selectText = undefined;
     scrollHash = undefined;
     sentStructureSnapshot = { context, sources: { ...sources } };
@@ -1248,7 +1250,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pageBuilder.refuse(reason);
     },
     /** Select this element once the next update (the one carrying an edit) has rendered. */
-    selectAfterUpdate(request: NativeNodeRequest | undefined, options?: { reveal?: "center" }) {
+    selectAfterUpdate(request: (NativeNodeRequest & { source?: string }) | undefined, options?: { reveal?: "center" }) {
       selectNode = request && options?.reveal ? { ...request, reveal: options.reveal } : request;
     },
     /** Re-select this text range (offsets into the selected element's text) after the next update. */

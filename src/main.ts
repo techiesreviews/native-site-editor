@@ -316,7 +316,11 @@ function mountWorkspace() {
   });
   repositorySelect = element<HTMLSelectElement>("repository");
   blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"), {
-    onPick: kind => void loadBlockInsert().then(blocks => blocks.click(kind)).catch(errorMessage),
+    onPick: kind => {
+      // The click's page, selection and repository, held while the insert code loads.
+      const current = blockInsertPorts.proof(), at = blockInsertPorts.target();
+      void loadBlockInsert().then(blocks => current() ? blocks.click(kind, at) : undefined).catch(errorMessage);
+    },
     onUp: () => nativePreview?.selectParent(),
   });
   sidebarResize = mountSidebarResize(
@@ -711,7 +715,7 @@ const blockInsertPorts: BlockInsertPorts = {
     // A part of a component's template stands for its instance on the page.
     const selection = appStore.selection.value;
     const host = selection && [selection.host, ...selection.hostChain ?? []].find(item => item?.path === path && item.node);
-    return { path, node: selection?.path === path ? selection.node : host?.node };
+    return selection?.path === path ? { path, node: selection.node, painted: selection.paintedSource } : { path, node: host?.node, painted: host?.paintedSource };
   },
   source: path => nativeEffectiveSource(path),
   exists: nativePathExists,

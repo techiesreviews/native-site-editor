@@ -26,6 +26,8 @@ test("a selected leaf takes the block right after it, in its container", () => {
   // Inside a list or inline text: after the element that sits in the Section.
   assert.deepEqual(at(clickTarget(home, "button", [1, 1, 3, 0])), { parent: [1, 1], index: 4, wrap: false });
   assert.deepEqual(at(clickTarget(page('<section><p>Hi <a class="btn" href="#">Go</a></p></section>'), "image", [1, 0, 0, 0])), { parent: [1, 0], index: 1, wrap: false });
+  // Blocks go only into a Section or a Div (ticket 10): a figure's image takes the block after the figure.
+  assert.deepEqual(at(clickTarget(page('<section><figure><img src="/a.png" alt=""></figure><p>B</p></section>'), "paragraph", [1, 0, 0, 0])), { parent: [1, 0], index: 1, wrap: false });
 });
 
 test("a Section always goes after the selection's page band, never nested", () => {

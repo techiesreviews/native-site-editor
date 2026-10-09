@@ -20,7 +20,7 @@ function setup(overrides: Partial<BlockInsertPorts> = {}, files: Record<string, 
       for (const [path, text] of op.edits) files[path] = text;
       return undefined;
     },
-    select: (request, where) => { log.selects.push(request && { ...request, where }); },
+    select: (request, where) => { log.selects.push(request && { path: request.path, node: request.node, where, rendered: request.source === files[request.path] }); },
     refuse: reason => { log.refusals.push(reason); },
     ...overrides,
   } satisfies BlockInsertPorts;
@@ -39,7 +39,8 @@ test("the first Image writes the placeholder in the same step; later ones reuse 
   assert.equal(log.ops.length, 2);
   assert.equal(log.ops[1].creates, undefined);
   assert.equal(files[PLACEHOLDER_IMAGE_PATH], "<svg>mine</svg>");
-  assert.deepEqual(log.selects.at(-1), { path: "index.html", node: [0, 0, 1], where: "Into Section “Work” › after Heading" });
+  // Selected once the page renders the step's own bytes.
+  assert.deepEqual(log.selects.at(-1), { path: "index.html", node: [0, 0, 1], where: "Into Section “Work” › after Heading", rendered: false });
   assert.deepEqual(log.refusals, []);
 });
 
@@ -78,4 +79,14 @@ test("a failed operation cancels the selection it asked for and flashes the erro
   await controller.click("button");
   assert.deepEqual(log.selects.at(-1), undefined);
   assert.deepEqual(log.refusals, ["The repository or source changed meanwhile."]);
+});
+
+test("a selection painted from other bytes is refused; the click's own target is used", async () => {
+  const { controller, log } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0], painted: page.replace("Work", "Old") }) });
+  await controller.click("paragraph");
+  assert.equal(log.ops.length, 0);
+  assert.deepEqual(log.refusals, ["The page is still updating. Try again in a moment."]);
+  await controller.click("paragraph", { path: "index.html", node: [0, 0], painted: page });
+  assert.equal(log.ops.length, 1);
+  assert.deepEqual(log.ops[0].selection.after, { path: "index.html", node: [0, 0, 1] });
 });

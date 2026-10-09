@@ -9,9 +9,13 @@ import { blockMarkup, blockNames, clickTarget } from "../page-builder/block-inse
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit } from "../page-builder/native-operations";
 
 type NodeRequest = { path: string; node: number[] };
+export type RailTarget = { path: string; node?: number[]; painted?: string };
 export interface BlockInsertPorts {
-  /** The page the preview shows, with the selection on it (a body path; a component's part gives its instance). */
-  readonly target: () => { path: string; node?: number[] } | undefined;
+  /**
+   * The page the preview shows, with the selection on it (a body path; a
+   * component's part gives its instance) and the page bytes it was painted from.
+   */
+  readonly target: () => RailTarget | undefined;
   readonly source: (path: string) => string | undefined;
   readonly exists: (path: string) => boolean;
   /** Proof of the repository, branch and session now; false once any changed. */
@@ -23,8 +27,8 @@ export interface BlockInsertPorts {
     expectedSources: Map<string, string | undefined>; creates?: { path: string; content: string }[]; edits: Map<string, string>;
     done: string; undone: string; current: () => boolean; selection: { before?: NodeRequest; after: NodeRequest };
   }) => Promise<string | undefined>;
-  /** Selects this element after the next render, flashing `where` at it; undefined cancels. */
-  readonly select: (request: NodeRequest | undefined, where?: string) => void;
+  /** Selects this element once the page renders `source`, flashing `where` at it; undefined cancels. */
+  readonly select: (request: (NodeRequest & { source: string }) | undefined, where?: string) => void;
   /** Flashes the red reason at the selection; nothing is inserted. */
   readonly refuse: (reason: string) => void;
 }
@@ -58,7 +62,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (!next) return `${name} was not added: the HTML around that spot could not be read exactly.`;
     const placeholder = kind === "image" && !ports.exists(PLACEHOLDER_IMAGE_PATH);
     const after = { path, node: wrap ? [...parent, index, 0] : [...parent, index] };
-    ports.select(after, request.where);
+    ports.select({ ...after, source: next }, request.where);
     const error = await ports.apply({
       expectedSources: new Map([[path, source]]),
       creates: placeholder ? [{ path: PLACEHOLDER_IMAGE_PATH, content: placeholderImageSvg }] : undefined,
@@ -72,11 +76,12 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     return error;
   }
 
-  /** A rail button clicked: the block goes where the selection says, or the reason flashes. */
-  async function click(kind: NativeElementKind) {
-    const at = ports.target();
+  /** A rail button clicked: the block goes where the selection (`at`, when the click was) says, or the reason flashes. */
+  async function click(kind: NativeElementKind, at = ports.target()) {
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
+    // A selection painted from other bytes names another element now.
+    if (at.node && at.painted !== undefined && at.painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
     const target = clickTarget(source, kind, at.node);
     if (!target.ok) { ports.refuse(target.reason); return; }
     const error = await insert({

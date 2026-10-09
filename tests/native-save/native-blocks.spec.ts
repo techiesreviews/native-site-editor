@@ -62,14 +62,15 @@ test("the first Image drafts images/placeholder.svg in its undo step; a second w
   expect(flat(first)).toContain('<h1>Small websites that stay yours</h1><img src="/images/placeholder.svg" alt="" width="640" height="400"><p class="lead">');
   // The preview shows the drafted placeholder.
   await expect.poll(() => frame(page).locator(".hero img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(640);
-  const svg = (await storedDraft(page, "images/placeholder.svg"))!.content;
+  const svg = (await storedDraft(page, "images/placeholder.svg"))!;
   await image.click();
   await expect.poll(async () => (await source(page)) !== first).toBe(true);
   expect((await source(page)).match(/placeholder\.svg/g)).toHaveLength(2);
-  expect((await storedDraft(page, "images/placeholder.svg"))?.content).toBe(svg);
+  // The same draft, not rewritten (its stamp included).
+  expect(await storedDraft(page, "images/placeholder.svg")).toEqual(svg);
   await undo(page);
   await expect.poll(() => source(page)).toBe(first);
-  expect((await storedDraft(page, "images/placeholder.svg"))?.content).toBe(svg);
+  expect(await storedDraft(page, "images/placeholder.svg")).toEqual(svg);
   await undo(page);
   await expect.poll(() => source(page)).toBe(original);
   await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toBeUndefined();
