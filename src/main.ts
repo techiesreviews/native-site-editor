@@ -39,6 +39,7 @@ import { createRepositoryMenu } from "./components/repository-menu";
 import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
+import { mountBlockRail } from "./components/block-rail";
 import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem } from "./components/native-preview";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
@@ -131,6 +132,7 @@ let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
 let repositoryMenu: ReturnType<typeof createRepositoryMenu> | undefined;
 let siteActions: ReturnType<typeof mountSiteActions> | undefined;
 let sidebarResize: SidebarResize | undefined;
+let blockRail: ReturnType<typeof mountBlockRail> | undefined;
 // The source editor without Monaco (src/components/source-editor.ts): drafts,
 // Undo/Redo and edits from the preview work from its draft store at once;
 // Monaco is only the code pane's view, loaded later.
@@ -311,6 +313,7 @@ function mountWorkspace() {
     if (menuPanel.matches(":popover-open")) { void agentController.ensure().catch(errorMessage); void setupController.mount().catch(errorMessage); }
   });
   repositorySelect = element<HTMLSelectElement>("repository");
+  blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"));
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
     app.querySelector<HTMLElement>(".sidebar")!,
@@ -474,7 +477,7 @@ function mountWorkspace() {
     addPanelDock: () => {
       const area = app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();
       const side = app.querySelector<HTMLElement>(".workspace > .sidebar")?.getBoundingClientRect();
-      return area && { left: area.left, top: area.top, bottom: Math.min(area.bottom, innerHeight), width: side?.width ?? 320 };
+      return area && { left: side?.left ?? area.left, top: side?.top ?? area.top, bottom: Math.min(area.bottom, innerHeight), width: side?.width ?? 320 };
     },
   });
   nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
@@ -2832,6 +2835,8 @@ function renderLogin(
   explorerDropdown = undefined;
   sidebarResize?.dispose();
   sidebarResize = undefined;
+  blockRail?.dispose();
+  blockRail = undefined;
   closeEditor();
   deactivateNative();
   nativePreview?.destroy();

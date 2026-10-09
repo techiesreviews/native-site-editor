@@ -50,8 +50,9 @@ export function mountSidebarResize(
   const savedLast = read(lastKey);
   if (savedLast >= minimum) last = savedLast;
   else if (width > 0) last = width;
+  const rail = workspace.querySelector<HTMLElement>(".block-rail");
   const maximum = () =>
-    Math.max(minimum, Math.min(560, workspace.clientWidth - 360));
+    Math.max(minimum, Math.min(560, workspace.clientWidth - (rail?.offsetWidth ?? 0) - 360));
   let drag: { x: number; width: number } | undefined;
   function apply(value: number) {
     width = value < minimum / 2 ? 0 : Math.round(Math.max(minimum, Math.min(maximum(), value)));
@@ -124,6 +125,7 @@ export function mountSidebarResize(
     else handle.title = `Click to ${width === 0 ? "show" : "hide"} the page structure`;
   });
   observer.observe(workspace);
+  if (rail) observer.observe(rail);
   apply(width);
   return {
     toggle,

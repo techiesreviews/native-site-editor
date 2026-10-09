@@ -92,9 +92,9 @@ test("the sidebar handle: hover growth, click hides and shows at the previous wi
   await expect(handle).toHaveAttribute("aria-valuetext", "Page structure hidden");
   await expect(handle).toHaveAttribute("aria-valuenow", "0");
   await expect(handle).toHaveAttribute("title", "Drag to resize, click to show the page structure");
-  // It stays at the workspace's left edge, visible, and still grows on hover.
-  const workspace = await box(page.locator(".workspace"));
-  expect(Math.abs((await box(handle)).x - workspace.x)).toBeLessThanOrEqual(1);
+  // It stays just after the block rail, visible, and still grows on hover.
+  const rail = await box(page.getByRole("navigation", { name: "Blocks" }));
+  expect(Math.abs((await box(handle)).x - (rail.x + rail.width))).toBeLessThanOrEqual(1);
   await expect(handle.locator(".resize-grip")).not.toHaveCSS("opacity", "0");
   await expectHoverGrowth(page, handle, "width");
 

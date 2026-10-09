@@ -2,7 +2,7 @@
 title: The block rail beside Structure
 type: task (AFK)
 status: open
-assignee:
+assignee: sol (runner: claude)
 blocked_by: [04-six-block-catalogue]
 builder: sol
 phase: 4
