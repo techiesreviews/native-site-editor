@@ -1,7 +1,7 @@
 ---
 title: "Edit component mode: in place, no flicker"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [01-remove-masters-and-save-shared]
 builder: claude ★
@@ -23,3 +23,8 @@ Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §1–2 and t
 ## Done when
 
 - Nightly spec: open the mode on the starter's Recent work, switch placeholders and this page's content, Done; no preview reload happens (assert the frame's document stays the same).
+
+## Done (2026-10-09)
+
+- Edit component (edit bar, Structure row) opens the instance's template in place: the runtime frames it and shades the page (not clickable), clicks map to template nodes, Esc stops at the template root; placeholders send the page's content to no slot as the page renders (slot names and their CSS stay), so toggling and template edits update in place with no frame reload. The canvas bar becomes the slim bar; Done only leaves; selecting another file leaves quietly. The mode loads lazily (`edit-component-mode.ts`, 0.7 KB gzip; main bundle unchanged within noise; runtime +2.8 KB gzip source). Templates open unfolded in code.
+- Commits 9edda8a, 365a87a, 87f2def. Spec `native-edit-component-mode-actual.spec.ts` (@actual: placeholders, page content, an in-mode template edit, shade, Done, frame document unchanged; Structure entry). Four older specs follow the shaded page and slim bar. No new pure rules (unit tests unchanged).
