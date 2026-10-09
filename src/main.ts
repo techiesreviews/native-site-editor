@@ -539,14 +539,14 @@ function mountWorkspace() {
   });
   nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
   pageStructure = createPageStructure(element("structure"), {
-    menuItems: (path, item, opening) => {
-      const painted = nativeStructurePaintedSources.get(item);
+    menuItems: (path, item, opening, template) => {
+      const painted = template ? template.source : nativeStructurePaintedSources.get(item);
       const fresh = () => painted !== undefined && nativeEffectiveSource(path) === painted && !versionView;
       if (!fresh()) {
         if (opening) announce("The source changed. Wait for the preview before using this action.");
         return [];
       }
-      return elementMenuItems({ path, node: item.node, tag: item.tag }).map(entry => ({ ...entry, run: () => {
+      return elementMenuItems({ path, node: template?.node ?? item.node, tag: item.tag, renameChip: template?.chip }).map(entry => ({ ...entry, run: () => {
         if (!fresh()) { announce("The source changed. Wait for the preview before using this action."); return; }
         entry.run();
       } }));
@@ -1648,7 +1648,10 @@ function nativePictureSources(source: string, node: readonly number[]) {
 let previewElementMenu: ReturnType<typeof createRowMenu> | undefined;
 window.addEventListener("blur", () => previewElementMenu?.close(false));
 function elementMenuItems(target: ElementMenuTarget) {
-  const providers = [(target: ElementMenuTarget) => componentTools?.menuItems(target) ?? []];
+  const providers = [
+    (target: ElementMenuTarget) => componentTools?.menuItems(target) ?? [],
+    (target: ElementMenuTarget) => componentTools?.slotMenu(target) ?? [],
+  ];
   return collectElementMenuItems(target, providers);
 }
 

@@ -1,7 +1,7 @@
 import type { NativePreviewSelection } from "./native-preview";
 import type { MenuItem } from "./row-menu";
 
-export type ElementMenuTarget = Pick<NativePreviewSelection, "path" | "node" | "tag" | "host">;
+export type ElementMenuTarget = Pick<NativePreviewSelection, "path" | "node" | "tag" | "host"> & { renameChip?: () => HTMLElement | undefined };
 export type ElementMenuProvider = (target: ElementMenuTarget) => MenuItem[];
 
 export function elementMenuItems(target: ElementMenuTarget, providers: ElementMenuProvider[]): MenuItem[] {

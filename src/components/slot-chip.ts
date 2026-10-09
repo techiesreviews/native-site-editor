@@ -26,6 +26,13 @@ export interface SlotChipActions {
   group?: string;
 }
 
+const renamers = new WeakMap<HTMLElement, () => void>();
+
+/** Start the same in-place edit as a chip's double-click or F2. */
+export function renameSlotChip(chip: HTMLElement | undefined) {
+  if (chip?.isConnected) renamers.get(chip)?.();
+}
+
 const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
 
 /** The chip's text: the slot's name, "items ×N" for an items slot. */
@@ -93,6 +100,7 @@ export function slotChip(chip: SlotChipState, actions: SlotChipActions) {
     selection?.removeAllRanges();
     selection?.addRange(range);
   }
+  renamers.set(out, startRename);
   function endRename(commit: boolean) {
     const was = renaming;
     if (!was) return;

@@ -28,6 +28,8 @@ export interface TemplateStructureItem extends NativeStructureItem {
   chips: number[][];
   /** Set by Edit component mode: the template file the row is in, when not the one edited. */
   path?: string;
+  /** The template bytes used to draw this row, for deferred menu actions. */
+  paintedSource?: string;
   /** Set by Edit component mode: this nested instance is open; its rows are that level's. */
   opened?: { path: string; root?: number[]; current: boolean };
   /** Set by Edit component mode: a nested instance of the template edited, which opens. */
@@ -1436,6 +1438,9 @@ export function slotChipState(template: string, path: readonly number[], templat
   if (!part) return undefined;
   let at = chain.length - 1;
   while (at >= 0 && chain[at].name !== "slot") at--;
+  // A nested instance's contents cannot inherit a slot outside that instance.
+  // A slot declared inside it is still this template's own slot (its row's badge).
+  if (chain.slice(at + 1, -1).some((el) => el.name.includes("-"))) return undefined;
   if (at >= 0) {
     const slot = chain[at];
     const name = (attribute(template, slot, "name") ?? "").trim();
@@ -1444,7 +1449,7 @@ export function slotChipState(template: string, path: readonly number[], templat
       ? { state: "items", name, slot: where, count: elements(slot.children).length }
       : { state: "slot", name, slot: where };
   }
-  if (chain.length < 2 || IN_PLACE.has(part.name) || chain.slice(0, -1).some((el) => el.name.includes("-"))
+  if (chain.length < 2 || IN_PLACE.has(part.name)
     || [...descendants(part.children)].some((el) => el.name === "slot")) return undefined;
   const taken = new Set(templateSlots(template).map((slot) => slot.name));
   const role = roleName(part, contentKind(template, [part]) ?? "content");

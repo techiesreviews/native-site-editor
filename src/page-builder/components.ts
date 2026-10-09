@@ -23,6 +23,8 @@ import type { MenuItem } from "../components/row-menu";
 // step; typing in a field is one step until the field is left), so the
 // code pane shows it as it happens.
 
+import { renameSlotChip } from "../components/slot-chip";
+import { slotMenuItems } from "./slot-menu";
 import { refuse as showRefusal } from "../components/refusal-note";
 import { isButtonBlock } from "./block-fields";
 import { nativeElementUrlProblem } from "./native-elements";
@@ -502,6 +504,29 @@ export function createComponentTools(deps: ComponentDeps) {
     })() }];
   }
 
+  function slotMenu(target: ElementMenuTarget): MenuItem[] {
+    const mode = editMode?.active();
+    if (!mode || target.path !== mode.templatePath || !target.node?.length) return [];
+    const source = deps.sources()[target.path], revision = deps.revision(), entry = explicitTemplate;
+    const state = templateChip(target.node);
+    return slotMenuItems(state).map(label => ({ label, run: () => {
+      if (editMode?.active()?.templatePath !== mode.templatePath || explicitTemplate !== entry
+        || deps.revision() !== revision || deps.sources()[target.path] !== source) return;
+      if (label === "Rename slot") {
+        if (target.renameChip) renameSlotChip(target.renameChip());
+        else {
+          const selected = deps.selection();
+          if (selected?.path === target.path && selected.node?.join() === target.node?.join())
+            renameSlotChip(document.querySelector<HTMLElement>(".edit-bar__label > .slot-chip") ?? undefined);
+        }
+      } else if (chipEvent && state) {
+        window.dispatchEvent(new CustomEvent(chipEvent, { detail: {
+          action: "toggle", template: target.path, node: [...target.node!], chip: state,
+        } satisfies SlotChipReport }));
+      }
+    } }));
+  }
+
   // ---- Variants (ticket 07 §5). ----
 
   /**
@@ -742,7 +767,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const last = mode.chain.length - 1;
     const levelRows = (k: number) => {
       const templatePath = mode.chain[k].templatePath;
-      const mark = (rows: TemplateStructureItem[]): TemplateStructureItem[] => rows.map((row) => ({ ...row, path: templatePath,
+      const mark = (rows: TemplateStructureItem[]): TemplateStructureItem[] => rows.map((row) => ({ ...row, path: templatePath, paintedSource: sources[k],
         chips: k === last ? row.chips : [], opens: k === last && isComponent(row.tag) && Boolean(templateOf(row.tag)), children: mark(row.children) }));
       return mark(templateStructure(sources[k]!, tag => templateOf(tag)?.source));
     };
@@ -1928,6 +1953,7 @@ export function createComponentTools(deps: ComponentDeps) {
   return {
     makeFromAgent,
     menuItems,
+    slotMenu,
     identity,
     /**
      * Edit component mode's template while it is the file open (the rail

@@ -53,7 +53,7 @@ interface TemplateRows {
 export interface PageStructureHandlers {
   templateRows?: (path: string, at: readonly number[]) => TemplateRows | undefined;
   /** `opening` checks a user action; painting the affordance stays silent on stale source. */
-  menuItems?: (path: string, item: NativeStructureItem, opening?: boolean) => MenuItem[];
+  menuItems?: (path: string, item: NativeStructureItem, opening?: boolean, template?: { source: string | undefined; node: number[]; chip: () => HTMLElement | undefined }) => MenuItem[];
   /** Source-guarded instance fields; synthetic slot rows never identify DOM nodes. */
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
@@ -573,8 +573,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
     // The element's actions (Make component…), shared with a right-click in the preview.
-    const menuPath = structure!.path;
-    const entries = (opening = false) => handlers.menuItems?.(menuPath, item, opening) ?? [];
+    const menuPath = own?.path ?? structure!.path;
+    const menuTemplate = own ? { source: own.paintedSource, node: own.chips[0] ?? item.node, chip: () => el.querySelector<HTMLElement>(":scope > .slot-chip") ?? undefined } : undefined;
+    const entries = (opening = false) => handlers.menuItems?.(menuPath, item, opening, menuTemplate) ?? [];
     const hasMenu = entries().length > 0;
     if (slotModel || template || modeRows || hasMenu) {
       // The row is named by its kind and preview only; its action buttons keep their own names.
