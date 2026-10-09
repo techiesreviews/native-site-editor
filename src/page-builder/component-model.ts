@@ -1097,6 +1097,28 @@ export interface MakeComponentPlan {
   slots: PlannedSlot[];
   /** What the making mode tells about the plan (a link-wrapped card that stays clickable through its title). */
   notes: string[];
+  /** The card components made from repeated plain items, one per items slot, in source order. */
+  cards: PlannedCard[];
+}
+
+/**
+ * A repeated item made a card component: its files, and the items that
+ * became its instances on the page (those written alike; the others stay as
+ * they are). The items slot's fallback in the new template is one empty
+ * instance of it.
+ */
+export interface PlannedCard {
+  tag: string;
+  /** The items slot it was made from ("" for the unnamed slot). */
+  slot: string;
+  /** components/<tag>/<tag>.html, from the first of its items. */
+  template: string;
+  css: string;
+  /** The card's own slots, as planned for the first of its items. */
+  slots: PlannedSlot[];
+  notes: string[];
+  /** The paths (as in `PlannedSlot`) of the items that became instances. */
+  instances: number[][];
 }
 
 /** The making mode's choices, each part named by its path inside the element (as in `PlannedSlot`). */
@@ -1177,8 +1199,20 @@ function ancestry(source: string, start: number): SourceElement[] {
  * of one role apart. `choices` keeps parts fixed, makes
  * other parts slots and renames slots. An `id` moves to the instance tag,
  * where links to it still find it.
+ *
+ * A group of plain items with a heading (`<article class="card">`) also
+ * becomes a card component (`cardTagFor`, free of `taken`): the items written
+ * alike become its instances, each keeping its own content in its slots,
+ * and the items slot's fallback is one empty instance of it. A group of card
+ * instances keeps its items as they are, with one empty instance of theirs
+ * as the fallback.
  */
-export function makeComponentPlan(source: string, range: InstanceRange, tag: string, choices: SlotChoices = {}): MakeComponentPlan | { error: string } {
+export function makeComponentPlan(source: string, range: InstanceRange, tag: string, choices: SlotChoices = {}, taken: Iterable<string> = []): MakeComponentPlan | { error: string } {
+  return planComponent(source, range, tag, choices, new Set([...taken, tag]));
+}
+
+/** `makeComponentPlan`; with no `taken`, a card's own plan, which makes no cards of its own. */
+function planComponent(source: string, range: InstanceRange, tag: string, choices: SlotChoices, taken?: Set<string>): MakeComponentPlan | { error: string } {
   if (!range.close) return { error: "The element's end tag could not be found in the source." };
   const written = source.slice(range.start, range.end);
   const element = elements(parseSource(written))[0];
@@ -1349,6 +1383,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
     };
   });
   const fills: string[] = [];
+  const cards: PlannedCard[] = [];
   // Edits to the element's own markup that make the template, back to front.
   const edits: RangeEdit[] = [];
   const indent = indentOf(source, range.start);
@@ -1364,15 +1399,25 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       fills.push(inner);
       return;
     }
-    // A repeated group: an empty slot where the items were; the items, and what was between them, go to the page as written.
+    // A repeated group: a slot where the items were, its fallback one empty card; the items, and what was between
+    // them, go to the page as written, plain items made cards.
     const items = part.items?.map((item) => item.el) ?? [el];
+    const made = part.items && taken ? cardFrom(html, part.items, name, tag, taken) : undefined;
+    if (made) {
+      cards.push(made.card);
+      taken!.add(made.card.tag);
+    }
     const end = items[items.length - 1].end;
     let copy = html.slice(el.start, end);
     for (const item of [...items].reverse()) {
       const at = item.start - el.start;
-      copy = copy.slice(0, at) + withSlot(html.slice(item.start, item.end), name) + copy.slice(item.end - el.start);
+      copy = copy.slice(0, at) + withSlot(made?.markup.get(item) ?? html.slice(item.start, item.end), name) + copy.slice(item.end - el.start);
     }
-    edits.push({ start: el.start, end, text: part.items ? `<slot${name ? ` name="${escapeAttribute(name)}"` : ""}></slot>` : `<slot name="${escapeAttribute(name)}">${html.slice(el.start, el.end)}</slot>` });
+    const fallback = made?.card.tag ?? (el.name.startsWith("card-") ? el.name : undefined);
+    edits.push({
+      start: el.start, end,
+      text: part.items ? `<slot${name ? ` name="${escapeAttribute(name)}"` : ""}>${fallback ? `<${fallback}></${fallback}>` : ""}</slot>` : `<slot name="${escapeAttribute(name)}">${html.slice(el.start, el.end)}</slot>`,
+    });
     // Lines after the first move to the instance's indentation, unless white space is the content's own.
     const verbatim = items.some((item) => [...descendants([item])].some((inner) => inner.name === "pre" || inner.name === "textarea"));
     fills.push(verbatim ? copy : reindent(copy, `${indent}  `).replace(/\n/g, newline));
@@ -1399,5 +1444,85 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
     instance,
     slots,
     notes: stretched ? ["The whole card stays clickable through its title link."] : [],
+    cards,
+  };
+}
+
+/** Whether a template has a heading slot (a slot holding a heading, or a heading's only content): a card component's mark. */
+export function hasHeadingSlot(template: string) {
+  const heading = (el: SourceElement) => /^h[1-6]$/.test(el.name);
+  const visit = (nodes: SourceNode[], parent?: SourceElement): boolean => elements(nodes).some((el) => {
+    if (el.name !== "slot") return visit(el.children, el);
+    const inside = meaningful(template, el.children);
+    return (inside.length === 1 && inside[0].type === "element" && heading(inside[0]))
+      || Boolean(parent && heading(parent) && meaningful(template, parent.children).length === 1);
+  });
+  return visit(parseSource(template));
+}
+
+/** A word's singular, by the common English endings: `services` → `service`, `stories` → `story`. */
+function singular(word: string) {
+  if (/(?:ss|us|is|news)$/.test(word)) return word;
+  if (/[^aeiou]ies$/.test(word)) return word.slice(0, -3) + "y";
+  if (/(?:s|x|z|ch|sh)es$/.test(word)) return word.slice(0, -2);
+  return word.endsWith("s") && word.length > 1 ? word.slice(0, -1) : word;
+}
+
+/**
+ * The tag of the card component made from an items slot's items: `card-`
+ * and the slot's name, its last word singular (`services` → `card-service`);
+ * for the unnamed slot (or an `items-2` not renamed), the new component's
+ * name (`section-work` → `card-work`). Numbered when taken.
+ */
+export function cardTagFor(slot: string, tag: string, taken: Iterable<string>) {
+  const named = slot && !/^items-\d+$/.test(slot) ? slot : tag.replace(/^(?:section|block|site|card)-(?=.)/, "");
+  const words = named.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^[^a-z]+|-+$/g, "").replace(/^cards?-(?=.)|-cards?$/g, "").split("-").filter(Boolean);
+  if (words.length) words.push(singular(words.pop()!));
+  const base = `card-${words.join("-") || "item"}`;
+  const used = new Set(taken);
+  let name = base;
+  for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
+  return name;
+}
+
+// Plain elements that can be made cards: not list items, which only work in their list.
+const CARD_ITEMS = new Set(["article", "div", "figure", "a", "blockquote"]);
+
+/** A template with each slot's fallback gone and white space between tags dropped: two items written alike have one. */
+function skeleton(template: string) {
+  const slots = [...descendants(parseSource(template))].filter((el) => el.name === "slot" && el.close);
+  let out = template;
+  let after = Infinity;
+  for (const slot of slots.reverse()) {
+    if (slot.end > after) continue;
+    out = out.slice(0, slot.tag.end) + out.slice(slot.close!.start);
+    after = slot.start;
+  }
+  return out.replace(/\s+/g, " ").replace(/>\s+</g, "><").trim();
+}
+
+/**
+ * The card component made from a group of plain items in `html` (the element
+ * being made a component): planned from each item, the items written alike
+ * (one template once their fallbacks are gone; the largest such set, at
+ * least two) become instances, each its own plan's instance. None when the
+ * items are instances already, cannot be cards, or have no heading.
+ */
+function cardFrom(html: string, items: { el: SourceElement; path: number[] }[], slot: string, tag: string, taken: Set<string>) {
+  if (!items.every(({ el }) => CARD_ITEMS.has(el.name) && el.close)) return undefined;
+  const cardTag = cardTagFor(slot, tag, taken);
+  const planned = items.map((item) => ({ item, plan: planComponent(html, { tag: item.el.tag, start: item.el.start, end: item.el.end, close: item.el.close }, cardTag, {}) }));
+  const alike = new Map<string, { item: (typeof items)[number]; plan: MakeComponentPlan }[]>();
+  for (const { item, plan } of planned) {
+    if ("error" in plan) continue;
+    const key = skeleton(plan.template);
+    alike.set(key, [...(alike.get(key) ?? []), { item, plan }]);
+  }
+  const chosen = [...alike.values()].reduce<{ item: (typeof items)[number]; plan: MakeComponentPlan }[]>((best, set) => (set.length > best.length ? set : best), []);
+  if (chosen.length < 2 || !hasHeadingSlot(chosen[0].plan.template)) return undefined;
+  const { template, css, slots, notes } = chosen[0].plan;
+  return {
+    card: { tag: cardTag, slot, template, css, slots, notes, instances: chosen.map(({ item }) => item.path) },
+    markup: new Map(chosen.map(({ item, plan }) => [item.el, plan.instance])),
   };
 }

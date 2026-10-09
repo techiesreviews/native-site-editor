@@ -1155,7 +1155,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const tag = input.value.trim();
       const problem = tagNameProblem(tag, taken);
       if (problem) return { problem };
-      const made = makeComponentPlan(source, range, tag);
+      const made = makeComponentPlan(source, range, tag, {}, taken);
       if ("error" in made) return { problem: made.error };
       return { tag, made };
     };
@@ -1170,12 +1170,12 @@ export function createComponentTools(deps: ComponentDeps) {
       const { tag, made } = planned;
       const slotted = made.slots.filter((slot) => !slot.fixed);
       const slots = slotted.map((slot) => slot.name ? `“${slot.name}”` : "its content").join(", ");
-      result.textContent = slotted.length
+      const cards = made.cards.map((card) => ` Its repeated items become <${card.tag}>, a card component, each keeping its own content.`).join("");
+      result.textContent = (slotted.length
         ? `<${tag}> gets ${slotted.length === 1 ? "a slot" : `${slotted.length} slots`} (${slots}); this page keeps its text, links and images in the instance.`
-        : `<${tag}> has no text of its own to slot: every instance shows the same content.`;
+        : `<${tag}> has no text of its own to slot: every instance shows the same content.`) + cards;
       files.replaceChildren(
-        codeBlock(`components/${tag}/${tag}.html (new)`, made.template),
-        codeBlock(`components/${tag}/${tag}.css (new)`, made.css),
+        ...madeFiles(tag, made).map((file) => codeBlock(`${file.path} (new)`, file.content)),
         codeBlock(`${path} (replaces the <${range.tag.name}>)`, made.instance, { source, at: range.start }),
       );
     };
@@ -1198,20 +1198,25 @@ export function createComponentTools(deps: ComponentDeps) {
     await makeComponent({ path, nodePath: [...nodePath], tag: planned.tag, source, range, made: planned.made, revision });
   }
 
+  /** The files Make component writes: the component's template and CSS, then each card component's. */
+  function madeFiles(tag: string, made: MakeComponentPlan) {
+    return [{ tag, template: made.template, css: made.css }, ...made.cards].flatMap((component) => [
+      { path: `components/${component.tag}/${component.tag}.html`, content: component.template },
+      { path: `components/${component.tag}/${component.tag}.css`, content: component.css },
+    ]);
+  }
+
   /**
-   * Writes the new component's files as drafts and replaces the element
-   * with an instance, as one undo step: undoing the page's edit takes the
-   * new files back, redoing writes them again.
+   * Writes the new component's files (and its card component's) as drafts
+   * and replaces the element with an instance, its items with card
+   * instances, as one undo step: undoing the page's edit takes the new files
+   * back, redoing writes them again.
    */
   async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; revision: string }) {
     const { path, nodePath, tag, source, range, made, revision } = request;
     const unchanged = () => deps.revision() === revision && deps.sources()[path] === source;
     if (!unchanged()) { deps.announce("The page or repository changed meanwhile; no component was made."); return; }
-    const newFiles = [
-      { path: `components/${tag}/${tag}.html`, content: made.template },
-      { path: `components/${tag}/${tag}.css`, content: made.css },
-    ];
-    const result = await deps.createFiles(newFiles);
+    const result = await deps.createFiles(madeFiles(tag, made));
     if ("error" in result) { deps.error(new Error(result.error)); return; }
     const receipt = result.receipt;
     const editor = deps.editor();
@@ -1233,7 +1238,7 @@ export function createComponentTools(deps: ComponentDeps) {
         undo: () => receipt.undo(),
         redo: () => void receipt.redo(),
       });
-      deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html`);
+      deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${made.cards.map((card) => `, and <${card.tag}>`).join("")}`);
     } catch (error) {
       receipt.undo();
       deps.preview()?.selectAfterUpdate(undefined);

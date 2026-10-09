@@ -698,3 +698,63 @@ test("a grid's own trailing link after its cards stops the ghost, which never co
   expect(await main()).toBe(domBefore);
   expect(await homeDraft(page)).toBe(fixture);
 });
+
+test("Make component on a grid of plain cards makes the section and a card component, the cards its instances, one undo step", async ({ page, baseURL }) => {
+  // Recent work with its cards written out as plain HTML (as Detach leaves them).
+  const home = readFileSync("fixtures/native-cards/index.html", "utf8");
+  const plain = home.replace(/<card-project>\s*<p slot="note">([^<]*)<\/p>\s*<h3 slot="title">([^<]*)<\/h3>\s*<p slot="body" class="body">([^<]*)<\/p>\s*<a slot="link" href="([^"]*)">([^<]*)<\/a>\s*<\/card-project>/g,
+    `<article class="project">
+          <p class="note">$1</p>
+          <h3>$2</h3>
+          <p class="body">$3</p>
+          <a href="$4">$5</a>
+        </article>`);
+  expect(plain.match(/<article class="project">/g)).toHaveLength(2);
+  // The session (its cookie) comes with the first load; the edit lands on GitHub, the reload reads it.
+  await open(page, baseURL);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "index.html", content: plain } });
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
+  const section = frame(page).locator("#work");
+  await expect(section.locator("article.project h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  const before = (await section.boundingBox())!;
+
+  await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section Recent work/ }).locator(".page-structure__label").first().click();
+  await bar(page).getByRole("button", { name: "Make component…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Make component" });
+  await dialog.getByRole("textbox", { name: "Component name" }).fill("section-work");
+  await expect(dialog.getByRole("status")).toContainText("Its repeated items become <card-work>, a card component");
+  await expect(dialog).toContainText("components/card-work/card-work.html (new)");
+  await dialog.getByRole("button", { name: "Make component" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(status(page)).toContainText("Made the component <section-work>");
+
+  // Four files and the page, written together; each card keeps its own content in its slots.
+  await expect.poll(async () => (await storedDraft(page, "components/section-work/section-work.html"))?.content ?? "").toContain("<slot><card-work></card-work></slot>");
+  const card = (await storedDraft(page, "components/card-work/card-work.html"))!.content;
+  expect(card).toContain(`<slot name="title"><h3>Fern &amp; Kettle</h3></slot>`);
+  expect(card).toContain(`<slot name="note"><p class="note">Cafe · Identity and site · 2025</p></slot>`);
+  expect((await storedDraft(page, "components/card-work/card-work.css"))?.content).toContain(":host");
+  expect((await storedDraft(page, "components/section-work/section-work.css"))?.content).toContain(":host");
+  const written = await homeDraft(page);
+  expect(written).toContain(`<section-work id="work">`);
+  expect(written.match(/<card-work>/g)).toHaveLength(2);
+  expect(written).toContain(`<h3 slot="title">Harbour Lane Pottery</h3>`);
+  expect(written).toContain(`<a slot="link" href="/work/harbour-lane-pottery/">Read about Harbour Lane Pottery</a>`);
+
+  // The page looks the same.
+  const made = frame(page).locator("section-work");
+  await expect(made.locator("card-work > h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await expect(made.locator("card-work > a")).toHaveText(["Read about Fern & Kettle", "Read about Harbour Lane Pottery"]);
+  const after = (await made.boundingBox())!;
+  expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
+
+  // One undo takes the page and all four files back.
+  await page.locator(".code-editor__undo").first().click();
+  await expect(section.locator("article.project h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await expect.poll(async () => await storedDraft(page, "components/card-work/card-work.html")).toBeUndefined();
+  expect(await storedDraft(page, "components/section-work/section-work.html")).toBeUndefined();
+  expect(await storedDraft(page, "index.html")).toBeUndefined();
+});

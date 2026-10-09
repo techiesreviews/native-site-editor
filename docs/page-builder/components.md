@@ -122,6 +122,13 @@ page's replacement. The result is deliberately minimal:
 - The page gets `<tag>` holding that text, those links and images as slotted
   content, so it shows what it showed. An `id` moves to the instance tag,
   where links to it still find it.
+- Repeated plain items with a heading (a grid of `<article class="card">`)
+  become a card component too, `card-…`, named from the items slot
+  (`services` → `card-service`) or the new component (`section-work` →
+  `card-work`): the items written alike become its instances, each keeping its
+  content in its slots, and the items slot's fallback is one empty instance.
+  Items that are instances already stay as they are. All four files and the
+  page are one undo step.
 - **No CSS moves.** The site's stylesheets reach a component's shadow root as
   they reach the page (the starter's loader and the editor's preview both do
   this), so the template looks the same. The new stylesheet only holds

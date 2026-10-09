@@ -1,7 +1,7 @@
 ---
 title: "Make component: the repeated item becomes a card component"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [08-slot-plan-repeated-groups-and-lists, 09-slot-plan-nested-instances-and-stretched-links]
 builder: claude ★
@@ -22,3 +22,9 @@ Ticket [04](../../tickets/04-prototype-making-components.md) §7–8, and decide
 
 - Unit tests: a grid of `<article class="card">` gives `section-…` plus `card-…` with the right slots and fallback, and the page's items rewritten as `<card-…>` instances with their own text, images and links in slots; names singularised; existing instances untouched; free tag names.
 - Making a component from the starter's Recent work section writes both components and converts the items as one undo step; the page looks the same.
+
+## Done (2026-10-09)
+
+- `makeComponentPlan(…, taken)` returns `cards`: a group of plain items (article, div, figure, a, blockquote) whose plan has a heading slot (`hasHeadingSlot`) becomes `card-…` (`cardTagFor`: the items slot's name, else the new component's, last word singular, numbered when taken); the items written alike (same template once fallbacks go, at least two) become its instances with their own content, odd ones stay plain. The items slot's fallback is one empty card instance, also for a group of existing `card-…` instances. Make component writes all files and the page in one undo step.
+- Commit "Make component: repeated plain items become a card component" on `dev`.
+- Tests: `tests/component-model.test.ts` (card grid, odd/unlike items, list items, no heading, instances, fixed groups, two groups, link cards, names, heading slot); `native-cards.spec.ts` "Make component on a grid of plain cards…" (the starter's Recent work holds `card-project` instances already, so the spec uses the native-cards Home with its cards written out plain).

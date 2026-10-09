@@ -4,12 +4,14 @@ import test from "node:test";
 import { startTags } from "../shared/html-source.ts";
 import {
   attributeEdit,
+  cardTagFor,
   attributeNameProblem,
   componentUsage,
   detachMarkup,
   fillInsertEdit,
   fillMarkup,
   fillRemoveEdits,
+  hasHeadingSlot,
   makeComponentPlan,
   parseSource,
   plainText,
@@ -565,11 +567,12 @@ test("make component on the starter's Recent work: its card instances become the
   assert.equal(plan.template, `<section class="flow">
   <slot name="title"><h2>Recent work</h2></slot>
   <div class="cards">
-    <slot></slot>
+    <slot><card-project></card-project></slot>
   </div>
 </section>
 `);
-  // Each instance moves as it is, its own slots kept.
+  // Each instance moves as it is, its own slots kept; no card is made of them, and the fallback is one of theirs.
+  assert.deepEqual(plan.cards, []);
   assert.equal((plan.instance.match(/<card-project>/g) ?? []).length, 3);
   assert.match(plan.instance, /^<section-work id="work">\n      <h2 slot="title">Recent work<\/h2>\n      <card-project>\n        <p slot="note">Cafe/);
   assert.deepEqual(plan.slots.map(({ name, items }) => [name, items?.length]), [["title", undefined], ["", 3]]);
@@ -606,7 +609,9 @@ test("make component: later groups are items-2, items-3; one item alone or items
   const grouped = makeComponentPlan(mixed, rangeOf(mixed, "section"), "section-x");
   assert.ok(!("error" in grouped));
   assert.deepEqual(grouped.slots.map(({ name, items }) => [name, items]), [["", [[0], [1]]], ["items-2", [[2], [3]]]]);
-  assert.equal(grouped.template, `<section><slot></slot><slot name="items-2"></slot></section>\n`);
+  // Items without a heading make no card; a group of card instances has one empty instance as its fallback.
+  assert.equal(grouped.template, `<section><slot></slot><slot name="items-2"><card-note></card-note></slot></section>\n`);
+  assert.deepEqual(grouped.cards, []);
   // Names come from position: the first group kept fixed leaves the second named items-2.
   const firstFixed = makeComponentPlan(mixed, rangeOf(mixed, "section"), "section-x", { fixed: [[0]] });
   assert.ok(!("error" in firstFixed));
@@ -654,10 +659,14 @@ test("make component: a list becomes one list slot, its items not slots of their
 
 test("make component: a group renamed or kept fixed; a renamed items slot keeps its role once its fallback is a card component", () => {
   const source = `<section><h2>Services</h2><div class="card"><h3>A</h3></div><div class="card"><h3>B</h3></div></section>`;
+  const items = (template: string) => templateSlots(template).map(({ name, items: role }) => [name, role]);
   const renamed = makeComponentPlan(source, rangeOf(source, "section"), "section-services", { names: [{ path: [1], name: "services" }] });
   assert.ok(!("error" in renamed));
-  assert.equal(renamed.template, `<section><slot name="title"><h2>Services</h2></slot><slot name="services"></slot></section>\n`);
-  assert.match(renamed.instance, /<div slot="services" class="card"><h3>A<\/h3><\/div><div slot="services" class="card"><h3>B<\/h3><\/div>/);
+  // The items become a card component named from the slot, its instances filling the renamed slot.
+  assert.equal(renamed.template, `<section><slot name="title"><h2>Services</h2></slot><slot name="services"><card-service></card-service></slot></section>\n`);
+  assert.deepEqual(renamed.cards.map(({ tag, slot, template }) => [tag, slot, template]), [["card-service", "services", `<div class="card"><slot name="title"><h3>A</h3></slot></div>\n`]]);
+  assert.match(renamed.instance, /<card-service slot="services">\n    <h3 slot="title">A<\/h3>\n  <\/card-service><card-service slot="services">\n    <h3 slot="title">B<\/h3>\n  <\/card-service>/);
+  assert.deepEqual(items(renamed.template), [["title", false], ["services", true]]);
   // Kept fixed, the items stay in the template; a part made a slot inside one of them still is.
   const kept = makeComponentPlan(source, rangeOf(source, "section"), "section-services", { fixed: [[1]], slots: [[2, 0]] });
   assert.ok(!("error" in kept));
@@ -677,11 +686,150 @@ test("make component: a group renamed or kept fixed; a renamed items slot keeps 
     ["2", "content", false, false],
   ]);
   // In a template: the unnamed slot is an items slot; a named one only when its fallback is a card component.
-  const items = (template: string) => templateSlots(template).map(({ name, items: role }) => [name, role]);
   assert.deepEqual(items(`<slot name="services"></slot>`), [["services", false]]);
   assert.deepEqual(items(`<slot name="services">\n  <card-service></card-service>\n</slot>`), [["services", true]]);
   assert.deepEqual(items(`<slot name="note"><block-note></block-note></slot><slot name="pair"><card-a></card-a><p>x</p></slot><slot><p>Text</p></slot>`),
     [["note", false], ["pair", false], ["", true]]);
+});
+
+test("make component: a grid of plain cards becomes a card component too, the page's cards its instances", () => {
+  const source = `<main>
+  <section class="work" id="work">
+    <h2>Recent work</h2>
+    <div class="cards">
+      <article class="card" id="fern">
+        <img src="/fern.jpg" alt="Fern &amp; Kettle">
+        <h3>Fern &amp; Kettle</h3>
+        <p>A <em>cafe</em> site.</p>
+        <a href="/work/fern/">Read about Fern</a>
+      </article>
+      <article class="card">
+        <img src="/harbour.jpg" alt="Harbour">
+        <h3>Harbour</h3>
+        <p>A pottery.</p>
+        <a href="/work/harbour/">Read about Harbour</a>
+      </article>
+    </div>
+  </section>
+</main>`;
+  const range = rangeOf(source, "section");
+  const plan = makeComponentPlan(source, range, "section-works", {}, ["card-project"]);
+  assert.ok(!("error" in plan));
+  // The items slot's fallback is one empty instance of the card, named from the element (singular).
+  assert.equal(plan.template, `<section class="work">
+  <slot name="title"><h2>Recent work</h2></slot>
+  <div class="cards">
+    <slot><card-work></card-work></slot>
+  </div>
+</section>
+`);
+  assert.equal(plan.cards.length, 1);
+  const [card] = plan.cards;
+  assert.equal(card.tag, "card-work");
+  assert.equal(card.slot, "");
+  assert.deepEqual(card.instances, [[1, 0], [1, 1]]);
+  // The card's own slots follow the default editables rule, its fallbacks the first card's.
+  assert.equal(card.template, `<article class="card">
+  <slot name="image"><img src="/fern.jpg" alt="Fern &amp; Kettle"></slot>
+  <slot name="title"><h3>Fern &amp; Kettle</h3></slot>
+  <slot name="text"><p>A <em>cafe</em> site.</p></slot>
+  <slot name="link"><a href="/work/fern/">Read about Fern</a></slot>
+</article>
+`);
+  assert.deepEqual(card.slots.map(({ name, kind }) => [name, kind]), [["image", "image"], ["title", "text"], ["text", "text"], ["link", "link"]]);
+  assert.equal(card.css, `:host {\n  display: block;\n}\n`);
+  // Each card keeps its own text, image and link in its slots; the id moves to its instance.
+  assert.equal(plan.instance, `<section-works id="work">
+    <h2 slot="title">Recent work</h2>
+    <card-work id="fern">
+      <img slot="image" src="/fern.jpg" alt="Fern &amp; Kettle">
+      <h3 slot="title">Fern &amp; Kettle</h3>
+      <p slot="text">A <em>cafe</em> site.</p>
+      <a slot="link" href="/work/fern/">Read about Fern</a>
+    </card-work>
+    <card-work>
+      <img slot="image" src="/harbour.jpg" alt="Harbour">
+      <h3 slot="title">Harbour</h3>
+      <p slot="text">A pottery.</p>
+      <a slot="link" href="/work/harbour/">Read about Harbour</a>
+    </card-work>
+  </section-works>`);
+  // The page shows what it showed: the cards fill the section's items slot, and every card slot is filled.
+  const page = source.slice(0, range.start) + plan.instance + source.slice(range.end);
+  assert.equal(slotStates(plan.template, readInstance(page, rangeOf(page, "section-works"))).get("")?.shown, true);
+  for (const nth of [0, 1]) {
+    const states = slotStates(card.template, readInstance(page, rangeOf(page, "card-work", nth)));
+    assert.deepEqual([...states.values()].map((state) => state.filled), [true, true, true, true]);
+  }
+  assert.deepEqual(templateSlots(plan.template).map(({ name, items }) => [name, items]), [["title", false], ["", true]]);
+});
+
+test("make component: cards written differently, instances, list items and items without a heading", () => {
+  const plan = (source: string, name = "section", taken: string[] = []) => {
+    const made = makeComponentPlan(source, rangeOf(source, name), "section-x", {}, taken);
+    assert.ok(!("error" in made));
+    return made;
+  };
+  // Only the cards written alike become instances (the most of them); the odd one stays as it is.
+  const odd = plan(`<section><article class="card"><h3>A</h3></article><article class="card featured"><h3>B</h3></article><article class="card"><h3>C</h3></article></section>`);
+  assert.deepEqual(odd.cards.map(({ tag, instances }) => [tag, instances]), [["card-x", [[0], [2]]]]);
+  assert.match(odd.instance, /<\/card-x><article class="card featured"><h3>B<\/h3><\/article><card-x>/);
+  // Fewer than two alike: no card, the items move as they are.
+  const unlike = plan(`<section><article class="card"><h3>A</h3><p>a</p></article><article class="card"><h3>B</h3></article></section>`);
+  assert.deepEqual(unlike.cards, []);
+  assert.equal(unlike.template, `<section><slot></slot></section>\n`);
+  // Items without a heading, list items and existing instances are no new card.
+  assert.deepEqual(plan(`<section><figure class="logo"><img src="/a.svg" alt="A"></figure><figure class="logo"><img src="/b.svg" alt="B"></figure></section>`).cards, []);
+  assert.deepEqual(plan(`<ul class="links"><li><h3>A</h3></li><li><h3>B</h3></li></ul>`, "ul").cards, []);
+  const instances = plan(`<section><card-project><h3 slot="title">A</h3></card-project><card-project></card-project></section>`);
+  assert.deepEqual(instances.cards, []);
+  assert.match(instances.instance, /\n  <card-project><h3 slot="title">A<\/h3><\/card-project><card-project><\/card-project>\n/);
+  // Free names: taken tags and the new component's own are skipped; each group gets its own card.
+  const two = plan(`<section><div class="a"><div class="card"><h3>A</h3></div><div class="card"><h3>B</h3></div></div><div class="b"><blockquote><h4>C</h4></blockquote><blockquote><h4>D</h4></blockquote></div></section>`, "section", ["card-x"]);
+  assert.deepEqual(two.cards.map(({ tag, slot }) => [tag, slot]), [["card-x-2", ""], ["card-x-3", "items-2"]]);
+  assert.match(two.template, /<slot><card-x-2><\/card-x-2><\/slot><\/div><div class="b"><slot name="items-2"><card-x-3><\/card-x-3><\/slot>/);
+  assert.match(two.instance, /<card-x-3 slot="items-2">\n    <h4 slot="title">C<\/h4>\n  <\/card-x-3>/);
+  // Kept fixed, the group makes no card.
+  const fixed = makeComponentPlan(`<section><div class="card"><h3>A</h3></div><div class="card"><h3>B</h3></div></section>`, rangeOf(`<section><div class="card"><h3>A</h3></div><div class="card"><h3>B</h3></div></section>`, "section"), "section-x", { fixed: [[0]] });
+  assert.ok(!("error" in fixed));
+  assert.deepEqual(fixed.cards, []);
+});
+
+test("make component: link-wrapped cards become a card component whose title carries each card's link", () => {
+  const source = `<section>
+  <a class="card" href="/a/"><h3>A</h3><p>One</p></a>
+  <a class="card" href="/b/"><h3>B</h3><p>Two</p></a>
+</section>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-pages", { names: [{ path: [0], name: "pages" }] });
+  assert.ok(!("error" in plan));
+  const [card] = plan.cards;
+  assert.equal(card.tag, "card-page");
+  assert.equal(card.template, `<article class="card"><slot name="title"><h3><a href="/a/">A</a></h3></slot><slot name="text"><p>One</p></slot></article>\n`);
+  assert.match(card.css, /position: relative;/);
+  assert.deepEqual(card.notes, ["The whole card stays clickable through its title link."]);
+  assert.match(plan.instance, /<card-page slot="pages">\n    <h3 slot="title"><a href="\/b\/">B<\/a><\/h3>\n    <p slot="text">Two<\/p>\n  <\/card-page>/);
+});
+
+test("card names: from the items slot, singular, with the card- prefix, free", () => {
+  assert.equal(cardTagFor("services", "section-x", []), "card-service");
+  assert.equal(cardTagFor("", "section-stories", []), "card-story");
+  assert.equal(cardTagFor("items-2", "block-team", []), "card-team");
+  assert.equal(cardTagFor("project-cards", "section-x", []), "card-project");
+  assert.equal(cardTagFor("card-boxes", "section-x", []), "card-box");
+  assert.equal(cardTagFor("news", "section-x", []), "card-news");
+  assert.equal(cardTagFor("addresses", "section-x", []), "card-address");
+  assert.equal(cardTagFor("", "section-work", ["card-work", "card-work-2"]), "card-work-3");
+  assert.equal(cardTagFor("---", "section-x", []).length > 5, true);
+  assert.equal(tagNameProblem(cardTagFor("2 Big Things!", "section-x", []), []), undefined);
+});
+
+test("a card component's mark: a heading slot", () => {
+  assert.equal(hasHeadingSlot(`<article><slot name="title"><h3>A</h3></slot></article>`), true);
+  assert.equal(hasHeadingSlot(`<article><h3><slot name="title">A</slot></h3></article>`), true);
+  assert.equal(hasHeadingSlot(`<article><slot name="title"><h3><a href="/">A</a></h3></slot></article>`), true);
+  assert.equal(hasHeadingSlot(`<article><h3>Fixed</h3><slot name="text"><p>A</p></slot></article>`), false);
+  assert.equal(hasHeadingSlot(`<article><h3>Note: <slot name="title">A</slot></h3></article>`), false);
+  assert.equal(hasHeadingSlot(`<div><slot name="note"><p>A</p></slot></div>`), false);
 });
 
 test("make component: a nested instance becomes one ordinary whole slot, named from its tag", () => {
