@@ -13,3 +13,17 @@ export async function showPublish(page: Page) {
     await panel.locator(".publish-menu__total-summary").click();
   await expect(panel.locator(".publish-menu__files")).toBeVisible();
 }
+
+/** Opens the branch actions even when Publish is disabled. */
+export async function showPublishActions(page: Page) {
+  const panel = page.locator("#publish-files");
+  if (!(await panel.isVisible())) await page.getByRole("button", { name: "More publish actions", exact: true }).click();
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/** Opens the branch actions and asks to discard every unsaved change. */
+export async function discardAllChanges(page: Page) {
+  const panel = await showPublishActions(page);
+  await panel.getByRole("button", { name: "Discard changes", exact: true }).click();
+}

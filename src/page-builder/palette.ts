@@ -230,7 +230,7 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   return out;
 }
 
-const publishButton = () => document.querySelector<HTMLButtonElement>(".publish-menu > button");
+const publishButton = () => document.querySelector<HTMLButtonElement>(".publish-menu__trigger");
 
 function actionCommands(deps: EditorPaletteDeps): Command[] {
   const mac = isMac();

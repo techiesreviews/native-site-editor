@@ -1,5 +1,5 @@
 import { openPageSettingsFromPages } from "./settings-entry";
-import { publishButton, showPublish } from "./publish";
+import { discardAllChanges, publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -145,7 +145,7 @@ test("a new stylesheet is a file like any other; a new folder holds a .gitkeep; 
 
   // Discarding the new stylesheet takes it out of the tree.
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Discard changes" }).click();
+  await discardAllChanges(page);
   await page.getByRole("dialog", { name: /^Discard \d+ unsaved change/ }).getByRole("button", { name: "Discard all" }).click();
   await openFiles(page);
   await expect(row(page, "styles")).toHaveAttribute("aria-expanded", "true");
@@ -372,7 +372,7 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
 
   // So does Discard changes on the new page.
   await create("Draft page");
-  await page.getByRole("button", { name: "Discard changes" }).click();
+  await discardAllChanges(page);
   await page.getByRole("dialog", { name: /^Discard \d+ unsaved change/ }).getByRole("button", { name: "Discard all" }).click();
   await gone("Draft page");
 
@@ -393,7 +393,7 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
   await expect(item(page, "Intro")).toHaveCount(0);
   await expect(item(page, "Videos")).not.toHaveAttribute("aria-expanded");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Discard changes" }).click();
+  await discardAllChanges(page);
   await page.getByRole("dialog", { name: /^Discard \d+ unsaved change/ }).getByRole("button", { name: "Discard all" }).click();
   await gone("Videos");
 });

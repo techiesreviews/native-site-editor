@@ -1,3 +1,10 @@
+.publish-menu { display: inline-flex; align-items: stretch; flex-shrink: 0; }
+.publish-menu > .publish-menu__trigger { border-start-end-radius: 0; border-end-end-radius: 0; }
+.publish-menu > .publish-menu__more { border-start-start-radius: 0; border-end-start-radius: 0; border-left: 1px solid color-mix(in oklch, var(--on-primary) 35%, transparent); padding-inline: 8px; }
+.publish-menu__separator { border: 0; border-top: 1px solid var(--line); margin-block: 12px; }
+/* Discard changes: a destructive action, below the changes; disabled it keeps its colours, faded. */
+.publish-menu__panel > .publish-menu__discard, .publish-menu__panel > .publish-menu__discard:disabled { width: 100%; justify-content: start; color: var(--danger-fg); background: var(--danger-bg); }
+.publish-menu__panel > .publish-menu__discard:hover:enabled { background: var(--danger-bg); outline: 1px solid var(--danger); }
 .publish-menu__panel { width: min(380px, calc(100vw - 32px)); padding: var(--panel-padding-roomy); }
 .publish-menu__files { display: flex; flex-direction: column; gap: 10px; margin-block: 10px 0; max-height: 40dvh; overflow: auto; }
 .publish-menu__file { display: flex; gap: 10px; align-items: start; font-size: var(--type-base); overflow-wrap: anywhere; }
@@ -67,8 +74,8 @@
 /* The count of waiting changes on the trigger. */
 .publish-menu__count { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: oklch(from currentColor l c h / 0.2); font-size: var(--type-badge); font-weight: 600; }
 .publish-menu__count:empty, .publish-menu__count[hidden] { display: none; }
-.publish-menu > .button[data-state="live"] { background: var(--color-success); opacity: 1; }
-.publish-menu > .button[data-state="failed"] { background: var(--danger); opacity: 1; }
+.publish-menu:has(.publish-menu__trigger[data-state="live"]) > .button { background: var(--color-success); opacity: 1; }
+.publish-menu:has(.publish-menu__trigger[data-state="failed"]) > .button { background: var(--danger); opacity: 1; }
 /* The grand total, unfolding to the changes, each with its counts. */
 .publish-menu__total { font-size: var(--type-base); }
 .publish-menu__total-summary { font-weight: 600; cursor: pointer; }

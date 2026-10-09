@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { publishButton, showPublish } from "./publish";
+import { discardAllChanges, publishButton, showPublish, showPublishActions } from "./publish";
+import { sampleContrast, type Pixel } from "./tone-contrast";
 import { storedDrafts } from "./drafts";
 
-// Discard changes in the top bar drops every draft of the branch (after a
+// Discard changes in the Publish menu drops every draft of the branch (after a
 // question naming them); a draft that is GitHub's version again goes on its
 // own; the "GitHub changed these files" notice names only files still
 // waiting; and the tab follows the branch's head, even when GitHub's reads
@@ -32,7 +33,7 @@ test.afterEach(() => {
 });
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
-const discardAll = (page: Page) => page.getByRole("button", { name: "Discard changes", exact: true });
+const discardAll = (page: Page) => page.locator("#publish-files").getByRole("button", { name: "Discard changes", exact: true });
 const message = (page: Page) => page.locator("#publish-files .publish-menu__message");
 const revision = (page: Page) => page.locator("#revision");
 
@@ -121,13 +122,14 @@ test("Discard changes asks, then drops every draft, the agent's too: edits, a ne
     await expect(revision(page)).toHaveText(moved.slice(0, 7), { timeout: 15_000 });
     await expect(message(page)).toContainText("GitHub changed these files: styles/sections.css.");
 
+    await showPublishActions(page);
     await expect(discardAll(page)).toBeEnabled();
-    await discardAll(page).click();
+    await discardAllChanges(page);
     const dialog = page.getByRole("dialog", { name: "Discard 4 unsaved changes?" });
     await expect(dialog).toContainText("docs/new.md, index.html, robots.txt, styles/sections.css");
     await dialog.getByRole("button", { name: "Cancel" }).click();
     expect(await drafts(page)).toHaveLength(4);
-    await discardAll(page).click();
+    await discardAllChanges(page);
     await dialog.getByRole("button", { name: "Discard all" }).click();
     await expect(page.locator("#status")).toHaveText("Discarded 4 unsaved changes.");
 
@@ -135,6 +137,7 @@ test("Discard changes asks, then drops every draft, the agent's too: edits, a ne
     await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
     await expect(page.locator("#content .view-lines")).toContainText("<site-header");
     await expect(page.locator("#content .view-lines")).not.toContainText("Edited by an agent");
+    await showPublishActions(page);
     await expect(discardAll(page)).toBeDisabled();
     await expect(publishButton(page)).toBeDisabled();
     await expect(message(page)).toHaveText("");
@@ -248,4 +251,72 @@ test("one file's changes are discarded from its menu or the Save panel; the refu
   } finally {
     await client.close();
   }
+});
+
+test("Publish menu holds branch Discard and supports keyboard opening and focus return", async ({ page }) => {
+  const more = page.getByRole("button", { name: "More publish actions", exact: true });
+  const panel = page.locator("#publish-files");
+  const discard = panel.getByRole("button", { name: "Discard changes", exact: true });
+  await expect(page.locator("button:not(#publish-files button)").filter({ hasText: /^Discard changes$/ })).toHaveCount(0);
+  await expect(publishButton(page)).toBeDisabled();
+  await expect(more).toBeEnabled();
+  await expect(more).toHaveAttribute("aria-haspopup", "true");
+  await expect(more).toHaveAttribute("aria-controls", "publish-files");
+  for (const key of ["Enter", "Space", "ArrowDown"]) {
+    await more.focus();
+    await more.press(key);
+    await expect(panel).toBeVisible();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => panel.evaluate(element => element.contains(document.activeElement))).toBe(true);
+    await expect(discard).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect(more).toBeFocused();
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+  }
+  await pasteSource(page, indexSource.replace("A native browser preview", "Menu discard edit"));
+  await expect.poll(() => drafts(page)).toEqual([indexPath]);
+  await publishButton(page).focus();
+  await publishButton(page).press("ArrowDown");
+  await expect(panel).toBeVisible();
+  await expect.poll(() => panel.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(publishButton(page)).toBeFocused();
+  await more.click();
+  await expect(discard).toBeEnabled();
+  await expect(panel.locator("hr + button")).toHaveAccessibleName("Discard changes");
+  await expect(discard).toHaveAttribute("title", "Discard every unsaved change on this branch");
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const colours = await discard.evaluate(element => {
+      const style = getComputedStyle(element);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      return [style.color, style.backgroundColor].map(colour => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 1, 1);
+        return { colour, rgba: Array.from(context.getImageData(0, 0, 1, 1).data).map(channel => channel / 255) };
+      });
+    });
+    expect(sampleContrast({ foreground: colours[0] as Pixel, backgrounds: [colours[1] as Pixel] }).ratio, `${scheme} Discard text contrast`).toBeGreaterThanOrEqual(4.5);
+  }
+  await discardAllChanges(page);
+  const dialog = page.getByRole("dialog", { name: "Discard 1 unsaved change?" });
+  await expect(dialog).toBeVisible();
+  await expect(panel).toBeHidden();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(more).toBeFocused();
+  expect(await drafts(page)).toEqual([indexPath]);
+  await expect(frame(page).locator(".hero h1")).toHaveText("Menu discard edit");
+  await discardAllChanges(page);
+  await dialog.getByRole("button", { name: "Discard all", exact: true }).click();
+  await expect.poll(() => drafts(page)).toEqual([]);
+  await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
+  await more.click();
+  await expect(discard).toBeDisabled();
+  await more.click();
+  await expect(panel).toBeHidden();
+  await expect(more).toBeFocused();
 });

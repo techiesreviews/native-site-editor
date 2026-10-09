@@ -22,7 +22,7 @@ import { createDraftStore, RECEIPT_REFUSAL, type DraftEvent, type DraftTextStore
 import { createPublishMenu } from "./publish-menu";
 import { textHash, type AgentCommand } from "../../shared/agent";
 import type { EditorContext, PublishResult } from "../../shared/types";
-import { listChanges, type FileChange } from "../file-changes";
+import type { FileChange } from "../file-changes";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 
@@ -54,8 +54,8 @@ export interface SourceFile {
   /** Kept for callers; the store holds every file's text, so history needs no mounted target. */
   ensureHistoryTarget?: (path: string) => Promise<boolean>;
   /**
-   * Discard changes in the toolbar: every draft of the branch goes (the
-   * caller asks first). Without it, the button discards this file's draft.
+   * Discard changes in the Publish menu: every draft of the branch goes
+   * (the caller asks first).
    */
   onDiscardAll?: () => void;
   /** The branch's head as the tab last saw it, sent with a save. */
@@ -785,35 +785,13 @@ export function mountSourceEditor(
     for (const owner of owners) owner.dispose();
     return true;
   };
-  const discard = button(
-    "Discard changes",
-    () => {
-      if (file.onDiscardAll) {
-        file.onDiscardAll();
-        return;
-      }
-      if (!confirm(baseSha() === null ? "Discard this new file?" : "Discard this file’s draft changes? You can undo this in the editor.")) return;
-      if (discardNew()) return;
-      if (conflict) {
-        store.acceptBase(scope, file.path, { text: file.source, baseSha: file.baseSha });
-        conflict = false;
-        reviewingLatest = false;
-      }
-      store.discard(scope, file.path, session);
-    },
-    "text-button",
-  );
-  if (file.onDiscardAll) discard.title = "Discard every unsaved change on this branch";
-  // With Discard all, the button waits for any draft of the branch, not only this file's.
-  const refreshDiscard = (changed: boolean) => {
-    discard.disabled = !!file.readOnly || (file.onDiscardAll && file.scope ? listChanges(store.drafts(file.scope, () => draftStore().list(file.scope!))).length === 0 : !changed);
-  };
   const publisher =
     file.scope && !file.readOnly
       ? createPublishMenu({
           scope: file.scope,
           currentPath: file.path,
           saveLabels: file.saveLabels,
+          onDiscardAll: file.onDiscardAll,
           onDiscardChange: file.onDiscardChange,
           deletedUpstream: file.deletedUpstream,
           onSettleDeleted: file.onSettleDeleted,
@@ -833,12 +811,10 @@ export function mountSourceEditor(
           },
         })
       : undefined;
-  toolbar.append(undo, redo, review, discard);
-  const changedNow = () => baseSha() === null || docText(current) !== base();
+  toolbar.append(undo, redo, review);
   // A draft written outside this editor: the Save menu and Discard changes follow.
   const refreshOutside = () => {
     publisher?.refresh();
-    refreshDiscard(changedNow());
   };
   if (publisher) {
     toolbar.append(publisher.root);
@@ -920,7 +896,6 @@ export function mountSourceEditor(
     const message = file.readOnly ? "Read only" : draftStore().error ?? refusal;
     notice.hidden = !message;
     notice.textContent = message ?? "";
-    refreshDiscard(changedNow());
     undo.disabled = !!file.readOnly || !store.canUndo(session);
     redo.disabled = !!file.readOnly || !store.canRedo(session);
     undo.title = refusal && undo.disabled ? `Undo: ${refusal}` : "Undo";

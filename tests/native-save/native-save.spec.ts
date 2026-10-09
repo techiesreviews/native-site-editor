@@ -259,14 +259,16 @@ test("typing while a slow save is in flight keeps the newer draft", async ({ pag
   await saveSubmit(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saving to GitHub", { timeout: 5_000 });
   // The disabled button names the progress, then that it saved.
-  await expect(page.locator(".publish-menu > .button.primary")).toContainText("Saving…");
-  await expect(page.locator(".publish-menu > .button.primary")).toBeDisabled();
+  await expect(page.locator(".publish-menu__trigger")).toContainText("Saving…");
+  await expect(page.locator(".publish-menu__trigger")).toBeDisabled();
+  await expect(page.locator("#publish-files").getByRole("button", { name: "Discard changes", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "More publish actions", exact: true })).toBeEnabled();
 
   // Type more while the request is still pending.
   await pasteSource(page, "", indexSource.replace("A native browser preview", "Typed during save"));
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   // The edit typed meanwhile waits: the button offers to publish it.
-  await expect(page.locator(".publish-menu > .button.primary")).toContainText("Publish1");
+  await expect(page.locator(".publish-menu__trigger")).toContainText("Publish1");
 
   // The in-flight edit survives as a new draft on top of the committed content.
   await expect(frame.getByRole("heading", { name: "Typed during save" })).toBeVisible();

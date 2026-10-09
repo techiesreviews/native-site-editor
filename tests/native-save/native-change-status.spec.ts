@@ -58,7 +58,7 @@ async function deployLink(page: Page, name: string) {
   await trigger(page).hover();
   return page.locator("#publish-files .publish-menu__message").getByRole("link", { name });
 }
-const trigger = (page: Page) => page.locator(".publish-menu > .button");
+const trigger = (page: Page) => page.locator(".publish-menu__trigger");
 
 async function openProjectMenu(page: Page) {
   await page.locator(".repository-menu__trigger").click();

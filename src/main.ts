@@ -3155,7 +3155,7 @@ const setupController = createSetupChecklistController({
     else refuse("This repository has a home page already.");
   },
   save: () => {
-    const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
+    const trigger = document.querySelector<HTMLButtonElement>(".publish-menu__trigger");
     if (!trigger || trigger.disabled) { refuse("There is nothing to save yet."); return; }
     trigger.focus();
     trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));

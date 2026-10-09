@@ -1,4 +1,4 @@
-import { publishButton, showPublish } from "./publish";
+import { discardAllChanges, publishButton, showPublish } from "./publish";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -414,7 +414,7 @@ test("a home page an agent writes switches the site on, and discarding all bring
     expect((await site()).pages?.length ?? 1).toBeGreaterThan(0);
 
     // Discard changes on the unsaved site: the repository is site-less again.
-    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await discardAllChanges(page);
     await page.getByRole("dialog").getByRole("button", { name: "Discard all" }).click();
     await expect(page.getByRole("heading", { name: "Start your site" })).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await site()).native, { timeout: 15_000 }).toBe(false);

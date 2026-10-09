@@ -1,4 +1,5 @@
 import { button, link, node } from "../ui/dom";
+import { setIcon } from "../icons";
 import { mountDropdown } from "./dropdown";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "../drafts";
 import { EMPTY_COMMIT, type PublishFile, type PublishResult } from "../../shared/types";
@@ -44,6 +45,8 @@ export function createPublishMenu(options: {
   onExpired: () => void;
   /** Native projects word the progress as saving to GitHub. */
   saveLabels?: boolean;
+  /** Asks to discard every draft of the branch. */
+  onDiscardAll?: () => void;
   /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
   onDiscardChange?: (change: FileChange) => void;
   /** Whether the draft at `path` is an edit of a file GitHub deleted since it began: it cannot be saved as it is. */
@@ -64,8 +67,13 @@ export function createPublishMenu(options: {
   const panel = node("div", "publish-menu__panel");
   panel.id = "publish-files";
   panel.setAttribute("aria-label", "Changes to publish");
-  const trigger = node("button", "button primary");
+  const trigger = node("button", "button primary publish-menu__trigger");
   trigger.type = "button";
+  const more = node("button", "button primary publish-menu__more");
+  more.type = "button";
+  more.setAttribute("aria-label", "More publish actions");
+  more.setAttribute("aria-haspopup", "true");
+  setIcon(more, "caret-down");
   // The button names the progress of a publish, then its deploy
   // (deploy-status.ts), and goes back to Publish when it is done.
   const label = node("span", "publish-menu__label", "Publish");
@@ -86,8 +94,17 @@ export function createPublishMenu(options: {
   const message = node("p", "muted publish-menu__message");
   message.setAttribute("role", "status");
   panel.append(total, message);
-  root.append(trigger, panel);
-  const dropdown = mountDropdown({ trigger, panel, anchor: "--publish-files", onClick: () => void send() });
+  const discard = options.onDiscardAll ? button("Discard changes", () => {
+    dropdown.close();
+    more.focus();
+    options.onDiscardAll?.();
+  }, "button publish-menu__discard") : undefined;
+  if (discard) {
+    discard.title = "Discard every unsaved change on this branch";
+    panel.append(node("hr", "publish-menu__separator"), discard);
+  }
+  root.append(trigger, more, panel);
+  const dropdown = mountDropdown({ trigger, secondaryTrigger: more, anchorElement: root, align: "end", panel, anchor: "--publish-files", onClick: () => void send() });
   // Every change is selected unless it was unticked here.
   const unticked = new Set<string>();
   let records: FileChange[] = [];
@@ -134,6 +151,7 @@ export function createPublishMenu(options: {
   function showState() {
     if (pending) return;
     trigger.disabled = records.length === 0;
+    if (discard) discard.disabled = records.length === 0;
     const word = !deploy || records.length ? "Publish"
       : deploy.state === "saved" ? "Saved"
       : deploy.state === "building" ? "Deploying…"
@@ -335,6 +353,7 @@ export function createPublishMenu(options: {
     if (pending) return;
     if (!submitted.length) { message.textContent = "Nothing selected to publish."; return; }
     pending = true; trigger.disabled = true;
+    if (discard) discard.disabled = true;
     list.querySelectorAll("input").forEach(input => input.disabled = true);
     message.textContent = pendingText;
     showingDeploy = false;
