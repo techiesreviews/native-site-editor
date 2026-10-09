@@ -57,6 +57,7 @@ import {
 } from "./component-model";
 import { componentIcon, mark, type ComponentMark } from "./component-icon";
 import "../components/create-dialog.css";
+import { cb14Install, cb14InterceptEdit, cb14EditBarControls } from "../prototype/cb14"; // PROTOTYPE cb14
 
 type CodeEditor = typeof import("../components/source-editor");
 
@@ -428,7 +429,7 @@ export function createComponentTools(deps: ComponentDeps) {
 
   /** The edit bar's component actions for a selection. */
   function controls(selection: NativePreviewSelection): EditBarControl[] {
-    const out: EditBarControl[] = [];
+    const out: EditBarControl[] = [...cb14EditBarControls(selection)]; // PROTOTYPE cb14 (was: [])
     if (isComponent(selection.tag)) {
       return out;
     }
@@ -457,6 +458,7 @@ export function createComponentTools(deps: ComponentDeps) {
    */
   let explicitTemplate: { path: string; revision: string } | undefined;
   async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }) {
+    if (cb14InterceptEdit(tag)) return; // PROTOTYPE cb14
     const template = templateOf(tag);
     if (!template) return;
     const from = deps.selection();
@@ -1455,6 +1457,7 @@ export function createComponentTools(deps: ComponentDeps) {
     };
   }
 
+  cb14Install({ deps, editComponent: (tag) => editComponent(tag) }); // PROTOTYPE cb14
   return {
     identity,
     /** Only explicit template entry permits shared-template editing from a page preview. */

@@ -55,6 +55,7 @@ import "./native-preview.css";
 // The runtime (native-preview-runtime.js, a plain classic script) is emitted
 // by Vite as-is under a content-hashed /assets/ URL, so it is cached as
 // immutable. The URL is absolute so the about:srcdoc frame needs no base URL.
+import { cb14FrameTag } from "../prototype/cb14"; // PROTOTYPE cb14
 const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
 // A tab opened before a deploy asks for the previous hash, which is gone: the
 // sandboxed frame's failed <script> never reaches the parent, so the host
@@ -72,7 +73,7 @@ const RUNTIME_DOC = `<!doctype html>
 </head>
 <body><div id="root" data-key="root"><div id="page" data-key="page"></div></div></body>
 </html>`;
-const runtimeDoc = (load: number) => RUNTIME_DOC.replace("__FRAME_LOAD__", String(load));
+const runtimeDoc = (load: number) => RUNTIME_DOC.replace("__FRAME_LOAD__", String(load)).replace("</head>", `${cb14FrameTag()}</head>`); // PROTOTYPE cb14 (was: without the second replace)
 
 interface UpdateInput {
   sources?: Record<string, string>;
