@@ -121,6 +121,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [59 Tone formulas and the contrast sweep test](tickets/59-tone-formula-sweep-test.md) | sol | – |
 | [69 Tone: cap the band surface's chroma to sRGB](tickets/69-tone-chroma-cap.md) | sol | 59 |
 | [60 Starter: four tones from one brand colour](tickets/60-starter-tone-rules.md) | claude ★ | 59, 69 |
+| [75 Starter: pages follow the visitor's light or dark setting](tickets/75-starter-follows-visitor-scheme.md) | sol | 60 |
 | [61 Tone in the edit bar, on page bands only](tickets/61-tone-on-bands-only.md) | sol | 13 |
 | [62 Browser check of the starter's tones](tickets/62-tone-contrast-browser-check.md) | sol | 60 |
 | [63 Vendor the new starter for the preview editor](tickets/63-vendor-starter-for-preview.md) | sol | 05, 06, 15, 17, 58, 60, 65 |

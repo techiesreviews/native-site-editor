@@ -19,3 +19,5 @@ Ticket [08](../../tickets/08-accessible-tone-text.md) §3: the CSS must match th
 
 - The spec passes on the starter's tones and fails when the nudge is removed from the CSS (checked once by hand).
 - The other tests that use `fixtures/actual-starter`, the drift test included, still pass.
+
+**Note (2026-10-09), from slice 60:** computed colours on the starter now read back as `color(srgb-linear …)` rather than `rgb(…)`; specs comparing against exact `rgb()` values need a tolerance after `fixtures/actual-starter` is refreshed. Check both `prefers-color-scheme` modes (slice 75).
