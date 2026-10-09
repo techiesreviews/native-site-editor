@@ -43,6 +43,21 @@ async function openRouting(page: Page, baseURL: string | undefined) {
   await expect(item(page, "Fern and kettle")).toBeVisible();
 }
 
+// Pointer events and the waits between them, run inside the page: the waits
+// are timers queued after the grace period's own, so they keep their order
+// however busy the page is, where a test round trip can take longer than the
+// grace period. Returns whether the stale title was still shown at the end.
+type PointerStep = ["pointerdown" | "pointerup" | "pointercancel", number] | number;
+function pointerSteps(page: Page, pointerType: "touch" | "pen", steps: PointerStep[]) {
+  return explorer(page).evaluate(async (el, { pointerType, steps }) => {
+    for (const step of steps) {
+      if (typeof step === "number") await new Promise(resolve => setTimeout(resolve, step));
+      else el.dispatchEvent(new PointerEvent(step[0], { pointerId: step[1], pointerType, button: 0, bubbles: true, cancelable: true, composed: true }));
+    }
+    return [...el.querySelectorAll(".pages-label")].some(label => label.textContent === "Fern and kettle");
+  }, { pointerType, steps });
+}
+
 async function expectRefreshed(page: Page) {
   await expect(item(page, "Fern & Kettle")).toBeVisible();
   await expect(item(page, "Notes")).toBeFocused();
@@ -221,14 +236,21 @@ for (const pointerType of ["touch", "pen"] as const) {
     await titles.requested;
     await button.dispatchEvent("pointerdown", { pointerId: 81, pointerType, button: 0, bubbles: true });
     await titles.release();
-    await button.dispatchEvent("pointerup", { pointerId: 81, pointerType, button: 0, bubbles: true });
-    // Model the browser's delayed tap/pen click in a later input task.
-    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    expect(await original!.evaluate(element => element.isConnected)).toBe(true);
-    await expect(item(page, "Fern and kettle")).toBeVisible();
-    await original!.evaluate((element, type) => element.dispatchEvent(new PointerEvent("click", { pointerId: 81, pointerType: type, button: 0, bubbles: true })), pointerType);
+    // Release, then model the browser's delayed tap/pen click two frames later,
+    // all inside the page: a test round trip between them can take longer than
+    // the grace period on a busy runner, which no real click does.
+    const connected = await original!.evaluate(async (element, type) => {
+      const init = { pointerId: 81, pointerType: type, button: 0, bubbles: true, cancelable: true, composed: true };
+      element.dispatchEvent(new PointerEvent("pointerup", init));
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const isConnected = element.isConnected;
+      element.dispatchEvent(new PointerEvent("click", init));
+      return isConnected;
+    }, pointerType);
+    expect(connected).toBe(true);
     const input = explorer(page).getByRole("textbox", { name: "URL of Fern and kettle", exact: true });
     await expect(input).toBeFocused();
+    await expect(item(page, "Fern and kettle")).toBeVisible();
     await input.press("Escape");
     await expect(item(page, "Fern & Kettle")).toBeVisible();
   });
@@ -245,10 +267,8 @@ for (const pointerType of ["touch", "pen"] as const) {
     await explorer(page).dispatchEvent("pointerup", { pointerId: 92, pointerType, button: 0, bubbles: true });
     await page.waitForTimeout(1500);
     await expect(item(page, "Fern and kettle")).toBeVisible();
-    await explorer(page).dispatchEvent("pointerup", { pointerId: 91, pointerType, button: 0, bubbles: true });
     // A tap's click may still be on its way, so the titles wait well past the next frames.
-    await page.waitForTimeout(500);
-    await expect(item(page, "Fern and kettle")).toBeVisible();
+    expect(await pointerSteps(page, pointerType, [["pointerup", 91], 500])).toBe(true);
     // Gestures under touch-action: none can end without any click at all.
     await expect(item(page, "Fern & Kettle")).toBeVisible();
   });
@@ -260,10 +280,7 @@ test("a new touch gesture within the grace period outlives the previous release'
   await titles.requested;
   await explorer(page).dispatchEvent("pointerdown", { pointerId: 91, pointerType: "touch", button: 0, bubbles: true });
   await titles.release();
-  await explorer(page).dispatchEvent("pointerup", { pointerId: 91, pointerType: "touch", button: 0, bubbles: true });
-  await page.waitForTimeout(300);
-  await explorer(page).dispatchEvent("pointerdown", { pointerId: 94, pointerType: "touch", button: 0, bubbles: true });
-  await page.waitForTimeout(1500);
+  expect(await pointerSteps(page, "touch", [["pointerup", 91], 300, ["pointerdown", 94], 1500])).toBe(true);
   await expect(item(page, "Fern and kettle")).toBeVisible();
   await explorer(page).dispatchEvent("pointercancel", { pointerId: 94, pointerType: "touch", button: 0, bubbles: true });
   await expect(item(page, "Fern & Kettle")).toBeVisible();
