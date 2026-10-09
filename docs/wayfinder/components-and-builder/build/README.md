@@ -42,7 +42,8 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [15 Starter: variants on its components](tickets/15-starter-variant-examples.md) | sol | – |
 | [16 Conventions: one Components chapter for agents](tickets/16-conventions-components-chapter.md) | claude ★ | 03 |
 | [17 Starter: the Components chapter in AGENTS.md](tickets/17-starter-agents-components-chapter.md) | sol | 16, 05 |
-| [18 Drift test for the starter's AGENTS.md](tickets/18-agents-md-drift-test.md) | sol | 17 |
+| [70 Conventions: fix the Components chapter where the starter showed it wrong](tickets/70-chapter-fixes-after-starter.md) | sol | 16, 17, 68 |
+| [18 Drift test for the starter's AGENTS.md](tickets/18-agents-md-drift-test.md) | sol | 17, 70 |
 | [19 MCP: make_component](tickets/19-make-component-mcp-tool.md) | sol | 10 |
 | [20 MCP: get_site lists variants](tickets/20-get-site-variants.md) | sol | 12 |
 | [64 Make component copies the element's page CSS into the component](tickets/64-make-component-carries-css.md) | claude ★ | 10 |

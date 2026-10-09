@@ -3,7 +3,7 @@ title: Drift test for the starter's AGENTS.md
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [17-starter-agents-components-chapter]
+blocked_by: [17-starter-agents-components-chapter, 70-chapter-fixes-after-starter]
 builder: sol
 phase: 2
 ---
