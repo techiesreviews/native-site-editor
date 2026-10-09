@@ -1153,6 +1153,11 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- Make component. ----
 
   async function openMakeComponent(selection: NativePreviewSelection) {
+    const path = selection.path;
+    const nodePath = selection.node;
+    const sources = deps.sources();
+    const source = sources[path];
+    const revision = deps.revision();
     // The page CSS the component takes along (ticket 64) is worked out by a module loaded here.
     let carry: typeof import("./component-css");
     try {
@@ -1162,17 +1167,12 @@ export function createComponentTools(deps: ComponentDeps) {
       deps.announce("Make component could not load. Try again.");
       return;
     }
-    const path = selection.path;
-    const nodePath = selection.node;
-    const sources = deps.sources();
-    const source = sources[path];
+    if (deps.revision() !== revision || deps.sources()[path] !== source) { deps.announce("The page or repository changed meanwhile; select the element again."); return; }
     const current = site();
-    const revision = deps.revision();
     if (!nodePath || source === undefined || !current) return;
     const range = locateNativeElementRange(source, nodePath);
     if (!range?.close) { deps.announce("The element's end tag could not be found in the source."); return; }
-    const linked = nativePageStylesheets(source, path).filter((file) => sources[file] !== undefined);
-    const sheets = expandStyleImports(linked, (file) => sources[file]).sheets;
+    const { sheets, unchanged } = pageStyles(path, source, revision);
     const taken = Object.keys(current.components);
     const nameField = node("label", "create-dialog__field");
     nameField.append("Component name");
@@ -1237,17 +1237,40 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!ok) return;
     const planned = plan();
     if (!planned.made || !planned.tag) return;
-    if (deps.revision() !== revision || deps.sources()[path] !== source) {
-      deps.announce("The page or repository changed meanwhile; no component was made.");
+    if (!unchanged()) {
+      deps.announce("The page, its styles or the repository changed meanwhile; no component was made.");
       return;
     }
-    await makeComponent({ path, nodePath: [...nodePath], tag: planned.tag, source, range, made: planned.made, revision });
+    await makeComponent({ path, nodePath: [...nodePath], tag: planned.tag, source, made: planned.made, range, unchanged });
+  }
+
+  /**
+   * The page's stylesheets, imports expanded, for the CSS Make component
+   * carries; `unchanged`: the page, those stylesheets and the repository are
+   * as they were, so the plan made from them still holds.
+   */
+  function pageStyles(path: string, source: string, revision: string) {
+    const sources = deps.sources();
+    const linked = nativePageStylesheets(source, path).filter((file) => sources[file] !== undefined);
+    const expanded = expandStyleImports(linked, (file) => sources[file]);
+    const styled = [...new Set([...linked, ...expanded.imported])].map((file) => [file, sources[file]] as const);
+    const unchanged = () => deps.revision() === revision && deps.sources()[path] === source && styled.every(([file, text]) => deps.sources()[file] === text);
+    return { sheets: expanded.sheets, unchanged };
   }
 
   /** Make component without a dialog, using the same plan and undo transaction. */
   async function makeFromAgent(request: { path: string; source: string; node: number[]; tag: string; fixed?: string[] }) {
     const { path, source, node: nodePath, tag, fixed = [] } = request;
-    const current = site(), revision = deps.revision();
+    const revision = deps.revision();
+    let carry: typeof import("./component-css");
+    try {
+      carry = await import("./component-css");
+    } catch (error) {
+      void handleChunkLoadFailure(error);
+      return "Make component could not load. Try again.";
+    }
+    if (deps.revision() !== revision) return "The repository changed meanwhile. Read the page again.";
+    const current = site();
     if (!current || !editable(path)) return "Open the page first.";
     // The element id was read against the source whose hash the agent gave.
     if (deps.sources()[path] !== source) return "The page changed in the editor since it was read. Read it again.";
@@ -1260,14 +1283,16 @@ export function createComponentTools(deps: ComponentDeps) {
     if ("error" in initial) return initial.error;
     const paths = fixedSlotPaths(initial.slots, fixed);
     if ("error" in paths) return paths.error;
-    const made = makeComponentPlan(source, range, tag, { fixed: paths.fixed }, taken);
-    if ("error" in made) return made.error;
-    const error = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, revision });
+    const bare = makeComponentPlan(source, range, tag, { fixed: paths.fixed }, taken);
+    if ("error" in bare) return bare.error;
+    const { sheets, unchanged } = pageStyles(path, source, revision);
+    const made = carry.withPageCss(bare, source, range, tag, sheets);
+    const error = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged });
     if (error) return error;
     return {
       tag, files: madeFiles(tag, made).map((file) => file.path),
       slots: made.slots.filter((slot) => !slot.fixed).map((slot) => slot.name),
-      cards: made.cards.map((card) => card.tag), notes: made.notes,
+      cards: made.cards.map((card) => card.tag), notes: [...made.notes, ...made.cards.flatMap((card) => card.notes)],
     };
   }
 
@@ -1285,11 +1310,10 @@ export function createComponentTools(deps: ComponentDeps) {
    * instances, as one undo step: undoing the page's edit takes the new files
    * back, redoing writes them again. Resolves to why nothing was made, if so.
    */
-  async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; revision: string }) {
-    const { path, nodePath, tag, source, range, made, revision } = request;
-    const unchanged = () => deps.revision() === revision && deps.sources()[path] === source;
+  async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; unchanged: () => boolean }) {
+    const { path, nodePath, tag, source, range, made, unchanged } = request;
     const stop = (message: string) => { deps.announce(message); return message; };
-    const changed = "The page or repository changed meanwhile; no component was made.";
+    const changed = "The page, its styles or the repository changed meanwhile; no component was made.";
     if (!unchanged()) return stop(changed);
     const result = await deps.createFiles(madeFiles(tag, made));
     if ("error" in result) { deps.error(new Error(result.error)); return result.error; }

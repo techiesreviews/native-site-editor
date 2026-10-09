@@ -154,7 +154,7 @@ test("a rule whose subject sits inside a slotted element is reported and not cop
 }
 `);
   assert.deepEqual(plan.notes, [
-    "2 rules can't follow the parts into the component: .intro .lead a, .intro p a. They style something inside a part the page fills, or depend on what stands beside the element, which the component's CSS can't reach; nothing was copied for them.",
+    "2 rules can't follow the parts into the component: .intro .lead a, .intro p a. The component's CSS can't reach what they style once the element is a component; nothing was copied for them.",
   ]);
 });
 
@@ -234,4 +234,41 @@ article.tile h3 {
 test("no matching rules leave the plan's CSS as it was", () => {
   const plan = made(intro, `.other h2 { color: red; }\nh2 { margin: 0; }`);
   assert.equal(plan.css, ":host {\n  display: block;\n}\n");
+});
+
+test("flattening keeps declarations after a nested rule after it, nesting's list specificity, and strings as written", () => {
+  const rules = flatRules(`main .intro {
+  color: red;
+  & { color: blue; }
+  color: green; /* last */
+}
+.intro, #other { & h2 { color: red; } }
+.intro h2[data-label="a  b"] { content: "/* hi */"; }`, "s.css");
+  assert.deepEqual(rules.map((rule) => [rule.selectors, rule.declarations]), [
+    [["main .intro"], ["color: red"]],
+    [["main .intro"], ["color: blue"]],
+    [["main .intro"], ["color: green"]],
+    [[":is(.intro, #other) h2"], ["color: red"]],
+    [[`.intro h2[data-label="a  b"]`], [`content: "/* hi */"`]],
+  ]);
+});
+
+test("a template part beside a slot is matched as the template holds it", () => {
+  // In the template the heading is a <slot>: `h2 + .box` stops reaching the box, so it is copied, and fails there too.
+  const plan = made(`<section class="intro"><h2>Hi</h2><div class="box"><hr></div></section>`, `h2 + .box { color: red; }`);
+  assert.equal(copied(plan.css), "");
+  assert.match(plan.notes[0], /^1 rule can't follow the parts into the component: h2 \+ \.box\./);
+});
+
+test("a copy that can't reach its element is reported, not written", () => {
+  const plan = made(intro.replace(`<section class="intro">`, `<section class="intro" id="about">`), `:is(#about) .actions { display: flex; }
+main .intro h2::before { content: "Hi"; }
+main .intro .lead:has(a) { color: red; }`);
+  assert.equal(copied(plan.css), "");
+  assert.match(plan.notes[0], /^3 rules can't follow the parts into the component: :is\(#about\) \.actions, main \.intro h2::before, main \.intro \.lead:has\(a\)\./);
+});
+
+test("escaped url()s are decoded before they are rewritten", () => {
+  const plan = made(intro, `main .intro h2 { background: url("../images/bg\\20 wide.png"); }`);
+  assert.match(plan.css, /url\("\.\.\/\.\.\/images\/bg wide\.png"\)/);
 });

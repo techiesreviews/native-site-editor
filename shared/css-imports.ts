@@ -104,9 +104,12 @@ function closingParen(css: string, open: number) {
   return -1;
 }
 
+// A URL as written, quotes off and CSS escapes decoded (`bg\20 wide.png` is `bg wide.png`).
 const unquote = (value: string) => {
   const trimmed = value.trim();
-  return /^(["']).*\1$/s.test(trimmed) ? trimmed.slice(1, -1).replace(/\\(.)/g, "$1") : trimmed;
+  const inner = /^(["']).*\1$/s.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
+  return inner.replace(/\\(?:([0-9a-fA-F]{1,6})[\t\n\f\r ]?|([\s\S]))/g, (_, hex?: string, char?: string) =>
+    (hex ? String.fromCodePoint(Math.min(parseInt(hex, 16), 0x10ffff) || 0xfffd) : char ?? ""));
 };
 
 // The URL, layer, supports() and media parts of one statement's prelude.

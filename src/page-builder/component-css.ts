@@ -27,9 +27,9 @@
 // it runs in the unit tests as it does in the editor; the editor loads it
 // when Make component opens.
 
-import { splitSelectorList } from "../../shared/cascade";
+import { compareSpecificity, specificity, splitSelectorList } from "../../shared/cascade";
 import { resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
-import { blockEnd, preludeEnd, skipSpace, withoutComments } from "../../shared/slotted-css";
+import { blockEnd, preludeEnd, skipSpace, slottedTwin } from "../../shared/slotted-css";
 import { parseSource, startTagAttributes, type InstanceRange, type MakeComponentPlan, type PlannedSlot, type SourceElement, type SourceNode } from "./component-model";
 
 // ---- Stylesheets as flat style rules. ----
@@ -51,15 +51,20 @@ const KEPT = new Set(["media", "supports", "container", "starting-style"]);
 
 /**
  * The style rules of `css` in order of appearance, nested rules flattened
- * (`.a { & b {} }` → `.a b`; a parent's declarations before its nested
- * rules). `@layer` blocks are read through; `@keyframes`, `@font-face`,
- * `@scope` and other at-rules are left out.
+ * (`.a { & b {} }` → `.a b`; declarations after a nested rule a rule of
+ * their own after it). `@layer` blocks are read through; `@keyframes`,
+ * `@font-face`, `@scope` and other at-rules are left out.
  */
 export function flatRules(css: string, path: string): FlatRule[] {
   const out: FlatRule[] = [];
   const read = (start: number, end: number, wrappers: string[], parent?: string[]) => {
-    const own: FlatRule | undefined = parent ? { path, selectors: parent, declarations: [], wrappers } : undefined;
-    if (own) out.push(own);
+    // The rule the declarations read now go to: a new one after each nested block.
+    let own: FlatRule | undefined;
+    const declare = (text: string) => {
+      if (!parent) return;
+      if (!own) out.push(own = { path, selectors: parent, declarations: [], wrappers });
+      own.declarations.push(text);
+    };
     let pos = start;
     while (pos < end) {
       pos = skipSpace(css, pos);
@@ -67,35 +72,67 @@ export function flatRules(css: string, path: string): FlatRule[] {
       const stop = Math.min(preludeEnd(css, pos), end);
       if (css[stop] !== "{" || stop >= end) {
         // A declaration, or a statement at-rule (`@import`, `@layer a, b;`).
-        const text = withoutComments(css.slice(pos, stop)).trim();
-        if (own && !text.startsWith("@") && /^[\w-]+\s*:/.test(text)) own.declarations.push(text);
+        const text = clean(css.slice(pos, stop));
+        if (!text.startsWith("@") && /^[\w-]+\s*:/.test(text)) declare(text);
         pos = stop + 1;
         continue;
       }
       const close = Math.min(blockEnd(css, stop), end);
-      const prelude = withoutComments(css.slice(pos, stop)).trim().replace(/\s+/g, " ");
+      const prelude = clean(css.slice(pos, stop), true);
+      if (parent && /^--[\w-]*\s*:/.test(prelude)) {
+        // A custom property whose value holds a block.
+        declare(clean(css.slice(pos, close)));
+        pos = close;
+        continue;
+      }
       if (prelude.startsWith("@")) {
         const name = /^@([\w-]+)/.exec(prelude)?.[1].toLowerCase() ?? "";
         if (KEPT.has(name)) read(stop + 1, close - 1, [...wrappers, prelude], parent);
         else if (name === "layer") read(stop + 1, close - 1, wrappers, parent);
-      } else if (own && /^--[\w-]*\s*:/.test(prelude)) {
-        // A custom property whose value holds a block.
-        own.declarations.push(withoutComments(css.slice(pos, close)).trim());
       } else read(stop + 1, close - 1, wrappers, nested(prelude, parent));
+      own = undefined;
       pos = close;
     }
-    if (own && !own.declarations.length) out.splice(out.indexOf(own), 1);
   };
   read(0, css.length, []);
   return out;
 }
 
+/** `text` without comments and trimmed; `collapse`: runs of white space made one space. Strings stay as written. */
+function clean(text: string, collapse = false) {
+  let out = "", quote = "";
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (quote) {
+      out += char;
+      if (char === "\\") out += text[++index] ?? "";
+      else if (char === quote) quote = "";
+    } else if (char === "/" && text[index + 1] === "*") {
+      const close = text.indexOf("*/", index + 2);
+      index = close < 0 ? text.length : close + 1;
+      if (!out.endsWith(" ")) out += " ";
+    } else if (collapse && /\s/.test(char)) {
+      if (!out.endsWith(" ")) out += " ";
+    } else if (char === "\\") out += char + (text[++index] ?? "");
+    else {
+      if (char === "\"" || char === "'") quote = char;
+      out += char;
+    }
+  }
+  return out.trim();
+}
+
 // A nested rule's selectors with the parent's put in: `&` replaced (by the
 // parent part as written where that is exact, else `:is(…)`), a relative one
-// (`> b`, `b`) put after it.
+// (`> b`, `b`) put after it. A parent list whose parts differ in specificity
+// stays one `:is(…)`, which counts as the most specific, as nesting does.
 function nested(prelude: string, parent?: string[]) {
   const parts = splitSelectorList(prelude);
   if (!parent) return parts;
+  if (parent.some((outer) => compareSpecificity(specificity(outer), specificity(parent[0])))) {
+    const list = `:is(${parent.join(", ")})`;
+    return parts.map((part) => (/&/.test(part) ? part.replace(/&/g, list) : `${list} ${part}`));
+  }
   return parts.flatMap((part) => parent.map((outer) => {
     if (!/&/.test(part)) return `${outer} ${part}`;
     const plain = compoundsOf(outer)?.length === 1 || /^&(?![\w-])/.test(part) && !/&/.test(part.slice(1));
@@ -407,6 +444,8 @@ interface Territory {
   rootTag: string;
   /** Its slotted elements, in source order. */
   slotted: SourceElement[];
+  /** Its plan's slots, as `PlannedSlot` paths from the root. */
+  slots: readonly PlannedSlot[];
   bucket: Bucket;
 }
 
@@ -464,10 +503,10 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
       if (item) cardOf.set(item, index);
     }
   });
-  const main: Territory = { root: element, rootTag: rootTagOf(plan.template, element), slotted: slottedOf(element, plan.slots, new Set(cardOf.keys())), bucket: own };
+  const main: Territory = { root: element, rootTag: rootTagOf(plan.template, element), slotted: slottedOf(element, plan.slots, new Set(cardOf.keys())), slots: plan.slots, bucket: own };
   const items = new Map([...cardOf].map(([item, index]): [SourceElement, Territory] => {
     const card = plan.cards[index];
-    return [item, { root: item, rootTag: rootTagOf(card.template, item), slotted: slottedOf(item, card.slots, new Set()), bucket: buckets[index] }];
+    return [item, { root: item, rootTag: rootTagOf(card.template, item), slotted: slottedOf(item, card.slots, new Set()), slots: card.slots, bucket: buckets[index] }];
   }));
   const territoryOf = new Map<SourceElement, Territory>();
   const reachOf = new Map<SourceElement, Reach>();
@@ -504,17 +543,32 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
   const cardHosts = new Map([...items].map(([item]) => [item, instance(item, plan.cards[cardOf.get(item)!].tag, host)]));
   fill(host, [...main.slotted, ...cardHosts.keys()].sort((a, b) => a.start - b.start).map((el) => cardHosts.get(el) ?? el));
   for (const [item, territory] of items) fill(cardHosts.get(item)!, territory.slotted);
-  // A template as its shadow root holds it: the root on its own, without its id, under its template tag.
-  const shadows = new Map<Territory, Match>();
-  const shadowOf = (territory: Territory) => {
-    let shadow = shadows.get(territory);
-    if (!shadow) {
-      const attributes = new Map(attributesOf(page, territory.root));
-      attributes.delete("id");
-      shadow = { html: source, top, boundary: territory.root, attributes: new Map([[territory.root, attributes]]), names: new Map([[territory.root, territory.rootTag]]) };
-      shadows.set(territory, shadow);
+  // A template on its own (`bare`): the root without its id, under its template tag. As its shadow root holds it
+  // (`shadow`), each part slotted whole is a `<slot>` where it was, a repeated group one `<slot>` where its items were.
+  const templates = new Map<Territory, { bare: Match; shadow: Match }>();
+  const templateOf = (territory: Territory) => {
+    let made = templates.get(territory);
+    if (made) return made;
+    const root = territory.root;
+    const attributes = new Map(attributesOf(page, root));
+    attributes.delete("id");
+    const bare: Match = { html: source, top, boundary: root, attributes: new Map([[root, attributes]]), names: new Map([[root, territory.rootTag]]) };
+    const shadow: Match = { ...bare, attributes: new Map(bare.attributes), names: new Map(bare.names), siblings: new Map() };
+    const gone = new Set<SourceElement>();
+    for (const slot of territory.slots) {
+      if (slot.fixed || !slot.path.length) continue;
+      const group = (slot.items ?? [slot.path]).map((path) => at(root, path)).filter((el) => el !== undefined);
+      if (!group.length) continue;
+      shadow.names!.set(group[0], "slot");
+      shadow.attributes!.set(group[0], new Map(slot.name ? [["name", slot.name]] : []));
+      for (const item of group.slice(1)) gone.add(item);
     }
-    return shadow;
+    for (const parent of new Set([...gone].map((el) => el.parent))) {
+      const kept = parent ? elementsOf(parent.children).filter((el) => !gone.has(el)) : [];
+      for (const el of kept) shadow.siblings!.set(el, kept);
+    }
+    templates.set(territory, made = { bare, shadow });
+    return made;
   };
 
   const nodes = [...territoryOf.keys()];
@@ -528,10 +582,14 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
           if (!matches(page, node, part)) continue;
           const territory = territoryOf.get(node)!, reach = reachOf.get(node)!;
           // Still reached as it is: by the page, or in the template by the stylesheets its shadow root clones.
-          if (matches(reach === "template" ? shadowOf(territory) : after, node, part)) continue;
+          const { bare, shadow } = templateOf(territory);
+          if (matches(reach === "template" ? shadow : after, node, part)) continue;
           const bucket = territory.bucket;
           const rewritten = reach === "inside" ? undefined : rewrite(page, node, part, compounds, territory);
-          if (rewritten === undefined) {
+          // The copy must reach it: in the template, or slotted through its `::slotted()` twin.
+          const rest = rewritten?.replace(/^:host(?:\s*>\s*|\s+|$)/, "");
+          if (rewritten === undefined || rest === undefined
+            || rest && (reach === "template" ? !matches(shadow, node, rest) : !slottedTwin(rewritten) || !matches(bare, node, rest))) {
             if (!bucket.stranded.includes(part)) bucket.stranded.push(part);
             continue;
           }
@@ -561,8 +619,7 @@ function strandedNote(stranded: string[]) {
   if (!stranded.length) return [];
   const one = stranded.length === 1;
   return [`${one ? "1 rule" : `${stranded.length} rules`} can't follow the parts into the component: ${stranded.join(", ")}. `
-    + `${one ? "It styles" : "They style"} something inside a part the page fills, or depend${one ? "s" : ""} on what stands beside the element, `
-    + `which the component's CSS can't reach; nothing was copied for ${one ? "it" : "them"}.`];
+    + `The component's CSS can't reach what ${one ? "it styles" : "they style"} once the element is a component; nothing was copied for ${one ? "it" : "them"}.`];
 }
 
 /**
