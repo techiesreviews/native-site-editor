@@ -1035,10 +1035,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         if (el && item && !isFolded(id)) fold(item, el, true);
       }
       if (!target) { dragOpened.clear(); return; }
-      for (let depth = 1; depth <= target.length; depth++) {
-        const id = key(target.slice(0, depth)), el = rows.get(id), item = items.get(id);
-        if (el && item && el.hasAttribute("aria-expanded") && isFolded(id)) { fold(item, el, false); dragOpened.add(id); }
-      }
+      for (let depth = 1; depth <= target.length; depth++) dropView.open(target.slice(0, depth));
     },
     open(target) {
       const id = key(target), el = rows.get(id), item = items.get(id);
