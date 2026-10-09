@@ -19,5 +19,5 @@ Ticket [05](../../tickets/05-what-agents-are-told.md) §5: `get_site` (`worker/m
 ## Done (2026-10-09)
 
 - `get_site` gives each component `variants` (and `variantWarnings` when any), read in the Worker by `worker/site-variants.ts` from the component CSS, the linked stylesheets with their imports and the site's scripts, drafts applied, saved texts batched (`SiteFiles.texts`). A read failure leaves variants out with a note; missing imports are skipped. `scriptSetAttributes` in `shared/variants.ts` feeds the component-CSS exclusion.
-- Built by Sol, restructured by Claude (reading moved out of `worker/mcp.ts`). Commit 91e83f5.
+- Built by Sol, restructured by Claude (reading moved out of `worker/mcp.ts`). Commits 91e83f5, review fixes after.
 - Tests: `tests/mcp-runtime.test.ts` (component, site, global and script-excluded variants with conditions; drafts, failures, no reads without a native site, batched reads), `tests/variants.test.ts` (script-set attributes).
