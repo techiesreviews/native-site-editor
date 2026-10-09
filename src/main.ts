@@ -329,7 +329,7 @@ function mountWorkspace() {
       return loadBlockDrag().then(create => current() ? nativePreview?.blockDrag(kind, {
         drop: (target, where, painted) => {
           const at = blockInsertPorts.target();
-          const place = { parent: target.container.path, index: target.index, where };
+          const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };
           if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at) : undefined).catch(errorMessage);
         },
         announce,
@@ -732,6 +732,7 @@ const blockInsertPorts: BlockInsertPorts = {
   },
   source: path => nativeEffectiveSource(path),
   exists: nativePathExists,
+  template: tag => (nativeSite && Object.hasOwn(nativeSite.components, tag) ? nativeEffectiveSource(nativeSite.components[tag]) : undefined),
   proof: () => {
     const epoch = generation, scope = setupScope();
     return () => epoch === generation && scope === setupScope() && !versionView;

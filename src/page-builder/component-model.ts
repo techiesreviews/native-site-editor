@@ -401,16 +401,26 @@ export interface TemplateSlot {
   forward?: string;
   /**
    * An items slot, which takes cards and other blocks (Add card, drops): the
-   * unnamed slot, or a slot whose fallback is a card component (`card-…`),
-   * whatever it is named. A slot holding another instance is an ordinary slot.
+   * unnamed slot, or a slot whose fallback is a card component, whatever it
+   * is named. A slot holding another instance (`card-project`'s `card-note`)
+   * is an ordinary slot.
    */
   items: boolean;
 }
 
+/** A component's template by its tag; undefined when the site has no such component. */
+export type TemplateOf = (tag: string) => string | undefined;
+
+/** A card component: a `card-…` component whose template has a heading slot (ticket 09 rule 9). */
+export function isCardComponent(tag: string, templateOf: TemplateOf) {
+  const template = tag.startsWith("card-") ? templateOf(tag) : undefined;
+  return template !== undefined && hasHeadingSlot(template);
+}
+
 /** Whether `nodes` are card component instances only, at least one. */
-function cardsOnly(html: string, nodes: SourceNode[]) {
+function cardsOnly(html: string, nodes: SourceNode[], templateOf: TemplateOf) {
   const parts = meaningful(html, nodes);
-  return parts.length > 0 && parts.every((node) => node.type === "element" && node.name.startsWith("card-"));
+  return parts.length > 0 && parts.every((node) => node.type === "element" && isCardComponent(node.name, templateOf));
 }
 
 /** What a run of content is: a text line, an image, a link, or anything else. */
@@ -441,8 +451,12 @@ export function slotLabel(name: string) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** The template's slots in source order, each name once (the first `<slot>` of a name is the one filled). */
-export function templateSlots(template: string): TemplateSlot[] {
+/**
+ * The template's slots in source order, each name once (the first `<slot>` of
+ * a name is the one filled). Telling a named items slot needs the site's
+ * other templates (`templateOf`); without them only the unnamed slot is one.
+ */
+export function templateSlots(template: string, templateOf: TemplateOf = () => undefined): TemplateSlot[] {
   const out: TemplateSlot[] = [];
   const seen = new Set<string>();
   for (const el of descendants(parseSource(template))) {
@@ -458,7 +472,7 @@ export function templateSlots(template: string): TemplateSlot[] {
       fallback,
       kind: contentKind(template, el.children) ?? slotKindFromName(name),
       ...(forward ? { forward } : {}),
-      items: !name || cardsOnly(template, el.children),
+      items: !name || cardsOnly(template, el.children, templateOf),
     });
   }
   return out;

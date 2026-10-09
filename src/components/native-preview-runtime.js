@@ -954,12 +954,31 @@
   function dropSealed(el) {
     return el.localName.indexOf("-") >= 0 || ["template", "noscript", "xmp", "noembed", "noframes", "svg", "math"].indexOf(el.localName) >= 0;
   }
+  // What counts in a template: elements and text that is not white space.
+  function dropMeaningful(nodes) {
+    return Array.prototype.filter.call(nodes, function (n) {
+      return n.nodeType === 1 ? !injectedStyle(n) : n.nodeType === 3 && /\S/.test(n.textContent);
+    });
+  }
+  function dropHeading(n) { return n && n.nodeType === 1 && /^h[1-6]$/.test(n.localName); }
+  // A card component: a card-… instance whose template (its shadow root) has
+  // a heading slot, a slot holding a heading or a heading's only content
+  // (component-model.ts isCardComponent and hasHeadingSlot).
+  function dropCard(el) {
+    if (el.nodeType !== 1 || el.localName.indexOf("card-") !== 0 || !el.shadowRoot) return false;
+    return Array.prototype.some.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
+      var inside = dropMeaningful(slot.childNodes);
+      var parent = slot.parentNode;
+      return (inside.length === 1 && dropHeading(inside[0])) || (dropHeading(parent) && dropMeaningful(parent.childNodes).length === 1);
+    });
+  }
   function dropSlots(el) {
     return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
       var name = slot.getAttribute("name") || "";
       var assigned = slot.assignedElements().filter(function (child) { return child.parentElement === el && !injectedStyle(child); });
-      // An items slot: the unnamed one, or one whose fallback is a card component.
-      var items = !name || Array.prototype.some.call(slot.children, function (child) { return child.localName.indexOf("card-") === 0; });
+      // An items slot: the unnamed one, or one whose fallback is card components only.
+      var fallback = dropMeaningful(slot.childNodes);
+      var items = !name || (fallback.length > 0 && fallback.every(dropCard));
       var parentEl = slot.parentElement || el;
       var hidden = getComputedStyle(slot).display === "none" || parentEl.closest("[data-native-empty]");
       var own = dropUnion(assigned.length ? assigned : Array.prototype.slice.call(slot.childNodes));

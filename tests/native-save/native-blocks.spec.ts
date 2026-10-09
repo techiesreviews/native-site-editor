@@ -76,13 +76,24 @@ test("the first Image drafts images/placeholder.svg in its undo step; a second w
   await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toBeUndefined();
 });
 
-test("a component refuses a block with its reason in red, and nothing changes", async ({ page, baseURL }) => {
+test("a selected instance takes a click-insert in its items slot, one undo step; one without an items slot refuses in red", async ({ page, baseURL }) => {
   await open(page, baseURL, 540, ".hero h1");
   const original = await source(page);
+  const kind = page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind");
+  // card-project's unnamed slot is its items slot.
   await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
-  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(/Project card|Card project/);
+  await expect(kind).toHaveText(/Project card|Card project/);
+  await rail(page).getByRole("button", { name: "Paragraph", exact: true }).click();
+  await expect(label(page)).toHaveText("Into Card project › items › empty");
+  await expect.poll(async () => flat(await source(page))).toMatch(/Read about Fern &amp; Kettle<\/a><p>Text<\/p><\/card-project>/);
+  await expect(frame(page).locator("card-project").first().locator("> p:not([slot])")).toHaveText("Text");
+  await undo(page);
+  await expect.poll(() => source(page)).toBe(original);
+  // The header's template has no slot at all.
+  await frame(page).locator("site-header").click({ position: { x: 200, y: 4 } });
+  await expect(kind).toHaveText(/Site header|Header/);
   await rail(page).getByRole("button", { name: "Paragraph", exact: true }).click();
   await expect(label(page)).toHaveClass(/is-refused/);
-  await expect(label(page)).toContainText("Card project is a component");
+  await expect(label(page)).toContainText("Site header is a component without an items slot");
   expect(await source(page)).toBe(original);
 });

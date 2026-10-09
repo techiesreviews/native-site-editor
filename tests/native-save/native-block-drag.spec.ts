@@ -114,3 +114,31 @@ test("an empty Div shows its drop area, and a Section snaps between page bands",
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/section><section class="flow"><\/section><section class="flow" id="services">/);
 });
+
+test("a Paragraph dragged into a section component's items slot lands among its cards, one undo step", async ({ page, baseURL }) => {
+  // Recent work as a section component whose unnamed slot holds the cards.
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+  await edit("components/section-work/section-work.html", '<section class="flow">\n  <slot name="title"><h2>Recent work</h2></slot>\n  <div class="cards"><slot><card-project></card-project></slot></div>\n</section>\n');
+  await edit("components/section-work/section-work.css", ":host { display: block; }\n.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }\n");
+  const home = (await source(page))!;
+  const made = home.replace('<section class="flow" id="work">', '<section-work id="work">').replace('<h2>Recent work</h2>\n      <div class="cards">', '<h2 slot="title">Recent work</h2>')
+    .replace(/<\/card-project>\n      <\/div>\n    <\/section>/, "</card-project>\n    </section-work>");
+  expect(made).toContain('</card-project>\n    </section-work>');
+  await edit("index.html", made);
+  await page.reload();
+  await expect(frame(page).locator("section-work card-project").nth(1)).toBeVisible({ timeout: 30_000 });
+  await expect(rail(page)).toBeVisible();
+  await editorMounted(page);
+  await expect.poll(() => frame(page).locator("section-work card-project").nth(1).evaluate(el => el.getBoundingClientRect().top - el.previousElementSibling!.getBoundingClientRect().top)).toBe(0);
+  const original = await source(page);
+  await dragFromRail(page, "Paragraph", await pointIn(page, "section-work card-project:nth-of-type(2)", 0, 0.3, -6));
+  await expect(where(page)).toHaveText("Into Section work › items › after Card project");
+  await expect(page.locator(".pb-drop__line--v")).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/<\/card-project><p>Text<\/p><card-project>/);
+  await expect(frame(page).locator("section-work > card-project + p:not([slot]):has(+ card-project)")).toHaveText("Text");
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});

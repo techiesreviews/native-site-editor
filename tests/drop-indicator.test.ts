@@ -65,7 +65,7 @@ test("Alt adds a level while held; Tab steps up, Shift+Tab back; a new innermost
   assert.deepEqual([found.level, found.state.tabs, found.state.inner], [1, 0, "section:1.1"]);
 });
 
-test("a probe gives the rail block its target: Sections snap between bands, items wait for slice 40", () => {
+test("a probe gives the rail block its target: Sections snap between bands, an instance's items slot takes blocks", () => {
   const main = box([1], "main", rect(0, 0, 900, 1000), [child(0, rect(0, 0, 900, 300), "section"), child(1, rect(0, 300, 900, 500), "section")]);
   const section = box([1, 1], "section", rect(0, 300, 900, 500), [child(0, rect(0, 300, 900, 40), "h2"), child(1, rect(0, 360, 900, 420), "div", "cards")]);
   const cards = { ...grid, path: [1, 1, 1], rect: rect(0, 360, 900, 420), children: grid.children.map((c) => ({ ...c, rect: { ...c.rect, top: c.rect.top + 360 } })) };
@@ -80,6 +80,6 @@ test("a probe gives the rail block its target: Sections snap between bands, item
   assert.deepEqual([sectionDrop.target?.container.path, sectionDrop.target?.index, sectionDrop.target?.ok], [[1], 2, true]);
   assert.equal(blockDropTarget({ ...report, containers: [] }, { x: 0, y: 0 }, "paragraph", level).target, undefined);
   const items = box([1, 1, 1], "items", rect(0, 360, 900, 420), [], { tag: "section-work", slot: "" });
-  const refused = blockDropTarget({ ...report, containers: [items, section, main] }, { x: 450, y: 500 }, "paragraph", level).target!;
-  assert.deepEqual([refused.ok, refused.reason], [false, "Section work is a component: its parts are filled by editing them."]);
+  const into = blockDropTarget({ ...report, containers: [items, section, main] }, { x: 450, y: 500 }, "paragraph", level).target!;
+  assert.deepEqual([into.ok, into.container.kind, into.container.path], [true, "items", [1, 1, 1]]);
 });

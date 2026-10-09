@@ -12,6 +12,7 @@ function setup(overrides: Partial<BlockInsertPorts> = {}, files: Record<string, 
     target: () => ({ path: "index.html", node: [0, 0, 0] }),
     source: (path: string) => files[path],
     exists: (path: string) => Object.hasOwn(files, path),
+    template: (tag: string) => files[`components/${tag}/${tag}.html`],
     proof: () => () => true,
     open: async () => () => true,
     apply: async (op: Op) => {
@@ -108,4 +109,25 @@ test("a drop inserts at its place, one step; a page changed since it was measure
   await stale.controller.drop("paragraph", { parent: [0, 0], index: 0, where: "" }, undefined);
   assert.equal(stale.log.ops.length, 0);
   assert.deepEqual(stale.log.refusals, ["The page is still updating. Try again in a moment.", "The page is still updating. Try again in a moment."]);
+});
+
+test("drops and clicks into an instance's items slot write its light DOM with the slot; other slots refuse", async () => {
+  const work = '<!doctype html><html><head><title>Home</title></head><body><main><section-work><h2 slot="title">Work</h2></section-work></main></body></html>';
+  const files = {
+    "index.html": work,
+    "components/section-work/section-work.html": '<section><slot name="title"><h2>Work</h2></slot><slot name="more"><card-quote></card-quote></slot></section>',
+    "components/card-quote/card-quote.html": '<blockquote><slot name="title"><h3>Quote</h3></slot></blockquote>',
+  };
+  const { controller, log } = setup({ target: () => ({ path: "index.html", node: [0, 0] }) }, files);
+  await controller.drop("paragraph", { parent: [0, 0], index: 1, where: "Into Section work › “more” slot › empty", slot: "more" }, work);
+  assert.match(log.ops[0].edits.get("index.html")!, /<h2 slot="title">Work<\/h2>\s*<p slot="more">Text<\/p>\s*<\/section-work>/);
+  assert.deepEqual(log.ops[0].selection.after, { path: "index.html", node: [0, 0, 1] });
+  // The title slot is not an items slot: nothing is written.
+  await controller.drop("paragraph", { parent: [0, 0], index: 1, where: "", slot: "title" }, files["index.html"]);
+  assert.equal(log.ops.length, 1);
+  assert.match(log.refusals[0], /could not be read exactly/);
+  // A click with the instance selected: its items slot, after its last child there.
+  await controller.click("heading");
+  assert.match(log.ops[1].edits.get("index.html")!, /<p slot="more">Text<\/p>\s*<h3 slot="more">Heading<\/h3>/);
+  assert.equal(log.ops[1].done, "Heading added. Into Section work › “more” slot › after Paragraph");
 });

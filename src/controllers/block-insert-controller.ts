@@ -5,7 +5,7 @@
 // place it was dropped on; templates pass their own place to `insert`.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
-import { blockMarkup, blockNames, clickTarget } from "../page-builder/block-insert";
+import { blockMarkup, blockNames, clickTarget, itemsSlotRule } from "../page-builder/block-insert";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit } from "../page-builder/native-operations";
 
 type NodeRequest = { path: string; node: number[] };
@@ -18,6 +18,8 @@ export interface BlockInsertPorts {
   readonly target: () => RailTarget | undefined;
   readonly source: (path: string) => string | undefined;
   readonly exists: (path: string) => boolean;
+  /** A component's template by its tag (for its items slots). */
+  readonly template: (tag: string) => string | undefined;
   /** Proof of the repository, branch and session now; false once any changed. */
   readonly proof: () => () => boolean;
   /** Opens the page in the editor, whose history takes the step: a proof it stays open there, or nothing when it could not. */
@@ -39,6 +41,8 @@ export interface BlockInsert {
   kind: NativeElementKind;
   /** In a new Section made for it, at `index` of `parent`. */
   wrap?: boolean;
+  /** `parent` is an instance: the items slot the block goes in ("" the unnamed one). */
+  slot?: string;
   /** The flash label ("Into Section › after Heading"). */
   where?: string;
   /** What Undo selects again. */
@@ -52,7 +56,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
    * Resolves to an error message, or nothing.
    */
   async function insert(request: BlockInsert): Promise<string | undefined> {
-    const { path, parent, index, kind, wrap } = request, name = blockNames[kind];
+    const { path, parent, index, kind, wrap, slot } = request, name = blockNames[kind];
     const proof = ports.proof();
     const source = ports.source(path);
     if (source === undefined) return `${name} was not added: ${path} is not there any more.`;
@@ -60,7 +64,9 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (!opened || !proof() || ports.source(path) !== source) return "The page changed meanwhile. Try again.";
     // The step's undo belongs to this page's history: another file opened meanwhile stops it.
     const current = () => proof() && opened();
-    const edit = nativeMarkupInsertEdit(source, parent, index, blockMarkup(source, kind, parent, wrap));
+    // An instance's seal opens only at its items slots.
+    const items = itemsSlotRule(ports.template);
+    const edit = nativeMarkupInsertEdit(source, parent, index, blockMarkup(source, kind, parent, wrap, items), items, slot);
     const next = edit && applyGuardedSourceEdit(source, edit);
     if (!next) return `${name} was not added: the HTML around that spot could not be read exactly.`;
     const placeholder = kind === "image" && !ports.exists(PLACEHOLDER_IMAGE_PATH);
@@ -85,10 +91,10 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
     // A selection painted from other bytes names another element now.
     if (at.node && at.painted !== undefined && at.painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
-    const target = clickTarget(source, kind, at.node);
+    const target = clickTarget(source, kind, at.node, ports.template);
     if (!target.ok) { ports.refuse(target.reason); return; }
     const error = await insert({
-      path: at.path, parent: target.parent, index: target.index, kind, wrap: target.wrap, where: target.where,
+      path: at.path, parent: target.parent, index: target.index, kind, wrap: target.wrap, slot: target.slot, where: target.where,
       before: at.node ? { path: at.path, node: at.node } : undefined,
     });
     if (error) ports.refuse(error);
@@ -96,10 +102,10 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
 
   /**
    * A rail block dropped on the canvas at `place` (a body path and index
-   * measured on the page's `painted` bytes): inserted there, or the reason
-   * flashes when the page has changed since.
+   * measured on the page's `painted` bytes; `slot` for an instance's items
+   * slot): inserted there, or the reason flashes when the page has changed since.
    */
-  async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string }, painted: string | undefined, at = ports.target()) {
+  async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string; slot?: string }, painted: string | undefined, at = ports.target()) {
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
     if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }

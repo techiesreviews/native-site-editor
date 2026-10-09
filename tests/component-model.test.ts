@@ -92,6 +92,25 @@ test("a template's slots: names, fallbacks and kinds", () => {
   ]);
 });
 
+test("items slots: the unnamed slot, or a named one whose fallback is card components (card-… with a heading slot)", () => {
+  const templates: Record<string, string> = {
+    "card-project": projectCard,
+    "card-note": `<div class="card-note"><slot name="text"><p>Note</p></slot></div>`,
+    "card-quote": `<blockquote><h3><slot name="title">Quote</slot></h3><slot name="body"><p>Text</p></slot></blockquote>`,
+    "block-other": `<div><slot></slot></div>`,
+  };
+  const templateOf = (tag: string) => templates[tag];
+  const roles = (template: string, lookup?: (tag: string) => string | undefined) => templateSlots(template, lookup).map(({ name, items }) => [name, items]);
+  const section = `<section><slot name="title"><h2>Work</h2></slot><div class="cards"><slot></slot></div><slot name="more"><card-project></card-project> <card-quote></card-quote></slot></section>`;
+  assert.deepEqual(roles(section, templateOf), [["title", false], ["", true], ["more", true]]);
+  // Without the other templates, a named slot can't be told an items slot.
+  assert.deepEqual(roles(section), [["title", false], ["", true], ["more", false]]);
+  // card-project's card-note has no heading slot: an ordinary slot, like any other single instance.
+  assert.deepEqual(roles(`<article><slot name="note"><card-note></card-note></slot><slot name="x"><block-other></block-other></slot></article>`, templateOf), [["note", false], ["x", false]]);
+  // Unknown cards, cards beside other content, and an empty named slot are not items slots.
+  assert.deepEqual(roles(`<div><slot name="a"><card-gone></card-gone></slot><slot name="b"><card-project></card-project><p>Hi</p></slot><slot name="c"></slot></div>`, templateOf), [["a", false], ["b", false], ["c", false]]);
+});
+
 test("slot states follow the loader's rules: fallbacks, optional parts, bare instances", () => {
   const range = rangeOf(page, "project-card");
   const instance = readInstance(page, range);
@@ -660,9 +679,9 @@ test("make component: a list becomes one list slot, its items not slots of their
 
 test("make component: a group renamed or kept fixed; a renamed items slot keeps its role once its fallback is a card component", () => {
   const source = `<section><h2>Services</h2><div class="card"><h3>A</h3></div><div class="card"><h3>B</h3></div></section>`;
-  const items = (template: string) => templateSlots(template).map(({ name, items: role }) => [name, role]);
   const renamed = makeComponentPlan(source, rangeOf(source, "section"), "section-services", { names: [{ path: [1], name: "services" }] });
   assert.ok(!("error" in renamed));
+  const items = (template: string) => templateSlots(template, (tag) => renamed.cards.find((card) => card.tag === tag)?.template).map(({ name, items: role }) => [name, role]);
   // The items become a card component named from the slot, its instances filling the renamed slot.
   assert.equal(renamed.template, `<section><slot name="title"><h2>Services</h2></slot><slot name="services"><card-service></card-service></slot></section>\n`);
   assert.deepEqual(renamed.cards.map(({ tag, slot, template }) => [tag, slot, template]), [["card-service", "services", `<div class="card"><slot name="title"><h3>A</h3></slot></div>\n`]]);

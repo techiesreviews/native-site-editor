@@ -11,7 +11,6 @@ import type { DropChild, DropRect, DropReport } from "./drop-report";
 import { dropContainerName, dropTarget, type DraggedBlock, type DropTarget } from "./drop-target";
 import type { NativeElementKind } from "./native-elements";
 import { sectionSnap } from "./section-snap";
-import { componentLabel } from "../native-insert";
 
 export type DropIndicator =
   | { kind: "line"; rect: DropRect; vertical: boolean }
@@ -75,10 +74,5 @@ export function blockDropTarget(report: DropReport, at: { x: number; y: number }
   const inner = report.containers[0];
   if (!inner) return { target: undefined, level };
   const next = levelAt(level, `${inner.kind}:${inner.path.join(".")}:${inner.slot ?? ""}`, report.containers.length - 1);
-  const target = dropTarget(report.containers, at, block, next.level);
-  // An instance's items take blocks once they can be written (slice 40).
-  if (target?.ok && target.container.kind === "items") {
-    return { target: { ...target, ok: false, reason: `${componentLabel(target.container.tag)} is a component: its parts are filled by editing them.` }, level: next.state };
-  }
-  return { target, level: next.state };
+  return { target: dropTarget(report.containers, at, block, next.level), level: next.state };
 }

@@ -170,12 +170,18 @@ test("items slots alone open the seal, including empty areas and zero-size wrapp
     section.innerHTML = '<block-list style="display:block"><style data-native-css></style><div slot="cards" id="assigned" style="height:60px"><article style="display:contents"><div id="inner" style="height:60px">Item</div></article></div></block-list>';
     const host = section.querySelector("block-list")!;
     host.attachShadow({ mode: "open" }).innerHTML = '<div style="min-height:100px;display:grid;grid-template-columns:1fr 1fr"><slot name="cards"><card-example></card-example></slot></div>';
+    // A card component: its template has a heading slot.
+    host.shadowRoot!.querySelector("card-example")!.attachShadow({ mode: "open" }).innerHTML = '<article><h3><slot name="title">Card</slot></h3></article>';
   });
   // The instance and the article both have no box of their own.
   await frame.locator("block-list").evaluate(host => { (host as HTMLElement).style.display = "contents"; });
   const items = await probe(page, "#inner");
   expect(items.containers.map(c => c.kind)).toEqual(["div", "div", "items", "section", "main"]);
   expect(items.containers[2]).toMatchObject({ path: [0, 0, 0], slot: "cards", axis: "row", empty: false, children: [{ index: 0 }] });
+  // A card-… without a heading slot (card-project's card-note) is no card component: an ordinary slot.
+  await frame.locator("block-list").evaluate(host => { host.shadowRoot!.querySelector("card-example")!.shadowRoot!.innerHTML = '<div><slot name="text"><p>Note</p></slot></div>'; });
+  expect((await probe(page, "#inner")).containers.map(c => c.kind)).toEqual(["slot", "section", "main"]);
+  await frame.locator("block-list").evaluate(host => { host.shadowRoot!.querySelector("card-example")!.shadowRoot!.innerHTML = '<article><slot name="title"><h3>Card</h3></slot></article>'; });
   const moved = await probe(page, "#inner", items.containers[1].path);
   expect(moved.containers.map(c => c.kind)).toEqual(["items", "section", "main"]);
   // A slot parent without a box of its own: the items slot covers its items.

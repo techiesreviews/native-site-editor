@@ -140,15 +140,31 @@ function tree(source: string): SourceNode | undefined {
   if (root.children.some((node) => ["head", "body"].includes(node.name))) return undefined;
   return root;
 }
-function atPath(root: SourceNode, path: readonly number[]) {
+/**
+ * Whether a component's slot (by the component's tag; "" the unnamed slot) is
+ * an items slot, whose page children are page blocks (component-model.ts
+ * `templateSlots`). Inserts open an instance's seal there and nowhere else.
+ */
+export type ItemsSlotRule = (tag: string, slot: string) => boolean;
+/** The slot a component's child fills: its `slot` attribute, or "" for the unnamed slot. */
+function slotOf(source: string, node: SourceNode) {
+  const open = source.slice(node.start, node.openEnd), tag = startTags(open)[0];
+  return tag ? decodeHtmlEntities(startTagAttribute(open, tag, "slot")?.value ?? "", true) : "";
+}
+const isInstance = (node: SourceNode) => (node.namespace ?? "html") === "html" && customName(node.name);
+/** The node at `path`; components are sealed, except (with `items`) towards a child in an items slot. */
+function atPath(root: SourceNode, path: readonly number[], open?: (instance: SourceNode, child: SourceNode) => boolean) {
   let node: SourceNode | undefined = root;
   for (const step of path) {
     if (!Number.isInteger(step) || step < 0) return undefined;
-    if (node?.opaque) return undefined;
-    node = node?.children[step];
+    const child: SourceNode | undefined = node?.children[step];
+    if (node?.opaque && !(child && open && isInstance(node) && open(node, child))) return undefined;
+    node = child;
   }
   return node;
 }
+const itemsOpener = (source: string, items: ItemsSlotRule | undefined) =>
+  items && ((instance: SourceNode, child: SourceNode) => items(instance.name, slotOf(source, child)));
 function all(node: SourceNode): SourceNode[] { return [node, ...node.children.flatMap(all)]; }
 // Template content and foreign trees have their own outer phrasing scope.
 function scopedDescendants(node: SourceNode): SourceNode[] {
@@ -156,8 +172,9 @@ function scopedDescendants(node: SourceNode): SourceNode[] {
   return [node, ...node.children.flatMap(scopedDescendants)];
 }
 const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template"].includes(node.name);
-function canContain(parent: SourceNode, children: SourceNode[]) {
-  if (parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
+/** Whether `children` may go in `parent`; `instance`: an instance's items slot, the one opening in its seal. */
+function canContain(parent: SourceNode, children: SourceNode[], instance = false) {
+  if (instance ? !isInstance(parent) : parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
   const names = children.map((child) => child.name);
   const movingDescendants = (node: SourceNode): SourceNode[] => [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(movingDescendants))];
   const descendants = children.flatMap(movingDescendants);
@@ -308,19 +325,38 @@ function insertion(source: string, parent: SourceNode, index: number, markup: st
   // Insert without deleting a single comment, text character, or whitespace.
   return { start: parent.closeStart, end: parent.closeStart, text: `${nl}${childIndent}${text}${nl}${indent}` };
 }
-/** A distinct markup API. The component nativeInsertEdit contract is unchanged. */
-export function nativeMarkupInsertEdit(source: string, parentPath: readonly number[], index: number, markup: string): GuardedSourceEdit | undefined {
+/**
+ * A distinct markup API. The component nativeInsertEdit contract is unchanged.
+ * With `items`, the parent may be an instance's items slot (`slot`, "" the
+ * unnamed one): the markup's elements get its `slot` attribute. A path may
+ * pass through instances only by their items slots' children.
+ */
+export function nativeMarkupInsertEdit(source: string, parentPath: readonly number[], index: number, markup: string, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
   const root = tree(source);
-  const fragment = tree(markup);
-  const parent = root && atPath(root, parentPath);
-  if (!parent || !fragment || fragment.name || !fragment.children.length || !validFragment(fragment, markup) || !Number.isInteger(index) || index < 0 || index > parent.children.length || !canContain(parent, fragment.children)) return undefined;
+  let fragment = tree(markup);
+  const parent = root && atPath(root, parentPath, itemsOpener(source, items));
+  if (!parent || !fragment || fragment.name || !fragment.children.length || !validFragment(fragment, markup) || !Number.isInteger(index) || index < 0 || index > parent.children.length) return undefined;
+  const instance = isInstance(parent);
+  if (instance) {
+    if (!items?.(parent.name, slot) || fragment.children.some((node) => slotOf(markup, node))) return undefined;
+    if (slot) {
+      const attribute = ` slot="${slot.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
+      for (const node of [...fragment.children].reverse()) {
+        const at = node.start + 1 + node.name.length;
+        markup = markup.slice(0, at) + attribute + markup.slice(at);
+      }
+      fragment = tree(markup);
+      if (!fragment) return undefined;
+    }
+  }
+  if (!canContain(parent, fragment.children, instance)) return undefined;
   const edit = insertion(source, parent, index, markup);
   return { ...edit, original: source.slice(edit.start, edit.end), source };
 }
 /** The level a new Heading block takes at this insert parent (ticket 10 §2). */
-export function nativeHeadingLevel(source: string, parentPath: readonly number[]): 2 | 3 | 4 | undefined {
+export function nativeHeadingLevel(source: string, parentPath: readonly number[], items?: ItemsSlotRule): 2 | 3 | 4 | undefined {
   const root = tree(source);
-  const parent = root && atPath(root, parentPath);
+  const parent = root && atPath(root, parentPath, itemsOpener(source, items));
   if (!parent) return undefined;
   if (parent.name === "section") return 2;
   let divs = 0, instance = false;
@@ -335,8 +371,8 @@ export function nativeHeadingLevel(source: string, parentPath: readonly number[]
   const level = (heading ? Number(heading.name[1]) : 2) + (instance ? 1 : divs);
   return level >= 4 ? 4 : level === 3 ? 3 : 2;
 }
-/** An element of the page as the strict source tree holds it (body paths); components are `opaque`. */
-export interface NativeOutline { name: string; className: string; opaque: boolean; heading: string; children: NativeOutline[]; parent?: NativeOutline }
+/** An element of the page as the strict source tree holds it (body paths); components are `opaque`; `slot` is its `slot` attribute. */
+export interface NativeOutline { name: string; className: string; slot: string; opaque: boolean; heading: string; children: NativeOutline[]; parent?: NativeOutline }
 /** The page's element tree for rules that read structure, not geometry; undefined when the source is not exact. */
 export function nativeOutline(source: string): NativeOutline | undefined {
   const root = tree(source);
@@ -346,7 +382,7 @@ export function nativeOutline(source: string): NativeOutline | undefined {
     const open = source.slice(node.start, node.openEnd), tag = startTags(open)[0];
     const className = tag ? decodeHtmlEntities(startTagAttribute(open, tag, "class")?.value ?? "", true) : "";
     const heading = node.name === "section" ? node.children.find(child => /^h[1-6]$/.test(child.name)) : undefined;
-    const out: NativeOutline = { name: node.name, className, opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent };
+    const out: NativeOutline = { name: node.name, className, slot: node === root ? "" : slotOf(source, node), opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent };
     out.children = node.children.map(child => map(child, out));
     return out;
   };

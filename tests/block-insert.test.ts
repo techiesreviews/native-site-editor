@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { blockMarkup, clickTarget, type BlockTarget } from "../src/page-builder/block-insert.ts";
-import { applyGuardedSourceEdit, nativeMarkupInsertEdit } from "../src/page-builder/native-operations.ts";
+import { blockMarkup, clickTarget, itemsSlotRule, type BlockTarget } from "../src/page-builder/block-insert.ts";
+import { applyGuardedSourceEdit, nativeMarkupInsertEdit, nativeMoveEdit } from "../src/page-builder/native-operations.ts";
 import type { NativeElementKind } from "../src/page-builder/native-elements.ts";
 
 // Body paths: <site-header> [0], <main> [1], <site-footer> [2].
@@ -70,7 +70,7 @@ test("components refuse blocks with the reason; so do bands that are no Section 
   for (const selection of [[1, 0], [1, 0, 0], [1, 1, 2, 0], [0], [2]]) {
     const target = clickTarget(home, "paragraph", selection);
     assert.equal(target.ok, false, String(selection));
-    if (!target.ok) assert.match(target.reason, /is a component: .*Select a Section or a Div\./);
+    if (!target.ok) assert.match(target.reason, /is a component without an items slot: .*Select a Section or a Div\./);
   }
   const band = clickTarget(page("<article><p>Hi</p></article>"), "paragraph", [1, 0, 0]);
   assert.equal(band.ok, false);
@@ -96,4 +96,84 @@ test("clicking Section, Div, Heading, Paragraph in turn builds a nested page, se
   }
   assert.deepEqual(selection, [1, 1, 0, 1]);
   assert.match(source.replace(/\s+(?=<)/g, ""), /<section class="flow"><h2>Old<\/h2><\/section><section class="flow"><div class="flow"><h3>Heading<\/h3><p>Text<\/p><\/div><\/section><\/main>/);
+});
+
+// Slice 40: an instance's items slots take blocks. section-work has the unnamed
+// slot and a named one of cards ("more"); card-project's "note" holds card-note,
+// which has no heading slot, so it is an ordinary slot.
+const templates: Record<string, string> = {
+  "section-work": `<section><slot name="title"><h2>Work</h2></slot><div class="cards"><slot></slot></div><slot name="more"><card-project></card-project></slot></section>`,
+  "card-project": `<article><card-note><slot name="note" slot="text"><p>Project</p></slot></card-note><slot name="title"><h3>Untitled</h3></slot><slot name="link"></slot></article>`,
+  "card-note": `<div><slot name="text"><p>Note</p></slot></div>`,
+  "section-hero": `<section><slot name="title"><h1>Hi</h1></slot></section>`,
+};
+const templateOf = (tag: string) => templates[tag];
+const items = itemsSlotRule(templateOf);
+const work = page('<section-work><h2 slot="title">Work</h2><card-project><h3 slot="title">A</h3></card-project><card-project slot="more"><h3 slot="title">B</h3></card-project></section-work><section-hero><h1 slot="title">Hi</h1></section-hero>');
+const insert = (source: string, kind: NativeElementKind, target: BlockTarget) => {
+  const t = ok(target);
+  const edit = nativeMarkupInsertEdit(source, t.parent, t.index, blockMarkup(source, kind, t.parent, t.wrap, items), items, t.slot);
+  assert.ok(edit, t.where);
+  return applyGuardedSourceEdit(source, edit)!.replace(/\s+(?=<)/g, "");
+};
+
+test("items slots: the unnamed slot and named slots of card components; card-note's slot is not one", () => {
+  assert.deepEqual([items("section-work", ""), items("section-work", "more"), items("section-work", "title")], [true, true, false]);
+  assert.deepEqual([items("card-project", ""), items("card-project", "note"), items("card-note", "text"), items("section-gone", "")], [false, false, false, false]);
+});
+
+test("a selected instance takes the block in its first items slot, after that slot's last child", () => {
+  const target = ok(clickTarget(work, "paragraph", [1, 0], templateOf));
+  assert.deepEqual([target.parent, target.index, target.slot, target.select], [[1, 0], 2, "", [1, 0, 2]]);
+  assert.equal(target.where, "Into Section work › items › after Card project");
+  assert.match(insert(work, "paragraph", target), /<card-project><h3 slot="title">A<\/h3><\/card-project><p>Text<\/p><card-project slot="more">/);
+  // A part of an ordinary slot stands for the instance.
+  assert.deepEqual(ok(clickTarget(work, "paragraph", [1, 0, 0], templateOf)).index, 2);
+  // An empty items slot: at the end.
+  const empty = page("<section-work></section-work>");
+  const first = ok(clickTarget(empty, "heading", [1, 0], templateOf));
+  assert.deepEqual([first.parent, first.index, first.where], [[1, 0], 0, "Into Section work › items › empty"]);
+  // A Heading in a section component's items is one below the component's own.
+  assert.match(insert(empty, "heading", first), /<section-work><h3>Heading<\/h3><\/section-work>/);
+});
+
+test("a selected child of an items slot takes the block right after it, in that slot; a Div in it takes blocks inside", () => {
+  const more = page('<section-work><p slot="more">M</p><p>N</p></section-work>');
+  const named = ok(clickTarget(more, "image", [1, 0, 0], templateOf));
+  assert.deepEqual([named.parent, named.index, named.slot], [[1, 0], 1, "more"]);
+  assert.equal(named.where, "Into Section work › “more” slot › after Paragraph");
+  assert.match(insert(more, "image", named), /<p slot="more">M<\/p><img slot="more" src="\/images\/placeholder.svg"[^>]*><p>N<\/p>/);
+  // A card in an items slot is an instance: its own items slot, or the reason (card-project here has none).
+  assert.equal(clickTarget(work, "image", [1, 0, 2], templateOf).ok, false);
+  const withDiv = page('<section-work><div class="flow"><p>In</p></div></section-work>');
+  const inner = ok(clickTarget(withDiv, "paragraph", [1, 0, 0], templateOf));
+  assert.deepEqual([inner.parent, inner.index, inner.slot], [[1, 0, 0], 1, undefined]);
+  assert.match(insert(withDiv, "paragraph", inner), /<div class="flow"><p>In<\/p><p>Text<\/p><\/div>/);
+  const leaf = ok(clickTarget(withDiv, "paragraph", [1, 0, 0, 0], templateOf));
+  assert.deepEqual([leaf.parent, leaf.index], [[1, 0, 0], 1]);
+});
+
+test("an instance without an items slot refuses a click-insert with the reason", () => {
+  const target = clickTarget(work, "paragraph", [1, 1], templateOf);
+  assert.equal(target.ok, false);
+  if (!target.ok) assert.equal(target.reason, "Section hero is a component without an items slot: its parts are filled by editing them. Select a Section or a Div.");
+  // Without its template the editor can't tell: refused too.
+  assert.equal(clickTarget(work, "paragraph", [1, 0]).ok, false);
+});
+
+test("the seal holds everywhere but items slots", () => {
+  // An ordinary named slot, and card-project's card-note slot, refuse.
+  assert.equal(nativeMarkupInsertEdit(work, [1, 0], 1, "<p>X</p>", items, "title"), undefined);
+  assert.equal(nativeMarkupInsertEdit(work, [1, 0, 1], 0, "<p>X</p>", items, "note"), undefined);
+  // Without the rule an instance takes nothing; nor does a path through an ordinary slot's child.
+  assert.equal(nativeMarkupInsertEdit(work, [1, 0], 1, "<p>X</p>"), undefined);
+  assert.equal(nativeMarkupInsertEdit(page('<section-work><div slot="title"></div></section-work>'), [1, 0, 0], 0, "<p>X</p>", items), undefined);
+  // Markup naming its own slot is refused; an items slot's index is checked like any other.
+  assert.equal(nativeMarkupInsertEdit(work, [1, 0], 1, '<p slot="title">X</p>', items, ""), undefined);
+  assert.equal(nativeMarkupInsertEdit(work, [1, 0], 4, "<p>X</p>", items, ""), undefined);
+  // Moves don't open it.
+  assert.equal(nativeMoveEdit(work, [1, 1], { parent: [1, 0], index: 0 }), undefined);
+  // The named items slot writes its slot attribute; the unnamed none.
+  assert.match(applyGuardedSourceEdit(work, nativeMarkupInsertEdit(work, [1, 0], 3, "<p>X</p>", items, "more")!)!, /<p slot="more">X<\/p>/);
+  assert.match(applyGuardedSourceEdit(work, nativeMarkupInsertEdit(work, [1, 0], 1, "<p>X</p>", items, "")!)!, /<h2 slot="title">Work<\/h2>\s*<p>X<\/p>/);
 });
