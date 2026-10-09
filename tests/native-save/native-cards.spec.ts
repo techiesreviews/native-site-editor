@@ -335,20 +335,25 @@ test("overlapping card and section Add controls remain clickable; popup tracks s
   await expect(popover(page).getByRole("textbox", { name: "Page title" })).toBeFocused();
   // With the block rail the canvas is too narrow for the popover beside the
   // button, so it opens above it, over the grid, and moves with the button.
-  // 40px still leaves room above (the button is about 280px under the pane's top).
   await expect.poll(async () => {
     const [pop, add] = [(await popover(page).boundingBox())!, (await addCard(page).boundingBox())!];
     return Math.abs(add.y - (pop.y + pop.height) - 8) <= 1;
   }).toBe(true);
   const before = (await page.locator(".card-ghost").boundingBox())!;
   const beforePopup = (await popover(page).boundingBox())!;
-  await frame(page).locator("html").evaluate(() => window.scrollBy(0, 40));
-  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - 40, 0);
+  // It stays above while its top is 12px or more inside the frame. The room
+  // left depends on the popover's height, so on the font: scroll within it.
+  const room = beforePopup.y - ((await page.locator(".native-preview-frame").boundingBox())!.y + 12);
+  expect(room).toBeGreaterThanOrEqual(8);
+  const step = Math.min(40, Math.floor(room / 2));
+  await frame(page).locator("html").evaluate((_html, y) => window.scrollBy(0, y), step);
+  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - step, 0);
   expect(await hitAdd()).toBe(true);
-  await expect.poll(async () => (await popover(page).boundingBox())!.y).toBeCloseTo(beforePopup.y - 40, 0);
+  await expect.poll(async () => (await popover(page).boundingBox())!.y).toBeCloseTo(beforePopup.y - step, 0);
   // Scrolled on until no room is left above the button, it goes below it, never over it.
-  await frame(page).locator("html").evaluate(() => window.scrollBy(0, 80));
-  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - 120, 0);
+  const rest = Math.ceil(room) - step + 40;
+  await frame(page).locator("html").evaluate((_html, y) => window.scrollBy(0, y), rest);
+  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - step - rest, 0);
   expect(await hitAdd()).toBe(true);
   const scrolledAdd = (await addCard(page).boundingBox())!;
   await expect.poll(async () => Math.abs((await popover(page).boundingBox())!.y - (scrolledAdd.y + scrolledAdd.height + 8)) <= 1).toBe(true);
