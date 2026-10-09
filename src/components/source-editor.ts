@@ -111,6 +111,8 @@ export interface PaneHost {
   cssWorkspace?: () => CssWorkspace | undefined;
   /** The lazy view supplies the parser; the host supplies current, cached sources. */
   variants?: (build: VariantLookupFactory) => VariantLookup | undefined;
+  /** Called again when the host's variant sources change outside the store. */
+  onVariantsChange(refresh: () => void): () => void;
   runHistory(direction: "undo" | "redo"): Promise<boolean>;
   reportContext(): void;
 }
@@ -274,6 +276,12 @@ const publishers = new Set<() => void>();
 /** A browser draft changed outside the editors: the Save menus list it again. */
 export function refreshDrafts() {
   for (const refresh of publishers) refresh();
+}
+// The code panes' variant notes, for site sources read after they mounted.
+const variantListeners = new Set<() => void>();
+/** The host read more of the site: the panes recompute their variant notes. */
+export function refreshVariants() {
+  for (const refresh of variantListeners) refresh();
 }
 /** Keep the shared journal unavailable while its accepted action remounts UI. */
 export function holdHistoryRefresh(path: string) {
@@ -929,6 +937,7 @@ export function mountSourceEditor(
     isCurrent: () => !disposed && mounted.get(file.path) === registration,
     cssWorkspace: file.cssWorkspace,
     variants: file.variants,
+    onVariantsChange: (refresh) => { variantListeners.add(refresh); return () => variantListeners.delete(refresh); },
     runHistory: (direction) => runVisualHistory(direction, file.path),
     reportContext: () => reportContext(),
   };

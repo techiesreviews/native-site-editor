@@ -72,7 +72,7 @@ function tags(text: string): Tag[] {
     if (name.includes("-")) result.push({ start, end, name, nameEnd, attributes });
     if (text.startsWith("/>", pos)) pos += 2;
     else if (text[pos] === ">") pos++;
-    if (name === "script" || name === "style") {
+    if (name === "script" || name === "style" || name === "textarea" || name === "title") {
       const close = new RegExp(`</${name}\\s*>`, "gi");
       close.lastIndex = pos;
       const found = close.exec(text);
@@ -104,7 +104,8 @@ export function variantSuggestions(text: string, offset: number, lookup: Lookup)
   const prefix = current ? text.slice(current.start, offset).toLowerCase() : "";
   return variants.filter(variant => variant.attribute.startsWith(prefix) && !tag.attributes.some(attr => attr.name === variant.attribute)).map(variant => ({
     start: current?.start ?? offset, end: current?.nameEnd ?? offset,
-    label: variant.attribute, insertText: variant.kind === "yes-no" ? variant.attribute : `${variant.attribute}=""`, kind: "attribute", detail: describe(variant),
+    // A name typed over keeps its value: only the name is replaced.
+    label: variant.attribute, insertText: variant.kind === "yes-no" || (current && current.end > current.nameEnd) ? variant.attribute : `${variant.attribute}=""`, kind: "attribute", detail: describe(variant),
   }));
 }
 

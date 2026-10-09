@@ -19,9 +19,12 @@ test("component attribute suggestions respect prefix and existing attributes", (
   assert.deepEqual(suggest('<section-hero data-t|').map(item => item.label), ["data-tone"]);
   assert.deepEqual(suggest('<section-hero data-tone="dark" |').map(item => item.label), ["data-reverse", "data-layout"]);
   assert.deepEqual(suggest('<section-hero | data-tone="dark">').map(item => item.label), ["data-reverse", "data-layout"]);
+  // A name typed over an existing value keeps the value.
+  const over = suggest('<section-hero data-l|="old">');
+  assert.deepEqual(over.map(item => [item.label, item.insertText]), [["data-layout", "data-layout"]]);
 });
 test("no suggestions in plain tags, unrelated values, comments or raw text", () => {
-  for (const marked of ['<div |>', '<section-unknown |>', '<section-hero class="|">', '<!-- <section-hero |>', '<script>const x="<section-hero |>";</script>', '<style>/* <section-hero |> */</style>', '<section-hero title="a > <section-hero |">']) assert.deepEqual(suggest(marked), []);
+  for (const marked of ['<div |>', '<section-unknown |>', '<section-hero class="|">', '<!-- <section-hero |>', '<script>const x="<section-hero |>";</script>', '<style>/* <section-hero |> */</style>', '<section-hero title="a > <section-hero |">', '<textarea><section-hero |></textarea>', '<title><section-hero |></title>']) assert.deepEqual(suggest(marked), []);
   assert.equal(suggest('<!-- ignored --> <section-hero |>').length, 3);
 });
 test("values describe absent default without inserting it, with quote and prefix support", () => {
@@ -76,6 +79,8 @@ test("script attribute scanner handles both APIs and dataset spellings, skips co
     const text = "el.dataset.fake"; const url = "https://example.com"; el.dataset.afterUrl = 'x';
     const template = \`el.dataset.template\`;`),
   ['data-open', 'data-ready', 'data-color-scheme', 'data-menu-open', 'data-tone', 'data-after-url']);
+  // Reads and comparisons set nothing; a setter inside a template's interpolation does.
+  assert.deepEqual(scriptAttributes('if (el.dataset.open == "") el.dataset.shown === "x"; html = `<p>${el.setAttribute("data-live", "")}</p>`;'), ["data-live"]);
 });
 
 test("lookup merges expanded site and component imports, excluding scripts only from own CSS", async () => {

@@ -409,7 +409,8 @@ export const monacoView: PaneViewFactory = (host) => {
     refresh();
     // Store events also refresh an HTML pane when another pane changes CSS.
     const unsubscribe = store.subscribe(() => refresh());
-    providers.push(model.onDidChangeContent(refresh), { dispose() { unsubscribe(); if (!model.isDisposed()) monaco.editor.setModelMarkers(model, owner, []); } });
+    const unlisten = host.onVariantsChange(refresh);
+    providers.push(model.onDidChangeContent(refresh), { dispose() { unsubscribe(); unlisten(); if (!model.isDisposed()) monaco.editor.setModelMarkers(model, owner, []); } });
   }
   // Undo and Redo keys in the pane run the shared journal: typing first
   // closes as one step (its Monaco stops kept), so the two never interleave.

@@ -1243,7 +1243,7 @@ let variantReadKey = "";
 function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined {
   const site = nativeSite, scope = draftScope();
   if (!site || !scope || versionView) return;
-  const paths = nativeFiles(scope).filter(path => /\.(?:css|js)$/i.test(path));
+  const paths = nativeFiles(scope).filter(path => /\.(?:css|js)$/i.test(path) && !/(?:^|\/)node_modules\//.test(path));
   const sources: Record<string, string> = {};
   for (const path of paths) {
     const source = nativeEffectiveSource(path, scope);
@@ -1255,7 +1255,12 @@ function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined 
   if (missing.length && readKey !== variantReadKey && appStore.repository.value) {
     variantReadKey = readKey;
     const epoch = generation, scopeKey = setupScope();
-    void readNativePredicted(appStore.repository.value.full_name, missing, () => epoch === generation && scopeKey === setupScope());
+    const live = () => epoch === generation && scopeKey === setupScope();
+    void readNativePredicted(appStore.repository.value.full_name, missing, live).then((read) => {
+      if (!live() || variantReadKey !== readKey) return;
+      // A failed read is tried again on the next request; a read one shows.
+      if (read) editorModule.refreshVariants(); else variantReadKey = "";
+    });
   }
   const key = JSON.stringify([generation, setupScope(), site.components, sources]);
   if (variantCache?.key === key) return variantCache.lookup;

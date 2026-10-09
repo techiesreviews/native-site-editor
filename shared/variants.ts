@@ -541,7 +541,7 @@ export function valueLabel(value: string) {
 }
 export function variantLabel(attribute: string) { return valueLabel(attribute.replace(/^data-/i, "")); }
 
-const SCRIPT_ATTRIBUTE = /(?:setAttribute|toggleAttribute)\s*\(\s*(["'])(data-[\w-]+)\1|dataset\s*(?:\.\s*(\w+)|\[\s*(["'])([\w-]+)\4\s*\])/y;
+const SCRIPT_ATTRIBUTE = /(?:setAttribute|toggleAttribute)\s*\(\s*(["'])(data-[\w-]+)\1|dataset\s*(?:\.\s*(\w+)|\[\s*(["'])([\w-]+)\4\s*\])\s*=(?!=)/y;
 /** Discover literal script-owned data attributes without evaluating site code. */
 export function scriptAttributes(text: string): string[] {
   const names = new Set<string>();
@@ -562,7 +562,8 @@ export function scriptAttributes(text: string): string[] {
       pos += match[0].length;
       continue;
     }
-    if (text[pos] === '"' || text[pos] === "'" || text[pos] === "`") {
+    // Template literals stay code: their interpolations may set attributes.
+    if (text[pos] === '"' || text[pos] === "'") {
       const quote = text[pos++];
       while (pos < text.length) {
         if (text[pos] === "\\") pos += 2;
