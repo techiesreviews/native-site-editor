@@ -1,22 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeElementDepthMove, nativeElementMoveChoices, nativeElementMovePlan, nativeElementSiblingMove } from "../src/page-builder/native-move-choices";
+import { nativeElementDepthMove, nativeElementMovePlan, nativeElementSiblingMove } from "../src/page-builder/native-move-choices";
 import { applyGuardedSourceEdit } from "../src/page-builder/native-operations";
-
-const source = '<main><section id="origin"><h2>Move me</h2><div><p>Descendant</p></div></section><section id="archive" aria-label="Archive &amp; notes"><p>Keep</p></section></main>';
-test("choices name compatible other containers and exclude self, descendants, current parent and opaque trees", () => {
-  const choices = nativeElementMoveChoices(source, [0, 0]);
-  assert.deepEqual(choices.map(value => value.destination), [{ parent: [0, 1], index: 1 }]);
-  assert.equal(choices[0].label, 'Inside section#archive “Archive & notes”, at the end (1.2)');
-  assert.equal(nativeElementMoveChoices(source, [0, 0, 0]).some(value => value.destination.parent.join() === "0"), true);
-  const opaque = '<main><p>Move</p><x-card><div id="hidden"></div></x-card><template><div id="hidden-template"></div></template><div id="target"></div></main>';
-  assert.deepEqual(nativeElementMoveChoices(opaque, [0, 0]).map(value => value.destination.parent), [[0, 3]]);
-  assert.deepEqual(nativeElementMoveChoices(opaque, [0, 1]).map(value => value.destination.parent), [[0, 3]]);
-  assert.deepEqual(nativeElementMoveChoices(opaque, [0, 1, 0]), []);
-  const slash = '<main><p>Move</p><svg><circle cx="1"/></svg><div id=target/ ></div></main>';
-  assert.deepEqual(nativeElementMoveChoices(slash, [0, 0]).map(value => value.destination.parent), [[0, 2]]);
-});
 
 test("sibling paths remain exact with repeated identical nodes and distinguish edges from refusals", () => {
   const identical = '<main><p>Same</p><p>Same</p><p>Same</p></main>';
@@ -68,23 +54,20 @@ test("guards preserve comments, sensitive bytes and CRLF and reject stale source
 test("illegal table and nested form destinations are refused rather than advertised", () => {
   const table = '<main><p>Move</p><table><tbody><tr><td>Cell</td></tr></tbody></table><div></div></main>';
   assert.equal(nativeElementMovePlan(table, [0, 0], { parent: [0, 1, 0], index: 0 }).status, "refused");
-  assert.deepEqual(nativeElementMoveChoices(table, [0, 0]).map(value => value.destination.parent), [[0, 2]]);
+  assert.equal(nativeElementMovePlan(table, [0, 0], { parent: [0, 2], index: 0 }).status, "moved");
   const forms = '<main><form action="" method="post"><input></form><form action="" method="post"><div></div></form></main>';
-  assert.deepEqual(nativeElementMoveChoices(forms, [0, 0]), []);
   assert.equal(nativeElementMovePlan(forms, [0, 0], { parent: [0, 1, 0], index: 0 }).status, "refused");
   const interactive = '<main><input><button>Go</button><a href="#">Link</a><div></div></main>';
   assert.equal(nativeElementMovePlan(interactive, [0, 0], { parent: [0, 1], index: 0 }).status, "refused");
   assert.equal(nativeElementMovePlan(interactive, [0, 0], { parent: [0, 2], index: 0 }).status, "refused");
-  assert.deepEqual(nativeElementMoveChoices(interactive, [0, 0]).map(value => value.destination.parent), [[0, 3]]);
+  assert.equal(nativeElementMovePlan(interactive, [0, 0], { parent: [0, 3], index: 0 }).status, "moved");
   const repaired = '<main><p><div>Repair</div></p></main>';
   assert.equal(nativeElementMovePlan(repaired, [0, 0], { parent: [0], index: 1 }).status, "refused");
 });
 
 test("full document paths ignore scripts, refresh metadata and template content", () => {
   const full = '<!doctype html><html><head><title>Page</title></head><body><script>"<div>not an element</div>"</script><meta http-equiv="refresh" content="5"><main><p>Move</p><template><div></div></template><div id="target"></div></main></body></html>';
-  const choices = nativeElementMoveChoices(full, [0, 0]);
-  assert.deepEqual(choices.map(value => value.destination), [{ parent: [0, 2], index: 0 }]);
-  const plan = nativeElementMovePlan(full, [0, 0], choices[0].destination);
+  const plan = nativeElementMovePlan(full, [0, 0], { parent: [0, 2], index: 0 });
   assert.equal(plan.status, "moved");
   if (plan.status === "moved") assert.deepEqual(plan.selection, [0, 1, 0]);
 });
@@ -154,4 +137,12 @@ test("depth moves refuse missing containers, bands and opaque component parts", 
   assert.deepEqual(nativeElementDepthMove(html, [0, 0, 1], "out"), { status: "refused", error: "Blocks go inside a Section or a Div, not straight between page bands." });
   assert.equal(nativeElementDepthMove('<main><section><article><div><p>Text</p></div></article></section></main>', [0, 0, 0, 0, 0], "out").status, "refused");
   assert.equal(nativeElementDepthMove('<main><section><div></div><meta name="x"></section></main>', [0, 0, 1], "in").status, "refused");
+});
+
+test("a component instance moves among its siblings whole", () => {
+  const source = '<main><x-card><p>In</p></x-card><p>A</p></main>';
+  assert.equal(nativeElementMovePlan(source, [0, 0], { parent: [0], index: 0 }).status, "stayed");
+  const down = nativeElementSiblingMove(source, [0, 0], "down");
+  assert.equal(down.status, "moved");
+  if (down.status === "moved") assert.deepEqual(down.selection, [0, 1]);
 });

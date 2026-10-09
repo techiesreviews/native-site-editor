@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { DropContainer, DropRect, DropReport } from "../src/page-builder/drop-report";
-import type { DropTarget } from "../src/page-builder/drop-target";
+import { dropRefusal, type DropTarget } from "../src/page-builder/drop-target";
 import { blockDropTarget, dropIndicator, levelAt, stepLevel, type DragLevel } from "../src/page-builder/drop-indicator";
 
 
@@ -71,17 +71,26 @@ test("a probe gives the rail block its target: Sections snap between bands, an i
   const cards = { ...grid, path: [1, 1, 1], rect: rect(0, 360, 900, 420), children: grid.children.map((c) => ({ ...c, rect: { ...c.rect, top: c.rect.top + 360 } })) };
   const report: DropReport = { id: 1, path: "index.html", x: 590, y: 460, containers: [cards, section, main] };
   const level: DragLevel = { alt: false, tabs: 0 };
-  const paragraph = blockDropTarget(report, { x: 590, y: 460 }, "paragraph", level);
+  const paragraph = blockDropTarget(report, { x: 590, y: 460 }, { kind: "new", block: "paragraph" }, level);
   assert.deepEqual([paragraph.target?.container.path, paragraph.target?.index, paragraph.level.inner], [[1, 1, 1], 2, "div:1.1.1:"]);
-  const up = blockDropTarget(report, { x: 590, y: 460 }, "paragraph", { ...level, alt: true });
+  const up = blockDropTarget(report, { x: 590, y: 460 }, { kind: "new", block: "paragraph" }, { ...level, alt: true });
   assert.deepEqual([up.target?.container.path, up.target?.index], [[1, 1], 1]);
   const bands: DropReport = { ...report, containers: [main] };
-  const sectionDrop = blockDropTarget(bands, { x: 590, y: 700 }, "section", level);
+  const sectionDrop = blockDropTarget(bands, { x: 590, y: 700 }, { kind: "new", block: "section" }, level);
   assert.deepEqual([sectionDrop.target?.container.path, sectionDrop.target?.index, sectionDrop.target?.ok], [[1], 2, true]);
-  assert.equal(blockDropTarget({ ...report, containers: [] }, { x: 0, y: 0 }, "paragraph", level).target, undefined);
+  assert.equal(blockDropTarget({ ...report, containers: [] }, { x: 0, y: 0 }, { kind: "new", block: "paragraph" }, level).target, undefined);
   const items = box([1, 1, 1], "items", rect(0, 360, 900, 420), [], { tag: "section-work", slot: "" });
-  const into = blockDropTarget({ ...report, containers: [items, section, main] }, { x: 450, y: 500 }, "paragraph", level).target!;
+  const into = blockDropTarget({ ...report, containers: [items, section, main] }, { x: 450, y: 500 }, { kind: "new", block: "paragraph" }, level).target!;
   assert.deepEqual([into.ok, into.container.kind, into.container.path], [true, "items", [1, 1, 1]]);
+  // A moved block does not go into an instance's items (only new ones do): the container around it takes it.
+  const moved = blockDropTarget({ ...report, containers: [items, section, main] }, { x: 450, y: 500 }, { kind: "move", path: [1, 0, 0], band: false }, level).target!;
+  assert.deepEqual([moved.ok, moved.container.path, moved.index], [true, [1, 1], 1]);
+  assert.equal(dropRefusal({ kind: "move", path: [1, 0, 0], band: false }, items), "Section work takes new blocks in its items, not moved ones.");
+  // A moved band snaps the same way; a moved card stays inside its own grid's line.
+  const band = blockDropTarget(bands, { x: 590, y: 100 }, { kind: "move", path: [1, 1], band: true }, level);
+  assert.deepEqual([band.target?.container.path, band.target?.index, band.target?.ok], [[1], 0, true]);
+  const card = blockDropTarget(report, { x: 590, y: 460 }, { kind: "move", path: [1, 1, 1, 0], band: false }, level);
+  assert.deepEqual([card.target?.container.path, card.target?.index, card.target?.ok], [[1, 1, 1], 2, true]);
 });
 
 test("an empty items slot among a card's parts draws a line where it sits, not an area over them", () => {

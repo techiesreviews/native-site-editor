@@ -61,9 +61,9 @@ for (const colorScheme of ["light", "dark"] as const) {
       for (const move of ["Move up", "Move down", "Move to"]) await expect(bar(page).getByRole("button", { name: move, exact: true })).toHaveCount(0);
       await expect(bar(page).getByRole("button", { name: /^Edit .* component$/ })).toHaveCount(0);
       if (shots) await page.screenshot({ path: `${shots}/actual-child-${name}.png` });
-      // The hero itself, from its chip: grip label, moves, and the label's hover.
+      // The hero itself, from its chip: its name (the handle), moves, and the label's hover.
       await bar(page).locator(".edit-bar__context").click();
-      const grip = bar(page).locator(".edit-bar__grip");
+      const grip = bar(page).locator(".edit-bar__handle");
       await expect(grip).toBeVisible();
       // The starter's tones.css names no default tone: an untoned band follows the page (slice 77).
       await expect(bar(page).getByRole("combobox", { name: "Tone", exact: true }).locator("option")).toHaveText(["No tone (follows the page)", "Light", "Dark", "Brand", "Accent"]);
@@ -74,7 +74,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       if (shots) await page.screenshot({ path: `${shots}/actual-root-hover-${name}.png` });
       await page.mouse.move(0, 0);
       if (shots) await page.screenshot({ path: `${shots}/actual-root-${name}.png` });
-      // Plain Down from the grip moves the hero; one undo puts it back.
+      // Plain Down from the name moves the hero; one undo puts it back.
       const order = () => frame(page).locator("main > *").evaluateAll((els) => els.map((el) => el.tagName));
       const before = await order();
       await grip.focus();
@@ -97,7 +97,7 @@ test("section-hero with the code pane hidden", { tag: "@actual" }, async ({ page
   await labelAbove(page);
   if (shots) await page.screenshot({ path: `${shots}/actual-child-code-hidden.png` });
   await bar(page).locator(".edit-bar__context").click();
-  await expect(bar(page).locator(".edit-bar__grip")).toBeVisible();
+  await expect(bar(page).locator(".edit-bar__handle")).toBeVisible();
   await labelAbove(page);
   await clearOfHeader(page);
   if (shots) await page.screenshot({ path: `${shots}/actual-root-code-hidden.png` });
@@ -133,7 +133,7 @@ test("Alt+arrows in the page move a whole section only, one exact undo", { tag: 
   // The whole feature section (picked in Structure), then Alt+Up with the
   // focus in the page: it moves.
   await page.getByRole("treeitem", { name: /^Section feature/ }).locator(".page-structure__label").click();
-  await expect(bar(page).locator(".edit-bar__grip")).toBeVisible();
+  await expect(bar(page).locator(".edit-bar__handle")).toBeVisible();
   await clearOfHeader(page);
   const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
   await page.locator(".native-preview-frame").focus();

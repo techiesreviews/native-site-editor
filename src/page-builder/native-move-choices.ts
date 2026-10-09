@@ -5,7 +5,6 @@ import { decodeHtmlEntities } from "./html-entities";
 import { nativeOutline, nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type NativeOutline } from "./native-operations";
 
 export interface NativeElementMoveDestination { parent: number[]; index: number }
-export interface NativeElementMoveChoice { label: string; destination: NativeElementMoveDestination }
 export type NativeElementMoveResult =
   | { status: "moved"; edit: GuardedSourceEdit; selection: number[] }
   | { status: "stayed"; reason: "already-position" | "edge" }
@@ -94,24 +93,6 @@ export function nativeElementSiblingMove(source: string, from: readonly number[]
   const children = before.point.parent.length ? parent?.children.length : elements.filter(value => value.path.length === 1).length;
   if (direction === "up" && index === 0 || direction === "down" && children !== undefined && index === children - 1) return { status: "stayed", reason: "edge" };
   return nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index: direction === "up" ? index - 1 : index + 2 });
-}
-
-/** Compatible other containers, each independently proved by nativeMoveEdit. */
-export function nativeElementMoveChoices(source: string, from: readonly number[]): NativeElementMoveChoice[] {
-  const currentParent = from.slice(0, -1);
-  const choices: NativeElementMoveChoice[] = [];
-  for (const element of indexedElements(source)) {
-    if (same(element.path, currentParent)) continue;
-    const inside = nativeDestinations(source, "", element.path).find(value => value.placement === "inside");
-    if (!inside) continue;
-    const destination = { parent: [...inside.point.parent], index: inside.point.index };
-    if (nativeElementMovePlan(source, from, destination).status !== "moved") continue;
-    const id = decodeHtmlEntities(startTagAttribute(source, element.tag, "id")?.value ?? "", true);
-    const aria = decodeHtmlEntities(startTagAttribute(source, element.tag, "aria-label")?.value ?? "", true);
-    const identity = `${element.tag.name}${id ? `#${id}` : ""}${aria ? ` “${aria}”` : ""}`;
-    choices.push({ label: `Inside ${identity}, at the end (${element.path.map(index => index + 1).join(".")})`, destination });
-  }
-  return choices;
 }
 
 /** Alt+Left/Right moves whole blocks across Section/Div boundaries. */

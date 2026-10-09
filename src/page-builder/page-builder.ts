@@ -17,7 +17,7 @@ import { createCanvasLayer, createEmptyCanvas, createInsertFlash } from "./canva
 import { defaultInsertPoint } from "./insert-target";
 import { thumbnailDocument, type ThumbnailInputs } from "./thumbnail-doc";
 import type { BlockDragPorts, createBlockDrag } from "./block-drag";
-import type { NativeElementKind } from "./native-elements";
+import type { DraggedBlock } from "./drop-target";
 
 export interface PageBuilderDeps {
   pane: HTMLElement;
@@ -215,13 +215,13 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       if (!active) panel.close(false);
     },
     /**
-     * A rail block dragged onto the canvas: its line, label and target
-     * (none while History shows an earlier version). `create` is
-     * block-drag.ts's, loaded with the first drag.
+     * A block dragged over the canvas (new from the rail, or moved): its
+     * line, label and target (none while History shows an earlier
+     * version). `create` is block-drag.ts's, loaded with the first drag.
      */
-    blockDrag(kind: NativeElementKind, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce">, create: typeof createBlockDrag) {
+    blockDrag(block: DraggedBlock, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce">, create: typeof createBlockDrag) {
       if (viewing) return undefined;
-      return create(kind, { ...ports, frame, layer: canvas.layer, scroll: (dy) => deps.scroll(dy) });
+      return create(block, { ...ports, frame, layer: canvas.layer, scroll: (dy) => deps.scroll(dy) });
     },
     insertPointKey,
     destroy() {

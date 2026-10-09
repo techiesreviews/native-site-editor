@@ -80,7 +80,7 @@
    the component mark sits inline before the text. */
 .edit-bar__label .edit-bar__kind--component,
 .edit-bar__label .edit-bar__component-name .edit-bar__kind,
-.edit-bar__label .edit-bar__grip .edit-bar__kind {
+.edit-bar__label .edit-bar__handle .edit-bar__kind {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -89,12 +89,12 @@
   background: transparent;
   color: inherit;
 }
-.edit-bar__label > .edit-bar__grip {
-  padding: 0 6px 0 2px;
+.edit-bar__label > .edit-bar__handle {
+  padding: 0 6px;
 }
-.edit-bar__label > .edit-bar__grip.edit-bar__component-name {
+.edit-bar__label > .edit-bar__handle.edit-bar__component-name {
   cursor: grab;
-  padding: 4px 6px 4px 2px;
+  padding: 4px 6px;
 }
 .edit-bar__label .edit-bar__kind > svg {
   display: inline-block;
@@ -378,32 +378,20 @@
   background: currentColor;
   mask: var(--icon-warning) center / contain no-repeat;
 }
-/* The grip that drags a whole section: the section's name with small dots
-   before it, a grab cursor, and no browser panning or text selection from a
-   touch or press on it. */
-.edit-bar__grip {
+/* The name chip that drags the selected block: a grab cursor, and no
+   browser panning or text selection from a touch or press on it. */
+.edit-bar__handle {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
-  padding: 4px 2px 4px 2px;
+  padding: 4px 6px;
   cursor: grab;
   touch-action: none;
   user-select: none;
 }
-.edit-bar__grip .edit-bar__kind {
-  padding: 0 6px 0 0;
+.edit-bar__handle .edit-bar__kind {
+  padding: 0;
 }
-.edit-bar__grip-dots {
-  width: 14px;
-  height: 14px;
-  color: var(--muted);
-  opacity: 0.7;
-}
-.edit-bar__grip:hover .edit-bar__grip-dots,
-.edit-bar__grip:focus-visible .edit-bar__grip-dots {
-  opacity: 1;
-}
-.edit-bar.is-dragging .edit-bar__grip {
+.edit-bar__handle.is-dragging {
   cursor: grabbing;
   background: var(--hover);
 }

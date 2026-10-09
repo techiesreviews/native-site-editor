@@ -478,11 +478,6 @@
   }
 
   function apply(payload) {
-    // A render replaces the page under a drag: the drag is over, nothing moved.
-    if (sectionDrag) {
-      endSectionDrag();
-      emit("section-drag", { phase: "cancel" });
-    }
     hadError = false;
     renderDepth = 0;
     var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
@@ -1732,7 +1727,7 @@
   // Scrolling changes the element under an unmoved pointer. Reuse the same
   // slot and component-root mapping as mouse movement.
   function refreshPointerHover() {
-    if (!hoverPointer || sectionDrag || editing) return;
+    if (!hoverPointer || pressDragging() || editing) return;
     var target = document.elementFromPoint(hoverPointer.x, hoverPointer.y);
     var inner;
     while (target && target.shadowRoot && typeof target.shadowRoot.elementFromPoint === "function" &&
@@ -2696,7 +2691,7 @@
     }
   });
   document.addEventListener("mousemove", function (e) {
-    if (sectionDrag) return;
+    if (pressDragging()) return;
     hoverPointer = { x: e.clientX, y: e.clientY };
     hovered = deepestElement(e, true);
     updateBoxes(true);
@@ -2708,117 +2703,90 @@
     updateBoxes();
     reportHover();
   });
-  // Drag to reorder in the canvas, driven by the editor from the edit bar's
-  // grip: the editor owns the pointer (captured on the grip, so nothing in
-  // this page is ever pressed or text-selected) and sends `drag-start`,
-  // `drag-move`, `drag-end` and `drag-cancel` with the pointer's position in
-  // this frame's viewport. The runtime owns the geometry: it tells the gap
-  // under the pointer from the siblings' midpoints, scrolls near the top and
-  // bottom edges of the frame, and reports only the chosen gap through
-  // `section-drag` messages (start, target, end, cancel); the editor draws
-  // the targets over the frame and writes the move.
-  var sectionDrag = null;
-  var SCROLL_STEP = 14;
-
-  function dragGap(drag) {
-    var children = Array.prototype.slice.call(drag.container.children);
-    for (var i = 0; i < children.length; i++) {
-      var rect = children[i].getBoundingClientRect();
-      if (drag.clientY < rect.top + rect.height / 2) return i;
-    }
-    return children.length;
+  // A block pressed in the page and moved 7 px drags itself (ticket 12
+  // §10): the block is the selection when the press is inside it, else the
+  // pressed element (an inline one gives its block; a part of an instance
+  // gives the outermost instance, which moves whole). Only the page's own
+  // blocks inside <main> drag; the header and footer don't. The pointer
+  // stays with this document (captured), so each step is relayed to the
+  // editor as `press-drag` (start, move, end, cancel); the editor runs the
+  // drag and writes the move. Text being typed in keeps press-and-drag for
+  // selecting text, and a plain click still selects or starts typing.
+  var press = null;
+  var swallowClick = false;
+  function pressDragging() {
+    return !!(press && press.dragging);
   }
-
-  function setDragTarget() {
-    var drag = sectionDrag;
-    if (!drag) return;
-    var index = dragGap(drag);
-    if (index === drag.target) return;
-    drag.target = index;
-    emit("section-drag", { phase: "target", parent: drag.parent, index: index });
+  // The element as the page has it: a template's own element stands for its instance.
+  function lightElement(el) {
+    while (el && el.getRootNode() instanceof ShadowRoot) el = el.getRootNode().host;
+    return el;
   }
-
-  // Near the top or bottom edge the frame scrolls on its own, faster the
-  // nearer the edge, at most SCROLL_STEP per animation frame (also when the
-  // pointer is outside the frame).
-  function autoScrollDrag() {
-    var drag = sectionDrag;
-    if (!drag) return;
-    var height = window.innerHeight;
-    var band = Math.min(72, height / 4);
-    var speed = 0;
-    if (drag.clientY < band) speed = -Math.min(SCROLL_STEP, Math.ceil(SCROLL_STEP * (band - drag.clientY) / band));
-    else if (drag.clientY > height - band) speed = Math.min(SCROLL_STEP, Math.ceil(SCROLL_STEP * (drag.clientY - (height - band)) / band));
-    if (speed) {
-      var before = window.scrollY;
-      window.scrollBy(0, speed);
-      if (window.scrollY !== before) setDragTarget();
-    }
-    drag.frame = requestAnimationFrame(autoScrollDrag);
+  function pressBlock(target) {
+    var el = lightElement(target);
+    if (!el || !pageEl || el === pageEl || !pageEl.contains(el)) return null;
+    if (selected && selected.isConnected && selected !== pageEl && selected.getRootNode() === document && selected.contains(el)) el = selected;
+    while (el.parentElement && el.parentElement !== pageEl && getComputedStyle(el).display === "inline") el = el.parentElement;
+    for (var at = el.parentElement; at && at !== pageEl; at = at.parentElement) if (dropSealed(at)) el = at;
+    if (dropSealed(el) && el.localName.indexOf("-") < 0) return null;
+    var main = el.parentElement && el.parentElement.closest("main");
+    var page = state && state.pagePaths && state.pagePaths[state.route];
+    return main && pageEl.contains(main) && page && ownerPath(el) === page ? el : null;
   }
-
-  function endSectionDrag() {
-    var drag = sectionDrag;
-    sectionDrag = null;
-    if (!drag) return;
-    if (drag.frame) cancelAnimationFrame(drag.frame);
-    drag.el.style.opacity = drag.opacity;
-    document.documentElement.style.userSelect = drag.userSelect;
+  window.addEventListener("pointerdown", function (e) {
+    press = null;
+    if (!state || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    var target = deepestElement(e);
+    if (!target || target.closest("input, textarea, select")) return;
+    if (editing && editing.contains(target)) return;
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, target: target, dragging: false, userSelect: "" };
+  }, true);
+  window.addEventListener("pointermove", function (e) {
+    if (!press || e.pointerId !== press.id) return;
+    if (!press.dragging) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 7) return;
+      var block = pressBlock(press.target);
+      var node = block && elementIndexPath(block);
+      if (!node) { press = null; return; }
+      press.dragging = true;
+      try { document.documentElement.setPointerCapture(e.pointerId); } catch (_) { /* gone */ }
+      stopEditing(true);
+      press.userSelect = document.documentElement.style.userSelect;
+      document.documentElement.style.userSelect = "none";
+      hoverPointer = null;
+      hovered = null;
+      updateBoxes();
+      reportHover();
+      emit("press-drag", { phase: "start", node: node, tag: block.localName, cls: block.getAttribute("class") || "",
+        band: sectionLike(block), x: e.clientX, y: e.clientY, alt: e.altKey });
+    } else emit("press-drag", { phase: "move", x: e.clientX, y: e.clientY, alt: e.altKey });
+    e.preventDefault();
+    var text = document.getSelection();
+    if (text) text.removeAllRanges();
+  }, true);
+  function endPress(e, phase) {
+    if (!press || e.pointerId !== press.id) return;
+    var was = press;
+    press = null;
+    if (!was.dragging) return;
+    document.documentElement.style.userSelect = was.userSelect;
+    // The click a release makes is not a click on the page.
+    swallowClick = true;
+    setTimeout(function () { swallowClick = false; }, 400);
+    emit("press-drag", { phase: phase, x: e.clientX, y: e.clientY });
   }
-
-  // The selected section starts a drag at the pointer's position; anything
-  // else (no selection, not a section, text being typed) cancels at once.
-  function startSectionDrag(y) {
-    endSectionDrag();
-    var container = selected && selected.isConnected && sectionLike(selected) && !editing ? selected.parentElement : null;
-    var parentPath = container && pageEl && (container === pageEl || pageEl.contains(container))
-      ? (container === pageEl ? [] : elementIndexPath(container))
-      : null;
-    if (!parentPath) {
-      emit("section-drag", { phase: "cancel" });
-      return;
-    }
-    var selection = document.getSelection();
-    if (selection) selection.removeAllRanges();
-    sectionDrag = {
-      el: selected, container: container, parent: parentPath, clientY: y, target: null,
-      opacity: selected.style.opacity, userSelect: document.documentElement.style.userSelect, frame: 0
-    };
-    selected.style.opacity = "0.55";
-    document.documentElement.style.userSelect = "none";
-    hoverPointer = null;
-    hovered = null;
-    updateBoxes();
-    reportHover();
-    emit("section-drag", { phase: "start", parent: parentPath, index: Array.prototype.indexOf.call(container.children, selected) });
-    setDragTarget();
-    sectionDrag.frame = requestAnimationFrame(autoScrollDrag);
-  }
-
-  function dragMessage(msg) {
-    var y = Number(msg.y);
-    if (msg.type === "drag-start") {
-      if (isFinite(y)) startSectionDrag(y);
-      else emit("section-drag", { phase: "cancel" });
-      return;
-    }
-    var drag = sectionDrag;
-    if (msg.type === "drag-move") {
-      if (!drag || !isFinite(y)) return;
-      drag.clientY = y;
-      setDragTarget();
-      return;
-    }
-    // A release, or a cancel: the drag is over either way. A release with
-    // no drag left (a render ended it) or no gap chosen is a cancel.
-    if (drag && msg.type === "drag-end" && isFinite(y)) {
-      drag.clientY = y;
-      setDragTarget();
-    }
-    endSectionDrag();
-    if (drag && msg.type === "drag-end" && drag.target !== null) emit("section-drag", { phase: "end", parent: drag.parent, index: drag.target });
-    else emit("section-drag", { phase: "cancel" });
-  }
+  window.addEventListener("pointerup", function (e) { endPress(e, "end"); }, true);
+  window.addEventListener("pointercancel", function (e) { endPress(e, "cancel"); }, true);
+  window.addEventListener("click", function (e) {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+  // Images and links would start the browser's own drag and drop.
+  window.addEventListener("dragstart", function (e) {
+    if (press) e.preventDefault();
+  }, true);
 
   // ---- Inspection for agents (inspect_preview): elements as rendered ----
   // An element's box, the computed values that decide how it looks, the
@@ -3155,7 +3123,7 @@
     canvasEnsure();
     if (canvasHint && !canvasHint.isConnected) canvasHint = null;
     var hint = canvasHint && canvasHint !== selected ? canvasHint : null;
-    canvasDrawLabel(hint || (hovered && hovered !== selected && !sectionDrag ? hovered : null));
+    canvasDrawLabel(hint || (hovered && hovered !== selected && !pressDragging() ? hovered : null));
     return hint;
   }
   // Called from updateBoxes, after the hover and selection boxes.
@@ -3172,7 +3140,7 @@
       canvasHintBox.style.border = "1px dashed " + hintColor;
       canvasHintBox.style.background = "color-mix(in srgb, " + hintColor + " 8%, transparent)";
     }
-    canvasDrawSpacing(canvasSpacing && !sectionDrag ? (hint || hovered || selected) : null);
+    canvasDrawSpacing(canvasSpacing && !pressDragging() ? (hint || hovered || selected) : null);
   }
   function canvasSelect(el, reason) {
     if (editing && editing !== el) stopEditing(true);
@@ -3194,7 +3162,7 @@
   document.addEventListener("keydown", function (e) {
     var up = (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === "ArrowUp";
     var esc = e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey;
-    if ((!up && !esc) || !selected || !selected.isConnected || sectionDrag) return;
+    if ((!up && !esc) || !selected || !selected.isConnected || pressDragging()) return;
     // A form field on the page (in a component too) keeps its own keys.
     var target = typeof e.composedPath === "function" ? e.composedPath()[0] : e.target;
     if (target instanceof Element && /^(input|textarea|select)$/.test(target.localName)) return;
@@ -3316,10 +3284,6 @@
         x: msg.x, y: msg.y, containers: dropContainers(msg.x, msg.y, msg.moving, msg.bands) });
       return;
     }
-    if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {
-      dragMessage(msg);
-      return;
-    }
     // Keep the popup's grid geometry live while the pointer is in host controls.
     if (msg.type === "item-grid-track") {
       trackedGrid = null;
@@ -3382,7 +3346,7 @@
     }
     // Escape on the editor's block rail: up a level, as Escape in the page.
     if (msg.type === "select-parent") {
-      if (selected && selected.isConnected && !sectionDrag) canvasSelectParent();
+      if (selected && selected.isConnected && !pressDragging()) canvasSelectParent();
       return;
     }
     if (msg.type === "inspect") {

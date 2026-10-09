@@ -4,12 +4,11 @@
 // refuses. No border round a container that takes the drop. And the level a
 // drag steps up: one while Alt is held, one per Tab, back one per Shift+Tab,
 // from zero again when the innermost container under the pointer changes.
-// And the target a probe gives a block from the rail. Pure; frame-viewport
+// And the target a probe gives a dragged block (new from the rail, or moved). Pure; frame-viewport
 // coordinates.
 
 import type { DropChild, DropRect, DropReport } from "./drop-report";
-import { dropContainerName, dropTarget, type DraggedBlock, type DropTarget } from "./drop-target";
-import type { NativeElementKind } from "./native-elements";
+import { dropContainerName, dropTarget, isBand, type DraggedBlock, type DropTarget } from "./drop-target";
 import { sectionSnap } from "./section-snap";
 
 export type DropIndicator =
@@ -71,10 +70,9 @@ export function levelAt(state: DragLevel, inner: string, levels: number): { stat
   return { state: { ...state, inner, tabs }, level: alt + tabs };
 }
 
-/** The target a probe gives for a new `kind` at `at`, with Alt and Tab's level. */
-export function blockDropTarget(report: DropReport, at: { x: number; y: number }, kind: NativeElementKind, level: DragLevel) {
-  const block: DraggedBlock = { kind: "new", block: kind };
-  if (kind === "section") {
+/** The target a probe gives `block` at `at` (a band snaps between page bands), with Alt and Tab's level. */
+export function blockDropTarget(report: DropReport, at: { x: number; y: number }, block: DraggedBlock, level: DragLevel) {
+  if (isBand(block)) {
     const main = report.containers.find((container) => container.kind === "main");
     return { target: main && sectionSnap(main, at.y), level };
   }

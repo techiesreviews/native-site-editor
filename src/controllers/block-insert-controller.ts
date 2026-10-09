@@ -1,12 +1,14 @@
 // Inserting a block (Section, Div, Heading, Paragraph, Image, Button) into a
-// page: one source edit and one undo step, with the new block selected and
-// its place flashed. The rail's click (`click`) picks the place from the
-// selection (src/page-builder/block-insert.ts); a drag (`drop`) brings the
+// page, or moving one of the page's blocks: one source edit and one undo
+// step, with the block selected and its place flashed. The rail's click
+// (`click`) picks the place from the selection
+// (src/page-builder/block-insert.ts); a drag (`drop`, `move`) brings the
 // place it was dropped on; templates pass their own place to `insert`.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
 import { blockMarkup, blockNames, clickTarget, itemsSlotRule } from "../page-builder/block-insert";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit } from "../page-builder/native-operations";
+import { nativeElementMovePlan } from "../page-builder/native-move-choices";
 
 type NodeRequest = { path: string; node: number[] };
 export type RailTarget = { path: string; node?: number[]; painted?: string };
@@ -118,6 +120,37 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (error) ports.refuse(error);
   }
 
-  return { insert, click, drop };
+  /**
+   * The page's block at `from`, named `name`, dragged to `place` (both
+   * measured on the page's `painted` bytes): moved there as one step, or
+   * the reason flashes when the page has changed since or the HTML there
+   * cannot take it.
+   */
+  async function move(from: number[], name: string, place: { parent: number[]; index: number; where: string }, painted: string | undefined, at = ports.target()) {
+    const proof = ports.proof();
+    const source = at && ports.source(at.path);
+    if (!at || source === undefined) { ports.refuse("Open a page to move blocks in it."); return; }
+    if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
+    const plan = nativeElementMovePlan(source, from, place);
+    // Where it already is (the drag says so): nothing to write.
+    if (plan.status === "stayed") return;
+    const next = plan.status === "moved" ? applyGuardedSourceEdit(source, plan.edit) : undefined;
+    if (plan.status !== "moved" || next === undefined) { ports.refuse(`${name} was not moved: the HTML there cannot take it.`); return; }
+    const { path } = at;
+    const opened = await ports.open(path);
+    if (!opened || !proof() || ports.source(path) !== source) { ports.refuse("The page changed meanwhile. Try again."); return; }
+    const after = { path, node: plan.selection };
+    ports.select({ ...after, source: next }, place.where);
+    const error = await ports.apply({
+      expectedSources: new Map([[path, source]]), edits: new Map([[path, next]]),
+      done: `${name} moved. ${place.where}`, undone: `Undid moving the ${name}.`,
+      // The step's undo belongs to this page's history: another file opened meanwhile stops it.
+      current: () => proof() && opened(),
+      selection: { before: { path, node: from }, after },
+    });
+    if (error) { ports.select(undefined); ports.refuse(error); }
+  }
+
+  return { insert, click, drop, move };
 }
 export type BlockInsertController = ReturnType<typeof createBlockInsertController>;

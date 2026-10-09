@@ -42,7 +42,8 @@ import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountBlockRail } from "./components/block-rail";
-import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem } from "./components/native-preview";
+import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
+import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
@@ -329,14 +330,14 @@ function mountWorkspace() {
     // the press's repository, branch and session hold through both loads.
     drag: kind => {
       const current = blockInsertPorts.proof();
-      return loadBlockDrag().then(create => current() ? nativePreview?.blockDrag(kind, {
+      return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag({ kind: "new", block: kind }, {
         drop: (target, where, painted) => {
           const at = blockInsertPorts.target();
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };
           if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at) : undefined).catch(errorMessage);
         },
         announce,
-      }, create) : undefined);
+      }, drag.createBlockDrag) : undefined);
     },
   });
   sidebarResize = mountSidebarResize(
@@ -502,10 +503,7 @@ function mountWorkspace() {
       if (result.status === "refused") announce(result.error);
       if (result.status === "moved") applyNativeChange(selection.path, source, [result.edit], result.selection, direction === "out" ? "Moved out of the container" : "Moved into the container");
     },
-    onSectionDrag: (gap) => {
-      const outcome = gap && appStore.selection.value ? moveNativeSectionTo(appStore.selection.value, gap.parent, gap.index) : undefined;
-      if (!outcome) element("status").textContent = "Section drag cancelled";
-    },
+    onBlockPress: dragPageBlock,
     onDismissRequest: (id) => void agentController.dismiss(id),
     onAnswerRequest: async (id, text) => {
       await agentController.answer(id, text);
@@ -796,7 +794,36 @@ const blockInsertPorts: BlockInsertPorts = {
     announce(reason);
   },
 };
-const loadBlockDrag = lazyModule(async () => (await import("./page-builder/block-drag")).createBlockDrag);
+const loadBlockDrag = lazyModule(() => import("./page-builder/block-drag"));
+
+// A page block dragged by its name in the edit bar (`pressed` none: the
+// selection) or pressed in the page: moved where it is dropped, one undo
+// step (the block-insert controller's `move`). The drag's targets load with
+// the first one; the press's page, repository and session hold throughout.
+function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
+  const at = blockInsertPorts.target(), selection = appStore.selection.value;
+  const from = pressed ?? (selection?.node && selection.path === at?.path
+    ? { node: selection.node, tag: selection.tag, cls: "", band: isNativeSectionTag(selection.tag), painted: selection.paintedSource } : undefined);
+  if (!at || !from) return undefined;
+  const current = blockInsertPorts.proof();
+  const block = { kind: "move", path: from.node, band: from.band } as const;
+  // The chip says the name; a press in the page names it once the drag code is in.
+  let name = press.source?.textContent?.trim() || from.tag;
+  return trackDrag(press, () => name, () => loadBlockDrag().then(drag => {
+    if (!current()) return undefined;
+    if (pressed) name = drag.dropBlockName(from.tag, from.cls);
+    return nativePreview?.blockDrag(block, {
+      drop: (target, where, painted) => {
+        if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
+        const place = { parent: target.container.path, index: target.index, where };
+        // Measured on the bytes the press was: a page that changed since refuses it.
+        const shown = painted === from.painted ? painted : undefined;
+        if (current()) void loadBlockInsert().then(blocks => current() ? blocks.move(from.node, name, place, shown, at) : undefined).catch(errorMessage);
+      },
+      announce,
+    }, drag.createBlockDrag);
+  }), true);
+}
 const loadBlockInsert = lazyModule(async () => (await import("./controllers/block-insert-controller")).createBlockInsertController(blockInsertPorts));
 
 const historyController = createHistoryController({

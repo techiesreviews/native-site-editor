@@ -10,6 +10,7 @@ import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { agentElement } from "../agent-site";
 import { isSectionTemplate } from "../native-insert";
+import { nativeMovableBlock } from "../page-builder/native-operations";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
@@ -487,9 +488,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // remove from icon buttons always in the bar, as one undo step each.
     // Nothing else can be removed this way. Alt+Up/Down move the section too,
     // from the bar, the preview or the page structure (`moveNativeSection`),
-    // as do plain Up/Down on the bar's grip, whose drag moves it in the page.
+    // as do plain Up/Down on the bar's name. Any block of the page's <main>
+    // drags by its name in the bar (ticket 12 §10).
     let onMove: EditBarModel["onMove"];
-    let draggable = false;
+    const draggable = Boolean(node && nativeMovableBlock(source, node));
     if (range && node && isNativeSectionTag(selection.tag)) {
       const parent = node.slice(0, -1);
       const index = node[node.length - 1];
@@ -499,7 +501,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
       const proof = selection.paintedSource === source ? sectionMoveProof(source, node, true) : undefined;
       const move = (direction: "up" | "down") => proof ? moveNativeSection(selection, direction, proof) : (announce(SECTION_MOVE_STALE), "stayed" as const);
       onMove = move;
-      draggable = true;
       controls.push({
         kind: "button",
         icon: "up",

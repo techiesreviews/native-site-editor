@@ -450,7 +450,7 @@ function listShortcuts() {
     { area: "Canvas", label: "Select parent", keys: [["Shift", "Enter"]], note: "When not typing" },
     { area: "Canvas", label: "Follow a link to its page", keys: [["Mod", "Click"]] },
     { area: "Edit bar", label: "Move between controls", keys: [["ArrowLeft"], ["ArrowRight"]] },
-    { area: "Edit bar", label: "Move the section from its grip", keys: [["ArrowUp"], ["ArrowDown"]] },
+    { area: "Edit bar", label: "Move the section from its name", keys: [["ArrowUp"], ["ArrowDown"]] },
     { area: "Edit bar", label: "Cancel a section drag", keys: [["Escape"]] },
     { area: "Edit bar", label: "Send to the agent", keys: [["Enter"]], note: "Shift+Enter starts a new line" },
     { area: "Page structure", label: "Move between rows", keys: [["ArrowUp"], ["ArrowDown"], ["Home"], ["End"]] },

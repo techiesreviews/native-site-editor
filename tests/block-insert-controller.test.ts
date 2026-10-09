@@ -133,3 +133,33 @@ test("drops and clicks into an instance's items slot write its light DOM with th
   assert.match(log.ops[1].edits.get("index.html")!, /<p slot="more">Text<\/p>\s*<h3 slot="more">Heading<\/h3>/);
   assert.equal(log.ops[1].done, "Heading added. Into Section work › “more” slot › after Paragraph");
 });
+
+test("a dragged block moves across containers as one step, selected at its new place", async () => {
+  const nested = '<!doctype html><html><head><title>Home</title></head><body><main><section><h2>Work</h2><div class="cards"><card-a></card-a><card-b></card-b></div></section></main></body></html>';
+  const { controller, log, files } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0] }) }, { "index.html": nested });
+  await controller.move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 1, where: "Into Div (grid) › after Card a" }, nested);
+  assert.equal(log.ops.length, 1);
+  assert.match(files["index.html"], /<div class="cards"><card-a><\/card-a>\s*<h2>Work<\/h2>\s*<card-b>/);
+  // The Div moved up one when the Heading left: the Heading is its second child.
+  assert.deepEqual(log.ops[0].selection, { before: { path: "index.html", node: [0, 0, 0] }, after: { path: "index.html", node: [0, 0, 0, 1] } });
+  assert.equal(log.ops[0].done, "Heading moved. Into Div (grid) › after Card a");
+  assert.equal(log.ops[0].undone, "Undid moving the Heading.");
+  assert.deepEqual(log.selects.at(-1), { path: "index.html", node: [0, 0, 0, 1], where: "Into Div (grid) › after Card a", rendered: false });
+  // A card reorders sideways: the second before the first.
+  const source = files["index.html"];
+  await controller.move([0, 0, 0, 2], "Card b", { parent: [0, 0, 0], index: 0, where: "Into Div (grid) › before Card a" }, source);
+  assert.match(files["index.html"], /<div class="cards"><card-b><\/card-b>\s*<card-a>/);
+  assert.deepEqual(log.ops[1].selection.after, { path: "index.html", node: [0, 0, 0, 0] });
+});
+
+test("a move measured on older bytes, onto itself or into a component writes nothing", async () => {
+  const nested = '<!doctype html><html><head><title>Home</title></head><body><main><section><h2>Work</h2><card-a><p>x</p></card-a></section></main></body></html>';
+  const { controller, log } = setup({}, { "index.html": nested });
+  await controller.move([0, 0, 0], "Heading", { parent: [0, 0], index: 2, where: "" }, nested.replace("Work", "Play"));
+  assert.deepEqual(log.refusals, ["The page is still updating. Try again in a moment."]);
+  await controller.move([0, 0, 0], "Heading", { parent: [0, 0], index: 1, where: "" }, nested);
+  assert.equal(log.refusals.length, 1);
+  await controller.move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 0, where: "" }, nested);
+  assert.equal(log.refusals[1], "Heading was not moved: the HTML there cannot take it.");
+  assert.equal(log.ops.length, 0);
+});

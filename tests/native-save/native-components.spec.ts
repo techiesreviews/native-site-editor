@@ -517,7 +517,7 @@ test("the complete component name edits with one tap on touch devices", async ({
 
 // Exercise the real toolbar in a browser with both nested identities and a drag
 // adapter. Native section tests below this suite verify source writes and Undo.
-test("editable component names keep their drag pixels and disable nested actions during drag", async ({ page }) => {
+test("editable component names keep their drag pixels, and a click after a drag edits nothing", async ({ page }) => {
   await page.evaluate(async () => {
     const modulePath = "/src/components/edit-bar.ts";
     const { createEditBar } = await import(modulePath);
@@ -529,9 +529,10 @@ test("editable component names keep their drag pixels and disable nested actions
     output.id = "affordance-actions";
     document.body.append(output);
     const record = (value: string) => { output.textContent += value + " "; };
-    const toolbar = createEditBar(pane, pane, {
-      start: () => record("start"), move: () => {}, end: () => record("end"), cancel: () => record("cancel"),
-    });
+    // The host's drag: a press is recorded; whether it became a drag is the test's to say.
+    const state = { dragged: false };
+    (window as unknown as { affordanceDrag: typeof state }).affordanceDrag = state;
+    const toolbar = createEditBar(pane, pane, () => { record("press"); return { justDragged: () => state.dragged }; });
     toolbar.show({
       kind: "Project card", draggable: true, controls: [],
       component: { tag: "project-card", onEdit: () => record("direct") },
@@ -540,21 +541,18 @@ test("editable component names keep their drag pixels and disable nested actions
   });
   const toolbar = page.locator("#affordance-drag .edit-bar");
   const direct = toolbar.getByRole("button", { name: "Edit Project card component", exact: true });
-  const enclosing = toolbar.getByRole("button", { name: "Edit enclosing Project card component", exact: true });
-  await expect(enclosing).toHaveCount(0);
+  await expect(toolbar.getByRole("button", { name: "Edit enclosing Project card component", exact: true })).toHaveCount(0);
   const chip = toolbar.getByRole("button", { name: "Select enclosing instance", exact: true });
   const output = page.locator("#affordance-actions");
-  const caret = chip.locator(".edit-bar__context-caret");
   await expect(direct).toHaveText("Project card");
   await expect(direct).toHaveCSS("cursor", "grab");
-  await expect(direct).toHaveCSS("padding", "4px 6px 4px 2px");
-  await caret.click();
+  await expect(direct).toHaveCSS("padding", "4px 6px");
+  await chip.locator(".edit-bar__context-caret").click();
   await expect(output).toHaveText("select ");
   await direct.click();
-  await expect(output).toHaveText("select direct ");
-  await expect(toolbar).not.toHaveClass(/is-dragging/);
-  // The last actual letter, measured with Range, must remain part of the grip.
-  const point = await toolbar.locator(".edit-bar__grip .edit-bar__kind").evaluate((el) => {
+  await expect(output).toHaveText("select press direct ");
+  // The last actual letter, measured with Range, must remain part of the handle.
+  const point = await toolbar.locator(".edit-bar__handle .edit-bar__kind").evaluate((el) => {
     const text = el.lastChild!;
     const range = document.createRange();
     range.setStart(text, text.textContent!.length - 1);
@@ -564,30 +562,18 @@ test("editable component names keep their drag pixels and disable nested actions
   });
   await page.mouse.move(point.x, point.y);
   await page.mouse.down();
-  await page.mouse.move(point.x + 10, point.y, { steps: 3 });
-  await expect(toolbar).toHaveClass(/is-dragging/);
-  await expect(output).toHaveText("select direct start ");
-  for (const action of [chip]) {
-    expect(await action.evaluate((el) => Boolean(el.closest("[inert]")))).toBe(true);
-    await action.evaluate((el) => { (el as HTMLElement).focus(); (el as HTMLElement).click(); });
-    await expect(action).not.toBeFocused();
-  }
-  // A second pointer cannot activate an inert action; keyboard cannot move or edit.
-  await chip.dispatchEvent("pointerdown", { pointerId: 2, pointerType: "touch", button: 0 });
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Enter");
-  await page.keyboard.press("ArrowDown");
-  await expect(output).toHaveText("select direct start ");
-  await page.keyboard.press("Escape");
+  await expect(output).toHaveText("select press direct press ");
+  // Released after a drag: the click that follows edits nothing.
+  await page.evaluate(() => { (window as unknown as { affordanceDrag: { dragged: boolean } }).affordanceDrag.dragged = true; });
   await page.mouse.up();
-  await expect(toolbar).not.toHaveClass(/is-dragging/);
-  await expect(toolbar.locator("[inert]")).toHaveCount(0);
+  await expect(output).toHaveText("select press direct press ");
+  // Keyboard presses are clicks, never drags.
+  await page.evaluate(() => { (window as unknown as { affordanceDrag: { dragged: boolean } }).affordanceDrag.dragged = false; });
   await chip.focus();
   await page.keyboard.press("Enter");
-  await expect(output).toHaveText("select direct start cancel select ");
   await direct.focus();
   await page.keyboard.press("Enter");
-  await expect(output).toHaveText("select direct start cancel select direct ");
+  await expect(output).toHaveText("select press direct press select direct ");
 });
 
 test("child selections omit template entry while root entry rejects stale or missing templates", async ({ page }) => {

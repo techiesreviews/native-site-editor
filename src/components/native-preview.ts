@@ -23,9 +23,9 @@ import { readCascade, readSelectedRules, type NativeCascade, type NativeSelected
 import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
-import type { DropTarget } from "../page-builder/drop-target";
+import type { DraggedBlock, DropTarget } from "../page-builder/drop-target";
 import type { createBlockDrag } from "../page-builder/block-drag";
-import type { NativeElementKind } from "../page-builder/native-elements";
+import type { DragFeed, DragPress } from "../page-builder/insert-drag";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
 import { linkCodeToCanvas } from "../page-builder/code-link";
@@ -205,6 +205,9 @@ export interface NativeTextEdit {
   after: string;
 }
 
+/** A block pressed in the page: its body path, tag and class, whether it is a band, and the page bytes it was painted from. */
+export interface PressedBlock { node: number[]; tag: string; cls: string; band: boolean; painted: string | undefined }
+
 export interface NativePreviewHandlers {
   /** The frame drew another page (the first, a followed link, a file opened): the host reads its images. */
   onRouteShown?: (route: string) => void;
@@ -222,9 +225,10 @@ export interface NativePreviewHandlers {
   onMove?: (direction: "up" | "down" | "out" | "in") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
-  // A section dragged in the preview was released on a gap among its
-  // siblings (`index` as the insert points count them), or the drag was cancelled.
-  onSectionDrag?: (gap: { parent: number[]; index: number } | undefined) => void;
+  // A page block pressed and moved 7 px: its name in the edit bar (`moving`
+  // none: the selection) or the block in the page (`moving`: the block the
+  // runtime picked, on the bytes it shows). The drag it starts, or none.
+  onBlockPress?: (press: DragPress, moving?: PressedBlock) => (DragFeed & { justDragged(): boolean }) | undefined;
   // The rendered page's own elements, after each render.
   onStructure?: (structure: NativeStructure | undefined) => void;
   // Components offered between page sections, and what to do with a choice.
@@ -378,10 +382,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   warningBox.setAttribute("role", "status");
   warningBox.hidden = true;
   pane.append(errorBox, warningBox, canvas.bar, frameHost);
-  // A drag from the edit bar's grip: the editor holds the pointer and sends
-  // its place in the frame; the runtime answers with `section-drag` messages.
-  const toRuntime = (type: string, at?: { x: number; y: number }) =>
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type, ...at }, "*");
   // The runtime draws its hover and selection boxes in the editor's color.
   let previewFocus = "";
   let componentColor = "";
@@ -397,12 +397,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let editMode: EditComponentFrameMode | undefined;
   // The bar keeps clear of the selection's pins, and Ask agent's note goes after them.
   let editBarRenderKey = "";
-  const editBar = createEditBar(pane, frame, {
-    start: (at) => toRuntime("drag-start", at),
-    move: (at) => toRuntime("drag-move", at),
-    end: (at) => toRuntime("drag-end", at),
-    cancel: () => toRuntime("drag-cancel"),
-  }, (rect) => pins?.row(rect) ?? { offset: 0, next: pinRequests.length + 1 });
+  // The edit bar's name drags the selected block (src/page-builder/insert-drag.ts).
+  const editBar = createEditBar(pane, frame,
+    (event, chip) => handlers.onBlockPress?.({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, alt: event.altKey, source: chip, hold: true }),
+    (rect) => pins?.row(rect) ?? { offset: 0, next: pinRequests.length + 1 });
+  // A block pressed in the page: the runtime keeps the pointer and relays it here.
+  let pressFeed: DragFeed | undefined;
   const insertControls = createInsertControls(pane, frame, {
     onOpen: (point) => pageBuilder.openFor(point),
     onClose: () => pageBuilder.closeGap(),
@@ -711,11 +711,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return;
     }
     // Messages that carry a user's action (`text-edit` above, `route`,
-    // `format`, `move`, and a `section-drag` cancel) are read even when they
-    // carry an older render context: they are not descriptions of a render,
-    // and the host checks what they ask against the current source. The
-    // rest (`select`, `text-selection`, `insert-points`, `structure`, the
-    // rects, a drag's start, target and end) describe the runtime's DOM and
+    // `format`, `move`, a press drag's steps after its start) are read even
+    // when they carry an older render context: they are not descriptions of
+    // a render, and the host checks what they ask against the current
+    // source. The rest (`select`, `text-selection`, `insert-points`,
+    // `structure`, the rects, a press drag's start) describe the runtime's DOM and
     // are dropped when a render requested since is still pending; the
     // runtime reports them again after that render.
     // A Ctrl/⌘+click on a link inside the preview (including inside shadow
@@ -735,30 +735,25 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (direction === "up" || direction === "down" || direction === "out" || direction === "in") handlers.onMove?.(direction);
       return;
     }
-    if (data.type === "section-drag" && site) {
-      const raw = data as { phase?: unknown; parent?: unknown; index?: unknown };
-      const stale = data.context !== context;
-      // A drag's gaps are counted in the runtime's DOM of the render it saw;
-      // after a render requested since they may not be the source's. A stale
-      // start or target is ignored; a stale end (or any cancel, including the
-      // one the runtime sends when a render replaces the page under a drag)
-      // ends the drag with nothing moved, announced as cancelled.
-      if (raw.phase === "cancel" || (stale && raw.phase === "end")) {
-        editBar.dragEnded();
-        insertControls.dragEnd();
-        handlers.onSectionDrag?.(undefined);
+    // A block pressed in the page and moved 7 px, and the pointer after
+    // that (frame-viewport points). The start names the block in the DOM of
+    // the render it saw: a stale one starts nothing.
+    if (data.type === "press-drag") {
+      const raw = data as { phase?: unknown; x?: unknown; y?: unknown; alt?: unknown; node?: unknown; tag?: unknown; cls?: unknown; band?: unknown };
+      const box = frame.getBoundingClientRect();
+      const x = box.left + frame.clientLeft + Number(raw.x), y = box.top + frame.clientTop + Number(raw.y);
+      if (raw.phase === "start") {
+        pressFeed?.cancel();
+        pressFeed = undefined;
+        if (!site || data.context !== context || viewing || !indexes(raw.node) || !raw.node.length || typeof raw.tag !== "string" || !Number.isFinite(x) || !Number.isFinite(y)) return;
+        const painted = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site.routes[route]] : undefined;
+        pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: raw.alt === true, relayed: true },
+          { node: raw.node, tag: raw.tag, cls: typeof raw.cls === "string" ? raw.cls : "", band: raw.band === true, painted });
         return;
       }
-      if (stale) return;
-      if (!indexes(raw.parent) || !Number.isInteger(raw.index) || (raw.index as number) < 0) return;
-      const gap = { parent: raw.parent, index: raw.index as number };
-      if (raw.phase === "start") insertControls.dragStart(gap);
-      else if (raw.phase === "target") insertControls.dragTarget(gap);
-      else if (raw.phase === "end") {
-        editBar.dragEnded();
-        insertControls.dragEnd();
-        handlers.onSectionDrag?.(gap);
-      }
+      if (raw.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, raw.alt === true);
+      else if (raw.phase === "end" && Number.isFinite(x) && Number.isFinite(y)) { pressFeed?.up(x, y); pressFeed = undefined; }
+      else if (raw.phase === "end" || raw.phase === "cancel") { pressFeed?.cancel(); pressFeed = undefined; }
       return;
     }
     // Esc or Ctrl/⌘+↑ climbed past the top, or the breadcrumb's body was chosen.
@@ -1117,19 +1112,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   return {
     probeDrop,
     /**
-     * A block from the rail dragged over the page (none without a page on
-     * show to drop into). A drop gives the page source its target was
-     * measured on, so a page that changed since refuses it.
+     * A block dragged over the page, new from the rail or moved (none
+     * without a page on show to drop into). A drop gives the page source its
+     * target was measured on, so a page that changed since refuses it.
      */
-    blockDrag(kind: NativeElementKind, ports: { drop(target: DropTarget, where: string, painted: string | undefined): void; announce(text: string): void },
+    blockDrag(block: DraggedBlock, ports: { drop(target: DropTarget, where: string, painted: string | undefined): void; announce(text: string): void },
       create: typeof createBlockDrag) {
       if (!site || !frameState.active || alone) return undefined;
       let painted: string | undefined;
-      return pageBuilder.blockDrag(kind, {
-        probe: (at, bands) => {
+      return pageBuilder.blockDrag(block, {
+        probe: (at, moving, bands) => {
           // With no update waiting (or the probe is refused), the frame shows the last sources sent.
           const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site!.routes[route]] : undefined;
-          return probeDrop(at, undefined, bands).then((report) => { if (report) painted = shown; return report; });
+          return probeDrop(at, moving ? [...moving] : undefined, bands).then((report) => { if (report) painted = shown; return report; });
         },
         drop: (target, where) => ports.drop(target, where, painted),
         announce: (text) => ports.announce(text),

@@ -240,6 +240,15 @@
 .pb-is-dragging * {
   cursor: grabbing !important;
 }
+/* Holds the pointer (or, for a press in the page, the keys) while dragging. */
+.pb-drag-holder {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  outline: none;
+}
 .pb-drag-ghost {
   position: fixed;
   top: 0;

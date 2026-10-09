@@ -404,6 +404,19 @@ export function nativeMoveDestinationValid(source: string, from: readonly number
   return Boolean(moveDestination(source, from, destination));
 }
 
+/**
+ * Whether the element at `path` is a block a drag may move: inside <main>
+ * (never <main> itself, the header or the footer), reached without passing
+ * through a component instance, and either no island or an instance itself.
+ */
+export function nativeMovableBlock(source: string, path: readonly number[]): boolean {
+  const root = tree(source);
+  const node = root && atPath(root, path);
+  if (!node || !path.length || (node.opaque && !isInstance(node))) return false;
+  for (let at = node.parent; at; at = at.parent) if (at.name === "main") return true;
+  return false;
+}
+
 /** One replacement, guarded against stale source; removal never takes neighbours. */
 export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">): GuardedSourceEdit | undefined {
   const valid = moveDestination(source, from, destination);

@@ -7,9 +7,9 @@ import "./insert-controls.css";
 // that holds sections); the buttons sit over the frame on those gaps, shown
 // only just above and below the item under the pointer (or while focused or
 // open). A plus opens the Add panel (src/page-builder/add-panel.ts) for its
-// gap. While a section is dragged in the preview, or one is dragged from
-// the Add panel, every gap of the target's parent shows instead, the one
-// under the pointer expanded and labelled "Drop here".
+// gap. While a section is dragged from the Add panel, every gap of the
+// target's parent shows instead, the one under the pointer expanded and
+// labelled "Drop here".
 
 export interface InsertPoint {
   // Page file the point belongs to.
@@ -57,8 +57,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   let near: { parent: string; index: number } | undefined;
   let pointerOnPlus = false;
   let leaveTimer = 0;
-  // A section being dragged in the preview, or one from the Add panel: its
-  // parent's gaps are the targets.
+  // A section being dragged from the Add panel: its parent's gaps are the targets.
   let drag: { parent: string; index: number | undefined } | undefined;
   let dropLabel = "Drop here";
   let collisionFrame = 0;
@@ -214,27 +213,6 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
       }
       clearTimeout(leaveTimer);
       near = { parent: item.parent.join("."), index: item.index };
-      layout();
-    },
-    /** A section drag began in the preview: show its parent's gaps, no plus buttons. */
-    dragStart(gap: { parent: number[]; index: number }) {
-      if (openKey) handlers.onClose?.();
-      clearTimeout(leaveTimer);
-      near = undefined;
-      drag = { parent: gap.parent.join("."), index: undefined };
-      layout();
-    },
-    /** The gap under the dragged section changed. */
-    dragTarget(gap: { parent: number[]; index: number }) {
-      if (!drag) return;
-      drag = { parent: gap.parent.join("."), index: gap.index };
-      layout();
-    },
-    /** The drag ended (dropped or cancelled): back to plus buttons. */
-    dragEnd() {
-      if (!drag) return;
-      drag = undefined;
-      dropLabel = "Drop here";
       layout();
     },
     /**

@@ -29,7 +29,7 @@ export interface DropTarget {
 
 export const DROP_EDGE = 8;
 
-const isBand = (block: DraggedBlock) => (block.kind === "new" ? block.block === "section" : block.band);
+export const isBand = (block: DraggedBlock) => (block.kind === "new" ? block.block === "section" : block.band);
 
 /** Why a container can't take the block, or undefined when it can. */
 export function dropRefusal(block: DraggedBlock, container: DropContainer): string | undefined {
@@ -42,6 +42,8 @@ export function dropRefusal(block: DraggedBlock, container: DropContainer): stri
   }
   if (container.kind === "main") return "Blocks go inside a Section or a Div, not straight between page bands.";
   if (container.kind === "slot") return `The “${container.slot}” slot is filled by editing its text, not by drops. Drop into the component's items instead.`;
+  // Only new blocks go into an instance's items (slice 40): a moved one goes to the container around it.
+  if (container.kind === "items" && block.kind === "move") return `${componentLabel(container.tag)} takes new blocks in its items, not moved ones.`;
   return undefined;
 }
 
@@ -99,7 +101,7 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
 }
 
 /** "Paragraph", "Div (stack)", "Button", or a component's name. */
-function blockName(tag: string, cls: string) {
+export function dropBlockName(tag: string, cls: string) {
   const classes = cls.split(/\s+/);
   if (tag === "div") return classes.includes("cards") ? "Div (grid)" : classes.includes("flow") ? "Div (stack)" : "Div";
   if (tag === "a" && classes.includes("btn")) return "Button";
@@ -108,12 +110,12 @@ function blockName(tag: string, cls: string) {
 
 /** "Div (stack)", "Section", "Card project › items": what labels call a container. */
 export function dropContainerName(container: DropContainer) {
-  if (container.kind !== "items" && container.kind !== "slot") return blockName(container.tag, container.cls);
+  if (container.kind !== "items" && container.kind !== "slot") return dropBlockName(container.tag, container.cls);
   return `${componentLabel(container.tag)} › ${container.slot ? `“${container.slot}” slot` : "items"}`;
 }
 
 /** Whether a move target is the place the block already is. */
-function stays(block: DraggedBlock, target: DropTarget) {
+export function dropStays(block: DraggedBlock, target: DropTarget) {
   if (block.kind !== "move") return false;
   const parent = block.path.slice(0, -1), i = block.path[block.path.length - 1];
   return target.container.path.length === parent.length && parent.every((step, at) => target.container.path[at] === step) &&
@@ -123,11 +125,11 @@ function stays(block: DraggedBlock, target: DropTarget) {
 /** The label by the pointer: "Into Div (stack) › after Paragraph", or the refusal's reason. */
 export function dropLabel(target: DropTarget, block: DraggedBlock) {
   if (!target.ok) return target.reason ?? "Not here";
-  if (stays(block, target)) return "Stays where it is";
+  if (dropStays(block, target)) return "Stays where it is";
   const items = target.container.children;
   const after = [...items].reverse().find((child) => child.index < target.index);
   const before = items.find((child) => child.index >= target.index);
-  const place = after ? `after ${blockName(after.tag, after.cls)}` : before ? `before ${blockName(before.tag, before.cls)}` : "";
+  const place = after ? `after ${dropBlockName(after.tag, after.cls)}` : before ? `before ${dropBlockName(before.tag, before.cls)}` : "";
   if (target.container.kind === "main") return `Between page bands › ${place || "the first"}`;
   return `Into ${dropContainerName(target.container)} › ${place || "empty"}`;
 }

@@ -131,7 +131,7 @@ type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
 type FieldsControl = Extract<EditBarControl, { kind: "fields" }>;
 
-export type IconName = "link" | "unlink" | "up" | "down" | "left" | "right" | "add" | "duplicate" | "remove" | "grip" | "ask";
+export type IconName = "link" | "unlink" | "up" | "down" | "left" | "right" | "add" | "duplicate" | "remove" | "ask";
 
 // The edit bar's icons by what they do, drawn from the editor's icon set.
 const iconNames: Record<IconName, PhosphorName> = {
@@ -144,7 +144,6 @@ const iconNames: Record<IconName, PhosphorName> = {
   add: "plus",
   duplicate: "copy",
   remove: "trash",
-  grip: "dots-six-vertical",
   ask: "sparkle",
 };
 
@@ -163,7 +162,7 @@ export interface EditBarModel {
   onFormat?: (format: "strong" | "em" | "link") => void;
   // Alt+Up and Alt+Down with focus in the bar; set only for a movable section.
   onMove?: (direction: "up" | "down") => void;
-  // A whole section: the bar's name is a grip that drags it in the page.
+  // A page block that moves: the bar's name drags it (ticket 12 §10).
   draggable?: boolean;
   // The selection is a component instance: its name wears the component
   // mark and accent (src/page-builder/components.ts), `tag` in its tooltip.
@@ -179,20 +178,8 @@ export interface EditBarModel {
   chip?: { key: string; element: HTMLElement };
 }
 
-// A point in the frame's viewport, as the page inside it measures it.
-export interface FramePoint {
-  x: number;
-  y: number;
-}
-
-// What a drag from the grip does: the preview relays each step to the
-// runtime, which owns the geometry and answers with the gap.
-export interface EditBarDrag {
-  start: (at: FramePoint) => void;
-  move: (at: FramePoint) => void;
-  end: (at: FramePoint) => void;
-  cancel: () => void;
-}
+/** What a press on the name chip starts: the host's drag of the selected block (none: no drag). */
+export type EditBarDrag = (event: PointerEvent, chip: HTMLElement) => { justDragged(): boolean } | undefined;
 
 /**
  * The pins on the element at a rectangle (src/components/agent-pins.ts):
@@ -201,8 +188,6 @@ export interface EditBarDrag {
  */
 export type PinRow = (rect: SelectionRect) => { offset: number; next: number };
 
-// Movement before a press on the grip becomes a drag.
-const DRAG_THRESHOLD = 7;
 // A sent note shrinking into its pin (edit-bar.css `edit-bar-note-sent`).
 const NOTE_SENT_MS = 180;
 // Six lines of the note's 14 px, where a browser without `field-sizing`
@@ -334,120 +319,33 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   }
   document.addEventListener("pointerdown", onPointerDown, true);
 
-  // The grip: a press on it moved 7 px or more drags the selected section.
-  // The editor keeps the pointer (captured on the grip) for the whole drag,
-  // so nothing inside the frame is pressed or text-selected; the pointer's
-  // place in the frame goes to the runtime at each move. The grip element
-  // lasts across renders, and a render asked for during a drag waits for its
-  // end, so the capture is never lost to a re-render.
-  // It is the bar's name with small dots before it, so the section is
-  // picked up by its name, with no separate handle.
+  // The name chip: a press on it moved 7 px or more drags the selected
+  // block (the host runs the drag, src/page-builder/insert-drag.ts), which
+  // is how a text block being typed in is moved. A plain click on a
+  // component's name edits the component. The chip lasts across renders.
   let editNameAction: (() => void) | undefined;
-  let suppressGripClick = false;
-  const grip = button("", () => undefined, "edit-bar__button edit-bar__grip");
-  grip.addEventListener("click", (event) => {
-    if (press?.dragging) return;
-    if (suppressGripClick && event.detail !== 0) { suppressGripClick = false; return; }
-    suppressGripClick = false;
-    editNameAction?.();
+  let chipDrag: { justDragged(): boolean } | undefined;
+  const chip = button("", () => undefined, "edit-bar__button edit-bar__handle");
+  chip.addEventListener("click", () => {
+    if (!chipDrag?.justDragged()) editNameAction?.();
   });
-  const gripDots = icon("grip");
-  gripDots.classList.add("edit-bar__grip-dots");
-  const gripName = node("span", "edit-bar__kind");
-  grip.append(gripDots, gripName);
-  grip.setAttribute("aria-label", "Drag to move");
-  grip.title = "Drag to move";
-  let press: { pointerId: number; x: number; y: number; dragging: boolean } | undefined;
-  let userSelect = "";
-  let pending: { model: EditBarModel; at: SelectionRect } | undefined;
-
-  function framePoint(event: PointerEvent): FramePoint {
-    const box = frame.getBoundingClientRect();
-    return { x: event.clientX - box.left - frame.clientLeft, y: event.clientY - box.top - frame.clientTop };
-  }
-  function inFrame(event: PointerEvent) {
-    const box = frame.getBoundingClientRect();
-    return event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
-  }
-  // Back to rest: capture released, the other controls usable, a render
-  // that waited applied. Nothing is sent to the runtime from here.
-  function stopDrag() {
-    const current = press;
-    press = undefined;
-    if (!current) return;
-    if (grip.hasPointerCapture(current.pointerId)) grip.releasePointerCapture(current.pointerId);
-    if (!current.dragging) return;
-    suppressGripClick = true;
-    document.documentElement.style.userSelect = userSelect;
-    bar.classList.remove("is-dragging");
-    for (const item of bar.querySelectorAll("[inert]")) item.removeAttribute("inert");
-    const waiting = pending;
-    pending = undefined;
-    if (waiting) show(waiting.model, waiting.at);
-    else position();
-  }
-  function cancelDrag() {
-    const dragging = press?.dragging;
-    stopDrag();
-    if (dragging) drag?.cancel();
-  }
-  grip.addEventListener("pointerdown", (event) => {
-    suppressGripClick = false;
-    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || press || !drag) return;
-    // No focus move and no text selection from the press itself.
+  const chipName = node("span", "edit-bar__kind");
+  chip.append(chipName);
+  chip.setAttribute("aria-label", "Drag to move");
+  chip.title = "Drag to move";
+  chip.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !event.isPrimary || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !drag) return;
+    // No text selection from the press itself.
     event.preventDefault();
-    grip.focus();
-    press = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, dragging: false };
-    try { grip.setPointerCapture(event.pointerId); } catch { /* a pointer that is gone already */ }
+    chip.focus();
+    chipDrag = drag(event, chip);
   });
-  grip.addEventListener("pointermove", (event) => {
-    if (!press || event.pointerId !== press.pointerId) return;
-    event.preventDefault();
-    if (!press.dragging) {
-      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_THRESHOLD) return;
-      press.dragging = true;
-      userSelect = document.documentElement.style.userSelect;
-      document.documentElement.style.userSelect = "none";
-      document.getSelection()?.removeAllRanges();
-      closePopover(false);
-      bar.classList.add("is-dragging");
-      // Everything but the grip goes inert: its siblings at each level from
-      // the grip up to the bar (the label's chip, the controls panel).
-      for (let at: Element = grip; at !== bar && at.parentElement; at = at.parentElement)
-        for (const item of at.parentElement.children) if (item !== at) item.setAttribute("inert", "");
-      drag?.start(framePoint(event));
-      return;
-    }
-    drag?.move(framePoint(event));
-  });
-  grip.addEventListener("pointerup", (event) => {
-    if (!press || event.pointerId !== press.pointerId) return;
-    const dragging = press.dragging;
-    stopDrag();
-    if (!dragging) return;
-    // A release outside the frame drops nowhere.
-    if (inFrame(event)) drag?.end(framePoint(event));
-    else drag?.cancel();
-  });
-  grip.addEventListener("pointercancel", (event) => {
-    if (press && event.pointerId === press.pointerId) cancelDrag();
-  });
-  grip.addEventListener("lostpointercapture", (event) => {
-    if (press && event.pointerId === press.pointerId) cancelDrag();
-  });
-  function onDragKey(event: KeyboardEvent) {
-    if (!press?.dragging || event.key !== "Escape") return;
-    event.preventDefault();
-    event.stopPropagation();
-    cancelDrag();
-  }
-  window.addEventListener("keydown", onDragKey, true);
+  chip.addEventListener("dragstart", (event) => event.preventDefault());
 
   bar.addEventListener("keydown", (event) => {
     const target = event.target as HTMLElement;
-    if (press?.dragging) { event.preventDefault(); return; }
-    // The grip is a move handle: plain Up/Down move the section too.
-    if (target === grip && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
+    // The chip is a move handle: plain Up/Down move the section too.
+    if (target === chip && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
       event.preventDefault();
       event.stopPropagation();
       onMove(event.key === "ArrowUp" ? "up" : "down");
@@ -482,8 +380,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   bar.addEventListener("focusout", () => queueMicrotask(position));
 
   function position() {
-    // Held where it is during a drag, so the grip stays under the pointer's capture.
-    if (press?.dragging) return;
     if (!rect || bar.hidden && !bar.dataset.model) return;
     const frameRect = frame.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
@@ -983,9 +879,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const panel = node("div", "edit-bar__controls");
     let kindName: HTMLElement;
     if (model.draggable && drag) {
-      gripName.textContent = model.kind;
-      kindName = gripName;
-      label.replaceChildren(grip);
+      chipName.textContent = model.kind;
+      kindName = chipName;
+      label.replaceChildren(chip);
     } else label.replaceChildren(kindName = node("span", "edit-bar__kind", model.kind));
     bar.replaceChildren(label, panel);
     // A long name is cut with an ellipsis; the whole of it stays in the tooltip.
@@ -996,19 +892,19 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       kindName.title = `<${model.component.tag}>`;
     } else kindName.removeAttribute("title");
     editNameAction = undefined;
-    grip.classList.remove("edit-bar__component-name");
-    grip.querySelector(".edit-bar__component-edit")?.remove();
-    grip.setAttribute("aria-label", "Drag to move");
-    grip.title = "Drag to move";
+    chip.classList.remove("edit-bar__component-name");
+    chip.querySelector(".edit-bar__component-edit")?.remove();
+    chip.setAttribute("aria-label", "Drag to move");
+    chip.title = "Drag to move";
     if (model.component?.onEdit) {
       const onEdit = model.component.onEdit;
-      const nameButton = kindName === gripName ? grip : button("", () => { if (!press?.dragging) onEdit(); }, "edit-bar__component-name");
-      if (nameButton === grip) {
+      const nameButton = kindName === chipName ? chip : button("", onEdit, "edit-bar__component-name");
+      if (nameButton === chip) {
         editNameAction = onEdit;
-        grip.classList.add("edit-bar__component-name");
+        chip.classList.add("edit-bar__component-name");
       } else { kindName.replaceWith(nameButton); nameButton.append(kindName); }
       nameButton.setAttribute("aria-label", `Edit ${model.kind} component`);
-      nameButton.title = `Edit ${model.kind} component${nameButton === grip ? "; drag to move" : ""}`;
+      nameButton.title = `Edit ${model.kind} component${nameButton === chip ? "; drag to move" : ""}`;
       const overlay = node("span", "edit-bar__component-edit");
       overlay.setAttribute("aria-hidden", "true");
       overlay.append(mark("edit", 16, "edit-bar__icon"));
@@ -1025,11 +921,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     }
     if (model.context) {
       const { onSelect } = model.context;
-      const chip = button("", () => { if (!press?.dragging) onSelect(); }, "edit-bar__button edit-bar__context");
-      chip.append(componentIcon(12), node("span", "edit-bar__context-name", model.context.label), node("span", "edit-bar__context-caret", "›"));
-      chip.setAttribute("aria-label", model.context.title);
-      chip.title = model.context.title;
-      label.prepend(chip);
+      const context = button("", onSelect, "edit-bar__button edit-bar__context");
+      context.append(componentIcon(12), node("span", "edit-bar__context-name", model.context.label), node("span", "edit-bar__context-caret", "›"));
+      context.setAttribute("aria-label", model.context.title);
+      context.title = model.context.title;
+      label.prepend(context);
     }
     if (model.chip) {
       label.append(model.chip.element);
@@ -1131,11 +1027,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
 
   function show(model: EditBarModel, at: SelectionRect) {
     void loadSuggestionRows();
-    // A drag holds the bar as it is; the newest model waits for its end.
-    if (press?.dragging) {
-      pending = { model, at };
-      return;
-    }
     const active = document.activeElement as HTMLElement | null;
     const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
     const label = focused >= 0 ? controlLabel(active!) : "";
@@ -1160,20 +1051,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     /** The selection moved (scroll, resize, reflow) without changing. */
     move(at: SelectionRect) {
       rect = at;
-      if (pending) pending.at = at;
       position();
     },
     /** The pins moved or changed: the bar and Ask agent's note keep to them. */
     refit() {
       position();
     },
-    /** The runtime ended the drag (dropped, or cancelled on its side): the grip lets go. */
-    dragEnded() {
-      stopDrag();
-    },
     hide() {
-      cancelDrag();
-      pending = undefined;
       closePopover(false);
       closeNote(false);
       rect = undefined;
@@ -1182,8 +1066,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       bar.replaceChildren();
     },
     destroy() {
-      stopDrag();
-      window.removeEventListener("keydown", onDragKey, true);
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       closeNote(false);

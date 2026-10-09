@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { DropContainer, DropRect, DropReport } from "../src/page-builder/drop-report";
-import type { DropTarget } from "../src/page-builder/drop-target";
+import type { DraggedBlock, DropTarget } from "../src/page-builder/drop-target";
 import type { DragAim } from "../src/page-builder/insert-drag";
 import { createBlockDragSession } from "../src/page-builder/block-drag-session";
 
@@ -18,14 +18,15 @@ const slot = box([1, 0, 2], "slot", rect(40, 520, 720, 40), [], { tag: "card-pro
 const report = (at: { x: number; y: number }): DropReport =>
   ({ id: 1, path: "index.html", ...at, containers: at.y > 510 ? [slot, section, main] : [stack, section, main] });
 
-function setup(answer: (at: { x: number; y: number }) => DropReport | undefined = report) {
-  const log = { probes: [] as { x: number; y: number }[], drops: [] as [DropTarget, string][], announced: [] as string[], shown: [] as DragAim<DropTarget>[], drawn: [] as unknown[] };
+function setup(answer: (at: { x: number; y: number }) => DropReport | undefined = report, block: DraggedBlock = { kind: "new", block: "paragraph" }) {
+  const log = { moving: [] as unknown[], probes: [] as { x: number; y: number }[], drops: [] as [DropTarget, string][], announced: [] as string[], shown: [] as DragAim<DropTarget>[], drawn: [] as unknown[] };
   const pending: (() => void)[] = [];
-  const session = createBlockDragSession("paragraph", {
+  const session = createBlockDragSession(block, {
     frame: {} as HTMLElement,
     draw: (indicator) => { log.drawn.push(indicator?.kind); },
-    probe: (at) => {
+    probe: (at, moving) => {
       log.probes.push(at);
+      log.moving.push(moving);
       return new Promise((resolve) => pending.push(() => resolve(answer(at))));
     },
     scroll: () => {},
@@ -143,4 +144,26 @@ test("a release decides by its own point: after a refusal onto a valid place, af
   assert.equal(scrolled.log.probes.length, 4);
   await scrolled.answerNext();
   assert.equal(scrolled.log.shown.at(-1)?.where, "Into Div (stack) › before Paragraph");
+});
+
+test("a moved block probes without itself, draws nothing where it already is, and says so", async () => {
+  // The second paragraph of the stack, moved: its own gaps are "Stays where it is".
+  const { session, log, show, answerNext } = setup(report, { kind: "move", path: [1, 0, 1, 1], band: false });
+  session.aim({ x: 400, y: 280 }, false, show);
+  await answerNext();
+  assert.deepEqual(log.moving, [[1, 0, 1, 1]]);
+  assert.equal(log.shown.at(-1)?.where, "Stays where it is");
+  assert.deepEqual(log.drawn, [undefined]);
+  // Above the first paragraph: a line and a place.
+  session.aim({ x: 400, y: 130 }, false, show);
+  await answerNext();
+  assert.equal(log.shown.at(-1)?.where, "Into Div (stack) › before Paragraph");
+  assert.deepEqual(log.drawn, [undefined, "line"]);
+  // A refused release says nothing was moved.
+  session.aim({ x: 400, y: 540 }, false, show);
+  session.clear();
+  session.drop(undefined, false);
+  await answerNext();
+  await answerNext();
+  assert.match(log.announced[0], /^Nothing was moved: /);
 });

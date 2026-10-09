@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The selection's name (and the instance around it) stands as a label above
 // the bar's controls, the way the page's outline labels sit on a section.
-// The label keeps its interactions: the section grip drags and moves, a
+// The label keeps its interactions: a block's name drags and moves it, a
 // component root's name fades in its edit icon, a child's chip selects the
 // instance.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -88,7 +88,7 @@ test("a heading's name is a label above its controls, the bar's height includes 
   expect(last).toBeTruthy();
 });
 
-test("a section's grip is the label: the controls sit under it, it moves the section by keyboard and by drag as one undo step", async ({ page }) => {
+test("a section's name is its handle: the controls sit under it, it moves the section by keyboard and by drag as one undo step", async ({ page }) => {
   await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).click());
   const toolbar = bar(page);
   const grip = toolbar.getByRole("button", { name: "Drag to move" });
@@ -115,13 +115,11 @@ test("a section's grip is the label: the controls sit under it, it moves the sec
   await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
   await page.mouse.down();
   await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2 + 10, { steps: 2 });
-  await expect(grip).not.toHaveAttribute("inert", "");
-  expect(await toolbar.locator(".edit-bar__group").evaluateAll((els) => els.every((el) => el.closest("[inert]") !== null))).toBe(true);
+  await expect(page.locator(".pb-drag-ghost")).toBeVisible();
   const hero = (await frame(page).locator("section.hero").boundingBox())!;
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 4, { steps: 8 });
   await page.mouse.up();
   await expect.poll(order).not.toEqual(before);
-  await expect(toolbar.locator("[inert]")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(order).toEqual(before);
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
   const source = '<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
@@ -238,4 +238,27 @@ test("comment syntax matrix keeps canonical paths and refuses alternate or neste
     assert.equal(await page.locator('textarea').textContent(), '--!> <!-- nested <!-->');
     assert.equal(await page.locator('main > section').textContent(), 'New');
   } finally { await browser.close(); }
+});
+
+test("a component instance moves whole, its bytes kept, and cards reorder sideways", () => {
+  const card = '<card-project>\n      <h3 slot="title">Fern</h3>\n    </card-project>';
+  const source = `<main>\n  <section>\n    <div class="cards">\n      <card-project><h3 slot="title">A</h3></card-project>\n      ${card}\n    </div>\n  </section>\n</main>`;
+  const edit = nativeMoveEdit(source, [0, 0, 0, 1], { parent: [0, 0, 0], index: 0 })!;
+  assert.ok(edit);
+  const out = applyGuardedSourceEdit(source, edit)!;
+  assert.ok(out.indexOf(card) >= 0 && out.indexOf(card) < out.indexOf('<h3 slot="title">A</h3>'));
+  // Nothing inside an instance moves, and nothing moves into one.
+  assert.equal(nativeMoveEdit(source, [0, 0, 0, 1, 0], { parent: [0, 0], index: 0 }), undefined);
+  assert.equal(nativeMoveEdit(source, [0, 0, 0, 0], { parent: [0, 0, 0, 1], index: 0 }), undefined);
+});
+
+test("only blocks inside <main> that no instance holds are movable", () => {
+  const source = '<site-header></site-header><header><p>Top</p></header><main><section><h2>A</h2><card-x><p>In</p></card-x></section><section-hero></section-hero></main><footer><p>End</p></footer>';
+  assert.equal(nativeMovableBlock(source, [2, 0]), true);
+  assert.equal(nativeMovableBlock(source, [2, 0, 0]), true);
+  assert.equal(nativeMovableBlock(source, [2, 0, 1]), true);
+  assert.equal(nativeMovableBlock(source, [2, 1]), true);
+  for (const path of [[0], [1], [1, 0], [2], [2, 0, 1, 0], [3, 0], [], [9]]) assert.equal(nativeMovableBlock(source, path), false, path.join("."));
+  assert.equal(nativeMovableBlock('<main><template><p>t</p></template><svg></svg></main>', [0, 0]), false);
+  assert.equal(nativeMovableBlock('<main><template><p>t</p></template><svg></svg></main>', [0, 1]), false);
 });
