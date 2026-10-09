@@ -1,7 +1,7 @@
 ---
 title: "Tone: cap the band surface's chroma to sRGB"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [59-tone-formulas-and-sweep]
 builder: sol
@@ -20,3 +20,10 @@ Lex (2026-10-09), after slice 59: AA must hold for every brand colour, including
 
 - The sweep passes for every brand on the grid, the lowest text contrast stays above 4.5:1, and narrowing the band still makes it fail.
 - Unit tests for the cap at a few hues (blue, cyan, magenta) and for sRGB brands being unchanged.
+
+## Done (2026-10-09)
+
+- Built as a luminance-keeping gamut map rather than a constant-hue cap: the nudged surface steps toward the grey of equal WCAG luminance until its linear sRGB channels fit, so contrast is kept and in-gamut surfaces are untouched. The exact constant-hue cap (cubic roots) worked but its CSS expanded to ~240 KB per use through custom-property substitution (~20 ms per band in Chromium); this recipe is ~1.4 KB. Hue can shift (≤ 5.4° for Display P3 surfaces; more for colours far outside P3). Vivid sRGB brands whose nudged surface leaves sRGB (2,490 of 84,311 grid brands, e.g. #ff0000, #0066cc) are mapped too; today the browser clips them.
+- `shared/tone.ts` holds the CSS recipe (`--tone-raw`, `--tone-y`, `--tone-t`, `color(from … srgb-linear …)`), checked against the TypeScript in Chromium; slice 60 copies it.
+- `tests/tone.test.ts`: sweep over all 280,174 grid points (every surface in sRGB, worst text 4.82:1 fallback, 4.96:1 `contrast-color`; narrowed band 0.55/0.67 fails 4,274 times), blue/cyan/magenta, wide cyan, hex brands, near-black/white in-gamut surfaces unchanged.
+- Commits on `dev`: 78da29f and the review fix after it.

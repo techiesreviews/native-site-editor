@@ -172,6 +172,18 @@ test("extreme lightness surfaces preserve clamped raw luminance", () => {
   }
 });
 
+test("in-gamut surfaces next to black and white are left as they are", () => {
+  for (const raw of [
+    { l: 0.009, c: 0.001, h: 123 }, { l: 0.0005, c: 0.0001, h: 250 }, { l: 1e-7, c: 0, h: 0 },
+    { l: 0.9995, c: 0.0001, h: 30 }, { l: 0.99999, c: 0, h: 0 },
+  ]) {
+    assert.ok(inSrgbGamut(raw, 0), JSON.stringify(raw));
+    const surface = brandSurface(raw);
+    close(surface.l, raw.l, 1e-6);
+    close(surface.c, raw.c, 1e-6);
+  }
+});
+
 test("the exact calc step leaves no intermediate surface beside the split", () => {
   for (const offset of [-1e-6, -1e-10, 0, 1e-10, 1e-6]) {
     const brand = { l: TONE_NUDGE_SPLIT_L + offset, c: 0.1, h: 185 };
@@ -244,6 +256,10 @@ function sweep(band: Readonly<ToneNudgeBand> = TONE_NUDGE_BAND): Sweep {
         result.largestP3HueShift = shift;
         result.worstP3HueShift = brand;
       }
+    }
+    if (inSrgbGamut(raw, 0)) {
+      close(surfaces.brand.l, raw.l, 1e-6);
+      close(surfaces.brand.c, raw.c, 1e-6);
     }
     if (srgbBrand && inSrgbGamut(raw)) {
       result.largestInsideReduction = Math.max(result.largestInsideReduction, brand.c - surfaces.brand.c);

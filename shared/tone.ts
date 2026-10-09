@@ -44,21 +44,25 @@ export function brandSurface(
   const { r, g, b } = oklchToLinearSrgb(raw);
   const y = clamp(0.2126 * r + 0.7152 * g + 0.0722 * b, 0, 1);
   const t = Math.min(1,
-    (1 - y) / Math.max(1e-6, Math.max(r, g, b) - y),
-    y / Math.max(1e-6, y - Math.min(r, g, b)),
+    Math.max(1e-9, 1 - y) / Math.max(1e-9, Math.max(r, g, b) - y),
+    Math.max(1e-9, y) / Math.max(1e-9, y - Math.min(r, g, b)),
   );
   return linearSrgbToOklch({ r: y + t * (r - y), g: y + t * (g - y), b: y + t * (b - y) });
 }
 
-// A luminance-keeping gamut map gives compact CSS; luminance, hence contrast, is kept exactly.
-// In-gamut surfaces are untouched; mapping toward equal-luminance grey can change OKLCH hue.
+// A luminance-keeping gamut map gives compact CSS: the surface keeps the WCAG
+// luminance of the unclipped nudged colour (clamped to 0..1), and so its contrast.
+// In-gamut surfaces are untouched (both ratios floor together, so t stays 1
+// near black and white; a mapped channel overshoots by at most 1e-9). Mapping
+// toward the equal-luminance grey can shift hue.
 // CSS recipe (default constants):
 // --tone-raw: oklch(from var(--brand) calc(
 //   min(l, 0.50) * clamp(0, 1 / (0.61 - l), 1) +
 //   max(l, 0.72) * (1 - clamp(0, 1 / (0.61 - l), 1))) c h / 1);
 // --tone-y: clamp(0, 0.2126 * r + 0.7152 * g + 0.0722 * b, 1);
-// --tone-t: min(1, (1 - var(--tone-y)) / max(1e-6, max(r, g, b) - var(--tone-y)),
-//   var(--tone-y) / max(1e-6, var(--tone-y) - min(r, g, b)));
+// --tone-t: min(1,
+//   max(1e-9, 1 - var(--tone-y)) / max(1e-9, max(r, g, b) - var(--tone-y)),
+//   max(1e-9, var(--tone-y)) / max(1e-9, var(--tone-y) - min(r, g, b)));
 // /* surface */
 // color(from var(--tone-raw) srgb-linear
 //   calc(var(--tone-y) + var(--tone-t) * (r - var(--tone-y)))
@@ -66,8 +70,7 @@ export function brandSurface(
 //   calc(var(--tone-y) + var(--tone-t) * (b - var(--tone-y))) / 1)
 // --tone-y and --tone-t contain channel keywords r/g/b: substitute them only
 // inside that relative color(from ... srgb-linear ...), never resolve them alone.
-// Unregistered properties expand textually: 1,338 UTF-8 bytes with var(--brand),
-// or 1,345 bytes with oklch(0.5 0.37 184), including the whitespace shown above.
+// Unregistered properties expand textually: about 1.4 KB in all.
 // TypeScript mirrors the unclipped linear channels, clamped Y and t step for step.
 function linearSrgbToOklch({ r, g, b }: Rgb): Oklch {
   // Björn Ottosson's forward matrices (paired with the inverse below).
