@@ -84,6 +84,7 @@ test("locked parts name the nested instance in the outer template", () => {
   assert.deepEqual(nativeLockedComponentPart(selection, "index.html", components, sources, hostTag), {
     part: { path: "outer.html", node: [0], tag: "inner-card" },
     instance: { path: "index.html", node: [0, 1], tag: "outer-card" },
+    source: sources["outer.html"],
   });
   assert.equal(nativeLockedComponentPart(selection, "index.html", components, sources, hostTag, true), undefined);
   assert.equal(nativeLockedComponentPart(selection, "index.html", { ...components, "inner-card": "wrong.html" }, sources, hostTag), undefined);

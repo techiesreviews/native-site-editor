@@ -87,8 +87,10 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
     const reason = dropRefusal(block, container);
     return { container, index, level: j, ok: !reason, ...(reason ? { reason } : {}) };
   };
-  // A named slot refuses where it is, rather than passing the drop up.
-  if (level <= 0 && (containers[0].kind === "slot" || containers[0].kind === "fixed") && !isBand(block)) return at(0);
+  // A named slot refuses where it is, rather than passing the drop up; a fixed
+  // part does too, except at its edges (below), where the drop goes beside it.
+  const first = containers[0];
+  if (level <= 0 && !isBand(block) && (first.kind === "slot" || first.kind === "fixed" && !nearEdge(p, first.rect))) return at(0);
   let i = 0;
   while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);

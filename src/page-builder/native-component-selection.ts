@@ -52,9 +52,14 @@ export function nativeComponentScopeSelection(
   }
 }
 
+type SourceTarget = { path: string; node: number[]; tag: string };
+
+/** A fixed part clicked on the page: the template element, the page instance, and the template as it was then. */
 export interface LockedComponentPart {
-  part: { path: string; node: number[]; tag: string };
-  instance: { path: string; node: number[]; tag: string };
+  part: SourceTarget;
+  instance: SourceTarget;
+  /** The part's template source when it was clicked; a lock holds only while it is unchanged. */
+  source: string;
 }
 
 /** A verified template click on the page, excluding slot placeholders and edit mode. */
@@ -81,5 +86,6 @@ export function nativeLockedComponentPart(
   return {
     part: { path: part.path, node: [...part.node], tag: part.tag },
     instance: { path: mapped.path, node: [...mapped.node], tag: mapped.tag },
+    source,
   };
 }

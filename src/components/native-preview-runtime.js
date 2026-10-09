@@ -1062,8 +1062,9 @@
       var chain = [];
       if (dropSealed(el)) {
         if (!el.shadowRoot) return chain;
-        // A fixed template element refuses here, even when an items slot's
-        // parent box overlaps it. Containers around slots still expose their gaps.
+        // A fixed template element refuses here (its edges pass the drop up, beside
+        // the instance), even when an items slot's parent box overlaps it.
+        // Containers around slots are not fixed parts: their gaps pass up too.
         var fixed = el.shadowRoot.elementFromPoint(x, y);
         if (fixed && fixed.getRootNode() === el.shadowRoot && !fixed.closest("slot") && !fixed.querySelector("slot")) {
           return [entry(el, "fixed", [], dropRect(fixed), fixed, [])];
@@ -1072,7 +1073,7 @@
         var slots = dropSlots(el);
         var hit = slots.find(function (s) { return !s.items && dropHit(s.rect, x, y); }) ||
           slots.find(function (s) { return s.items && dropHit(s.rect, x, y); });
-        if (!hit) return [entry(el, "fixed", [], dropRect(el), el, [])];
+        if (!hit) return chain;
         chain.push(entry(el, hit.items ? "items" : "slot", hit.assigned, hit.rect, hit.parent,
           Array.prototype.slice.call(hit.slot.assignedNodes()), hit.name));
         if (hit.around) chain[chain.length - 1].around = hit.around;

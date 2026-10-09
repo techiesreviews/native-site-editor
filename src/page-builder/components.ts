@@ -420,7 +420,7 @@ export function createComponentTools(deps: ComponentDeps) {
       };
     };
     if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag) };
-    if (!editMode?.active() && selection.locked) {
+    if (!editMode?.active() && selection.locked && deps.sources()[selection.locked.part.path] === selection.locked.source) {
       const { part, instance } = selection.locked;
       const onEdit = guardedEdit(instance.tag, undefined, part, instance);
       const partSource = deps.sources()[part.path];

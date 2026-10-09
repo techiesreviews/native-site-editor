@@ -104,14 +104,17 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
       ? intent.path : ports.editingScopePath();
   }
 
-  async function select(selection: NativePreviewSelection) {
+  // `replayed` is the lock of a click replayed once its page mounted; frame reports never carry one.
+  async function select(selection: NativePreviewSelection, replayed?: LockedComponentPart) {
     ports.clearMoveAction();
     const sources = ports.sources();
     const previous = store.selection.value;
-    // Geometry/source refreshes of the same host keep its click intent. A
-    // different selection, including a direct click on that host, clears it.
-    let locked = selection.reason === "refresh" && previous?.path === selection.path && previous.tag === selection.tag
-      && previous.node?.join(".") === selection.node?.join(".") ? previous.locked : undefined;
+    // Geometry/source refreshes of the same host keep its click intent while the
+    // part's template is unchanged. A different selection, including a direct
+    // click on that host, clears it.
+    let locked = replayed ?? (selection.reason === "refresh" && previous?.path === selection.path && previous.tag === selection.tag
+      && previous.node?.join(".") === selection.node?.join(".") ? previous.locked : undefined);
+    if (locked && sources[locked.part.path] !== locked.source) locked = undefined;
     if (pendingInstance) {
       locked = undefined;
       const was = pendingInstance;
@@ -200,7 +203,7 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
       const was = pending;
       if (was?.selection.path === path && store.openFile.value === path && ports.editor()?.isMounted(path)) {
         pending = undefined;
-        if (was.epoch === ports.generation()) void select(was.selection);
+        if (was.epoch === ports.generation()) void select(was.selection, was.selection.locked);
       }
     },
     handlers(): Required<Pick<NativePreviewHandlers, "onSelect" | "onItemGrids" | "onTextSelection">> {
