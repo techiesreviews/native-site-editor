@@ -1,11 +1,12 @@
-// An instance's variants as edit bar fields (ticket 07 §5): a dropdown per
+// An instance's (or a Button's) variants as edit bar fields (ticket 07 §5): a dropdown per
 // choice, a checkbox per yes/no variant. Leaving the attribute off is the
 // default look, so the default option removes it; a value no rule knows
 // shows as "Custom" and stays until something else is picked. A variant (or
 // a value) styled only inside a media or container query says where it
 // shows ("wide screens only").
 
-// Loaded when an instance is first selected (src/page-builder/components.ts),
+// Loaded when an instance or a Button (`a.btn`) is first selected
+// (src/page-builder/components.ts),
 // so the variant parser stays out of the boot bundle.
 
 import { scriptsSetAttributes, siteVariants, valueLabel, variantsForClass, variantsForComponent, type Variant } from "../../shared/variants";

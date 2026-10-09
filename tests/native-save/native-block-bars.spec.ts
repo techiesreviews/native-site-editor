@@ -109,8 +109,12 @@ test("Heading, Paragraph, Section and ordinary links have no variant controls", 
   await expect(bar(page).getByRole("combobox", { name: "Layout", exact: true })).toHaveCount(0);
 });
 
-
 test("Button without matching stylesheet rules shows no variant fields", async ({ page }) => {
+  // The variant reader is loaded (Variant shows) before the rules go away.
+  await frame(page).getByRole("link", { name: "Button", exact: true }).click();
+  await expect(bar(page).getByRole("combobox", { name: "Variant", exact: true })).toBeVisible();
+  await frame(page).getByRole("heading", { name: "Block edit bars" }).click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await page.evaluate(async () => {
     const editor = await import("/src/components/source-editor.ts");
     const html = editor.getMountedSource("blocks.html")!;

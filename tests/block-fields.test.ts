@@ -33,6 +33,9 @@ test("only Div with a complete flow or cards class token offers Layout", () => {
     assert.equal(blockLayoutEdit(source, startTags(source)[0], "flow"), undefined);
   }
   assert.equal(blockLayoutEdit('<div class="flow">', startTags('<div class="flow">')[0], "columns"), undefined);
+  // A no-break space joins tokens rather than separating them.
+  for (const source of ['<div class="before\u00a0flow">', '<div class="flow\u00a0after">']) assert.equal(blockLayout(source, startTags(source)[0]), undefined);
+  assert.equal(swap('<div class="a\u00a0b flow">', "cards"), '<div class="a\u00a0b cards">');
 });
 
 test("only an anchor with the complete btn class token is a Button block", () => {
@@ -42,6 +45,7 @@ test("only an anchor with the complete btn class token is a Button block", () =>
   }
   assert.equal(isButtonBlock("a", []), false);
   assert.equal(isButtonBlock("a", [{ name: "class", value: "btn-other" }]), false);
+  assert.equal(isButtonBlock("a", [{ name: "class", value: "other\u00a0btn" }]), false);
 });
 
 test("Button fields use .btn axes, preserve Custom, notes and presence, and ignore global rules", () => {
