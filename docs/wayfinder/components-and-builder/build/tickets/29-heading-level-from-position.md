@@ -18,3 +18,9 @@ Ticket [10](../../tickets/10-block-set.md) §2 (Heading): directly in a Section 
 ## Done when
 
 - Unit tests: in a Section, in a Div in a Section (with and without a section heading), deeper Divs capped at `h4`, a Section whose heading is `h1`.
+
+## Done (2026-10-09)
+
+- `nativeHeadingLevel(source, parentPath)` in `src/page-builder/native-operations.ts`: h2 directly in a Section; the section's heading level + 1 per Div, clamped to h2..h4; an instance parent one below; undefined for an unresolvable path. Not wired into inserts yet (slice 30).
+- Commits: 11e3f0c, fbd5b5f.
+- Tests: `tests/native-heading-level.test.ts` (Section, Div with and without a section heading, h1 section, Div cap at h4, header/hgroup headings, instances, bad paths).
