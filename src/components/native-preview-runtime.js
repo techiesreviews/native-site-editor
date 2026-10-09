@@ -2733,6 +2733,8 @@
     el.setAttribute("spellcheck", "false");
     el.addEventListener("blur", commitEditing);
     el.addEventListener("keydown", onEditingKey);
+    // Typing can wrap the selection before the text edit is committed.
+    el.addEventListener("input", scheduleRect);
   }
   function stopEditing(commit) {
     if (!editing) return;
@@ -2740,6 +2742,7 @@
     if (commit) commitEditing();
     el.removeEventListener("blur", commitEditing);
     el.removeEventListener("keydown", onEditingKey);
+    el.removeEventListener("input", scheduleRect);
     el.removeAttribute("contenteditable");
     el.removeAttribute("spellcheck");
     editing = null;

@@ -50,39 +50,41 @@ test("a reported inset moves the bar; invalid or missing ones leave it; a huge o
   // With room above the rectangle and no inset, the bar stands above it.
   expect(plain.side).toBe("above");
   expect(plain.top).toBe(Math.round(100 - plain.height - 8));
-  // A valid inset reaching past the room above pins the bar just under it.
-  const pinned = await sendRect(page, 150);
-  expect(pinned.side).toBe("pinned");
-  expect(pinned.top).toBe(154);
+  // A valid inset reaching past the room above puts the bar below, under the header.
+  const below = await sendRect(page, 150);
+  expect(below.side).toBe("below");
+  expect(below.top).toBe(154);
   // The same message with no render context is not applied.
-  expect(await sendRect(page, 0, false)).toEqual(pinned);
+  expect(await sendRect(page, 0, false)).toEqual(below);
   // Invalid insets are ignored: the bar goes back to the no-inset place.
   for (const invalid of [-40, Number.NaN, Number.POSITIVE_INFINITY, "120", null]) {
-    expect(await sendRect(page, 150)).toEqual(pinned);
+    expect(await sendRect(page, 150)).toEqual(below);
     expect(await sendRect(page, invalid)).toEqual(plain);
   }
   // An inset taller than the frame: the bar still fits inside the frame.
   const huge = await sendRect(page, 100_000);
-  expect(huge.side).toBe("pinned");
+  expect(huge.side).toBe("below");
   expect(huge.top).toBeGreaterThanOrEqual(0);
   expect(huge.bottom).toBeLessThanOrEqual(huge.frameHeight + 0.5);
-  expect(huge.top).toBeLessThan(pinned.frameHeight);
+  expect(huge.top).toBeLessThan(below.frameHeight);
   // Back to none: the original place.
   expect(await sendRect(page, 0)).toEqual(plain);
 });
 
 // The fixture's site-header sticks. The runtime's own report for the hero
-// heading (right under it) pins the bar just under the header, over the
-// heading's top, never below the heading onto the lead paragraph.
-test("the sticky header pins the bar under it, over the selected heading", async ({ page }) => {
+// heading (right under it) puts the bar below the heading and the header.
+test("the sticky header leaves the bar under it and below the selected heading", async ({ page }) => {
   await frame(page).locator(".hero h1").click();
   await page.waitForTimeout(300);
   const header = (await frame(page).locator("site-header").boundingBox())!;
   const heading = (await frame(page).locator(".hero h1").boundingBox())!;
   const box = (await bar(page).boundingBox())!;
-  expect(await bar(page).getAttribute("data-side")).toBe("pinned");
+  expect(await bar(page).getAttribute("data-side")).toBe("below");
   expect(box.y).toBeGreaterThanOrEqual(header.y + header.height - 0.5);
-  expect(box.y).toBeLessThan(heading.y + heading.height);
+  expect(box.y).toBeGreaterThanOrEqual(heading.y + heading.height);
+  const area = (await page.locator(".native-preview-frame").boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(area.y);
+  expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
 });
 
 // The runtime's inset: the header's bottom with a full-height sidebar beside

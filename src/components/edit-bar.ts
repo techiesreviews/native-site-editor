@@ -2,6 +2,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
+import { editBarPlacement } from "./edit-bar-placement";
 import { componentIcon, mark } from "../page-builder/component-icon";
 import "./edit-bar.css";
 
@@ -9,8 +10,9 @@ import "./edit-bar.css";
 // native preview. It lives in the preview pane, over the frame, and follows
 // the selection's rectangle as reported by the preview runtime. Geometry
 // follows the User Editor reference: 8 px above the selection when that fits,
-// below it otherwise, else pinned 4 px inside the frame top; never past the
-// frame's sides; hidden while the selection is scrolled out of view.
+// below it otherwise, else pinned inside the frame where it covers the least
+// visible selection; never past the frame's sides; hidden while the selection
+// is scrolled out of view unless its controls retain focus.
 
 export interface SelectionRect {
   top: number;
@@ -408,37 +410,25 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const frameLeft = frameRect.left - paneRect.left;
     const frameTop = frameRect.top - paneRect.top;
     const frameRight = frameRect.right - paneRect.left;
-    const frameBottom = frameRect.bottom - paneRect.top;
     bar.style.maxWidth = `${Math.max(180, frameRect.width - 16)}px`;
     fitPanel();
     const width = bar.offsetWidth;
     const height = bar.offsetHeight;
-    const gap = 8;
     // Clear of the selection and of the notes on it (its pins, Ask agent's note).
     const row = placeNote(rect, frameRect, frameLeft, frameTop);
-    // The page's sticky header is kept clear, unless it leaves no room for
-    // the bar at all (a tiny frame): then the frame's own top is used.
-    const covered = Math.min(rect.inset ?? 0, Math.max(0, frameRect.height - height - 8));
-    const ceiling = frameTop + covered + 4;
-    const above = frameTop + Math.min(rect.top, row?.top ?? rect.top) - height - gap;
-    const below = Math.max(ceiling, frameTop + Math.max(rect.bottom, row?.bottom ?? rect.bottom) + gap);
-    let top = above;
-    let side = "above";
-    if (above < ceiling) {
-      // Under a sticky header the bar pins just below it, over the selection's
-      // top, rather than dropping below the selection onto what follows it.
-      if (covered <= 0 && below + height <= frameBottom - 4) { top = below; side = "below"; }
-      else { top = ceiling; side = "pinned"; }
-    }
-    if (!visible) {
-      // Keep the active controls reachable until focus leaves them. An
-      // unfocused selection still hides when it leaves the viewport.
-      top = Math.max(ceiling, Math.min(top, frameBottom - height - 4));
-      side = "pinned";
-    }
+    // Prefer above, then below (also under a sticky header). If neither fits,
+    // pin to the canvas edge that covers less of the visible selection.
+    const { top, side } = editBarPlacement({
+      selectionTop: Math.min(rect.top, row?.top ?? rect.top),
+      selectionBottom: Math.max(rect.bottom, row?.bottom ?? rect.bottom),
+      frameHeight: frameRect.height,
+      barHeight: height,
+      inset: rect.inset,
+      visible,
+    });
     bar.dataset.side = side;
     bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
-    bar.style.top = `${top}px`;
+    bar.style.top = `${frameTop + top}px`;
     if (!popover.hidden && popoverButton) placePopover(popoverButton);
   }
   // A wrapped flex box keeps the width of the line it wrapped from, so a
