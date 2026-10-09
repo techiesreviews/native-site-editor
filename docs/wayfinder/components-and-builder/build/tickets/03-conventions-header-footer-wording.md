@@ -24,4 +24,4 @@ Ticket [02](../../tickets/02-masters-become-components.md) §3, word for word.
 ## Done (2026-10-09)
 
 - `worker/site-conventions.ts` carries ticket 02's header/footer sentence (nav links in the template, skip link before `<site-header>`, its style in the shared CSS) and "Write both files, then place it with add_section…" without the loader/`site.css` step.
-- `tests/mcp-runtime.test.ts` asserts the new sentence and that "add the tag to the loader" is gone.
+- Commit a01f78b; `tests/mcp-runtime.test.ts` asserts the new sentence, the shortened "Write both files, then place it with add_section" step, and that "add the tag to the loader" is gone.
