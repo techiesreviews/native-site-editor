@@ -108,8 +108,12 @@ function closingParen(css: string, open: number) {
 const unquote = (value: string) => {
   const trimmed = value.trim();
   const inner = /^(["']).*\1$/s.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
-  return inner.replace(/\\(?:([0-9a-fA-F]{1,6})[\t\n\f\r ]?|([\s\S]))/g, (_, hex?: string, char?: string) =>
-    (hex ? String.fromCodePoint(Math.min(parseInt(hex, 16), 0x10ffff) || 0xfffd) : char ?? ""));
+  return inner.replace(/\\(?:([0-9a-fA-F]{1,6})(?:\r\n|[\t\n\f\r ])?|(\r\n|[\n\f\r])|([\s\S]))/g, (_, hex?: string, _continued?: string, char?: string) => {
+    if (!hex) return char ?? "";
+    // A string continued on the next line drops the break; a code point out of range, a surrogate or zero is U+FFFD.
+    const point = parseInt(hex, 16);
+    return String.fromCodePoint(!point || point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff) ? 0xfffd : point);
+  });
 };
 
 // The URL, layer, supports() and media parts of one statement's prelude.

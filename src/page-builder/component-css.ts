@@ -129,7 +129,8 @@ function clean(text: string, collapse = false) {
 function nested(prelude: string, parent?: string[]) {
   const parts = splitSelectorList(prelude);
   if (!parent) return parts;
-  if (parent.some((outer) => compareSpecificity(specificity(outer), specificity(parent[0])))) {
+  // `& + &` pairs every part with every other, which one list does and a part at a time doesn't.
+  if (parent.some((outer) => compareSpecificity(specificity(outer), specificity(parent[0]))) || parent.length > 1 && parts.some((part) => /&[\s\S]*&/.test(part))) {
     const list = `:is(${parent.join(", ")})`;
     return parts.map((part) => (/&/.test(part) ? part.replace(/&/g, list) : `${list} ${part}`));
   }
@@ -589,7 +590,7 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
           // The copy must reach it: in the template, or slotted through its `::slotted()` twin.
           const rest = rewritten?.replace(/^:host(?:\s*>\s*|\s+|$)/, "");
           if (rewritten === undefined || rest === undefined
-            || rest && (reach === "template" ? !matches(shadow, node, rest) : !slottedTwin(rewritten) || !matches(bare, node, rest))) {
+            || rest && (reach === "template" ? !matches(shadow, node, rest) : !twinReaches(rewritten, rest, node, bare, shadow))) {
             if (!bucket.stranded.includes(part)) bucket.stranded.push(part);
             continue;
           }
@@ -613,6 +614,19 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
       notes: [...card.notes, ...strandedNote(buckets[index].stranded)],
     })),
   };
+}
+
+/**
+ * Whether the `::slotted()` twin of `selector` (`rest`: without a leading
+ * `:host`) reaches `node`, slotted whole: its last compound matches the node,
+ * and what comes before matches the `<slot>` that stands in its place.
+ */
+function twinReaches(selector: string, rest: string, node: SourceElement, bare: Match, shadow: Match) {
+  const compounds = compoundsOf(rest);
+  if (!slottedTwin(selector) || !compounds) return false;
+  const last = compounds[compounds.length - 1];
+  const prefix = rest.trim().slice(0, last.start);
+  return matches(bare, node, rest.trim().slice(last.start)) && matches(shadow, node, `${prefix}*`);
 }
 
 function strandedNote(stranded: string[]) {

@@ -151,3 +151,8 @@ test("an imported sheet's rule maps to the imported file's own byte range", () =
   assert.equal(rules.length, 1);
   assert.equal(base.slice(rules[0].start, rules[0].end), ".filler { padding: 1px; }");
 });
+
+test("import URLs decode CSS escapes: hex, a continued line, and out-of-range code points", () => {
+  const urls = parseCssImports(`@import "bg\\20 wide.css";\n@import "ba\\\nse.css";\n@import "x\\110000 y.css";\n@import url(a\\ b.css);`).imports.map((item) => item.url);
+  assert.deepEqual(urls, ["bg wide.css", "base.css", "x�y.css", "a b.css"]);
+});

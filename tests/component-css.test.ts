@@ -272,3 +272,13 @@ test("escaped url()s are decoded before they are rewritten", () => {
   const plan = made(intro, `main .intro h2 { background: url("../images/bg\\20 wide.png"); }`);
   assert.match(plan.css, /url\("\.\.\/\.\.\/images\/bg wide\.png"\)/);
 });
+
+test("a slotted part's copy must reach it beside the slots its siblings became", () => {
+  const plan = made(`<section class="intro"><h2>Hi</h2><p>Text</p></section>`, `main .intro h2 + p { color: red; }\nmain .intro p { margin: 0; }`);
+  assert.equal(copied(plan.css), ".intro p {\n  margin: 0;\n}\n");
+  assert.match(plan.notes[0], /^1 rule can't follow the parts into the component: main \.intro h2 \+ p\./);
+});
+
+test("nesting with & twice keeps every pairing of a parent list", () => {
+  assert.deepEqual(flatRules(`.a, .b { & + & { color: red; } }`, "s.css")[0].selectors, [":is(.a, .b) + :is(.a, .b)"]);
+});
