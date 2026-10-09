@@ -168,15 +168,22 @@ function announceRefusal(deps: EditorPaletteDeps, reason: string) {
   refuse(reason);
 }
 
+/** What a listed command must still find selected: the selection without its on-screen rect, which scrolling updates. */
+export function selectionIdentity(selection: object | undefined): string {
+  if (!selection) return "";
+  const { rect: _rect, ...rest } = selection as { rect?: unknown };
+  return JSON.stringify(rest);
+}
+
 function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const model = deps.editBar();
   const selection = deps.selection();
   if (!model || !selection) return [];
   const revision = deps.revision?.();
   const source = deps.source(selection.path);
-  const identity = JSON.stringify(selection);
+  const identity = selectionIdentity(selection);
   const guard = (run: () => void | Promise<void>) => guardCommand(run,
-    () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
+    () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && selectionIdentity(deps.selection()) === identity,
     () => announceRefusal(deps, "The selection changed. Reopen the command palette and try again."));
   const kind = model.kind;
   const out: Command[] = [];
@@ -334,7 +341,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
   const pagePath = current && pageFiles.has(current) ? current : undefined;
   const revision = deps.revision?.();
   const listedSource = pagePath ? deps.source(pagePath) : undefined;
-  const listedSelection = JSON.stringify(selection);
+  const listedSelection = selectionIdentity(selection);
   for (const component of deps.components()) {
     if (component.section && pagePath) {
       out.push({
@@ -347,7 +354,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
         suggested: true,
         keywords: ["insert", "section", "component", component.tag],
         run: async () => {
-          if (deps.revision?.() !== revision || deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || JSON.stringify(deps.selection()) !== listedSelection) {
+          if (deps.revision?.() !== revision || deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || selectionIdentity(deps.selection()) !== listedSelection) {
             announceRefusal(deps, "The page changed. Reopen the command palette and try again.");
             return;
           }
@@ -417,12 +424,12 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
   if (!path || source === undefined || !deps.pages().some((page) => page.file === path)) return [];
   const revision = deps.revision?.();
   const selection = deps.selection();
-  const identity = JSON.stringify(selection);
+  const identity = selectionIdentity(selection);
   return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag))).map((choice) => ({
     id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", icon: "insert",
     hint: "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
     run: async () => {
-      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
+      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || selectionIdentity(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
         announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
       const point: { path?: string; parent: number[]; index: number } | undefined = deps.nativeInsertPoint ? deps.nativeInsertPoint(source, path, selection, choice) : nativePaletteInsertPoint(source, path, selection, choice);
@@ -431,7 +438,7 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
         announceRefusal(deps, `Select a valid HTML container to add ${choice.label}.`); return;
       }
       // Host callbacks cannot silently replace the captured source or selection.
-      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity) {
+      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || selectionIdentity(deps.selection()) !== identity) {
         announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
       if (point.path !== undefined && point.path !== path) { announceRefusal(deps, "The insertion page changed. Reopen the command palette."); return; }
@@ -517,7 +524,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
         const revision = deps.revision?.();
         const selection = deps.selection();
         const source = selection && deps.source(selection.path);
-        const identity = JSON.stringify(selection);
+        const identity = selectionIdentity(selection);
         return [{
           id: "agent.ask-typed",
           title: `Ask agent: “${text}”`,
@@ -527,7 +534,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
           run: guardCommand(async () => {
             const problem = await prompt.onSend(text);
             if (problem) deps.onError(new Error(problem));
-          }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
+          }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && selectionIdentity(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
           () => announceRefusal(deps, "The selection changed. Reopen the command palette and try again.")),
         }];
       },
