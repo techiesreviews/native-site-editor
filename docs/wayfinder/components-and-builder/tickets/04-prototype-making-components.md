@@ -36,3 +36,5 @@ Decided with Lex by reacting live to five variants on `dev` behind `?proto=compo
 12. **Form:** a name, made valid as typed, and its tag. Create places a blank component (a section with a title slot and an empty items slot) on the current page and opens it in Edit component mode, where it is built with the block set (ticket 14).
 
 **Extended by ticket 09 (2026-10-09):** Add card is a split button; its ▾ and a look chip on the card choose another card component or variant. The plain Add card still adds the slot's card component.
+
+**Amended by ticket 15 (2026-10-09):** rule 5 is dropped. Make component converts only the selected section; there is no "Also on N other pages" offer and no copies flag on `make_component`.
