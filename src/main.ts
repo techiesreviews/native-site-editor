@@ -201,9 +201,12 @@ const nativeHistoryAliases = new Map<string, { epoch: number; scope: string; ses
 let nativeHistoryMountCapture: ((path: string, pane?: boolean) => void) | undefined;
 // Native operations' history steps, told when the stylesheet pane mounts a file outside their own transitions.
 const nativePaneMountAdopters = new Set<(path: string) => void>();
+// Edit component's shares (components' shareHistory): a template records its steps in a page's journal, the latest share first.
+const nativeHistoryShares = new Map<string, { epoch: number; scope: string; session: string }[]>();
 function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>, path: string) {
-  const key = draftKey(scope, path), alias = nativeHistoryAliases.get(key);
-  return alias && alias.epoch === generation && alias.scope === setupScope() ? alias.session : key;
+  const key = draftKey(scope, path), share = nativeHistoryShares.get(key)?.at(-1), alias = nativeHistoryAliases.get(key);
+  const live = (bound: typeof alias): bound is NonNullable<typeof alias> => !!bound && bound.epoch === generation && bound.scope === setupScope();
+  return live(share) ? share.session : live(alias) ? alias.session : key;
 }
 
 function closeEditor() {
@@ -622,7 +625,7 @@ function mountComponentTools() {
       const epoch = generation, scope = draftScope();
       recordNativeSourceIntent(path);
       // A pane open on its own history when a share (shareHistory below) asks for another opens again on that.
-      const shared = scope && nativeHistoryAliases.has(draftKey(scope, path)) ? nativeHistorySession(scope, path) : undefined;
+      const shared = scope && nativeHistoryShares.has(draftKey(scope, path)) ? nativeHistorySession(scope, path) : undefined;
       if (appStore.openFile.value !== path || !editorModule?.isMounted(path) || (shared && editorModule.paneOf(path)?.session !== shared)) await restoreFile(path, epoch);
       return epoch === generation && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
     },
@@ -658,13 +661,16 @@ function mountComponentTools() {
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
     refreshBar: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
-    // Joins the template to the page's journal, as the stylesheet pane follows the page's.
+    // Joins the template to the page's journal, as the stylesheet pane follows the page's; an operation's alias stays under it.
     shareHistory: (path, owner) => {
       const scope = draftScope();
       if (!scope) return () => {};
-      const key = draftKey(scope, path), alias = { epoch: generation, scope: setupScope(), session: nativeHistorySession(scope, owner) };
-      nativeHistoryAliases.set(key, alias);
-      return () => { if (nativeHistoryAliases.get(key) === alias) nativeHistoryAliases.delete(key); };
+      const key = draftKey(scope, path), share = { epoch: generation, scope: setupScope(), session: nativeHistorySession(scope, owner) };
+      nativeHistoryShares.set(key, [...nativeHistoryShares.get(key) ?? [], share]);
+      return () => {
+        const rest = nativeHistoryShares.get(key)?.filter((each) => each !== share) ?? [];
+        if (rest.length) nativeHistoryShares.set(key, rest); else nativeHistoryShares.delete(key);
+      };
     },
   });
 }

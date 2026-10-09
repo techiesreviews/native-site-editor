@@ -575,10 +575,13 @@ export function createComponentTools(deps: ComponentDeps) {
     // A failed load is told only while this entry still stands (below), never after it was left.
     const modeLoad = framed && loadEditMode().then((mode) => ({ mode }), (error: unknown) => ({ error }));
     // The mode's edits of the template are undo steps of the framed page (from this opening); an entry that never starts the mode lets go.
-    const shared = framed ? deps.shareHistory?.(template.path, framed.path) : undefined;
+    const release = framed ? deps.shareHistory?.(template.path, framed.path) : undefined;
+    const share: EntryShare | undefined = release && { release };
+    if (share) { letGo(entryShare); entryShare = share; }
     if (!(await deps.openFile(template.path))
-      || deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { shared?.(); return; }
+      || deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { letGo(share); return; }
     const opened = explicitTemplate = { path: template.path, revision: deps.revision() };
+    if (share) share.opened = opened;
     // The template's code takes the caret straight away: typing edits it at once.
     deps.editor()?.focusEditor?.(template.path);
     const source = deps.sources()[template.path] ?? template.source;
@@ -594,11 +597,12 @@ export function createComponentTools(deps: ComponentDeps) {
     if (framed && modeLoad) void modeLoad.then((loaded) => {
       // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
       if (explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
-        || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { shared?.(); return; }
-      if (!("mode" in loaded)) { shared?.(); deps.error(loaded.error); return; }
+        || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return; }
+      if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return; }
       // A mode already on (another instance) gives way: its share goes, the frame is told only the new mode.
-      releaseHistory?.();
-      releaseHistory = shared;
+      modeShare?.();
+      modeShare = undefined;
+      if (share && entryShare === share) { entryShare = undefined; modeShare = share.release; }
       loaded.mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path });
       renderBar();
       // The part is selected again in the framed instance when the selection is in another one (or none).
@@ -635,13 +639,21 @@ export function createComponentTools(deps: ComponentDeps) {
   // Edit component mode (edit-component-mode.ts), loaded on its first use.
   let editMode: EditComponentMode | undefined;
   let editModeLoad: Promise<EditComponentMode> | undefined;
-  // The mode's share of the page's history (deps.shareHistory), let go as the mode ends.
-  let releaseHistory: (() => void) | undefined;
+  // Shares of the page's history (deps.shareHistory): the mode's, let go as it ends, and the
+  // latest entry's until it starts the mode, or its opening of the template is left first.
+  type EntryShare = { release: () => void; opened?: object };
+  let modeShare: (() => void) | undefined;
+  let entryShare: EntryShare | undefined;
+  function letGo(share: EntryShare | undefined) {
+    if (!share || entryShare !== share) return;
+    entryShare = undefined;
+    share.release();
+  }
   /** Ends the mode, if it is on; the instance it was on. */
   function leaveMode() {
     const was = editMode?.leave();
-    releaseHistory?.();
-    releaseHistory = undefined;
+    modeShare?.();
+    modeShare = undefined;
     return was;
   }
   const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode }) => editMode = createEditComponentMode({
@@ -659,6 +671,7 @@ export function createComponentTools(deps: ComponentDeps) {
   let barTag = "";
   function renderBar() {
     if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
+    if (entryShare?.opened && entryShare.opened !== explicitTemplate) letGo(entryShare);
     // The mode lasts while its template stays open over its page; another file (Files, a page's element) ends it.
     const moded = editMode?.active();
     if (moded && (explicitTemplate?.path !== moded.templatePath || deps.previewPage() !== moded.path)) leaveMode();
@@ -1781,6 +1794,7 @@ export function createComponentTools(deps: ComponentDeps) {
       panel.remove();
       if (barKey) deps.canvasComponent(undefined);
       leaveMode();
+      letGo(entryShare);
       usedOnDropdown.destroy();
       usedOn.remove();
       dialog.remove();
