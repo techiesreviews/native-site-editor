@@ -1,7 +1,7 @@
 ---
 title: Click a block to insert it by selection
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [28-block-rail, 29-heading-level-from-position]
 builder: claude ★
@@ -24,3 +24,9 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §2–4.
 - Unit tests for the rule: each selection case, nothing selected, Sections never nested.
 - Nightly spec: the first Image insert drafts `images/placeholder.svg` and one undo removes both; a second insert writes no file.
 - `@smoke` spec (for example `tests/native-save/native-blocks.spec.ts`): click Section, Div, Heading, Paragraph: the page holds `<section class="flow"><div class="flow"><h3>…</h3><p>…</p></div></section>`, each insert one undo step.
+
+## Done (2026-10-09)
+
+- Clicking a rail block inserts it by selection (`clickTarget` in `src/page-builder/block-insert.ts`; Sections only between bands, other blocks only into a Section or Div, a component refuses until slice 40). The new block is selected, a label flashes under it ("Into Div › after Heading"), a refusal flashes its red reason, and Escape on the rail goes up a level. `src/controllers/block-insert-controller.ts` `insert` is the one helper for slices 35 and 43: one `applyNativeOperation` per block; the first Image also creates `images/placeholder.svg` in that step (drafted SVGs now show in the preview). Loaded on the first click; boot JS +1.2 KB gzip.
+- Commits 763f3a8, c93499f, cba1851 (the last two from Sol's review: the click's proof held across the lazy load, stale painted selections refused, the selection request waits for the step's own render, undo pinned to the page's editor).
+- Tests: `tests/block-insert.test.ts`, `tests/block-insert-controller.test.ts`, `tests/native-save/native-blocks.spec.ts` (`@smoke` Section › Div › Heading › Paragraph with one undo each; nightly placeholder draft, reuse and undo; refusal); `native-block-rail.spec.ts` expects the click to insert.
