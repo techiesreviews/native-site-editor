@@ -11,6 +11,7 @@ import {
   fillInsertEdit,
   fillMarkup,
   fillRemoveEdits,
+  fixedSlotPaths,
   hasHeadingSlot,
   makeComponentPlan,
   parseSource,
@@ -1165,4 +1166,22 @@ test("new breaks copy the content's <br> spelling, never its attributes", () => 
   const source = '<p>One<br id="x">Two</p>';
   const { from, to } = innerOf(source);
   assert.equal(applyEdit(source, breakTextEdit(source, from, to, "One\nTwo\nThree")), '<p>One<br id="x">Two<br>Three</p>');
+});
+
+
+test("fixed slot names resolve to the default plan's paths, including unnamed and repeated choices", () => {
+  const source = "<section><h2>Title</h2><p>Text</p></section>";
+  const made = makeComponentPlan(source, rangeOf(source, "section"), "section-intro");
+  assert.ok(!("error" in made));
+  assert.deepEqual(fixedSlotPaths(made.slots, ["title", "title"]), { fixed: [[0]] });
+  assert.deepEqual(fixedSlotPaths(made.slots, []), { fixed: [] });
+  assert.match((fixedSlotPaths(made.slots, ["missing"]) as { error: string }).error, /Unknown fixed slot: missing.*title, text/);
+  const unnamed = [{ ...made.slots[0], name: "" }];
+  assert.deepEqual(fixedSlotPaths(unnamed, [""]), { fixed: [[0]] });
+  assert.match((fixedSlotPaths(unnamed, ["missing"]) as { error: string }).error, /Slots in this plan: \(unnamed\)/);
+  assert.match((fixedSlotPaths([], ["missing"]) as { error: string }).error, /\(none\)/);
+  const fixed = makeComponentPlan(source, rangeOf(source, "section"), "section-intro", { fixed: [[0]] });
+  assert.ok(!("error" in fixed));
+  assert.doesNotMatch(fixed.instance, /slot="title"/);
+  assert.match(fixed.template, /<h2>Title<\/h2>/);
 });

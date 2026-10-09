@@ -1,8 +1,8 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { buildAgentContext, linkedStylesheets } from "../src/agent-site.ts";
+import { applySiteCommand, buildAgentContext, linkedStylesheets, type AgentSiteActions } from "../src/agent-site.ts";
 import type { SavedDraft } from "../src/drafts.ts";
-import { textHash } from "../shared/agent.ts";
+import { textHash, type AgentCommand } from "../shared/agent.ts";
 
 test("the agent context lists the stylesheets the pages link, home page first, each with what it imports", () => {
   const sources: Record<string, string> = {
@@ -42,4 +42,61 @@ test("the agent context lists every draft by hash and hands over each text up to
   assert.deepEqual(context.drafts.find((entry) => entry.path === "styles/huge.css"), { path: "styles/huge.css", baseSha: null, updatedAt: 1, size: 1024 * 1024 + 1 });
   assert.deepEqual(context.drafts.find((entry) => entry.path === "images/logo.png"), { path: "images/logo.png", baseSha: null, updatedAt: 1, binary: true });
   assert.equal(texts.size, 150);
+});
+
+test("make_component opens the guarded page, forwards its request and reports flat results", async () => {
+  let source = "<html><head></head><body><main><section><h2>Title</h2></section></main></body></html>";
+  const hash = await textHash(source);
+  const command: AgentCommand = {
+    id: "make-1", operation: "make_component", path: "index.html", branch: "dev", commit: "c",
+    content: "", expectedHash: hash, args: { element: "0.0", tag: "section-intro", fixed: ["title"] },
+    state: "pending", createdAt: 1,
+  };
+  // Only the ports this operation may use are present; any other call fails.
+  const actions = {
+    open: async (path: string) => { assert.equal(path, command.path); return true; },
+    isMounted: () => true,
+    text: async () => source,
+    makeComponent: async (request: unknown) => {
+      assert.deepEqual(request, { path: "index.html", node: [0, 0], tag: "section-intro", fixed: ["title"] });
+      source = "<body><main><section-intro></section-intro></main></body>";
+      return { tag: "section-intro", files: ["components/section-intro/section-intro.html", "components/section-intro/section-intro.css"],
+        slots: ["", "text"], cards: ["card-intro"], notes: ["A plan note."] };
+    },
+  } as AgentSiteActions;
+  const outcome = await applySiteCommand(actions, command);
+  assert.match(outcome.message!, /Made <section-intro>.*unsaved/);
+  assert.deepEqual(outcome.result, {
+    tag: "section-intro", files: "components/section-intro/section-intro.html, components/section-intro/section-intro.css",
+    slots: "(unnamed), text", cards: "card-intro", notes: "A plan note.", hash: await textHash(source),
+  });
+});
+
+test("make_component reports refusals as conflicts and never calls the action for missing elements or stale pages", async () => {
+  const source = "<body><main><section></section></main></body>";
+  const command: AgentCommand = {
+    id: "make-1", operation: "make_component", path: "index.html", branch: "dev", commit: "c",
+    content: "", expectedHash: await textHash(source), args: { element: "0.0", tag: "section-intro" },
+    state: "pending", createdAt: 1,
+  };
+  let calls = 0;
+  const actions = {
+    open: async () => true, isMounted: () => true, text: async () => source,
+    makeComponent: async (request: Parameters<AgentSiteActions["makeComponent"]>[0]) => {
+      calls++;
+      if (request.node[0] === 9) return "That element is not on the page any more. Read the page again.";
+      return "Unknown fixed slot: missing. Slots in this plan: title.";
+    },
+  } as AgentSiteActions;
+  await assert.rejects(applySiteCommand(actions, command), (error: Error) => {
+    assert.equal(error.constructor.name, "Conflict");
+    assert.match(error.message, /Unknown fixed slot/);
+    return true;
+  });
+  assert.equal(calls, 1);
+  await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "9.9" } }), /not on the page/);
+  assert.equal(calls, 2);
+  await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "bad.id" } }), /not on the page/);
+  await assert.rejects(applySiteCommand(actions, { ...command, expectedHash: "stale" }), /changed in the editor/);
+  assert.equal(calls, 2);
 });

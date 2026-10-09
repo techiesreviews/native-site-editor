@@ -76,7 +76,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
-      "inspect_preview", "list_files", "move_file", "move_section", "open_page", "read_file", "remove_section", "reply_to_request", "set_page_details",
+      "inspect_preview", "list_files", "make_component", "move_file", "move_section", "open_page", "read_file", "remove_section", "reply_to_request", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
@@ -184,7 +184,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     // The tool descriptions and the server's instructions point to the
     // chapter and state no component rules of their own.
     const described = (name: string) => listing.find((tool) => tool.name === name)!.description!;
-    for (const text of [client.getInstructions()!, described("write_file"), described("add_section"), described("get_site")])
+    for (const text of [client.getInstructions()!, described("write_file"), described("add_section"), described("make_component"), described("get_site")])
       assert.match(text, /Components chapter/);
     for (const text of [client.getInstructions()!, ...listing.map((tool) => tool.description ?? "")])
       assert.doesNotMatch(text, /<slot\b|slot=|whole element|fallback|::slotted|registered|data-(?:layout|tone)|card-/);
@@ -247,6 +247,47 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     }
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "pending");
     assert.equal((await call("write_file", { path: "styles/extra.css", content: "a {}\n", waitSeconds: 0 })).isError, true, "one waiting change per file");
+
+    // Make component validates cheaply, then leaves planning to the tab.
+    const makeTool = listing.find((tool) => tool.name === "make_component")!;
+    assert.deepEqual(makeTool.inputSchema.required, ["page", "element", "tag", "expectedHash"]);
+    assert.deepEqual(Object.keys(makeTool.inputSchema.properties!).sort(), ["element", "expectedHash", "fixed", "page", "requestId", "tag", "waitSeconds"]);
+    const makeArgs = { page: "/", element: "1.0", tag: "section-welcome", expectedHash: page.hash, waitSeconds: 0 };
+    for (const [extra, reason] of [
+      [{ element: "bad.id" }, /not an element id/],
+      [{ tag: "section" }, /not a valid custom-element name/],
+      [{ tag: "font-face" }, /not a valid custom-element name/],
+      [{ tag: "feature-block" }, /component.*already/],
+      [{ expectedHash: "0".repeat(64) }, /changed since you read it/],
+      [{ element: "" }, /not an element id/],
+    ] as const) {
+      const refused = await call("make_component", { ...makeArgs, ...extra });
+      assert.equal(refused.isError, true);
+      assert.match(JSON.stringify(refused), reason);
+    }
+    // <main> and the header and footer components are refused before queueing.
+    const refusing = structuredClone(context);
+    refusing.site!.outlines[0].containers.push({ id: "1.5", tag: "main", children: 0 });
+    refusing.site!.outlines[0].sections.push({ id: "1.6", tag: "site-header" }, { id: "1.7", tag: "card-note" });
+    await tab.share(refusing);
+    for (const [element, reason] of [["1.5", /A <main> cannot be a component/], ["1.6", /site's header component already/], ["1.7", /<card-note> is a component already/]] as const) {
+      const refused = await call("make_component", { ...makeArgs, element });
+      assert.equal(refused.isError, true);
+      assert.match(JSON.stringify(refused), reason);
+    }
+    await tab.share(context);
+    for (const extra of [{ fixed: Array(33).fill("title") }, { fixed: ["x".repeat(101)] }, { fixed: [1] }]) {
+      assert.equal((await call("make_component", { ...makeArgs, ...extra })).isError, true);
+    }
+    const made = await call("make_component", { ...makeArgs, fixed: ["title"], requestId: "make-1" });
+    assert.equal(payload(made).state, "pending", JSON.stringify(made));
+    const makeCommand = (await tab.hub()).commands.find((item: any) => item.id === "make-1");
+    assert.equal(makeCommand.operation, "make_component");
+    assert.equal(makeCommand.path, "index.html");
+    assert.equal(makeCommand.expectedHash, page.hash);
+    assert.deepEqual(makeCommand.args, { element: "1.0", tag: "section-welcome", fixed: ["title"] });
+    await tab.claim("make-1", makeCommand.grantId);
+    await tab.ack("make-1", makeCommand.grantId, "applied");
 
     // Sections: section components only, at a place the outline has, on the page hash read.
     const homeHash = page.hash;

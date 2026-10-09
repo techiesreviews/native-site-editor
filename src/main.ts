@@ -4620,6 +4620,7 @@ async function awaitNativeResync() {
     throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
 }
 const agentSiteActions: AgentSiteActions = {
+  makeComponent: async (request) => componentTools?.makeFromAgent(request) ?? "The component tools are not ready.",
   async text(path) {
     await awaitNativeResync();
     const mounted = editorModule?.getMountedSource(path);

@@ -60,6 +60,62 @@ function result(value: unknown): any {
   return JSON.parse(text);
 }
 
+test("make_component drafts files and whole-element slots in one undo step", { tag: "@smoke" }, async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    const home = await call("get_page", { page: "/" });
+    const filler = home.sections.find((section: { key: string }) => section.key === "filler");
+    const refused = await client.callTool({ name: "make_component", arguments: {
+      page: "/", element: home.containers[0].id, tag: "section-main", expectedHash: home.hash,
+    } });
+    expect(refused.isError).toBe(true);
+    for (const [element, fixed, reason] of [
+      ["0", undefined, /component already/],
+      ["1.1.0.1", undefined, /inside the component instance/],
+      [filler.id, ["missing"], /Unknown fixed slot.*Slots in this plan: title/],
+    ] as const) {
+      const response = await client.callTool({ name: "make_component", arguments: {
+        page: "/", element, tag: "section-refused", expectedHash: home.hash, ...(fixed ? { fixed } : {}),
+      } });
+      expect(response.isError).toBe(true);
+      expect(JSON.stringify(response)).toMatch(reason);
+    }
+    const made = await call("make_component", { page: "/", element: filler.id, tag: "section-scroll", expectedHash: home.hash });
+    expect(made.state).toBe("applied");
+    expect(made.result.tag).toBe("section-scroll");
+    const htmlPath = "components/section-scroll/section-scroll.html";
+    const cssPath = "components/section-scroll/section-scroll.css";
+    await expect.poll(async () => (await draft(page, indexPath)).content).toContain("<section-scroll");
+    const source = (await call("read_file", { path: indexPath })).content;
+    expect(source).toMatch(/<h2[^>]*slot="title"[^>]*>Scroll to verify<\/h2>/);
+    expect((await call("read_file", { path: htmlPath })).content).toContain('<slot name="title"><h2');
+    expect((await call("read_file", { path: cssPath })).content).toContain(":host");
+    expect(made.result.files).toBe(`${htmlPath}, ${cssPath}`);
+    await undo(page).click();
+    await expect.poll(async () => (await call("read_file", { path: indexPath })).content).toBe(indexSource);
+    for (const path of [htmlPath, cssPath]) {
+      expect((await client.callTool({ name: "read_file", arguments: { path } })).isError).toBe(true);
+    }
+    // Keeping title fixed removes it from this instance and preserves it in the template.
+    const restored = await call("get_page", { page: "/" });
+    const fixed = await call("make_component", { page: "/", element: filler.id, tag: "section-fixed", fixed: ["title"], expectedHash: restored.hash });
+    expect(fixed.state).toBe("applied");
+    expect((await call("read_file", { path: "components/section-fixed/section-fixed.html" })).content).toContain("Scroll to verify");
+    const fixedSource = (await call("read_file", { path: indexPath })).content;
+    expect(/<section-fixed\b[^>]*>([\s\S]*?)<\/section-fixed>/.exec(fixedSource)![1]).not.toContain('slot="title"');
+  } finally {
+    await client.close();
+  }
+});
+
 test("an agent edits a page, adds and removes a section, creates a page and sets its details while the editor is open", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);

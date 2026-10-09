@@ -1139,6 +1139,13 @@ export interface PlannedCard {
   instances: number[][];
 }
 
+/** Resolve the agent's fixed slot names against the unchanged default plan. */
+export function fixedSlotPaths(slots: readonly PlannedSlot[], names: readonly string[]): { fixed: number[][] } | { error: string } {
+  const unknown = names.filter((name) => !slots.some((slot) => slot.name === name));
+  if (unknown.length) return { error: `Unknown fixed slot: ${unknown.map((name) => name || "(unnamed)").join(", ")}. Slots in this plan: ${slots.map((slot) => slot.name || "(unnamed)").join(", ") || "(none)"}.` };
+  return { fixed: slots.filter((slot) => names.includes(slot.name)).map((slot) => slot.path) };
+}
+
 /** The making mode's choices, each part named by its path inside the element (as in `PlannedSlot`). */
 export interface SlotChoices {
   /** Parts to keep fixed in the template. */

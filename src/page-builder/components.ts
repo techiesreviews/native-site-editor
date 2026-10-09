@@ -49,6 +49,7 @@ import {
   fillInsertEdit,
   fillMarkup,
   fillRemoveEdits,
+  fixedSlotPaths,
   makeComponentPlan,
   makeComponentOffered,
   readInstance,
@@ -1221,6 +1222,31 @@ export function createComponentTools(deps: ComponentDeps) {
     await makeComponent({ path, nodePath: [...nodePath], tag: planned.tag, source, range, made: planned.made, revision });
   }
 
+  /** Make component without a dialog, using the same plan and undo transaction. */
+  async function makeFromAgent(request: { path: string; node: number[]; tag: string; fixed?: string[] }) {
+    const { path, node: nodePath, tag, fixed = [] } = request;
+    const source = deps.sources()[path], current = site(), revision = deps.revision();
+    if (source === undefined || !current) return "Open the page first.";
+    const range = locateNativeElementRange(source, nodePath);
+    if (!range) return "That element is not on the page any more. Read the page again.";
+    const taken = Object.keys(current.components);
+    const problem = tagNameProblem(tag, taken);
+    if (problem) return problem;
+    const initial = makeComponentPlan(source, range, tag, {}, taken);
+    if ("error" in initial) return initial.error;
+    const paths = fixedSlotPaths(initial.slots, fixed);
+    if ("error" in paths) return paths.error;
+    const made = makeComponentPlan(source, range, tag, { fixed: paths.fixed }, taken);
+    if ("error" in made) return made.error;
+    const error = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, revision });
+    if (error) return error;
+    return {
+      tag, files: madeFiles(tag, made).map((file) => file.path),
+      slots: made.slots.filter((slot) => !slot.fixed).map((slot) => slot.name),
+      cards: made.cards.map((card) => card.tag), notes: made.notes,
+    };
+  }
+
   /** The files Make component writes: the component's template and CSS, then each card component's. */
   function madeFiles(tag: string, made: MakeComponentPlan) {
     return [{ tag, template: made.template, css: made.css }, ...made.cards].flatMap((component) => [
@@ -1233,27 +1259,27 @@ export function createComponentTools(deps: ComponentDeps) {
    * Writes the new component's files (and its card component's) as drafts
    * and replaces the element with an instance, its items with card
    * instances, as one undo step: undoing the page's edit takes the new files
-   * back, redoing writes them again.
+   * back, redoing writes them again. Resolves to why nothing was made, if so.
    */
   async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; revision: string }) {
     const { path, nodePath, tag, source, range, made, revision } = request;
     const unchanged = () => deps.revision() === revision && deps.sources()[path] === source;
-    if (!unchanged()) { deps.announce("The page or repository changed meanwhile; no component was made."); return; }
+    const stop = (message: string) => { deps.announce(message); return message; };
+    const changed = "The page or repository changed meanwhile; no component was made.";
+    if (!unchanged()) return stop(changed);
     const result = await deps.createFiles(madeFiles(tag, made));
-    if ("error" in result) { deps.error(new Error(result.error)); return; }
+    if ("error" in result) { deps.error(new Error(result.error)); return result.error; }
     const receipt = result.receipt;
     const editor = deps.editor();
-    // The plan is the one reviewed in the modal. Cleanup belongs to its receipt,
-    // even if another repository now has a draft at the same path.
+    // Cleanup belongs to the files' receipt, even if another repository
+    // now has a draft at the same path.
     if (!unchanged() || !receipt.isCurrent()) {
       receipt.undo();
-      deps.announce("The page or repository changed meanwhile; no component was made.");
-      return;
+      return stop(changed);
     }
     if (!editor || !editable(path)) {
       receipt.undo();
-      deps.announce("Open the page first.");
-      return;
+      return stop("Open the page first.");
     }
     deps.preview()?.selectAfterUpdate({ path, node: nodePath });
     try {
@@ -1266,6 +1292,7 @@ export function createComponentTools(deps: ComponentDeps) {
       receipt.undo();
       deps.preview()?.selectAfterUpdate(undefined);
       deps.error(error);
+      return error instanceof Error ? error.message : "The component could not be made.";
     }
   }
 
@@ -1580,6 +1607,7 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   return {
+    makeFromAgent,
     identity,
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {

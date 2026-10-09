@@ -37,6 +37,7 @@ import { SiteFiles, writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
 import { EMPTY_COMMIT } from "../shared/types";
+import { isNativeComponentTag } from "../shared/native-project";
 import { componentVariantsOf, type ComponentVariants } from "./site-variants";
 
 interface SiteVariantSummary { components?: Map<string, ComponentVariants>; note?: string }
@@ -708,6 +709,44 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return { container: only.id, index: only.children };
   }
 
+  server.registerTool(
+    "make_component",
+    {
+      description:
+        "Turn one element of one page into a new component: writes components/<tag>/<tag>.html and .css, and its card component's files when its repeated items become cards, then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses <main>, <body>, the header and footer components, and anything inside a component instance. Needs the page hash from get_page; how slots are chosen: the Components chapter of the native-site://conventions resource.",
+      inputSchema: z.object({
+        page: pageRef,
+        element: z.string().max(300).describe("An element id from get_page or get_selection."),
+        tag: z.string().min(1).max(100).describe("The new component's tag."),
+        fixed: z.array(z.string().max(100)).max(32).optional().describe("Slot names to keep fixed in the template."),
+        expectedHash: hash,
+        requestId,
+        waitSeconds,
+      }),
+      annotations: editing,
+    },
+    async ({ page: ref, element, tag, fixed, expectedHash, requestId, waitSeconds }) => {
+      if (!parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
+      if (!isNativeComponentTag(tag)) return failure(`<${tag}> is not a valid custom-element name.`);
+      const { context } = await current();
+      const page = findPage(context, ref);
+      const outline = outlineOf(context, page.file);
+      checkHash(expectedHash, outline.hash, page.file);
+      if (context.site?.components.some((item) => item.tag === tag)) return failure(`There is a component <${tag}> already.`);
+      const container = outline.containers.find((item) => item.id === element && (item.tag === "main" || item.tag === "body"));
+      if (container) return failure(`A <${container.tag}> cannot be a component.`);
+      const section = outline.sections.find((item) => item.id === element);
+      if (section?.tag.includes("-"))
+        return failure(/^site-(?:header|footer)$/.test(section.tag) ? `<${section.tag}> is the site's ${section.tag.slice(5)} component already.` : `<${section.tag}> is a component already.`);
+      return queue("make_component", context, {
+        path: page.file,
+        expectedHash,
+        args: { element, tag, ...(fixed !== undefined ? { fixed } : {}) },
+        requestId,
+        waitSeconds,
+      });
+    },
+  );
   server.registerTool(
     "add_section",
     {

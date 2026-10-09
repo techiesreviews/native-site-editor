@@ -336,6 +336,10 @@ export interface AgentSiteActions {
   open(path: string): Promise<boolean>;
   /** The Pages tab's New page; an error message, or the page made. */
   createPage(request: { parent: string; title: string; slug: string }): Promise<string | { file: string; route: string }>;
+  /** Make component on the open page: a refusal message, or the files and slots made. */
+  makeComponent(request: { path: string; node: number[]; tag: string; fixed?: string[] }): Promise<string | {
+    tag: string; files: string[]; slots: string[]; cards: string[]; notes: string[];
+  }>;
   setPageDetail(path: string, field: "title" | "description", value: string): Promise<string | undefined>;
   sectionTags(): ReadonlySet<string>;
   template(tag: string): string | undefined;
@@ -472,6 +476,20 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
         if (error) throw new Error(error);
       }
       return { message: `Page details of ${path} updated, unsaved.`, result: { path, hash: await hashOf(actions, path) } };
+    }
+    case "make_component": {
+      await openPage(actions, path, command.expectedHash);
+      const node = parseOutlineId(args.element ?? "");
+      if (!node) throw new Conflict("That element is not on the page any more. Read the page again.");
+      const made = await actions.makeComponent({ path, node, tag: args.tag ?? "", ...(args.fixed !== undefined ? { fixed: args.fixed } : {}) });
+      if (typeof made === "string") throw new Conflict(made);
+      return {
+        message: `Made <${made.tag}> from element ${args.element} on ${path}; the page has the instance, unsaved.`,
+        result: {
+          tag: made.tag, files: made.files.join(", "), slots: made.slots.map((name) => name || "(unnamed)").join(", "),
+          cards: made.cards.join(", "), notes: made.notes.join("\n"), hash: await hashOf(actions, path),
+        },
+      };
     }
     case "add_section":
     case "move_section":

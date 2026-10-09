@@ -16,6 +16,7 @@ export type AgentOperation =
   | "create_page"
   | "set_page_details"
   | "add_section"
+  | "make_component"
   | "move_section"
   | "remove_section"
   | "move_file"
@@ -67,12 +68,14 @@ export interface AgentCommandArgs {
   /** add_section / move_section: the containing element's id and the gap index among its element children. */
   container?: string;
   index?: number;
-  /** add_section: the section's tag at `section`, as the Worker saw it. */
+  /** add_section: the section's tag at `section`, as the Worker saw it; make_component: the new component's tag. */
   tag?: string;
+  /** make_component: slot names to keep fixed in the template ("" for the unnamed slot). */
+  fixed?: string[];
   /** move_file */
   to?: string;
   keepOldUrl?: boolean;
-  /** inspect_preview: the element by outline id, or a CSS selector, and how many to report. */
+  /** make_component / inspect_preview: the element by outline id; inspect_preview also takes a CSS selector and count. */
   element?: string;
   selector?: string;
   limit?: number;
