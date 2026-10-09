@@ -151,6 +151,7 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keyup", onKey, true);
       if (!active) {
+        if (source.hasPointerCapture?.(id)) source.releasePointerCapture(id);
         if (crossed) window.setTimeout(() => { dragged = false; }, 0);
         return;
       }
@@ -192,13 +193,16 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
       if (cancel.pointerId === id) finish(false);
     }
     function onKey(key: KeyboardEvent) {
-      if (!active) return;
-      if (key.key === "Escape" && key.type === "keydown") {
+      // Escape also cancels a drag whose context is still loading.
+      if (key.key === "Escape" && key.type === "keydown" && (active || crossed)) {
         key.preventDefault();
         key.stopPropagation();
         target = undefined;
         finish(false);
-      } else if (key.key === "Alt") {
+        return;
+      }
+      if (!active) return;
+      if (key.key === "Alt") {
         key.preventDefault();
         alt = key.type === "keydown";
         retarget();

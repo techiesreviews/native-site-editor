@@ -78,9 +78,10 @@ test("Alt steps the target up a level and Escape cancels the drag", async ({ pag
   await page.keyboard.press("Escape");
   await expect(ghost(page)).toHaveCount(0);
   await expect(page.locator(".pb-drop")).toHaveCount(0);
+  await expect(page.locator("#status")).toHaveText("Heading was not added");
   await page.mouse.up();
-  await page.waitForTimeout(300);
   expect(await source(page)).toBe(original);
+  await expect(page.locator("#status")).toHaveText("Heading was not added");
 });
 
 test("a card's title slot refuses with its reason; a release there adds nothing", async ({ page, baseURL }) => {
@@ -92,7 +93,7 @@ test("a card's title slot refuses with its reason; a release there adds nothing"
   await expect(page.locator(".pb-drop__refused")).toBeVisible();
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
-  await page.waitForTimeout(300);
+  await expect(page.locator("#status")).toHaveText("Paragraph was not added");
   expect(await source(page)).toBe(original);
 });
 

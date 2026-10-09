@@ -322,15 +322,19 @@ function mountWorkspace() {
       void loadBlockInsert().then(blocks => current() ? blocks.click(kind, at) : undefined).catch(errorMessage);
     },
     onUp: () => nativePreview?.selectParent(),
-    // The drag's targets and drawing load with the first press on a block.
-    drag: kind => loadBlockDrag().then(create => nativePreview?.blockDrag(kind, {
-      drop: (target, where, painted) => {
-        const current = blockInsertPorts.proof(), at = blockInsertPorts.target();
-        const place = { parent: target.container.path, index: target.index, where };
-        void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at) : undefined).catch(errorMessage);
-      },
-      announce,
-    }, create)),
+    // The drag's targets and drawing load with the first press on a block;
+    // the press's repository, branch and session hold through both loads.
+    drag: kind => {
+      const current = blockInsertPorts.proof();
+      return loadBlockDrag().then(create => current() ? nativePreview?.blockDrag(kind, {
+        drop: (target, where, painted) => {
+          const at = blockInsertPorts.target();
+          const place = { parent: target.container.path, index: target.index, where };
+          if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at) : undefined).catch(errorMessage);
+        },
+        announce,
+      }, create) : undefined);
+    },
   });
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
