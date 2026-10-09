@@ -211,7 +211,7 @@ test("a card's row in a section component's items slot drags below the other car
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
   await expect(row(page, "1.1.1")).toHaveClass(/is-drag-source/);
   await page.mouse.move(await levelX(page, 3), (await box(row(page, "1.1.2"))).bottom - 3, { steps: 4 });
-  await expect(where(page)).toHaveText("Into Section work › items › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Card project");
   await page.mouse.up();
   await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
   await expect.poll(async () => flat(await source(page))).toMatch(/Harbour Lane Pottery<\/h3>.*Fern &amp; Kettle<\/h3>.*<\/section-work>/);

@@ -222,7 +222,7 @@ test("a card pressed in a section component's items slot swaps with the second c
   const original = await source(page);
   await pressAndMove(page, await pointIn(page, "section-work card-project:nth-of-type(1) h3[slot=title]"), await pointIn(page, "section-work card-project:nth-of-type(2) h3[slot=title]", 0.8));
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
-  await expect(where(page)).toHaveText("Into Section work › items › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await page.mouse.up();
   await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
