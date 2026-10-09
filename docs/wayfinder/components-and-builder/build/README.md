@@ -81,6 +81,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [33 Drop target model](tickets/33-drop-target-model.md) | claude ★ | 32 |
 | [34 Sections snap between page bands](tickets/34-section-snap.md) | sol | 32 |
 | [35 Drag blocks from the rail onto the canvas](tickets/35-canvas-drag-new-blocks.md) | claude ★ | 28, 33, 34 |
+| [91 The drag label shows only the block's icon and name, in Structure's colours](tickets/91-drag-label-name-only.md) | sol | 35 |
 | [73 Edit bar: update the controls spec for Make component; call a.btn a Button](tickets/73-edit-bar-spec-and-button-label.md) | sol | – |
 | [36 Blocks drag themselves](tickets/36-drag-existing-blocks.md) | claude ★ | 35 |
 | [88 A dragged card targets the gaps between cards](tickets/88-card-drag-targets-grid.md) | sol | 36 |

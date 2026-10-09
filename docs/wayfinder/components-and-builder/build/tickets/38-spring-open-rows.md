@@ -17,3 +17,5 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §7: holding a non-Sect
 ## Done when
 
 - Nightly spec: a folded Section springs open under a held Paragraph and folds back after a drop elsewhere; a user-opened row stays open.
+
+**Lex (2026-10-09):** "open the element where another element will be dropped in": while dragging (on the canvas or in Structure), the Structure row of the target container opens so its children and the drop line are visible — not only after a hover delay on a folded row. Rows opened this way fold back after the drop if the user hadn't opened them.
