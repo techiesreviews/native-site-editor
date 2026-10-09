@@ -55,10 +55,11 @@ test('Create site commits the native starter and every public page works without
       const original = readFileSync(resolve(root, 'files', `${entry.path}.asset`));
       expect(original.length).toBe(entry.size);
       expect(createHash('sha256').update(original).digest('hex')).toBe(entry.sha256);
-      // The worker deliberately removes the template's deployment address and noindex.
+      // The worker deliberately removes the template's deployment address and noindex (also AGENTS.md's note on it).
       const expected = entry.path.endsWith('.png') ? original : Buffer.from(original.toString('utf8')
         .split('https://native-site-editor-starter-test.lexvd.workers.dev').join('')
-        .replace(entry.path.endsWith('.html') && entry.path !== '404.html' ? /[ \t]*<meta name="robots" content="noindex">\r?\n?/g : /$^/, ''));
+        .replace(entry.path.endsWith('.html') && entry.path !== '404.html' ? /[ \t]*<meta name="robots" content="noindex">\r?\n?/g : /$^/, '')
+        .replace(entry.path === 'AGENTS.md' ? / The site is kept out of search results[^\n]*? because this is a test domain\./g : /$^/, ''));
       expect(bytes.equals(expected), entry.path).toBe(true);
     } else {
       expect(entry.path).toBe('.editor/config.json');

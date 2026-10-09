@@ -24,4 +24,5 @@ The preview editor's Start your site reads a vendored starter (`STARTER_SOURCE: 
 ## Done (2026-10-09)
 
 - `public/native-static-starter/v6a20035/` vendors the starter's `dev` head `6a20035` (39 files byte for byte: routes, `components/`, `styles/` incl. `tones.css`, `images/`, `robots.txt`, `AGENTS.md`; settings inline); `v6a9ca44` removed; `NATIVE_STARTER_VERSION` and `docs/native-starter-source.md` updated. Limits unchanged (40 of 100 files, 156 KB).
+- New sites' `AGENTS.md` loses the template's "kept out of search results … test domain" note (`prepareStarterFiles`), like the pages lose their noindex.
 - `tests/native-starter.test.ts` now expects `AGENTS.md`, every route's component files and the one module loader script; `native-static-starter-create.spec.ts` checks routes only (component templates are not pages), allows the loader without JS, and renders the components with JS on the plain byte server.

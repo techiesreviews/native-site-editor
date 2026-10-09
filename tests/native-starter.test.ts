@@ -62,7 +62,8 @@ test("nativeStarterFiles reads only ASSETS and returns the six routes, component
   assert.ok(fake.paths.every((path) => path.startsWith(`/native-static-starter/${NATIVE_STARTER_VERSION}/`)));
   assert.ok(!paths.some((path) => /legacy-components|CLAUDE|README|wrangler|\.github|\.assetsignore/.test(path)));
   assert.deepEqual(JSON.parse(text(files, ".editor/config.json")), { site: { name: "My site" } });
-  assert.ok(paths.includes("AGENTS.md"));
+  assert.match(text(files, "AGENTS.md"), /^## Components$/m);
+  assert.doesNotMatch(text(files, "AGENTS.md"), /test domain|content="noindex"/);
   assert.ok(paths.includes("components/components.js"));
   assert.ok(paths.includes("styles/tones.css"));
   for (const route of routes) {

@@ -163,8 +163,9 @@ const STARTER_ONLY = [/^wrangler\.jsonc?$/, /^\.assetsignore$/, /^\.github\//, /
  * template's test Worker), with its settings named for the new site and no
  * address, its test address taken out of the pages (canonical, og:url and
  * og:image become root links until the user gives the site an address), the
- * test domain's noindex dropped from every page but 404.html, and the
- * README's section on that deployment removed.
+ * test domain's noindex dropped from every page but 404.html (and from
+ * what AGENTS.md says about the pages), and the README's section on that
+ * deployment removed.
  */
 export function prepareStarterFiles(files: StarterFile[], siteName: string): StarterFile[] {
   const config = files.find((file) => file.path === NATIVE_CONFIG_PATH);
@@ -191,6 +192,7 @@ export function prepareStarterFiles(files: StarterFile[], siteName: string): Sta
       if (/\.html$/.test(file.path) && file.path !== "404.html")
         content = content.replace(/[ \t]*<meta name="robots" content="noindex">\r?\n?/g, "");
       if (file.path === "README.md") content = content.replace(/\n## Deploying\n[\s\S]*?(?=\n## |$)/, "\n");
+      if (file.path === "AGENTS.md") content = content.replace(/ The site is kept out of search results[^\n]*? because this is a test domain\./g, "");
     }
     out.push({ path: file.path, content });
   }

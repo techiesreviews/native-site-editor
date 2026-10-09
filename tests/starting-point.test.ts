@@ -60,13 +60,17 @@ test("the Starter site drops the template's own deployment and takes its address
     ),
     text("404.html", '<meta name="robots" content="noindex">\n<p>Missing</p>'),
     text("README.md", "# Starter\n\n## Deploying\nUse wrangler.\n\n## Editing\nUse the editor.\n"),
+    text(
+      "AGENTS.md",
+      '- `404.html` has neither. The site is kept out of search results (`<meta name="robots" content="noindex">` on every page) because this is a test domain.\n- JSON-LD.\n',
+    ),
     { path: "images/logo.png", base64: "AAEC", size: 3 },
     text("styles/site.css", "body{}"),
   ];
   const out = prepareStarterFiles(files, "My site");
   assert.deepEqual(
     out.map((file) => file.path),
-    [".editor/config.json", "index.html", "404.html", "README.md", "images/logo.png", "styles/site.css"],
+    [".editor/config.json", "index.html", "404.html", "README.md", "AGENTS.md", "images/logo.png", "styles/site.css"],
   );
   const byPath = Object.fromEntries(out.map((file) => [file.path, file])) as Record<string, any>;
   assert.deepEqual(JSON.parse(byPath[".editor/config.json"].content), { site: { name: "My site" } });
@@ -76,6 +80,8 @@ test("the Starter site drops the template's own deployment and takes its address
   assert.match(byPath["404.html"].content, /noindex/);
   assert.doesNotMatch(byPath["README.md"].content, /Deploying|wrangler/);
   assert.match(byPath["README.md"].content, /## Editing/);
+  // The template's own test-domain noindex note does not describe the new site.
+  assert.equal(byPath["AGENTS.md"].content, "- `404.html` has neither.\n- JSON-LD.\n");
   assert.deepEqual(byPath["images/logo.png"], { path: "images/logo.png", base64: "AAEC", size: 3 });
 });
 
