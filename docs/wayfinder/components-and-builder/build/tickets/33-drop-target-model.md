@@ -25,5 +25,5 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §5 and §9, [10](../..
 ## Done (2026-10-09)
 
 - `src/page-builder/drop-target.ts`: `dropTarget(containers, pointer, block, level)` (innermost valid container, 8 px edge escape, levels up from there, a named slot refuses in place, index along the axis), `dropRefusal` (ticket 10 §5 with the 04 amendment) and `dropLabel` ("Into Div (stack) › after Paragraph", the reason, or "Stays where it is"). The probe now also reports each child's `tag`/`cls` and the container's child `count`.
-- Commits `8a22577`, `1718a9e`.
+- Commits `f60e01d`, `c9cd8bb`.
 - Tests: `tests/drop-target.test.ts`; `tests/drop-report.test.ts` (new fields); `native-drop-containers.spec.ts` checks the slot refusal and a grid label on the real probe.
