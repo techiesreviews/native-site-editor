@@ -81,6 +81,9 @@ test("script attribute scanner handles both APIs and dataset spellings, skips co
   ['data-open', 'data-ready', 'data-color-scheme', 'data-menu-open', 'data-tone', 'data-after-url']);
   // Reads and comparisons set nothing; a setter inside a template's interpolation does.
   assert.deepEqual(scriptAttributes('if (el.dataset.open == "") el.dataset.shown === "x"; html = `<p>${el.setAttribute("data-live", "")}</p>`;'), ["data-live"]);
+  // Template text is not code; compound assignments write.
+  assert.deepEqual(scriptAttributes('t = `el.dataset.tone = dark`; u = `https://x/${el.setAttribute("data-a", "")} it\'s`; el.dataset.b += "x"; el.dataset.c ??= "y"; el.dataset.d >= 1;'),
+    ["data-a", "data-b", "data-c"]);
 });
 
 test("lookup merges expanded site and component imports, excluding scripts only from own CSS", async () => {

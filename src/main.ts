@@ -1257,9 +1257,10 @@ function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined 
     const epoch = generation, scopeKey = setupScope();
     const live = () => epoch === generation && scopeKey === setupScope();
     void readNativePredicted(appStore.repository.value.full_name, missing, live).then((read) => {
-      if (!live() || variantReadKey !== readKey) return;
-      // A failed read is tried again on the next request; a read one shows.
-      if (read) editorModule.refreshVariants(); else variantReadKey = "";
+      if (!live()) return;
+      // A read shows at once; a failed one is tried again on the next request.
+      if (read) editorModule.refreshVariants();
+      else if (variantReadKey === readKey) variantReadKey = "";
     });
   }
   const key = JSON.stringify([generation, setupScope(), site.components, sources]);

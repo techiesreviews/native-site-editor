@@ -541,10 +541,14 @@ export function valueLabel(value: string) {
 }
 export function variantLabel(attribute: string) { return valueLabel(attribute.replace(/^data-/i, "")); }
 
-const SCRIPT_ATTRIBUTE = /(?:setAttribute|toggleAttribute)\s*\(\s*(["'])(data-[\w-]+)\1|dataset\s*(?:\.\s*(\w+)|\[\s*(["'])([\w-]+)\4\s*\])\s*=(?!=)/y;
+const SCRIPT_ATTRIBUTE = /(?:setAttribute|toggleAttribute)\s*\(\s*(["'])(data-[\w-]+)\1|dataset\s*(?:\.\s*(\w+)|\[\s*(["'])([\w-]+)\4\s*\])\s*(?:\*\*|<<|>>>?|&&|\|\||\?\?|[-+*/%&|^])?=(?!=)/y;
 /** Discover literal script-owned data attributes without evaluating site code. */
 export function scriptAttributes(text: string): string[] {
   const names = new Set<string>();
+  scanScript(text, names);
+  return [...names];
+}
+function scanScript(text: string, names: Set<string>) {
   let pos = 0;
   while (pos < text.length) {
     if (text.startsWith("//", pos) || text.startsWith("/*", pos)) {
@@ -562,8 +566,22 @@ export function scriptAttributes(text: string): string[] {
       pos += match[0].length;
       continue;
     }
-    // Template literals stay code: their interpolations may set attributes.
-    if (text[pos] === '"' || text[pos] === "'") {
+    // A template's text is skipped; its interpolations are code.
+    if (text[pos] === "`") {
+      pos++;
+      while (pos < text.length && text[pos] !== "`") {
+        if (text[pos] === "\\") { pos += 2; continue; }
+        if (!text.startsWith("${", pos)) { pos++; continue; }
+        const start = pos += 2;
+        for (let depth = 1; pos < text.length; pos++) {
+          if (text[pos] === "{") depth++;
+          else if (text[pos] === "}" && !--depth) break;
+        }
+        scanScript(text.slice(start, pos), names);
+        pos++;
+      }
+      pos++;
+    } else if (text[pos] === '"' || text[pos] === "'") {
       const quote = text[pos++];
       while (pos < text.length) {
         if (text[pos] === "\\") pos += 2;
@@ -571,5 +589,4 @@ export function scriptAttributes(text: string): string[] {
       }
     } else pos++;
   }
-  return [...names];
 }
