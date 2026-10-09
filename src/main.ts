@@ -619,9 +619,11 @@ function mountComponentTools() {
     selection: () => appStore.selection.value,
     revision: () => `${generation}:${setupScope()}`,
     openFile: async (path) => {
-      const epoch = generation;
+      const epoch = generation, scope = draftScope();
       recordNativeSourceIntent(path);
-      if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, epoch);
+      // A pane open on its own history when a share (shareHistory below) asks for another opens again on that.
+      const shared = scope && nativeHistoryAliases.has(draftKey(scope, path)) ? nativeHistorySession(scope, path) : undefined;
+      if (appStore.openFile.value !== path || !editorModule?.isMounted(path) || (shared && editorModule.paneOf(path)?.session !== shared)) await restoreFile(path, epoch);
       return epoch === generation && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
     },
     announce,
@@ -656,6 +658,14 @@ function mountComponentTools() {
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
     refreshBar: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    // Joins the template to the page's journal, as the stylesheet pane follows the page's.
+    shareHistory: (path, owner) => {
+      const scope = draftScope();
+      if (!scope) return () => {};
+      const key = draftKey(scope, path), alias = { epoch: generation, scope: setupScope(), session: nativeHistorySession(scope, owner) };
+      nativeHistoryAliases.set(key, alias);
+      return () => { if (nativeHistoryAliases.get(key) === alias) nativeHistoryAliases.delete(key); };
+    },
   });
 }
 
