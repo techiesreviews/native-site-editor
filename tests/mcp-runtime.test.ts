@@ -161,7 +161,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /:host\(\[data-layout="image-left"\]\) \{ \.media \{ order: 2; \} \}/,
       /\.media \{ :host\(\[data-layout="image-left"\]\) & \{ order: 2; \} \}/,
       /Never `:host\[data-layout="…"\]` or `:host \{ &\[data-layout="…"\] \{ … \} \}`/,
-      /written bare on the instance: `<section-split data-reverse>`/,
+      /written bare on the instance \(`<section-split data-reverse>`\) when a rule matches its presence, and as `data-reverse="true"` when the CSS only matches `"true"`/,
       /`data-layout` \(`content-left`, `image-left`, `centered`\)/,
       // Tones on page bands only, where the site defines them.
       /Tones work this way where the site's CSS defines them/,
