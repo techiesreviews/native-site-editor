@@ -72,7 +72,6 @@ export function createPublishMenu(options: {
   const more = node("button", "button primary publish-menu__more");
   more.type = "button";
   more.setAttribute("aria-label", "More publish actions");
-  more.setAttribute("aria-haspopup", "true");
   setIcon(more, "caret-down");
   // The button names the progress of a publish, then its deploy
   // (deploy-status.ts), and goes back to Publish when it is done.
@@ -152,6 +151,8 @@ export function createPublishMenu(options: {
     if (pending) return;
     trigger.disabled = records.length === 0;
     if (discard) discard.disabled = records.length === 0;
+    // Nothing to publish, discard or read: the caret fades with Publish.
+    more.disabled = records.length === 0 && !deploy;
     const word = !deploy || records.length ? "Publish"
       : deploy.state === "saved" ? "Saved"
       : deploy.state === "building" ? "Deploying…"

@@ -14,10 +14,13 @@ export async function showPublish(page: Page) {
   await expect(panel.locator(".publish-menu__files")).toBeVisible();
 }
 
+// The caret beside Publish opens the same panel, which ends with Discard changes.
+export const publishActions = (page: Page) => page.getByRole("button", { name: "More publish actions", exact: true });
+
 /** Opens the branch actions even when Publish is disabled. */
 export async function showPublishActions(page: Page) {
   const panel = page.locator("#publish-files");
-  if (!(await panel.isVisible())) await page.getByRole("button", { name: "More publish actions", exact: true }).click();
+  if (!(await panel.isVisible())) await publishActions(page).click();
   await expect(panel).toBeVisible();
   return panel;
 }

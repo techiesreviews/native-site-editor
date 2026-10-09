@@ -1,7 +1,7 @@
 .publish-menu { display: inline-flex; align-items: stretch; flex-shrink: 0; }
 .publish-menu > .publish-menu__trigger { border-start-end-radius: 0; border-end-end-radius: 0; }
 .publish-menu > .publish-menu__more { border-start-start-radius: 0; border-end-start-radius: 0; border-left: 1px solid color-mix(in oklch, var(--on-primary) 35%, transparent); padding-inline: 8px; }
-.publish-menu__separator { border: 0; border-top: 1px solid var(--line); margin-block: 12px; }
+.publish-menu__separator { border: 0; border-top: 1px solid color-mix(in oklch, var(--text) 18%, transparent); margin-block: 10px; }
 /* Discard changes: a destructive action, below the changes; disabled it keeps its colours, faded. */
 .publish-menu__panel > .publish-menu__discard, .publish-menu__panel > .publish-menu__discard:disabled { width: 100%; justify-content: start; color: var(--danger-fg); background: var(--danger-bg); }
 .publish-menu__panel > .publish-menu__discard:hover:enabled { background: var(--danger-bg); outline: 1px solid var(--danger); }

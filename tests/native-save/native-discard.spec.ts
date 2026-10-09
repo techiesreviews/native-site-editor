@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { discardAllChanges, publishButton, showPublish, showPublishActions } from "./publish";
+import { discardAllChanges, publishActions, publishButton, showPublish, showPublishActions } from "./publish";
 import { sampleContrast, type Pixel } from "./tone-contrast";
 import { storedDrafts } from "./drafts";
 
@@ -137,8 +137,8 @@ test("Discard changes asks, then drops every draft, the agent's too: edits, a ne
     await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
     await expect(page.locator("#content .view-lines")).toContainText("<site-header");
     await expect(page.locator("#content .view-lines")).not.toContainText("Edited by an agent");
-    await showPublishActions(page);
-    await expect(discardAll(page)).toBeDisabled();
+    // Nothing to discard or publish: the menu does not open.
+    await expect(publishActions(page)).toBeDisabled();
     await expect(publishButton(page)).toBeDisabled();
     await expect(message(page)).toHaveText("");
     await expect(page.locator(".code-editor__undo").first()).toBeDisabled();
@@ -254,28 +254,31 @@ test("one file's changes are discarded from its menu or the Save panel; the refu
 });
 
 test("Publish menu holds branch Discard and supports keyboard opening and focus return", async ({ page }) => {
-  const more = page.getByRole("button", { name: "More publish actions", exact: true });
+  const more = publishActions(page);
   const panel = page.locator("#publish-files");
   const discard = panel.getByRole("button", { name: "Discard changes", exact: true });
   await expect(page.locator("button:not(#publish-files button)").filter({ hasText: /^Discard changes$/ })).toHaveCount(0);
+  // Nothing to publish, discard or read: Publish and its caret are both disabled.
   await expect(publishButton(page)).toBeDisabled();
-  await expect(more).toBeEnabled();
-  await expect(more).toHaveAttribute("aria-haspopup", "true");
+  await expect(more).toBeDisabled();
+  await expect(panel.locator(".publish-menu__discard")).toBeDisabled();
   await expect(more).toHaveAttribute("aria-controls", "publish-files");
+
+  await pasteSource(page, indexSource.replace("A native browser preview", "Menu discard edit"));
+  await expect.poll(() => drafts(page)).toEqual([indexPath]);
+  await expect(more).toBeEnabled();
   for (const key of ["Enter", "Space", "ArrowDown"]) {
     await more.focus();
     await more.press(key);
     await expect(panel).toBeVisible();
     await expect(more).toHaveAttribute("aria-expanded", "true");
     await expect.poll(() => panel.evaluate(element => element.contains(document.activeElement))).toBe(true);
-    await expect(discard).toBeDisabled();
+    await expect(discard).toBeEnabled();
     await page.keyboard.press("Escape");
     await expect(panel).toBeHidden();
     await expect(more).toBeFocused();
     await expect(more).toHaveAttribute("aria-expanded", "false");
   }
-  await pasteSource(page, indexSource.replace("A native browser preview", "Menu discard edit"));
-  await expect.poll(() => drafts(page)).toEqual([indexPath]);
   await publishButton(page).focus();
   await publishButton(page).press("ArrowDown");
   await expect(panel).toBeVisible();
@@ -283,7 +286,6 @@ test("Publish menu holds branch Discard and supports keyboard opening and focus 
   await page.keyboard.press("Escape");
   await expect(publishButton(page)).toBeFocused();
   await more.click();
-  await expect(discard).toBeEnabled();
   await expect(panel.locator("hr + button")).toHaveAccessibleName("Discard changes");
   await expect(discard).toHaveAttribute("title", "Discard every unsaved change on this branch");
   for (const scheme of ["light", "dark"] as const) {
@@ -302,6 +304,10 @@ test("Publish menu holds branch Discard and supports keyboard opening and focus 
     });
     expect(sampleContrast({ foreground: colours[0] as Pixel, backgrounds: [colours[1] as Pixel] }).ratio, `${scheme} Discard text contrast`).toBeGreaterThanOrEqual(4.5);
   }
+  // A second click on the caret closes the menu.
+  await more.click();
+  await expect(panel).toBeHidden();
+  await expect(more).toBeFocused();
   await discardAllChanges(page);
   const dialog = page.getByRole("dialog", { name: "Discard 1 unsaved change?" });
   await expect(dialog).toBeVisible();
@@ -314,9 +320,6 @@ test("Publish menu holds branch Discard and supports keyboard opening and focus 
   await dialog.getByRole("button", { name: "Discard all", exact: true }).click();
   await expect.poll(() => drafts(page)).toEqual([]);
   await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
-  await more.click();
-  await expect(discard).toBeDisabled();
-  await more.click();
-  await expect(panel).toBeHidden();
-  await expect(more).toBeFocused();
+  await expect(more).toBeDisabled();
+  await expect(panel.locator(".publish-menu__discard")).toBeDisabled();
 });

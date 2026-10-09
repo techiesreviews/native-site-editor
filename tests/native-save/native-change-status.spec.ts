@@ -1,4 +1,4 @@
-import { publishButton, showPublish } from "./publish";
+import { publishActions, publishButton, showPublish } from "./publish";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -88,6 +88,9 @@ test("a save shows Saved, then Building while its workflow runs, then Live with 
   // Nothing to publish: disabled, but hovering still opens its menu.
   await expect(trigger(page)).toBeDisabled();
   await expect(await deployLink(page, "View the commit on GitHub")).toHaveAttribute("href", /\/commit\/[0-9a-f]{40}$/);
+  // The caret still opens the menu for the status; there is nothing to discard.
+  await expect(publishActions(page)).toBeEnabled();
+  await expect(page.locator("#publish-files").getByRole("button", { name: "Discard changes", exact: true })).toBeDisabled();
   await expect(page.locator(".topbar .change-status")).toHaveCount(0);
 
   await setActions(page, baseURL, "runs", [{ name: "Deploy test site", status: "in_progress" }]);
@@ -105,6 +108,7 @@ test("a save shows Saved, then Building while its workflow runs, then Live with 
   await expect(label(page)).toHaveText("Publish", { timeout: 10_000 });
   await expect(trigger(page)).not.toHaveAttribute("data-state");
   await expect(publishButton(page)).toBeDisabled();
+  await expect(publishActions(page)).toBeDisabled();
 
   // The editor asked about the saved commit, the branch's new head.
   const asked = (await (await page.request.get(`${baseURL}/__demo/actions`)).json()).asked as string[];
