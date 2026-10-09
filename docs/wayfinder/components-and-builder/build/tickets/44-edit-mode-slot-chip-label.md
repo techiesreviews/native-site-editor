@@ -10,12 +10,12 @@ phase: 5
 
 ## What
 
-Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §4, with the shared chip built in slices 23–24 (decided at handoff, 8).
+Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §4, with the shared chip built in slices 23–24 (decided at handoff, 8; there is no making mode, Lex 2026-10-09).
 
 - In the mode, the edit bar's name label reads "◇ Section work › Heading [title]", with the shared chip after the element name: purple for a slot, pink for an items slot ("items ×1"), grey struck through for a fixed part.
-- A click toggles slot ↔ fixed and a double-click renames in place, as in making mode. No chips on the canvas and no "+" on hover.
-- Each toggle or rename goes through slice 45, which rewrites the template and every page at once.
+- A click toggles slot ↔ fixed and a double-click renames in place, each applied to the template as one undo step, with the code pane following. No chips on the canvas and no "+" on hover.
+- Slice 45 widens each toggle and rename to every page at once.
 
 ## Done when
 
-- Nightly spec: the label shows the right chip for a slot, an items slot and a fixed part in the mode; the chip's click and double-click reach slice 45's change.
+- Nightly spec: the label shows the right chip for a slot, an items slot and a fixed part in the mode; a click makes a slot fixed in the template (and back), a double-click rename renames it there; one undo each.

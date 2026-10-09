@@ -27,6 +27,9 @@ starter shows them.
   to [14](../tickets/14-prototype-edit-component-visually.md). Ticket
   [15](../tickets/15-dedup-on-make-component.md) is out of scope. Read the
   amendments appended to 03, 04, 10 and 14: they override the rule above them.
+  Lex changed the design after handoff (2026-10-09): Make component creates
+  at once, with no making mode, and lands in Edit component mode (decision 8;
+  slices 22, 25, 76).
 - Research (branch, file under `docs/wayfinder/components-and-builder/research/`):
   `research/cb-01-masters-and-components` (`01-masters-and-components.md`),
   `research/cb-06-variant-discovery` (`06-variant-discovery.md`, 16 edge cases),
@@ -150,19 +153,24 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 
 ### Phase 3: Make component and New component
 
-- **Making mode in the preview** ([04](../tickets/04-prototype-making-components.md) §1–4, §6,
-  with decision 8): purple frame, slots outlined on the canvas (no canvas
-  chips, no "+ slot" on hover); the edit bar shows only its name label, with
-  ticket 14's slot chip after the element name, the same control as the
-  Structure badge (click toggles, double-click edits the name in place, never
-  an input field); Structure border and badges; a slim bar with name, tag,
-  Cancel and Create; names made valid as typed, with a `section-`/`card-`/
-  `block-` prefix when they have no hyphen. Entry points: edit bar, Structure
-  row ⋯ menu, right-click.
-- **Create** writes the files and turns the section into an instance in one
-  undo step, then opens Edit component (the code pane until phase 5 lands,
-  then the visual mode; slice [49](tickets/49-create-lands-in-edit-mode.md)).
-- **+ New component** at the top of the Add panel's component list
+- **Make component creates at once** (Lex, 2026-10-09; decision 8, amending
+  [04](../tickets/04-prototype-making-components.md) §2–4, §6): no dialog, no
+  making mode, no slim bar. It applies the default slot rule
+  (`makeComponentPlan`), makes the card component for repeated items, copies
+  the page CSS, and names the component from its first heading ("Recent
+  work" → `section-recent-work`, normalised with the `section-`/`card-`/
+  `block-` prefix; else `section-1`, `section-2`…, avoiding taken names), all
+  as one undo step. Entry points: edit bar, Structure row ⋯ menu, right-click
+  (slice [26](tickets/26-make-component-entry-points.md)).
+- **It then opens Edit component mode** on the new instance (ticket 14's
+  design, phase 5; the code pane while the mode can't frame it, slice
+  [49](tickets/49-create-lands-in-edit-mode.md)). The plan's notes (the card
+  link, page rules that can't follow) show as a dismissible note in the
+  mode's bar, not in a dialog. Slots are then changed there with the slot
+  chip (slices 23–24, 44–46, 66) and the component renamed there (slice
+  [76](tickets/76-rename-component-in-edit-mode.md)).
+- **+ New component** at the top of the Add panel's component list, with its
+  small name form (name made valid as typed, tag preview)
   ([04](../tickets/04-prototype-making-components.md) §11–12).
 
 ### Phase 4: Block builder
@@ -206,10 +214,18 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   (no preview reload); the edited part stays in view.
 - **The slot chip** after the element name in the edit bar label, the same
   control as the Structure badge (§4–5): purple slot, pink items slot, grey
-  struck fixed; click toggles, double-click renames in place.
+  struck fixed; click toggles, double-click renames in place, never an input
+  field. Structure frames the component's rows in purple and badges its
+  parts; right-click offers Make slot, Rename slot and Remove slot.
 - **Slot changes reach every page at once**: made a slot, renamed or made
   fixed rewrites the template and every page as one undo step; Done only
   leaves the mode (§8–9, decision 6).
+- **Renaming the component** (Lex, 2026-10-09): double-click the tag in the
+  mode's bar and edit it in place, normalised as typed; it moves the folder
+  and files, renames the tag in the component's CSS and every page's
+  instances (the loader needs nothing, there is no registry), as one undo
+  step.
+- **Make component and + New component land here** (slices 22, 27, 49).
 - **Outside the mode** fixed parts are locked, with an Edit component hint;
   Page Structure lists only the instance's slots (§7).
 
@@ -252,12 +268,14 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   normalising and prefixes, variant
   parser (component and site CSS, warnings), heading level, click-insert
   target, drop target, Section snapping, Alt+←/→ moves, items-slot detection,
-  slot change rewrite plan, page groups, card fill mapping, card looks, look
+  slot change rewrite plan, component rename plan, automatic component
+  names, page groups, card fill mapping, card looks, look
   swap, tone formula sweep, `AGENTS.md` drift.
 - **One `@smoke` browser spec per feature's main path** (tag
   `{ tag: "@smoke" }`, default fixture group unless stated): variants in the
-  edit bar (slice 13); `make_component` over MCP (19); making mode Create
-  (22, which also covers Make component on the edit bar); New component (27);
+  edit bar (slice 13); `make_component` over MCP (19); Make component
+  creating at once and landing in Edit component mode (22, from the edit
+  bar); New component (27);
   click-insert (30); drag a block into a nested container (35); Edit
   component mode, fixed text (42); Add card with a page (53); Tone on a
   section (61). Nine new smoke tests on top of today's ~30.
@@ -277,8 +295,8 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 5. **Items slot:** the unnamed slot, or a slot whose fallback is a card component (a `card-…` tag). A slot holding one other nested instance is an ordinary slot.
 6. **Edit component mode:** each slot change (made a slot, renamed, made fixed) rewrites the template and every page at once, one undo step; Done only leaves the mode. A slot made fixed removes each page's element for it (undo restores); the template's text shows instead.
 7. **Placeholder image:** the site file `images/placeholder.svg`, written the first time an Image block is inserted (same undo step), then reused.
-8. **One way to mark slots:** making mode uses ticket 14's label chip (after the element name, the same control as the Structure badge); the canvas keeps only slot outlines; no canvas chips, no "+ slot" on hover.
-9. **Names without a hyphen** get a prefix from what they were made from: `section-`, `card-`, else `block-`; the slim bar's tag preview shows the result as typed.
+8. **No making mode; one way to mark slots** (changed by Lex after handoff, 2026-10-09: "When making a component, why is there a modal? I just want it created, the code should know how."): Make component creates at once with the default slot rule, the card component and the copied page CSS, named automatically from its first heading (else `section-1`, `section-2`…), in one undo step, and then opens Edit component mode on the new instance, where the plan's notes show in the bar. Slots are marked there with ticket 14's label chip (after the element name, the same control as the Structure badge): click toggles slot ↔ fixed, double-click edits the name in place; Structure badges; right-click Make slot, Rename slot, Remove slot. No canvas chips, no "+ slot" on hover. The component is renamed by double-clicking its tag in the mode's bar (slice 76). + New component keeps its small name form. Supersedes the making mode of ticket 04 §2–4 and slices 22–25 as first written.
+9. **Names without a hyphen** get a prefix from what they were made from: `section-`, `card-`, else `block-`; + New component's form shows the result as typed, and so does renaming in Edit component mode's bar.
 10. **Make component works on any element** (section, card, div), except `<main>`, `<body>`, the header and footer components and anything inside an instance.
 11. **Touch drag** is out of scope for this run; click-insert works on touch.
 12. **Content kept aside on a look swap** lives in the editor while the page is open (a swap back restores it); it is gone after a reload or page switch; nothing is written to the HTML.
@@ -300,7 +318,8 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 - `npm run check`, `npm test`, the smoke slice and the full native-save
   suite are green on `dev`'s head.
 - On the real starter, in the preview editor: a built section becomes a
-  component through making mode and opens in Edit component mode; a component
+  component with one click of Make component and opens in Edit component
+  mode, where it can be renamed; a component
   is edited in place and every page follows in one undo step; a page is
   built from blocks by clicking and dragging, nested; Add card links an
   existing page; a section's tone changes and stays readable.

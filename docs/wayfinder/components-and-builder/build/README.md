@@ -6,13 +6,15 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 
 1. **Removals** (6 slices)
 2. **Component model** (16 slices)
-3. **Make component and New component** (7 slices)
+3. **Make component and New component** (7 slices, one dropped)
 4. **Block builder** (13 slices)
-5. **Edit component mode, in place** (9 slices)
+5. **Edit component mode, in place** (11 slices)
 6. **Add card** (9 slices)
 7. **Tone** (5 slices)
 
 ★ = a Claude agent builds it; the rest go to Sol (codex). Starter slices are commits on the `dev` branch of `~/Projects/native-site-editor-starter`. Slices 64 and 65 were added at handoff (Lex's decisions, 2026-10-09) and belong to phase 2.
+
+**Design change (Lex, 2026-10-09):** Make component creates at once (no dialog, no making mode, no slim bar), named from its first heading, and lands in Edit component mode, where slots are changed with the slot chip and the component is renamed. Slice 22 was rewritten, 23, 24, 26, 44, 46, 49 and 66 reworded, 25 dropped and 76 added; see the spec's [decision 8](spec.md#decided-at-handoff-lex-2026-10-09).
 
 ## Slices
 
@@ -58,10 +60,10 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | Slice | Builder | Blocked by |
 | --- | --- | --- |
 | [21 Names made valid as typed](tickets/21-name-normalising.md) | sol | – |
-| [22 Making mode: frame, slim bar and Create](tickets/22-making-mode-shell.md) | claude ★ | 02, 10, 21 |
-| [23 The slot chip: one control for the label and Structure](tickets/23-slot-chip.md) | claude ★ | 22 |
+| [22 Make component creates at once and opens Edit component mode](tickets/22-make-component-creates-at-once.md) | claude ★ | 02, 10, 21, 64 |
+| [23 The slot chip: one control for the label and Structure](tickets/23-slot-chip.md) | claude ★ | 41 |
 | [24 Slot chips rename in place](tickets/24-slot-chip-rename-in-place.md) | claude ★ | 23 |
-| [25 Making mode in Structure: frame and slot badges](tickets/25-making-mode-structure.md) | sol | 24 |
+| ~~[25 Making mode in Structure: frame and slot badges](tickets/25-making-mode-structure.md)~~ dropped, folded into 46 | – | – |
 | [26 Make component from Structure and right-click](tickets/26-make-component-entry-points.md) | sol | 22 |
 | [72 Undo and redo of steps that create files are all or nothing](tickets/72-atomic-redo-with-files.md) | claude ★ | – |
 | [27 + New component in Add](tickets/27-new-component-in-add.md) | sol | 21 |
@@ -94,11 +96,12 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [43 Edit component mode: build with the rail](tickets/43-edit-mode-blocks.md) | claude ★ | 41, 35, 40 |
 | [44 Edit component mode: the slot chip in the edit bar label](tickets/44-edit-mode-slot-chip-label.md) | sol | 41, 24 |
 | [45 Slot changes rewrite the template and every page at once](tickets/45-slot-change-rewrites-pages.md) | claude ★ | 44 |
-| [46 Edit component mode in Structure](tickets/46-edit-mode-structure-badges.md) | sol | 44, 25 |
+| [46 Edit component mode in Structure](tickets/46-edit-mode-structure-badges.md) | sol | 44 |
 | [47 Edit component mode: open a nested card component](tickets/47-edit-mode-nested-card-drill.md) | sol | 41 |
 | [48 Fixed parts are locked on the page](tickets/48-locked-fixed-parts-on-page.md) | sol | 41 |
-| [49 Create and New component open Edit component mode](tickets/49-create-lands-in-edit-mode.md) | sol | 41, 22, 27 |
-| [66 Right-click slot items in making mode and Edit component mode](tickets/66-slot-context-menu.md) | sol | 24, 26, 44 |
+| [49 Make component and + New component open Edit component mode](tickets/49-create-lands-in-edit-mode.md) | sol | 41, 22, 27 |
+| [66 Right-click slot items in Edit component mode](tickets/66-slot-context-menu.md) | sol | 24, 26, 44 |
+| [76 Rename the component from Edit component mode's bar](tickets/76-rename-component-in-edit-mode.md) | claude ★ | 41, 45, 72 |
 
 ### Phase 6: Add card
 
