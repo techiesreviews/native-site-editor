@@ -5,7 +5,9 @@
 // on the page, inside a frame, the rest of the page shaded (the preview's
 // runtime draws both). The canvas bar becomes the mode's slim bar: "Editing
 // <tag> · used on N pages ▾ · Show this page's content / Show placeholders ·
-// Done". Placeholders (the template's fallbacks) show first. Every change is
+// Done". Placeholders (the template's fallbacks) show first. Opened by Make
+// component (build slice 22), the bar also holds the plan's notes until they
+// are dismissed. Every change is
 // an edit of the template as it is made, so Done only leaves the mode. The
 // preview is never reloaded for any of it: the frame gets the mode as a
 // message and renders the instance again in place.
@@ -16,6 +18,8 @@
 // SLOT_CHIP_EVENT.
 
 import { button, node } from "../ui/dom";
+import { icon } from "../icons";
+import { mountDropdown } from "../components/dropdown";
 import { componentIcon } from "./component-icon";
 import { slotChip } from "../components/slot-chip";
 import type { EditComponentFrameMode } from "../components/native-preview";
@@ -57,6 +61,7 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   let now: (EditComponentTarget & { show: EditComponentShow }) | undefined;
   // The chip shown, kept while it says the same of the same part.
   let shownChip: { key: string; element: HTMLElement } | undefined;
+  let notes: string[] = [];
 
   const title = node("span", "edit-mode__title");
   const show = node("span", "edit-mode__show");
@@ -77,6 +82,32 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   };
   const dots = [dot(), dot()];
 
+  // The notes: the first in the bar, all of them in a panel it opens; × dismisses them.
+  const note = node("span", "edit-mode__note");
+  note.setAttribute("role", "note");
+  const noteButton = node("button", "edit-mode__note-text");
+  noteButton.type = "button";
+  const noteLabel = node("span", "edit-mode__note-label");
+  noteButton.append(node("span", "edit-mode__note-kind", "Note"), noteLabel);
+  const noteList = node("ul", "edit-mode__notes");
+  noteList.id = "edit-mode-notes";
+  noteList.setAttribute("aria-label", "Notes");
+  document.body.append(noteList);
+  const noteDropdown = mountDropdown({ trigger: noteButton, panel: noteList, anchor: "--edit-mode-notes" });
+  let doneButton: HTMLElement | undefined;
+  const dismiss = button("", () => {
+    const focused = note.contains(document.activeElement);
+    notes = [];
+    noteDropdown.close();
+    ports.changed();
+    // The focus doesn't go with the note: Done takes it.
+    if (focused) doneButton?.focus();
+  }, "edit-mode__note-dismiss");
+  dismiss.setAttribute("aria-label", "Dismiss the notes");
+  dismiss.title = "Dismiss";
+  dismiss.append(icon("x", 12));
+  note.append(noteButton, dismiss);
+
   function send() {
     ports.frame(now && { path: now.path, node: [...now.node], tag: now.tag, show: now.show });
   }
@@ -84,6 +115,9 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     if (!now) return;
     title.replaceChildren(componentIcon(12), node("span", "edit-mode__verb", "Editing"), node("code", "edit-mode__tag", `<${now.tag}>`));
     for (const [value, choice] of choices) choice.setAttribute("aria-pressed", String(now.show === value));
+    noteLabel.textContent = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0] ?? "";
+    noteButton.title = notes.join("\n");
+    noteList.replaceChildren(...notes.map((text) => node("li", "edit-mode__notes-item", text)));
   }
   function setShow(next: EditComponentShow) {
     if (!now || now.show === next) return;
@@ -95,9 +129,10 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   }
 
   return {
-    /** Starts the mode on `target`, its placeholders showing. */
-    enter(target: EditComponentTarget) {
+    /** Starts the mode on `target`, its placeholders showing, with `notes` to tell in the bar. */
+    enter(target: EditComponentTarget, withNotes: readonly string[] = []) {
       now = { path: target.path, node: [...target.node], tag: target.tag, templatePath: target.templatePath, show: "placeholders" };
+      notes = [...withNotes];
       render();
       send();
     },
@@ -107,6 +142,8 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       if (!was) return undefined;
       now = undefined;
       shownChip = undefined;
+      notes = [];
+      noteDropdown.close();
       send();
       return { path: was.path, node: [...was.node], tag: was.tag, templatePath: was.templatePath };
     },
@@ -136,8 +173,9 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       return shownChip;
     },
     /** The slim bar around the host's Used on and Done controls. */
-    parts(usedOn: Element, done: Element) {
-      return { lead: [title, dots[0], usedOn, dots[1], show], end: [done] };
+    parts(usedOn: Element, done: HTMLElement) {
+      doneButton = done;
+      return { lead: [title, dots[0], usedOn, dots[1], show, ...(notes.length ? [note] : [])], end: [done] };
     },
   };
 }

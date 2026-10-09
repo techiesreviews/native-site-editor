@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { startTags } from "../shared/html-source.ts";
 import {
   attributeEdit,
   cardTagFor,
@@ -21,7 +20,6 @@ import {
   slotTextEdit,
   slotValue,
   startTagAttributes,
-  suggestTagName,
   tagNameProblem,
   templateSlots,
   textChangeEdit,
@@ -1037,13 +1035,6 @@ test("new component names: a dash, lowercase, free", () => {
   assert.ok(tagNameProblem("section--hero", []));
   assert.ok(tagNameProblem("font-face", []));
   assert.ok(tagNameProblem("section-intro", ["section-intro"]));
-  const source = `<section class="hero"><h1>Hi</h1></section><article><h2>Fern &amp; Kettle cafe</h2></article><section><h2>Scroll to verify</h2></section>`;
-  const sections = startTags(source).filter((tag) => tag.name === "section");
-  assert.equal(suggestTagName(source, rangeOf(source, "section"), []), "section-hero");
-  assert.equal(suggestTagName(source, rangeOf(source, "section"), ["section-hero"]), "section-hero-2");
-  assert.equal(suggestTagName(source, rangeOf(source, "article"), []), "card-fern-kettle");
-  assert.equal(sections.length, 2);
-  assert.equal(suggestTagName(source, rangeOf(source, "section", 1), []), "section-scroll-to");
 });
 
 test("review: attribute edits rewrite the whole attribute, double-quoted and escaped", () => {

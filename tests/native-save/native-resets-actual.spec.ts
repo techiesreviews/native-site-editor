@@ -19,16 +19,15 @@ test("Make component on the About hero keeps its slotted heading and lead spacin
   expect(parseFloat(before[1][0])).toBeGreaterThan(0);
 
   await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section About Larkspur/ }).locator(".page-structure__label").first().click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Make component…", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Make component" });
-  await dialog.getByRole("textbox", { name: "Component name" }).fill("section-about-hero");
-  await dialog.getByRole("button", { name: "Make component" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(page.locator("#status")).toContainText("Made the component <section-about-hero>");
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Make component", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Made the component <section-about-larkspur>");
+  // Edit component mode opens on it; Done shows the page's own content again.
+  await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
 
-  const cssPath = "components/section-about-hero/section-about-hero.css";
+  const cssPath = "components/section-about-larkspur/section-about-larkspur.css";
   await expect.poll(async () => (await storedDraft(page, cssPath))?.content ?? "").toMatch(/\.flow > \* \+ \*\s*\{\s*margin-top: var\(--space-s\);/);
-  const made = frame.locator("section-about-hero");
+  const made = frame.locator("section-about-larkspur");
   const title = made.locator(":scope > h1[slot]");
   const lead = made.locator(":scope > .lead[slot]");
   await expect(title).toHaveText("About Larkspur");

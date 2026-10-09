@@ -1090,21 +1090,6 @@ export function makeComponentOffered(chain: readonly string[]): boolean {
 
 const slug = (text: string, words = 3) => text.toLowerCase().replace(/&[a-z]+;/g, " ").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).slice(0, words).join("-");
 
-/** A free tag name for the element at `range`: its kind, then its class or heading ("section-hero"). */
-export function suggestTagName(source: string, range: InstanceRange, taken: Iterable<string>) {
-  const html = source.slice(range.start, range.end);
-  const el = elements(parseSource(html))[0];
-  const prefix = ({ section: "section", article: "card", header: "site-header", footer: "site-footer", nav: "site-nav", aside: "aside", figure: "figure", form: "form" } as Record<string, string>)[range.tag.name] ?? "block";
-  const className = el ? (attribute(html, el, "class") ?? "").split(/\s+/).find((word) => /^[a-z]/i.test(word)) : undefined;
-  const heading = /<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]/i.exec(html)?.[1];
-  const words = [className && slug(className.split("__")[0], 2), heading && slug(plainText(heading), 2)].find((word) => word && word !== prefix);
-  const base = prefix.includes("-") && !words ? prefix : `${prefix}-${words || "block"}`.replace(/^(site-[a-z]+)-.*$/, "$1");
-  const used = new Set(taken);
-  let name = base;
-  for (let n = 2; used.has(name); n++) name = `${base}-${n}`;
-  return name;
-}
-
 /** A part of the element that the plan makes a slot, or would but is kept fixed. */
 export interface PlannedSlot {
   /** The part's element-child index path inside the element (`[]`: the element itself). */

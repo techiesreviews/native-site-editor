@@ -534,7 +534,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // no element move is offered here; the page structure still moves rows.
     if (!isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
     nativeElementMoveAction = onMove;
-    // Edit component, Make component… (src/page-builder/components.ts).
+    // Edit component, Make component (src/page-builder/components.ts).
     if (ports.componentTools) controls.push(...ports.componentTools.controls(selection));
     // Ask agent: a request about this element for a connected agent, pinned on it.
     const menu = ports.agentController.captureAsk();

@@ -192,7 +192,7 @@ test("a selected link takes an address as typed with page suggestions, and the b
     { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
     { name: "Bold", disabled: false }, { name: "Italic", disabled: false },
   ]);
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   // Tab walks every enabled control; native selects retain their own arrow keys.
   await bar(page).getByRole("combobox", { name: "Heading level" }).focus();
   for (const control of [

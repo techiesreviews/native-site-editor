@@ -77,3 +77,68 @@
   margin: 0 2px 0 5px;
   opacity: 1;
 }
+
+/* Make component's notes (build slice 22): the first in the bar, all of them
+   in the panel it opens, until dismissed. */
+.edit-mode__note {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  max-width: 340px;
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--component) 12%, transparent);
+}
+.edit-mode__note-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px 2px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--component-text);
+  font: inherit;
+  cursor: pointer;
+}
+.edit-mode__note-kind {
+  flex: none;
+  font-weight: 600;
+}
+.edit-mode__note-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-mode__note-dismiss {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--component-text);
+  cursor: pointer;
+}
+:is(.edit-mode__note-text, .edit-mode__note-dismiss):hover {
+  background: color-mix(in oklch, var(--component) 14%, transparent);
+}
+:is(.edit-mode__note-text, .edit-mode__note-dismiss):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.edit-mode__notes.dropdown-panel {
+  max-width: min(420px, calc(100vw - 24px));
+  margin: 0;
+  padding: 8px 12px 8px 26px;
+  color: var(--text);
+  font-size: var(--type-small);
+  line-height: 1.4;
+}
+.edit-mode__notes-item + .edit-mode__notes-item {
+  margin-top: 6px;
+}

@@ -640,6 +640,11 @@ function mountComponentTools() {
     pageLabel: nativePageLabelOf,
     // New files as drafts (a component made from the page), as the Files tab's New file writes them.
     createFiles: async (made) => {
+      /** `path` of `scope` is the stylesheet pane's file, beside another file in the code pane. */
+      const besidePage = (scope: DraftScope, path: string) => {
+        const now = draftScope();
+        return Boolean(now && draftKey(now, path) === draftKey(scope, path) && secondaryPath === path && appStore.openFile.value !== path);
+      };
       const scope = draftScope(), epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
       if (!scope || !appStore.snapshot.value) return { error: "Open a repository first." };
       return createComponentFileDrafts(made, {
@@ -647,8 +652,13 @@ function mountComponentTools() {
         isCurrent: () => epoch === generation && key === setupScope(),
         exists: path => Boolean(pathNow(path)),
         checkPath: branchPathProblem,
-        isOpen: (scope, path) => Boolean(editor?.draftOpen(scope, path)),
-        drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
+        // The new component's stylesheet beside the page (after Edit component mode) doesn't hold Undo
+        // back: taking the file back closes that pane.
+        isOpen: (scope, path) => !besidePage(scope, path) && Boolean(editor?.draftOpen(scope, path)),
+        drop: (scope, path) => {
+          if (besidePage(scope, path)) closeSecondary();
+          return editor?.dropDraft(scope, path) ?? store.remove(scope, path);
+        },
         refresh: afterFileChanges,
         announce,
       });

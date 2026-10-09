@@ -61,7 +61,6 @@ import {
   slotStates,
   slotTextEdit,
   slotValue,
-  suggestTagName,
   tagNameProblem,
   templateSlots,
   usageSummary,
@@ -487,7 +486,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const source = deps.sources()[selection.path];
     const chain = source === undefined ? undefined : elementChain(source, selection.node);
     if (chain && makeComponentOffered(chain.map((element) => element.localName))) {
-      out.push({ kind: "button", label: "Make component…", title: "Turn this element into a component the site can reuse", className: "edit-bar__component-action", onPress: () => void openMakeComponent(selection) });
+      out.push({ kind: "button", label: "Make component", title: "Turn this element into a component the site can reuse, and edit it", className: "edit-bar__component-action", onPress: () => void openMakeComponent(selection) });
     }
     return out;
   }
@@ -561,12 +560,13 @@ export function createComponentTools(deps: ComponentDeps) {
    * Opens `tag`'s template in the code pane; root entry selects its root.
    * Legacy explicit slot entry selects its part matching
    * `slot` (the element holding that slot, its `<slot>` marked in the code)
-   * in the instance on show, else the template's first element.
+   * in the instance on show, else the template's first element. Resolves to
+   * whether Edit component mode opened (with `notes` in its bar).
    */
   let explicitTemplate: { path: string; revision: string } | undefined;
-  async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }, instance?: { path: string; node: readonly number[] }) {
+  async function editComponent(tag: string, slot?: string, part?: { path: string; node: number[]; tag: string }, instance?: { path: string; node: readonly number[] }, notes: readonly string[] = []): Promise<boolean> {
     const template = templateOf(tag);
-    if (!template) return;
+    if (!template) return false;
     const from = deps.selection();
     const openingRevision = deps.revision();
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
@@ -580,7 +580,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const share: EntryShare | undefined = release && { release };
     if (share) { letGo(entryShare); entryShare = share; }
     if (!(await deps.openFile(template.path))
-      || deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { letGo(share); return; }
+      || deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { letGo(share); return false; }
     const opened = explicitTemplate = { path: template.path, revision: deps.revision() };
     if (share) share.opened = opened;
     // The template's code takes the caret straight away: typing edits it at once.
@@ -595,30 +595,32 @@ export function createComponentTools(deps: ComponentDeps) {
     const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
     const preserved = part?.path === template.path && locateNativeElementRange(source, part.node)?.tag.name === part.tag ? part.node : undefined;
     const nodePath = preserved ?? (element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0]);
-    if (framed && modeLoad) void modeLoad.then((loaded) => {
+    // Whether the mode opened (else the code pane shows the template alone).
+    const entered = framed && modeLoad ? modeLoad.then((loaded) => {
       // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
       // A later Edit component (another instance) supersedes this one.
       if (latestEntry !== entry || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
-        || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return; }
-      if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return; }
+        || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return false; }
+      if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return false; }
       // A mode already on (another instance) gives way: its share goes, the frame is told only the new mode.
       modeShare?.();
       modeShare = undefined;
       if (share && entryShare === share) { entryShare = undefined; modeShare = share.release; }
-      loaded.mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path });
+      loaded.mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path }, notes);
       renderBar();
       // The part is selected again in the framed instance when the selection is in another one (or none).
       const now = deps.selection();
       const inFrame = now?.path === template.path && now.host?.path === framed.path && now.host.node?.join() === framed.node.join() && now.node?.join() === nodePath?.join();
       if (nodePath && !inFrame) deps.preview()?.selectNode({ path: template.path, node: nodePath });
-    });
+      return true;
+    }) : Promise.resolve(false);
     if (nodePath) deps.preview()?.selectNode({ path: template.path, node: nodePath });
     else if (target && deps.currentPath() === template.path) {
       deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
-      return;
+      return entered;
     }
     deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`);
-    if (!target) return;
+    if (!target) return entered;
     // Once the preview has selected the part (and marked its tag), the slot's own tag is selected.
     for (let waited = 0; waited < 2000; waited += 50) {
       await new Promise((done) => setTimeout(done, 50));
@@ -626,6 +628,7 @@ export function createComponentTools(deps: ComponentDeps) {
       if (now !== from && now?.path === template.path) break;
     }
     if (deps.currentPath() === template.path) deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
+    return entered;
   }
 
   /** The instance on the page shown that a selection is, or is in (as its template's part), when it is a `tag`. */
@@ -1261,16 +1264,22 @@ export function createComponentTools(deps: ComponentDeps) {
 
   // ---- Make component. ----
 
+  /**
+   * Make component (build slice 22): one click makes the element a component
+   * named from its first heading, with the default slots, its card component
+   * and the page CSS that styled it, as one undo step; then Edit component
+   * mode opens on the new instance, the plan's notes in its bar.
+   */
   async function openMakeComponent(selection: NativePreviewSelection) {
     const path = selection.path;
     const nodePath = selection.node;
-    const sources = deps.sources();
-    const source = sources[path];
+    const source = deps.sources()[path];
     const revision = deps.revision();
-    // The page CSS the component takes along (ticket 64) is worked out by a module loaded here.
+    // The name and the page CSS the component takes along (slice 64) are worked out by modules loaded here.
     let carry: typeof import("./component-css");
+    let names: typeof import("./component-names");
     try {
-      carry = await import("./component-css");
+      [carry, names] = await Promise.all([import("./component-css"), import("./component-names")]);
     } catch (error) {
       void handleChunkLoadFailure(error);
       deps.announce("Make component could not load. Try again.");
@@ -1280,77 +1289,29 @@ export function createComponentTools(deps: ComponentDeps) {
     const current = site();
     if (!nodePath || source === undefined || !current) return;
     const range = locateNativeElementRange(source, nodePath);
+    if (range && range.tag.name.toLowerCase() !== selection.tag.toLowerCase()) { deps.announce("The page changed meanwhile; select the element again."); return; }
     if (!range?.close) { deps.announce("The element's end tag could not be found in the source."); return; }
-    const { sheets, unchanged } = pageStyles(path, source, revision);
     const taken = Object.keys(current.components);
-    const nameField = node("label", "create-dialog__field");
-    nameField.append("Component name");
-    const input = node("input");
-    input.type = "text";
-    input.value = suggestTagName(source, range, taken);
-    input.autocomplete = "off";
-    input.spellcheck = false;
-    nameField.append(input);
-    const result = node("p", "create-dialog__result");
-    result.setAttribute("role", "status");
-    const files = node("div", "component-dialog__files");
+    const tag = names.automaticComponentName(source.slice(range.start, range.end), taken);
+    const bare = makeComponentPlan(source, range, tag, {}, taken);
+    if ("error" in bare) { deps.announce(bare.error); return; }
+    const { sheets, unchanged } = pageStyles(path, source, revision);
+    const made = carry.withPageCss(bare, source, range, tag, sheets);
     const loader = Object.values(current.routes).some((file) => /components\/components\.js/.test(deps.sources()[file] ?? ""));
-    const notes = node("div", "component-dialog__notes");
-    const styles = node("div");
-    notes.append(styles);
-    const plan = () => {
-      const tag = input.value.trim();
-      const problem = tagNameProblem(tag, taken);
-      if (problem) return { problem };
-      const bare = makeComponentPlan(source, range, tag, {}, taken);
-      if ("error" in bare) return { problem: bare.error };
-      const made = carry.withPageCss(bare, source, range, tag, sheets);
-      const copied = made.css !== bare.css || made.cards.some((card, index) => card.css !== bare.cards[index].css);
-      return { tag, made, copied };
-    };
-    const update = () => {
-      const planned = plan();
-      result.classList.toggle("is-error", Boolean(planned.problem));
-      if (planned.problem || !planned.made) {
-        result.textContent = planned.problem ?? "";
-        files.replaceChildren();
-        styles.replaceChildren();
-        return;
-      }
-      const { tag, made, copied } = planned;
-      const slotted = made.slots.filter((slot) => !slot.fixed);
-      const slots = slotted.map((slot) => slot.name ? `“${slot.name}”` : "its content").join(", ");
-      const cards = made.cards.map((card) => ` Its repeated items become <${card.tag}>, a card component, each keeping its own content.`).join("");
-      result.textContent = (slotted.length
-        ? `<${tag}> gets ${slotted.length === 1 ? "a slot" : `${slotted.length} slots`} (${slots}); this page keeps its text, links and images in the instance.`
-        : `<${tag}> has no text of its own to slot: every instance shows the same content.`) + cards;
-      files.replaceChildren(
-        ...madeFiles(tag, made).map((file) => codeBlock(`${file.path} (new)`, file.content)),
-        codeBlock(`${path} (replaces the <${range.tag.name}>)`, made.instance, { source, at: range.start }),
-      );
-      styles.replaceChildren(
-        node("p", "create-dialog__result", copied
-          ? "The rules that styled this element are copied into the component's CSS, rewritten to start at it. The site's stylesheets stay as they are."
-          : "Styles stay where they are: the site's stylesheets reach the component as they reached the page."),
-        ...[...made.notes, ...made.cards.flatMap((card) => card.notes)].map((note) => node("p", "create-dialog__result", note)),
-      );
-    };
-    input.addEventListener("input", update);
-    update();
-    if (!loader) notes.append(node("p", "create-dialog__result is-error", "No page loads components/components.js, so the live site will not show components until it does."));
-    const ok = await ask("Make component", [nameField, result, files, notes], "Make component", () => {
-      const planned = plan();
-      if (planned.problem) { update(); input.focus(); }
-      return planned.problem;
-    });
-    if (!ok) return;
-    const planned = plan();
-    if (!planned.made || !planned.tag) return;
-    if (!unchanged()) {
-      deps.announce("The page, its styles or the repository changed meanwhile; no component was made.");
-      return;
-    }
-    await makeComponent({ path, nodePath: [...nodePath], tag: planned.tag, source, made: planned.made, range, unchanged });
+    const notes = [
+      ...made.notes, ...made.cards.flatMap((card) => card.notes),
+      ...(loader ? [] : ["No page loads components/components.js, so the live site will not show components until it does."]),
+    ];
+    if (await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged })) return;
+    const madeRevision = deps.revision();
+    // A mode that hasn't opened in a few seconds (its module held) counts as the code pane.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const inMode = await Promise.race([
+      editComponent(tag, undefined, undefined, { path, node: nodePath }, notes),
+      new Promise<boolean>((done) => { timer = setTimeout(() => done(false), 8000); }),
+    ]).finally(() => clearTimeout(timer));
+    // Where the code pane opens instead of the mode, the notes go to the status line.
+    if (deps.revision() === madeRevision) deps.announce([madeMessage(tag, made), ...(inMode ? [] : notes)].join(" "));
   }
 
   /**
@@ -1409,6 +1370,9 @@ export function createComponentTools(deps: ComponentDeps) {
     };
   }
 
+  const madeMessage = (tag: string, made: MakeComponentPlan) =>
+    `Made the component <${tag}>: components/${tag}/${tag}.html${made.cards.map((card) => `, and <${card.tag}>`).join("")}`;
+
   /** The files Make component writes: the component's template and CSS, then each card component's. */
   function madeFiles(tag: string, made: MakeComponentPlan) {
     return [{ tag, template: made.template, css: made.css }, ...made.cards].flatMap((component) => [
@@ -1446,7 +1410,7 @@ export function createComponentTools(deps: ComponentDeps) {
     deps.preview()?.selectAfterUpdate({ path, node: nodePath });
     try {
       editor.replaceActiveRange({ path, start: range.start, end: range.end, text: made.instance, expected: source.slice(range.start, range.end) }, false, receipt.companion);
-      deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${made.cards.map((card) => `, and <${card.tag}>`).join("")}`);
+      deps.announce(madeMessage(tag, made));
     } catch (error) {
       receipt.undo();
       deps.preview()?.selectAfterUpdate(undefined);

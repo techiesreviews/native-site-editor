@@ -128,7 +128,7 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
   await frame.locator("#lnk").click();
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Link");
   await check([["Bold", "Italic"], ["Italic", "Address"]]);
-  await expect(bar.getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
 
   // The paragraph: Bold/Italic together, and no move controls (only a
   // whole section moves from the bar). Select the paragraph itself so the
@@ -136,7 +136,7 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
   await frame.locator("#moving").evaluate((el) => (el as HTMLElement).click());
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
   await check([["Bold", "Italic"]]);
-  await expect(bar.getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   for (const name of ["Move up", "Move down", "Move to"]) await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);
   // The section: its moves share the arrange group, beside Duplicate.
   await frame.locator("#first").evaluate((el) => (el as HTMLElement).click());

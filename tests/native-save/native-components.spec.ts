@@ -358,7 +358,7 @@ test("Detach replaces an instance with the markup it shows, after showing it", a
 test("a plain page section offers Make component but its heading does not, without writing source", async ({ page }) => {
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toBeVisible();
   // Masters are gone: no save or update action for the section.
   await expect(bar(page).getByRole("button", { name: /^Save |^Update / })).toHaveCount(0);
   const before = await editorText(page);
@@ -367,7 +367,7 @@ test("a plain page section offers Make component but its heading does not, witho
   expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
   // Headings are not containers.
   await frame(page).locator("section.hero h1").first().click();
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
 });
 
 test("image and conditional slots: an address, alt text and a part shown only when filled", async ({ page, baseURL }) => {
@@ -644,54 +644,7 @@ test("child selections omit template entry while root entry rejects stale or mis
   expect(result.announcements[1]).toContain("Editing the Project card component");
 });
 
-test("Make component turns a section into a component with slots, as one undo step with its files", async ({ page }) => {
-  const headingLook = (selector: string) => frame(page).locator(selector).evaluate((el) => { const style = getComputedStyle(el); return [style.fontSize, style.marginBottom]; });
-  const lookBefore = await headingLook("section.hero h1");
-  await select(page, "section.hero");
-  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  await bar(page).getByRole("button", { name: "Make component…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Make component" });
-  const name = dialog.getByRole("textbox", { name: "Component name" });
-  await expect(name).toHaveValue("section-hero");
-  await expect(dialog.locator(".component-dialog__file-name")).toHaveText([
-    "components/section-hero/section-hero.html (new)",
-    "components/section-hero/section-hero.css (new)",
-    "index.html (replaces the <section>)",
-  ]);
-  await name.fill("hero");
-  await expect(dialog.locator(".create-dialog__result").first()).toHaveText("A component's name has a dash in it, such as section-intro.");
-  await name.fill("section-hero");
-  await expect(dialog.locator(".create-dialog__result").first()).toContainText("<section-hero> gets 3 slots");
-  await dialog.getByRole("button", { name: "Make component" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(status(page)).toHaveText("Made the component <section-hero>: components/section-hero/section-hero.html");
-  const source = await editorText(page);
-  expect(source).toContain(`  <section-hero>
-    <h1 slot="title" data-key="hero-title">A native browser preview</h1>
-    <p slot="text" class="lead" data-key="hero-lead">Edit plain HTML, CSS, and shared component templates and watch the preview update in place — no build, no iframe reload.</p>
-    <img slot="image" class="hero-image" src="/images/placeholder.svg" data-key="hero-image">
-  </section-hero>`);
-  // The page shows what it showed, now through the component.
-  await expect(frame(page).locator("section-hero h1[slot=title]")).toHaveText("A native browser preview");
-  await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.shadowRoot?.querySelector<HTMLSlotElement>("slot[name=title]")?.assignedElements()[0]?.textContent?.trim())).toBe("A native browser preview");
-  await expect.poll(() => headingLook("section-hero h1[slot=title]")).toEqual(lookBefore);
-  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section hero");
-  expect((await storedDraft(page, "components/section-hero/section-hero.html"))?.content).toContain(`<slot name="title"><h1 data-key="hero-title">A native browser preview</h1></slot>`);
-  // The page rule that styled the heading stops reaching it once it is slotted,
-  // so Make component copies it, rewritten to start at the section (slice 64).
-  const heroCss = ":host {\n  display: block;\n}\n\n/* The rules that styled this element in styles/site.css, rewritten to start at it. The site's stylesheets are unchanged. */\n.hero h1 {\n  font-size: clamp(28px, 4vw, 44px);\n  margin: 0 0 12px;\n}\n";
-  expect((await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(heroCss);
-  // Undo takes the instance and the new files back; Redo makes them again.
-  await page.locator("#editor-toolbar-host").getByRole("button", { name: "Undo" }).click();
-  await expect(frame(page).locator("section.hero h1")).toHaveText("A native browser preview");
-  await expect.poll(() => storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
-  await expect.poll(() => storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
-  await page.locator("#editor-toolbar-host").getByRole("button", { name: "Redo" }).click();
-  await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.shadowRoot?.querySelector<HTMLSlotElement>("slot[name=title]")?.assignedElements()[0]?.textContent?.trim())).toBe("A native browser preview");
-  await expect.poll(async () => (await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(heroCss);
-});
-
-test("Make component refuses a page replacement made while its preview dialog is open", async ({ page, baseURL }) => {
+test("Make component refuses a page replacement made while it loads", async ({ page, baseURL }) => {
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
@@ -714,16 +667,20 @@ test("Make component refuses a page replacement made while its preview dialog is
     const hero = /<section class="hero"[^>]*>[\s\S]*?<\/section>/.exec(home.html)![0];
     await select(page, "section.hero");
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-    await bar(page).getByRole("button", { name: "Make component…" }).click();
-    const dialog = page.getByRole("dialog", { name: "Make component" });
-    await expect(dialog).toContainText("A native browser preview");
+    // Make component's module is held while an agent replaces the section.
+    let release!: () => void;
+    const held = new Promise<void>((done) => { release = done; });
+    let requested = false;
+    await page.route(/\/component-css(?:\.ts|-[\w-]+\.js)/, async (route) => { requested = true; await held; await route.continue(); });
+    await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
+    await expect.poll(() => requested).toBe(true);
     const replacement = `<section class="hero" data-key="hero"><h1>Unreviewed replacement</h1></section>`;
     const edited = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: hero, newText: replacement }] });
     expect(edited.state).toBe("applied");
     await expect(frame(page).locator("section.hero h1")).toHaveText("Unreviewed replacement");
-    await dialog.getByRole("button", { name: "Make component", exact: true }).click();
-    await expect(dialog).toBeHidden();
-    await expect(status(page)).toHaveText("The page, its styles or the repository changed meanwhile; no component was made.");
+    release();
+    await expect(status(page)).toHaveText("The page or repository changed meanwhile; select the element again.");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     expect((await storedDraft(page, indexPath))?.content).toContain(replacement);
     expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
     expect(await storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
@@ -737,15 +694,15 @@ test("Make component refuses main, shared header/footer and instance contents", 
   await expect(row(page, "Main")).toHaveAttribute("aria-selected", "true");
   // <main> gets no edit bar at all, so no Make component either (the rule itself: tests/make-component-offer.test.ts).
   await expect(bar(page)).toBeHidden();
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   for (const name of ["Site header", "Site footer"]) {
     await row(page, name).locator(".page-structure__label").click();
     await expect(bar(page).getByRole("button", { name: `Edit ${name} component`, exact: true })).toBeVisible();
-    await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+    await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   }
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   // Fixed template content selects its instance; click outside the slotted text.
   const heading = frame(page).locator("project-card .project-card__title").first();
   await heading.scrollIntoViewIfNeeded();
@@ -754,7 +711,7 @@ test("Make component refuses main, shared header/footer and instance contents", 
   await heading.click({ position: { x: bounds!.width - 5, y: 5 } });
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Project card");
   await expect(bar(page).getByRole("button", { name: "Edit Project card component", exact: true })).toBeVisible();
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
 });
 
 test("Make component refuses plain page landmarks but offers a card and its header", async ({ page, baseURL }) => {
@@ -770,14 +727,14 @@ test("Make component refuses plain page landmarks but offers a card and its head
   for (const name of ["Header", "Footer"]) {
     await row(page, name).locator(".page-structure__label").click();
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText(name);
-    await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
+    await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   }
   const article = row(page, "Article");
   await article.locator(".page-structure__label").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toBeVisible();
   await expandInstance(article);
   await row(page, "Header Card header").locator(".page-structure__label").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Header");
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toBeVisible();
 });

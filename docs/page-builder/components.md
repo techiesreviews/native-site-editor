@@ -106,12 +106,19 @@ cannot be kept (several top-level elements). One undo step.
 
 ## Make component
 
-*Make component…* in the edit bar for a container of a page (section,
-article, header, footer, aside, nav, figure, div, form) shows a guided preview
-before anything is written: the name (suggested from the element's class or
-heading, checked live: a dash, lowercase, free, not reserved) and the three
-results — `components/<tag>/<tag>.html`, `components/<tag>/<tag>.css` and the
-page's replacement. The result is deliberately minimal:
+*Make component* in the edit bar for a container of a page (section, div,
+article, aside, figure, nav, or a header/footer inside sectioning content;
+not a component or anything inside one; slice 80) makes it a component at once, with no
+dialog (build slice 22). The name is automatic (`automaticComponentName`,
+`component-names.ts`): the prefix for what it was made from (`section-`,
+`card-` for an article or a "card" class, else `block-`) and the first three
+words of its first heading ("Recent work" → `section-recent-work`), else a
+number (`section-1`, `section-2`); a taken name takes the next free number.
+It writes `components/<tag>/<tag>.html`, `components/<tag>/<tag>.css` and the
+page's replacement, then opens Edit component mode on the new instance, where
+the plan's notes (a link-wrapped card, page rules that can't follow, no page
+loading `components/components.js`) show in the bar until dismissed. The
+name is changed afterwards in Edit component mode.
 
 - The element's markup becomes the template. Each line of text keeps its
   element and gets a slot *inside* it (`<h1><slot name="title">…</slot></h1>`)
@@ -124,18 +131,16 @@ page's replacement. The result is deliberately minimal:
   where links to it still find it.
 - Repeated plain items with a heading (a grid of `<article class="card">`)
   become a card component too, `card-…`, named from the items slot
-  (`services` → `card-service`) or the new component (`section-work` →
-  `card-work`): the items written alike become its instances, each keeping its
+  (`services` → `card-service`) or the new component (`section-recent-work` →
+  `card-recent-work`): the items written alike become its instances, each keeping its
   content in its slots, and the items slot's fallback is one empty instance.
   Items that are instances already stay as they are. All four files and the
   page are one undo step.
-- **No CSS moves.** The site's stylesheets reach a component's shadow root as
-  they reach the page (the starter's loader and the editor's preview both do
-  this), so the template looks the same. The new stylesheet only holds
-  `:host { display: block; }`, so the custom element is a block as the
-  element was. Moving rules is not "trivially safe" in general (other pages
-  may use them), so it is left to the user.
-- A site whose pages do not load `components/components.js` is warned.
+- **The page CSS that styled it follows** (build slice 64): a rule that
+  would stop reaching the element once it is an instance is copied into the
+  new stylesheet, rewritten to start at it (after `:host { display: block; }`);
+  the site's stylesheets stay as they are. Rules that can't follow are noted.
+- A site whose pages do not load `components/components.js` is noted.
 
 The new files are drafts; writing them and replacing the element is one undo
 step (the code editor's history companion): Undo/Redo in the top bar take the
@@ -200,19 +205,21 @@ The seam browser test runs the production component controller with mocked compo
   `tests/native-save/native-variants.spec.ts` (browser, fixture
   `native-variants`): variant fields, Custom, conditions, bare yes/no
   attributes, the Variants button and one undo step per pick.
+- `tests/native-save/native-make-component.spec.ts` (browser, `@smoke`): Make
+  component with no dialog, the automatic names, Edit component mode on the
+  new instance, one undo and redo of its files.
 - `tests/native-save/native-components.spec.ts` (browser): the accent in the
   bar, structure and canvas and the chip back to the instance; the instance fields’
   text, link, optional, reset and attribute edits as source with undo; Edit
-  component with the canvas bar, Used on and Done; Detach; Make component with
-  undo and redo of its files; an image slot and an empty slot on a
+  component with the canvas bar, Used on and Done; Detach; Make component's
+  refusals; an image slot and an empty slot on a
   component added to About.
 
 ## Known gaps
 
 - Editing a template's slot *definitions* (adding a slot, renaming one) is done
   in the code pane; Structure edits instances.
-- Make component does not offer to move CSS, and does not create a loader for
-  a site without one.
+- Make component does not create a loader for a site without one.
 
 The edit bar offers component editing only when the component root itself is
 selected. Light-DOM slot children and template children keep the instance-selection

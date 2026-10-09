@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  automaticComponentName,
+  madeFrom,
   normaliseAtCaret,
   normaliseComponentName,
   normaliseName,
@@ -75,4 +77,56 @@ test("caret offsets follow the text before the caret", () => {
   assert.deepEqual(normaliseAtCaret("Title!", 100), { value: "title", caret: 5 });
   assert.deepEqual(normaliseAtCaret("Title!", -1), { value: "title", caret: 0 });
   assert.deepEqual(normaliseAtCaret("123!", 4), { value: "", caret: 0 });
+});
+
+test("what an element was made from picks the prefix: section, card, else block", () => {
+  assert.equal(madeFrom("section"), "section");
+  assert.equal(madeFrom("section", "card"), "section");
+  assert.equal(madeFrom("article"), "card");
+  assert.equal(madeFrom("div", "project-card"), "card");
+  assert.equal(madeFrom("li", "card__item wide"), "card");
+  assert.equal(madeFrom("div", "cardigan"), "block");
+  assert.equal(madeFrom("div", "intro"), "block");
+  assert.equal(madeFrom("aside"), "block");
+});
+
+test("Make component names the component from the element's first heading", () => {
+  assert.equal(automaticComponentName(`<section class="work"><h2>Recent work</h2><p>Text</p></section>`, []), "section-recent-work");
+  // Inline markup and entities are read as the heading shows them.
+  assert.equal(automaticComponentName(`<section><h2>Tea <em>&amp;</em> <a href="/">Cak&#233;s</a></h2></section>`, []), "section-tea-cakes");
+  // The first heading, however deep; the element itself when it is one.
+  assert.equal(automaticComponentName(`<div><div><h3>Opening hours</h3></div><h2>Later</h2></div>`, []), "block-opening-hours");
+  assert.equal(automaticComponentName(`<h2 class="lede">Big news</h2>`, []), "block-big-news");
+  assert.equal(automaticComponentName(`<article class="card"><h3>Fern &amp; Kettle</h3></article>`, []), "card-fern-kettle");
+  // Digits after the prefix stay; a heading that starts with the prefix doesn't repeat it.
+  assert.equal(automaticComponentName(`<section><h2>2026 in review</h2></section>`, []), "section-2026-in-review");
+  assert.equal(automaticComponentName(`<section><h2>Section one</h2></section>`, []), "section-one");
+});
+
+test("a long heading is cut to its first three words", () => {
+  assert.equal(automaticComponentName(`<section><h2>A native browser preview for plain sites</h2></section>`, []), "section-a-native-browser");
+});
+
+test("with no heading, or one that leaves nothing, the component is numbered", () => {
+  assert.equal(automaticComponentName(`<section><p>Only text</p></section>`, []), "section-1");
+  assert.equal(automaticComponentName(`<section><h2>!!! — ???</h2></section>`, []), "section-1");
+  assert.equal(automaticComponentName(`<section><h2>Section</h2></section>`, []), "section-1");
+  assert.equal(automaticComponentName(`<div class="note"><p>A note</p></div>`, []), "block-1");
+  assert.equal(automaticComponentName(`<article><img src="a.jpg" alt=""></article>`, []), "card-1");
+  // The next free number.
+  assert.equal(automaticComponentName(`<section><p>Only text</p></section>`, ["section-1"]), "section-2");
+  assert.equal(automaticComponentName(`<section></section>`, ["section-1", "section-2", "section-4"]), "section-3");
+});
+
+test("a taken name takes the next free number", () => {
+  assert.equal(automaticComponentName(`<section><h2>Recent work</h2></section>`, ["section-recent-work"]), "section-recent-work-2");
+  assert.equal(automaticComponentName(`<section><h2>Recent work</h2></section>`, ["section-recent-work", "section-recent-work-2"]), "section-recent-work-3");
+});
+
+test("the prefix keeps an automatic name clear of names reserved by HTML", () => {
+  assert.equal(tagNameProblem("font-face", []), "font-face is reserved by HTML.");
+  assert.equal(automaticComponentName(`<div><h2>Font face</h2></div>`, []), "block-font-face");
+  for (const html of [`<div><h2>Font face</h2></div>`, `<section><h2>Missing glyph</h2></section>`, `<article><h3>Color profile</h3></article>`]) {
+    assert.equal(tagNameProblem(automaticComponentName(html, []), []), undefined);
+  }
 });

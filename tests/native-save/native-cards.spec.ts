@@ -736,36 +736,34 @@ test("Make component on a grid of plain cards makes the section and a card compo
   const beforeCards = await cardBoxes(section.locator("article.project"));
 
   await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section Recent work/ }).locator(".page-structure__label").first().click();
-  await bar(page).getByRole("button", { name: "Make component…", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Make component" });
-  await dialog.getByRole("textbox", { name: "Component name" }).fill("section-work");
-  await expect(dialog.getByRole("status")).toContainText("Its repeated items become <card-work>, a card component");
-  await expect(dialog).toContainText("components/card-work/card-work.html (new)");
-  await dialog.getByRole("button", { name: "Make component" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(status(page)).toContainText("Made the component <section-work>");
+  await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
+  // Named from its heading; Edit component mode opens on it.
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/section-recent-work/section-recent-work.html");
+  await expect(status(page)).toContainText("Made the component <section-recent-work>: components/section-recent-work/section-recent-work.html, and <card-recent-work>");
+  await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
 
   // Four files and the page, written together; each card keeps its own content in its slots.
-  await expect.poll(async () => (await storedDraft(page, "components/section-work/section-work.html"))?.content ?? "").toContain("<slot><card-work></card-work></slot>");
-  const card = (await storedDraft(page, "components/card-work/card-work.html"))!.content;
+  await expect.poll(async () => (await storedDraft(page, "components/section-recent-work/section-recent-work.html"))?.content ?? "").toContain("<slot><card-recent-work></card-recent-work></slot>");
+  const card = (await storedDraft(page, "components/card-recent-work/card-recent-work.html"))!.content;
   expect(card).toContain(`<slot name="title"><h3>Fern &amp; Kettle</h3></slot>`);
   expect(card).toContain(`<slot name="note"><p class="note">Cafe · Identity and site · 2025</p></slot>`);
-  expect((await storedDraft(page, "components/card-work/card-work.css"))?.content).toContain(":host");
-  expect((await storedDraft(page, "components/section-work/section-work.css"))?.content).toContain(":host");
+  expect((await storedDraft(page, "components/card-recent-work/card-recent-work.css"))?.content).toContain(":host");
+  expect((await storedDraft(page, "components/section-recent-work/section-recent-work.css"))?.content).toContain(":host");
   const written = await homeDraft(page);
-  expect(written).toContain(`<section-work id="work">`);
-  expect(written.match(/<card-work>/g)).toHaveLength(2);
+  expect(written).toContain(`<section-recent-work id="work">`);
+  expect(written.match(/<card-recent-work>/g)).toHaveLength(2);
   expect(written).toContain(`<h3 slot="title">Harbour Lane Pottery</h3>`);
   expect(written).toContain(`<a slot="link" href="/work/harbour-lane-pottery/">Read about Harbour Lane Pottery</a>`);
 
   // The page looks the same.
-  const made = frame(page).locator("section-work");
-  await expect(made.locator("card-work > h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
-  await expect(made.locator("card-work > a")).toHaveText(["Read about Fern & Kettle", "Read about Harbour Lane Pottery"]);
+  const made = frame(page).locator("section-recent-work");
+  await expect(made.locator("card-recent-work > h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await expect(made.locator("card-recent-work > a")).toHaveText(["Read about Fern & Kettle", "Read about Harbour Lane Pottery"]);
   const after = (await made.boundingBox())!;
   expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
-  const afterCards = await cardBoxes(made.locator(":scope > card-work"));
+  const afterCards = await cardBoxes(made.locator(":scope > card-recent-work"));
   expect(afterCards).toHaveLength(2);
   // Each card where it was in its section (the preview may have scrolled to the selection).
   afterCards.forEach((box, index) => {
@@ -779,15 +777,15 @@ test("Make component on a grid of plain cards makes the section and a card compo
   // One undo takes the page and all four files back.
   await page.locator(".code-editor__undo").first().click();
   await expect(section.locator("article.project h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
-  await expect.poll(async () => await storedDraft(page, "components/card-work/card-work.html")).toBeUndefined();
-  for (const file of ["section-work/section-work.html", "section-work/section-work.css", "card-work/card-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeUndefined();
+  await expect.poll(async () => await storedDraft(page, "components/card-recent-work/card-recent-work.html")).toBeUndefined();
+  for (const file of ["section-recent-work/section-recent-work.html", "section-recent-work/section-recent-work.css", "card-recent-work/card-recent-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeUndefined();
   expect(await storedDraft(page, "index.html")).toBeUndefined();
   // Redo writes them all again.
   await page.locator(".code-editor__redo").first().click();
-  await expect(made.locator("card-work > h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
-  await expect.poll(async () => (await storedDraft(page, "components/card-work/card-work.html"))?.content).toBe(card);
+  await expect(made.locator("card-recent-work > h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await expect.poll(async () => (await storedDraft(page, "components/card-recent-work/card-recent-work.html"))?.content).toBe(card);
   expect(await homeDraft(page)).toBe(written);
-  for (const file of ["section-work/section-work.html", "section-work/section-work.css", "card-work/card-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeDefined();
+  for (const file of ["section-recent-work/section-recent-work.html", "section-recent-work/section-recent-work.css", "card-recent-work/card-recent-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeDefined();
 });
 
 test("Make component copies the rules that styled the section into its CSS, so its heading, lead and links look the same", async ({ page, baseURL }) => {
@@ -827,18 +825,27 @@ test("Make component copies the rules that styled the section into its CSS, so i
   expect(before[2][1]).toContain("font-weight: 700");
 
   await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section Made to be changed/ }).locator(".page-structure__label").first().click();
-  await bar(page).getByRole("button", { name: "Make component…", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Make component" });
-  await dialog.getByRole("textbox", { name: "Component name" }).fill("section-intro");
-  await expect(dialog).toContainText("The rules that styled this element are copied into the component's CSS");
-  await expect(dialog).toContainText("1 rule can't follow the parts into the component: .intro .lead em.");
-  await dialog.getByRole("button", { name: "Make component" }).click();
-  await expect(dialog).toBeHidden();
-  await expect(status(page)).toContainText("Made the component <section-intro>");
+  await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
+  await expect(status(page)).toContainText("Made the component <section-made-to-be>");
+  // The rule that can't follow is a note in Edit component mode's bar, all of it in the panel it opens, until dismissed.
+  const note = page.locator(".canvas-bar").getByRole("note");
+  await expect(note).toContainText("1 rule can't follow the parts into the component: .intro .lead em.");
+  await note.getByRole("button", { name: /^Note/ }).click();
+  await expect(page.locator("#edit-mode-notes")).toBeVisible();
+  await expect(page.locator("#edit-mode-notes li")).toHaveText([/1 rule can't follow the parts into the component: \.intro \.lead em\./]);
+  await page.keyboard.press("Escape");
+  // Dismissed from the keyboard, the focus goes to Done.
+  await note.getByRole("button", { name: "Dismiss the notes", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(note).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Done editing component", exact: true })).toBeFocused();
+  await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveText("Editing<section-made-to-be>");
+  await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
 
   // The rules, rewritten to start at the section, in the component's CSS; the site's stylesheet as it was.
-  await expect.poll(async () => (await storedDraft(page, "components/section-intro/section-intro.css"))?.content ?? "").toContain(".intro .actions a {");
-  const written = (await storedDraft(page, "components/section-intro/section-intro.css"))!.content;
+  await expect.poll(async () => (await storedDraft(page, "components/section-made-to-be/section-made-to-be.css"))?.content ?? "").toContain(".intro .actions a {");
+  const written = (await storedDraft(page, "components/section-made-to-be/section-made-to-be.css"))!.content;
   expect(written).toContain(".intro h2 {\n  letter-spacing: 3px;");
   expect(written).toContain(".intro .lead {\n  font-style: italic;");
   expect(written).toContain("@media (min-width: 1px) {\n  .intro .actions a {");
@@ -847,7 +854,7 @@ test("Make component copies the rules that styled the section into its CSS, so i
   expect(await storedDraft(page, "styles/site.css")).toBeUndefined();
 
   // The page looks the same: the heading, lead and links, now slotted into the component.
-  const made = frame(page).locator("section-intro");
+  const made = frame(page).locator("section-made-to-be");
   await expect(made.locator(":scope > h2")).toHaveText("Made to be changed");
   await expect.poll(async () => [await looks(made.locator(":scope > h2")), await looks(made.locator(":scope > .lead")), await looks(made.locator(":scope > a"))]).toEqual(before);
 });
