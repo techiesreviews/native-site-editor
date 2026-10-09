@@ -83,6 +83,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [35 Drag blocks from the rail onto the canvas](tickets/35-canvas-drag-new-blocks.md) | claude ★ | 28, 33, 34 |
 | [73 Edit bar: update the controls spec for Make component; call a.btn a Button](tickets/73-edit-bar-spec-and-button-label.md) | sol | – |
 | [36 Blocks drag themselves](tickets/36-drag-existing-blocks.md) | claude ★ | 35 |
+| [88 A dragged card targets the gaps between cards](tickets/88-card-drag-targets-grid.md) | sol | 36 |
 | [79 Click selects, double-click edits, everywhere on the page](tickets/79-click-selects-double-click-edits.md) | claude ★ | 36 |
 | [81 Delete key removes the selected element; no delete icon on Structure rows](tickets/81-delete-key-and-no-row-delete.md) | sol | 79 |
 | [83 Refusal reasons show on screen](tickets/83-visible-refusals.md) | sol | – |
