@@ -46,7 +46,9 @@ test("a section plus inserts a component from its section-only group into the pa
   await expect(page.locator(".insert-point__plus")).toHaveCount(4);
   const before = plus(page, "Add a section before “Scroll to verify”");
   // The gap between the cards and the filler sits below the frame's first screen.
-  await frame.locator("section.filler h2").scrollIntoViewIfNeeded();
+  // Centre the cards so the gaps on both sides are in the frame whatever the
+  // font: scrolling the filler in can push the cards' top out with wider text.
+  await frame.locator("section.cards").evaluate((el) => el.scrollIntoView({ block: "center" }));
   await hoverIn(page, "section.cards");
   await expect(shown(page)).toHaveCount(2);
   await expect(shown(page).first()).toHaveAccessibleName(/^Add a section before “Reusable cards/);
