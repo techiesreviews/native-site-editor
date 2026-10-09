@@ -5,6 +5,33 @@
 import { splitSelectorList } from "./cascade";
 import { blockEnd, preludeEnd, skipSpace, withoutComments } from "./slotted-css";
 
+/** Statically named attributes written by site scripts; dynamic names are unknown. */
+export function scriptSetAttributes(source: string): string[] {
+  const tokens = source.match(/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[\w$]+|\?\.|\|\|=|&&=|\?\?=|[+*/%-]=|\+\+|--|===|==|=>|\S/g)?.filter((token) => !token.startsWith("//") && !token.startsWith("/*")) ?? [];
+  const names = new Set<string>();
+  const literal = (token = "") => /^(["'])[\w-]+\1$/.test(token) ? token.slice(1, -1) : undefined;
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index];
+    if (tokens[index - 1] !== "." && tokens[index - 1] !== "?.") continue;
+    if ((token === "setAttribute" || token === "toggleAttribute") && tokens[index + 1] === "(") {
+      const name = literal(tokens[index + 2]);
+      if (name && [",", ")"].includes(tokens[index + 3])) names.add(name.toLowerCase());
+    }
+    if (token !== "dataset") continue;
+    let key: string | undefined, end: number;
+    if (tokens[index + 1] === ".") {
+      key = /^[a-z_$][\w$]*$/i.test(tokens[index + 2] ?? "") ? tokens[index + 2] : undefined;
+      end = index + 3;
+    } else if (tokens[index + 1] === "[" && tokens[index + 3] === "]") {
+      key = literal(tokens[index + 2]);
+      end = index + 4;
+    } else continue;
+    if (key && /^(?:=|[+*/%-]=|\|\|=|&&=|\?\?=|\+\+|--)$/.test(tokens[end] ?? ""))
+      names.add("data-" + key.replace(/[A-Z]/g, (char) => "-" + char.toLowerCase()));
+  }
+  return [...names];
+}
+
 export interface VariantValue { value: string; label: string; conditions: string[] }
 export interface Variant {
   attribute: string;

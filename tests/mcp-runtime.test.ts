@@ -93,7 +93,24 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.equal(site.pages[1].description, "Who we are.");
     assert.deepEqual(site.pages[1].subpages, [{ route: "/about/team/", file: "about/team/index.html", title: "Team" }]);
     assert.deepEqual(site.notFound, { route: "/404.html", file: "404.html" });
-    assert.deepEqual(site.components.find((item: any) => item.tag === "feature-block"), { tag: "feature-block", file: "components/feature-block/feature-block.html", section: true, slots: ["title"] });
+    const feature = site.components.find((item: any) => item.tag === "feature-block");
+    assert.deepEqual(feature, {
+      tag: "feature-block", file: "components/feature-block/feature-block.html", css: "components/feature-block/feature-block.css", section: true, slots: ["title"],
+      variants: [
+        { attribute: "data-layout", label: "Layout", kind: "choice", values: [
+          { value: "split", label: "Split", conditions: [] },
+          { value: "centered", label: "Centered", conditions: ["@media (min-width: 60rem)"] },
+        ], conditions: [] },
+        { attribute: "data-wide", label: "Wide", kind: "yes-no", values: [], conditions: [] },
+        { attribute: "data-color-scheme", label: "Color scheme", kind: "choice", values: [{ value: "dark", label: "Dark", conditions: ["@media (min-width: 40rem)"] }], conditions: ["@media (min-width: 40rem)"] },
+        { attribute: "data-tone", label: "Tone", kind: "choice", values: [{ value: "dark", label: "Dark", conditions: [] }], conditions: [] },
+      ],
+    });
+    const header = site.components.find((item: any) => item.tag === "site-header");
+    assert.deepEqual(header.variants, [feature.variants[2]]);
+    assert.equal("variantWarnings" in header, false);
+    assert.equal(github.requests.filter((path) => path === "/graphql").length, 1, "saved variant files are batched");
+    assert.equal(github.requests.filter((path) => path.includes("/git/blobs/")).length, 1, "only the truncated import needs an individual read");
     assert.deepEqual(site.stylesheets, [{ file: "styles/site.css", imports: ["styles/tokens.css"] }]);
     assert.deepEqual(site.editor.previewSelection, { file: "index.html", id: "1.0", tag: "section", text: "Welcome" });
     assert.deepEqual(site.changes.map((change: any) => change.kind), ["M", "A"]);
@@ -203,7 +220,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const queued = (await tab.hub()).commands;
     assert.equal(queued.length, 1);
     assert.equal(queued[0].operation, "write_file");
-    assert.equal(queued[0].content, '@import url("tokens.css");\nbody { margin: 1px; }\n');
+    assert.equal(queued[0].content, files["styles/site.css"].replace("margin: 0", "margin: 1px"));
     assert.equal(queued[0].expectedHash, css.hash);
     // A second tab cannot take a change the first one claimed.
     assert.equal((await tab.claim("css-1", queued[0].grantId)).status, 200);
@@ -386,6 +403,75 @@ test("every draft up to 1 MB is readable and writable however many there are; a 
   }
 });
 
+test("get_site applies variant drafts, reports unreadable files, skips missing imports, and reads nothing without a native site", async () => {
+  const { worker, github } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker);
+    const tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    client = new Client({ name: "variant-drafts-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker),
+    }));
+    const getSite = () => client!.callTool({ name: "get_site", arguments: {} });
+    const reads = () => github.requests.filter((path) => path === "/graphql" || /\/git\/(blobs|trees|commits)\//.test(path)).length;
+    assert.equal(payload(await getSite()).available, false);
+    assert.equal(reads(), 0, "no file reads when no tab shares");
+
+    const context = await siteContext();
+    const nonNative = { ...context };
+    delete nonNative.pages;
+    assert.equal((await tab.share(nonNative)).status, 200);
+    assert.equal(payload(await getSite()).native, false);
+    assert.equal(reads(), 0, "no file reads for a non-native site");
+
+    assert.equal((await tab.share(context)).status, 200);
+    github.limited = true;
+    const failed = await getSite();
+    assert.notEqual(failed.isError, true);
+    assert.match(payload(failed).note, /Variants could not be read/);
+    assert.ok(payload(failed).components.every((component: any) => !("variants" in component)));
+    github.limited = false;
+
+    // New CSS, imported CSS and scripts all use the editor's draft texts.
+    const css = "components/feature-block/draft.css";
+    context.site!.components[0].css = css;
+    context.drafts.push(
+      { path: css, baseSha: null, updatedAt: Date.now(), content: ':host([data-layout="draft"]) {} :host([data-busy]) {} :host[data-broken] {}' },
+      { path: "styles/tokens.css", baseSha: "0".repeat(40), updatedAt: Date.now(), content: '[data-color-scheme="light"] {}' },
+      { path: "scripts/draft.js", baseSha: null, updatedAt: Date.now(), content: 'el.dataset.busy = "yes";' },
+      { path: "scripts/huge.js", baseSha: null, updatedAt: Date.now(), size: 2 * 1024 * 1024 },
+    );
+    assert.equal((await tab.share(context)).status, 200);
+    const drafted = payload(await getSite());
+    const feature = drafted.components[0];
+    assert.deepEqual(feature.variants.map((variant: any) => [variant.attribute, variant.values.map((value: any) => value.value)]), [
+      ["data-layout", ["draft"]], ["data-color-scheme", ["light"]], ["data-tone", ["dark"]],
+    ]);
+    assert.equal(feature.variantWarnings[0].kind, "host-without-parentheses");
+
+    const draft = context.drafts.find((item) => item.path === css)!;
+    delete draft.content;
+    assert.equal((await tab.share(context)).status, 200);
+    const missingDraft = await getSite();
+    assert.notEqual(missingDraft.isError, true);
+    assert.match(payload(missingDraft).note, /Variants could not be read/);
+    assert.ok(payload(missingDraft).components.every((component: any) => !("variants" in component)));
+
+    // A missing import is skipped, as the preview skips it; the rest still counts.
+    draft.content = ':host {}';
+    context.drafts.find((item) => item.path === "styles/tokens.css")!.content = '@import "missing.css";';
+    assert.equal((await tab.share(context)).status, 200);
+    const skipped = payload(await getSite());
+    assert.doesNotMatch(skipped.note, /Variants could not be read/);
+    assert.deepEqual(skipped.components[0].variants.map((variant: any) => variant.attribute), ["data-tone"]);
+  } finally {
+    await client?.close();
+    await worker.dispose();
+  }
+});
+
 test("export_site reads the whole site in one call with drafts and hashes, blobs are read from GitHub once, and a rate limit reads as one", async () => {
   const { worker, github } = await startWorker();
   let client: Client | undefined;
@@ -425,6 +511,7 @@ test("export_site reads the whole site in one call with drafts and hashes, blobs
     const before = objectReads().length;
     assert.deepEqual(payload(await call("export_site", { folder: "components/" })).files.map((file: any) => file.path), [
       "components/components.js",
+      "components/feature-block/feature-block.css",
       "components/feature-block/feature-block.html",
       "components/site-header/site-header.html",
     ]);

@@ -169,6 +169,32 @@ export class SiteFiles {
     return out;
   }
 
+  /**
+   * The texts of those `paths` that are readable text files, drafts applied;
+   * missing, binary and too large ones are left out. Saved texts are read in
+   * batched queries first, and only a few one by one.
+   */
+  async texts(paths: Iterable<string>): Promise<Map<string, string>> {
+    const entries = new Map((await this.entries()).map((entry) => [entry.path, entry]));
+    const out = new Map<string, string>();
+    const saved = [];
+    for (const path of new Set(paths)) {
+      const draft = this.draft(path);
+      const entry = entries.get(path);
+      if (draft ? draft.deleted || draft.binary || (draft.size ?? 0) > AGENT_TEXT_LIMIT : entry?.type !== "blob" || (entry.size ?? 0) > AGENT_TEXT_LIMIT) continue;
+      if (draft) out.set(path, (await this.read(path))!.content);
+      else saved.push({ path, sha: entry!.sha });
+    }
+    await this.github.prefetchTexts(this.repo, saved.map(({ sha }) => sha));
+    let singles = 0;
+    for (const { path, sha } of saved) {
+      if (!this.github.hasText(this.repo, sha) && ++singles > exportSingleReads)
+        throw new HttpError(503, "Too many files to read one by one in one call.");
+      out.set(path, await this.github.file(this.repo, sha));
+    }
+    return out;
+  }
+
   /** Whether `path` is a folder (something is inside it). */
   async isFolder(path: string) {
     const prefix = `${path}/`;

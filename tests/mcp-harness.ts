@@ -27,10 +27,13 @@ export const files: Record<string, string> = {
   "about/index.html": page("About", `<main>\n  <section><h1>About us</h1></section>\n</main>\n`),
   "404.html": page("Page not found", `<main>\n  <section><h1>Page not found</h1></section>\n</main>\n`),
   "components/components.js": `const TAGS = ["feature-block", "site-header"];\n`,
+  "scripts/state.mjs": `el.setAttribute("data-open", "true"); el.dataset.colorScheme = "dark"; el.toggleAttribute("data-tone");\n`,
+  "node_modules/ignored.js": `el.dataset.layout = "split";\n`,
   "components/feature-block/feature-block.html": `<section class="feature-block">\n  <slot name="title"><h2>A feature</h2></slot>\n</section>\n`,
+  "components/feature-block/feature-block.css": `:host { display: block; }\n:host([data-layout="split"]) {}\n:host([data-wide]) {}\n@media (min-width: 60rem) { :host([data-layout="centered"]) {} }\n:host([data-open]) {}\n`,
   "components/site-header/site-header.html": `<header><a href="/">Home</a></header>\n`,
-  "styles/site.css": `@import url("tokens.css");\nbody { margin: 0; }\n`,
-  "styles/tokens.css": `:root { --accent: green; }\n`,
+  "styles/site.css": `@import url("tokens.css") layer(theme) supports(display: grid) (min-width: 40rem);\nbody { margin: 0; }\nfeature-block[data-tone="dark"] {}\n`,
+  "styles/tokens.css": `:root { --accent: green; }\n[data-color-scheme="dark"] {}\n`,
   ".editor/config.json": `{ "site": { "name": "Starter", "url": "https://starter.example" } }\n`,
 };
 const shas = Object.fromEntries(
@@ -176,7 +179,7 @@ export async function siteContext(): Promise<EditorContext> {
       openRoute: "/",
       selection: { file: "index.html", id: "1.0", tag: "section", text: "Welcome" },
       components: [
-        { tag: "feature-block", file: "components/feature-block/feature-block.html", section: true, slots: ["title"] },
+        { tag: "feature-block", file: "components/feature-block/feature-block.html", css: "components/feature-block/feature-block.css", section: true, slots: ["title"] },
         { tag: "site-header", file: "components/site-header/site-header.html", section: false, slots: [] },
       ],
       stylesheets: [{ file: "styles/site.css", imports: ["styles/tokens.css"] }],

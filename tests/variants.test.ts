@@ -1,10 +1,32 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { componentVariants, variantLabel, valueLabel } from "../shared/variants.ts";
+import { componentVariants, scriptSetAttributes, variantLabel, valueLabel } from "../shared/variants.ts";
 import { withSlottedRules } from "../shared/slotted-css.ts";
 
 const parse = (css: string) => componentVariants(css).variants;
 const values = (css: string) => parse(css).map((variant) => [variant.attribute, variant.values.map(({ value }) => value)]);
+
+test("script-set attributes include literal setters and dataset writes in source order", () => {
+  assert.deepEqual(scriptSetAttributes(`
+    el.setAttribute("DATA-OPEN", "true"); el.toggleAttribute('data-wide');
+    el.dataset.fooBar = 'x'; el.dataset['colorScheme'] ||= 'dark';
+    el.dataset["count"]++; el.dataset.fooBar = 'again';
+    el?.setAttribute('data-ready', '');
+  `), ["data-open", "data-wide", "data-foo-bar", "data-color-scheme", "data-count", "data-ready"]);
+});
+
+test("script discovery ignores comments, strings, reads and dynamic attribute names", () => {
+  assert.deepEqual(scriptSetAttributes(`
+    // el.setAttribute('data-comment', 'x');
+    /* el.dataset.comment = 'x'; */
+    const text = "el.toggleAttribute('data-string')";
+    const template = \`el.dataset.template = 'x'\`;
+    el.setAttribute(name, 'x'); el.setAttribute('data-' + name, 'x');
+    el.dataset[key] = 'x'; console.log(el.dataset.readOnly);
+    el.dataset.test === 'x'; el.dataset.test == 'x';
+    const dataset = {}; dataset.fake = 'x';
+  `), []);
+});
 
 test("quoting, flags, CSS escapes and attribute case deduplicate in source order", () => {
   assert.deepEqual(values(String.raw`
