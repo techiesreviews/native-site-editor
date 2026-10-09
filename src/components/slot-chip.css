@@ -1,9 +1,11 @@
 /* The slot chip (slot-chip.ts): solid violet for a slot, pink for an items
-   slot, muted grey and struck through for a fixed part. */
+   slot, muted grey and struck through for a fixed part. Renamed in place, its
+   name takes a caret and stays the chip: no field look. */
 .slot-chip {
   --slot-chip-slot: oklch(from var(--color-component) 47% 0.21 h);
   --slot-chip-items: oklch(50% 0.19 355);
   flex: none;
+  display: inline-block;
   box-sizing: border-box;
   height: 17px;
   margin: 0 2px 0 3px;
@@ -15,7 +17,27 @@
   font: 600 10.5px / 17px var(--font-mono);
   white-space: nowrap;
   cursor: pointer;
+  user-select: none;
   transition: filter 120ms ease-out;
+}
+.slot-chip__name {
+  outline: none;
+}
+.slot-chip--renaming {
+  cursor: text;
+  user-select: text;
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.slot-chip--renaming,
+.slot-chip--renaming:hover {
+  filter: none;
+}
+.slot-chip--renaming > .slot-chip__name {
+  /* A caret still shows with every letter deleted. */
+  display: inline-block;
+  min-width: 1ch;
+  caret-color: currentColor;
 }
 .slot-chip--items {
   background: var(--slot-chip-items);

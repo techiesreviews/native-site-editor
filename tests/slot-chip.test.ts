@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import { CLICK_WAIT_MS, clickTiming } from "../src/components/click-timing.ts";
 import { slotChipState } from "../src/page-builder/component-model.ts";
+import { committedSlotName, normaliseAtCaret } from "../src/page-builder/component-names.ts";
 
 // The slot chip (build slice 23): its click/double-click timing, and what it says of a template's part.
 
@@ -131,4 +132,25 @@ test("no chip for the root, a part holding slots, a nested instance's content, a
   assert.equal(slotChipState(`<div><card-note><p slot="note">Hi</p></card-note></div>`, [0, 0, 0]), undefined);
   assert.equal(slotChipState(`<div><table><tbody><tr><td>A</td></tr></tbody></table></div>`, [0, 0, 0, 0, 0]), undefined);
   assert.equal(slotChipState(`<div><details><summary>More</summary><p>Body</p></details></div>`, [0, 0, 0]), undefined);
+});
+
+// Slice 24: a slot renamed in the chip, as typed and as committed.
+test("a slot name typed in the chip is made valid letter by letter and committed without its trailing hyphen", () => {
+  let shown = "";
+  for (const letter of "Lead Text") shown = normaliseAtCaret(shown + letter, shown.length + 1).value;
+  assert.equal(shown, "lead-text");
+  assert.equal(normaliseAtCaret("lead ", 5).value, "lead-");
+  assert.equal(committedSlotName("title", "Lead Text"), "lead-text");
+  assert.equal(committedSlotName("title", "lead-"), "lead");
+  assert.equal(committedSlotName("title", "  Big   Title!! "), "big-title");
+});
+
+test("an empty or unchanged slot name commits nothing", () => {
+  assert.equal(committedSlotName("title", ""), undefined);
+  assert.equal(committedSlotName("title", "-- 42 "), undefined);
+  assert.equal(committedSlotName("title", "title"), undefined);
+  assert.equal(committedSlotName("title", "Title-"), undefined);
+  // An unnamed items slot reads "items": left so, it stays unnamed.
+  assert.equal(committedSlotName("items", "items"), undefined);
+  assert.equal(committedSlotName("items", "projects"), "projects");
 });

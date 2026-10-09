@@ -142,3 +142,99 @@ test("Edit component mode shows each part's slot chip after its name; a click re
   await expect(toolbar(page)).toBeVisible();
   await expect(page.locator(".slot-chip")).toHaveCount(0);
 });
+
+// Slice 24: a double-click on a slot's chip puts a caret in its own text; the
+// name is made valid as typed; Enter or leaving commits, Esc cancels.
+test("a double-click renames a slot in its chip: valid as typed, Enter or leaving commits, Esc cancels", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await openMode(page, baseURL);
+  const work = frame(page).locator("section-work");
+  await page.evaluate(() => {
+    const reports: unknown[] = [];
+    (window as unknown as { slotChipReports: unknown[] }).slotChipReports = reports;
+    window.addEventListener("native-slot-chip", (event) => {
+      const detail = (event as CustomEvent<{ name?: string }>).detail;
+      reports.push(detail);
+      // The owner may refuse a name: this one stands for a taken one.
+      if (detail.name === "taken") event.preventDefault();
+    });
+  });
+  const reports = () => page.evaluate(() => (window as unknown as { slotChipReports: { action: string; node: number[]; name?: string }[] }).slotChipReports);
+  const name = () => chip(page).locator(".slot-chip__name");
+  const settle = () => page.evaluate(() => new Promise((done) => setTimeout(done, 3 * 240)));
+
+  await work.getByText("Section title", { exact: true }).click();
+  await expect(chip(page)).toHaveText("title");
+
+  // A stand-in for the slot's Structure badge (slice 46): another chip of the same slot.
+  await chip(page).evaluate((el) => {
+    const badge = el.cloneNode(true) as HTMLElement;
+    badge.id = "badge-stand-in";
+    document.body.append(badge);
+  });
+  const badge = page.locator("#badge-stand-in");
+
+  // Esc cancels: the old name, nothing reported.
+  await chip(page).dblclick();
+  await expect(name()).toBeFocused();
+  await expect(name()).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  expect(await label(page).locator("input, textarea").count()).toBe(0);
+  if (shots) await page.screenshot({ path: `${shots}/rename-caret.png` });
+  await page.keyboard.type("Lead ");
+  await expect(chip(page)).toHaveText("lead-");
+  await page.keyboard.type("Text");
+  await expect(chip(page)).toHaveText("lead-text");
+  await expect(badge).toHaveText("lead-text");
+  if (shots) await page.screenshot({ path: `${shots}/rename-typed.png` });
+  // The editor's keys stay out of it: Backspace edits the name, not the page.
+  await page.keyboard.press("Backspace");
+  await expect(chip(page)).toHaveText("lead-tex");
+  await page.keyboard.press("Escape");
+  await expect(chip(page)).toHaveText("title");
+  await expect(badge).toHaveText("title");
+  await expect(name()).not.toHaveAttribute("contenteditable");
+  await expect(chip(page)).toBeFocused();
+  await settle();
+  expect(await reports()).toEqual([]);
+  await expect(work.getByText("Section title", { exact: true })).toBeVisible();
+
+  // Enter commits: the owner hears the valid name.
+  await chip(page).dblclick();
+  await page.keyboard.type("Lead Text");
+  await expect(chip(page)).toHaveText("lead-text");
+  await page.keyboard.press("Enter");
+  await expect.poll(reports).toHaveLength(1);
+  expect((await reports())[0]).toMatchObject({ action: "rename", template: TEMPLATE, node: [0, 0, 0], name: "lead-text", chip: { state: "slot", name: "title" } });
+  await expect(chip(page)).toHaveText("lead-text");
+  await expect(badge).toHaveText("lead-text");
+  await expect(name()).not.toHaveAttribute("contenteditable");
+  if (shots) await page.screenshot({ path: `${shots}/rename-committed.png` });
+  await settle();
+  expect(await reports()).toHaveLength(1);
+
+  // A name the owner refuses: the old one comes back.
+  await chip(page).dblclick();
+  await page.keyboard.type("Taken");
+  await page.keyboard.press("Enter");
+  await expect.poll(reports).toHaveLength(2);
+  await expect(chip(page)).toHaveText("lead-text");
+  await expect(badge).toHaveText("lead-text");
+  await badge.evaluate((el) => el.remove());
+
+  // Leaving commits: the items slot renamed, then a click on the page.
+  await work.locator("h3:visible", { hasText: "Untitled project" }).click();
+  await expect(chip(page)).toHaveText("items ×1");
+  await chip(page).dblclick();
+  await expect(name()).toBeFocused();
+  await page.keyboard.type("Projects ");
+  await expect(chip(page)).toHaveText("projects- ×1");
+  await work.getByText(LEDE, { exact: true }).click();
+  await expect.poll(reports).toHaveLength(3);
+  expect((await reports())[2]).toMatchObject({ action: "rename", name: "projects", chip: { state: "items", name: "", slot: [0, 2, 0] } });
+
+  // A fixed part's chip has no name to rename: a double-click does nothing.
+  await expect(chip(page)).toHaveText("text");
+  await chip(page).dblclick();
+  await expect(name()).not.toHaveAttribute("contenteditable");
+  await settle();
+  expect(await reports()).toHaveLength(3);
+});

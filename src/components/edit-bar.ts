@@ -260,7 +260,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
   function focusable() {
-    return [...bar.querySelectorAll<HTMLElement>(":scope > .edit-bar__label > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > select, :scope > .edit-bar__controls > .edit-bar__group > label > :is(select, input)")];
+    return [...bar.querySelectorAll<HTMLElement>(":scope > .edit-bar__label > :is(button:not([disabled]), .slot-chip), :scope > .edit-bar__controls > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > select, :scope > .edit-bar__controls > .edit-bar__group > label > :is(select, input)")];
   }
 
   function closePopover(restoreFocus: boolean) {
@@ -938,6 +938,19 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     return item;
   }
 
+  /** A caret in text typed inside `element`: a function that puts it back once `element` has moved. */
+  function keepCaret(element: HTMLElement) {
+    const active = document.activeElement;
+    const selection = document.getSelection();
+    if (!(active instanceof HTMLElement) || !active.isContentEditable || !element.contains(active) || !selection?.rangeCount) return undefined;
+    const range = selection.getRangeAt(0).cloneRange();
+    return () => {
+      active.focus();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    };
+  }
+
   function render(model: EditBarModel) {
     let opening: { item: HTMLButtonElement; control: AddressControl } | undefined;
     // Own source changes retain the field, but a new target/session/field
@@ -956,6 +969,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     else closeNote(false);
     onFormat = model.onFormat;
     onMove = model.onMove;
+    // A slot chip being renamed keeps its caret as it moves into the new label.
+    const chipCaret = model.chip && keepCaret(model.chip.element);
     // The label (chip and name) above the panel of controls.
     const label = node("div", "edit-bar__label");
     const panel = node("div", "edit-bar__controls");
@@ -1000,7 +1015,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       chip.title = model.context.title;
       label.prepend(chip);
     }
-    if (model.chip) label.append(model.chip.element);
+    if (model.chip) {
+      label.append(model.chip.element);
+      chipCaret?.();
+    }
     // Controls fall into groups (name, style, content, arrange) with a thin
     // rule between neighbours, so the bar reads as a few clusters, not a row.
     let group = "name";

@@ -61,3 +61,9 @@ export function normaliseField(el: HTMLInputElement | HTMLElement): void {
     selection.addRange(range);
   }
 }
+
+/** A slot name edited in place (the slot chip), as committed: its final spelling, or none when empty or unchanged. */
+export function committedSlotName(before: string, typed: string): string | undefined {
+  const name = normaliseName(typed, true);
+  return name && name !== before ? name : undefined;
+}

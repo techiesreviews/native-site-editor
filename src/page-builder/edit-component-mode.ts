@@ -11,8 +11,9 @@
 // message and renders the instance again in place.
 //
 // Selecting a part of the template shows its slot chip after the element's
-// name in the edit bar label (slot-chip.ts). The chip reports a click to the
-// mode's owner as a window event, SLOT_CHIP_EVENT.
+// name in the edit bar label (slot-chip.ts). The chip reports a click, and a
+// slot renamed in place, to the mode's owner as a window event,
+// SLOT_CHIP_EVENT.
 
 import { button, node } from "../ui/dom";
 import { componentIcon } from "./component-icon";
@@ -23,14 +24,18 @@ import "./edit-component-mode.css";
 
 export type EditComponentShow = EditComponentFrameMode["show"];
 
-/** A slot chip's click, on `window`: toggle the part at `node` of `template` between slot and fixed. */
+/**
+ * A slot chip's report, on `window`: toggle the part at `node` of `template`
+ * between slot and fixed, or rename its slot to `name` (already valid). A
+ * rename is cancelable: the owner calls `preventDefault()` to refuse it, and
+ * the chip shows the old name again.
+ */
 export const SLOT_CHIP_EVENT = "native-slot-chip";
-export interface SlotChipReport {
-  action: "toggle";
+export type SlotChipReport = {
   template: string;
   node: number[];
   chip: SlotChipState;
-}
+} & ({ action: "toggle" } | { action: "rename"; name: string });
 
 /** The instance edited: where it is on the page shown, and its template. */
 export interface EditComponentTarget {
@@ -116,8 +121,17 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       const template = now.templatePath;
       const key = JSON.stringify([template, at, state]);
       if (shownChip?.key !== key) {
-        const report = (): SlotChipReport => ({ action: "toggle", template, node: [...at], chip: state });
-        shownChip = { key, element: slotChip(state, { onToggle: () => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail: report() })) }) };
+        const report = (detail: SlotChipReport) => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail, cancelable: detail.action === "rename" }));
+        const part = { template, node: [...at], chip: state };
+        shownChip = {
+          key,
+          element: slotChip(state, {
+            onToggle: () => { report({ action: "toggle", ...part, node: [...at] }); },
+            onRename: (name) => report({ action: "rename", ...part, node: [...at], name }),
+            // Every chip of this slot (the label, its Structure badge) shows the name as typed.
+            group: state.state === "fixed" ? undefined : JSON.stringify([template, state.slot]),
+          }),
+        };
       }
       return shownChip;
     },
