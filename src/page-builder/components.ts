@@ -58,6 +58,8 @@ import {
   readInstance,
   slotLabel,
   slotChipState,
+  templateStructure,
+  type TemplateStructureItem,
   slotChange,
   slotStates,
   slotTextEdit,
@@ -145,6 +147,7 @@ export interface ComponentDeps {
   previewPage: () => string | undefined;
   /** Shows the edit bar again for the current selection (once the variant reader has loaded). */
   refreshBar: () => void;
+  refreshStructure?: () => void;
   /**
    * Records `path`'s undo steps in `owner`'s history from its next opening
    * (Edit component mode: the template's edits are steps of the page it was
@@ -455,10 +458,7 @@ export function createComponentTools(deps: ComponentDeps) {
     }
     // In Edit component mode, a part of the template edited: its slot chip after its name.
     const moded = editMode?.active();
-    const template = moded && selection.path === moded.templatePath && selection.node?.length ? deps.sources()[moded.templatePath] : undefined;
-    let chip = template === undefined ? undefined : slotChipState(template, selection.node!, (tag) => templateOf(tag)?.source);
-    const kept = chip?.state === "fixed" ? keptNames.get(keptKey(moded!.templatePath, template!, selection.node!)) : undefined;
-    if (chip && kept) chip = { ...chip, name: kept };
+    const chip = moded && selection.path === moded.templatePath && selection.node?.length ? templateChip(selection.node) : undefined;
     if (chip) out.chip = editMode!.chip(selection.node!, chip);
     return out;
   }
@@ -659,6 +659,7 @@ export function createComponentTools(deps: ComponentDeps) {
       modeShare = undefined;
       if (share && entryShare === share) { entryShare = undefined; modeShare = share.release; }
       loaded.mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path }, notes);
+      deps.refreshStructure?.();
       renderBar();
       // The part is selected again in the framed instance when the selection is in another one (or none).
       const now = deps.selection();
@@ -702,6 +703,64 @@ export function createComponentTools(deps: ComponentDeps) {
   // as that change left it (Undo and Redo bring it back too). Keyed by template, source and part.
   const keptNames = new Map<string, string>();
   const keptKey = (template: string, source: string, node: readonly number[]) => JSON.stringify([template, source, node]);
+  // The template Structure last drew in the mode (refresh draws it again only when it changed).
+  let modeStructureKey = "";
+  /** One state rule for the label and Structure, including names retained while fixed. */
+  function templateChip(at: readonly number[]) {
+    const mode = editMode?.active();
+    const source = mode && deps.sources()[mode.templatePath];
+    if (!mode || source === undefined) return undefined;
+    const chip = slotChipState(source, at, tag => templateOf(tag)?.source);
+    const kept = chip?.state === "fixed" ? keptNames.get(keptKey(mode.templatePath, source, at)) : undefined;
+    return chip && kept ? { ...chip, name: kept } : chip;
+  }
+
+  /**
+   * Structure's rows for the page instance framed by the mode: its template's
+   * parts, and down the chain each opened nested instance's own, badges and
+   * "Open ›" only on the level edited.
+   */
+  function templateRows(path: string, at: readonly number[]) {
+    const mode = editMode?.active();
+    if (!mode || mode.path !== path || mode.node.join() !== at.join()) return undefined;
+    const sources = mode.chain.map((level) => deps.sources()[level.templatePath]);
+    if (sources.some((source) => source === undefined)) return undefined;
+    const rootOf = (source: string) => {
+      const roots = parseSource(source).filter(node => node.type === "element");
+      return roots.length === 1 && roots[0].name !== "slot" ? [0] : undefined;
+    };
+    const last = mode.chain.length - 1;
+    const levelRows = (k: number) => {
+      const templatePath = mode.chain[k].templatePath;
+      const mark = (rows: TemplateStructureItem[]): TemplateStructureItem[] => rows.map((row) => ({ ...row, path: templatePath,
+        chips: k === last ? row.chips : [], opens: k === last && isComponent(row.tag) && Boolean(templateOf(row.tag)), children: mark(row.children) }));
+      return mark(templateStructure(sources[k]!, tag => templateOf(tag)?.source));
+    };
+    const items = levelRows(0);
+    let level = items;
+    for (let k = 1; k <= last; k++) {
+      const find = (rows: TemplateStructureItem[]): TemplateStructureItem | undefined => {
+        for (const row of rows) { if (row.node.join() === mode.chain[k].node.join()) return row; const found = find(row.children); if (found) return found; }
+        return undefined;
+      };
+      const holder = find(level);
+      if (!holder) break;
+      holder.opens = false;
+      holder.opened = { path: mode.chain[k].templatePath, root: rootOf(sources[k]!), current: k === last };
+      holder.children = level = levelRows(k);
+    }
+    return { path: mode.templatePath, root: rootOf(sources[0]!), nested: last > 0, items,
+      badge: (node: readonly number[]) => {
+        const state = templateChip(node);
+        return state && editMode?.badge(node, state);
+      },
+      open: (node: readonly number[]) => {
+        const source = deps.sources()[mode.templatePath];
+        const tag = source === undefined ? undefined : locateNativeElementRange(source, [...node])?.tag.name;
+        if (tag) void editComponent(tag, undefined, { path: mode.templatePath, node });
+      } };
+  }
+
   function applyChip(event: Event) {
     const report = (event as CustomEvent<SlotChipReport>).detail;
     const mode = editMode?.active();
@@ -740,6 +799,7 @@ export function createComponentTools(deps: ComponentDeps) {
         }
       }
       deps.refreshBar();
+      deps.refreshStructure?.();
     }).catch((error: unknown) => {
       if (!current()) return;
       refuse(error instanceof Error ? error.message : "The slot could not be changed.");
@@ -769,6 +829,7 @@ export function createComponentTools(deps: ComponentDeps) {
   /** Ends the mode, if it is on; the instance it was on. */
   function leaveMode() {
     const was = editMode?.leave();
+    if (was) deps.refreshStructure?.();
     keptNames.clear();
     letGoLevels(0);
     modeShare?.();
@@ -780,7 +841,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!destroyed) window.addEventListener(chipEvent, applyChip);
     return editMode = createEditComponentMode({
       frame: (mode) => deps.preview()?.editComponent?.(mode),
-      changed: () => { barKey = ""; renderBar(); deps.refreshBar(); },
+      changed: () => { barKey = ""; renderBar(); deps.refreshBar(); deps.refreshStructure?.(); },
       back: (index) => { void navigateMode(index); },
     });
   }).catch((error: unknown) => { editModeLoad = undefined; throw error; });
@@ -1863,6 +1924,7 @@ export function createComponentTools(deps: ComponentDeps) {
       return { ...selection, path: at.path, node: [...at.node], tag: at.tag, host: undefined, selector: host.selector };
     },
     structure,
+    templateRows,
     controls,
     variantControls,
     /** The selection changed or the page re-rendered: the panel follows. */
@@ -1870,6 +1932,10 @@ export function createComponentTools(deps: ComponentDeps) {
     /** The open file or the sources changed: the canvas bar follows. */
     refresh() {
       renderBar();
+      // In the mode, Structure draws the template: a change to it (code, Undo, Redo) draws it again.
+      const mode = editMode?.active();
+      const key = mode ? JSON.stringify([mode.path, mode.node, mode.chain, mode.chain.map((level) => deps.sources()[level.templatePath])]) : "";
+      if (key !== modeStructureKey) { modeStructureKey = key; if (mode) deps.refreshStructure?.(); }
     },
     editComponent,
     newComponent,

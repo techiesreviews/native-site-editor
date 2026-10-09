@@ -1,7 +1,7 @@
 ---
 title: Edit component mode in Structure
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [44-edit-mode-slot-chip-label]
 builder: sol
@@ -19,3 +19,9 @@ Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §5: Structur
 ## Done when
 
 - Nightly spec: in the mode, the component's rows are framed in light and dark and carry badges matching the label chip; toggling or renaming a badge changes the label chip at once and applies the change to the template and every page.
+
+## Done (2026-10-10)
+
+- In Edit component mode the framed instance's Structure row lists its template's parts as the end result (`templateStructure` in `component-model.ts`, pure: slots resolved to their fallbacks at their source paths, text runs and headings as the runtime gives them, nested instances as leaf rows), inside one purple outline (`--component`, light and dark). Each part that is or can be a slot carries the label's own slot chip (`editMode.badge`, one `templateChip` state rule for both, kept names included): click toggles, double-click renames in place, mirrored with the label through `applyChip`. Rows select their template part; no page-only actions. Structure redraws on template, mode and level changes (`pageStructure.refresh`).
+- With slice 47: an opened nested card's rows show under its row, the outline moves round it, the outer levels stay as muted, inert rows; a nested instance row of the level edited has "Open ›". The runtime's structure report gives the page's real slot name while placeholders show (it read `ase-placeholder:…`, slice 41).
+- Built by Sol, fixed by Claude. Tests: `tests/template-structure.test.ts` (7); `native-structure-badges-actual.spec.ts` (@actual: rows, outline contrast light/dark, badges vs label, toggle, rename mirrored, Undo, code edit refresh, no `ase-placeholder` slot reported, nested card and back). `native-slot-chip-actual.spec.ts` drops the Show toggle's page count (ticket 14 amendment).

@@ -184,6 +184,18 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     noteList.replaceChildren(...notes.map((text) => node("li", "edit-mode__notes-item", text)));
   }
 
+  function makeChip(at: readonly number[], state: SlotChipState) {
+    if (!now) return undefined;
+    const template = now.chain.at(-1)!.templatePath;
+    const report = (detail: SlotChipReport) => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail, cancelable: detail.action === "rename" }));
+    const part = { template, node: [...at], chip: state };
+    return slotChip(state, {
+      onToggle: () => { report({ action: "toggle", ...part, node: [...at] }); },
+      onRename: name => report({ action: "rename", ...part, node: [...at], name }),
+      group: state.state === "fixed" ? undefined : JSON.stringify([template, state.slot]),
+    });
+  }
+
   return {
     /** Starts the mode on `target`, its placeholders showing, with `notes` to tell in the bar. */
     enter(target: EditComponentTarget, withNotes: readonly string[] = []) {
@@ -231,22 +243,17 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     },
     /** An operation refused its optimistic rename: draw the name from source again. */
     resetChip() { shownChip = undefined; },
+    /** A separate element for a Structure badge, sharing the label's reports and rename group. */
+    badge: makeChip,
     /** The slot chip of the template's part at `node`, for the edit bar label. */
     chip(at: readonly number[], state: SlotChipState) {
       if (!now) return undefined;
       const template = now.chain.at(-1)!.templatePath;
       const key = JSON.stringify([template, at, state]);
       if (shownChip?.key !== key) {
-        const report = (detail: SlotChipReport) => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail, cancelable: detail.action === "rename" }));
-        const part = { template, node: [...at], chip: state };
         shownChip = {
           key,
-          element: slotChip(state, {
-            onToggle: () => { report({ action: "toggle", ...part, node: [...at] }); },
-            onRename: (name) => report({ action: "rename", ...part, node: [...at], name }),
-            // Every chip of this slot (the label, its Structure badge) shows the name as typed.
-            group: state.state === "fixed" ? undefined : JSON.stringify([template, state.slot]),
-          }),
+          element: makeChip(at, state)!,
         };
       }
       return shownChip;

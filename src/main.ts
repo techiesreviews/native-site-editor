@@ -529,6 +529,7 @@ function mountWorkspace() {
     },
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
     componentSlots: (path, node) => componentTools?.structure(path, node),
+    templateRows: (path, node) => componentTools?.templateRows(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,
     pageMeta: nativePageMeta,
     onPageSettings: (path) => void openNativePageSettings(path),
@@ -675,6 +676,7 @@ function mountComponentTools() {
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
     refreshBar: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    refreshStructure: () => pageStructure?.refresh(),
     // Joins the template to the page's journal, as the stylesheet pane follows the page's; an operation's alias stays under it.
     shareHistory: (path, owner) => {
       const scope = draftScope();

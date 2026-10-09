@@ -20,6 +20,95 @@
 import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 import { itemKind } from "./card-grid";
 import { decodeHtmlEntities } from "./html-entities";
+import type { NativeStructureItem } from "../components/native-preview";
+
+export interface TemplateStructureItem extends NativeStructureItem {
+  children: TemplateStructureItem[];
+  /** Template paths accepted by slotChipState; a text-only slot uses its own path. */
+  chips: number[][];
+  /** Set by Edit component mode: the template file the row is in, when not the one edited. */
+  path?: string;
+  /** Set by Edit component mode: this nested instance is open; its rows are that level's. */
+  opened?: { path: string; root?: number[]; current: boolean };
+  /** Set by Edit component mode: a nested instance of the template edited, which opens. */
+  opens?: boolean;
+}
+
+/** The rendered fallbacks, with source paths preserved through invisible slot wrappers. */
+export function templateStructure(template: string, templateOf: TemplateOf = () => undefined): TemplateStructureItem[] {
+  const roots = elements(parseSource(template));
+  const paths = new Map<SourceElement, number[]>();
+  const index = (list: SourceElement[], parent: number[]) => list.forEach((el, i) => {
+    const path = [...parent, i]; paths.set(el, path); index(elements(el.children), path);
+  });
+  index(roots, []);
+  const inline = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
+  const run = /^(h[1-6]|p|li|button|blockquote|figcaption|dt|dd|summary|legend|caption|label|td|th|a|strong|em|b|i|small|cite|q|mark|code)$/;
+  const landmark = /^(section|article|main|header|footer|nav|aside)$/;
+  const text = (nodes: SourceNode[]): string => nodes.map(n => n.type === "text"
+    ? decodeHtmlEntities(template.slice(n.start, n.end)) : n.name === "br" ? " " : text(n.children)).join("");
+  const snippet = (value: string) => value.replace(/\s+/g, " ").trim().slice(0, 80);
+  const heading = (el: SourceElement): string => {
+    if (/^h[1-6]$/.test(el.name)) return "";
+    const find = (list: SourceElement[]): string => {
+      for (const child of list) {
+        if (/^h[1-6]$/.test(child.name)) return snippet(text(child.children));
+        if (landmark.test(child.name) || child.name.includes("-")) continue;
+        const found = find(elements(child.children)); if (found) return found;
+      }
+      return "";
+    };
+    if (el.name.includes("-")) {
+      const source = templateOf(el.name);
+      if (source !== undefined) {
+        // Inspect this template once; nested instances remain leaves.
+        const rows = templateStructure(source);
+        const first = (list: TemplateStructureItem[]): string => {
+          for (const row of list) { if (/^h[1-6]$/.test(row.tag)) return row.text; const found = first(row.children); if (found) return found; }
+          return "";
+        };
+        return first(rows);
+      }
+    }
+    return find(elements(el.children));
+  };
+  const seenSlots = new Set<string>();
+  const badge = (at: number[]): number[][] => {
+    const state = slotChipState(template, at, templateOf);
+    if (!state) return [];
+    if (state.state === "fixed") return [at];
+    const key = state.slot.join(".");
+    if (seenSlots.has(key)) return [];
+    seenSlots.add(key); return [at];
+  };
+  const visit = (list: SourceElement[], holder?: TemplateStructureItem): TemplateStructureItem[] => list.flatMap(el => {
+    const at = paths.get(el)!;
+    if (el.name === "style" || el.name === "script") return [];
+    if (el.name === "slot") {
+      if (elements(el.children).length) return visit(elements(el.children), holder);
+      if (holder) { holder.chips.push(...badge(at)); return []; }
+      return [{ tag: "slot", className: "", node: at, text: "", heading: "", slot: "", children: [], chips: badge(at) }];
+    }
+    const row: TemplateStructureItem = { tag: el.name, className: attribute(template, el, "class") ?? "",
+      node: at, text: snippet(text(el.children)), heading: heading(el), slot: "", children: [], chips: badge(at) };
+    // A nested instance is one row: the slots its content holds (`<card-note><slot name="note" slot="text">`) badge it.
+    if (el.name.includes("-")) {
+      for (const child of walk(el.children)) if (child.name === "slot") row.chips.push(...badge(paths.get(child)!));
+      return [row];
+    }
+    const descendants = [...walk(el.children)];
+    const isRun = descendants.length > 0 && descendants.every(child => inline.test(child.name) && attribute(template, child, "slot") === undefined)
+      && (run.test(el.name) || el.children.some(n => n.type === "text" && snippet(text([n]))));
+    if (isRun) {
+      for (const child of descendants) if (child.name === "slot") row.chips.push(...badge(paths.get(child)!));
+    } else row.children = visit(elements(el.children), row);
+    return [row];
+  });
+  function* walk(nodes: SourceNode[]): Generator<SourceElement> {
+    for (const el of elements(nodes)) { yield el; yield* walk(el.children); }
+  }
+  return roots.length === 1 && roots[0].name !== "slot" ? visit(elements(roots[0].children)) : visit(roots);
+}
 
 export interface RangeEdit {
   start: number;

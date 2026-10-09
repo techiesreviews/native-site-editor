@@ -10,6 +10,7 @@ import { elementIcon } from "./element-icons";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import type { FocusRequest, StructureEditing } from "./structure-editing";
 import "./page-structure.css";
+import type { TemplateStructureItem } from "../page-builder/component-model";
 import type { ComponentStructureModel } from "../page-builder/components";
 import type { DragPress } from "../page-builder/insert-drag";
 import type { StructureDropView, TreeRow } from "../page-builder/tree-drop";
@@ -30,7 +31,24 @@ import type { StructureDropView, TreeRow } from "../page-builder/tree-drop";
 
 export type PageMetaField = "title" | "description";
 
+/**
+ * Edit component mode's rows under the page's instance: the template edited
+ * (`path`), or the templates opened down to it, each row of an outer level
+ * carrying its own `path` and the opened instance's row its `opened` level.
+ */
+interface TemplateRows {
+  path: string;
+  root?: number[];
+  /** A nested component is open: the outline goes round its row, not the page instance's. */
+  nested?: boolean;
+  items: TemplateStructureItem[];
+  badge: (at: readonly number[]) => HTMLElement | undefined;
+  /** Opens the nested instance at `at` of the template edited ("Open ›"). */
+  open?: (at: readonly number[]) => void;
+}
+
 export interface PageStructureHandlers {
+  templateRows?: (path: string, at: readonly number[]) => TemplateRows | undefined;
   /** Source-guarded instance fields; synthetic slot rows never identify DOM nodes. */
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
@@ -468,24 +486,57 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return result;
   }
 
+  const templatePaths = new WeakMap<NativeStructureItem, string>();
+  const templateRoots = new WeakMap<NativeStructureItem, { path: string; node: number[] }>();
+  let rootAlias: { key: string; id: string } | undefined;
+  const templateKey = (path: string, at: number[]) => `@${path}:${key(at)}`;
+  const itemKey = (item: NativeStructureItem) => {
+    const path = templatePaths.get(item);
+    return path ? templateKey(path, item.node) : key(item.node);
+  };
+  let editingInstance: string | undefined;
+  // Rows of an outer level while a nested component is open: shown, not selectable.
+  const outerRows = new WeakSet<NativeStructureItem>();
+  // Opened rows unfolded once each time they open.
+  const unfoldedOpen = new Set<string>();
   let rowNameSeq = 0;
-  // `sealed`: inside a component instance, whose parts move with it.
-  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext, sealed = false): HTMLElement[] {
-    const id = key(item.node);
-    if (insideMain) inMain.add(id);
-    if (insideMain && !sealed) movable.add(id);
-    items.set(id, item);
+  // `sealed`: inside a component instance, whose parts move with it. `template`: Edit component
+  // mode's rows of the template shown (never the page's: no drags, drops or moves).
+  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext, sealed = false, template?: TemplateRows): HTMLElement[] {
+    const own = template && (item as TemplateStructureItem);
+    if (template) templatePaths.set(item, own?.path ?? template.path);
+    if (own && own.path !== undefined && own.path !== template!.path && !own.opened?.current) outerRows.add(item);
+    else outerRows.delete(item);
+    const id = itemKey(item);
+    if (insideMain && !template) inMain.add(id);
+    if (insideMain && !sealed && !template) movable.add(id);
+    if (!template) items.set(id, item);
     const el = node("div", "page-structure__row");
     el.setAttribute("role", "treeitem");
     el.setAttribute("aria-level", String(level));
     el.setAttribute("aria-selected", String(id === selected));
     el.dataset.node = id;
+    if (template) el.dataset.templatePath = templatePaths.get(item);
+    if (outerRows.has(item)) el.classList.add("page-structure__row--outer");
     el.tabIndex = -1;
     el.style.setProperty("--depth", String(level - 1));
     const toggle = node("span", "page-structure__toggle");
     toggle.setAttribute("aria-hidden", "true");
-    const { kind, text, component } = handlers.label(item);
-    const slotModel = structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
+    const name = handlers.label(item);
+    const { text, component } = name;
+    const kind = template && item.tag === "slot" ? "Empty" : name.kind;
+    if (template && item.tag === "slot") el.classList.add("page-structure__row--empty-slot");
+    const modeRows = !template && structure?.path ? handlers.templateRows?.(structure.path, item.node) : undefined;
+    // The instance's row stands for the root of the template it shows: the page's for the
+    // first level, an opened nested instance's for its own.
+    const opened = modeRows && !modeRows.nested ? { path: modeRows.path, root: modeRows.root, current: true } : own?.opened;
+    if (opened?.root) {
+      templateRoots.set(item, { path: opened.path, node: [...opened.root] });
+      if (opened.current) rootAlias = { key: templateKey(opened.path, opened.root), id };
+      el.dataset.templatePath = opened.path;
+    } else templateRoots.delete(item);
+    if (modeRows?.nested) outerRows.add(item);
+    const slotModel = !template && !modeRows && structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
     // A slot opened before its element existed (Show, or a defaulted slot's
     // first edit) settles on its first actual assigned root.
     if (slotContext && paintFresh !== false && openSlot && openSlot.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name
@@ -496,7 +547,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     const editing = !!slotContext && editable(slotContext.slot) && openSlot?.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name && openSlot.anchor === id;
     const attributes = !!slotModel && openAttributes === id;
-    const hasChildren = item.children.length > 0 || !!slotModel;
+    const children = modeRows?.items ?? item.children;
+    const hasChildren = children.length > 0 || !!slotModel;
     const label = node("span", "page-structure__label");
     const named = component;
     // A Button block (an <a class="btn">) takes the button icon, not the link one.
@@ -509,14 +561,16 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     label.append(kindName);
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
-    if (slotModel) {
+    if (slotModel || template || modeRows) {
       // The row is named by its kind and preview only; its action buttons keep their own names.
       kindName.id = `page-structure-kind-${++rowNameSeq}`;
       const parts = [kindName.id];
       const preview = label.querySelector<HTMLElement>(":scope > .page-structure__text");
       if (preview) { preview.id = `page-structure-text-${rowNameSeq}`; parts.push(preview.id); }
       el.setAttribute("aria-labelledby", parts.join(" "));
-      el.classList.add("page-structure__row--instance");
+      if (component) el.classList.add("page-structure__row--instance");
+    }
+    if (slotModel) {
       const attributesAction = iconAction("Attributes", "content", () => {
           openSlot = undefined;
           openAttributes = openAttributes === id ? undefined : id;
@@ -538,6 +592,18 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       ]);
     }
 
+    if (own) {
+      for (const at of own.chips) {
+        const chip = template!.badge(at);
+        if (chip) el.append(chip);
+      }
+      if (own.opens && template!.open) {
+        const open = button("Open ›", () => template!.open!(item.node), "page-structure__action page-structure__action--open");
+        open.setAttribute("aria-label", `Open ${kind} component`);
+        open.title = `Open ${kind} component`;
+        addRowActions(el, [open]);
+      }
+    }
     if (slotContext) {
       el.classList.add("page-structure__row--slot");
       const { slot } = slotContext;
@@ -553,7 +619,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;
-    el.addEventListener("pointerdown", (event) => { if (inEditor(event.target)) return; notePress(event, el); pressRow(event, item, el); });
+    el.addEventListener("pointerdown", (event) => { if (inEditor(event.target)) return; notePress(event, el); if (!template && !modeRows) pressRow(event, item, el); });
     el.addEventListener("click", (event) => {
       if (rowDrag?.justDragged()) return;
       if (inEditor(event.target)) return;
@@ -585,10 +651,27 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (inline) inline.id = `structure-inline-${id}`;
     // A row with Attributes open and its panel read as one attached block.
     if (attributes) el.classList.add("has-panel");
-    if (!hasChildren) return inline ? [el, inline] : [el];
+    const outlined = modeRows && !modeRows.nested || own?.opened?.current;
+    const framed = (parts: HTMLElement[]) => {
+      if (!outlined) return parts;
+      const outline = node("div", "page-structure__component-outline");
+      outline.append(...parts); return [outline];
+    };
+    if (!hasChildren) return framed(inline ? [el, inline] : [el]);
     el.setAttribute("aria-expanded", String(!isFolded(id)));
     const group = node("div", "page-structure__group");
     group.setAttribute("role", "group");
+    if (modeRows) {
+      if (!editingInstance || editingInstance !== id) foldState.set(id, false);
+      editingInstance = id;
+      el.classList.add("page-structure__row--editing-component");
+      el.setAttribute("aria-expanded", String(!isFolded(id)));
+    }
+    if (own?.opened) {
+      if (!unfoldedOpen.has(id)) foldState.set(id, false);
+      unfoldedOpen.add(id);
+      el.setAttribute("aria-expanded", String(!isFolded(id)));
+    }
     group.hidden = isFolded(id);
     const childInMain = insideMain || item.tag === "main";
     if (inline) group.append(inline);
@@ -605,18 +688,18 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // back, before the first child of a later slot (fillInsertEdit's order).
     const missing = slotModel ? slotModel.slots.filter(slot => !slot.assignedNodes.length) : [];
     const slotOrder = (name: string) => { const at = slotModel!.slots.findIndex(slot => slot.name === name); return at < 0 ? slotModel!.slots.length : at; };
-    for (const child of item.children) {
+    for (const child of children) {
       while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
       const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
       const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
-      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, sealed || Boolean(component)));
+      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, sealed || Boolean(component), modeRows ?? template));
     }
     for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1));
-    return [el, group];
+    return framed([el, group]);
   }
 
   function fold(item: NativeStructureItem, el: HTMLElement, closed: boolean) {
-    const id = key(item.node);
+    const id = itemKey(item);
     foldState.set(id, closed);
     el.setAttribute("aria-expanded", String(!closed));
     const group = el.nextElementSibling;
@@ -637,9 +720,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 
   function choose(item: NativeStructureItem) {
     if (!structure?.path) return;
-    setSelected(key(item.node));
-    rows.get(key(item.node))?.focus();
-    handlers.onSelect(structure.path, item.node);
+    // An outer level's row only shows where the opened component sits: the breadcrumb goes back.
+    if (outerRows.has(item)) { rows.get(itemKey(item))?.focus(); return; }
+    setSelected(itemKey(item));
+    rows.get(itemKey(item))?.focus();
+    const root = templateRoots.get(item);
+    handlers.onSelect(root?.path ?? templatePaths.get(item) ?? structure.path, root?.node ?? item.node);
   }
 
   // Rows that are on show, in tree order, for the arrow keys.
@@ -647,6 +733,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")].filter((el) => !el.closest("[role='group'][hidden]"));
 
   function onKey(event: KeyboardEvent, item: NativeStructureItem, el: HTMLElement) {
+    if ((templatePaths.has(item) || templateRoots.has(item)) && event.altKey) { event.preventDefault(); event.stopPropagation(); return; }
     const list = visibleRows();
     const at = list.indexOf(el);
     const focusRow = (target: HTMLElement | undefined) => {
@@ -682,12 +769,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       case "End": focusRow(list[list.length - 1]); break;
       case "ArrowRight":
         if (!el.hasAttribute("aria-expanded")) return;
-        if (isFolded(key(item.node))) fold(item, el, false);
+        if (isFolded(itemKey(item))) fold(item, el, false);
         else focusRow(list[at + 1]);
         break;
       case "ArrowLeft":
-        if (el.hasAttribute("aria-expanded") && !isFolded(key(item.node))) fold(item, el, true);
-        else focusRow(rows.get(key(item.node.slice(0, -1))));
+        if (el.hasAttribute("aria-expanded") && !isFolded(itemKey(item))) fold(item, el, true);
+        else {
+          const parent = el.parentElement?.closest("[role='group']")?.previousElementSibling;
+          focusRow(parent instanceof HTMLElement ? parent : undefined);
+        }
         break;
       case "Enter":
       case " ":
@@ -704,7 +794,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     selected = id;
     // Formatting inside a line of text has no row of its own: its line's row is marked.
     let shown = id;
-    while (shown !== undefined && !rows.has(shown)) shown = shown.includes(".") ? shown.slice(0, shown.lastIndexOf(".")) : undefined;
+    while (shown !== undefined && !rows.has(shown)) {
+      if (rootAlias?.key === shown) shown = rootAlias.id;
+      else shown = shown.includes(".") ? shown.slice(0, shown.lastIndexOf(".")) : undefined;
+    }
     let current: HTMLElement | undefined;
     for (const [rowId, el] of rows) {
       const on = rowId === shown;
@@ -727,7 +820,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const chosen = row.getAttribute("aria-selected") === "true" || row.dataset.slotRow !== undefined;
     press = event.button === 0 ? { row, x: event.clientX, y: event.clientY, focused: document.activeElement === row && chosen } : undefined;
   }
-  const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(".page-structure__edit-field, .page-structure__done"));
+  const inEditor = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(".page-structure__edit-field, .page-structure__done, .slot-chip"));
   function secondClick(event: MouseEvent, row: HTMLElement, label: HTMLElement) {
     const pressed = press; press = undefined;
     if (!pressed || pressed.row !== row || !pressed.focused) return false;
@@ -774,13 +867,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     rows.clear();
     items.clear();
     movable.clear();
+    rootAlias = undefined;
     slotRows.clear();
     inMain.clear();
     const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
     const previousFocus = tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.slotRow : undefined;
     // A row's button with focus (a badge, an action) is found again on its redrawn row.
     const active = document.activeElement;
-    const focusedControl = active instanceof HTMLButtonElement && tree.contains(active) ? (() => {
+    const focusedControl = active instanceof HTMLElement && active.matches("button, .slot-chip[role='button']") && tree.contains(active) ? (() => {
       const owner = active.closest<HTMLElement>("[role='treeitem']");
       const id = owner?.dataset.node ?? owner?.dataset.slotRow;
       return id === undefined ? undefined : { id, name: active.getAttribute("aria-label") ?? active.textContent ?? "" };
@@ -806,14 +900,21 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     keepPending = false;
     editorWaiting = false;
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
+    const pendingTemplate = pendingSelection && [...rows.values()].some(row => row.dataset.templatePath === pendingSelection!.path);
+    if (pendingTemplate && pendingSelection) {
+      selected = templateKey(pendingSelection.path, pendingSelection.node);
+      pendingSelection = undefined;
+    }
+    if (!tree.querySelector(".page-structure__component-outline")) { editingInstance = undefined; unfoldedOpen.clear(); }
     // An editor whose anchor went (Hide, Undo, Redo) or a Show that found
     // nothing to anchor to is forgotten, so no later render reopens it.
     // A paint proven stale proves nothing, and a pending Show waits for a fresh one.
     if (openSlot && !editorWaiting && !keepPending && paintFresh !== false && !tree.querySelector("[data-slot-editor]")) { openSlot = undefined; }
     leftEditing = undefined;
-    setSelected(selected);
+    const currentSelection = setSelected(selected);
+    if (pendingTemplate && currentSelection) { reveal(currentSelection); currentSelection.scrollIntoView({ block: "nearest" }); }
     if (focusedControl && !tree.contains(document.activeElement)) {
-      const again = [...(rowElement(focusedControl.id)?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+      const again = [...(rowElement(focusedControl.id)?.querySelectorAll<HTMLElement>("button, .slot-chip[role='button']") ?? [])]
         .find(control => (control.getAttribute("aria-label") ?? control.textContent ?? "") === focusedControl.name);
       again?.focus();
     }
@@ -944,6 +1045,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (path && pending) {
         pendingSelection = undefined;
         if (pending.path === path) selected = key(pending.node);
+        else if (path === previousStructure?.path) pendingSelection = pending;
       }
       // While a row's text is being typed, the paint of exactly the source that
       // typing made (text alone changed) is kept but not drawn: the tree stays
@@ -967,7 +1069,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     /** Mark the row of the element selected in the preview, and show it. */
     select(target: { path: string; node: number[] } | undefined) {
       pendingSelection = target && target.path !== structure?.path ? { path: target.path, node: [...target.node] } : undefined;
-      const id = target && structure && target.path === structure.path ? key(target.node) : undefined;
+      const template = target && [...rows.values()].some(row => row.dataset.templatePath === target.path);
+      if (template) pendingSelection = undefined;
+      const id = target && template ? templateKey(target.path, target.node) : target && structure && target.path === structure.path ? key(target.node) : undefined;
       if (id === selected) return;
       // Another element chosen (on the page or here): a row edit is kept and ends. The
       // edited element, its instance (its own writes select that) or what is in it do not count.
@@ -979,6 +1083,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     },
     /** What a block's drag draws in the tree and measures there (tree-drop.ts). */
     dropView: () => dropView,
+    /** Source or mode changed without a new runtime structure report. */
+    refresh() { rendered = ""; render(); },
     /** The page changed under the fields: show its title and description again. */
     refreshMeta() {
       if (structure?.path) renderMeta(structure.path);

@@ -1571,11 +1571,17 @@
         node: path,
         text: textWithBreaks(child).replace(/\s+/g, " ").trim().slice(0, 80),
         heading: heading ? slotAwareText(heading).replace(/\s+/g, " ").trim().slice(0, 80) : "",
-        slot: child.getAttribute("slot") || "",
+        slot: pageSlot(child),
         children: textRun(child) ? [] : structureItems(child, depth + 1)
       });
     }
     return out;
+  }
+  // The slot the page assigns an element to: with placeholders showing (Edit
+  // component mode), the name it had before toPlaceholders sent it to none.
+  function pageSlot(el) {
+    var slot = el.getAttribute("slot") || "";
+    return slot.indexOf(PLACEHOLDER_SLOT + ":") === 0 ? slot.slice(PLACEHOLDER_SLOT.length + 1) : slot;
   }
   // A line of text with inline formatting in it (a paragraph with a bold
   // word or a link): one row, summarised by all its text, with no rows for
