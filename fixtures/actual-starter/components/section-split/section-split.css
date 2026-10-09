@@ -87,6 +87,46 @@ slot[name="secondary"] a:hover,
   filter: none;
 }
 
+/* Reverse the columns only while they sit side by side (the complement of
+   the max-width: 720px query below). */
+@media (width > 720px) {
+  :host([data-layout="content-left"]) .content {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  :host([data-layout="content-left"]) .media {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+:host([data-layout="centered"]) section {
+  grid-template-columns: 1fr;
+}
+
+/* The image keeps the text's measure, so it doesn't fill the whole band. */
+:host([data-layout="centered"]) .media,
+:host([data-layout="centered"]) .content {
+  width: 100%;
+}
+
+:host([data-layout="centered"]) .media {
+  max-width: var(--reading-width);
+  margin-inline: auto;
+}
+
+:host([data-layout="centered"]) .content {
+  align-items: center;
+  max-width: var(--reading-width);
+  margin-inline: auto;
+  text-align: center;
+}
+
+:host([data-layout="centered"]) .actions {
+  justify-content: center;
+}
+
 @media (max-width: 720px) {
   section {
     grid-template-columns: 1fr;

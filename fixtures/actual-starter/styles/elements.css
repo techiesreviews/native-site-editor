@@ -39,6 +39,16 @@
     color: var(--accent);
   }
 
+  /* A whole-title link keeps the title's look, even inside a list item. */
+  :is(h1, h2, h3, h4, h5, h6, [slot="title"]) > a:only-child {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :is(h1, h2, h3, h4, h5, h6, [slot="title"]) > a:only-child:hover {
+    text-decoration: underline;
+  }
+
   a:focus-visible,
   button:focus-visible {
     outline: 2px solid var(--accent);

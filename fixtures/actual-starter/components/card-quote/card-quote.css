@@ -1,0 +1,33 @@
+/* A quote card: a title and the quote, no image or link slot. Fills its grid
+   cell like card-project and bounds a stretched title link. */
+:host {
+  display: block;
+  position: relative;
+}
+
+article {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  padding: var(--space-l);
+  border: 1px solid var(--line);
+  border-inline-start: var(--space-3xs) solid var(--accent);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+}
+
+h3 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.3;
+}
+
+.body {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-2xl);
+  font-style: italic;
+  line-height: 1.5;
+}

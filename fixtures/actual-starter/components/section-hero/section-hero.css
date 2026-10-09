@@ -74,6 +74,15 @@ slot[name="secondary"] a:hover,
   filter: none;
 }
 
+:host([data-layout="centered"]) section {
+  align-items: center;
+  text-align: center;
+}
+
+:host([data-layout="centered"]) .actions {
+  justify-content: center;
+}
+
 @media (max-width: 720px) {
   section {
     padding-block: var(--space-xl);

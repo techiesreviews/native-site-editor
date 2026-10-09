@@ -17,23 +17,6 @@ header {
   border-bottom: 1px solid var(--line);
 }
 
-/* Off screen until it takes keyboard focus. It points at <main id="main">. */
-.skip {
-  position: absolute;
-  top: var(--space-2xs);
-  left: var(--space-2xs);
-  padding: var(--space-2xs) var(--space-s);
-  border-radius: var(--radius-s);
-  background: var(--ink);
-  color: var(--surface);
-  font-weight: 600;
-  transform: translateY(-200%);
-}
-
-.skip:focus {
-  transform: none;
-}
-
 .brand {
   font-weight: 700;
   font-size: var(--text-l);

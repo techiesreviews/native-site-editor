@@ -1,7 +1,8 @@
 /* Fills its grid cell, so every card in a row is as tall as the tallest and
-   the link paragraph lines up along the bottom. */
+   the link paragraph lines up along the bottom. Bounds a stretched title link. */
 :host {
   display: block;
+  position: relative;
 }
 
 article {
@@ -14,6 +15,16 @@ article {
   border-radius: var(--radius-l);
   background: var(--surface);
   border: 1px solid var(--line);
+}
+
+/* A thicker accent edge without changing the card's size or content measure. */
+:host([data-featured]) article {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+:host([data-layout="centered"]) article {
+  text-align: center;
 }
 
 h3 {
@@ -40,6 +51,9 @@ p {
   font-weight: 600;
 }
 
+/* Keep the action link clickable above a stretched title link. */
 .actions a {
+  position: relative;
+  z-index: 1;
   color: var(--accent);
 }

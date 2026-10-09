@@ -144,12 +144,9 @@ function markCurrentPage(root) {
 // - An element that holds slots, has no text of its own and whose slots all
 //   show nothing is hidden too: a wrapper round two unfilled buttons goes.
 function hideEmpty(root, section) {
-  const slots = new Map();
-  for (const slot of root.querySelectorAll("slot")) if (!slots.has(slot.name)) slots.set(slot.name, slot);
-
   // The page filled the slot (its fallback does not count).
   const filled = (slot) => Boolean(slot) && slot.assignedNodes().length > 0 && slot.assignedNodes({ flatten: true }).some(isContent);
-  const unmet = (slot) => section && [...root.host.childNodes].some(isContent) && !filled(slots.get(slot.name));
+  const unmet = (slot) => Boolean(section) && [...root.host.childNodes].some(isContent) && !filled(slot);
   const showsSomething = (slot) => filled(slot) || (!unmet(slot) && [...slot.childNodes].some(isContent));
   const ownText = (el) =>
     [...el.childNodes].some((node) =>

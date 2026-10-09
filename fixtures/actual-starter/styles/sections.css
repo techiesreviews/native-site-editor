@@ -10,6 +10,22 @@
     color: var(--muted);
   }
 
+  /* A link styled as a button, including inside a .flow block. */
+  .btn {
+    display: inline-block;
+    padding: var(--space-xs) var(--space-m);
+    border: 2px solid var(--accent);
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .btn:hover {
+    filter: brightness(0.92);
+  }
+
   /* A row of buttons: the first link is the main action, any after it are
      outlined. Used under the home hero. */
   .cta {

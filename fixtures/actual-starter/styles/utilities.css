@@ -1,8 +1,29 @@
-/* Text sizes the editor's Text size control offers. Each class sets one step
-   of the type scale in tokens.css; the editor writes the class on the
-   element. The utilities layer comes last, so a class wins over the
-   element, layout and section styles. */
+/* Classes that win over the element, layout and section styles: the
+   utilities layer comes last. The skip link every page carries, then the
+   text sizes the editor's Text size control offers. Each text class sets one
+   step of the type scale in tokens.css; the editor writes the class on the
+   element. */
 @layer utilities {
+  /* Each page's "Skip to content" link, right before <site-header>. Off
+     screen until it takes keyboard focus, then above the sticky header. It
+     points at <main id="main">. */
+  .skip {
+    position: absolute;
+    z-index: 3;
+    top: var(--space-2xs);
+    left: var(--space-2xs);
+    padding: var(--space-2xs) var(--space-s);
+    border-radius: var(--radius-s);
+    background: var(--ink);
+    color: var(--surface);
+    font-weight: 600;
+    transform: translateY(-200%);
+  }
+
+  .skip:focus {
+    transform: none;
+  }
+
   .text-s { font-size: var(--text-s); }
   .text-m { font-size: var(--text-m); }
   .text-l { font-size: var(--text-l); }

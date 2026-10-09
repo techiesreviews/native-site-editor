@@ -2,7 +2,7 @@
 
 This repository is a static website. The repository root is the site root, there is no build, and every file runs as it is. Keep it that way: no bundler, no `package.json`, no generated files. Check changes by serving the root (`python3 -m http.server`, then http://localhost:8000/) and looking at the page.
 
-When editing through Native Site Editor's MCP server, the editor applies the same layout; read its `native-site://conventions` resource too.
+When editing through Native Site Editor's MCP server, the editor applies the same layout; read its `native-site://conventions` resource too. The Components chapter below is copied from those conventions; where this site's own notes contradict how components work, the conventions win.
 
 ## Layout
 
@@ -43,6 +43,7 @@ Every page is a full document. Copy an existing page and change its head and `<m
   <script type="module" src="/components/components.js"></script>
 </head>
 <body>
+  <a class="skip" href="#main">Skip to content</a>
   <site-header></site-header>
   <main class="page" id="main">
     …sections…
@@ -54,53 +55,131 @@ Every page is a full document. Copy an existing page and change its head and `<m
 
 - The `<title>` is the page title followed by ` · Larkspur Studio`; `og:title` repeats it. `<meta name="description">` and `og:description` match. `canonical` and `og:url` are the site URL plus the page's path; `404.html` has neither. The site is kept out of search results (`<meta name="robots" content="noindex">` on every page) because this is a test domain.
 - JSON-LD (the organization and the website) is on the home page only.
-- `<main>` keeps `id="main"`: the header's "Skip to content" link points there.
-- Sections written straight into a page are `<section>` elements with shared classes: `hero flow`, `prose flow`, `contact flow` (see `styles/sections.css`).
+- `<main>` keeps `id="main"`: each page carries its "Skip to content" link right before `<site-header>`, and the link points there. Its style is in the shared CSS (`styles/utilities.css`).
+- Sections written straight into a page are `<section>` elements with shared classes: `hero flow`, `prose flow`, `contact flow` (see `styles/sections.css`). Inside them, `.btn` styles a link as a button: `<a class="btn" href="…">Label</a>`.
 
 To add a page at `/services/`: create `services/index.html` from a copy of `about/index.html`, change the title, description, canonical, `og:*` URL and text, then link to it (for the main navigation, edit `components/site-header/site-header.html` and `site-footer.html`; every page picks it up).
 
 ## Components
+A component is a custom element. **A new component is just its files**: its template, `components/<tag>/<tag>.html`, and, when it has styles of its own, the sibling `components/<tag>/<tag>.css`. Nothing is registered: the loader finds a component by its tag, on the live site as in the editor's preview, so neither `components.js` nor `site.css` keeps a list of tags. (The editor also reads a flat `components/<tag>.html`, but the loader looks only in the tag's folder.) The tag is lowercase with a hyphen and named by part: `section-…` for a page section, `card-…` for a card or other repeated item, `site-…` for the header and footer, `block-…` for anything else.
 
-A component is a custom element: a template `components/<tag>/<tag>.html` (shadow DOM markup with `<slot name="…">` for what a page fills) and a stylesheet beside it. Tags are lowercase with a dash and named *part*-*name*: `section-` for page sections, `card-` for cards, `site-` for the header and footer. A page uses one as a tag and fills its slots with whole elements:
-
+### Using a component
+The template is shadow DOM markup; each `<slot name="…">` marks a part the page fills. A page uses the tag and fills each slot with one whole element carrying the `slot` attribute; what it holds without a `slot` attribute fills the unnamed `<slot>`:
 ```html
 <section-hero>
-  <p slot="eyebrow" class="eyebrow">Larkspur Studio</p>
+  <p slot="eyebrow" class="eyebrow">Studio name</p>
   <h1 slot="title">A short, clear headline.</h1>
   <p slot="lead" class="lead">Who this is for and what they get.</p>
   <a slot="primary" href="/about/#contact">Get in touch</a>
 </section-hero>
 ```
+- Editing a component's template or CSS changes every page that uses it; what a page slots in belongs to that page.
+- The header and footer are components with no slots: their nav links live in the template, so changing the nav is one edit. Each page puts the skip link, `<a class="skip" href="#main">Skip to content</a>`, before `<site-header>` as a plain link, so it works without JavaScript; its style lives in the shared CSS, not the header's.
+- Components can use other components.
 
 ### The loader
+`components/components.js` is the site's own loader, a dependency-free ES module every page loads. It keeps no list of tags: it finds the custom elements that are not defined yet (in the page, in what scripts add later and in each template it renders), fetches each tag's template, `components/<tag>/<tag>.html`, and its stylesheet, `components/<tag>/<tag>.css` when there is one, once, and defines the element. Every instance gets an open shadow root with, in order: the page's stylesheets (each `<link rel="stylesheet">` in its head), the component's CSS with the `::slotted()` twins added, and the template. It hides optional parts (below) and sets `aria-current="page"` on links in the shadow root that point at the current page. Until a component is defined, `styles/site.css` hides it (one `:not(:defined)` rule that covers every component, with no list of tags, under `@media (scripting: enabled)`), so nothing flashes unstyled and nothing is hidden with JavaScript off; a tag whose template cannot be loaded is left undefined with a console warning and marked `data-unloaded`, which shows its content as it is.
 
-`components/components.js` is a dependency-free ES module every page loads. There is no list of tags: it looks for custom elements that are not defined yet (tags with a dash) in the page as it loads, in whatever other scripts add later, and in each template it renders, so components can use components. For each new tag it fetches `components/<tag>/<tag>.html` and its `.css` (optional: a missing one means no styles) once and defines the element. Each instance gets an open shadow root with, in order:
+### Slots
+- Each slot wraps one whole element, not a slot inside the element: `<slot name="title"><h2>Headline</h2></slot>`, not `<h2><slot name="title">Headline</slot></h2>`. The page's copy is the element itself, `<h2 slot="title">Headline</h2>`, so the page source shows real elements and a part the user removes from a page stays gone.
+- What becomes a slot (the editor's Make component follows the same rule; write templates by hand the same way):
+  - **Text:** each text element (a heading, `p`, `blockquote`, `figcaption`, an `li` outside a list, …) is one slot. Inline `a`, `strong`, `em` and `br` stay inside it as rich text.
+  - **Links:** a link is a slot of its own only when it stands alone (a button link), not when it sits in a text element.
+  - **Images:** every `<img>` and `<picture>`, whatever its alt text. Inline `<svg>` icons and CSS backgrounds stay fixed.
+  - **Lists:** a `<ul>` or `<ol>` is one slot, `list`, edited as a rich list.
+  - **A component inside it:** a nested instance is one whole slot (`<slot name="quote"><block-quote></block-quote></slot>`), so each page owns that instance and fills its slots. A slot holding `card-…` instances is an items slot instead (below).
+  - **Repeated items** go in an items slot (below).
+  - **Fixed:** what is the same on every page stays in the template around the slots: wrappers (`<div class="actions">`), icons, decoration.
+- Names come from the role: the first heading is `title`, a paragraph `text`, then `image`, `link` and `list`, numbered on repeats (`text-2`). When parts share a role, each one's own class tells them apart (`<p class="eyebrow">` and `<p class="lead">` give `eyebrow` and `lead`).
+- Give every slot a fallback of the element it takes: the editor reads what a slot holds (text, a link, an image or other content) from it. Put classes on the fallback element (`<p class="lead">`) so the page's copy keeps them.
+- Optional parts need no marker. In a section component that the page fills at all, each slot the page leaves out is hidden with its fallback; a bare tag (`<section-hero></section-hero>`) shows every fallback. Other components show a missing slot's fallback. An element that holds slots, has no text of its own and whose slots all show nothing (a row of buttons) is hidden too.
 
-1. the page's stylesheets (every `<link rel="stylesheet">` in `<head>`), so tokens and shared rules apply inside components;
-2. the component's CSS in a `<style>`, with a `::slotted()` twin added to each selector: `h1 { … }` becomes `h1, ::slotted(h1) { … }` and `.actions a` also `.actions ::slotted(a)`. So write component CSS **without** `::slotted()`; one rule styles the template's fallback and the page's slotted element alike. `:host` rules and selectors that already use `::slotted()` are left as they are;
-3. the template.
+### Cards and repeated items
+- A repeated item (a card in a grid, a step, a quote in a row) is a component of its own, `card-…`, so every item has the same slots. The section holds the items in an **items slot**: the unnamed slot, or a slot whose fallback is `card-…` instances. Its fallback is one instance of the card, and the page's items are instances of it, each filling its own slots:
+  ```html
+  <section>
+    <slot name="title"><h2>Recent work</h2></slot>
+    <div class="cards">
+      <slot><card-project></card-project></slot>
+    </div>
+  </section>
+  ```
+  ```html
+  <section-work>
+    <h2 slot="title">Recent work</h2>
+    <card-project>
+      <h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>
+      <p slot="body" class="body">A one-page site with a menu the owners change themselves.</p>
+    </card-project>
+    <card-project>…</card-project>
+  </section-work>
+  ```
+- The editor's Add card adds a fresh instance of the items slot's card component, from no items up, and other blocks can be dropped into an items slot too. A named slot is an items slot only when its fallback is `card-…` instances, so name only cards `card-…`.
+- A second group of items in one component gets a named items slot (`items-2`, or a name for what it holds, `services`), and its items carry that name: `<card-service slot="services">`.
+- **Card links.** A card links to its page through a link slot (`<slot name="link"><a href="/work/">Read more</a></slot>`), or through its title: the title's whole content is one link (`<h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>`), and the site's shared card link rule stretches that link over the whole card, in a `.cards` grid and in a component's items slot. It lives in the shared CSS because component CSS cannot reach a link inside slotted content (`::slotted()` reaches only the slotted element). Card components set `:host { position: relative; }` to bound it; other links in a card take `position: relative; z-index: 1` to stay clickable. There is no `stretched` class. The starter's rules in `styles/layout.css`:
+  ```css
+  .cards > * { position: relative; }
+  .cards > * :is(h2, h3, h4, [slot="title"]) > a:only-child::after,
+  :not(main, body, section, div) > * > [slot="title"] > a:only-child::after { content: ""; position: absolute; inset: 0; }
+  .cards > * a:not(:is(h2, h3, h4, [slot="title"]) > a:only-child) { position: relative; z-index: 1; }
+  :not(main, body, section, div) > :has(> [slot="title"] > a:only-child) a:not([slot="title"] > a:only-child) { position: relative; z-index: 1; }
+  ```
+- A card that is one link around everything (`<a class="card" href="…">…</a>`) becomes a card component without the wrapping link: its image and texts become slots and its title carries the link, as above. A link around no text at all is one whole slot.
 
-It also:
+### Variants
+- A variant is a `data-*` attribute on an instance that CSS styles: `<section-split data-layout="image-left">`. Leaving it off gives the default look, so write the default look without the attribute and a rule for each other value; choosing the default in the editor removes the attribute.
+- In the component's CSS, select it on the host: `:host([data-layout="image-left"]) { … }`, also inside `@media` and `@container`, and nested either way: `:host([data-layout="image-left"]) { .media { order: 2; } }` or `.media { :host([data-layout="image-left"]) & { order: 2; } }`. Never `:host[data-layout="…"]` or `:host { &[data-layout="…"] { … } }`: browsers never match them.
+- A yes/no variant is styled by its presence (`:host([data-reverse])`) or by `"true"`/`"false"`, and written bare on the instance: `<section-split data-reverse>`.
+- Values are `=` matches (`[data-layout="centered"]`); other attribute operators make no variant. The editor reads the values from the CSS and labels them from the value (`image-left` reads "Image left", `data-layout` reads "Layout"), so no comments or annotations are needed. A value no rule knows stays on the page as it is.
+- The site's shared CSS can add variants too: a rule naming the tag (`section-hero[data-layout="centered"]`, or nested `section-hero { &[data-layout="centered"] { … } }`) adds one to that component; `:host([data-x="v"])` in a shared stylesheet reaches every component through the loader; and a rule on the bare attribute (`[data-x="v"]`) is offered on every component (except `data-tone`, below).
+- Suggested names, so components share them: `data-layout` (`content-left`, `image-left`, `centered`) and `data-tone` (below). Any other `data-*` name works. Leave `data-empty`, `data-unloaded` and `data-native-…` to the loader and the editor. An attribute the site's own scripts set (`data-open`) is state: the editor does not offer it as a variant when it is styled in the component's own CSS.
+- Picking a variant is changing one attribute on the instance in the page (edit_file through the editor).
 
-- hides optional parts: in a section component (template is one `<section>`) that the page fills at all, a slot the page does not fill is hidden with its fallback, while a bare tag shows every fallback. An element that holds slots, has no text of its own and whose slots all show nothing is hidden too (an empty button row, `card-project`'s link paragraph). It recomputes on `slotchange`;
-- sets `aria-current="page"` on links in the shadow root that point at the current page (the header's nav styles it); links with a `#` are left out, so the nav's Work link (`/#work`) is not marked;
-- scrolls again to the target of a link like `/#work` once the page's components have loaded (the browser's own scroll happens before they grow), unless the reader has scrolled.
+### Tones
+Tones work this way where the site's CSS defines them (look for `[data-tone="…"]` rules in the shared CSS first); a site without them has none, so add them before using `data-tone`.
+- `data-tone` colours a page band: a section component, a plain `<section>`, the header or the footer. Cards, buttons and everything else inside a band follow their band; there is no tone inside a toned band.
+- Its values are `light` (the default: no attribute), `dark`, `brand` and `accent`.
+- The tone rules live once, in the site's shared CSS, as plain `[data-tone="…"]` rules (never in a component's CSS), so a tone means the same on every band; written by hand, they work on any element.
+- Tone rules should keep text readable (WCAG AA) whatever the brand colour:
+  - `light` and `dark` set `color-scheme`, so the site's colour roles flip.
+  - `brand` and `accent` take their surface from `--brand` with relative colour syntax: `brand` is the brand colour with its OKLCH lightness moved out of the middle band (to at most 0.50 or at least 0.72, hue and chroma kept); `accent` is a soft, light, low-chroma tint of it.
+  - Text is `contrast-color()` of the surface under `@supports`, else a near-white or near-black picked from the surface's lightness. Buttons in a toned band invert (the fill takes the text colour, the label the surface colour); links take the text colour, underlined. Browsers without relative colour syntax get fixed fallback colours.
+- So components colour themselves from the site's colour tokens, never fixed values (`color: #fff`), and follow the band they sit in. Changing `--brand` recomputes every band.
 
-Until a component is defined, `styles/site.css` hides it (`:not(:defined):not([data-unloaded])` under `@media (scripting: enabled)`; `:not(:defined)` only ever matches custom elements), so there is no flash of unstyled content and nothing is hidden with JS off. If a tag's template cannot be fetched, the loader logs one warning, marks that tag's elements `data-unloaded` so they show their own content unstyled, and leaves the tag undefined: a site script may define it instead.
+### Building a section component
+- Root: exactly one `<section>`, with nothing before or after it. Only such templates are section components (get_site's `section: true`), which add_section and the page builder place between sections.
+- In the CSS, write rules for the template's own elements (`h2 { … }`, `.lead { … }`, `.actions a { … }`) without `::slotted()`: the loader and the preview add each selector's `::slotted()` twin (`.actions a` also reads `.actions ::slotted(a)`), so one rule styles both the fallback and the element a page slots in. The twin reaches the slotted element itself, not elements inside it, and none is added for a selector whose last part has a pseudo-element (`a::after`), `:host` or `:has()`; write `::slotted(a)::after` by hand if needed.
+- Inside the shadow root the page's stylesheets sit in their cascade layers and component CSS does not, so a component rule beats a shared rule on the template's own elements. On an element a page slots in, the page's CSS beats the component's `::slotted()` rules whatever the layers (styles from outside a shadow tree beat those inside it), so shared rules that size elements use `:not([slot])` (`h1:not([slot])`) to leave what a page slots in to the component. Both hold for declarations without `!important`, which reverses them.
+- Use the site's design tokens (`var(--space-l)`, `var(--text-2xl)`, `var(--accent)`) from `styles/tokens.css`; read it and an existing component's CSS first.
+- Through the editor, a section component goes into a page with add_section, never by hand-writing the instance. add_section writes the tag with a copy of each named slot's fallback that is one element holding only text and inline markup (a heading, `p`, `blockquote`, `figcaption`, `dt`, `dd`, `address`, or a link or other inline element) or one `<img>`, as that element with the `slot` attribute (`<h2 slot="title">Headline</h2>`); a fallback of text and inline markup that is not one element is copied inside a `<span slot="…">`. It copies nothing for the unnamed slot or for any other fallback (a list, a `<picture>`, a nested component or card, several elements that are not all inline): fill those in the page yourself, or the section hides them. Without the editor, write the instance the same way.
+- Through the editor: write the template (and its CSS, if it has any), then place it with add_section and fill its copied parts with edit_file.
 
-### Writing a component
+```html
+<section>
+  <slot name="eyebrow"><p class="eyebrow">Studio name</p></slot>
+  <slot name="title"><h1>A short, clear headline.</h1></slot>
+  <slot name="lead"><p class="lead">Who this is for and what they get.</p></slot>
+  <div class="actions">
+    <slot name="primary"><a href="/about/#contact">Get in touch</a></slot>
+    <slot name="secondary"><a href="/work/">See our work</a></slot>
+  </div>
+</section>
+```
 
-- Each editable part of a section is one slot wrapping one whole element: `<slot name="title"><h2>Headline</h2></slot>`, not `<h2><slot name="title">…</slot></h2>`. Put classes on the fallback element (`<p class="lead">`) so a copy in a page keeps them.
-- A `section-` template is exactly one `<section>` with nothing before or after it; only those are offered by the editor's "Add to the page".
-- Styles are scoped to the shadow root: use element selectors (`article`, `nav a`) and a short class only to tell same-tag siblings apart. Use tokens (`var(--space-l)`, `var(--text-2xl)`, `var(--accent)`).
-- Shared styles are in cascade layers; component CSS is not, so any component rule beats any shared rule. Shared rules that size elements use `:not([slot])` (see `styles/elements.css`) so a heading slotted into a component is sized by the component.
-- Components can use other components (`card-project` uses `card-note`, and passes its `note` slot on with `<slot name="note" slot="text">`). A component styles what a page slots in with a rule on the slotted element; text that is passed through another component's slot is reached only by inheritance, so `card-note` sets its type on `:host`.
+## This site's components
 
-To add a component `card-quote`: create `components/card-quote/card-quote.html` and `card-quote.css`, then use `<card-quote>` in a page. That is all; the loader finds it.
+- Component CSS is scoped to its shadow root, so use element selectors (`article`, `nav a`) and a short class only to tell same-tag siblings apart.
+- The loader recomputes optional parts on `slotchange`. It leaves links containing `#` out of `aria-current`, so the header's Work link (`/#work`) is not marked. After components load, it scrolls again to the page's hash target unless the reader has scrolled meanwhile.
+- `card-project` has `note`, `title`, `body` and `link` slots, plus an unnamed slot; use `body` for its description, as in the home page. Its empty `link` slot has no fallback, so the loader hides the link paragraph when no link is supplied.
+- `card-project` passes its `note` slot through `card-note` with `<slot name="note" slot="text">`. Text forwarded through another component's slot is reached only by inheritance, so `card-note` sets its type on `:host`.
+- `card-quote` has `title` and `body` slots, with no image or link slot; put a link inside its title to link the card.
+- `card-project` supports `data-layout="centered"` to centre its text, note and link row; leaving it off keeps the default layout.
 
 ## Styles
 
-`styles/site.css` sets the layer order and imports, in order: `tokens.css` (custom properties), `elements.css` (plain elements), `layout.css` (`.page`, `.flow`, `.cards`), `sections.css` (page sections: `.hero`, `.lead`, `.cta`, `.steps`, `.contact`), `utilities.css` (`.text-s` … `.text-4xl`, which the editor's Text size writes). A new shared file is imported from `site.css`. Elements have no margins: text blocks take `flow`, components use `gap`.
+`styles/site.css` sets the layer order and imports, in order: `tokens.css` (custom properties), `elements.css` (plain elements), `layout.css` (`.page`, `.flow`, `.cards`), `sections.css` (page sections: `.hero`, `.lead`, `.cta`, `.steps`, `.contact`; `.btn` for a link styled as a button, `<a class="btn" href="…">Label</a>`), `utilities.css` (`.skip` for the page's skip link, then `.text-s` … `.text-4xl`, which the editor's Text size writes). A new shared file is imported from `site.css`. Elements have no margins: text blocks take `flow`, components use `gap`.
+
+In a `.cards` grid, a title whose only element is a link stretches that link over the whole item, whether a plain card or a card component. A card component's title link also stretches when the card sits in another component's items slot (`<section-work><card-project><h3 slot="title"><a …>`). That part of the rule goes by structure: it matches a slotted title whose component sits inside another component, so a non-card component nested in a named slot gets it too. The rule uses `:only-child`, which ignores text, so make the link the title's whole content. Card components (and any nested component with a title link) set `:host { position: relative; }` to bound it; other links stay clickable. A section component's own title link (its tag sits in `<main>`, `<body>`, a `<section>` or a `<div>`) and a card component on its own outside a `.cards` grid cover only the title. Whole-title links keep the heading's colour, with an underline on hover.
 
 ## Adding a blog
 
@@ -112,5 +191,4 @@ To add a component `card-quote`: create `components/card-quote/card-quote.html` 
 
 - Add a build step, dependencies or generated output.
 - Use hash routes (`#/about/`) or relative asset paths (`images/x.svg`); use root links.
-- Add `::slotted()` twins by hand; the loader adds them.
 - Put site files in `.editor/`, or editor settings anywhere else.

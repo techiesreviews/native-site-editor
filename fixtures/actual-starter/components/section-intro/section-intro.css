@@ -40,3 +40,8 @@ h2 {
   line-height: 1.6;
   color: var(--muted);
 }
+
+:host([data-layout="centered"]) section {
+  align-items: center;
+  text-align: center;
+}

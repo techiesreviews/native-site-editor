@@ -11,6 +11,7 @@
     --surface: #ffffff;
     --page: #f6f7f3;
     --accent: #2f6d3a;
+    --on-accent: #fff; /* Text on an accent background. */
     --line: #e2e6de;
 
     /* Type */
