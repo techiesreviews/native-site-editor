@@ -23,6 +23,12 @@ test("component attribute suggestions respect prefix and existing attributes", (
   const over = suggest('<section-hero data-l|="old">');
   assert.deepEqual(over.map(item => [item.label, item.insertText]), [["data-layout", "data-layout"]]);
 });
+test("a yes/no variant whose CSS only matches \"true\" is suggested with that value", () => {
+  const pinned = componentVariants(`:host {} :host([data-pinned="true"]) {}`).variants;
+  const [item] = variantSuggestions("<card-tip |>", 10, tag => tag === "card-tip" ? pinned : undefined);
+  assert.deepEqual([item.label, item.insertText], ["data-pinned", 'data-pinned="true"']);
+  assert.match(item.detail, /data-pinned="true" enables this variant/);
+});
 test("no suggestions in plain tags, unrelated values, comments or raw text", () => {
   for (const marked of ['<div |>', '<section-unknown |>', '<section-hero class="|">', '<!-- <section-hero |>', '<script>const x="<section-hero |>";</script>', '<style>/* <section-hero |> */</style>', '<section-hero title="a > <section-hero |">', '<textarea><section-hero |></textarea>', '<title><section-hero |></title>']) assert.deepEqual(suggest(marked), []);
   assert.equal(suggest('<!-- ignored --> <section-hero |>').length, 3);
