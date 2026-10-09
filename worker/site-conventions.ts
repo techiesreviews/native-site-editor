@@ -90,17 +90,20 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
     <h2 slot="title">Recent work</h2>
     <card-project>
       <h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>
-      <p slot="text">A one-page site with a menu the owners change themselves.</p>
+      <p slot="body" class="body">A one-page site with a menu the owners change themselves.</p>
     </card-project>
     <card-project>…</card-project>
   </section-work>
   \`\`\`
 - The editor's Add card adds a fresh instance of the items slot's card component, from no items up, and other blocks can be dropped into an items slot too. A named slot is an items slot only when its fallback is \`card-…\` instances, so name only cards \`card-…\`.
 - A second group of items in one component gets a named items slot (\`items-2\`, or a name for what it holds, \`services\`), and its items carry that name: \`<card-service slot="services">\`.
-- **Card links.** A card links to its page through a link slot (\`<slot name="link"><a href="/work/">Read more</a></slot>\`), or through its title: the title's whole content is one link (\`<h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>\`), and one rule in the site's shared CSS, the card link rule, stretches that link over the whole card. It lives in the shared CSS because component CSS cannot reach a link inside slotted content (\`::slotted()\` reaches only the slotted element). Card components set \`:host { position: relative; }\` to bound it; other links in a card take \`position: relative; z-index: 1\` to stay clickable. There is no \`stretched\` class. The starter's rule:
+- **Card links.** A card links to its page through a link slot (\`<slot name="link"><a href="/work/">Read more</a></slot>\`), or through its title: the title's whole content is one link (\`<h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>\`), and the site's shared card link rule stretches that link over the whole card, in a \`.cards\` grid and in a component's items slot. It lives in the shared CSS because component CSS cannot reach a link inside slotted content (\`::slotted()\` reaches only the slotted element). Card components set \`:host { position: relative; }\` to bound it; other links in a card take \`position: relative; z-index: 1\` to stay clickable. There is no \`stretched\` class. The starter's rules in \`styles/layout.css\`:
   \`\`\`css
   .cards > * { position: relative; }
-  .cards > * :is(h2, h3, h4, [slot="title"]) > a:only-child::after { content: ""; position: absolute; inset: 0; }
+  .cards > * :is(h2, h3, h4, [slot="title"]) > a:only-child::after,
+  :not(main, body, section, div) > * > [slot="title"] > a:only-child::after { content: ""; position: absolute; inset: 0; }
+  .cards > * a:not(:is(h2, h3, h4, [slot="title"]) > a:only-child) { position: relative; z-index: 1; }
+  :not(main, body, section, div) > :has(> [slot="title"] > a:only-child) a:not([slot="title"] > a:only-child) { position: relative; z-index: 1; }
   \`\`\`
 - A card that is one link around everything (\`<a class="card" href="…">…</a>\`) becomes a card component without the wrapping link: its image and texts become slots and its title carries the link, as above. A link around no text at all is one whole slot.
 
@@ -114,10 +117,11 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
 - Picking a variant is changing one attribute on the instance in the page (edit_file through the editor).
 
 ### Tones
+Tones work this way where the site's CSS defines them (look for \`[data-tone="…"]\` rules in the shared CSS first); a site without them has none, so add them before using \`data-tone\`.
 - \`data-tone\` colours a page band: a section component, a plain \`<section>\`, the header or the footer. Cards, buttons and everything else inside a band follow their band; there is no tone inside a toned band.
 - Its values are \`light\` (the default: no attribute), \`dark\`, \`brand\` and \`accent\`.
 - The tone rules live once, in the site's shared CSS, as plain \`[data-tone="…"]\` rules (never in a component's CSS), so a tone means the same on every band; written by hand, they work on any element.
-- They keep text readable (WCAG AA) whatever the brand colour:
+- Tone rules should keep text readable (WCAG AA) whatever the brand colour:
   - \`light\` and \`dark\` set \`color-scheme\`, so the site's colour roles flip.
   - \`brand\` and \`accent\` take their surface from \`--brand\` with relative colour syntax: \`brand\` is the brand colour with its OKLCH lightness moved out of the middle band (to at most 0.50 or at least 0.72, hue and chroma kept); \`accent\` is a soft, light, low-chroma tint of it.
   - Text is \`contrast-color()\` of the surface under \`@supports\`, else a near-white or near-black picked from the surface's lightness. Buttons in a toned band invert (the fill takes the text colour, the label the surface colour); links take the text colour, underlined. Browsers without relative colour syntax get fixed fallback colours.
@@ -126,7 +130,7 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
 ### Building a section component
 - Root: exactly one \`<section>\`, with nothing before or after it. Only such templates are section components (get_site's \`section: true\`), which add_section and the page builder place between sections.
 - In the CSS, write rules for the template's own elements (\`h2 { … }\`, \`.lead { … }\`, \`.actions a { … }\`) without \`::slotted()\`: the loader and the preview add each selector's \`::slotted()\` twin (\`.actions a\` also reads \`.actions ::slotted(a)\`), so one rule styles both the fallback and the element a page slots in. The twin reaches the slotted element itself, not elements inside it, and none is added for a selector whose last part has a pseudo-element (\`a::after\`), \`:host\` or \`:has()\`; write \`::slotted(a)::after\` by hand if needed.
-- Shared styles are in cascade layers and component CSS is not, so a component rule beats any shared rule. Shared rules that size elements use \`:not([slot])\` (\`h1:not([slot])\`) so what a page slots into a component is sized by the component.
+- Inside the shadow root the page's stylesheets sit in their cascade layers and component CSS does not, so a component rule beats a shared rule on the template's own elements. On an element a page slots in, the page's CSS beats the component's \`::slotted()\` rules whatever the layers (styles from outside a shadow tree beat those inside it), so shared rules that size elements use \`:not([slot])\` (\`h1:not([slot])\`) to leave what a page slots in to the component.
 - Use the site's design tokens (\`var(--space-l)\`, \`var(--text-2xl)\`, \`var(--accent)\`) from \`styles/tokens.css\`; read it and an existing component's CSS first.
 - Through the editor, a section component goes into a page with add_section, never by hand-writing the instance. add_section writes the tag with a copy of each named slot's fallback that is one element holding only text and inline markup (a heading, \`p\`, \`blockquote\`, \`figcaption\`, \`dt\`, \`dd\`, \`address\`, or a link or other inline element) or one \`<img>\`, as that element with the \`slot\` attribute (\`<h2 slot="title">Headline</h2>\`); a fallback of text and inline markup that is not one element is copied inside a \`<span slot="…">\`. It copies nothing for the unnamed slot or for any other fallback (a list, a \`<picture>\`, a nested component or card, several elements that are not all inline): fill those in the page yourself, or the section hides them. Without the editor, write the instance the same way.
 - Through the editor: write the template (and its CSS, if it has any), then place it with add_section and fill its copied parts with edit_file.

@@ -1,7 +1,7 @@
 ---
 title: "Conventions: fix the Components chapter where the starter showed it wrong"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [16-conventions-components-chapter, 17-starter-agents-components-chapter, 68-starter-card-links-in-components]
 builder: sol
@@ -22,3 +22,8 @@ Keep `tests/mcp-runtime.test.ts`'s chapter assertions passing (update the ones t
 ## Done when
 
 - The four points read correctly; `npm run check` and `npm test` pass; the starter's `## Components` is byte-identical to `componentsChapter()` of the editor's conventions.
+
+## Done (2026-10-09)
+
+- `worker/site-conventions.ts`' Components chapter: the card link bullet says where the stretch works (a `.cards` grid and a component's items slot) and quotes slice 68's four starter rules; the `section-work` example fills `card-project`'s real `body` slot (`<p slot="body" class="body">`); Tones apply where the site's CSS defines them; the precedence bullet says a component rule wins on the template's own elements, while the page's CSS beats `::slotted()` rules on slotted elements (hence `:not([slot])`).
+- Commit "Components chapter: card links, slot names, tones and precedence (slice 70)" (Sol built, Claude reworded tones/precedence); the starter's `## Components` copied byte for byte on its `dev`. `tests/mcp-runtime.test.ts` asserts the new selectors, the `body` slot in the example, conditional tones and the `::slotted()` precedence.

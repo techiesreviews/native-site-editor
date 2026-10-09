@@ -157,7 +157,9 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /through a link slot/,
       /the title's whole content is one link/,
       /Card components set `:host \{ position: relative; \}`/,
-      /\.cards > \* :is\(h2, h3, h4, \[slot="title"\]\) > a:only-child::after/,
+      /\.cards > \* :is\(h2, h3, h4, \[slot="title"\]\) > a:only-child::after,\n  :not\(main, body, section, div\) > \* > \[slot="title"\] > a:only-child::after/,
+      /\.cards > \* a:not\(:is\(h2, h3, h4, \[slot="title"\]\) > a:only-child\) \{ position: relative; z-index: 1; \}/,
+      /:not\(main, body, section, div\) > :has\(> \[slot="title"\] > a:only-child\) a:not\(\[slot="title"\] > a:only-child\) \{ position: relative; z-index: 1; \}/,
       /There is no `stretched` class/,
       /A card that is one link around everything [^\n]* becomes a card component without the wrapping link/,
       // Variants.
@@ -167,7 +169,9 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /Never `:host\[data-layout="…"\]` or `:host \{ &\[data-layout="…"\] \{ … \} \}`/,
       /written bare on the instance: `<section-split data-reverse>`/,
       /`data-layout` \(`content-left`, `image-left`, `centered`\)/,
-      // Tones on page bands only.
+      // Tones on page bands only, where the site defines them.
+      /Tones work this way where the site's CSS defines them/,
+      /Tone rules should keep text readable \(WCAG AA\)/,
       /`data-tone` colours a page band: a section component, a plain `<section>`, the header or the footer/,
       /`light` \(the default: no attribute\), `dark`, `brand` and `accent`/,
       /plain `\[data-tone="…"\]` rules \(never in a component's CSS\)/,
@@ -178,6 +182,8 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /add_section writes the tag with a copy of each named slot's fallback that is one element holding only text and inline markup/,
       /is copied inside a `<span slot="…">`\. It copies nothing for the unnamed slot or for any other fallback/,
     ]) assert.match(chapter, rule);
+    assert.match(chapter, /<section-work>[\s\S]*<card-project>\s*<h3 slot="title">[^\n]*<\/h3>\s*<p slot="body" class="body">A one-page site/, "the card-project example uses its real body slot and fallback class");
+    assert.match(chapter, /a component rule beats a shared rule on the template's own elements\. On an element a page slots in, the page's CSS beats the component's `::slotted\(\)` rules whatever the layers[^\n]*`:not\(\[slot\]\)`/, "shadow-root layers do not override document styles on slotted elements");
     // The tool descriptions and the server's instructions point to the
     // chapter and state no component rules of their own.
     const described = (name: string) => listing.find((tool) => tool.name === name)!.description!;
