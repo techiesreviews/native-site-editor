@@ -1,5 +1,7 @@
 // Tone formulas for data-tone bands (ticket 08 §3). The starter copies the
 // constants and the CSS in the comments; tests/tone.test.ts sweeps them for AA.
+// The model is opaque: every CSS recipe ends in `/ 1`, because relative colour
+// otherwise inherits the brand's alpha (a transparent --brand would hide text).
 
 export type Oklch = { l: number; c: number; h: number };
 export type Rgb = { r: number; g: number; b: number };
@@ -41,25 +43,26 @@ export function brandSurface(
   // CSS (default constants):
   // oklch(from var(--brand) calc(
   //   min(l, 0.50) * clamp(0, 1 / (0.61 - l), 1) +
-  //   max(l, 0.72) * (1 - clamp(0, 1 / (0.61 - l), 1))) c h)
+  //   max(l, 0.72) * (1 - clamp(0, 1 / (0.61 - l), 1))) c h / 1)
   return { l: dark * (1 - side) + light * side, c: brand.c, h: brand.h };
 }
 
 export function accentSurface(brand: Oklch): Oklch {
-  // CSS: oklch(from var(--brand) 0.95 min(c, 0.04) h).
+  // CSS: oklch(from var(--brand) 0.95 min(c, 0.04) h / 1).
   return { l: TONE_ACCENT_L, c: Math.min(brand.c, TONE_ACCENT_MAX_C), h: brand.h };
 }
 
 export function fallbackText(surface: Oklch): Oklch {
   const side = lightSide(surface.l, TONE_NUDGE_SPLIT_L);
   // CSS: oklch(from var(--surface)
-  //   calc(0.99 + (0.01 - 0.99) * (1 - clamp(0, 1 / (0.61 - l), 1))) 0 0).
+  //   calc(0.99 + (0.01 - 0.99) * (1 - clamp(0, 1 / (0.61 - l), 1))) 0 0 / 1).
   return { l: TONE_TEXT_LIGHT_L + (TONE_TEXT_DARK_L - TONE_TEXT_LIGHT_L) * side, c: 0, h: 0 };
 }
 
 export function contrastColorText(surface: Oklch): Oklch {
   // CSS: contrast-color(var(--surface)); the luminance comparison models the
   // browser primitive, rather than a formula the fallback CSS must reproduce.
+  // The spec leaves the algorithm to the browser; slice 62 checks real ones.
   const rgb = oklchToSrgb(surface);
   const white = contrastRatio(rgb, { r: 1, g: 1, b: 1 });
   const black = contrastRatio(rgb, { r: 0, g: 0, b: 0 });
