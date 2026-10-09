@@ -37,6 +37,8 @@ async function edit(page: Page, heading: Locator, width: number) {
   await heading.click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await clear(page, heading);
+  // Enter types in the selected heading.
+  await page.keyboard.press("Enter");
   await expect(heading).toHaveAttribute("contenteditable", /^(plaintext-only|true)$/);
   await expect(heading).toBeFocused();
   await page.keyboard.press("ControlOrMeta+End");
@@ -59,8 +61,12 @@ async function edit(page: Page, heading: Locator, width: number) {
     })).toBe(true);
     expect((await heading.boundingBox())!.height).toBeGreaterThan(startHeight);
   }
-  // Escape restores the text (shorter again): the bar follows and stays clear.
+  // Escape keeps the text and leaves typing; Undo makes it shorter again: the bar follows and stays clear.
   await page.keyboard.press("Escape");
+  await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(heading).toHaveText(expected!);
+  await clear(page, heading);
+  await page.keyboard.press("ControlOrMeta+Z");
   await expect(heading).toHaveText(original!);
   await clear(page, heading);
 }
