@@ -91,6 +91,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [47 Edit component mode: open a nested card component](tickets/47-edit-mode-nested-card-drill.md) | sol | 41 |
 | [48 Fixed parts are locked on the page](tickets/48-locked-fixed-parts-on-page.md) | sol | 41 |
 | [49 Create and New component open Edit component mode](tickets/49-create-lands-in-edit-mode.md) | sol | 41, 22, 27 |
+| [66 Right-click slot items in making mode and Edit component mode](tickets/66-slot-context-menu.md) | sol | 24, 26, 44 |
 
 ### Phase 6: Add card
 
