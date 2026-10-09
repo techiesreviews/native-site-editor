@@ -1464,7 +1464,7 @@ export function hasHeadingSlot(template: string) {
 function singular(word: string) {
   if (/(?:ss|us|is|news)$/.test(word)) return word;
   if (/[^aeiou]ies$/.test(word)) return word.slice(0, -3) + "y";
-  if (/(?:s|x|z|ch|sh)es$/.test(word)) return word.slice(0, -2);
+  if (/(?:ss|x|z|ch|sh)es$/.test(word)) return word.slice(0, -2);
   return word.endsWith("s") && word.length > 1 ? word.slice(0, -1) : word;
 }
 
@@ -1488,7 +1488,7 @@ export function cardTagFor(slot: string, tag: string, taken: Iterable<string>) {
 // Plain elements that can be made cards: not list items, which only work in their list.
 const CARD_ITEMS = new Set(["article", "div", "figure", "a", "blockquote"]);
 
-/** A template with each slot's fallback gone and white space between tags dropped: two items written alike have one. */
+/** A template with each slot's fallback gone: two items written alike have one. */
 function skeleton(template: string) {
   const slots = [...descendants(parseSource(template))].filter((el) => el.name === "slot" && el.close);
   let out = template;
@@ -1498,15 +1498,15 @@ function skeleton(template: string) {
     out = out.slice(0, slot.tag.end) + out.slice(slot.close!.start);
     after = slot.start;
   }
-  return out.replace(/\s+/g, " ").replace(/>\s+</g, "><").trim();
+  return out.replace(/\r\n/g, "\n");
 }
 
 /**
  * The card component made from a group of plain items in `html` (the element
- * being made a component): planned from each item, the items written alike
- * (one template once their fallbacks are gone; the largest such set, at
- * least two) become instances, each its own plan's instance. None when the
- * items are instances already, cannot be cards, or have no heading.
+ * being made a component): planned from each item, the items with a heading
+ * slot written alike (one template once their fallbacks are gone; the
+ * largest such set, at least two) become instances, each its own plan's
+ * instance. None when the items are instances already or cannot be cards.
  */
 function cardFrom(html: string, items: { el: SourceElement; path: number[] }[], slot: string, tag: string, taken: Set<string>) {
   if (!items.every(({ el }) => CARD_ITEMS.has(el.name) && el.close)) return undefined;
@@ -1514,12 +1514,12 @@ function cardFrom(html: string, items: { el: SourceElement; path: number[] }[], 
   const planned = items.map((item) => ({ item, plan: planComponent(html, { tag: item.el.tag, start: item.el.start, end: item.el.end, close: item.el.close }, cardTag, {}) }));
   const alike = new Map<string, { item: (typeof items)[number]; plan: MakeComponentPlan }[]>();
   for (const { item, plan } of planned) {
-    if ("error" in plan) continue;
+    if ("error" in plan || !hasHeadingSlot(plan.template)) continue;
     const key = skeleton(plan.template);
     alike.set(key, [...(alike.get(key) ?? []), { item, plan }]);
   }
   const chosen = [...alike.values()].reduce<{ item: (typeof items)[number]; plan: MakeComponentPlan }[]>((best, set) => (set.length > best.length ? set : best), []);
-  if (chosen.length < 2 || !hasHeadingSlot(chosen[0].plan.template)) return undefined;
+  if (chosen.length < 2) return undefined;
   const { template, css, slots, notes } = chosen[0].plan;
   return {
     card: { tag: cardTag, slot, template, css, slots, notes, instances: chosen.map(({ item }) => item.path) },

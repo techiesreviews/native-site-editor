@@ -774,6 +774,16 @@ test("make component: cards written differently, instances, list items and items
   const odd = plan(`<section><article class="card"><h3>A</h3></article><article class="card featured"><h3>B</h3></article><article class="card"><h3>C</h3></article></section>`);
   assert.deepEqual(odd.cards.map(({ tag, instances }) => [tag, instances]), [["card-x", [[0], [2]]]]);
   assert.match(odd.instance, /<\/card-x><article class="card featured"><h3>B<\/h3><\/article><card-x>/);
+  // Only items with a heading of their own count: a heading-less majority, or one heading-less item written alike once
+  // its fallbacks go, never makes or blocks a card.
+  const mixed = plan(`<section><article class="card"><p class="a">1</p></article><article class="card"><p class="a">2</p></article><article class="card"><p class="a">3</p></article>`
+    + `<article class="card"><h3>A</h3></article><article class="card"><h3>B</h3></article></section>`);
+  assert.deepEqual(mixed.cards.map(({ instances }) => instances), [[[3], [4]]]);
+  const lookalike = plan(`<section><article class="card"><h3 class="title">A</h3><p class="text">B</p></article><article class="card"><p class="title">C</p><p class="text">D</p></article></section>`);
+  assert.deepEqual(lookalike.cards, []);
+  // Fixed parts must be written the same, white space too.
+  const spaced = plan(`<section><article class="card"><h3>A</h3><pre>one  two</pre></article><article class="card"><h3>B</h3><pre>one two</pre></article></section>`);
+  assert.deepEqual(spaced.cards, []);
   // Fewer than two alike: no card, the items move as they are.
   const unlike = plan(`<section><article class="card"><h3>A</h3><p>a</p></article><article class="card"><h3>B</h3></article></section>`);
   assert.deepEqual(unlike.cards, []);
@@ -818,6 +828,9 @@ test("card names: from the items slot, singular, with the card- prefix, free", (
   assert.equal(cardTagFor("card-boxes", "section-x", []), "card-box");
   assert.equal(cardTagFor("news", "section-x", []), "card-news");
   assert.equal(cardTagFor("addresses", "section-x", []), "card-address");
+  assert.equal(cardTagFor("houses", "section-x", []), "card-house");
+  assert.equal(cardTagFor("cases", "section-x", []), "card-case");
+  assert.equal(cardTagFor("benches", "section-x", []), "card-bench");
   assert.equal(cardTagFor("", "section-work", ["card-work", "card-work-2"]), "card-work-3");
   assert.equal(cardTagFor("---", "section-x", []).length > 5, true);
   assert.equal(tagNameProblem(cardTagFor("2 Big Things!", "section-x", []), []), undefined);

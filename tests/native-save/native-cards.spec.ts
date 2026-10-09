@@ -719,6 +719,8 @@ test("Make component on a grid of plain cards makes the section and a card compo
   const section = frame(page).locator("#work");
   await expect(section.locator("article.project h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
   const before = (await section.boundingBox())!;
+  const cardBoxes = async (cards: import("@playwright/test").Locator) => Promise.all((await cards.all()).map(async (one) => (await one.boundingBox())!));
+  const beforeCards = await cardBoxes(section.locator("article.project"));
 
   await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section Recent work/ }).locator(".page-structure__label").first().click();
   await bar(page).getByRole("button", { name: "Make component…", exact: true }).click();
@@ -750,11 +752,27 @@ test("Make component on a grid of plain cards makes the section and a card compo
   const after = (await made.boundingBox())!;
   expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
+  const afterCards = await cardBoxes(made.locator(":scope > card-work"));
+  expect(afterCards).toHaveLength(2);
+  // Each card where it was in its section (the preview may have scrolled to the selection).
+  afterCards.forEach((box, index) => {
+    const was = beforeCards[index];
+    expect(Math.abs(box.x - after.x - (was.x - before.x))).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.y - after.y - (was.y - before.y))).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.width - was.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(box.height - was.height)).toBeLessThanOrEqual(1);
+  });
 
   // One undo takes the page and all four files back.
   await page.locator(".code-editor__undo").first().click();
   await expect(section.locator("article.project h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
   await expect.poll(async () => await storedDraft(page, "components/card-work/card-work.html")).toBeUndefined();
-  expect(await storedDraft(page, "components/section-work/section-work.html")).toBeUndefined();
+  for (const file of ["section-work/section-work.html", "section-work/section-work.css", "card-work/card-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeUndefined();
   expect(await storedDraft(page, "index.html")).toBeUndefined();
+  // Redo writes them all again.
+  await page.locator(".code-editor__redo").first().click();
+  await expect(made.locator("card-work > h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await expect.poll(async () => (await storedDraft(page, "components/card-work/card-work.html"))?.content).toBe(card);
+  expect(await homeDraft(page)).toBe(written);
+  for (const file of ["section-work/section-work.html", "section-work/section-work.css", "card-work/card-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeDefined();
 });
