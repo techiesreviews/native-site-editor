@@ -57,7 +57,6 @@ import {
 } from "./component-model";
 import { componentIcon, mark, type ComponentMark } from "./component-icon";
 import "../components/create-dialog.css";
-import { cb04Install, cb04EditBarControls } from "../prototype/cb04"; // PROTOTYPE cb04
 
 type CodeEditor = typeof import("../components/source-editor");
 
@@ -437,7 +436,6 @@ export function createComponentTools(deps: ComponentDeps) {
     if (at) {
       return out;
     }
-    out.push(...cb04EditBarControls(selection)); // PROTOTYPE cb04
     // A part of a page (not inside a template) can become a component.
     if (deps.nativePageActions) {
       if (!selection.host && selection.node && !tagOfFile(selection.path)) out.push(...deps.nativePageActions(selection));
@@ -1457,7 +1455,6 @@ export function createComponentTools(deps: ComponentDeps) {
     };
   }
 
-  cb04Install({ deps, editComponent: (tag) => editComponent(tag) }); // PROTOTYPE cb04
   return {
     identity,
     /** Only explicit template entry permits shared-template editing from a page preview. */

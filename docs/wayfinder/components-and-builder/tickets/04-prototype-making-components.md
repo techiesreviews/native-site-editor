@@ -12,7 +12,7 @@ How should the two entry points look and behave? (a) **Make component** on a sel
 
 ## Resolution (2026-10-09)
 
-Decided with Lex by reacting live to five variants on `dev` behind `?proto=components` (A dialog, B in the preview, C drawer/canvas, D slot marking, E chips), on the real starter through a tunnel and on preview builds up to `82e4d1b6`. **E is the design.** The prototype code (`src/prototype/cb04*`) is throwaway and is not kept for the build.
+Decided with Lex by reacting live to five variants on `dev` behind `?proto=components` (A dialog, B in the preview, C drawer/canvas, D slot marking, E chips), on the real starter through a tunnel and on preview builds up to `82e4d1b6`. **E is the design.** The prototype code is throwaway and is not kept for the build; it was taken off `dev` and lives only on the branch `prototype/cb-04-make-component` (tip `23de3d9`).
 
 **Make component, from built HTML**
 

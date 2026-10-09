@@ -22,7 +22,6 @@ import type { PreviewSelectionController } from "./preview-selection-controller"
 
 import type { readSectionCatalog } from "../page-builder/static-sections";
 import type { readPagePartCatalog } from "../page-builder/native-page-parts";
-import { cb04MarkingControls } from "../prototype/cb04"; // PROTOTYPE cb04
 
 /** Workspace values are live host getters; operations and parsers stay injected. */
 export interface PageStructurePorts {
@@ -544,7 +543,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // no element move is offered here; the page structure still moves rows.
     if (!isNativeSectionTag(selection.tag) && !inMaster) controls.push(...ports.cardControls(selection, source));
     nativeElementMoveAction = onMove;
-    controls.push(...cb04MarkingControls(selection)); // PROTOTYPE cb04
     // Edit component, Make component… (src/page-builder/components.ts).
     if (ports.componentTools && !inMaster) controls.push(...ports.componentTools.controls(selection));
     // Ask agent: a request about this element for a connected agent, pinned on it.

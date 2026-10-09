@@ -110,7 +110,6 @@ import { createSavePublishController } from "./controllers/save-publish-controll
 import { createFileOperationsController } from "./controllers/file-operations-controller";
 import { createComponentTools, type ComponentTools } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
-import { cb04FileItems } from "./prototype/cb04"; // PROTOTYPE cb04
 import type {
   EditorContext,
   Directory,
@@ -4081,7 +4080,6 @@ function fileRowItems(target: FileRowTarget): MenuItem[] {
       { label: "New folder…", run: () => openCreateKind(target.path, "folder") },
       { label: "Upload files…", run: () => void pickFiles().then((picked) => uploadFilesTo(target.path, picked)) },
     );
-  if (target.folder) items.push(...cb04FileItems(target.path)); // PROTOTYPE cb04
   items.push({ label: "Rename", shortcut: "F2", run: () => fileActions?.rename(files, target.path) });
   if (!target.folder) items.push({ label: "Duplicate", run: () => void duplicateFileTarget(target) });
   const change = treeState().changes.get(target.path);
