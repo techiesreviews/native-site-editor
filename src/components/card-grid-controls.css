@@ -90,6 +90,48 @@
   outline-offset: 2px;
 }
 
+/* A card slot's split button, "+ Add card │ ▾": the ▾ opens "Add card as…". */
+.card-ghost__buttons {
+  display: inline-flex;
+}
+.card-ghost__buttons.is-split .card-ghost__add {
+  border-radius: 999px 0 0 999px;
+  padding-right: 10px;
+}
+.card-ghost__looks {
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 30px;
+  height: var(--size-compact);
+  margin: 0 0 0 -1px;
+  padding: 0 2px 0 0;
+  border: 1px solid var(--control-line);
+  border-radius: 0 999px 999px 0;
+  background: var(--panel-surface);
+  color: var(--text);
+  font: inherit;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: var(--shadow-small);
+  transition: background-color 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+}
+.card-ghost__looks[hidden] {
+  display: none;
+}
+.card-ghost__looks:hover,
+.card-ghost__looks:focus-visible,
+.card-ghost.is-looking .card-ghost__looks {
+  position: relative;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.card-ghost__looks:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* The popover for a new page and its card. */
 .card-add {
   position: absolute;
@@ -312,6 +354,7 @@
     animation: none;
   }
   .card-ghost__add,
+  .card-ghost__looks,
   .card-add__path {
     transition: none;
   }

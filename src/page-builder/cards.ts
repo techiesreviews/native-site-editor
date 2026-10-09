@@ -24,6 +24,7 @@ import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, 
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
 import { cardFill, cardFillMarkup, pageTitle } from "./card-fill";
 import { locateNativeElementRange } from "../native-source-location";
+import type { CardLook } from "./card-looks";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
 import { nativeLinkTarget } from "../../shared/native-routes";
@@ -251,8 +252,8 @@ export function createCards(deps: CardsDeps) {
 
   /** Add card on an instance's card slot (card-slot.ts): the fresh card's edit, and what the slot is called, while its page's text and the templates read are the same. */
   let slotCache: { key: string; source: string; templates: Map<string, string | undefined>; add: ReturnType<typeof slotAdd> } | undefined;
-  function slotAdd(source: string, parent: number[], slot: string, templateOf: (tag: string) => string | undefined) {
-    const add = cardSlotAddEdit(source, parent, templateOf, slot);
+  function slotAdd(source: string, parent: number[], slot: string, templateOf: (tag: string) => string | undefined, look?: CardLook) {
+    const add = cardSlotAddEdit(source, parent, templateOf, slot, look);
     return add && { ...add, noun: itemNoun(add.card), label: instanceLabel(source, parent) ?? "" };
   }
   function slotAddFor(path: string, parent: number[], slot: string) {
@@ -276,7 +277,7 @@ export function createCards(deps: CardsDeps) {
     // A card slot's Add card places its card at once; linking it to a page comes after (ticket 09 §1).
     if (report.slot !== undefined) {
       const add = slotAddFor(report.path, report.parent, report.slot);
-      return add && { noun: add.noun, label: add.label };
+      return add && { noun: add.noun, label: add.label, card: add.card };
     }
     const found = gridFor(report.path, report.parent);
     if (!found) return undefined;
@@ -289,18 +290,22 @@ export function createCards(deps: CardsDeps) {
   // Adds a card after the grid's last item and selects it: in an instance's
   // card slot (`slot`, else the slot its last item fills) a fresh card of the
   // slot's card component, else a copy of the last item with placeholder text.
+  // Add card ▾ places a card slot's card in the chosen `look` (ticket 09 §7).
   // Resolves to the fresh card, which a page can be linked to next (ticket 09 §1).
-  async function addCard(path: string, parent: number[], slot?: string): Promise<NewCard | undefined> {
+  async function addCard(path: string, parent: number[], slot?: string, look?: CardLook): Promise<NewCard | undefined> {
     if (!(await deps.ensureOpen(path))) return;
     const found = gridFor(path, parent);
     const route = routeOf(path);
     const last = found?.grid.items[found.grid.items.length - 1];
     const lastSlot = last && startTagAttribute(found.source, last.range.tag, "slot")?.value;
-    const fresh = route && slotAddFor(path, parent, slot ?? decodeHtmlEntities(lastSlot ?? "", true));
+    const slotName = slot ?? decodeHtmlEntities(lastSlot ?? "", true);
+    const text = look && deps.source(path);
+    const fresh = route && (!look ? slotAddFor(path, parent, slotName) : text === undefined ? undefined : slotAdd(text, parent, slotName, template, look));
     if (fresh) {
       const node = [...parent, fresh.index];
-      return deps.change(path, fresh.edit.source, [fresh.edit], node, `${capital(fresh.noun)} added to ${fresh.label}`) ? { path, node } : undefined;
+      return deps.change(path, fresh.edit.source, [fresh.edit], node, `${capital(fresh.noun)} added to ${fresh.label}${look ? ` as ${look.label}` : ""}`) ? { path, node } : undefined;
     }
+    if (look) { refuse("That card can't be added there any more."); return; }
     if (!found || !route || !last) { refuse("That grid is not on the page any more."); return; }
     const { source, grid } = found;
     const copy = cardMarkup(source, route, grid, last);
@@ -509,7 +514,7 @@ export function createCards(deps: CardsDeps) {
       if (!found || !pageOptions(found.grid).parent) return { ok: false, error: "That grid does not list pages." };
       return planPage(request);
     },
-    addCard: (report: ItemGridReport) => addCard(report.path, report.parent, report.slot),
+    addCard: (report: ItemGridReport, look?: CardLook) => addCard(report.path, report.parent, report.slot, look),
     addPage: (report: ItemGridReport, request: CardPageRequest) => addPage(report.path, report.parent, request),
     linkPages,
     fillCard,

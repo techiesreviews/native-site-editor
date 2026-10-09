@@ -28,7 +28,7 @@ export function createCardsController(ports: CardsControllerPorts) {
     preview: {
       describe: (grid) => cards?.describe(grid),
       plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: NO_SITE },
-      addCard: (grid) => cards?.addCard(grid) ?? Promise.resolve(undefined),
+      addCard: (grid, look) => cards?.addCard(grid, look) ?? Promise.resolve(undefined),
       linkPages: (card) => cards?.linkPages(card),
       fillCard: (card, route, base) => cards?.fillCard(card, route, base),
       cardText: (card) => cards?.cardText(card),

@@ -366,7 +366,8 @@ export function nativeMarkupInsertEdit(source: string, parentPath: readonly numb
  * A new component instance at `index` of the element at `parentPath`, as
  * nativeMarkupInsertEdit places blocks: into an instance only at an items
  * slot (`slot`, written on it). `markup` is one custom element with no
- * attributes holding a copy of its template's fallbacks (`slotMarkup`), its
+ * attributes but one variant (`data-…`, bare or with a quoted value; ticket
+ * 09 §7) holding a copy of its template's fallbacks (`slotMarkup`), its
  * lines after the first indented relative to the first; they are indented
  * to its line.
  */
@@ -377,7 +378,8 @@ export function nativeInstanceInsertEdit(source: string, parentPath: readonly nu
   const only = fragment?.children[0];
   if (!parent || !fragment || fragment.children.length !== 1 || !only || !isInstance(only) || !Number.isInteger(index) || index < 0 || index > parent.children.length) return undefined;
   const open = markup.slice(only.start, only.openEnd);
-  if (only.start !== 0 || only.end !== markup.length || open !== `<${only.name}>`) return undefined;
+  const variant = open.slice(only.name.length + 1, -1);
+  if (only.start !== 0 || only.end !== markup.length || !open.startsWith(`<${only.name}`) || !/^(?: data-[a-z\d-]+(?:="[^"<>]*")?)?$/.test(variant)) return undefined;
   // The content is a copy of the site's own template's fallbacks (card-slot.ts), which render there
   // already: read exactly and free of document parts, as written (a `srcset` included).
   const content = markup.slice(only.openEnd, only.closeStart);
@@ -388,7 +390,7 @@ export function nativeInstanceInsertEdit(source: string, parentPath: readonly nu
   if (!canContain(parent, [only], instance)) return undefined;
   const { childIndent, nl } = insertIndent(source, parent, index);
   const attribute = instance && slot ? ` slot="${slot.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"` : "";
-  const text = `<${only.name}${attribute}>${content}</${only.name}>`.replace(/\r?\n/g, `${nl}${childIndent}`);
+  const text = `<${only.name}${variant}${attribute}>${content}</${only.name}>`.replace(/\r?\n/g, `${nl}${childIndent}`);
   const edit = insertion(source, parent, index, text);
   return { ...edit, original: source.slice(edit.start, edit.end), source };
 }

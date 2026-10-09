@@ -7,6 +7,9 @@ import type { SitePage } from "../page-builder/page-choices";
 import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardLinkPicker } from "./card-link-picker";
 import type { CardFillStrip } from "./card-fill-strip";
+import type { CardLook } from "../page-builder/card-looks";
+import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
+import type { CardLookGallery } from "./card-look-gallery";
 import "./card-grid-controls.css";
 
 // "Add card" over the native preview: a dashed ghost where one more item of
@@ -21,6 +24,9 @@ import "./card-grid-controls.css";
 // slot gets "Link to a page…" at its foot (card-link-picker.ts, loaded then);
 // picking a page fills the card and swaps the combobox for an information
 // strip of where each slot's content came from (card-fill-strip.ts).
+// A card slot's button is split, "+ │ ▾": the ▾ opens "Add card as…", a
+// gallery of card looks (card-look-gallery.ts, loaded then), and places a
+// blank card of the one picked.
 
 export interface FrameBox {
   top: number;
@@ -71,6 +77,8 @@ export interface GridDescription {
   folders?: string[];
   /** Whether a new folder can be made for it. */
   newFolders?: boolean;
+  /** A card slot's own card component, whose ▾ offers the looks. */
+  card?: string;
 }
 
 /** A new page for a grid: its title, the folder it goes in, and a new folder to make there first. */
@@ -107,8 +115,8 @@ export interface CardGridHandlers {
   describe(grid: ItemGridReport): GridDescription | undefined;
   /** The URL the new page gets, or why it cannot be made. */
   plan(grid: ItemGridReport, request: CardPageRequest): Checked<{ route: string }>;
-  /** Adds a card after the last one; resolves to it when a page can be linked to it (a card slot's fresh card). */
-  addCard(grid: ItemGridReport): Promise<NewCard | undefined>;
+  /** Adds a card after the last one, a card slot's in `look` when given; resolves to it when a page can be linked to it (a card slot's fresh card). */
+  addCard(grid: ItemGridReport, look?: CardLook): Promise<NewCard | undefined>;
   linkPages(card: NewCard): CardLinkPages | undefined;
   /** Fills the card from the page at `route`, from `base` when given (one undo step); undefined when it could not. */
   fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined;
@@ -126,7 +134,13 @@ const gridKey = (grid: ItemGridReport) => `${grid.path}|${grid.parent.join(".")}
 const sameReport = (a: ItemGridReport | null | undefined, b: ItemGridReport | null | undefined) =>
   JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, handlers: CardGridHandlers) {
+/** What the looks gallery renders thumbnails with (the preview's page builder inputs). */
+export interface CardLookSupport {
+  inputs(): ThumbnailInputs | undefined;
+  prepare(tags: string[]): void;
+}
+
+export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, handlers: CardGridHandlers, lookSupport?: CardLookSupport) {
   const layer = node("div", "card-grid-layer");
   const ghost = node("div", "card-ghost");
   ghost.hidden = true;
@@ -134,7 +148,15 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   add.setAttribute("aria-haspopup", "dialog");
   const addLabel = node("span", "card-ghost__label", "Add card");
   add.append(icon("plus", 14), addLabel);
-  ghost.append(add);
+  // A card slot's ▾: "Add card as…".
+  const looks = button("", () => toggleGallery(), "card-ghost__looks");
+  looks.setAttribute("aria-haspopup", "dialog");
+  looks.setAttribute("aria-expanded", "false");
+  looks.append(icon("caret-down", 14));
+  looks.hidden = true;
+  const buttons = node("span", "card-ghost__buttons");
+  buttons.append(add, looks);
+  ghost.append(buttons);
   layer.append(ghost);
 
   const popover = node("form", "card-add");
@@ -157,11 +179,11 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   // The open popover's folder list.
   let folderMenu: HTMLElement | undefined;
 
-  add.addEventListener("pointerenter", () => {
+  buttons.addEventListener("pointerenter", () => {
     pointerOnAdd = true;
     clearTimeout(leaveTimer);
   });
-  add.addEventListener("pointerleave", () => {
+  buttons.addEventListener("pointerleave", () => {
     pointerOnAdd = false;
     if (hoverGone) scheduleLeave();
   });
@@ -174,6 +196,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function current(): ItemGridReport | undefined {
     if (open) return open.grid;
+    if (gallery) return gallery.grid;
     // Just after the pointer left the grid (on its way to the button), the grid it left;
     // the selection's report of that grid is newer (the card just added is selected in it).
     const left = hoverGone && lastHover && !(reports.selected && gridKey(reports.selected) === gridKey(lastHover)) ? lastHover : undefined;
@@ -207,12 +230,18 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const name = about.noun;
     addLabel.textContent = `Add ${name}`;
     const where = about.label ? ` to ${about.label}` : "";
+    const split = Boolean(lookSupport && about.card && grid.slot !== undefined);
+    looks.hidden = !split;
+    buttons.classList.toggle("is-split", split);
+    looks.setAttribute("aria-label", `Add ${aOr(name)}${where} as…`);
+    looks.title = `Choose the ${name}'s look`;
     add.setAttribute("aria-label", about.collection ? `Add ${aOr(name)} with its own page${where}` : `Add ${aOr(name)}${where}`);
     add.title = about.collection ? `New page and ${name}${where}` : grid.slot !== undefined ? `Add ${aOr(name)}${where}` : `Add ${aOr(name)}${where}, a copy with placeholder text`;
     ghost.classList.toggle("is-compact", box.width < 120 || (!column && !strip && box.height < 40));
     // Below the last item, the button sits near the top, a short way from the items.
     ghost.classList.toggle("is-below", !grid.beside && !strip && box.height > 96);
     if (open) placePopover();
+    gallery?.view?.place();
   }
   const resize = new ResizeObserver(() => layout());
   resize.observe(frame);
@@ -221,7 +250,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   function scheduleLeave() {
     clearTimeout(leaveTimer);
     leaveTimer = window.setTimeout(() => {
-      if (pointerOnAdd || open) return;
+      if (pointerOnAdd || open || gallery) return;
       hoverGone = false;
       layout();
     }, 300);
@@ -229,6 +258,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function activate(grid = shown?.grid, about = shown?.about) {
     if (!grid || !about) return;
+    closeGallery(false);
     if (!about.collection) {
       close(false);
       addCard(grid);
@@ -245,9 +275,9 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   // a page is picked, the strip of where its content came from instead.
   let linker: { card: NewCard; picker?: CardLinkPicker; strip?: CardFillStrip; filled?: CardFilled; filling?: boolean; seen: boolean; scrolled?: boolean } | undefined;
 
-  function addCard(grid: ItemGridReport) {
+  function addCard(grid: ItemGridReport, look?: CardLook) {
     closeLinker();
-    void handlers.addCard(grid).then((card) => {
+    void handlers.addCard(grid, look).then((card) => {
       if (!card || !handlers.linkPages(card)) return;
       closeLinker();
       const entry: NonNullable<typeof linker> = { card, seen: false };
@@ -341,6 +371,53 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     linker = undefined;
   }
 
+  // "Add card as…" for the card slot it was opened on.
+  interface GalleryEntry { grid: ItemGridReport; live: boolean; view?: CardLookGallery }
+  let gallery: GalleryEntry | undefined;
+
+  function toggleGallery() {
+    const grid = shown?.grid;
+    const card = shown?.about.card;
+    if (gallery) { closeGallery(true); return; }
+    if (!grid || !card || !lookSupport) return;
+    close(false);
+    closeLinker();
+    const entry: GalleryEntry = { grid, live: false };
+    gallery = entry;
+    trackGrid(grid);
+    looks.setAttribute("aria-expanded", "true");
+    ghost.classList.add("is-looking");
+    // A card's width in the grid, so each look shows as it would there.
+    const width = grid.item?.width ?? (grid.beside ? grid.ghost.width : 320);
+    import("./card-look-gallery").then(({ createCardLookGallery }) => {
+      if (gallery !== entry) return;
+      entry.view = createCardLookGallery(pane, looks, {
+        inputs: () => lookSupport.inputs(),
+        prepare: (tags) => lookSupport.prepare(tags),
+        card,
+        noun: shown?.about.noun ?? "card",
+        cardWidth: Math.max(220, Math.min(420, width)),
+        onPick: (look) => {
+          const target = gallery?.grid ?? grid;
+          closeGallery(false);
+          addCard(target, look);
+        },
+        onClose: (focus) => closeGallery(focus),
+      });
+    }).catch(() => { if (gallery === entry) closeGallery(false); });
+  }
+
+  function closeGallery(restoreFocus: boolean) {
+    if (!gallery) return;
+    gallery.view?.destroy();
+    gallery = undefined;
+    trackGrid();
+    looks.setAttribute("aria-expanded", "false");
+    ghost.classList.remove("is-looking");
+    layout();
+    if (restoreFocus && !ghost.hidden && !looks.hidden) looks.focus();
+  }
+
   function trackGrid(grid?: ItemGridReport) {
     if (!(frame instanceof HTMLIFrameElement)) return;
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "item-grid-track", grid }, "*");
@@ -348,6 +425,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function openPopover(grid: ItemGridReport, about: GridDescription) {
     closeLinker();
+    closeGallery(false);
     open = { grid, about, live: false };
     trackGrid(grid);
     add.setAttribute("aria-expanded", "true");
@@ -627,10 +705,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
         open.grid = latest;
         open.live = true;
       }
+      const looking = gallery ? [next.hover, next.selected].find((grid) => grid && gridKey(grid) === gridKey(gallery!.grid)) : undefined;
+      if (gallery && looking) {
+        gallery.grid = looking;
+        gallery.live = true;
+      }
       if (sameReport(reports.hover, next.hover) && sameReport(reports.selected, next.selected)) return;
       if (hoverLeft) lastHover = reports.hover ?? undefined;
       reports = next;
       if (open?.live && !latest) close(false);
+      if (gallery?.live && !looking) closeGallery(false);
       if (next.hover) {
         hoverGone = false;
         clearTimeout(leaveTimer);
@@ -641,8 +725,12 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       }
       layout();
     },
-    /** The page's text changed: a filled card that is not as it was filled (undone, edited) drops its strip. */
+    /**
+     * The page's text, styles or images changed: the looks gallery's pictures
+     * follow; a filled card that is not as it was filled (undone, edited) drops its strip.
+     */
     sourcesChanged() {
+      gallery?.view?.refresh();
       if (linker?.filled && !linker.filling && handlers.cardText(linker.card) !== linker.filled.filled) closeLinker();
     },
     /** The grid around the selection, as last reported. */
@@ -662,6 +750,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     },
     clear() {
       close(false);
+      closeGallery(false);
       closeLinker();
       clearTimeout(leaveTimer);
       hoverGone = false;
@@ -674,6 +763,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       closeLinker();
+      gallery?.view?.destroy();
+      gallery = undefined;
       layer.remove();
       popover.remove();
       folderMenu?.remove();

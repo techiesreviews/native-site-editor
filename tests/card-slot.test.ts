@@ -75,6 +75,32 @@ test("a named card slot gets the card with its slot attribute, after that slot's
   assert.equal(cardSlotAddEdit(source, [0, 0], templateOf, "quotes")?.index, 2);
 });
 
+test("Add card as… a look: another card component or a variant, in the same slot, after its last item", () => {
+  const source = work(card("A"));
+  const as = (look: Parameters<typeof cardSlotAddEdit>[4]) => {
+    const result = cardSlotAddEdit(source, [0, 0], templateOf, undefined, look);
+    return result && { next: applyGuardedSourceEdit(source, result.edit), card: result.card, index: result.index };
+  };
+  const quote = as({ tag: "card-quote" });
+  assert.deepEqual([quote?.card, quote?.index], ["card-quote", 2]);
+  assert.equal(quote?.next, work(card("A"), '<card-quote>\n        <p slot="quote">A kind word.</p>\n        <span slot="who">Someone</span>\n      </card-quote>'));
+  assert.equal(as({ tag: "card-project", attribute: { name: "data-featured", value: true } })?.next, work(card("A"), fresh.replace("<card-project>", "<card-project data-featured>").replace(/\n/g, "\n      ")));
+  assert.match(as({ tag: "card-project", attribute: { name: "data-layout", value: "centered" } })?.next ?? "", /<card-project data-layout="centered">\n {8}<p slot="note">Project<\/p>/);
+  // A named slot keeps its slot attribute after the variant.
+  const pair = page('<section-pair><card-quote slot="quotes"></card-quote></section-pair>');
+  const named = cardSlotAddEdit(pair, [0, 0], templateOf, "quotes", { tag: "card-project", attribute: { name: "data-layout", value: "wide" } });
+  assert.match(applyGuardedSourceEdit(pair, named!.edit)!, /<card-project data-layout="wide" slot="quotes">/);
+  // Not a card component (no heading slot, not card-…, unknown): nothing.
+  assert.equal(as({ tag: "card-note" }), undefined);
+  assert.equal(as({ tag: "section-plain" }), undefined);
+  assert.equal(as({ tag: "card-gone" }), undefined);
+});
+
+test("a fresh card's variant: bare, or its value quoted and escaped", () => {
+  assert.match(freshCardMarkup("card-quote", templateOf, { name: "data-tilt", value: true })!, /^<card-quote data-tilt>\n/);
+  assert.match(freshCardMarkup("card-quote", templateOf, { name: "data-tilt", value: 'a"b' })!, /^<card-quote data-tilt="a&quot;b">\n/);
+});
+
 test("no card slot, no card: plain grids and other elements keep today's copy", () => {
   assert.equal(cardSlotAddEdit(page('<section-plain><article class="card"><h3>A</h3></article><article class="card"><h3>B</h3></article></section-plain>'), [0, 0], templateOf), undefined);
   assert.equal(cardSlotAddEdit(page('<div class="cards">' + card("A") + card("B") + "</div>"), [0, 0], templateOf), undefined);
@@ -85,7 +111,9 @@ test("an instance insert takes one bare instance of plain markup, and opens an i
   const source = work();
   const items = (tag: string, slot: string) => tag === "section-work" && slot === "";
   assert.ok(nativeInstanceInsertEdit(source, [0, 0], 1, "<card-project></card-project>", items));
-  for (const markup of ['<card-project class="x"></card-project>', "<card-project></card-project><card-project></card-project>", "<p>x</p>", "<card-project><script>x()</script></card-project>", "<card-project><style>p{}</style></card-project>"])
+  assert.ok(nativeInstanceInsertEdit(source, [0, 0], 1, "<card-project data-featured></card-project>", items));
+  assert.ok(nativeInstanceInsertEdit(source, [0, 0], 1, '<card-project data-layout="wide"></card-project>', items));
+  for (const markup of ['<card-project class="x"></card-project>', '<card-project data-a data-b></card-project>', '<card-project data-a="x" onclick="y"></card-project>', "<card-project data-a='x'></card-project>", '<card-project  data-a></card-project>', "<card-project></card-project><card-project></card-project>", "<p>x</p>", "<card-project><script>x()</script></card-project>", "<card-project><style>p{}</style></card-project>"])
     assert.equal(nativeInstanceInsertEdit(source, [0, 0], 1, markup, items), undefined, markup);
   // The seal holds at a slot that is not an items slot, and with no rule at all.
   assert.equal(nativeInstanceInsertEdit(source, [0, 0], 1, "<card-project></card-project>", items, "title"), undefined);

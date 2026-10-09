@@ -14,6 +14,7 @@ import { decodeHtmlEntities } from "./html-entities";
 import { itemsSlotRule } from "./block-insert";
 import { slotMarkup } from "../native-insert";
 import { nativeInstanceInsertEdit, nativeOutline, type GuardedSourceEdit } from "./native-operations";
+import type { CardLook } from "./card-looks";
 
 /** An items slot of a component whose fallback is a card component: its name ("" the unnamed one) and that card's tag. */
 export interface CardSlot {
@@ -34,21 +35,23 @@ export function cardSlotOf(tag: string, templateOf: TemplateOf): CardSlot[] {
   });
 }
 
-/** A fresh instance of the card component `tag`, one slot's copy a line; undefined when the site has no such component. */
-export function freshCardMarkup(tag: string, templateOf: TemplateOf): string | undefined {
+/** A fresh instance of the card component `tag`, one slot's copy a line, with the variant `attribute` when given; undefined when the site has no such component. */
+export function freshCardMarkup(tag: string, templateOf: TemplateOf, attribute?: CardLook["attribute"]): string | undefined {
   const template = templateOf(tag);
-  return template === undefined ? undefined : [`<${tag}>`, ...slotMarkup(template).map((line) => `  ${line}`), `</${tag}>`].join("\n");
+  const set = !attribute ? "" : attribute.value === true ? ` ${attribute.name}` : ` ${attribute.name}="${attribute.value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
+  return template === undefined ? undefined : [`<${tag}${set}>`, ...slotMarkup(template).map((line) => `  ${line}`), `</${tag}>`].join("\n");
 }
 
 /**
  * Add card on the instance at `parent` (a body path): a fresh card of its
  * card slot `slot` (else the slot its last child in a card slot fills, else
  * its first card slot), after that slot's last item, else after the
- * instance's last child. The edit, the new card's index in the instance, its
- * tag and slot; undefined when the element there has no such slot or the
- * page's HTML cannot be read exactly.
+ * instance's last child; in `look` (another card component, a variant;
+ * ticket 09 §7) when given. The edit, the new card's index in the instance,
+ * its tag and slot; undefined when the element there has no such slot, the
+ * look is no card component, or the page's HTML cannot be read exactly.
  */
-export function cardSlotAddEdit(source: string, parent: readonly number[], templateOf: TemplateOf, slot?: string): { edit: GuardedSourceEdit; index: number; card: string; slot: string } | undefined {
+export function cardSlotAddEdit(source: string, parent: readonly number[], templateOf: TemplateOf, slot?: string, look?: Pick<CardLook, "tag" | "attribute">): { edit: GuardedSourceEdit; index: number; card: string; slot: string } | undefined {
   let node = nativeOutline(source);
   for (const step of parent) node = node?.children[step];
   if (!node || !node.name.includes("-")) return undefined;
@@ -56,12 +59,14 @@ export function cardSlotAddEdit(source: string, parent: readonly number[], templ
   const named = (name: string | undefined) => slots.find((entry) => entry.slot === name);
   const kids = node.children;
   const chosen = slot !== undefined ? named(slot) : named([...kids].reverse().find((child) => named(child.slot))?.slot) ?? slots[0];
-  const markup = chosen && freshCardMarkup(chosen.card, templateOf);
-  if (!chosen || !markup) return undefined;
+  const card = look?.tag ?? chosen?.card;
+  if (!chosen || !card || (look && !isCardComponent(card, templateOf))) return undefined;
+  const markup = freshCardMarkup(card, templateOf, look?.attribute);
+  if (!markup) return undefined;
   const last = kids.map((child) => child.slot).lastIndexOf(chosen.slot);
   const index = last < 0 ? kids.length : last + 1;
   const edit = nativeInstanceInsertEdit(source, parent, index, markup, itemsSlotRule(templateOf), chosen.slot);
-  return edit ? { edit, index, card: chosen.card, slot: chosen.slot } : undefined;
+  return edit ? { edit, index, card, slot: chosen.slot } : undefined;
 }
 
 /**

@@ -416,21 +416,25 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
   // The Add panel, dragging onto the canvas, the empty page and the
   // highlight on a section just added (src/page-builder/).
+  // What thumbnails render (the Add panel's, Add card ▾'s): the site, its sources, styles and images, the route on show.
+  const thumbnailInputs = () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route };
+  // Component stylesheets a thumbnail needs and the preview has not read.
+  const prepareStyles = (tags: string[]) => {
+    const wanted = site ? tags.filter((tag) => Object.hasOwn(site!.components, tag) && !componentStyles[tag]) : [];
+    if (wanted.length) handlers.onComponentStyles?.(wanted);
+  };
   const pageBuilder = createPageBuilder({
     pane,
     frame,
     insertControls: () => insertControls,
-    inputs: () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route },
+    inputs: () => thumbnailInputs(),
     choices: () => handlers.insertChoices?.() ?? [],
     pointFor: handlers.insertPointFor,
     destinationText: handlers.insertDestinationText,
     newComponent: handlers.onNewComponent && ((tag, point) => viewing ? Promise.resolve(false) : handlers.onNewComponent!(tag, point)),
     // An earlier version on show (History) is not edited: its places are not the source's.
     insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
-    prepare: (tags) => {
-      const wanted = site ? tags.filter((tag) => Object.hasOwn(site!.components, tag) && !componentStyles[tag]) : [];
-      if (wanted.length) handlers.onComponentStyles?.(wanted);
-    },
+    prepare: (tags) => prepareStyles(tags),
     scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
     dock: handlers.addPanelDock,
   });
@@ -442,7 +446,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       slotSelection?.path === report.pagePath && report.hostNode.every((index, i) => slotSelection!.node[i] === index) &&
       (!slotSelection.exact || (slotSelection.node.length === report.hostNode.length && slotSelection.tag === report.tag))),
   });
-  const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards) : undefined;
+  const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards, { inputs: thumbnailInputs, prepare: prepareStyles }) : undefined;
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
   let pins: ReturnType<typeof createAgentPins> | undefined;

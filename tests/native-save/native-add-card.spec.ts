@@ -323,3 +323,59 @@ test("Change page fills the card again from the card as it was added; Esc there 
   await expect(addCard(page)).toBeFocused();
   expect(await source(page)).toBe(twice);
 });
+
+test("Add card ▾ lists the card looks, rendered, and places a blank card of the one picked; the link combobox follows", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  // The starter's looks: card-quote beside card-project, whose CSS has a yes/no and a choice variant.
+  const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+  await edit("components/card-quote/card-quote.html", '<article>\n  <slot name="title"><h3>Untitled quote</h3></slot>\n  <slot name="body"><p class="body">No quote yet.</p></slot>\n</article>\n');
+  await edit("components/card-quote/card-quote.css", ":host { display: block; }\narticle { padding: 24px; border-left: 4px solid rgb(200, 80, 40); font-style: italic; }\n");
+  await edit("components/card-project/card-project.css", ':host { display: block; }\narticle { padding: 24px; border: 1px solid #d9ddd1; border-radius: 12px; }\n:host([data-featured]) article { border-color: rgb(0, 90, 200); }\n:host([data-layout="centered"]) article { text-align: center; }\n');
+  const made = await openSectionWork(page, baseURL, 1);
+  await frame(page).locator("section-work > card-project").hover();
+  const looks = page.getByRole("button", { name: "Add a card to Recent work as…" });
+  await expect(looks).toBeVisible();
+  await expect(addCard(page)).toBeVisible();
+  await looks.click();
+  const gallery = page.getByRole("dialog", { name: "Add card as…" });
+  await expect(gallery).toBeVisible();
+  await expect(looks).toHaveAttribute("aria-expanded", "true");
+  // Card components (card-note has no heading slot), then card-project's variants.
+  const tiles = gallery.locator(".card-looks__tile");
+  await expect(tiles).toHaveText([/^card-projectusual$/, /^card-quote$/, /^card-project · featured$/, /^card-project · centered$/]);
+  await expect(tiles.first()).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(tiles.nth(1)).toBeFocused();
+  // Each a blank card of its look with the site's CSS.
+  const thumb = (n: number) => tiles.nth(n).frameLocator("iframe");
+  await expect(thumb(1).locator("card-quote > h3")).toHaveText("Untitled quote");
+  await expect(thumb(2).locator("card-project[data-featured] > h3")).toHaveText("Untitled project");
+  await expect.poll(() => thumb(2).locator("card-project").evaluate((el) => getComputedStyle(el.shadowRoot!.querySelector("article")!).borderTopColor)).toBe("rgb(0, 90, 200)");
+  // Esc closes it, back on ▾.
+  await page.keyboard.press("Escape");
+  await expect(gallery).toHaveCount(0);
+  await expect(looks).toBeFocused();
+  await expect(looks).toHaveAttribute("aria-expanded", "false");
+  expect(await source(page)).toBe(made);
+
+  // A card-quote goes after the last card, blank; Link to a page… follows.
+  await looks.click();
+  await gallery.getByRole("button", { name: "card-quote" }).click();
+  await expect(gallery).toHaveCount(0);
+  const quote = '<card-quote>\n        <h3 slot="title">Untitled quote</h3>\n        <p slot="body" class="body">No quote yet.</p>\n      </card-quote>';
+  const withQuote = made.replace("</card-project>\n    </section-work>", `</card-project>\n      ${quote}\n    </section-work>`);
+  await expect.poll(() => source(page)).toBe(withQuote);
+  await expect(frame(page).locator("section-work > card-quote > h3")).toHaveText("Untitled quote");
+  await expect(page.getByRole("combobox", { name: "Link to a page" })).toBeFocused();
+  await page.keyboard.press("Escape");
+
+  // A variant: the slot's card with its attribute; one undo takes it back.
+  await frame(page).locator("section-work > card-quote").hover();
+  await looks.click();
+  await gallery.getByRole("button", { name: "card-project · centered" }).click();
+  await expect.poll(() => source(page)).toBe(withQuote.replace("</card-quote>\n    </section-work>", `</card-quote>\n      ${fresh.replace("<card-project>", '<card-project data-layout="centered">')}\n    </section-work>`));
+  await expect(frame(page).locator("section-work > card-project[data-layout=centered]")).toHaveCount(1);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(withQuote);
+});
