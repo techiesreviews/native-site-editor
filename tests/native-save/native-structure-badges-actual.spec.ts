@@ -137,6 +137,15 @@ test("Structure frames template parts and mirrors slot chip edits in both themes
   await undo();
   await expect.poll(source).toBe(workTemplate);
   await expect(badge(LEDE)).toHaveClass(/slot-chip--fixed/);
+  // From the keyboard the badge keeps the focus as its part moves into the new slot and back.
+  await badge(LEDE).focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(source).toBe(workTemplate.replace(`<p class="lede">${LEDE}</p>`, `<slot name="text"><p class="lede">${LEDE}</p></slot>`));
+  await expect(badge(LEDE)).toHaveClass(/slot-chip--slot/);
+  await expect(badge(LEDE)).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect.poll(source).toBe(workTemplate);
+  await expect(badge(LEDE)).toBeFocused();
   await title.locator(".page-structure__label").click();
   await expect(title).toHaveAttribute("aria-selected", "true");
   await expect(chip(page)).toHaveText("title");
@@ -160,6 +169,12 @@ test("Structure frames template parts and mirrors slot chip edits in both themes
   await lede.focus();
   await page.keyboard.press("Alt+ArrowUp");
   expect(await source()).toBe(workTemplate);
+  // Nor does the framed instance's own row move it on the page.
+  const home = await effectiveSource(page, baseURL, "index.html");
+  await outline.getByRole("treeitem").first().focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await page.waitForTimeout(300);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   // Code edits and Undo/Redo refresh Structure even when the page's light DOM report is identical.
   const at = workTemplate.indexOf("Section title");
   await page.evaluate(async ({ path, at }) => {

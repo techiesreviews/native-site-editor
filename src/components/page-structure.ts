@@ -497,6 +497,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let editingInstance: string | undefined;
   // Rows of an outer level while a nested component is open: shown, not selectable.
   const outerRows = new WeakSet<NativeStructureItem>();
+  // The page's instance the mode frames.
+  const framedRows = new WeakSet<NativeStructureItem>();
   // Opened rows unfolded once each time they open.
   const unfoldedOpen = new Set<string>();
   let rowNameSeq = 0;
@@ -536,6 +538,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       el.dataset.templatePath = opened.path;
     } else templateRoots.delete(item);
     if (modeRows?.nested) outerRows.add(item);
+    if (modeRows) framedRows.add(item); else framedRows.delete(item);
     const slotModel = !template && !modeRows && structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
     // A slot opened before its element existed (Show, or a defaulted slot's
     // first edit) settles on its first actual assigned root.
@@ -733,7 +736,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")].filter((el) => !el.closest("[role='group'][hidden]"));
 
   function onKey(event: KeyboardEvent, item: NativeStructureItem, el: HTMLElement) {
-    if ((templatePaths.has(item) || templateRoots.has(item)) && event.altKey) { event.preventDefault(); event.stopPropagation(); return; }
+    // Template rows, and the framed instance's own, never move the page's elements.
+    if ((templatePaths.has(item) || templateRoots.has(item) || framedRows.has(item)) && event.altKey) { event.preventDefault(); event.stopPropagation(); return; }
     const list = visibleRows();
     const at = list.indexOf(el);
     const focusRow = (target: HTMLElement | undefined) => {
@@ -877,7 +881,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const focusedControl = active instanceof HTMLElement && active.matches("button, .slot-chip[role='button']") && tree.contains(active) ? (() => {
       const owner = active.closest<HTMLElement>("[role='treeitem']");
       const id = owner?.dataset.node ?? owner?.dataset.slotRow;
-      return id === undefined ? undefined : { id, name: active.getAttribute("aria-label") ?? active.textContent ?? "" };
+      // A slot chip's row can change its path (a part made a slot moves inside it): its place in the tree finds it then.
+      const place = owner && active.matches(".slot-chip") ? visibleRows().indexOf(owner) : -1;
+      return id === undefined ? undefined : { id, place, name: active.getAttribute("aria-label") ?? active.textContent ?? "" };
     })() : undefined;
     focusAfterRender = undefined;
     if (!structure || !structure.path) {
@@ -915,7 +921,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (pendingTemplate && currentSelection) { reveal(currentSelection); currentSelection.scrollIntoView({ block: "nearest" }); }
     if (focusedControl && !tree.contains(document.activeElement)) {
       const again = [...(rowElement(focusedControl.id)?.querySelectorAll<HTMLElement>("button, .slot-chip[role='button']") ?? [])]
-        .find(control => (control.getAttribute("aria-label") ?? control.textContent ?? "") === focusedControl.name);
+        .find(control => (control.getAttribute("aria-label") ?? control.textContent ?? "") === focusedControl.name)
+        ?? (focusedControl.place >= 0 && !rowElement(focusedControl.id) ? visibleRows()[focusedControl.place]?.querySelector<HTMLElement>(":scope > .slot-chip") ?? undefined : undefined);
       again?.focus();
     }
     if (activeField && tree.contains(activeField)) {
