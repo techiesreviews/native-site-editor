@@ -116,25 +116,27 @@ test("make_component drafts files and whole-element slots in one undo step", { t
   }
 });
 
-test("make_component refuses a heading with the allowed containers and writes no drafts", async ({ page, baseURL }) => {
+test("make_component refuses a heading and an image with the allowed containers and writes no drafts", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
-    await frame(page).locator(".hero h1").click();
-    await expect.poll(async () => {
-      const response = await client.callTool({ name: "get_selection", arguments: {} });
-      return response.isError ? undefined : result(response).element?.tag;
-    }).toBe("h1");
-    const selected = result(await client.callTool({ name: "get_selection", arguments: {} })).element;
     const home = result(await client.callTool({ name: "get_page", arguments: { page: "/" } }));
-    const response = await client.callTool({ name: "make_component", arguments: {
-      page: "/", element: selected.id, tag: "heading-refused", expectedHash: home.hash,
-    } });
-    expect(response.isError).toBe(true);
-    expect(JSON.stringify(result(response))).toContain("Make component works only on section, div, article, aside, figure, nav, or header/footer inside article, aside, main, nav or section; <h1> cannot become a component here.");
+    for (const [selector, tag] of [[".hero h1", "h1"], [".hero img", "img"]] as const) {
+      await frame(page).locator(selector).first().click();
+      await expect.poll(async () => {
+        const response = await client.callTool({ name: "get_selection", arguments: {} });
+        return response.isError ? undefined : result(response).element?.tag;
+      }).toBe(tag);
+      const selected = result(await client.callTool({ name: "get_selection", arguments: {} })).element;
+      const response = await client.callTool({ name: "make_component", arguments: {
+        page: "/", element: selected.id, tag: "refused-part", expectedHash: home.hash,
+      } });
+      expect(response.isError).toBe(true);
+      expect(JSON.stringify(result(response))).toContain(`Make component works only on section, div, article, aside, figure, nav, or header/footer inside article, aside, main, nav or section; <${tag}> cannot become a component here.`);
+    }
     expect(await draft(page, indexPath)).toBeUndefined();
-    for (const path of ["components/heading-refused/heading-refused.html", "components/heading-refused/heading-refused.css"]) {
+    for (const path of ["components/refused-part/refused-part.html", "components/refused-part/refused-part.css"]) {
       expect(await draft(page, path)).toBeUndefined();
       expect((await client.callTool({ name: "read_file", arguments: { path } })).isError).toBe(true);
     }

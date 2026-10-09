@@ -1327,14 +1327,15 @@ export function createComponentTools(deps: ComponentDeps) {
     if (deps.sources()[path] !== source) return "The page changed in the editor since it was read. Read it again.";
     const range = locateNativeElementRange(source, nodePath);
     if (!range) return "That element is not on the page any more. Read the page again.";
+    // A component, a document element or anything inside an instance gets the plan's own, more telling reason.
+    const chain = elementChain(source, nodePath)?.map((element) => element.localName) ?? [];
+    const planRefuses = chain.some((name) => name.includes("-")) || ["html", "head", "body", "main"].includes(range.tag.name);
+    if (!planRefuses && !makeComponentOffered(chain)) return `Make component works only on ${makeComponentContainers}; <${range.tag.name}> cannot become a component here.`;
     const taken = Object.keys(current.components);
     const problem = tagNameProblem(tag, taken);
     if (problem) return problem;
     const initial = makeComponentPlan(source, range, tag, {}, taken);
     if ("error" in initial) return initial.error;
-    // After the plan's own refusals (a component, inside an instance, <main>), which say more.
-    const chain = elementChain(source, nodePath)?.map((element) => element.localName) ?? [];
-    if (!makeComponentOffered(chain)) return `Make component works only on ${makeComponentContainers}; <${range.tag.name}> cannot become a component here.`;
     const paths = fixedSlotPaths(initial.slots, fixed);
     if ("error" in paths) return paths.error;
     const bare = makeComponentPlan(source, range, tag, { fixed: paths.fixed }, taken);
