@@ -150,3 +150,17 @@ test("an empty Button asks what this button does", async ({ page }) => {
   await bar(page).getByRole("button", { name: "Needs a name", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveAttribute("placeholder", "What this button does");
 });
+
+test("a class written with a character reference names the Button the same in the bar and the structure", async ({ page }) => {
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/source-editor.ts");
+    const html = editor.getMountedSource("blocks.html")!;
+    const text = `<a class="btn"`;
+    const start = html.indexOf(text);
+    editor.replaceActiveRanges([{ path: "blocks.html", start, end: start + text.length, text: `<a class="x&#32;btn"`, expected: text }]);
+  });
+  await expect(frame(page).locator("a.x.btn")).toHaveCount(1);
+  await frame(page).locator("a.btn").click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Button");
+  await expect(page.getByRole("treeitem", { name: "Button Button", exact: true })).toHaveAttribute("aria-selected", "true");
+});

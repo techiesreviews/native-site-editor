@@ -6,6 +6,7 @@ import { type StartTag, type ElementRange } from "../native-source-location";
 import { nativeLinkSuggestions } from "../native-pages";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "../page-builder/native-element-fields";
 import { blockLayout, blockLayoutEdit } from "../page-builder/block-fields";
+import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { agentElement } from "../agent-site";
 import { isSectionTemplate } from "../native-insert";
@@ -96,7 +97,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     const source = ports.nativeEditableSource(path) ?? "";
     const range = node ? ports.locateNativeElementRange(source, node) : undefined;
-    const className = range ? ports.startTagAttribute(source, range.tag, "class")?.value : undefined;
+    // Decoded as the browser reads it, so the bar names it as the page structure does.
+    const classValue = range ? ports.startTagAttribute(source, range.tag, "class")?.value : undefined;
+    const className = classValue === undefined ? undefined : decodeHtmlEntities(classValue, true);
     const kind = nativeElementLabel(selection.tag, Boolean(ports.nativeSite && Object.hasOwn(ports.nativeSite.components, selection.tag)), className);
     // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
     if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
