@@ -20,6 +20,6 @@ From slices 22 and 85 (see their Done notes): Edit component mode's bar ("Editin
 
 ## Done (2026-10-09)
 
-- Show toggle removed (Lex, 2026-10-09): the mode always shows the template's placeholders; the toggle, its CSS, the page-content view path (frame mode `show`, runtime, items-slot count) and its spec steps are gone (slices 22, 23, 41 specs follow).
+- Show toggle removed (Lex, 2026-10-09): the mode always shows the template's placeholders; the toggle, its CSS, the page-content view path (frame mode `show`, runtime, items-slot count) and its spec steps are gone, with slice 47's "would hide" refusal (slices 22, 23, 41, 47 specs follow).
 - The bar fits by measured stages (`src/page-builder/edit-mode-bar-fit.ts`): off-screen copies measure each stage once per content change, a ResizeObserver picks the first that fits: the note shrinks to an info mark and its count, then "used on N pages" to "N pages" (accessible names keep the full text), then the bar wraps with the device tools on their own row. Done always visible.
 - Tests: `tests/edit-mode-bar-fit.test.ts`; nightly `native-edit-mode-bar-fits.spec.ts` (1440, 1200, 1024, 760, 390 with a plan note, light and dark: each shrink stage in order; every control visible, inside, not overlapping, clickable; Done at 390). Screenshots in `.scratch/cb-build-shots/89/`.
