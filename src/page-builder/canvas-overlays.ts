@@ -141,15 +141,14 @@ export function createEmptyCanvas(layer: HTMLElement, handlers: EmptyCanvasHandl
 }
 
 /**
- * The brief highlight around a block just added, with a label naming where
- * it went ("Into Section › after Heading"); a refused insert's red reason.
+ * The brief highlight around a block just added; a refused insert's red reason.
  */
 export function createInsertFlash(layer: HTMLElement) {
   const box = node("div", "pb-flash");
   const label = node("div", "pb-flash-label");
   box.hidden = label.hidden = true;
   layer.append(box, label);
-  let armed: { path: string; node: string; until: number; where?: string } | undefined;
+  let armed: { path: string; node: string; until: number } | undefined;
   let timer = 0;
   let shown: SelectionRect | undefined;
 
@@ -187,10 +186,10 @@ export function createInsertFlash(layer: HTMLElement) {
   }
 
   return {
-    /** The next selection of this element (the one an insert asked for) is highlighted, with `where` when given. */
-    arm(path: string, nodePath: number[], where?: string) {
-      // A first Image waits for its file reads; a refusal or another arm replaces it.
-      armed = { path, node: nodePath.join("."), until: Date.now() + (where ? 30_000 : 5000), where };
+    /** The next selection of this element (the one an insert asked for) is highlighted, if it comes within `wait` ms. */
+    arm(path: string, nodePath: number[], wait = 5000) {
+      // A refusal or another arm replaces it.
+      armed = { path, node: nodePath.join("."), until: Date.now() + wait };
     },
     /** The runtime selected an element: highlighted when it is the armed one. */
     selected(path: string, nodePath: number[] | undefined, rect: SelectionRect | undefined) {
@@ -200,9 +199,8 @@ export function createInsertFlash(layer: HTMLElement) {
         return false;
       }
       if (armed.path !== path || armed.node !== nodePath.join(".")) return false;
-      const where = armed.where;
       armed = undefined;
-      show(rect, where, false);
+      show(rect, undefined, false);
       return true;
     },
     /** A refused insert: the reason in red at `rect` (the selection), or atop the canvas. */

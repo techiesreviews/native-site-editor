@@ -70,7 +70,7 @@ test("a canvas drag unfolds Structure to its target and shows the spot as an ind
   const from = await pointIn(page, "#services h2", 0.2);
   const between = await pointIn(page, "#work .cards card-project:nth-child(2)", 0, 0.3, -3);
   await pressAndMove(page, from, between);
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   // Down to the grid, one level in, before the second card's row; the grid's row tinted.
   await expect(row(page, "1.1")).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, "1.1.1")).toHaveAttribute("aria-expanded", "true");
@@ -110,17 +110,17 @@ test("a row dragged in Structure takes its depth from the pointer's x", async ({
   // The gap below the folded grid: in the grid (level 4) or after it in the Section (level 3).
   const y = (await box(row(page, "1.1.1"))).bottom - 3;
   await page.mouse.move(await levelX(page, 4), y, { steps: 4 });
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   expect(await depth(page)).toBe("3");
   await expect(row(page, "1.1.1")).toHaveClass(/is-drop-target/);
   await page.mouse.move(await levelX(page, 3), y, { steps: 4 });
-  await expect(where(page)).toHaveText("Into Section › after Div (grid)");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Div (grid)");
   expect(await depth(page)).toBe("2");
   await expect(row(page, "1.1")).toHaveClass(/is-drop-target/);
   await expect(row(page, "1.1.1")).not.toHaveClass(/is-drop-target/);
   // Further left, <main> would refuse a Heading: it stays at the nearest depth that takes it.
   await page.mouse.move(await levelX(page, 1), y, { steps: 4 });
-  await expect(where(page)).toHaveText("Into Section › after Div (grid)");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Div (grid)");
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/div><h2>What we do<\/h2><\/section>/);
   await expect(frame(page).locator("#services > h2")).toHaveCount(0);
@@ -140,7 +140,7 @@ test("a Section dragged in Structure snaps between page bands", async ({ page, b
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Section");
   // Over the header: the first gap, which is where it is.
   await page.mouse.move(hero.x, (await box(row(page, "0"))).y, { steps: 4 });
-  await expect(where(page)).toHaveText("Stays where it is");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Stays where it is");
   await expect(line(page)).toBeHidden();
   // Over the footer: after the last band, whatever the x.
   await page.mouse.move(await levelX(page, 5), (await box(row(page, "2"))).y, { steps: 6 });
@@ -150,7 +150,7 @@ test("a Section dragged in Structure snaps between page bands", async ({ page, b
   await expect(row(page, "1")).toHaveClass(/is-drop-target/);
   // Over a nested row deep in #work's lower half, far right: after #work, at the bands' depth.
   await page.mouse.move(await levelX(page, 6), (await box(row(page, "1.1.1"))).y, { steps: 6 });
-  await expect(where(page)).toHaveText("Between page bands › after Section");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Between page bands › after Section");
   expect(await depth(page)).toBe("1");
   expect(Math.abs(await lineY(page) - (await box(row(page, "1.2"))).top)).toBeLessThan(4);
   await page.mouse.up();
@@ -167,7 +167,7 @@ test("a block from the rail drops in Structure at the depth the pointer's x pick
   const button = await box(rail(page).getByRole("button", { name: "Paragraph", exact: true }));
   const y = (await box(row(page, "1.1.1"))).bottom - 3;
   await pressAndMove(page, button, { x: await levelX(page, 4), y });
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   expect(await depth(page)).toBe("3");
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/card-project><p>Text<\/p><\/div>/);

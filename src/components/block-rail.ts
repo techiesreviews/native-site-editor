@@ -46,7 +46,7 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
     button.addEventListener("focus", () => { if (button.matches(":focus-visible")) showTip(button); });
     button.addEventListener("blur", hideTip);
     button.addEventListener("pointerdown", hideTip);
-    const drag = makeInsertDraggable(button, () => choice.label, () => options.drag?.(kind));
+    const drag = makeInsertDraggable(button, () => ({ name: choice.label, tag: tags[kind] ?? kind }), () => options.drag?.(kind));
     button.addEventListener("click", () => {
       hideTip();
       if (!drag.justDragged()) options.onPick?.(kind);

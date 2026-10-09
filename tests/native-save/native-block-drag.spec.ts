@@ -36,6 +36,9 @@ async function dragFromRail(page: Page, name: string, to: { x: number; y: number
   await page.mouse.move(b.x + b.width / 2 + 12, b.y + b.height / 2, { steps: 2 });
   await page.mouse.move(to.x, to.y, { steps: 8 });
   await expect(ghost(page)).toBeVisible();
+  await expect(ghost(page).locator(".pb-drag-ghost__name")).toHaveText(name);
+  await expect(ghost(page).locator("svg")).toHaveCount(1);
+  await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
 }
 
 // The gap between the grid's two cards.
@@ -45,7 +48,7 @@ test("a Paragraph dragged from the rail between two cards of a nested grid lands
   await open(page, baseURL);
   const original = await source(page);
   await dragFromRail(page, "Paragraph", await betweenCards(page));
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   // The line stands sideways between the cards; nothing outlines the grid.
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await expect(page.locator(".pb-drop__refused, .pb-drop__area")).toHaveCount(0);
@@ -54,6 +57,7 @@ test("a Paragraph dragged from the rail between two cards of a nested grid lands
   await expect(page.locator(".pb-drop")).toHaveCount(0);
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/card-project><p>Text<\/p><card-project>/);
   await expect(frame(page).locator("#work .cards > card-project + p + card-project")).toHaveCount(1);
+  await expect(page.locator(".pb-flash-label")).toBeHidden();
   // The new block is selected.
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Paragraph");
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
@@ -64,17 +68,17 @@ test("Alt steps the target up a level and Escape cancels the drag", async ({ pag
   await open(page, baseURL);
   const original = await source(page);
   await dragFromRail(page, "Heading", await betweenCards(page));
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   await page.keyboard.down("Alt");
-  await expect(where(page)).toHaveText("Into Section › after Heading");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Heading");
   await expect(page.locator(".pb-drop__line:not(.pb-drop__line--v)")).toBeVisible();
   await page.keyboard.up("Alt");
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   // Tab steps up too, Shift+Tab back.
   await page.keyboard.press("Tab");
-  await expect(where(page)).toHaveText("Into Section › after Heading");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Heading");
   await page.keyboard.press("Shift+Tab");
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   await page.keyboard.press("Escape");
   await expect(ghost(page)).toHaveCount(0);
   await expect(page.locator(".pb-drop")).toHaveCount(0);
@@ -106,13 +110,13 @@ test("an empty Div shows its drop area, and a Section snaps between page bands",
   await rail(page).getByRole("button", { name: "Div", exact: true }).click();
   await expect(frame(page).locator("#services > div.flow:empty")).toBeVisible();
   await dragFromRail(page, "Image", await pointIn(page, "#services > div.flow"));
-  await expect(where(page)).toHaveText("Into Div (stack) › empty");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (stack) › empty");
   await expect(page.locator(".pb-drop__area")).toHaveText("Drop into the empty Div (stack)");
   await page.mouse.up();
   await expect(frame(page).locator("#services > div.flow > img")).toBeVisible();
   // A Section over a card goes between bands: after #work when below its middle.
   await dragFromRail(page, "Section", await pointIn(page, "#work .cards card-project", 0.5, 0.9));
-  await expect(where(page)).toHaveText(/^Between page bands › /);
+  await expect(ghost(page)).toHaveAttribute("data-where", /^Between page bands › /);
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/section><section class="flow"><\/section><section class="flow" id="services">/);
 });
@@ -136,7 +140,7 @@ test("a Paragraph dragged into a section component's items slot lands among its 
   await expect.poll(() => frame(page).locator("section-work card-project").nth(1).evaluate(el => el.getBoundingClientRect().top - el.previousElementSibling!.getBoundingClientRect().top)).toBe(0);
   const original = await source(page);
   await dragFromRail(page, "Paragraph", await pointIn(page, "section-work card-project:nth-of-type(2)", 0, 0.3, -6));
-  await expect(where(page)).toHaveText("Into Section work › items › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/card-project><p>Text<\/p><card-project>/);
@@ -149,14 +153,48 @@ test("over a card's padding a Paragraph goes in its empty items slot, a line whe
   await open(page, baseURL);
   await frame(page).locator("#work card-project").first().evaluate(el => el.scrollIntoView({ block: "center" }));
   await dragFromRail(page, "Paragraph", await pointIn(page, "#work card-project", 0.5, 1, 0, -14));
-  await expect(where(page)).toHaveText("Into Card project › items › empty");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Card project › items › empty");
   // Between the card's text and its link, not an area over the card.
   await expect(page.locator(".pb-drop__area")).toHaveCount(0);
-  const line = (await page.locator(".pb-drop__line:not(.pb-drop__line--v)").boundingBox())!;
-  const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
-  const [body, link] = await Promise.all(["p[slot=body]", "a[slot=link]"].map(s => frame(page).locator(`#work card-project ${s}`).first().evaluate(el => el.getBoundingClientRect().toJSON())));
-  expect(line.y - frameBox.y).toBeGreaterThan(body.bottom - 1);
-  expect(line.y - frameBox.y).toBeLessThan(link.top);
+  await expect.poll(async () => {
+    const line = await page.locator(".pb-drop__line:not(.pb-drop__line--v)").boundingBox();
+    if (!line) return false;
+    const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+    const [body, link] = await Promise.all(["p[slot=body]", "a[slot=link]"].map(s => frame(page).locator(`#work card-project ${s}`).first().evaluate(el => el.getBoundingClientRect().toJSON())));
+    return line.y - frameBox.y > body.bottom - 1 && line.y - frameBox.y < link.top;
+  }).toBe(true);
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/Read about Fern &amp; Kettle<\/a><p>Text<\/p><\/card-project>/);
 });
+
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`the drag label matches a Structure row in ${colorScheme}`, async ({ page, baseURL }) => {
+    await page.emulateMedia({ colorScheme });
+    await open(page, baseURL);
+    const row = page.locator(".page-structure__row").filter({
+      has: page.locator(".page-structure__kind").filter({ hasText: /^Section$/ }),
+    }).first();
+    await expect(row).toBeVisible();
+    const rect = (await row.boundingBox())!;
+    // Off the canvas still shows only the block, beside the row for comparison.
+    await dragFromRail(page, "Section", { x: rect.x + rect.width - 12, y: rect.y + rect.height / 2 });
+    await expect(ghost(page)).toBeVisible();
+    await expect(where(page)).toBeHidden();
+    await expect(ghost(page)).toHaveText("Section");
+    const rowStyle = await row.evaluate(el => {
+      const style = getComputedStyle(el);
+      return { radius: style.borderRadius, height: style.minHeight, color: style.color, font: style.fontSize, weight: style.fontWeight };
+    });
+    const ghostStyle = await ghost(page).evaluate(el => {
+      const style = getComputedStyle(el);
+      return { radius: style.borderRadius, height: style.minHeight, color: style.color, font: style.fontSize, weight: style.fontWeight };
+    });
+    expect(ghostStyle).toEqual(rowStyle);
+    expect(await ghost(page).evaluate(el => getComputedStyle(el).backgroundColor)).toBe(
+      await page.locator(".sidebar").evaluate(el => getComputedStyle(el).backgroundColor),
+    );
+    expect(await ghost(page).locator("svg").innerHTML()).toBe(await row.locator("svg.element-icon").innerHTML());
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+  });
+}

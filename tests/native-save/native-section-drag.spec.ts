@@ -62,7 +62,7 @@ test("a sidebar row dragged onto a gap between bands reorders the page as one un
   const drop = page.locator(".page-structure__drop");
   await expect(drop).toBeVisible();
   expect(Math.abs((await drop.boundingBox())!.y - hero.top)).toBeLessThan(3);
-  await expect(page.locator(".pb-drag-ghost__where")).toHaveText("Between page bands › before Section");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Between page bands › before Section");
   await page.mouse.up();
   await expect.poll(() => sectionOrder(page)).toEqual(["cards", "hero", "filler"]);
   await expect(status(page)).toHaveText("Section moved. Between page bands › before Section");
@@ -142,7 +142,7 @@ test("6 px is a click, 7 px is a drag; Escape, a same-position release and a rel
   await page.mouse.down();
   await page.mouse.move(from.x, from.y + 20, { steps: 3 });
   await page.mouse.move(from.x, 4, { steps: 6 });
-  await expect(page.locator(".pb-drag-ghost__where")).toHaveText("Release to cancel");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Release to cancel");
   await expect(page.locator(".page-structure__drop")).toBeHidden();
   await page.mouse.up();
   await expect(status(page)).toHaveText("Section was not moved");
@@ -193,13 +193,14 @@ test("the name in the edit bar drags a selected section between page bands, one 
   const from = await pressHandle(page);
   await page.mouse.move(from.x, from.y - 20, { steps: 4 });
   await expect(ghost(page)).toBeVisible();
-  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Section");
+  await expect(ghost(page)).toHaveText("Section");
+  await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
   expect(await page.evaluate(() => document.documentElement.classList.contains("pb-is-dragging"))).toBe(true);
   // Across the hero's heading text, then onto its upper half: the gap above it.
   await page.mouse.move(heading.x + heading.width - 4, heading.y + heading.height / 2, { steps: 6 });
   await page.mouse.move(heading.x + 4, heading.y + 4, { steps: 6 });
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 8, { steps: 4 });
-  await expect(where(page)).toHaveText("Between page bands › before Section");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Between page bands › before Section");
   const line = page.locator(".pb-drop__line");
   await expect(line).toBeVisible();
   expect(Math.abs((await line.boundingBox())!.y - hero.y)).toBeLessThan(8);
@@ -250,7 +251,7 @@ test("a drag by the name needs 7 px, cancels on Escape and records nothing for a
   from = await pressHandle(page);
   await page.mouse.move(from.x, from.y - 30, { steps: 4 });
   await page.mouse.move(cards.x + cards.width / 2, cards.y + 10, { steps: 4 });
-  await expect(where(page)).toHaveText("Stays where it is");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Stays where it is");
   await expect(page.locator(".pb-drop__line")).toHaveCount(0);
   await page.mouse.up();
   await expect(status(page)).toHaveText("Section stayed in place");
@@ -262,7 +263,7 @@ test("a drag by the name needs 7 px, cancels on Escape and records nothing for a
   from = await pressHandle(page);
   await page.mouse.move(from.x, from.y - 30, { steps: 4 });
   await page.mouse.move(frameBox.x + frameBox.width + 40, from.y, { steps: 4 });
-  await expect(where(page)).toHaveText("Release to cancel");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Release to cancel");
   await page.mouse.up();
   await expect(status(page)).toHaveText("Section was not moved");
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
@@ -279,9 +280,10 @@ test("a press and move inside the selected section drags the section itself", as
   await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
   await page.mouse.down();
   await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2 - 20, { steps: 4 });
-  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Section");
+  await expect(ghost(page)).toHaveText("Section");
+  await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 8, { steps: 6 });
-  await expect(where(page)).toHaveText("Between page bands › before Section");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Between page bands › before Section");
   await page.mouse.up();
   await expect.poll(() => sectionOrder(page)).toEqual(["cards", "hero", "filler"]);
   // The release is not a click: the moved section stays selected.

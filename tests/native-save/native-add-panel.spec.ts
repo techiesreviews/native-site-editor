@@ -102,6 +102,7 @@ test("an item dragged onto the canvas goes into the gap under the pointer; Escap
   await expect(target).toHaveCount(1);
   await expect(target.locator(".insert-point__drop")).toHaveText("Add “Feature block” here");
   await expect(page.locator(".pb-drag-ghost")).toHaveText("Feature block");
+  await expect(page.locator(".pb-drag-ghost svg.component-mark")).toHaveAttribute("width", "12");
   await page.keyboard.press("Escape");
   await expect(target).toHaveCount(0);
   await expect(page.locator(".pb-drag-ghost")).toHaveCount(0);

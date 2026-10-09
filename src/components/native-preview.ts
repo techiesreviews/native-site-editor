@@ -1327,9 +1327,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectParent() {
       if (frameState.active) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-parent" }, "*");
     },
-    /** The next selection of this element (a block just inserted) flashes `where` at it. */
-    flashInsert(request: NativeNodeRequest, where: string) {
-      pageBuilder.flash(request, where);
+    /** The next selection of this element (a block just inserted or moved) flashes. */
+    flashInsert(request: NativeNodeRequest) {
+      pageBuilder.flash(request);
     },
     /** A refused insert: its red reason flashes at the selection. */
     flashRefusal(reason: string) {

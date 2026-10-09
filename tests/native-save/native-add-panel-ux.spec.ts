@@ -83,7 +83,8 @@ test("a refused drag drop explains the destination visibly without inserting", a
   await page.mouse.move(box.x + 30, box.y + 30); await page.mouse.down();
   await page.mouse.move(box.x + 80, box.y + 40, { steps: 4 });
   await page.mouse.move(850, 300, { steps: 4 });
-  await expect(page.locator(".pb-drag-ghost")).toBeVisible();
+  await expect(page.locator(".pb-drag-ghost")).toHaveText("Heading");
+  await expect(page.locator(".pb-drag-ghost svg.element-icon")).toHaveAttribute("width", "14");
   await page.evaluate(() => (window as any).addUXProbe.sourceChanged());
   await page.mouse.up();
   await expect(page.locator(".pb-drag-ghost")).toHaveCount(0);

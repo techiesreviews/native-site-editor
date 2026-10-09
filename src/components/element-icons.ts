@@ -2,6 +2,8 @@
 // rows that already say what they hold: the page structure shows the icon
 // with the kind as its tooltip and accessible name instead of the word.
 
+import { blockIconKind } from "./block-icon-kind";
+import { componentIcon } from "../page-builder/component-icon";
 import textT from "@phosphor-icons/core/regular/text-t.svg?raw";
 import textH from "@phosphor-icons/core/regular/text-h.svg?raw";
 import image from "@phosphor-icons/core/regular/image.svg?raw";
@@ -42,4 +44,10 @@ export function elementIcon(tag: string, size = 14) {
   const template = document.createElement("template");
   template.innerHTML = raw.replace("<svg ", `<svg class="icon element-icon" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
   return template.content.firstElementChild as SVGSVGElement;
+}
+
+/** The same icon and size in Structure rows and the floating drag label. */
+export function blockIcon(tag: string, name: string, component?: boolean) {
+  const kind = blockIconKind(tag, name, component);
+  return kind === "component" ? componentIcon(12) : elementIcon(kind, 14);
 }

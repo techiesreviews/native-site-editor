@@ -9,13 +9,17 @@
 // (blocks step up a level with them).
 
 import { refuse } from "../components/refusal-note";
-import { icon } from "../icons";
+import { blockIcon } from "../components/element-icons";
 import { node } from "../ui/dom";
 
 /** What the label by the pointer says about the target under it. */
 export interface DragAim<T> {
   target: T | undefined;
-  /** The ghost's text below the name; empty keeps just the name. */
+  /**
+   * Where a release would put the block ("Into Div › after Image"), or why
+   * not. The label shows only a refusal's reason beneath the name (the
+   * canvas line is the place); the ghost keeps the rest as `data-where`.
+   */
   where?: string;
   /** Red: the place under the pointer refuses (a release adds nothing). */
   refused?: boolean;
@@ -75,7 +79,7 @@ export interface DragFeed {
  * arrives). `move`: the label says moved, not added. `justDragged` tells
  * the click a release makes from a click.
  */
-export function trackDrag<T>(press: DragPress, label: () => string,
+export function trackDrag<T>(press: DragPress, label: () => { name: string; tag: string },
   context: () => InsertDragContext<T> | Promise<InsertDragContext<T> | undefined> | undefined, move = false): DragFeed & { justDragged(): boolean } {
   const id = press.pointerId;
   const source = press.source;
@@ -113,9 +117,10 @@ export function trackDrag<T>(press: DragPress, label: () => string,
     refused = Boolean(aim.refused);
     ghost?.classList.toggle("is-over", Boolean(aim.target) && !refused);
     ghost?.classList.toggle("is-refused", refused);
+    if (ghost) ghost.dataset.where = aim.where ?? "";
     if (where) {
-      where.textContent = aim.where ?? "";
-      where.hidden = !aim.where;
+      where.textContent = refused ? aim.where ?? "" : "";
+      where.hidden = !where.textContent;
     }
     place();
   }
@@ -165,11 +170,12 @@ export function trackDrag<T>(press: DragPress, label: () => string,
     const text = node("span", "pb-drag-ghost__text");
     where = node("span", "pb-drag-ghost__where");
     where.hidden = true;
-    text.append(node("span", "pb-drag-ghost__name", label()), where);
-    if (!move) ghost.append(icon("plus"));
+    const block = label();
+    text.append(node("span", "pb-drag-ghost__name", block.name), where);
+    ghost.append(blockIcon(block.tag, block.name));
     ghost.append(text);
     document.body.append(ghost);
-    ctx!.announce(`Dragging ${label()}. Release over the page to ${move ? "move" : "add"} it, Escape to cancel.`);
+    ctx!.announce(`Dragging ${label().name}. Release over the page to ${move ? "move" : "add"} it, Escape to cancel.`);
     frameId = requestAnimationFrame(tick);
   }
 
@@ -205,9 +211,9 @@ export function trackDrag<T>(press: DragPress, label: () => string,
     ghost?.remove();
     const at = target;
     ctx!.clear(drop);
-    if (!drop) ctx!.announce(`${label()} was not ${done}`);
+    if (!drop) ctx!.announce(`${label().name} was not ${done}`);
     // A refused release keeps its reason on screen by the pointer once the label goes.
-    else if (!ctx!.drop(at, refused)) refuse((refused && where?.textContent) || `${label()} was not ${done}`, { pointer });
+    else if (!ctx!.drop(at, refused)) refuse((refused && where?.textContent) || `${label().name} was not ${done}`, { pointer });
     // The click a release makes is not a click on the item.
     window.setTimeout(() => { dragged = false; }, 0);
   }
@@ -301,7 +307,7 @@ export function trackDrag<T>(press: DragPress, label: () => string,
  * loading starts the drag once it arrives. Returns whether a drag just
  * ended, so the click that follows a release is not taken as a click.
  */
-export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
+export function makeInsertDraggable<T>(source: HTMLElement, label: () => { name: string; tag: string },
   context: () => InsertDragContext<T> | Promise<InsertDragContext<T> | undefined> | undefined) {
   let last: { justDragged(): boolean } | undefined;
   source.addEventListener("pointerdown", (event) => {

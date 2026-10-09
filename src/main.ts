@@ -819,7 +819,7 @@ const blockInsertPorts: BlockInsertPorts = {
   apply: op => applyNativeOperation(op),
   select: (request, where) => {
     nativePreview?.selectAfterUpdate(request);
-    if (request && where) nativePreview?.flashInsert(request, where);
+    if (request && where) nativePreview?.flashInsert(request);
   },
   refuse: (reason, pointer) => {
     if (pointer) { refuse(reason, { pointer }); return; }
@@ -846,7 +846,7 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   const block = { kind: "move", path: from.node, band: from.band } as const;
   // The chip says the name; a press in the page names it once the drag code is in.
   let name = press.source?.textContent?.trim() || from.tag;
-  return trackDrag(press, () => name, () => loadBlockDrag().then(drag => {
+  return trackDrag(press, () => ({ name, tag: from.tag }), () => loadBlockDrag().then(drag => {
     if (!current()) return undefined;
     if (pressed) name = drag.dropBlockName(from.tag, from.cls);
     return nativePreview?.blockDrag(block, {

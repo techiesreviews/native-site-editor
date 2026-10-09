@@ -31,7 +31,7 @@ export interface BlockInsertPorts {
     expectedSources: Map<string, string | undefined>; creates?: { path: string; content: string }[]; edits: Map<string, string>;
     done: string; undone: string; current: () => boolean; selection: { before?: NodeRequest; after: NodeRequest };
   }) => Promise<string | undefined>;
-  /** Selects this element once the page renders `source`, flashing `where` at it; undefined cancels. */
+  /** Selects this element once the page renders `source`, flashing it when `where` is given (an insert or move); undefined cancels. */
   readonly select: (request: (NodeRequest & { source: string }) | undefined, where?: string) => void;
   /** Flashes the red reason at the selection; nothing is inserted. */
   readonly refuse: (reason: string, pointer?: { x: number; y: number }) => void;

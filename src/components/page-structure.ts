@@ -4,11 +4,11 @@ import { setIcon } from "../icons";
 import { button, node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
-import { mark, componentIcon } from "../page-builder/component-icon";
+import { mark } from "../page-builder/component-icon";
 import eyeOpen from "@phosphor-icons/core/regular/eye.svg?raw";
 import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
 import { rowActions } from "./row-actions";
-import { elementIcon } from "./element-icons";
+import { blockIcon } from "./element-icons";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import type { FocusRequest, StructureEditing } from "./structure-editing";
 import "./page-structure.css";
@@ -300,7 +300,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   function kindMark(tag: string, kind: string, iconOnly: boolean) {
     const result = node("span", "page-structure__kind page-structure__kind--icon");
     result.title = kind;
-    result.append(elementIcon(tag, 14), node("span", iconOnly ? "sr-only" : "", kind));
+    result.append(blockIcon(tag, kind, false), node("span", iconOnly ? "sr-only" : "", kind));
     return result;
   }
   function iconAction(label: string, icon: Parameters<typeof mark>[0], action: () => void) {
@@ -559,12 +559,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const hasChildren = children.length > 0 || !!slotModel;
     const label = node("span", "page-structure__label");
     const named = component;
-    // A Button block (an <a class="btn">) takes the button icon, not the link one.
-    const iconTag = item.tag === "a" && kind === "Button" ? "button" : item.tag;
-    const kindName = named ? node("span", "page-structure__kind", kind) : kindMark(iconTag, kind, Boolean(text));
+    const kindName = named ? node("span", "page-structure__kind", kind) : kindMark(item.tag, kind, Boolean(text));
     if (named) {
       if (component) el.classList.add("page-structure__row--component");
-      kindName.prepend(componentIcon(12));
+      kindName.prepend(blockIcon(item.tag, kind, true));
     }
     label.append(kindName);
     if (text) label.append(" ", node("span", "page-structure__text", text));

@@ -21,15 +21,11 @@ async function open(page: Page, baseURL: string | undefined, repo: number, ready
 test("clicking Section, Div, Heading, Paragraph builds a nested section, one undo step each", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, 501, ".hero h1");
   const states = [await source(page)];
-  const steps = [
-    ["Section", "Between page bands › after “Scroll to verify”"],
-    ["Div", "Into Section › empty"],
-    ["Heading", "Into Div › empty"],
-    ["Paragraph", "Into Div › after Heading"],
-  ] as const;
-  for (const [name, where] of steps) {
+  const steps = ["Section", "Div", "Heading", "Paragraph"];
+  for (const name of steps) {
     await rail(page).getByRole("button", { name, exact: true }).click();
-    await expect(label(page)).toHaveText(where);
+    await expect(page.locator(".pb-flash")).toBeVisible();
+    await expect(label(page)).toBeHidden();
     await expect.poll(async () => (await source(page)) !== states.at(-1)).toBe(true);
     states.push(await source(page));
   }
@@ -56,7 +52,8 @@ test("the first Image drafts images/placeholder.svg in its undo step; a second w
   await frame(page).locator(".hero h1").click();
   const image = rail(page).getByRole("button", { name: "Image", exact: true });
   await image.click();
-  await expect(label(page)).toHaveText("Into Section “Small websites that sta…” › after Heading");
+  await expect(page.locator(".pb-flash")).toBeVisible();
+  await expect(label(page)).toBeHidden();
   await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.content).toContain("<svg");
   const first = await source(page);
   expect(flat(first)).toContain('<h1>Small websites that stay yours</h1><img src="/images/placeholder.svg" alt="" width="640" height="400"><p class="lead">');
@@ -84,7 +81,8 @@ test("a selected instance takes a click-insert in its items slot, one undo step;
   await frame(page).locator("card-project").first().click({ position: { x: 4, y: 4 } });
   await expect(kind).toHaveText(/Project card|Card project/);
   await rail(page).getByRole("button", { name: "Paragraph", exact: true }).click();
-  await expect(label(page)).toHaveText("Into Card project › items › empty");
+  await expect(page.locator(".pb-flash")).toBeVisible();
+  await expect(label(page)).toBeHidden();
   await expect.poll(async () => flat(await source(page))).toMatch(/Read about Fern &amp; Kettle<\/a><p>Text<\/p><\/card-project>/);
   await expect(frame(page).locator("card-project").first().locator("> p:not([slot])")).toHaveText("Text");
   await undo(page);

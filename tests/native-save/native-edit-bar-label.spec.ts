@@ -115,7 +115,8 @@ test("a section's name is its handle: the controls sit under it, it moves the se
   await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
   await page.mouse.down();
   await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2 + 10, { steps: 2 });
-  await expect(page.locator(".pb-drag-ghost")).toBeVisible();
+  await expect(page.locator(".pb-drag-ghost")).toHaveText("Section");
+  await expect(page.locator(".pb-drag-ghost svg.element-icon")).toHaveAttribute("width", "14");
   const hero = (await frame(page).locator("section.hero").boundingBox())!;
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 4, { steps: 8 });
   await page.mouse.up();

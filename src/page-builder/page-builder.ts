@@ -154,9 +154,9 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       selectedRect = rect;
       flash.move(rect);
     },
-    /** A block is being inserted: its selection after the render flashes `where`. */
-    flash(request: { path: string; node: number[] }, where: string) {
-      if (!viewing) flash.arm(request.path, request.node, where);
+    /** A block is being inserted or moved: its selection after the render flashes (a first Image waits for its file reads). */
+    flash(request: { path: string; node: number[] }) {
+      if (!viewing) flash.arm(request.path, request.node, 30_000);
     },
     /** An insert was refused: the reason flashes in red at the selection. */
     refuse(reason: string) {

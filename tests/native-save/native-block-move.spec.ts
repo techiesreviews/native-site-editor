@@ -45,8 +45,9 @@ test("a Heading pressed in the page moves into another container's Div, one undo
   const original = await source(page);
   await pressAndMove(page, await pointIn(page, "#services h2", 0.2), await pointIn(page, "#work .cards card-project:nth-child(2)", 0, 0.3, -3));
   await expect(ghost(page)).toBeVisible();
-  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveText("Heading");
+  await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
@@ -65,21 +66,22 @@ test("cards reorder sideways by dragging one", async ({ page, baseURL }) => {
   // A press on the card's text moves the card, the instance, not its slotted paragraph.
   const itself = await pointIn(page, "#work card-project:nth-child(2)", 0.3, 0.5);
   await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(2) p[slot=body]"), itself);
-  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
+  await expect(ghost(page)).toHaveText("Card project");
+  await expect(ghost(page).locator("svg.component-mark")).toHaveAttribute("width", "12");
   // Over itself: it stays, and nothing is drawn.
-  await expect(where(page)).toHaveText("Stays where it is");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Stays where it is");
   await expect(page.locator(".pb-drop__line")).toHaveCount(0);
   // Over another card's text, the grid targets the gap before that card.
   const before = await pointIn(page, "#work card-project:nth-child(1) p[slot=body]", 0.2, 0.5);
   await page.mouse.move(before.x, before.y, { steps: 6 });
-  await expect(where(page)).toHaveText("Into Div (grid) › before Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › before Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await expect(page.locator(".pb-drop__refused")).toHaveCount(0);
   // Alt now steps up from the grid to the surrounding Section.
   await page.keyboard.down("Alt");
-  await expect(where(page)).toHaveText("Into Section › after Heading");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Heading");
   await page.keyboard.up("Alt");
-  await expect(where(page)).toHaveText("Into Div (grid) › before Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › before Card project");
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
   await expect.poll(async () => flat(await source(page)).indexOf("Harbour Lane Pottery</h3>")).toBeLessThan(flat(await source(page)).indexOf("Fern &amp; Kettle</h3>"));
@@ -102,7 +104,7 @@ test("a card dragged over the third card's title reorders in the grid, one undo 
   // The title's middle, a little into its after half so the side never rests on a rounding.
   const to = await pointIn(page, "#work card-project:nth-child(3) h3[slot=title]", 0.6);
   await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(1) h3[slot=title]"), to);
-  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   // The line stands at the third card's right edge, along its height.
   const right = await pointIn(page, "#work card-project:nth-child(3)", 1, 0.5);
@@ -141,7 +143,7 @@ test("a plain click still edits text, a press in typed text selects it, and the 
   await expect.poll(async () => (c = await chip.boundingBox())).not.toBeNull();
   c = c!;
   await pressAndMove(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 }, await pointIn(page, "#services ul", 0.5, 0.6));
-  await expect(where(page)).toHaveText("Into Section › after List");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after List");
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/ul><p class="lead">One or two sentences[^<]*what they get\. Typed\.<\/p>/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
@@ -170,7 +172,8 @@ test("6 px is a click and 7 px a drag; the header does not drag; Escape cancels"
   await page.mouse.move(heading.x, heading.y);
   await page.mouse.down();
   await page.mouse.move(heading.x, heading.y + 7, { steps: 3 });
-  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
+  await expect(ghost(page)).toHaveText("Heading");
+  await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
   await page.keyboard.press("Escape");
   await expect(ghost(page)).toHaveCount(0);
   await page.mouse.up();
@@ -183,7 +186,7 @@ test("a block moves into a card's items slot", async ({ page, baseURL }) => {
   const original = await source(page);
   // The card's own padding, over its unnamed (items) slot, not a named part.
   await pressAndMove(page, await pointIn(page, ".hero .lead", 0.2), await pointIn(page, "#work card-project:nth-child(1)", 0.5, 0, 0).then((p) => ({ x: p.x, y: p.y + 12 })));
-  await expect(where(page)).toHaveText(/^Into Card project › items › /);
+  await expect(ghost(page)).toHaveAttribute("data-where", /^Into Card project › items › /);
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/Read about Fern &amp; Kettle<\/a><p class="lead">One or two sentences/);
   await expect(frame(page).locator("#work card-project").first().locator("p.lead")).toHaveCount(1);
