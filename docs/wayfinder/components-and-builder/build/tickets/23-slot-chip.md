@@ -1,7 +1,7 @@
 ---
 title: "The slot chip: one control for the label and Structure"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [41-edit-mode-shell]
 builder: claude ★
@@ -22,3 +22,9 @@ One way to mark slots everywhere (decided at handoff, 8, as changed by Lex on 20
 
 - Unit test for the click/double-click timing helper.
 - Nightly spec: in Edit component mode on the starter's Recent work, selecting its title, its items and a fixed part shows a purple, a pink and a grey struck chip after the element name; a single click reports one toggle, a double-click none.
+
+## Done (2026-10-09)
+
+- `src/components/slot-chip.ts` (+ `.css`, loaded with the mode) is the shared chip: violet slot, pink items slot ("items ×N", the fallback's count, or the page's while it shows this page's content), grey struck fixed part with the role name it would get (`slotChipState` in `component-model.ts`). In Edit component mode the edit bar label shows it after the element name (`EditBarModel.chip`, kept per part across renders). A click is reported on `window` as `SLOT_CHIP_EVENT` (`edit-component-mode.ts`) for slice 44 to apply; the double-click rename is slice 24.
+- `src/components/click-timing.ts`: a click acts after 240 ms (the prototype's), so a double-click within it acts alone; a keyboard click acts at once. A slower pair acts as a click then a double-click.
+- Commits "The slot chip after the element name in Edit component mode (slice 23)" and one review-fix commit on `dev`. Tests: `tests/slot-chip.test.ts` (timing, chip states, role names, no-chip cases); `native-slot-chip-actual.spec.ts` (@actual: title, items, fixed lede; page count; one click one report, double-click none).
