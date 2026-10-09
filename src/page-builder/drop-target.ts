@@ -42,8 +42,6 @@ export function dropRefusal(block: DraggedBlock, container: DropContainer): stri
   }
   if (container.kind === "main") return "Blocks go inside a Section or a Div, not straight between page bands.";
   if (container.kind === "slot") return `The “${container.slot}” slot is filled by editing its text, not by drops. Drop into the component's items instead.`;
-  // Only new blocks go into an instance's items (slice 40): a moved one goes to the container around it.
-  if (container.kind === "items" && block.kind === "move") return `${componentLabel(container.tag)} takes new blocks in its items, not moved ones.`;
   return undefined;
 }
 

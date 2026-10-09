@@ -7,7 +7,7 @@
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
 import { blockMarkup, blockNames, clickTarget, itemsSlotRule } from "../page-builder/block-insert";
-import { applyGuardedSourceEdit, nativeMarkupInsertEdit } from "../page-builder/native-operations";
+import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit } from "../page-builder/native-operations";
 import { nativeElementMovePlan } from "../page-builder/native-move-choices";
 
 type NodeRequest = { path: string; node: number[] };
@@ -121,31 +121,42 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
   }
 
   /**
-   * The page's block at `from`, named `name`, dragged to `place` (both
-   * measured on the page's `painted` bytes): moved there as one step, or
-   * the reason flashes when the page has changed since or the HTML there
-   * cannot take it.
+   * The page's block at `from` (named `name`, measured on the `pressed`
+   * bytes) dragged to `place` (measured on the `painted` bytes; `slot` for
+   * an instance's items slot): moved there as one step, or the reason
+   * flashes when the page has changed since or the HTML there cannot take
+   * it. `current`: the drag's own proof (its page still on show).
    */
-  async function move(from: number[], name: string, place: { parent: number[]; index: number; where: string }, painted: string | undefined, at = ports.target()) {
-    const proof = ports.proof();
+  async function move(request: { from: number[]; name: string; pressed: string | undefined; place: { parent: number[]; index: number; where: string; slot?: string }; painted: string | undefined; current?: () => boolean }, at = ports.target()) {
+    const { from, name, place } = request;
+    const proof = ports.proof(), still = () => proof() && (request.current?.() ?? true);
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to move blocks in it."); return; }
-    if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
-    const plan = nativeElementMovePlan(source, from, place);
+    // The press's bytes, or with only text typed into the block since (the bar's name commits typing as it is pressed).
+    const pressed = request.pressed !== undefined && nativeEditInside(request.pressed, source, from);
+    if (request.painted !== source || !pressed) { ports.refuse("The page is still updating. Try again in a moment."); return; }
+    // An instance's seal opens only at its items slots: the templates that say so are part of the step's proof.
+    const templates = new Map<string, string>();
+    const items = itemsSlotRule((tag) => {
+      const file = ports.template(tag);
+      if (file) templates.set(file.path, file.source);
+      return file?.source;
+    });
+    const plan = nativeElementMovePlan(source, from, place, items);
     // Where it already is (the drag says so): nothing to write.
     if (plan.status === "stayed") return;
     const next = plan.status === "moved" ? applyGuardedSourceEdit(source, plan.edit) : undefined;
     if (plan.status !== "moved" || next === undefined) { ports.refuse(`${name} was not moved: the HTML there cannot take it.`); return; }
     const { path } = at;
     const opened = await ports.open(path);
-    if (!opened || !proof() || ports.source(path) !== source) { ports.refuse("The page changed meanwhile. Try again."); return; }
+    if (!opened || !still() || ports.source(path) !== source) { ports.refuse("The page changed meanwhile. Try again."); return; }
     const after = { path, node: plan.selection };
     ports.select({ ...after, source: next }, place.where);
     const error = await ports.apply({
-      expectedSources: new Map([[path, source]]), edits: new Map([[path, next]]),
+      expectedSources: new Map([...templates, [path, source]]), edits: new Map([[path, next]]),
       done: `${name} moved. ${place.where}`, undone: `Undid moving the ${name}.`,
       // The step's undo belongs to this page's history: another file opened meanwhile stops it.
-      current: () => proof() && opened(),
+      current: () => still() && opened(),
       selection: { before: { path, node: from }, after },
     });
     if (error) { ports.select(undefined); ports.refuse(error); }

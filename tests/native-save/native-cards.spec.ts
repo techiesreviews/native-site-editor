@@ -421,10 +421,10 @@ test('only a fully occluded section plus is hidden, remains keyboard reachable, 
   await first.focus();await expect(first).toHaveCSS('opacity','1');
   expect(await first.evaluate(el=>{const r=el.getBoundingClientRect();return el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})).toBe(true);
   await page.keyboard.press('Enter');await expect(fixture).toHaveAttribute('data-open','true');
-  await page.evaluate(()=>(window as any).collisionControls.dragStart({parent:[],index:0}));
-  await page.evaluate(()=>(window as any).collisionControls.dragTarget({parent:[],index:0}));
+  // A section dragged from the Add panel over the first gap.
+  await page.evaluate(()=>(window as any).collisionControls.showDrop({parent:[],index:0}));
   await expect(first).toBeHidden();await expect(fixture.locator('.is-target .insert-point__drop')).toBeVisible();
-  await page.evaluate(()=>{(window as any).collisionControls.dragEnd();(window as any).collisionControls.destroy();document.querySelector('#collision-fixture')!.remove();});
+  await page.evaluate(()=>{(window as any).collisionControls.showDrop(undefined);(window as any).collisionControls.destroy();document.querySelector('#collision-fixture')!.remove();});
 });
 test('collision placement uses real screen rectangles under a scaled preview pane',async({page,baseURL})=>{
   await open(page,baseURL);

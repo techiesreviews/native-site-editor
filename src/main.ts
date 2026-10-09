@@ -816,13 +816,9 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
     return nativePreview?.blockDrag(block, {
       drop: (target, where, painted) => {
         if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
-        const place = { parent: target.container.path, index: target.index, where };
-        // Measured on the bytes the press was (the bar's selection repainted
-        // since, as after typing committed by the press): a page that changed refuses it.
-        const now = appStore.selection.value;
-        const fromPainted = !pressed && now?.path === at.path && now.node?.join() === from.node.join() ? now.paintedSource : from.painted;
-        const shown = painted === fromPainted ? painted : undefined;
-        if (current()) void loadBlockInsert().then(blocks => current() ? blocks.move(from.node, name, place, shown, at) : undefined).catch(errorMessage);
+        const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };
+        const request = { from: from.node, name, pressed: from.painted, place, painted, current };
+        if (current()) void loadBlockInsert().then(blocks => current() ? blocks.move(request, at) : undefined).catch(errorMessage);
       },
       announce,
     }, drag.createBlockDrag);

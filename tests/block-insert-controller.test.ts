@@ -134,10 +134,13 @@ test("drops and clicks into an instance's items slot write its light DOM with th
   assert.equal(log.ops[1].done, "Heading added. Into Section work › “more” slot › after Paragraph");
 });
 
+const move = (from: number[], name: string, place: { parent: number[]; index: number; where: string; slot?: string }, bytes: string, pressed = bytes) =>
+  ({ from, name, place, painted: bytes, pressed });
+
 test("a dragged block moves across containers as one step, selected at its new place", async () => {
   const nested = '<!doctype html><html><head><title>Home</title></head><body><main><section><h2>Work</h2><div class="cards"><card-a></card-a><card-b></card-b></div></section></main></body></html>';
   const { controller, log, files } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0] }) }, { "index.html": nested });
-  await controller.move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 1, where: "Into Div (grid) › after Card a" }, nested);
+  await controller.move(move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 1, where: "Into Div (grid) › after Card a" }, nested));
   assert.equal(log.ops.length, 1);
   assert.match(files["index.html"], /<div class="cards"><card-a><\/card-a>\s*<h2>Work<\/h2>\s*<card-b>/);
   // The Div moved up one when the Heading left: the Heading is its second child.
@@ -147,19 +150,58 @@ test("a dragged block moves across containers as one step, selected at its new p
   assert.deepEqual(log.selects.at(-1), { path: "index.html", node: [0, 0, 0, 1], where: "Into Div (grid) › after Card a", rendered: false });
   // A card reorders sideways: the second before the first.
   const source = files["index.html"];
-  await controller.move([0, 0, 0, 2], "Card b", { parent: [0, 0, 0], index: 0, where: "Into Div (grid) › before Card a" }, source);
+  await controller.move(move([0, 0, 0, 2], "Card b", { parent: [0, 0, 0], index: 0, where: "Into Div (grid) › before Card a" }, source));
   assert.match(files["index.html"], /<div class="cards"><card-b><\/card-b>\s*<card-a>/);
   assert.deepEqual(log.ops[1].selection.after, { path: "index.html", node: [0, 0, 0, 0] });
 });
 
-test("a move measured on older bytes, onto itself or into a component writes nothing", async () => {
+test("a move measured on older bytes, onto itself or into a component's other parts writes nothing", async () => {
   const nested = '<!doctype html><html><head><title>Home</title></head><body><main><section><h2>Work</h2><card-a><p>x</p></card-a></section></main></body></html>';
   const { controller, log } = setup({}, { "index.html": nested });
-  await controller.move([0, 0, 0], "Heading", { parent: [0, 0], index: 2, where: "" }, nested.replace("Work", "Play"));
+  await controller.move(move([0, 0, 0], "Heading", { parent: [0, 0], index: 2, where: "" }, nested.replace("Work", "Play")));
   assert.deepEqual(log.refusals, ["The page is still updating. Try again in a moment."]);
-  await controller.move([0, 0, 0], "Heading", { parent: [0, 0], index: 1, where: "" }, nested);
+  await controller.move(move([0, 0, 0], "Heading", { parent: [0, 0], index: 1, where: "" }, nested));
   assert.equal(log.refusals.length, 1);
-  await controller.move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 0, where: "" }, nested);
+  await controller.move(move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 0, where: "" }, nested));
   assert.equal(log.refusals[1], "Heading was not moved: the HTML there cannot take it.");
-  assert.equal(log.ops.length, 0);
+  // Pressed on bytes that changed outside the block since: refused, not moved by its old path.
+  const outside = nested.replace("<p>x</p>", "<p>y</p>");
+  const changed = setup({}, { "index.html": outside });
+  await changed.controller.move(move([0, 0, 0], "Heading", { parent: [0, 0], index: 2, where: "" }, outside, nested));
+  assert.deepEqual(changed.log.refusals, ["The page is still updating. Try again in a moment."]);
+  // The drag's own proof (its page on show) failing after the page opened: nothing is written.
+  const gone = setup({}, { "index.html": nested });
+  await gone.controller.move({ ...move([0, 0, 0], "Heading", { parent: [0, 0], index: 2, where: "" }, nested), current: () => false });
+  assert.deepEqual(gone.log.refusals, ["The page changed meanwhile. Try again."]);
+  assert.equal(log.ops.length + changed.log.ops.length + gone.log.ops.length, 0);
+});
+
+test("text typed into the block since the press still moves it (the bar's name commits typing)", async () => {
+  const before = '<!doctype html><html><head><title>Home</title></head><body><main><section><p>Lead</p><h2>Work</h2></section></main></body></html>';
+  const typed = before.replace("<p>Lead</p>", "<p>Lead, typed</p>");
+  const { controller, log, files } = setup({}, { "index.html": typed });
+  await controller.move(move([0, 0, 0], "Paragraph", { parent: [0, 0], index: 2, where: "Into Section › after Heading" }, typed, before));
+  assert.deepEqual(log.refusals, []);
+  assert.match(files["index.html"], /<h2>Work<\/h2>\s*<p>Lead, typed<\/p>/);
+});
+
+test("a block moves into an instance's items slot with the slot's name; the templates join the step's proof", async () => {
+  const work = '<!doctype html><html><head><title>Home</title></head><body><main><p>Note</p><section-work><h2 slot="title">Work</h2></section-work></main></body></html>';
+  const files = {
+    "index.html": work,
+    "components/section-work/section-work.html": '<section><slot name="title"><h2>Work</h2></slot><slot name="more"><card-quote></card-quote></slot><slot></slot></section>',
+    "components/card-quote/card-quote.html": '<blockquote><slot name="title"><h3>Quote</h3></slot></blockquote>',
+  };
+  const { controller, log } = setup({}, files);
+  await controller.move(move([0, 0], "Paragraph", { parent: [0, 1], index: 1, where: "Into Section work › “more” slot › after Heading", slot: "more" }, work));
+  assert.match(log.ops[0].edits.get("index.html")!, /<main><section-work><h2 slot="title">Work<\/h2>\s*<p slot="more">Note<\/p><\/section-work>/);
+  assert.deepEqual(log.ops[0].selection.after, { path: "index.html", node: [0, 0, 1] });
+  assert.deepEqual([...log.ops[0].expectedSources.keys()].sort(), ["components/card-quote/card-quote.html", "components/section-work/section-work.html", "index.html"]);
+  // The unnamed slot: no attribute. The title slot is not an items slot: refused.
+  const again = setup({}, { ...files, "index.html": work });
+  await again.controller.move(move([0, 0], "Paragraph", { parent: [0, 1], index: 1, where: "", slot: "" }, work));
+  assert.match(again.log.ops[0].edits.get("index.html")!, /<h2 slot="title">Work<\/h2>\s*<p>Note<\/p><\/section-work>/);
+  const title = setup({}, { ...files, "index.html": work });
+  await title.controller.move(move([0, 0], "Paragraph", { parent: [0, 1], index: 1, where: "", slot: "title" }, work));
+  assert.deepEqual([title.log.ops.length, title.log.refusals], [0, ["Paragraph was not moved: the HTML there cannot take it."]]);
 });

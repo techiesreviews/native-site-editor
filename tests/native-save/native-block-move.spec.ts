@@ -152,3 +152,16 @@ test("6 px is a click and 7 px a drag; the header does not drag; Escape cancels"
   await expect(page.locator("#status")).toHaveText("Heading was not moved");
   expect(await source(page)).toBe(original);
 });
+
+test("a block moves into a card's items slot", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const original = await source(page);
+  // The card's own padding, over its unnamed (items) slot, not a named part.
+  await pressAndMove(page, await pointIn(page, ".hero .lead", 0.2), await pointIn(page, "#work card-project:nth-child(1)", 0.5, 0, 0).then((p) => ({ x: p.x, y: p.y + 12 })));
+  await expect(where(page)).toHaveText(/^Into Card project › items › /);
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/Read about Fern &amp; Kettle<\/a><p class="lead">One or two sentences/);
+  await expect(frame(page).locator("#work card-project").first().locator("p.lead")).toHaveCount(1);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});

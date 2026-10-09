@@ -163,6 +163,11 @@ function atPath(root: SourceNode, path: readonly number[], open?: (instance: Sou
   }
   return node;
 }
+/** `markup` with `slot="…"` on the start tag of its element `node`. */
+function withSlot(markup: string, node: SourceNode, slot: string) {
+  const at = node.start + 1 + node.name.length;
+  return `${markup.slice(0, at)} slot="${slot.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"${markup.slice(at)}`;
+}
 const itemsOpener = (source: string, items: ItemsSlotRule | undefined) =>
   items && ((instance: SourceNode, child: SourceNode) => items(instance.name, slotOf(source, child)));
 function all(node: SourceNode): SourceNode[] { return [node, ...node.children.flatMap(all)]; }
@@ -340,11 +345,7 @@ export function nativeMarkupInsertEdit(source: string, parentPath: readonly numb
   if (instance) {
     if (!items?.(parent.name, slot) || fragment.children.some((node) => slotOf(markup, node))) return undefined;
     if (slot) {
-      const attribute = ` slot="${slot.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
-      for (const node of [...fragment.children].reverse()) {
-        const at = node.start + 1 + node.name.length;
-        markup = markup.slice(0, at) + attribute + markup.slice(at);
-      }
+      for (const node of [...fragment.children].reverse()) markup = withSlot(markup, node, slot);
       fragment = tree(markup);
       if (!fragment) return undefined;
     }
@@ -388,20 +389,44 @@ export function nativeOutline(source: string): NativeOutline | undefined {
   };
   return map(root);
 }
-function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">) {
+/**
+ * Where a move may go. With `items`, the destination may be an instance's
+ * items slot (`slot`, "" the unnamed one), as for inserts; the moved block
+ * must fill no slot yet.
+ */
+function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = "") {
   const root = tree(source);
   const moving = root && atPath(root, from);
-  const parent = root && atPath(root, destination.parent);
+  const parent = root && atPath(root, destination.parent, itemsOpener(source, items));
   // A component instance moves whole (its bytes kept as they are); other opaque islands stay put.
   if (!moving || (moving.opaque && !isInstance(moving)) || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
   for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return undefined;
-  if (!canContain(parent, [moving])) return undefined;
-  return { moving, parent };
+  const instance = isInstance(parent);
+  if (instance && (!items?.(parent.name, slot) || slotOf(source, moving))) return undefined;
+  if (!canContain(parent, [moving], instance)) return undefined;
+  return { moving, parent, instance };
 }
 
 /** Validate a move destination, including legitimate same-parent no-op positions. */
-export function nativeMoveDestinationValid(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">): boolean {
-  return Boolean(moveDestination(source, from, destination));
+export function nativeMoveDestinationValid(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""): boolean {
+  return Boolean(moveDestination(source, from, destination, items, slot));
+}
+
+/** Whether `after` differs from `before` only inside the element at `path` (between its tags), as typing in it does. */
+export function nativeEditInside(before: string, after: string, path: readonly number[]): boolean {
+  if (before === after) return true;
+  const root = tree(before);
+  const node = root && path.length ? atPath(root, path) : undefined;
+  if (!node || node.closeStart === node.openEnd && node.end === node.openEnd) return false;
+  const max = Math.min(before.length, after.length);
+  let start = 0, end = 0;
+  while (start < max && before[start] === after[start]) start++;
+  while (end < max && before[before.length - 1 - end] === after[after.length - 1 - end]) end++;
+  // The changed stretch (for an insertion, any point between the common ends) lies within the content,
+  // and the element still ends where its bytes moved to (no tags were closed or opened across it).
+  if (start < node.openEnd || before.length - end > node.closeStart) return false;
+  const now = tree(after), same = now && atPath(now, path);
+  return Boolean(same && same.start === node.start && same.openEnd === node.openEnd && same.end === node.end + after.length - before.length);
 }
 
 /**
@@ -417,9 +442,13 @@ export function nativeMovableBlock(source: string, path: readonly number[]): boo
   return false;
 }
 
-/** One replacement, guarded against stale source; removal never takes neighbours. */
-export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">): GuardedSourceEdit | undefined {
-  const valid = moveDestination(source, from, destination);
+/**
+ * One replacement, guarded against stale source; removal never takes
+ * neighbours. Into a named items slot (`items`, `slot`) the block gets its
+ * `slot` attribute.
+ */
+export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
+  const valid = moveDestination(source, from, destination, items, slot);
   if (!valid) return undefined;
   const { moving, parent } = valid;
   const index = from[from.length - 1];
@@ -427,7 +456,8 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
   const lineStart = source.lastIndexOf("\n", moving.start - 1) + 1;
   const lead = source.slice(lineStart, moving.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
-  const markup = structuralIndent(source.slice(moving.start, moving.end), source.includes("\r\n") ? "\r\n" : "\n", "", indent);
+  const element = source.slice(moving.start, moving.end);
+  const markup = structuralIndent(valid.instance && slot ? withSlot(element, { ...moving, start: 0 }, slot) : element, source.includes("\r\n") ? "\r\n" : "\n", "", indent);
   const insert = insertion(source, parent, destination.index, markup);
   const start = Math.min(moving.start, insert.start);
   const end = Math.max(moving.end, insert.end);

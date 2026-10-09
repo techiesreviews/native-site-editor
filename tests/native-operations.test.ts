@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, nativeEditInside, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
   const source = '<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
@@ -261,4 +261,29 @@ test("only blocks inside <main> that no instance holds are movable", () => {
   for (const path of [[0], [1], [1, 0], [2], [2, 0, 1, 0], [3, 0], [], [9]]) assert.equal(nativeMovableBlock(source, path), false, path.join("."));
   assert.equal(nativeMovableBlock('<main><template><p>t</p></template><svg></svg></main>', [0, 0]), false);
   assert.equal(nativeMovableBlock('<main><template><p>t</p></template><svg></svg></main>', [0, 1]), false);
+});
+
+test("an edit inside one element's content keeps its path; anything else does not", () => {
+  const before = '<main><p>Lead</p><h2>Work</h2><img src="a.png"></main>';
+  assert.equal(nativeEditInside(before, before, [0, 0]), true);
+  assert.equal(nativeEditInside(before, before.replace("Lead", "Lead, typed"), [0, 0]), true);
+  assert.equal(nativeEditInside(before, before.replace("<p>Lead</p>", "<p>Lead<b>!</b></p>"), [0, 0]), true);
+  assert.equal(nativeEditInside(before, before.replace("Work", "Play"), [0, 0]), false);
+  assert.equal(nativeEditInside(before, before.replace("<p>Lead", "<p class=x>Lead"), [0, 0]), false);
+  assert.equal(nativeEditInside(before, before.replace("<p>Lead</p>", "<p>Lead</p><p>New</p>"), [0, 0]), false);
+  assert.equal(nativeEditInside(before, before.replace("a.png", "b.png"), [0, 2]), false);
+  assert.equal(nativeEditInside(before, before.replace("Lead", "x"), [9]), false);
+});
+
+test("a move into an instance's items slot carries the slot's name; other slots and slotted blocks refuse", () => {
+  const items = (tag: string, slot: string) => tag === "x-work" && ["", "more"].includes(slot);
+  const source = '<main><p>Note</p><p slot="more">Odd</p><x-work><h2 slot="title">T</h2></x-work></main>';
+  const named = nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 1 }, items, "more")!;
+  assert.match(applyGuardedSourceEdit(source, named)!, /<h2 slot="title">T<\/h2>\s*<p slot="more">Note<\/p><\/x-work>/);
+  const unnamed = nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 0 }, items, "")!;
+  assert.match(applyGuardedSourceEdit(source, unnamed)!, /<x-work><p>Note<\/p>\s*<h2 slot="title">/);
+  assert.equal(nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 1 }, items, "title"), undefined);
+  assert.equal(nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 1 }), undefined);
+  // A block that already names a slot does not take another.
+  assert.equal(nativeMoveEdit(source, [0, 1], { parent: [0, 2], index: 1 }, items, "more"), undefined);
 });

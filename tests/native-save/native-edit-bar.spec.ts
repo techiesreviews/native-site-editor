@@ -184,12 +184,12 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await child!.evaluate(() => window.scrollTo(0, 0));
   await expect(bar(page)).toBeVisible();
 
-  // Heading controls have no move controls: only a whole section moves from the bar.
+  // Heading controls have no move controls: only a whole section moves from the bar's buttons; the name drags.
   await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
   expect(await bar(page).locator("button, select").evaluateAll(controls => controls.map(control => ({
     name: control.getAttribute("aria-label") ?? control.textContent?.trim(), disabled: (control as HTMLButtonElement | HTMLSelectElement).disabled,
   })))).toEqual([
-    { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
+    { name: "Heading", disabled: false }, { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
     { name: "Bold", disabled: false }, { name: "Italic", disabled: false },
   ]);
   await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
@@ -206,14 +206,15 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();
+  // Past the end, back to the start: the heading's name (its drag handle).
   await page.keyboard.press("ArrowRight");
-  await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
+  await expect(bar(page).locator(".edit-bar__handle")).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(bar(page).getByRole("combobox", { name: "Text size" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("Home");
-  await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
+  await expect(bar(page).locator(".edit-bar__handle")).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("End");
   await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();

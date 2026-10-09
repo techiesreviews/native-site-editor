@@ -2,9 +2,10 @@ import { startTags, startTagAttribute, VOID_ELEMENTS, type StartTag } from "../.
 import { nativePageBody } from "../../shared/native-project";
 import { blockLabel } from "./block-insert";
 import { decodeHtmlEntities } from "./html-entities";
-import { nativeOutline, nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type NativeOutline } from "./native-operations";
+import { nativeOutline, nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
-export interface NativeElementMoveDestination { parent: number[]; index: number }
+/** `slot`: the parent is an instance, and this its items slot ("" the unnamed one). */
+export interface NativeElementMoveDestination { parent: number[]; index: number; slot?: string }
 export type NativeElementMoveResult =
   | { status: "moved"; edit: GuardedSourceEdit; selection: number[] }
   | { status: "stayed"; reason: "already-position" | "edge" }
@@ -62,14 +63,14 @@ function indexedElements(source: string): IndexedElement[] {
 }
 const same = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((step, index) => step === b[index]);
 
-/** A fresh guarded edit and the moved element's path after removal/insertion. */
-export function nativeElementMovePlan(source: string, from: readonly number[], destination: NativeElementMoveDestination): NativeElementMoveResult {
+/** A fresh guarded edit and the moved element's path after removal/insertion; `items` opens instances' items slots. */
+export function nativeElementMovePlan(source: string, from: readonly number[], destination: NativeElementMoveDestination, items?: ItemsSlotRule): NativeElementMoveResult {
   const refusal: NativeElementMoveResult = { status: "refused", error: "This destination cannot accept the selected element." };
   if (from.length && same(destination.parent, from.slice(0, -1)) && [from.at(-1)!, from.at(-1)! + 1].includes(destination.index)) {
-    return nativeMoveDestinationValid(source, from, destination)
+    return nativeMoveDestinationValid(source, from, destination, items, destination.slot)
       ? { status: "stayed", reason: "already-position" } : refusal;
   }
-  const edit = nativeMoveEdit(source, from, destination);
+  const edit = nativeMoveEdit(source, from, destination, items, destination.slot);
   if (!edit) return refusal;
   const oldParent = from.slice(0, -1), oldIndex = from.at(-1)!;
   const parent = [...destination.parent];
