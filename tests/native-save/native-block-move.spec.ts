@@ -75,7 +75,9 @@ test("cards reorder sideways by dragging one", async ({ page, baseURL }) => {
   await expect(where(page)).toHaveText(/^The “body” slot is filled by editing its text/);
   await expect(page.locator(".pb-drop__refused")).toBeVisible();
   await page.mouse.up();
-  await expect(page.locator("#status")).toHaveText("Card project was not moved");
+  // The reason stays on screen by the pointer after the label goes, and in #status.
+  await expect(page.locator("#status")).toHaveText(/^The “body” slot is filled by editing its text/);
+  await expect(page.locator(".refusal-note")).toHaveText(/^The “body” slot is filled by editing its text/);
   expect(await source(page)).toBe(original);
   // Alt steps up to the grid: before that card.
   await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(2) p[slot=body]"), before);
