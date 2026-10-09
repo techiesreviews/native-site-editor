@@ -858,3 +858,73 @@ test("Make component copies the rules that styled the section into its CSS, so i
   await expect(made.locator(":scope > h2")).toHaveText("Made to be changed");
   await expect.poll(async () => [await looks(made.locator(":scope > h2")), await looks(made.locator(":scope > .lead")), await looks(made.locator(":scope > a"))]).toEqual(before);
 });
+
+test("queued grid reports cannot close a newly opened card popover before its tracking request is applied", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const states = await page.evaluate(async () => {
+    const { createCardGridControls } = await import("/src/components/card-grid-controls.ts");
+    const pane = document.createElement("div");
+    Object.assign(pane.style, { position: "fixed", left: "20px", top: "60px", width: "360px", height: "520px", zIndex: "100", background: "white" });
+    const frame = document.createElement("iframe");
+    Object.assign(frame.style, { width: "360px", height: "520px" });
+    pane.append(frame);
+    document.body.append(pane);
+    const requests: { tracking?: number }[] = [];
+    frame.contentWindow!.postMessage = (request: { tracking?: number }) => { requests.push(request); };
+    const controls = createCardGridControls(pane, frame, {
+      describe: () => ({ noun: "card", label: "Work", collection: "/work/" }),
+      plan: () => ({ ok: true, value: { route: "/work/x/" } }),
+      addCard: () => {},
+      addPage: async () => undefined,
+    });
+    const grid = { path: "index.html", parent: [1, 1], index: 1, position: 1, count: 2, row: true, beside: false,
+      ghost: { top: 300, left: 20, width: 320, height: 32 } };
+    const add = pane.querySelector<HTMLButtonElement>(".card-ghost__add")!;
+    const form = pane.querySelector<HTMLFormElement>(".card-add")!;
+    const out: { step: string; open: boolean; focused: boolean }[] = [];
+    const record = (step: string) => out.push({ step, open: !form.hidden, focused: form.contains(document.activeElement) });
+    controls.update({ hover: grid, selected: null });
+    add.click();
+    const first = requests.at(-1)?.tracking;
+    record("opened");
+    // These reports were queued before the frame received the tracking request.
+    controls.update({ hover: grid, selected: null });
+    controls.update({ hover: null, selected: null });
+    record("queued leave");
+    controls.update({ hover: grid, selected: null, tracking: first });
+    record("tracked");
+    form.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    const closed = requests.at(-1)?.tracking;
+    add.click();
+    const second = requests.at(-1)?.tracking;
+    // Reopening the same grid also rejects reports from its previous opening.
+    controls.update({ hover: grid, selected: null, tracking: first });
+    controls.update({ hover: null, selected: null, tracking: closed });
+    record("old opening and closing");
+    controls.update({ hover: grid, selected: null, tracking: second });
+    record("retracked");
+    controls.update({ hover: null, selected: null, tracking: second });
+    record("removed grid");
+    const removal = requests.at(-1)?.tracking;
+    add.click();
+    const third = requests.at(-1)?.tracking;
+    controls.update({ hover: null, selected: null, tracking: removal });
+    record("queued removal");
+    // Even unchanged empty geometry must close once this opening is acknowledged.
+    controls.update({ hover: null, selected: null, tracking: third });
+    record("unavailable tracked grid");
+    controls.destroy();
+    pane.remove();
+    return out;
+  });
+  expect(states).toEqual([
+    { step: "opened", open: true, focused: true },
+    { step: "queued leave", open: true, focused: true },
+    { step: "tracked", open: true, focused: true },
+    { step: "old opening and closing", open: true, focused: true },
+    { step: "retracked", open: true, focused: true },
+    { step: "removed grid", open: false, focused: false },
+    { step: "queued removal", open: true, focused: true },
+    { step: "unavailable tracked grid", open: false, focused: false },
+  ]);
+});

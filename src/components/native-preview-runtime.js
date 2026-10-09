@@ -1599,6 +1599,7 @@
   }
   var GHOST_STRIP = 32;
   var trackedGrid = null;
+  var gridTracking = 0;
   var recentGrid = null;
   var gridFrame = 0;
   var lastGrids = "";
@@ -1611,7 +1612,8 @@
       if (trackedGrid && (!trackedGrid.container.isConnected || !pageEl.contains(trackedGrid.container))) trackedGrid = null;
       var report = {
         hover: gridReport(trackedGrid || underPointer),
-        selected: gridReport(selected && selected.isConnected ? gridItemOf(selected) : null)
+        selected: gridReport(selected && selected.isConnected ? gridItemOf(selected) : null),
+        tracking: gridTracking
       };
       // A new render has a new context: its report goes out even when it is the same.
       var key = String(state && state.context) + JSON.stringify(report);
@@ -3598,6 +3600,7 @@
     // Keep the popup's grid geometry live while the pointer is in host controls.
     if (msg.type === "item-grid-track") {
       trackedGrid = null;
+      gridTracking = Number.isSafeInteger(msg.tracking) && msg.tracking > 0 ? msg.tracking : 0;
       var candidate = recentGrid && gridReport(recentGrid);
       if (msg.grid && candidate && msg.grid.path === candidate.path &&
           JSON.stringify(msg.grid.parent) === JSON.stringify(candidate.parent)) trackedGrid = recentGrid;

@@ -889,8 +889,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return;
     }
     if (data.type === "item-grids" && site) {
-      const raw = data as { hover?: unknown; selected?: unknown };
-      const report = { hover: readItemGrid(raw.hover), selected: readItemGrid(raw.selected) };
+      const raw = data as { hover?: unknown; selected?: unknown; tracking?: unknown };
+      const report = { hover: readItemGrid(raw.hover), selected: readItemGrid(raw.selected),
+        tracking: typeof raw.tracking === "number" && Number.isSafeInteger(raw.tracking) && raw.tracking > 0 ? raw.tracking : undefined };
       cardGrids?.update(report);
       handlers.onItemGrids?.(report);
       return;
