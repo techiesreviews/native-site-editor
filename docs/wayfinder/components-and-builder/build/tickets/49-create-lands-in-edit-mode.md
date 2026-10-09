@@ -19,4 +19,4 @@ Ticket [04](../../tickets/04-prototype-making-components.md) §6 and §12 (as am
 ## Done (2026-10-10)
 
 - Make component already opened Edit component mode on the new instance (slice 22); its `@smoke` spec (`native-make-component.spec.ts`) already asserts the frame and `Editing<tag>`, and it has no code-pane fallback left beyond the status-line notes when the mode can't load. "+ New component" now frames the inserted instance (`newComponent` passes `{ path, node }` to `editComponent`) instead of relying on the selection, which often left only the code pane.
-- Commit 67af8f8f (built by Sol). Tests: `native-new-component.spec.ts` `@smoke` and gap tests assert the mode's frame and `Editing<section-services>` (both fail without the fix). No new pure rules.
+- Commit 4c754b3f (built by Sol). Tests: `native-new-component.spec.ts` `@smoke` and gap tests assert the mode's frame and `Editing<section-services>` (both fail without the fix). No new pure rules.
