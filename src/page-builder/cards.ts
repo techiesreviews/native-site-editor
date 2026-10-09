@@ -20,6 +20,7 @@ import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
+import { cb09Install } from "../prototype/cb09"; // PROTOTYPE cb09
 
 interface RangeEdit {
   start: number;
@@ -410,6 +411,7 @@ export function createCards(deps: CardsDeps) {
     return undefined;
   }
 
+  cb09Install(deps); // PROTOTYPE cb09
   return {
     describe,
     plan(report: ItemGridReport, request: CardPageRequest): Checked<{ route: string }> {

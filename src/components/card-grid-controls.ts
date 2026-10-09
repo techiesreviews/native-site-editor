@@ -4,6 +4,7 @@ import type { Checked } from "../native-create";
 import { cardPrefixRequest } from "../page-builder/cards";
 import { aOr } from "../page-builder/card-grid";
 import "./card-grid-controls.css";
+import { cb09Activate, cb09Popover } from "../prototype/cb09"; // PROTOTYPE cb09
 
 // "Add card" over the native preview: a dashed ghost where one more item of
 // a grid would go (after its last item), with a "+ Add card" button in it,
@@ -182,6 +183,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function activate(grid = shown?.grid, about = shown?.about) {
     if (!grid || !about) return;
+    if (!(open && gridKey(open.grid) === gridKey(grid)) && cb09Activate({ grid, about, anchor: add })) { close(false); return; } // PROTOTYPE cb09
     if (!about.collection) {
       close(false);
       handlers.addCard(grid);
@@ -253,6 +255,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const actions = node("div", "card-add__actions");
     actions.append(only, create);
     popover.replaceChildren(heading, where, field, url, message, actions);
+    queueMicrotask(() => cb09Popover({ popover, grid, about, close: () => close(false), place: placePopover })); // PROTOTYPE cb09
     // Beside the popover in the pane, not in it: the popover's opening
     // animation moves it, and that would carry a fixed list with it.
     folderMenu?.remove();
@@ -502,6 +505,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       const grid = reports.selected;
       const about = grid ? handlers.describe(grid) : undefined;
       if (!grid || !about) return;
+      if (cb09Activate({ grid, about, anchor: add })) return; // PROTOTYPE cb09
       if (!about.collection) { handlers.addCard(grid); return; }
       reports = { ...reports, hover: null };
       layout();

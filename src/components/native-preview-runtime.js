@@ -3009,6 +3009,8 @@
       updateBoxes();
       return;
     }
+    // PROTOTYPE cb09: element rects by node path, one extra stylesheet, an optional scroll into view (src/prototype/cb09-core.ts).
+    if (msg.type === "cb09") { var cb09Style = document.getElementById("cb09-proto-style"); if (typeof msg.css === "string") { if (!cb09Style) { cb09Style = document.createElement("style"); cb09Style.id = "cb09-proto-style"; (document.head || document.documentElement).appendChild(cb09Style); } if (cb09Style.textContent !== msg.css) cb09Style.textContent = msg.css; } if (Array.isArray(msg.reveal)) { var cb09Hit = resolveNodePath({ path: msg.path, node: msg.reveal }); if (cb09Hit && cb09Hit.scrollIntoView) cb09Hit.scrollIntoView({ block: msg.block === "start" ? "start" : "center" }); } parent.postMessage({ source: "cb09-proto", id: msg.id, rects: (msg.nodes || []).map(function (n) { var hit = resolveNodePath({ path: msg.path, node: n }); var r = hit && hit.getBoundingClientRect(); return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; }) }, "*"); return; } // PROTOTYPE cb09
     if (msg.type === "component-focus") {
       focusTag = typeof msg.tag === "string" ? msg.tag : "";
       updateBoxes();
