@@ -257,15 +257,14 @@ interface Axis {
 }
 type Axes = Map<string, Axis>;
 interface Subject { key: string; attributes: Attribute[]; bare: boolean }
-interface SubjectAxes { key: string; axes: Axes }
+interface SubjectAxes { readonly key: string; readonly axes: ReadonlyMap<string, Axis> }
 type SubjectReader = (selector: string, authored: string, offset: number) => Subject[];
 const allowedAttribute = (name: string) => name !== "data-empty" && name !== "data-unloaded" && !name.startsWith("data-native-");
 
-function readVariantAxes(css: string, read: SubjectReader, excluded = new Set<string>(), onRule?: (subjects: SubjectAxes[]) => void) {
-  const sources = new Map<string, Axes[]>();
+function readVariantAxes(css: string, read: SubjectReader, excluded: ReadonlySet<string>, onRule: (subjects: { key: string; axes: Axes }[]) => void) {
   walkStyleRules(css, ({ selectors, conditions, offset }) => {
-    const ruleSubjects: SubjectAxes[] = [];
-    const matches = selectors.flatMap(({ authored, resolved }) => read(resolved, authored, offset));
+    const ruleSubjects: { key: string; axes: Axes }[] = [];
+    const matches = selectors.flatMap(({ authored, resolved }, selector) => read(resolved, authored, offset).map((subject) => ({ ...subject, selector })));
     for (const subject of matches) {
       const axes: Axes = new Map();
       ruleSubjects.push({ key: subject.key, axes });
@@ -286,20 +285,16 @@ function readVariantAxes(css: string, read: SubjectReader, excluded = new Set<st
     for (const [index, subject] of matches.entries()) for (const attribute of subject.attributes) {
       if (attribute.operator !== "=" || !attribute.value || attribute.negated) continue;
       const axis = ruleSubjects[index].axes.get(attribute.name);
-      if (axis && axis.defaultValue === undefined && matches.some((other) => other !== subject && other.key === subject.key && (other.bare || other.attributes.some((absent) => absent.name === attribute.name && absent.absent))))
+      // Only another selector in the list is an alternative; a second compound
+      // of the same selector (`x[data-a=v] x`) must match as well.
+      if (axis && axis.defaultValue === undefined && matches.some((other) => other.selector !== subject.selector && other.key === subject.key && (other.bare || other.attributes.some((absent) => absent.name === attribute.name && absent.absent))))
         axis.defaultValue = attribute.value;
     }
-    onRule?.(ruleSubjects);
-    for (const { key, axes } of ruleSubjects) {
-      const group = sources.get(key);
-      if (group) group.push(axes);
-      else sources.set(key, [axes]);
-    }
+    onRule(ruleSubjects);
   });
-  return new Map([...sources].map(([key, axes]) => [key, mergeAxes(axes)]));
 }
 
-function variantsOf(axes: Axes): Variant[] {
+function variantsOf(axes: ReadonlyMap<string, Axis>): Variant[] {
   return [...axes].map(([attribute, axis]) => {
     const choice = [...axis.values.keys()].some((value) => value !== "true" && value !== "false");
     const values = choice ? [...axis.values].map(([value, occurrences]) => ({ value, label: valueLabel(value), conditions: [...conditionsOf(occurrences)] })) : [];
@@ -330,7 +325,8 @@ function readComponent(css: string, scriptAttributes?: Iterable<string>) {
   const warnings: VariantWarning[] = [];
   const warned = new Set<string>();
   let defaultLook = false;
-  const subjects = readVariantAxes(css, (resolved, authored, offset) => {
+  const parts: Axes[] = [];
+  readVariantAxes(css, (resolved, authored, offset) => {
     const compound = resolved.slice(0, compoundEnd(resolved));
     if (!/^:host(?:\(|(?=[^\w-]|$))/i.test(compound)) { defaultLook = true; return []; }
     const read = readHost(compound, (attribute, fix) => {
@@ -342,8 +338,8 @@ function readComponent(css: string, scriptAttributes?: Iterable<string>) {
     if (!read) return [];
     if (read.canBeTrue) defaultLook = true;
     return [{ key: "component", attributes: read.attributes, bare: compound[5] !== "(" }];
-  }, excluded);
-  const axes = subjects.get("component") ?? new Map<string, Axis>();
+  }, excluded, (subjects) => parts.push(...subjects.map(({ axes }) => axes)));
+  const axes = mergeAxes(parts);
   if (axes.size && !defaultLook) warnings.push({ kind: "no-default-look" });
   return { axes, warnings };
 }
@@ -356,8 +352,9 @@ export function componentVariants(css: string, options: { scriptAttributes?: Ite
 // One parsed site sheet: per rule, the variant axes of each subject that has
 // any (`tag:x`, `class:x`, `every` for site `:host()`, `global`), kept in
 // source order so merged values follow the cascade order of the site.
-export interface SiteVariantSheet { path: string; rules: readonly SubjectAxes[] }
-export interface SiteVariants { sheets: readonly SiteVariantSheet[] }
+// Cached and shared between callers: read it, never change it.
+export interface SiteVariantSheet { readonly path: string; readonly rules: readonly SubjectAxes[] }
+export interface SiteVariants { readonly sheets: readonly SiteVariantSheet[] }
 
 // Compound boundaries ignore combinators inside strings and functional pseudos.
 function selectorCompounds(selector: string) {
@@ -371,6 +368,47 @@ function selectorCompounds(selector: string) {
   return compounds;
 }
 
+// The tags and classes a compound names, or global when it names neither.
+// `:is()`/`:where()` name what their alternatives' subject compounds name.
+function compoundSubjects(compound: string): { keys: string[]; global: boolean } {
+  const keys: string[] = [];
+  let global = true;
+  for (let pos = 0; pos < compound.length;) {
+    const char = compound[pos];
+    if (char === "[") { pos = closing(compound, pos) + 1; continue; }
+    if (char === ":") {
+      const end = identifierEnd(compound, pos + 1);
+      const name = compound.slice(pos + 1, end).toLowerCase();
+      if (name === "root" || name === "host" || name === "host-context" || compound[pos + 1] === ":") global = false;
+      if (compound[end] !== "(") { pos = Math.max(pos + 1, end); continue; }
+      const close = closing(compound, end);
+      if (name === "is" || name === "where") {
+        for (const alternative of splitSelectorList(compound.slice(end + 1, close))) {
+          const inner = compoundSubjects(selectorCompounds(alternative.trim()).at(-1) ?? "");
+          keys.push(...inner.keys);
+          global &&= inner.global;
+        }
+      }
+      pos = close + 1;
+      continue;
+    }
+    if (char === "." || char === "#") {
+      const end = identifierEnd(compound, pos + 1);
+      if (char === "." && end > pos + 1) keys.push(`class:${unescapeCss(compound.slice(pos + 1, end))}`);
+      global = false;
+      pos = Math.max(pos + 1, end);
+      continue;
+    }
+    const end = identifierEnd(compound, pos);
+    if (end > pos) {
+      keys.push(`tag:${unescapeCss(compound.slice(pos, end)).toLowerCase()}`);
+      global = false;
+      pos = end;
+    } else pos = atomEnd(compound, pos);
+  }
+  return { keys, global };
+}
+
 function readSiteSubjects(selector: string): Subject[] {
   const subjects: Subject[] = [];
   for (const [index, compound] of selectorCompounds(selector).entries()) {
@@ -379,32 +417,7 @@ function readSiteSubjects(selector: string): Subject[] {
       if (read) subjects.push({ key: "every", attributes: read.attributes, bare: compound[5] !== "(" });
       continue;
     }
-    const keys: string[] = [];
-    let global = true;
-    for (let pos = 0; pos < compound.length;) {
-      const char = compound[pos];
-      if (char === "[") { pos = closing(compound, pos) + 1; continue; }
-      if (char === ":") {
-        const end = identifierEnd(compound, pos + 1);
-        const name = compound.slice(pos + 1, end).toLowerCase();
-        if (name === "root" || name === "host" || name === "host-context" || compound[pos + 1] === ":") global = false;
-        pos = compound[end] === "(" ? closing(compound, end) + 1 : Math.max(pos + 1, end);
-        continue;
-      }
-      if (char === "." || char === "#") {
-        const end = identifierEnd(compound, pos + 1);
-        if (char === "." && end > pos + 1) keys.push(`class:${unescapeCss(compound.slice(pos + 1, end))}`);
-        global = false;
-        pos = Math.max(pos + 1, end);
-        continue;
-      }
-      const end = identifierEnd(compound, pos);
-      if (end > pos) {
-        keys.push(`tag:${unescapeCss(compound.slice(pos, end)).toLowerCase()}`);
-        global = false;
-        pos = end;
-      } else pos = atomEnd(compound, pos);
-    }
+    const { keys, global } = compoundSubjects(compound);
     const read = readCompoundAttributes(compound);
     if (global) keys.push("global");
     for (const key of new Set(keys)) subjects.push({ key, attributes: read.attributes, bare: !read.attributes.length });
@@ -443,7 +456,7 @@ function mergeOccurrences(target: Occurrences, source: Occurrences) {
   for (const condition of source.conditions) if (!target.conditions.includes(condition)) target.conditions.push(condition);
 }
 
-function mergeAxes(sources: readonly Axes[]) {
+function mergeAxes(sources: readonly ReadonlyMap<string, Axis>[]) {
   const merged: Axes = new Map();
   for (const axes of sources) for (const [attribute, source] of axes) {
     let target = merged.get(attribute);
@@ -462,7 +475,7 @@ function mergeAxes(sources: readonly Axes[]) {
 
 export function variantsForComponent(tag: string, options: { css: string; site: SiteVariants; scriptAttributes?: Iterable<string> }): { variants: Variant[]; warnings: VariantWarning[] } {
   const { axes, warnings } = readComponent(options.css, options.scriptAttributes);
-  const sources = [axes];
+  const sources: ReadonlyMap<string, Axis>[] = [axes];
   const keys = new Set([`tag:${tag.toLowerCase()}`, "every", "global"]);
   for (const sheet of options.site.sheets) for (const { key, axes } of sheet.rules) {
     if (keys.has(key)) sources.push(axes);

@@ -151,3 +151,18 @@ test("cache reuses sheets by path and content, reparses changes and evicts oldes
   siteVariants(Array.from({ length: 128 }, (_, index) => ({ path: `cache-fill-${index}.css`, source: "" })));
   assert.notStrictEqual(siteVariants([original]).sheets[0], first.sheets[0]);
 });
+
+test(":is() and :where() subjects name their alternatives, not every component", () => {
+  const parsed = site(`:is(section-hero)[data-tone=dark] {} :where(.btn, main .btn)[data-size=small] {}
+    :is([data-a], [data-b])[data-scheme=dark] {}`);
+  assert.deepEqual(choices(variantsForComponent("section-hero", { css: "", site: parsed }).variants), [["data-tone", ["dark"]], ["data-a", []], ["data-b", []], ["data-scheme", ["dark"]]]);
+  assert.deepEqual(choices(variantsForComponent("site-footer", { css: "", site: parsed }).variants), [["data-a", []], ["data-b", []], ["data-scheme", ["dark"]]]);
+  assert.deepEqual(choices(variantsForClass("btn", parsed)), [["data-size", ["small"]]]);
+});
+
+test("a repeated compound in one selector is not a default alternative", () => {
+  const [tone] = component("section-hero[data-tone=dark] section-hero {}");
+  assert.equal(tone.defaultValue, undefined);
+  const [alias] = variantsForClass("btn", site(".btn, .btn[data-variant=primary] {}"));
+  assert.equal(alias.defaultValue, "primary");
+});
