@@ -807,11 +807,15 @@
     return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
       var name = slot.getAttribute("name") || "";
       var assigned = slot.assignedElements().filter(function (child) { return child.parentElement === el && !injectedStyle(child); });
-      var items = !name || Array.prototype.some.call(slot.querySelectorAll("*"), function (child) { return child.localName.indexOf("card-") === 0; });
+      // An items slot: the unnamed one, or one whose fallback is a card component.
+      var items = !name || Array.prototype.some.call(slot.children, function (child) { return child.localName.indexOf("card-") === 0; });
       var parentEl = slot.parentElement || el;
       var hidden = getComputedStyle(slot).display === "none" || parentEl.closest("[data-native-empty]");
+      var own = dropUnion(assigned.length ? assigned : Array.prototype.slice.call(slot.childNodes));
+      // An items slot covers its parent's box (an empty one still has an area); a parent without a box falls back to its items.
+      var area = items ? dropRect(parentEl) : null;
       return { slot: slot, name: name, assigned: assigned, items: items, parent: parentEl,
-        rect: hidden ? null : items ? dropRect(parentEl) : dropUnion(assigned.length ? assigned : Array.prototype.slice.call(slot.childNodes)) };
+        rect: hidden ? null : area && area.width && area.height ? area : own };
     });
   }
   function dropContainers(x, y, moving) {

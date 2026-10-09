@@ -11,7 +11,8 @@ test("flowAxis measures stacks, grids, wrapped rows and flex rows", () => {
   assert.equal(flowAxis([rect(), rect(0, 50), rect(110, 50)], layout), "row");
   assert.equal(flowAxis([rect(), rect(110, 1.9)], { ...layout, display: "flex" }), "row");
   assert.equal(flowAxis([rect(), rect(110, 2)], layout), "column");
-  assert.equal(flowAxis([rect(110), rect()], layout), "column");
+  assert.equal(flowAxis([rect(110), rect()], { ...layout, display: "flex", dir: "row-reverse" }), "row");
+  assert.equal(flowAxis([rect(), rect(0.5, 50)], layout), "column");
   assert.equal(flowAxis([rect(), rect(50, 100, 0, 0), rect(110)], layout), "row");
 });
 
@@ -52,7 +53,8 @@ test("parseDropReport drops bad containers and children", () => {
   const c = container();
   const bad = [null, { ...c, kind: "article" }, { ...c, path: [1, -1] }, { ...c, path: [0.1] },
     { ...c, path: Array(101).fill(0) }, { ...c, rect: rect(0, 0, -1) }, { ...c, rect: rect(NaN) },
-    { ...c, layout: { ...layout, cols: Infinity } }, { ...c, empty: "false" }, { ...c, kind: "slot" }];
+    { ...c, layout: { ...layout, cols: Infinity } }, { ...c, empty: "false" }, { ...c, kind: "slot" },
+    { ...c, path: Array(1) }, { ...c, tag: `x-${"y".repeat(100)}` }, { ...c, kind: "slot", slot: "s".repeat(101) }];
   const parsed = parseDropReport(report([...bad, { ...c, children: [null, { index: -1, rect: rect() },
     { index: 0, rect: rect(Infinity) }, { index: 3, rect: rect() }] }]), "index.html")!;
   assert.equal(parsed.containers.length, 1);

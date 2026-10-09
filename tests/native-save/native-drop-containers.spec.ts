@@ -154,6 +154,12 @@ test("items slots alone open the seal, including empty areas and zero-size wrapp
   expect(items.containers[2]).toMatchObject({ path: [0, 0, 0], slot: "cards", axis: "row", empty: false, children: [{ index: 0 }] });
   const moved = await probe(page, "#inner", items.containers[1].path);
   expect(moved.containers.map(c => c.kind)).toEqual(["items", "section", "main"]);
+  // A slot parent without a box of its own: the items slot covers its items.
+  await frame.locator("block-list").evaluate(host => { host.shadowRoot!.querySelector("div")!.style.display = "contents"; });
+  const boxless = await probe(page, "#inner");
+  expect(boxless.containers.map(c => c.kind)).toEqual(["div", "div", "items", "section", "main"]);
+  expect(boxless.containers[2].rect.height).toBeGreaterThanOrEqual(60);
+  await frame.locator("block-list").evaluate(host => { host.shadowRoot!.querySelector("div")!.style.display = "grid"; });
   await frame.locator("block-list").evaluate(host => {
     host.querySelector("#assigned")!.remove();
     host.shadowRoot!.querySelector("slot")!.innerHTML = "";
@@ -165,7 +171,8 @@ test("items slots alone open the seal, including empty areas and zero-size wrapp
   expect(empty.containers[0].rect.height).toBeGreaterThanOrEqual(100);
   await frame.locator("block-list").evaluate(host => {
     host.innerHTML = '<div slot="body" id="ordinary" style="height:60px"><div id="sealed-inner" style="height:60px">Text</div></div>';
-    host.shadowRoot!.innerHTML = '<div><slot name="body"><block-other></block-other></slot></div>';
+    // The fallback is another instance (holding a card, which does not count): an ordinary slot.
+    host.shadowRoot!.innerHTML = '<div><slot name="body"><block-other><card-x></card-x></block-other></slot></div>';
   });
   const named = await probe(page, "#sealed-inner");
   expect(named.containers.map(c => c.kind)).toEqual(["slot", "section", "main"]);
