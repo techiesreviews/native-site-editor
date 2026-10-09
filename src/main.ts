@@ -732,7 +732,11 @@ const blockInsertPorts: BlockInsertPorts = {
   },
   source: path => nativeEffectiveSource(path),
   exists: nativePathExists,
-  template: tag => (nativeSite && Object.hasOwn(nativeSite.components, tag) ? nativeEffectiveSource(nativeSite.components[tag]) : undefined),
+  template: tag => {
+    const path = nativeSite && Object.hasOwn(nativeSite.components, tag) ? nativeSite.components[tag] : undefined;
+    const source = path === undefined ? undefined : nativeEffectiveSource(path);
+    return path === undefined || source === undefined ? undefined : { path, source };
+  },
   proof: () => {
     const epoch = generation, scope = setupScope();
     return () => epoch === generation && scope === setupScope() && !versionView;

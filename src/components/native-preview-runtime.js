@@ -957,7 +957,7 @@
   // What counts in a template: elements and text that is not white space.
   function dropMeaningful(nodes) {
     return Array.prototype.filter.call(nodes, function (n) {
-      return n.nodeType === 1 ? !injectedStyle(n) : n.nodeType === 3 && /\S/.test(n.textContent);
+      return n.nodeType === 1 ? !injectedStyle(n) : n.nodeType === 3 && /[^\t\n\f\r ]/.test(n.textContent);
     });
   }
   function dropHeading(n) { return n && n.nodeType === 1 && /^h[1-6]$/.test(n.localName); }

@@ -161,6 +161,20 @@ test("an instance without an items slot refuses a click-insert with the reason",
   assert.equal(clickTarget(work, "paragraph", [1, 0]).ok, false);
 });
 
+test("slot names are read and written as the browser reads them", () => {
+  const odd: Record<string, string> = {
+    "section-odd": `<section><slot name="a&amp;&quot;b"><card-quote></card-quote></slot><slot name="c">&#32;<card-quote></card-quote> </slot><slot name="d">&nbsp;<card-quote></card-quote></slot></section>`,
+    "card-quote": `<blockquote><h3><slot name="title">Q</slot></h3></blockquote>`,
+  };
+  const rule = itemsSlotRule((tag) => odd[tag]);
+  assert.deepEqual([rule("section-odd", 'a&"b'), rule("section-odd", "a&amp;&quot;b"), rule("section-odd", "c"), rule("section-odd", "d")], [true, false, true, false]);
+  const source = page("<section-odd></section-odd>");
+  const target = ok(clickTarget(source, "paragraph", [1, 0], (tag) => odd[tag]));
+  assert.equal(target.slot, 'a&"b');
+  const edit = nativeMarkupInsertEdit(source, target.parent, target.index, "<p>X</p>", rule, target.slot);
+  assert.match(applyGuardedSourceEdit(source, edit!)!, /<p slot="a&amp;&quot;b">X<\/p>/);
+});
+
 test("the seal holds everywhere but items slots", () => {
   // An ordinary named slot, and card-project's card-note slot, refuse.
   assert.equal(nativeMarkupInsertEdit(work, [1, 0], 1, "<p>X</p>", items, "title"), undefined);

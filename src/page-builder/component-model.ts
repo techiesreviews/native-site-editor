@@ -340,7 +340,8 @@ export function breakTextEdit(source: string, from: number, to: number, after: s
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
-const blank = (html: string, node: SourceNode) => node.type === "text" && !html.slice(node.start, node.end).trim();
+// As the browser reads it: character references decoded, only ASCII white space blank.
+const blank = (html: string, node: SourceNode) => node.type === "text" && !/[^\t\n\f\r ]/.test(decodeEntities(html.slice(node.start, node.end)));
 /** Elements and text that is not just white space. */
 const meaningful = (html: string, nodes: SourceNode[]) => nodes.filter((node) => !blank(html, node));
 

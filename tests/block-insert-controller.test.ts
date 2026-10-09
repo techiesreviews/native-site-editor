@@ -12,7 +12,7 @@ function setup(overrides: Partial<BlockInsertPorts> = {}, files: Record<string, 
     target: () => ({ path: "index.html", node: [0, 0, 0] }),
     source: (path: string) => files[path],
     exists: (path: string) => Object.hasOwn(files, path),
-    template: (tag: string) => files[`components/${tag}/${tag}.html`],
+    template: (tag: string) => { const path = `components/${tag}/${tag}.html`; return Object.hasOwn(files, path) ? { path, source: files[path] } : undefined; },
     proof: () => () => true,
     open: async () => () => true,
     apply: async (op: Op) => {
@@ -122,6 +122,8 @@ test("drops and clicks into an instance's items slot write its light DOM with th
   await controller.drop("paragraph", { parent: [0, 0], index: 1, where: "Into Section work › “more” slot › empty", slot: "more" }, work);
   assert.match(log.ops[0].edits.get("index.html")!, /<h2 slot="title">Work<\/h2>\s*<p slot="more">Text<\/p>\s*<\/section-work>/);
   assert.deepEqual(log.ops[0].selection.after, { path: "index.html", node: [0, 0, 1] });
+  // The templates that opened the seal are part of the step's proof.
+  assert.deepEqual([...log.ops[0].expectedSources.keys()].sort(), ["components/card-quote/card-quote.html", "components/section-work/section-work.html", "index.html"]);
   // The title slot is not an items slot: nothing is written.
   await controller.drop("paragraph", { parent: [0, 0], index: 1, where: "", slot: "title" }, files["index.html"]);
   assert.equal(log.ops.length, 1);

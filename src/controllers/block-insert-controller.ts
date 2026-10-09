@@ -18,8 +18,8 @@ export interface BlockInsertPorts {
   readonly target: () => RailTarget | undefined;
   readonly source: (path: string) => string | undefined;
   readonly exists: (path: string) => boolean;
-  /** A component's template by its tag (for its items slots). */
-  readonly template: (tag: string) => string | undefined;
+  /** A component's template file by its tag (for its items slots). */
+  readonly template: (tag: string) => { path: string; source: string } | undefined;
   /** Proof of the repository, branch and session now; false once any changed. */
   readonly proof: () => () => boolean;
   /** Opens the page in the editor, whose history takes the step: a proof it stays open there, or nothing when it could not. */
@@ -64,8 +64,13 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (!opened || !proof() || ports.source(path) !== source) return "The page changed meanwhile. Try again.";
     // The step's undo belongs to this page's history: another file opened meanwhile stops it.
     const current = () => proof() && opened();
-    // An instance's seal opens only at its items slots.
-    const items = itemsSlotRule(ports.template);
+    // An instance's seal opens only at its items slots: the templates that say so are part of the step's proof.
+    const templates = new Map<string, string>();
+    const items = itemsSlotRule((tag) => {
+      const file = ports.template(tag);
+      if (file) templates.set(file.path, file.source);
+      return file?.source;
+    });
     const edit = nativeMarkupInsertEdit(source, parent, index, blockMarkup(source, kind, parent, wrap, items), items, slot);
     const next = edit && applyGuardedSourceEdit(source, edit);
     if (!next) return `${name} was not added: the HTML around that spot could not be read exactly.`;
@@ -73,7 +78,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     const after = { path, node: wrap ? [...parent, index, 0] : [...parent, index] };
     ports.select({ ...after, source: next }, request.where);
     const error = await ports.apply({
-      expectedSources: new Map([[path, source]]),
+      expectedSources: new Map([...templates, [path, source]]),
       creates: placeholder ? [{ path: PLACEHOLDER_IMAGE_PATH, content: placeholderImageSvg }] : undefined,
       edits: new Map([[path, next]]),
       done: `${name} added.${request.where ? ` ${request.where}` : ""}`,
@@ -91,7 +96,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
     // A selection painted from other bytes names another element now.
     if (at.node && at.painted !== undefined && at.painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
-    const target = clickTarget(source, kind, at.node, ports.template);
+    const target = clickTarget(source, kind, at.node, (tag) => ports.template(tag)?.source);
     if (!target.ok) { ports.refuse(target.reason); return; }
     const error = await insert({
       path: at.path, parent: target.parent, index: target.index, kind, wrap: target.wrap, slot: target.slot, where: target.where,

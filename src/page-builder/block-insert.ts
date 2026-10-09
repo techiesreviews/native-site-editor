@@ -11,7 +11,7 @@
 //                               into the last Section, or a new one made for them
 // Pure: the caller inserts (block-insert-controller.ts) and selects the result.
 
-import { templateSlots, type TemplateOf } from "./component-model";
+import { decodeEntities, templateSlots, type TemplateOf } from "./component-model";
 import { nativeElementMarkup, type NativeElementKind } from "./native-elements";
 import { nativeHeadingLevel, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
@@ -27,14 +27,16 @@ const isSection = (node: NativeOutline) => node.name === "section";
 const takesBlocks = (node: NativeOutline) => node.name === "section" || node.name === "div";
 const isInstance = (node: NativeOutline) => node.opaque && node.name.includes("-");
 
+/** A component's items slots by name as the browser reads them (decoded), in template order. */
+const itemsSlots = (tag: string, templateOf: TemplateOf) => {
+  const template = templateOf(tag);
+  return template === undefined ? [] : templateSlots(template, templateOf).filter((entry) => entry.items).map((entry) => decodeEntities(entry.name));
+};
 /** The items slots of the site's components (component-model.ts `templateSlots`), from their templates. */
 export function itemsSlotRule(templateOf: TemplateOf): ItemsSlotRule {
   const known = new Map<string, Set<string>>();
   return (tag, slot) => {
-    if (!known.has(tag)) {
-      const template = templateOf(tag);
-      known.set(tag, new Set(template === undefined ? [] : templateSlots(template, templateOf).filter((entry) => entry.items).map((entry) => entry.name)));
-    }
+    if (!known.has(tag)) known.set(tag, new Set(itemsSlots(tag, templateOf)));
     return known.get(tag)!.has(slot);
   };
 }
@@ -126,8 +128,7 @@ export function clickTarget(source: string, kind: NativeElementKind, selection?:
   }
   if (isInstance(selected)) {
     // Its first items slot, after that slot's last child (at the end when it has none).
-    const template = templateOf(selected.name);
-    const slot = template === undefined ? undefined : templateSlots(template, templateOf).find((entry) => entry.items)?.name;
+    const slot = itemsSlots(selected.name, templateOf)[0];
     if (slot === undefined) return { ok: false, reason: `${blockLabel(selected)} is a component without an items slot: its parts are filled by editing them. Select a Section or a Div.` };
     const last = selected.children.map((child) => child.slot).lastIndexOf(slot);
     return into(selected, last < 0 ? selected.children.length : last + 1, false, slot);
