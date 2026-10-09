@@ -26,6 +26,7 @@ import type { MenuItem } from "../components/row-menu";
 import { refuse as showRefusal } from "../components/refusal-note";
 import { isButtonBlock } from "./block-fields";
 import { nativeElementUrlProblem } from "./native-elements";
+import { nativeComponentFrameSelected } from "./native-component-selection";
 import { startTags } from "../../shared/html-source";
 import { mountComponentPanelResize } from "./component-panel-resize";
 import { mountDropdown } from "../components/dropdown";
@@ -673,9 +674,9 @@ export function createComponentTools(deps: ComponentDeps) {
       loaded.mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path }, notes);
       deps.refreshStructure?.();
       renderBar();
-      // The part is selected again in the framed instance when the selection is in another one (or none).
+      // Keep any part selected in this instance while the mode was loading.
       const now = deps.selection();
-      const inFrame = now?.path === template.path && now.host?.path === framed.path && now.host.node?.join() === framed.node.join() && now.node?.join() === nodePath?.join();
+      const inFrame = nativeComponentFrameSelected(now, framed, template.path);
       if (nodePath && !inFrame) deps.preview()?.selectNode({ path: template.path, node: nodePath });
       return true;
     }) : Promise.resolve(false);

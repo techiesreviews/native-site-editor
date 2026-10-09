@@ -1,5 +1,15 @@
 import type { NativePreviewSelection } from "../components/native-preview";
 
+/** A part selected while mode entry loads already belongs to the framed instance. */
+export function nativeComponentFrameSelected(
+  selection: Pick<NativePreviewSelection, "path" | "node" | "host"> | undefined,
+  instance: { path: string; node: readonly number[] },
+  templatePath: string,
+): boolean {
+  return Boolean(selection?.node?.length && selection.path === templatePath &&
+    selection.host?.path === instance.path && selection.host.node?.join() === instance.node.join());
+}
+
 /** Resolve actual shadow owners to an allowed source scope, never by selector. */
 export function nativeComponentScopeSelection(
   selection: NativePreviewSelection,

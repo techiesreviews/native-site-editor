@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeComponentScopeSelection } from "../src/page-builder/native-component-selection";
+import { nativeComponentFrameSelected, nativeComponentScopeSelection } from "../src/page-builder/native-component-selection";
 import type { NativePreviewSelection } from "../src/components/native-preview";
 
 const sources = {
@@ -78,4 +78,33 @@ test("content and card targets remain selected; a container inside a link resolv
   assert.equal(nativeComponentScopeSelection(card, "index.html", components, ownSources, tagAt, (_source, node) => node.join(".") === "0.3"), card);
   const direct = { ...wrapper, path: "outer.html" };
   assert.equal(nativeComponentScopeSelection(direct, "outer.html", components, sources, tagAt), direct);
+});
+
+const framed = { path: "index.html", node: [0, 1] } satisfies Parameters<typeof nativeComponentFrameSelected>[1];
+const framedPart = {
+  path: "outer.html", node: [0, 2],
+  host: { tag: "outer-card", selector: "outer-card:nth-of-type(2)", path: "index.html", node: [0, 1] },
+} satisfies NonNullable<Parameters<typeof nativeComponentFrameSelected>[0]>;
+
+test("mode entry keeps both the root and a different descendant selected in its framed instance", () => {
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, node: [0] }, framed, "outer.html"), true);
+  assert.equal(nativeComponentFrameSelected(framedPart, framed, "outer.html"), true);
+});
+
+test("mode entry selects its own target when the part belongs to another instance or page", () => {
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, host: { ...framedPart.host, node: [0, 0] } }, framed, "outer.html"), false);
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, host: { ...framedPart.host, path: "about/index.html" } }, framed, "outer.html"), false);
+});
+
+test("mode entry does not retain another template's part or a page selection", () => {
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, path: "inner.html" }, framed, "outer.html"), false);
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, path: "index.html" }, framed, "outer.html"), false);
+});
+
+test("mode entry needs a selected part and its complete instance address", () => {
+  assert.equal(nativeComponentFrameSelected(undefined, framed, "outer.html"), false);
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, node: undefined }, framed, "outer.html"), false);
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, node: [] }, framed, "outer.html"), false);
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, host: undefined }, framed, "outer.html"), false);
+  assert.equal(nativeComponentFrameSelected({ ...framedPart, host: { ...framedPart.host, node: undefined } }, framed, "outer.html"), false);
 });

@@ -250,3 +250,43 @@ test("page-owned slot content selects atoms, while its layout wrapper selects th
     await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(kind);
   }
 });
+
+test("a delayed component mode keeps the template part selected while it loads", async ({ page }) => {
+  let release!: () => void;
+  let requested = false;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/src/page-builder/edit-component-mode.ts*", async route => {
+    requested = true;
+    await gate;
+    await route.continue();
+  });
+  try {
+    await page.evaluate(async () => {
+      const editor = await import("/src/components/code-editor.ts");
+      const before = editor.getMountedSource("index.html")!;
+      const match = /<p slot="body">[\s\S]*?<\/p>/.exec(before)!;
+      editor.replaceActiveRange({ path: "index.html", start: match.index, end: match.index + match[0].length, expected: match[0], text: "" });
+    });
+    await firstCard(page).getByRole("button", { name: "Edit component", exact: true }).click();
+    const path = "components/project-card/project-card.html";
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+    await expect.poll(() => requested).toBe(true);
+    await expect.poll(() => source(page, path)).toContain("No description yet.");
+    const body = frame(page).locator("project-card").first().locator(".project-card__body");
+    await expect(body).toHaveText("No description yet.");
+    await body.click({ position: { x: 5, y: 5 } });
+    await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
+    await expect(body).toBeFocused();
+    release();
+    await expect(page.getByRole("group", { name: "Slot content", exact: true })).toBeVisible();
+    await expect(frame(page).locator('[data-native-selection-box="edit-frame"]')).toBeVisible();
+    await expect(body).toBeFocused();
+    await body.fill("Typing after delayed mode entry");
+    await body.press("Enter");
+    await expect.poll(() => source(page, path)).toContain("Typing after delayed mode entry");
+    await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
