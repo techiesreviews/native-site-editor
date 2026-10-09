@@ -747,29 +747,36 @@
     return !!editMode && editMode.show === "placeholders" && !!host && host === editHostElement();
   }
   // In the page's fresh copy, the edited instance's own content goes to no
-  // slot: each child's `slot` names one no template has, and loose text is
+  // slot: each child's `slot` names one no template has, and its text is
   // left out. Elements keep their identity (markupOf was taken before).
   function placeholderContent(content) {
     if (!editMode || editMode.show !== "placeholders" || !state || state.pagePaths[state.route] !== editMode.path) return;
     var el = content;
     for (var i = 0; el && i < editMode.node.length; i++) el = el.children[editMode.node[i]] || null;
     if (!el || el === content || el.localName !== editMode.tag) return;
-    Array.prototype.forEach.call(el.childNodes, function (n) {
+    // Text, even blank, would fill the unnamed slot: it is left out.
+    Array.prototype.slice.call(el.childNodes).forEach(function (n) {
       if (n.nodeType === 1) n.setAttribute("slot", PLACEHOLDER_SLOT + ":" + (n.getAttribute("slot") || ""));
-      else if (n.nodeType === 3) n.data = n.data.trim() ? "" : n.data;
+      else if (n.nodeType === 3) n.remove();
     });
   }
   // The edited instance's box: its own, or its template's when it has none (display: contents).
+  // The edited instance's box: its own, else the union of what it shows
+  // through boxless (display: contents) wrappers and slots; null when none.
   function editRect(host) {
-    var r = host.getBoundingClientRect();
-    if (r.width || r.height) return r;
     var out = null;
-    Array.prototype.forEach.call(host.shadowRoot.children, function (el) {
+    function add(el, depth) {
       var b = el.getBoundingClientRect();
-      if (!b.width && !b.height) return;
-      out = out ? { left: Math.min(out.left, b.left), top: Math.min(out.top, b.top), right: Math.max(out.right, b.right), bottom: Math.max(out.bottom, b.bottom) } : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
-    });
-    return out ? { left: out.left, top: out.top, width: out.right - out.left, height: out.bottom - out.top } : r;
+      if (b.width || b.height) {
+        out = out ? { left: Math.min(out.left, b.left), top: Math.min(out.top, b.top), right: Math.max(out.right, b.right), bottom: Math.max(out.bottom, b.bottom) } : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+        return;
+      }
+      if (depth > 32) return;
+      var kids = el instanceof HTMLSlotElement && el.assignedElements().length ? el.assignedElements() : el.shadowRoot ? el.shadowRoot.children : el.children;
+      Array.prototype.forEach.call(kids, function (kid) { add(kid, depth + 1); });
+    }
+    add(host, 0);
+    return out && { left: out.left, top: out.top, width: out.right - out.left, height: out.bottom - out.top };
   }
   function editLayer(kind) {
     var el = document.createElement("div");
@@ -805,6 +812,12 @@
     editFrame.style.border = "2px solid " + componentColor;
     editFrame.style.boxShadow = "0 0 0 4px color-mix(in srgb, " + componentColor + " 22%, transparent)";
     var r = editRect(host);
+    // Nothing shown yet (its styles still arriving): no frame and no shade over it.
+    if (!r) {
+      editFrame.style.display = "none";
+      editShades.forEach(function (shade) { shade.style.display = "none"; });
+      return;
+    }
     var x = r.left + window.scrollX, y = r.top + window.scrollY, w = r.width, h = r.height;
     var root = document.documentElement;
     var W = Math.max(root.scrollWidth, window.innerWidth), H = Math.max(root.scrollHeight, window.innerHeight);
@@ -854,6 +867,7 @@
   // to the top of the frame when it is taller than what is left.
   function revealEdited(el, smooth) {
     var r = el === editHost() ? editRect(el) : el.getBoundingClientRect();
+    if (!r) return;
     var inset = topInset(el), gap = 12;
     var room = window.innerHeight - inset - gap * 2;
     var dy = 0;

@@ -14,11 +14,11 @@ const canvasBar = (page: Page) => page.locator(".canvas-bar");
 const shots = process.env.ASE_EDIT_MODE_SHOTS;
 const TEMPLATE = "components/section-work/section-work.html";
 
-// Recent work as a section component: a title slot, and an items slot whose fallback is one card-project.
+// Recent work as a section component: a title slot, and the items slot (the unnamed one) whose fallback is one card-project.
 const workTemplate = `<section class="flow">
   <slot name="title"><h2>Section title</h2></slot>
   <div class="cards">
-    <slot name="items">
+    <slot>
       <card-project></card-project>
     </slot>
   </div>
@@ -46,7 +46,7 @@ function homeWithWork() {
   expect(start).toBeGreaterThan(0);
   const cards = home.slice(start, end).match(/<card-project>[\s\S]*?<\/card-project>/g)!;
   expect(cards).toHaveLength(3);
-  const items = cards.map((card) => card.replace("<card-project>", `<card-project slot="items">`)).join("\n      ");
+  const items = cards.join("\n      ");
   return `${home.slice(0, start)}<section-work id="work">
       <h2 slot="title">Recent work</h2>
       ${items}
@@ -95,7 +95,7 @@ test("Edit component opens Recent work in place: placeholders, this page's conte
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
   await expect(frame(page).locator("[data-native-selection-box='edit-shade']:visible")).not.toHaveCount(0);
   // The template's own slots keep their names (the component's CSS can name them).
-  expect(await work.evaluate((host) => [...host.shadowRoot!.querySelectorAll("slot")].map((slot) => slot.name))).toEqual(["title", "items"]);
+  expect(await work.evaluate((host) => [...host.shadowRoot!.querySelectorAll("slot")].map((slot) => slot.name))).toEqual(["title", ""]);
   if (shots) await page.screenshot({ path: `${shots}/placeholders.png` });
 
   // An edit of the template shows in place at once, the mode and the frame's document unchanged.
@@ -127,10 +127,11 @@ test("Edit component opens Recent work in place: placeholders, this page's conte
   await expect(work.getByText("Fern & Kettle", { exact: true })).toBeVisible();
   await expect(work.getByText("Recent work", { exact: true })).toBeVisible();
   // Still in view, below the site's sticky header.
-  const header = (await frame(page).locator("site-header").boundingBox())!;
-  const shown = (await work.getByText("Recent work", { exact: true }).boundingBox())!;
-  expect(shown.y).toBeGreaterThanOrEqual(header.y + header.height);
-  expect(shown.y + shown.height).toBeLessThanOrEqual(canvas.y + canvas.height);
+  await expect.poll(async () => {
+    const header = (await frame(page).locator("site-header").boundingBox())!;
+    const shown = (await work.getByText("Recent work", { exact: true }).boundingBox())!;
+    return shown.y >= header.y + header.height && shown.y + shown.height <= canvas.y + canvas.height;
+  }).toBe(true);
   await expect(fallbackCard).toHaveCount(0);
   if (shots) await page.screenshot({ path: `${shots}/page-content.png` });
   await showPlaceholders.click();
@@ -160,9 +161,11 @@ test("Structure's Edit component opens the mode on that row's instance; a page r
   await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
   // The edited instance is the one on that row, not just any section-work.
-  const framed = (await frame(page).locator("[data-native-selection-box='edit-frame']").boundingBox())!;
-  const host = (await frame(page).locator("section-work").boundingBox())!;
-  expect(Math.abs(framed.y + 4 - host.y)).toBeLessThan(2);
+  await expect.poll(async () => {
+    const framed = (await frame(page).locator("[data-native-selection-box='edit-frame']").boundingBox())!;
+    const host = (await frame(page).locator("section-work").boundingBox())!;
+    return Math.abs(framed.y + 4 - host.y);
+  }).toBeLessThan(2);
 
   // Selecting a page element (here through Structure) opens the page, which ends the mode.
   await page.getByRole("treeitem", { name: /^Section contact/ }).first().locator(".page-structure__label").click();

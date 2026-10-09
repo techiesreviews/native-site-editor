@@ -540,7 +540,8 @@ export function createComponentTools(deps: ComponentDeps) {
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
     const framed = instance ?? instanceOf(from, tag);
     const framedSource = framed && deps.sources()[framed.path];
-    const modeLoad = framed && loadEditMode().catch((error: unknown) => { deps.error(error); return undefined; });
+    // A failed load is told only while this entry still stands (below), never after it was left.
+    const modeLoad = framed && loadEditMode().then((mode) => ({ mode }), (error: unknown) => ({ error }));
     if (!(await deps.openFile(template.path))) return;
     if (deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) return;
     const opened = explicitTemplate = { path: template.path, revision: deps.revision() };
@@ -556,10 +557,12 @@ export function createComponentTools(deps: ComponentDeps) {
     const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
     const preserved = part?.path === template.path && locateNativeElementRange(source, part.node)?.tag.name === part.tag ? part.node : undefined;
     const nodePath = preserved ?? (element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0]);
-    if (framed && modeLoad) void modeLoad.then((mode) => {
+    if (framed && modeLoad) void modeLoad.then((loaded) => {
       // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
-      if (!mode || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
+      if (explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
         || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) return;
+      if (!("mode" in loaded)) { deps.error(loaded.error); return; }
+      const mode = loaded.mode;
       mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path });
       renderBar();
       // The part is selected again in the framed instance when the selection is in another one (or none).
