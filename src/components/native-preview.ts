@@ -215,7 +215,8 @@ export interface NativePreviewHandlers {
   onTextSelection?: (selection: NativeTextSelection | undefined) => void;
   // Ctrl/⌘+B, +I or +K pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
-  // Alt+Up or Alt+Down pressed inside the preview on a selected section.
+  // Alt+Up/Down (a selected section among its siblings) or Alt+Left/Right
+  // ("out" of / "in" to a container) pressed inside the preview.
   onMove?: (direction: "up" | "down" | "out" | "in") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;

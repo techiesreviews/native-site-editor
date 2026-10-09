@@ -942,7 +942,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (first) { first.focus(); return; }
     }
     if (activeField) editingModule?.closeField(activeField);
-    if (focused && rows.has(focused)) focusRowOnly(rows.get(focused)!);
+    // A row moved into a folded container (Alt+→) shows before it takes focus.
+    if (focused && rows.has(focused)) { reveal(rows.get(focused)!); focusRowOnly(rows.get(focused)!); }
     else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
   }
 

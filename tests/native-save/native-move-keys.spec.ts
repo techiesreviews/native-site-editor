@@ -205,9 +205,14 @@ test("Alt+Left/Right in Structure moves a card across its Div, retains focus, an
   await expect(movedCard(page)).toBeFocused();
   await expect(movedCard(page)).toHaveAttribute("aria-level", "3");
   const outside = await cardsSource(page);
+  // Into a folded Div: its row unfolds so the moved row keeps focus.
+  await tree(page).getByRole("treeitem", { name: /^Block/ }).locator(".page-structure__toggle").click();
+  await expect(tree(page).getByRole("treeitem", { name: /^Block/ })).toHaveAttribute("aria-expanded", "false");
+  await movedCard(page).focus();
   await page.keyboard.press("Alt+ArrowRight");
   await expect(frame(page).locator("#work .cards > card-project")).toHaveCount(2);
   await expect(status(page)).toHaveText("Moved into the container");
+  await expect(tree(page).getByRole("treeitem", { name: /^Block/ })).toHaveAttribute("aria-expanded", "true");
   await expect(movedCard(page)).toBeFocused();
   await expect(movedCard(page)).toHaveAttribute("aria-level", "4");
   await cardsUndo(page);
