@@ -818,9 +818,9 @@ const blockInsertPorts: BlockInsertPorts = {
     return path === undefined || source === undefined ? undefined : { path, source };
   },
   proof: () => {
-    // Edit component mode entered or left (or another template opened in it) ends the step too.
-    const epoch = generation, scope = setupScope(), template = componentTools?.editModeTemplate()?.path;
-    return () => epoch === generation && scope === setupScope() && !versionView && componentTools?.editModeTemplate()?.path === template;
+    // Edit component mode entered or left, or its template opened again, ends the step too.
+    const epoch = generation, scope = setupScope(), template = componentTools?.editModeTemplate()?.entry;
+    return () => epoch === generation && scope === setupScope() && !versionView && componentTools?.editModeTemplate()?.entry === template;
   },
   open: async path => {
     const epoch = generation;

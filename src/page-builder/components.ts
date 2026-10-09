@@ -1921,12 +1921,13 @@ export function createComponentTools(deps: ComponentDeps) {
     identity,
     /**
      * Edit component mode's template while it is the file open (the rail
-     * builds in it): its tag and path, and the page it is framed on.
+     * builds in it): its tag and path, the page it is framed on, and the
+     * opening (`entry`, the same object until the template is opened again).
      */
     editModeTemplate() {
       const mode = editMode?.active();
       return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath && explicitTemplate.revision === deps.revision()
-        ? { tag: mode.tag, path: mode.templatePath, page: mode.path } : undefined;
+        ? { tag: mode.tag, path: mode.templatePath, page: mode.path, entry: explicitTemplate as object } : undefined;
     },
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
