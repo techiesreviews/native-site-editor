@@ -1,7 +1,7 @@
 ---
 title: Variants in the edit bar
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [12-variant-parser-site-css]
 builder: claude ★
@@ -21,3 +21,9 @@ Ticket [07](../../tickets/07-variant-contract.md) §1 and §5.
 
 - `@smoke` spec (for example `tests/native-save/native-variants.spec.ts`): pick a variant on an instance, the attribute is written; pick the default, it is removed; one undo each.
 - Nightly: yes/no checkbox, the Variants button past two, "Custom", "wide screens only".
+
+## Done (2026-10-09)
+
+- A selected instance shows a captioned dropdown per variant and a checkbox per yes/no variant (bare attribute), behind one Variants button past two (its popover stays open as fields change); Default removes the attribute, unknown values show as Custom, conditional variants and values say where they show ("wide screens only"). One undo step per pick; Structure unchanged. The reader (`src/page-builder/variant-fields.ts`) loads on the first instance selection (boot +1 KB gzip).
+- Commits `8d1621d`, `b157c8a` (review: neutral notes for negated or mixed conditions, yes/no on by presence). Not yet: attributes set by site scripts are not excluded in the browser (no script sources loaded).
+- Tests: `tests/variant-fields.test.ts` (9), `tests/native-save/native-variants.spec.ts` (@smoke + 2 nightly) on the new `native-variants` fixture (id 541).
