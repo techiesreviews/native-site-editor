@@ -25,3 +25,5 @@ Decided with Lex. This rule applies to whatever HTML a component starts from, bu
 9. **Language:** components use **Slot**; no "Editable" term is added. `CONTEXT.md`'s Slot entry now says the page supplies a whole element.
 
 **Changes to `makeComponentPlan`** (`component-model.ts:1095`): wrap the whole element for text (today a text element gets its slot inside it, at `:1137-1144`), name slots by role, detect repeated groups and lists, wrap nested instances, and handle stretched links.
+
+**Amended by ticket 04 (2026-10-09):** the Make component dialog became an in-preview making mode with chips. A repeated item becomes its own card component, which is the items slot's fallback. Rule 5's items slot may be named and still gets Add card.

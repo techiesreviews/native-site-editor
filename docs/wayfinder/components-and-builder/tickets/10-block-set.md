@@ -29,3 +29,5 @@ Decided with Lex.
    - Div, Image, Heading, Paragraph and Button inside a Section or a Div.
    - Inside a component instance only into its unnamed slot, where its repeated items live. Named slots refuse drops, because they are filled by editing.
 6. **Existing code.** The hidden element catalogue (`native-elements.ts`) becomes the block set: its markup code is kept, cut to these six blocks and wired back into Add. List, video, embed, divider and form choices are deleted. The disabled Columns/Grid go, replaced by the Div's Layout choice. `static-section-defaults.ts` goes with the masters (ticket 02).
+
+**Amended by ticket 04 (2026-10-09):** any slot holding repeated items, named or unnamed, accepts drops of any block and gets Add card. Other named slots still refuse drops.
