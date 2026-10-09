@@ -75,13 +75,11 @@ test("main, heading, page components and instance contents have no Make componen
     await target.click({ button: "right" });
     await expect(menu(page)).toHaveCount(0);
   }
-  // Each right-click is seen (the edit bar leaves the section first) and opens no menu.
+  // Each right-click is seen (the edit bar names the element) and opens no menu.
   const kind = page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind");
-  for (const selector of [".hero h1", "site-header", "site-footer", "project-card .project-card__title"]) {
-    await clickSection(page, "left");
-    await expect(kind).toHaveText("Section");
+  for (const [selector, named] of [[".hero h1", "Heading"], ["site-header", "Site header"], ["site-footer", "Site footer"], ["project-card .project-card__title", "Text"]]) {
     await frame(page).locator(selector).first().click({ button: "right" });
-    await expect(kind).not.toHaveText("Section");
+    await expect(kind).toHaveText(named);
     await expect(menu(page)).toHaveCount(0);
   }
 });
