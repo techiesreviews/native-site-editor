@@ -539,16 +539,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const openingRevision = deps.revision();
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
     const framed = instance ?? instanceOf(from, tag);
+    const framedSource = framed && deps.sources()[framed.path];
     const modeLoad = framed && loadEditMode().catch((error: unknown) => { deps.error(error); return undefined; });
     if (!(await deps.openFile(template.path))) return;
     if (deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) return;
     const opened = explicitTemplate = { path: template.path, revision: deps.revision() };
-    if (framed && modeLoad) void modeLoad.then((mode) => {
-      // Still this template, opened by this Edit component, over the instance's page.
-      if (!mode || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path || deps.previewPage() !== framed.path) return;
-      mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path });
-      renderBar();
-    });
     // The template's code takes the caret straight away: typing edits it at once.
     deps.editor()?.focusEditor?.(template.path);
     const source = deps.sources()[template.path] ?? template.source;
@@ -561,6 +556,17 @@ export function createComponentTools(deps: ComponentDeps) {
     const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
     const preserved = part?.path === template.path && locateNativeElementRange(source, part.node)?.tag.name === part.tag ? part.node : undefined;
     const nodePath = preserved ?? (element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0]);
+    if (framed && modeLoad) void modeLoad.then((mode) => {
+      // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
+      if (!mode || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
+        || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) return;
+      mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path });
+      renderBar();
+      // The part is selected again in the framed instance when the selection is in another one (or none).
+      const now = deps.selection();
+      const inFrame = now?.path === template.path && now.host?.path === framed.path && now.host.node?.join() === framed.node.join();
+      if (nodePath && !inFrame) deps.preview()?.selectNode({ path: template.path, node: nodePath });
+    });
     if (nodePath) deps.preview()?.selectNode({ path: template.path, node: nodePath });
     else if (target && deps.currentPath() === template.path) {
       deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);

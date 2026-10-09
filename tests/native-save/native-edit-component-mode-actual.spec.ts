@@ -27,6 +27,17 @@ const workTemplate = `<section class="flow">
 const workCss = `:host {
   display: block;
 }
+
+/* Slots are display: contents, so the section spaces its parts with a gap. */
+section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-m);
+}
+
+h2 {
+  margin: 0;
+}
 `;
 function homeWithWork() {
   const home = readFileSync(`${process.env.ASE_NATIVE_SAVE_FIXTURE}/index.html`, "utf8");
@@ -83,10 +94,23 @@ test("Edit component opens Recent work in place: placeholders, this page's conte
   await expect(work.getByText("Fern & Kettle", { exact: true })).toBeHidden();
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
   await expect(frame(page).locator("[data-native-selection-box='edit-shade']:visible")).not.toHaveCount(0);
+  // The template's own slots keep their names (the component's CSS can name them).
+  expect(await work.evaluate((host) => [...host.shadowRoot!.querySelectorAll("slot")].map((slot) => slot.name))).toEqual(["title", "items"]);
   if (shots) await page.screenshot({ path: `${shots}/placeholders.png` });
 
+  // An edit of the template shows in place at once, the mode and the frame's document unchanged.
+  const template = await page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), TEMPLATE);
+  const at = template!.indexOf("Section title");
+  await page.evaluate(async ({ path, at }) => {
+    (await import("/src/components/code-editor.ts")).replaceActiveRange({ path, start: at, end: at + "Section title".length, text: "Selected projects", expected: "Section title" });
+  }, { path: TEMPLATE, at });
+  await expect(work.getByText("Selected projects", { exact: true })).toBeVisible();
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
+  await expect(fallbackCard).toHaveCount(1);
+  expect(await frameMark(page)).toBe("slice-41");
+
   // A click inside the frame selects the template's part; one on the shaded page selects nothing.
-  await work.getByText("Section title", { exact: true }).click();
+  await work.getByText("Selected projects", { exact: true }).click();
   await expect(toolbar(page)).toBeVisible();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
   await expect.poll(() => page.evaluate(() => document.querySelector(".edit-bar__label")?.textContent ?? "")).toContain("Heading");

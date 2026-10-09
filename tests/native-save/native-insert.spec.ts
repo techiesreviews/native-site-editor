@@ -150,16 +150,14 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   );
 });
 
-test("inserting while a component file is open edits the page", async ({ page }) => {
+test("inserting while a component file is open edits the page", async ({ page, baseURL }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const footerPath = "components/site-footer/site-footer.html";
   const footerSource = readFileSync(resolve(fixture, footerPath), "utf8");
-  // A click in the footer selects this page's instance; its root's Edit opens the shared template.
-  await frame.locator(".site-footer p").click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  await page.getByRole("treeitem", { name: /^Site footer/ }).locator(".page-structure__label").first().click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Site footer component", exact: true }).click();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
+  // The shared template opened as a file (not Edit component mode, which keeps the page's controls away).
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(footerPath)}`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath, { timeout: 30_000 });
+  await expect(frame.locator(".hero")).toBeVisible({ timeout: 30_000 });
   await scrollFrame(page, "top");
   await hoverIn(page, "section.hero");
   await plus(page, "Add a section before “A native browser preview”").click();

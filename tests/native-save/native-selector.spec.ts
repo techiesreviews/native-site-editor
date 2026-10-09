@@ -136,9 +136,8 @@ test("slotted body keeps page ownership and shared CSS stays live through undo a
   await page.keyboard.press("Escape");
   await page.keyboard.press("ArrowRight");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
-  const bodyCrumb = page.getByRole("navigation", { name: "Selected element and its ancestors" })
-    .getByRole("button", { name: "p.project-card__body", exact: true });
-  await expect(bodyCrumb).toHaveAttribute("aria-current", "true");
+  // Edit component mode's slim bar stands in for the breadcrumb: the edit bar names the selection.
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect(page.locator("#secondary-title")).toHaveText(componentCssPath);
   const bodyRule = page.locator("#secondary-rules button").filter({ hasText: ".project-card__body" });
   await expect(bodyRule).toHaveCount(1);

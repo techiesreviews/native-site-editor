@@ -81,9 +81,11 @@ test("Undo of a stylesheet whose pane has closed redraws the preview", async ({ 
   await frame(page).locator("project-card").first().locator("card-note").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
-  const title = frame(page).locator(".project-card__title").first();
-  const box = (await title.boundingBox())!;
-  await title.click({ position: { x: box.width - 2, y: 2 } });
+  const first = frame(page).locator(".project-card__title").first();
+  const box = (await first.boundingBox())!;
+  await first.click({ position: { x: box.width - 2, y: 2 } });
+  // Measured on another instance: the one clicked in Edit component mode is having its text edited (focused).
+  const title = frame(page).locator(".project-card__title").nth(1);
   await expect(page.locator("#secondary-title")).toHaveText(css);
   const outline = () => title.evaluate((element) => getComputedStyle(element).outlineWidth);
   const before = await outline();

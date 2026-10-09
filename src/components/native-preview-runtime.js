@@ -257,10 +257,7 @@
         scrollRoots.add(root);
         root.addEventListener("scroll", refreshScroll, true);
       }
-      var content = freshContent(html);
-      // Edit component mode with placeholders: its slots take none of the page's content.
-      if (placeholdersOn(host)) placeholderSlots(content);
-      reconcileChildren(root, content);
+      reconcileChildren(root, freshContent(html));
       markCurrentPage(root);
       syncRootStyles(root);
       watchSlots(root);
@@ -339,7 +336,10 @@
       var keys = Object.keys(state.pages);
       html = keys.length ? state.pages[keys[0]] : "";
     }
-    reconcileChildren(pageEl, freshContent(html));
+    var content = freshContent(html);
+    // Edit component mode with placeholders: the instance edited takes none of the page's content.
+    placeholderContent(content);
+    reconcileChildren(pageEl, content);
     renderInstances();
     updateBoxes();
     scheduleInsertPoints();
@@ -719,10 +719,11 @@
   // frame in the component accent; the rest of the page is shaded, visible
   // but not clickable. Clicks inside the frame select the template's parts
   // (the page content a slot shows stands for the part around the slot).
-  // With placeholders on, its slots are renamed as the instance renders, so
-  // nothing the page wrote is assigned and the template's fallbacks show;
-  // the renaming is part of the render, so a render never flickers between
-  // the two. Nothing here changes the page's source.
+  // With placeholders on, what the page put in the instance is sent to a
+  // slot no template has, as the page renders, so the template's fallbacks
+  // show (its own slots, and the CSS naming them, stay as written). It is
+  // part of the render, so a render never flickers between the two.
+  // Nothing here changes the page's source.
   var editMode = null;
   var editFrame = null;
   var editShades = [];
@@ -745,13 +746,17 @@
   function placeholdersOn(host) {
     return !!editMode && editMode.show === "placeholders" && !!host && host === editHostElement();
   }
-  // Renames every slot of a template's fresh copy: the page's content stays
-  // out, the fallbacks show. Its own name is kept beside it.
-  function placeholderSlots(content) {
-    content.querySelectorAll("slot").forEach(function (slot) {
-      var name = slot.getAttribute("name") || "";
-      slot.setAttribute("data-ase-slot", name);
-      slot.setAttribute("name", PLACEHOLDER_SLOT + (name ? ":" + name : ""));
+  // In the page's fresh copy, the edited instance's own content goes to no
+  // slot: each child's `slot` names one no template has, and loose text is
+  // left out. Elements keep their identity (markupOf was taken before).
+  function placeholderContent(content) {
+    if (!editMode || editMode.show !== "placeholders" || !state || state.pagePaths[state.route] !== editMode.path) return;
+    var el = content;
+    for (var i = 0; el && i < editMode.node.length; i++) el = el.children[editMode.node[i]] || null;
+    if (!el || el === content || el.localName !== editMode.tag) return;
+    Array.prototype.forEach.call(el.childNodes, function (n) {
+      if (n.nodeType === 1) n.setAttribute("slot", PLACEHOLDER_SLOT + ":" + (n.getAttribute("slot") || ""));
+      else if (n.nodeType === 3) n.data = n.data.trim() ? "" : n.data;
     });
   }
   // The edited instance's box: its own, or its template's when it has none (display: contents).
@@ -848,7 +853,7 @@
   // Brings `el` into view below the site's own sticky header (topInset), or
   // to the top of the frame when it is taller than what is left.
   function revealEdited(el, smooth) {
-    var r = el.getBoundingClientRect();
+    var r = el === editHost() ? editRect(el) : el.getBoundingClientRect();
     var inset = topInset(el), gap = 12;
     var room = window.innerHeight - inset - gap * 2;
     var dy = 0;
@@ -865,11 +870,14 @@
     var wasOn = !!editMode;
     editMode = valid ? { path: next.path, node: next.node.slice(), tag: next.tag, show: next.show === "page" ? "page" : "placeholders" } : null;
     var after = editHostElement();
-    // Each instance renders again as it now should: its fallbacks or the page's content.
-    if (before && before !== after && typeof before.render === "function") before.render();
-    if (after && typeof after.render === "function") after.render();
+    // The page renders again as it now should: the instance's fallbacks or its page content.
+    if ((before || after) && state) renderPage();
     // What is selected outside the frame is left.
-    if (after && selected && !editContains(after, selected)) { stopEditing(true); selected = null; }
+    if (after && selected && !editContains(after, selected)) {
+      stopEditing(true);
+      selected = null;
+      emit("select", { path: "", tag: "", text: "", reason: "refresh", selectors: [] });
+    }
     hovered = null;
     updateBoxes();
     var host = editHost();
