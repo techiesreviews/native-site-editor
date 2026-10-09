@@ -12,8 +12,10 @@
 // - Variants: a dropdown per variant and a checkbox per yes/no variant in
 //   the edit bar, read from the CSS that can style the instance
 //   (shared/variants.ts); past two, behind one Variants button.
-// - Make component and Detach: an element becomes a component, an instance
-//   becomes plain markup again, each shown before it is done.
+// - Make component and Detach: an element of a page becomes a component
+//   (any element but <main>, <body>, the page's header and footer, and what
+//   is in an instance: makeComponentOffered), an instance becomes plain
+//   markup again, each shown before it is done.
 //
 // Every change is an edit of a site file through the open editor (one undo
 // step; typing in a field is one step until the field is left), so the
@@ -45,6 +47,7 @@ import {
   fillMarkup,
   fillRemoveEdits,
   makeComponentPlan,
+  makeComponentOffered,
   readInstance,
   slotLabel,
   slotStates,
@@ -149,8 +152,6 @@ interface Located {
 
 const KIND_LABEL: Record<SlotValue["kind"], string> = { text: "Text", image: "Image", link: "Link", content: "Content" };
 const KIND_MARK: Record<SlotValue["kind"], ComponentMark> = { text: "text", image: "image", link: "link", content: "content" };
-// Elements a section of a page is made of, which Make component offers to turn into one.
-const CONTAINERS = new Set(["section", "article", "header", "footer", "aside", "nav", "figure", "div", "form"]);
 
 export type ComponentSlotPart = "text" | "src" | "alt" | "href";
 /** The preview's text patch (native-preview.ts): typed text shown ahead of its write, on top of a source the session vouches for. */
@@ -291,6 +292,19 @@ export function createComponentTools(deps: ComponentDeps) {
     return parsed.root;
   }
 
+  /** The elements from `source`'s root down to the one at `nodePath`, or nothing when it is not there. */
+  function elementChain(source: string, nodePath: readonly number[]): Element[] | undefined {
+    const chain: Element[] = [];
+    let parent: ParentNode = parsedRoot(source);
+    for (const index of nodePath) {
+      const child: Element | undefined = parent.children[index];
+      if (!child) return undefined;
+      chain.push(child);
+      parent = child;
+    }
+    return chain;
+  }
+
   /**
    * The instance a selection is, or sits in as the page's own content
    * (`within` names the slot), in the selection's own file. An element of
@@ -300,15 +314,8 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!selection?.path || !selection.node?.length || !site()) return undefined;
     const source = deps.sources()[selection.path];
     if (source === undefined) return undefined;
-    const root = parsedRoot(source);
-    const chain: Element[] = [];
-    let parent: ParentNode = root;
-    for (const index of selection.node) {
-      const child: Element | undefined = parent.children[index];
-      if (!child) return undefined;
-      chain.push(child);
-      parent = child;
-    }
+    const chain = elementChain(source, selection.node);
+    if (!chain) return undefined;
     // With `around`, the instance the selection sits in, not the selection itself.
     for (let depth = chain.length - (around ? 2 : 1); depth >= 0; depth--) {
       if (!isComponent(chain[depth].localName)) continue;
@@ -438,8 +445,10 @@ export function createComponentTools(deps: ComponentDeps) {
     if (at) {
       return out;
     }
-    // A part of a page (not inside a template) can become a component.
-    if (!selection.host && selection.node && CONTAINERS.has(selection.tag) && !tagOfFile(selection.path)) {
+    if (selection.host || !selection.node?.length || tagOfFile(selection.path)) return out;
+    const source = deps.sources()[selection.path];
+    const chain = source === undefined ? undefined : elementChain(source, selection.node);
+    if (chain && makeComponentOffered(chain.map((element) => element.localName))) {
       out.push({ kind: "button", label: "Make component…", title: "Turn this element into a component the site can reuse", className: "edit-bar__component-action", onPress: () => void openMakeComponent(selection) });
     }
     return out;

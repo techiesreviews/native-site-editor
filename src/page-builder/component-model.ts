@@ -1049,6 +1049,24 @@ export function tagNameProblem(name: string, taken: Iterable<string>) {
   return undefined;
 }
 
+/**
+ * Whether Make component is offered for the page element at the end of
+ * `chain` (lowercase tag names from the file's root element down): any
+ * element with an end tag, except `<html>`, `<body>`, `<main>`, what is in
+ * `<head>`, the page's own header and footer, a component (it keeps Edit
+ * component) and anything inside one.
+ */
+export function makeComponentOffered(chain: readonly string[]): boolean {
+  const tag = chain.at(-1);
+  if (!tag || chain.includes("head") || chain.some((name) => name.includes("-"))) return false;
+  if (["html", "body", "main"].includes(tag) || VOID_ELEMENTS.has(tag)) return false;
+  // The page's header and footer (HTML-AAM banner and contentinfo): not inside sectioning content or <main>.
+  if (tag === "header" || tag === "footer") {
+    return chain.slice(0, -1).some((name) => ["article", "aside", "main", "nav", "section"].includes(name));
+  }
+  return true;
+}
+
 const slug = (text: string, words = 3) => text.toLowerCase().replace(/&[a-z]+;/g, " ").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).slice(0, words).join("-");
 
 /** A free tag name for the element at `range`: its kind, then its class or heading ("section-hero"). */
