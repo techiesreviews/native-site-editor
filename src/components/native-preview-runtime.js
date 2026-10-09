@@ -763,6 +763,103 @@
     return (text || "<" + el.localName + ">").slice(0, 60);
   }
 
+  function dropKids(el) {
+    return Array.prototype.filter.call(el.children, function (child) { return !injectedStyle(child); });
+  }
+  function dropRect(el) {
+    var r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }
+  function dropHit(r, x, y) {
+    return r && r.width > 0 && r.height > 0 && x >= r.left && x <= r.left + r.width && y >= r.top && y <= r.top + r.height;
+  }
+  function dropLayout(el) {
+    var cs = getComputedStyle(el);
+    // Computed tracks are resolved lengths; line names do not count as tracks.
+    var tracks = cs.gridTemplateColumns.replace(/\[[^\]]*\]/g, "").trim();
+    return { display: cs.display, cols: tracks && tracks !== "none" ? tracks.split(/\s+/).length : 0,
+      dir: cs.flexDirection, wrap: cs.flexWrap };
+  }
+  function dropUnion(els) {
+    var out = null;
+    els.forEach(function (el) {
+      var r;
+      if (el.nodeType === 3) {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        r = range.getBoundingClientRect();
+      } else if (el.nodeType === 1) r = dropRect(el);
+      if (!r || !r.width || !r.height) return;
+      if (!out) out = { left: r.left, top: r.top, width: r.width, height: r.height };
+      else {
+        var right = Math.max(out.left + out.width, r.left + r.width);
+        var bottom = Math.max(out.top + out.height, r.top + r.height);
+        out.left = Math.min(out.left, r.left); out.top = Math.min(out.top, r.top);
+        out.width = right - out.left; out.height = bottom - out.top;
+      }
+    });
+    return out;
+  }
+  function dropSealed(el) {
+    return el.localName.indexOf("-") >= 0 || ["template", "noscript", "xmp", "noembed", "noframes", "svg", "math"].indexOf(el.localName) >= 0;
+  }
+  function dropSlots(el) {
+    return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
+      var name = slot.getAttribute("name") || "";
+      var assigned = slot.assignedElements().filter(function (child) { return child.parentElement === el && !injectedStyle(child); });
+      var items = !name || Array.prototype.some.call(slot.querySelectorAll("*"), function (child) { return child.localName.indexOf("card-") === 0; });
+      var parentEl = slot.parentElement || el;
+      var hidden = getComputedStyle(slot).display === "none" || parentEl.closest("[data-native-empty]");
+      return { slot: slot, name: name, assigned: assigned, items: items, parent: parentEl,
+        rect: hidden ? null : items ? dropRect(parentEl) : dropUnion(assigned.length ? assigned : Array.prototype.slice.call(slot.childNodes)) };
+    });
+  }
+  function dropContainers(x, y, moving) {
+    if (!pageEl || !state || state.master) return [];
+    var moved = Array.isArray(moving) ? walkNodePath(pageEl, moving) : null;
+    function entry(el, kind, children, box, layoutEl, nodes, slot) {
+      var all = dropKids(el);
+      var out = { path: elementIndexPath(el), kind: kind, tag: el.localName, cls: el.getAttribute("class") || "",
+        rect: box, children: children.map(function (child) { return { index: all.indexOf(child), rect: dropRect(child) }; }),
+        layout: dropLayout(layoutEl), empty: !children.length && !nodes.some(function (n) { return n.nodeType === 3 && n.textContent.trim(); }) };
+      if (slot !== undefined) out.slot = slot;
+      return out;
+    }
+    // Only zero-size wrappers need a search below their own box.
+    function under(el) {
+      if (getComputedStyle(el).display === "none") return false;
+      var r = dropRect(el);
+      if (dropHit(r, x, y)) return true;
+      if (r.width || r.height || el === moved) return false;
+      if (dropSealed(el)) return !!el.shadowRoot && dropSlots(el).some(function (slot) { return dropHit(slot.rect, x, y); });
+      return dropKids(el).some(under);
+    }
+    function walk(el, depth) {
+      if (el === moved || depth > 100) return [];
+      var chain = [];
+      if (dropSealed(el)) {
+        if (!el.shadowRoot) return chain;
+        // Named text slots win over an items parent's larger area.
+        var slots = dropSlots(el);
+        var hit = slots.find(function (s) { return !s.items && dropHit(s.rect, x, y); }) ||
+          slots.find(function (s) { return s.items && dropHit(s.rect, x, y); });
+        if (!hit) return chain;
+        chain.push(entry(el, hit.items ? "items" : "slot", hit.assigned, hit.rect, hit.parent,
+          Array.prototype.slice.call(hit.slot.assignedNodes()), hit.name));
+        if (!hit.items) return chain;
+        var child = hit.assigned.find(under);
+        return child ? walk(child, depth + 1).concat(chain) : chain;
+      }
+      var children = dropKids(el);
+      if (el !== pageEl && ["main", "section", "div"].indexOf(el.localName) >= 0) {
+        chain.push(entry(el, el.localName, children, dropRect(el), el, Array.prototype.slice.call(el.childNodes)));
+      }
+      var child = children.find(under);
+      return child ? walk(child, depth + 1).concat(chain) : chain;
+    }
+    return walk(pageEl, 0);
+  }
+
   function insertPoints() {
     var out = [];
     // A master session offers no places on the page.
@@ -2973,6 +3070,12 @@
     if (e.source !== parent) return;
     var msg = e.data || {};
     if (msg.source !== "astro-native-preview-host") return;
+    if (msg.type === "drop-probe") {
+      if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
+      emit("drop-containers", { id: msg.id, path: String(state && state.pagePaths[state.route] || ""),
+        x: msg.x, y: msg.y, containers: dropContainers(msg.x, msg.y, msg.moving) });
+      return;
+    }
     if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {
       dragMessage(msg);
       return;

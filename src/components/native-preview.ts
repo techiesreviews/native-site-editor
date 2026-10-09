@@ -1,3 +1,4 @@
+import { parseDropReport, type DropReport } from "../page-builder/drop-report";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
 export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
@@ -509,6 +510,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let masterError: string | undefined;
   let masterEpoch = 0;
   let context = "";
+  let probeId = 0;
+  let probe: { id: number; context: string; path: string; done: (report?: DropReport) => void } | undefined;
+  function endProbe(report?: DropReport) {
+    const pending = probe;
+    probe = undefined;
+    pending?.done(report);
+  }
   let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>>; master?: { path: string; source: string; token: string } } | undefined;
   let renderVersion = 0;
   // A click reported against an older render. The runtime re-reports its
@@ -545,6 +553,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // A fresh document for the next site: nothing of the old page or its assets
     // survives. The load number changes the srcdoc so the frame really navigates.
     reload: () => {
+      endProbe();
       sentAssets.clear();
       postedRoutes.clear();
       lastAvoid = "";
@@ -686,6 +695,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (livePatch) { livePatch = undefined; postPatch({ drop: true }); }
   }
   function schedule() {
+    endProbe();
     if (!site) return;
     syncMaster();
     slotGhosts.clear();
@@ -819,6 +829,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"
           ? [{ id: (item as { id: string }).id, rect: readRect((item as { rect?: unknown }).rect) ?? null }]
           : []));
+      return;
+    }
+    if (data.type === "drop-containers") {
+      const raw = data as unknown as { id?: unknown; context?: unknown };
+      if (!probe || raw.id !== probe.id) return;
+      const valid = raw.context === probe.context && context === probe.context && site?.routes[route] === probe.path &&
+        frameState.active && !viewing && !master && !alone;
+      endProbe(valid ? parseDropReport(data, probe.path) : undefined);
       return;
     }
     if (data.type !== "ready" && data.context !== context) {
@@ -1155,6 +1173,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
 
   return {
+    /** Measure nested containers at a point in the frame's viewport. */
+    probeDrop(at: { x: number; y: number }, moving?: number[]): Promise<DropReport | undefined> {
+      endProbe();
+      const path = site?.routes[route];
+      if (!path || !frameState.active || !frameState.ready || viewing || master || alone || rafHandle ||
+        !Number.isFinite(at.x) || !Number.isFinite(at.y)) return Promise.resolve(undefined);
+      return new Promise(resolve => {
+        const timer = setTimeout(() => endProbe(), 1000);
+        probe = { id: ++probeId, context, path, done: report => { clearTimeout(timer); resolve(report); } };
+        frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id: probe.id,
+          x: at.x, y: at.y, moving }, "*");
+      });
+    },
     /** Send an already scheduled source change immediately after a direct user action. */
     flushPendingUpdate() {
       if (!rafHandle) return;
@@ -1349,6 +1380,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * `undefined` goes back to the latest.
      */
     setViewing(bar: HTMLElement | undefined) {
+      endProbe();
       viewing?.remove();
       viewing = bar;
       pane.classList.toggle("is-viewing", Boolean(bar));
@@ -1458,6 +1490,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
+      endProbe();
       frameState.destroy();
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
