@@ -499,6 +499,8 @@ test("review: cells, summaries and picture sources stay in place; a link's text 
   assert.equal(link.template, `<a class="btn" href="/about/"><slot>About <em>us</em></slot></a>\n`);
   assert.equal(link.instance, `<block-x>About <em>us</em></block-x>`);
   assert.deepEqual(link.slots.map(({ name, kind }) => [name, kind]), [["", "text"]]);
+  // The element's own text moves to the instance as written.
+  assert.equal(plan(`<a href="/" style="white-space: pre">A  B</a>`, "a").instance, `<block-x>A  B</block-x>`);
 });
 
 test("review: renames never collide, and a part the rule picks stays a default slot when chosen by hand", () => {

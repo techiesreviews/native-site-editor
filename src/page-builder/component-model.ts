@@ -1222,7 +1222,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       // The element itself: its text fills the unnamed slot.
       const inner = html.slice(el.tag.end, el.close!.start);
       edits.push({ start: el.tag.end, end: el.close!.start, text: `<slot>${inner}</slot>` });
-      fills.push(inner.replace(/\s+/g, " ").trim());
+      fills.push(inner);
       return;
     }
     const copy = html.slice(el.start, el.end);
