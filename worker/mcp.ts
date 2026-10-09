@@ -697,7 +697,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "add_section",
     {
       description:
-        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance carrying copies of its template's fallbacks, which you can then change with edit_file (what is copied: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page.",
+        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance, which you can then change with edit_file (what it puts in the page: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page.",
       inputSchema: z.object({
         page: pageRef,
         component: z.string().min(1).max(100).describe("A component tag get_site marks as a section component."),

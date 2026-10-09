@@ -102,7 +102,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.match(conventions, /components\/<tag>\/<tag>\.html/);
     assert.match(conventions, /A new component is just its files/);
     assert.ok(conventions.includes(JSON.stringify("The header and footer are components with no slots: their nav links live in the template, so changing the nav is one edit. Each page puts the skip link, `<a class=\"skip\" href=\"#main\">Skip to content</a>`, before `<site-header>` as a plain link, so it works without JavaScript; its style lives in the shared CSS, not the header's.").slice(1, -1)));
-    assert.match(conventions, /Write both files, then place it with add_section/);
+    assert.match(conventions, /write the template \(and its CSS, if it has any\), then place it with add_section/);
     assert.doesNotMatch(conventions, /add the tag to the loader/);
     assert.doesNotMatch(conventions, /TAGS/);
     assert.match(conventions, /:not\(:defined\)/);
@@ -126,6 +126,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /every `<img>` and `<picture>`, whatever its alt text\. Inline `<svg>` icons and CSS backgrounds stay fixed/,
       /a `<ul>` or `<ol>` is one slot, `list`/,
       /the first heading is `title`, a paragraph `text`, then `image`, `link` and `list`, numbered on repeats \(`text-2`\)/,
+      /When parts share a role, each one's own class tells them apart/,
       /a nested instance is one whole slot/,
       /In a section component that the page fills at all, each slot the page leaves out is hidden/,
       // A repeated item is its own card component, in an items slot.
@@ -133,13 +134,17 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /\*\*items slot\*\*: the unnamed slot, or a slot whose fallback is `card-…` instances/,
       /<slot><card-project><\/card-project><\/slot>/,
       /Add card adds a fresh instance of the items slot's card component/,
+      /A named slot is an items slot only when its fallback is `card-…` instances/,
+      /a named items slot [^\n]* its items carry that name: `<card-service slot="services">`/,
       // Card links: a link slot, or the title's link stretched by the shared card link rule.
       /through a link slot/,
       /the title's whole content is one link/,
       /Card components set `:host \{ position: relative; \}`/,
       /\.cards > \* :is\(h2, h3, h4, \[slot="title"\]\) > a:only-child::after/,
       /There is no `stretched` class/,
+      /A card that is one link around everything [^\n]* becomes a card component without the wrapping link/,
       // Variants.
+      /a rule on the bare attribute \(`\[data-x="v"\]`\) is offered on every component \(except `data-tone`, below\)/,
       /:host\(\[data-layout="image-left"\]\) \{ \.media \{ order: 2; \} \}/,
       /\.media \{ :host\(\[data-layout="image-left"\]\) & \{ order: 2; \} \}/,
       /Never `:host\[data-layout="…"\]` or `:host \{ &\[data-layout="…"\] \{ … \} \}`/,
@@ -162,7 +167,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     for (const text of [client.getInstructions()!, described("write_file"), described("add_section"), described("get_site")])
       assert.match(text, /Components chapter/);
     for (const text of [client.getInstructions()!, ...listing.map((tool) => tool.description ?? "")])
-      assert.doesNotMatch(text, /<slot\b|slot=|whole element|::slotted|registered|data-(?:layout|tone)|card-/);
+      assert.doesNotMatch(text, /<slot\b|slot=|whole element|fallback|::slotted|registered|data-(?:layout|tone)|card-/);
     const prompt = await client.getPrompt({ name: "edit_site", arguments: { goal: "Add a team page" } });
     assert.match(JSON.stringify(prompt), /Add a team page/);
 
