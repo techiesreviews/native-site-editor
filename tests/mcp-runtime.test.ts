@@ -183,7 +183,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /is copied inside a `<span slot="…">`\. It copies nothing for the unnamed slot or for any other fallback/,
     ]) assert.match(chapter, rule);
     assert.match(chapter, /<section-work>[\s\S]*<card-project>\s*<h3 slot="title">[^\n]*<\/h3>\s*<p slot="body" class="body">A one-page site/, "the card-project example uses its real body slot and fallback class");
-    assert.match(chapter, /a component rule beats a shared rule on the template's own elements\. On an element a page slots in, the page's CSS beats the component's `::slotted\(\)` rules whatever the layers[^\n]*`:not\(\[slot\]\)`/, "shadow-root layers do not override document styles on slotted elements");
+    assert.match(chapter, /a component rule beats a shared rule on the template's own elements\. On an element a page slots in, the page's CSS beats the component's `::slotted\(\)` rules whatever the layers[^\n]*`:not\(\[slot\]\)`[^\n]*Both hold for declarations without `!important`, which reverses them/, "shadow-root layers do not override document styles on slotted elements");
     // The tool descriptions and the server's instructions point to the
     // chapter and state no component rules of their own.
     const described = (name: string) => listing.find((tool) => tool.name === name)!.description!;
