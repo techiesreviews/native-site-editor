@@ -846,7 +846,8 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   const block = { kind: "move", path: from.node, band: from.band } as const;
   // The chip says the name; a press in the page names it once the drag code is in.
   let name = press.source?.textContent?.trim() || from.tag;
-  return trackDrag(press, () => ({ name, tag: from.tag }), () => loadBlockDrag().then(drag => {
+  const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, from.tag));
+  return trackDrag(press, () => ({ name, tag: from.tag, component }), () => loadBlockDrag().then(drag => {
     if (!current()) return undefined;
     if (pressed) name = drag.dropBlockName(from.tag, from.cls);
     return nativePreview?.blockDrag(block, {

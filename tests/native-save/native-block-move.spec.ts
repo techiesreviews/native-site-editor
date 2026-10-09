@@ -68,6 +68,9 @@ test("cards reorder sideways by dragging one", async ({ page, baseURL }) => {
   await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(2) p[slot=body]"), itself);
   await expect(ghost(page)).toHaveText("Card project");
   await expect(ghost(page).locator("svg.component-mark")).toHaveAttribute("width", "12");
+  // In the component colour of its Structure row.
+  const rowKind = page.locator(".page-structure__row--component .page-structure__kind").filter({ hasText: /^Card project$/ }).first();
+  expect(await ghost(page).evaluate(el => getComputedStyle(el).color)).toBe(await rowKind.evaluate(el => getComputedStyle(el).color));
   // Over itself: it stays, and nothing is drawn.
   await expect(ghost(page)).toHaveAttribute("data-where", "Stays where it is");
   await expect(page.locator(".pb-drop__line")).toHaveCount(0);

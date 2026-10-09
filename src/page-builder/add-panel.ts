@@ -285,7 +285,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     label.append(node("span", "pb-add-item__name", item.name), node("code", "pb-add-item__tag", item.kind === "native" ? "HTML" : `<${item.tag}>`));
     option.append(thumb.root, label);
     root.append(option);
-    const drag = makeInsertDraggable<InsertPoint>(option, () => ({ name: item.name, tag: item.tag }), () => {
+    const drag = makeInsertDraggable<InsertPoint>(option, () => ({ name: item.name, tag: item.tag, component: item.kind !== "native" }), () => {
       const canvas = handlers.points().length ? handlers.drag() : undefined;
       let shown: InsertPoint | undefined;
       return canvas && {

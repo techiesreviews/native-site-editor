@@ -249,7 +249,9 @@
   height: 0;
   outline: none;
 }
-/* A lifted Structure row, over the page rather than in the sidebar. */
+/* A lifted Structure row, over the page rather than in the sidebar: the
+   row's surface, size and radius, its kind's icon, weight and colour
+   (page-structure.css .page-structure__kind; a component's, components.css). */
 .pb-drag-ghost {
   position: fixed;
   top: 0;
@@ -263,9 +265,9 @@
   border-radius: var(--radius);
   padding: 0 8px 0 6px;
   background: var(--surface-subtle);
-  color: var(--text);
-  font-size: var(--type-base);
-  font-weight: 400;
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
   box-shadow: var(--shadow-small);
@@ -275,10 +277,10 @@
   flex: none;
   margin: 0;
 }
-.pb-drag-ghost > .element-icon {
-  color: var(--muted);
+.pb-drag-ghost.is-component {
+  color: var(--component-text);
 }
-.pb-drag-ghost.is-refused > .element-icon {
+.pb-drag-ghost.is-refused > .icon {
   color: inherit;
 }
 .pb-drag-ghost__text {

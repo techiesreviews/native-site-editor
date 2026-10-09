@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { editorMounted } from "./drafts";
 
 // Default fixture group: native-cards (#repo=540), a Section › Div (grid) › two cards.
@@ -181,15 +181,12 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect(ghost(page)).toBeVisible();
     await expect(where(page)).toBeHidden();
     await expect(ghost(page)).toHaveText("Section");
-    const rowStyle = await row.evaluate(el => {
-      const style = getComputedStyle(el);
-      return { radius: style.borderRadius, height: style.minHeight, color: style.color, font: style.fontSize, weight: style.fontWeight };
-    });
-    const ghostStyle = await ghost(page).evaluate(el => {
-      const style = getComputedStyle(el);
-      return { radius: style.borderRadius, height: style.minHeight, color: style.color, font: style.fontSize, weight: style.fontWeight };
-    });
-    expect(ghostStyle).toEqual(rowStyle);
+    // The row's shape, its kind's type and colour.
+    const look = (box: Locator, text: Locator) => Promise.all([
+      box.evaluate(el => { const style = getComputedStyle(el); return { radius: style.borderRadius, height: style.minHeight }; }),
+      text.evaluate(el => { const style = getComputedStyle(el); return { color: style.color, font: style.fontSize, weight: style.fontWeight }; }),
+    ]);
+    expect(await look(ghost(page), ghost(page).locator(".pb-drag-ghost__name"))).toEqual(await look(row, row.locator(".page-structure__kind")));
     expect(await ghost(page).evaluate(el => getComputedStyle(el).backgroundColor)).toBe(
       await page.locator(".sidebar").evaluate(el => getComputedStyle(el).backgroundColor),
     );

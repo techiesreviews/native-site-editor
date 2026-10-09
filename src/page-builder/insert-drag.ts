@@ -12,6 +12,13 @@ import { refuse } from "../components/refusal-note";
 import { blockIcon } from "../components/element-icons";
 import { node } from "../ui/dom";
 
+/** The dragged block as its Structure row names it: a component wears the component mark and colour. */
+export interface DragName {
+  name: string;
+  tag: string;
+  component: boolean;
+}
+
 /** What the label by the pointer says about the target under it. */
 export interface DragAim<T> {
   target: T | undefined;
@@ -79,7 +86,7 @@ export interface DragFeed {
  * arrives). `move`: the label says moved, not added. `justDragged` tells
  * the click a release makes from a click.
  */
-export function trackDrag<T>(press: DragPress, label: () => { name: string; tag: string },
+export function trackDrag<T>(press: DragPress, label: () => DragName,
   context: () => InsertDragContext<T> | Promise<InsertDragContext<T> | undefined> | undefined, move = false): DragFeed & { justDragged(): boolean } {
   const id = press.pointerId;
   const source = press.source;
@@ -172,7 +179,8 @@ export function trackDrag<T>(press: DragPress, label: () => { name: string; tag:
     where.hidden = true;
     const block = label();
     text.append(node("span", "pb-drag-ghost__name", block.name), where);
-    ghost.append(blockIcon(block.tag, block.name));
+    ghost.classList.toggle("is-component", block.component);
+    ghost.append(blockIcon(block.tag, block.name, block.component));
     ghost.append(text);
     document.body.append(ghost);
     ctx!.announce(`Dragging ${label().name}. Release over the page to ${move ? "move" : "add"} it, Escape to cancel.`);
@@ -307,7 +315,7 @@ export function trackDrag<T>(press: DragPress, label: () => { name: string; tag:
  * loading starts the drag once it arrives. Returns whether a drag just
  * ended, so the click that follows a release is not taken as a click.
  */
-export function makeInsertDraggable<T>(source: HTMLElement, label: () => { name: string; tag: string },
+export function makeInsertDraggable<T>(source: HTMLElement, label: () => DragName,
   context: () => InsertDragContext<T> | Promise<InsertDragContext<T> | undefined> | undefined) {
   let last: { justDragged(): boolean } | undefined;
   source.addEventListener("pointerdown", (event) => {
