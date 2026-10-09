@@ -15,3 +15,5 @@ From the suite fix (branch build/cb-fix-suite-1): `tests/native-save/native-site
 ## Done when
 
 - The test passes 20 times in a row (`--repeat-each=20`) and the cause is recorded in the Done note.
+
+**Also (2026-10-09, from slices 74 and 84):** `tests/native-save/native-card-paths-starter.spec.ts:143` (`structureSlot: fields found`, @actual) fails about 1 in 8, a different variant each time. Same treatment: find the cause, fix product or test, 20 in a row.
