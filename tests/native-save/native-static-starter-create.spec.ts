@@ -66,14 +66,18 @@ test('Create site commits the native starter and every public page works without
     }
   }
   const html = [...committed.keys()].filter(path => path.endsWith('.html'));
-  expect(html).toHaveLength(6);
+  const routes = html.filter(path => !path.startsWith('components/'));
+  expect(routes.sort()).toEqual([
+    '404.html', 'about/index.html', 'index.html', 'work/fern-and-kettle/index.html',
+    'work/harbour-lane-pottery/index.html', 'work/meadow-row-allotments/index.html',
+  ]);
   for (const path of html) expect(committed.get(path)!.toString()).not.toMatch(/data-key=|data-native-|astro-native|public\/template|\.editor\/loader/i);
   const png = [...committed.keys()].find(path => path.endsWith('.png'))!;
   expect(png).toBeTruthy();
   expect(committed.get(png)!.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   expect(errors).toEqual([]);
 
-  // A plain byte server: no editor routes, HTML transform, or JavaScript runtime.
+  // A plain byte server: no editor routes or HTML transform.
   const requests: string[] = [];
   const server = createServer((request, response) => {
     const path = new URL(request.url!, 'http://localhost').pathname;
@@ -81,7 +85,7 @@ test('Create site commits the native starter and every public page works without
     const file = path.endsWith('/') ? `${path.slice(1)}index.html` : path.slice(1);
     const bytes = file.startsWith('.editor/') ? undefined : committed.get(file);
     response.statusCode = bytes ? 200 : 404;
-    const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : file.endsWith('.png') ? 'image/png' : 'text/plain';
+    const type = file.endsWith('.html') ? 'text/html' : file.endsWith('.css') ? 'text/css' : file.endsWith('.js') ? 'text/javascript' : file.endsWith('.svg') ? 'image/svg+xml' : file.endsWith('.png') ? 'image/png' : 'text/plain';
     response.setHeader('Content-Type', type);
     response.end(bytes);
   });
@@ -94,7 +98,7 @@ test('Create site commits the native starter and every public page works without
     const publicPage = await staticContext.newPage();
     const network: { url: string; status: number; type: string }[] = [];
     publicPage.on('response', response => network.push({ url: response.url(), status: response.status(), type: response.request().resourceType() }));
-    for (const path of html) {
+    for (const path of routes) {
       const route = path === 'index.html' ? '/' : path.endsWith('/index.html') ? `/${path.slice(0, -10)}` : `/${path}`;
       const response = await publicPage.goto(`${origin}${route}`);
       expect(response!.status()).toBe(200);
@@ -110,12 +114,16 @@ test('Create site commits the native starter and every public page works without
         expect(target).toMatch(/^\//);
         expect((await staticContext.request.get(`${origin}${target}`)).status(), target!).toBe(200);
       }
-      expect(await publicPage.locator('script:not([type="application/ld+json"])').count()).toBe(0);
+      const scripts = publicPage.locator('script:not([type="application/ld+json"])');
+      await expect(scripts).toHaveCount(1);
+      await expect(scripts).toHaveAttribute('type', 'module');
+      await expect(scripts).toHaveAttribute('src', '/components/components.js');
+      await expect(scripts).toHaveText('');
       for (const metadata of await publicPage.locator('script[type="application/ld+json"]').all()) expect(JSON.parse((await metadata.textContent())!)).toHaveProperty('@context', 'https://schema.org');
       for (const image of await publicPage.locator('img').all()) expect(await image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     }
     expect(network.some(entry => entry.type === 'stylesheet')).toBe(true);
-    // This starter uses favicon/social metadata rather than visible <img> elements.
+    // Every image remains available byte for byte, including metadata assets.
     for (const path of [...committed.keys()].filter(path => path.startsWith('images/'))) {
       const response = await staticContext.request.get(`${origin}/${path}`);
       expect(response.status(), path).toBe(200);
@@ -128,6 +136,34 @@ test('Create site commits the native starter and every public page works without
     expect((await pngResponse.body()).equals(committed.get(png)!)).toBe(true);
     for (const path of [...committed.keys()].filter(path => path.endsWith('.css'))) {
       expect((await (await staticContext.request.get(`${origin}/${path}`)).body()).equals(committed.get(path)!)).toBe(true);
+    }
+
+    // The same committed bytes also render components with the site's own loader.
+    const componentContext = await browser.newContext({ javaScriptEnabled: true });
+    try {
+      const componentPage = await componentContext.newPage();
+      const componentErrors: string[] = [];
+      const componentNetwork: { url: string; status: number }[] = [];
+      componentPage.on('pageerror', error => componentErrors.push(error.message));
+      componentPage.on('response', response => componentNetwork.push({ url: response.url(), status: response.status() }));
+      await componentPage.goto(origin);
+      const tags = [...new Set([...committed.get('index.html')!.toString().matchAll(/<([a-z][a-z0-9]*-[a-z0-9-]+)\b/g)].map(([, tag]) => tag))];
+      expect(tags).toContain('site-header');
+      for (const tag of tags) {
+        await expect(componentPage.locator(`${tag}:not(:defined)`)).toHaveCount(0);
+        await expect.poll(() => componentPage.locator(tag).evaluateAll(elements => elements.every(element => element.shadowRoot !== null))).toBe(true);
+        await expect.poll(() => componentNetwork.some(entry => entry.url === `${origin}/components/${tag}/${tag}.css` && entry.status === 200)).toBe(true);
+      }
+      await expect(componentPage.locator('site-header nav')).toBeVisible();
+      await expect(componentPage.locator('h1[slot="title"]')).toBeVisible();
+      expect(componentNetwork.some(entry => entry.url === `${origin}/components/components.js` && entry.status === 200)).toBe(true);
+      for (const entry of componentNetwork) {
+        expect(entry.url.startsWith(origin)).toBe(true);
+        expect(entry.status, entry.url).toBe(200);
+      }
+      expect(componentErrors).toEqual([]);
+    } finally {
+      await componentContext.close();
     }
   } finally {
     await staticContext.close();

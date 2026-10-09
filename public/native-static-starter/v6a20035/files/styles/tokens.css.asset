@@ -1,0 +1,70 @@
+/* The layer order for every shared stylesheet. Keep this file first in
+   site.css's imports so the order is set before any layer is used. A
+   component's own stylesheet is not in a layer, so it wins over all of them. */
+@layer tokens, elements, tones, layout, sections, utilities;
+
+@layer tokens {
+  :root {
+    /* The site's one colour. tones.css derives the accent and the brand and
+       accent tones from it, keeping their text readable whatever it is. */
+    --brand: #2f6d3a;
+
+    /* Colour roles. These plain values are for browsers without
+       light-dark(); the pairs below give each role a light and a dark value,
+       picked by color-scheme (tones.css). Where the browser has relative
+       colour syntax, tones.css derives the accent from --brand; elsewhere
+       it is these fixed, readable values. */
+    --ink: #20231f;
+    --muted: #5c665a;
+    --surface: #ffffff;
+    --page: #f6f7f3;
+    --accent: #20231f; /* Links, buttons, focus rings: see tones.css. */
+    --on-accent: #fff; /* Text on an accent background. */
+    --line: #e2e6de;
+
+    /* Type */
+    --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --text-s: 14px;
+    --text-m: 16px;
+    --text-l: 18px;
+    --text-xl: 20px;
+    --text-2xl: 24px;
+    --text-3xl: clamp(24px, 3vw, 34px);
+    --text-4xl: clamp(28px, 4vw, 44px);
+
+    /* Space */
+    --space-3xs: 4px;
+    --space-2xs: 8px;
+    --space-xs: 12px;
+    --space-s: 16px;
+    --space-m: 20px;
+    --space-l: 24px;
+    --space-xl: 32px;
+    --space-2xl: 40px;
+    --space-3xl: 48px;
+    --space-4xl: 56px;
+    --space-5xl: 80px;
+
+    /* Shape */
+    --radius-s: 4px;
+    --radius-m: 12px;
+    --radius-l: 16px;
+    --radius-full: 999px;
+
+    /* Measure */
+    --page-width: 960px;
+    --reading-width: 64ch;
+  }
+
+  @supports (color: light-dark(#000, #fff)) {
+    :root {
+      --ink: light-dark(#20231f, #e6e9e2);
+      --muted: light-dark(#5c665a, #a8b1a5);
+      --surface: light-dark(#ffffff, #20241e);
+      --page: light-dark(#f6f7f3, #161915);
+      --accent: light-dark(#20231f, #e6e9e2);
+      --on-accent: light-dark(#fff, #161915);
+      --line: light-dark(#e2e6de, #353b32);
+    }
+  }
+}

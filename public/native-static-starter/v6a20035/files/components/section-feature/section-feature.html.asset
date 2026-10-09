@@ -1,0 +1,17 @@
+<section>
+  <slot name="title"><h2>What we offer</h2></slot>
+  <div class="items">
+    <article>
+      <slot name="item-1-title"><h3>First item</h3></slot>
+      <slot name="item-1-body"><p>A sentence or two about this item.</p></slot>
+    </article>
+    <article>
+      <slot name="item-2-title"><h3>Second item</h3></slot>
+      <slot name="item-2-body"><p>A sentence or two about this item.</p></slot>
+    </article>
+    <article>
+      <slot name="item-3-title"><h3>Third item</h3></slot>
+      <slot name="item-3-body"><p>A sentence or two about this item.</p></slot>
+    </article>
+  </div>
+</section>

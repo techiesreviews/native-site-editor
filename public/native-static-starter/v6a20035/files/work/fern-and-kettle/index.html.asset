@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fern &amp; Kettle · Larkspur Studio</title>
+  <meta name="description" content="A one-page site for a neighbourhood cafe, with a printable menu the owners update themselves each morning.">
+  <meta name="robots" content="noindex">
+  <link rel="canonical" href="https://native-site-editor-starter-test.lexvd.workers.dev/work/fern-and-kettle/">
+  <meta name="theme-color" content="#2f6d3a">
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Larkspur Studio">
+  <meta property="og:title" content="Fern &amp; Kettle · Larkspur Studio">
+  <meta property="og:description" content="A one-page site for a neighbourhood cafe, with a printable menu the owners update themselves each morning.">
+  <meta property="og:url" content="https://native-site-editor-starter-test.lexvd.workers.dev/work/fern-and-kettle/">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:image" content="https://native-site-editor-starter-test.lexvd.workers.dev/images/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Larkspur Studio: small, editable websites for independent businesses, Frome, Somerset">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/styles/site.css">
+  <script type="module" src="/components/components.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <site-header></site-header>
+  <main class="page" id="main">
+    <section class="hero flow">
+      <card-note><p slot="text">Cafe · Identity and site · 2025</p></card-note>
+      <h1>Fern &amp; Kettle</h1>
+      <p class="lead">A one-page site with a menu the owners change themselves before opening each morning.</p>
+    </section>
+    <section class="prose flow">
+      <h2>The brief</h2>
+      <p>Fern &amp; Kettle opened with a chalkboard menu and a social media account that nobody had time to update. Customers kept asking whether the cafe did breakfast, which it did, and whether it took bookings, which it did too.</p>
+      <h2>What we built</h2>
+      <p>A single page with the opening hours at the top, the menu below, and a booking link that goes straight to the cafe's existing calendar. The menu prints cleanly on one sheet, so the counter copy and the website are always the same.</p>
+      <h2>Since launch</h2>
+      <p>The owners update the menu most mornings in a couple of minutes. Phone calls asking about opening hours have mostly stopped.</p>
+      <p><a href="/#work">Back to all work</a></p>
+    </section>
+    <section-contact>
+      <h2 slot="title">Need something similar?</h2>
+      <p slot="body" class="body">Tell us what your site needs to do and we will reply within a few days.</p>
+      <a slot="action" href="/about/#contact">Start a project</a>
+    </section-contact>
+  </main>
+  <site-footer></site-footer>
+</body>
+</html>

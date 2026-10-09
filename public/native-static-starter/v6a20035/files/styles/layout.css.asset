@@ -1,0 +1,61 @@
+@layer layout {
+  .page {
+    max-width: var(--page-width);
+    margin: 0 auto;
+    padding: var(--space-3xl) var(--space-l) var(--space-5xl);
+  }
+
+  /* Space between the page's sections. */
+  .page > * + * {
+    margin-top: var(--space-4xl);
+  }
+
+  /* Rhythm inside a block of text: each child sits a step below the one
+     before it, a little further after a heading. */
+  .flow > * + * {
+    margin-top: var(--space-s);
+  }
+
+  .flow > h2 + * {
+    margin-top: var(--space-m);
+  }
+
+  .flow > p {
+    max-width: var(--reading-width);
+  }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--space-m);
+  }
+
+  /* Stretch a title link over its card. This lives in the site's CSS because
+     component CSS cannot reach a link inside slotted content. The second
+     selector reaches cards in a section component's items slot (their host is
+     a child of the section's tag); a section component's own title, whose
+     host sits in main, body, a section or a div, keeps a title-sized link. */
+  .cards > * {
+    position: relative;
+  }
+
+  .cards > * :is(h2, h3, h4, [slot="title"]) > a:only-child::after,
+  :not(main, body, section, div) > * > [slot="title"] > a:only-child::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Keep other links above the stretched title link: in a .cards item, */
+  .cards > * a:not(:is(h2, h3, h4, [slot="title"]) > a:only-child) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* and in a card in an items slot (its own rule, so a browser without
+     :has() still keeps the one above). */
+  :not(main, body, section, div) > :has(> [slot="title"] > a:only-child) a:not([slot="title"] > a:only-child) {
+    position: relative;
+    z-index: 1;
+  }
+}

@@ -53,15 +53,24 @@ test("the vendored files match the manifest's sizes and checksums, and the manif
   }
 });
 
-test("nativeStarterFiles reads only ASSETS and returns the six routes, styles, images and named settings, sorted", async () => {
+test("nativeStarterFiles reads only ASSETS and returns the six routes, components, styles, images, AGENTS.md and named settings, sorted", async () => {
   const fake = assets();
   const files = await starterProvider({ STARTER_SOURCE: "native-static", ASSETS: fake }, noNetwork)("My site");
   const paths = files.map((file) => file.path);
   assert.deepEqual(paths, [...paths].sort());
   for (const route of routes) assert.ok(paths.includes(route), route);
   assert.ok(fake.paths.every((path) => path.startsWith(`/native-static-starter/${NATIVE_STARTER_VERSION}/`)));
-  assert.ok(!paths.some((path) => /legacy-components|AGENTS|CLAUDE|README|wrangler|\.github|\.assetsignore/.test(path)));
+  assert.ok(!paths.some((path) => /legacy-components|CLAUDE|README|wrangler|\.github|\.assetsignore/.test(path)));
   assert.deepEqual(JSON.parse(text(files, ".editor/config.json")), { site: { name: "My site" } });
+  assert.ok(paths.includes("AGENTS.md"));
+  assert.ok(paths.includes("components/components.js"));
+  assert.ok(paths.includes("styles/tones.css"));
+  for (const route of routes) {
+    for (const [, tag] of text(files, route).matchAll(/<([a-z][a-z0-9]*-[a-z0-9-]+)\b/g)) {
+      assert.ok(paths.includes(`components/${tag}/${tag}.html`), `${route} → ${tag} template`);
+      assert.ok(paths.includes(`components/${tag}/${tag}.css`), `${route} → ${tag} styles`);
+    }
+  }
   const home = text(files, "index.html");
   // Every stylesheet a page links, and every stylesheet site.css imports, is in the site.
   for (const route of routes)
@@ -73,7 +82,10 @@ test("nativeStarterFiles reads only ASSETS and returns the six routes, styles, i
   for (const file of files) if ("content" in file) assert.ok(!file.content.includes(testHost), file.path);
   for (const route of routes.filter((route) => route !== "404.html")) assert.doesNotMatch(text(files, route), /name="robots" content="noindex"/);
   assert.match(home, /application\/ld\+json/);
-  assert.doesNotMatch(home, /<script(?![^>]*application\/ld\+json)/);
+  const scripts = [...home.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/g)].map(([script]) => script);
+  assert.deepEqual(scripts.filter((script) => !script.startsWith('<script type="application/ld+json">')), [
+    '<script type="module" src="/components/components.js"></script>',
+  ]);
   // The social card stays binary, byte for byte.
   const card = files.find((file) => file.path === "images/social-card.png")!;
   assert.ok("base64" in card);

@@ -1,0 +1,59 @@
+/* Fills its grid cell, so every card in a row is as tall as the tallest and
+   the link paragraph lines up along the bottom. Bounds a stretched title link. */
+:host {
+  display: block;
+  position: relative;
+}
+
+article {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-l);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+/* A thicker accent edge without changing the card's size or content measure. */
+:host([data-featured]) article {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+:host([data-layout="centered"]) article {
+  text-align: center;
+}
+
+h3 {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.3;
+}
+
+p {
+  margin: 0;
+}
+
+.body {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* Shown only on cards whose page passes a link. The slot has no fallback, so
+   components.js (and the editor) hide this paragraph on the other cards. The
+   auto margin pushes it to the bottom of the card. */
+.actions {
+  margin-top: auto;
+  padding-top: var(--space-3xs);
+  font-weight: 600;
+}
+
+/* Keep the action link clickable above a stretched title link. */
+.actions a {
+  position: relative;
+  z-index: 1;
+  color: var(--accent);
+}

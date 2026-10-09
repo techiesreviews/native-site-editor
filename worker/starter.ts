@@ -129,7 +129,7 @@ export async function starterFiles(siteName: string, fetcher: typeof fetch = fet
  * and small dot files (`.editor/config.json`) inline, so serving them does
  * not depend on dot paths.
  */
-export const NATIVE_STARTER_VERSION = "v6a9ca44";
+export const NATIVE_STARTER_VERSION = "v6a20035";
 const NATIVE_STARTER_BASE = `/native-static-starter/${NATIVE_STARTER_VERSION}/`;
 const NATIVE_MAX_FILES = 100;
 const NATIVE_MAX_FILE_BYTES = 2 * 1024 * 1024;

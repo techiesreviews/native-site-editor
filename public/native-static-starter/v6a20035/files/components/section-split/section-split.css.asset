@@ -1,0 +1,136 @@
+:host {
+  display: block;
+}
+
+/* Each part is a whole element in a slot. components.js gives every rule a
+   ::slotted() twin, so a rule styles the template's fallback and what a page
+   slots in alike. */
+
+section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2xl);
+  align-items: center;
+  padding: var(--space-xl);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+}
+
+.media {
+  min-width: 0;
+}
+
+.media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-m);
+  background: var(--page);
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-s);
+  min-width: 0;
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--text-3xl);
+  line-height: 1.2;
+}
+
+p {
+  margin: 0;
+  font-size: var(--text-l);
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-2xs);
+}
+
+/* Both buttons: the template's own fallback links and the ones a page slots in. */
+.actions a {
+  display: inline-block;
+  padding: var(--space-xs) var(--space-m);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  text-decoration: none;
+  border: 2px solid var(--accent);
+}
+
+.actions a:hover {
+  filter: brightness(0.92);
+}
+
+/* The second button is outlined: the template's fallback link inside the
+   secondary slot, and a page's own <a slot="secondary">. */
+slot[name="secondary"] a,
+.actions [slot="secondary"] {
+  background: transparent;
+  color: var(--accent);
+}
+
+slot[name="secondary"] a:hover,
+.actions [slot="secondary"]:hover {
+  background: var(--page);
+  filter: none;
+}
+
+/* Reverse the columns only while they sit side by side (the complement of
+   the max-width: 720px query below). */
+@media (width > 720px) {
+  :host([data-layout="content-left"]) .content {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  :host([data-layout="content-left"]) .media {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+:host([data-layout="centered"]) section {
+  grid-template-columns: 1fr;
+}
+
+/* The image keeps the text's measure, so it doesn't fill the whole band. */
+:host([data-layout="centered"]) .media,
+:host([data-layout="centered"]) .content {
+  width: 100%;
+}
+
+:host([data-layout="centered"]) .media {
+  max-width: var(--reading-width);
+  margin-inline: auto;
+}
+
+:host([data-layout="centered"]) .content {
+  align-items: center;
+  max-width: var(--reading-width);
+  margin-inline: auto;
+  text-align: center;
+}
+
+:host([data-layout="centered"]) .actions {
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  section {
+    grid-template-columns: 1fr;
+    gap: var(--space-l);
+    padding: var(--space-l);
+  }
+}

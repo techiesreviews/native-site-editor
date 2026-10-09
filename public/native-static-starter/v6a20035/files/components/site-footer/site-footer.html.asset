@@ -1,0 +1,10 @@
+<footer>
+  <address>
+    <p>Larkspur Studio, Frome, Somerset. Designed and built by hand.</p>
+    <p><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p>
+  </address>
+  <nav aria-label="Footer">
+    <a href="/#work">Work</a>
+    <a href="/about/">About</a>
+  </nav>
+</footer>

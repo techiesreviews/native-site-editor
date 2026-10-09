@@ -1,7 +1,7 @@
 ---
 title: Vendor the new starter for the preview editor
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [05-starter-skip-link, 06-starter-btn-class, 15-starter-variant-examples, 17-starter-agents-components-chapter, 58-starter-card-looks, 60-starter-tone-rules, 65-starter-card-link-rule]
 builder: sol
@@ -20,3 +20,8 @@ The preview editor's Start your site reads a vendored starter (`STARTER_SOURCE: 
 
 - `tests/native-starter.test.ts` and `native-static-starter-create.spec.ts` (`@native-static` group) pass on the new version.
 - On preview, Start your site → Starter site gives the components, tones and `AGENTS.md`; screenshots.
+
+## Done (2026-10-09)
+
+- `public/native-static-starter/v6a20035/` vendors the starter's `dev` head `6a20035` (39 files byte for byte: routes, `components/`, `styles/` incl. `tones.css`, `images/`, `robots.txt`, `AGENTS.md`; settings inline); `v6a9ca44` removed; `NATIVE_STARTER_VERSION` and `docs/native-starter-source.md` updated. Limits unchanged (40 of 100 files, 156 KB).
+- `tests/native-starter.test.ts` now expects `AGENTS.md`, every route's component files and the one module loader script; `native-static-starter-create.spec.ts` checks routes only (component templates are not pages), allows the loader without JS, and renders the components with JS on the plain byte server.

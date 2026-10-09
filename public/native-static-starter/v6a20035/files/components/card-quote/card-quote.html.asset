@@ -1,0 +1,4 @@
+<article>
+  <slot name="title"><h3>Untitled quote</h3></slot>
+  <slot name="body"><p class="body">No quote yet.</p></slot>
+</article>

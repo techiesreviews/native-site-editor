@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page not found · Larkspur Studio</title>
+  <meta name="description" content="There is nothing at this address.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#2f6d3a">
+  <link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Larkspur Studio">
+  <meta property="og:title" content="Page not found · Larkspur Studio">
+  <meta property="og:description" content="There is nothing at this address.">
+  <meta property="og:locale" content="en_GB">
+  <meta property="og:image" content="https://native-site-editor-starter-test.lexvd.workers.dev/images/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Larkspur Studio: small, editable websites for independent businesses, Frome, Somerset">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="/styles/site.css">
+  <script type="module" src="/components/components.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <site-header></site-header>
+  <main class="page" id="main">
+    <section class="hero flow">
+      <h1>Page not found</h1>
+      <p class="lead">There is nothing at this address, so try <a href="/">our work</a>, <a href="/about/">about the studio</a>, or write to <a href="mailto:hello@larkspur.example">hello@larkspur.example</a>.</p>
+    </section>
+  </main>
+  <site-footer></site-footer>
+</body>
+</html>

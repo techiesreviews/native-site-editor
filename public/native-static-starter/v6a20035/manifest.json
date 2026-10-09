@@ -1,0 +1,207 @@
+{
+  "version": "6a20035",
+  "source": "techiesreviews/native-site-editor-starter@6a20035",
+  "files": [
+    {
+      "path": "404.html",
+      "size": 1718,
+      "sha256": "77e10330a00a6fa874a336ec12fe575a649f814fca19e79f98a3794bb26ac448"
+    },
+    {
+      "path": "AGENTS.md",
+      "size": 23533,
+      "sha256": "f4e3e0e48145493f5cda6b01188d5828e6107169451afc0c71811940f8f58102"
+    },
+    {
+      "path": "about/index.html",
+      "size": 3051,
+      "sha256": "87f0452b19d69fdc10714e0140e2b63b0253d7c00889ae07f7dda1b02acc923b"
+    },
+    {
+      "path": "components/card-note/card-note.css",
+      "size": 566,
+      "sha256": "dd80ff69b6b330fce34cc4e60b93ac861cb48d194e8927fc5ce88a50dfa2dd1b"
+    },
+    {
+      "path": "components/card-note/card-note.html",
+      "size": 40,
+      "sha256": "99acc6cc993aad25e9e91bc8bb5f075e158223cb2a7cead2995d3b1e84fba4a8"
+    },
+    {
+      "path": "components/card-project/card-project.css",
+      "size": 1302,
+      "sha256": "3dcfa2fe344f2323486d18032c227dd77349512012f16f29d59a8f7566d6402f"
+    },
+    {
+      "path": "components/card-project/card-project.html",
+      "size": 286,
+      "sha256": "025fd2abbb63c7ce74151b1ef55dc21a0aac07ecf8622c4078620b9459f245ea"
+    },
+    {
+      "path": "components/card-quote/card-quote.css",
+      "size": 685,
+      "sha256": "db10f953e37bf335cd6f1b173f1ecd09302f6f9287eeeb44b943e96838e98547"
+    },
+    {
+      "path": "components/card-quote/card-quote.html",
+      "size": 134,
+      "sha256": "53cd9d3736bf5dd59835d34a7049cf994236da697684160366a26094b62e5a46"
+    },
+    {
+      "path": "components/components.js",
+      "size": 14064,
+      "sha256": "b4b2c15fe4fa86fca494389002a047094fa82ae9cf5d8775b34ce8fda61d3620"
+    },
+    {
+      "path": "components/section-contact/section-contact.css",
+      "size": 610,
+      "sha256": "de92c0a84d8b26dac872a31e6319923cbfe8066818814ef3f8e256c44fca4db8"
+    },
+    {
+      "path": "components/section-contact/section-contact.html",
+      "size": 294,
+      "sha256": "a7c6fd9af64017a65ada1dd9ecaea209aa1ddaabaf50db3761c52c1502a74996"
+    },
+    {
+      "path": "components/section-feature/section-feature.css",
+      "size": 819,
+      "sha256": "2b0e1f528f4a9ea68c3662ac2566441a5891b09558860326c94ca780ed1a7291"
+    },
+    {
+      "path": "components/section-feature/section-feature.html",
+      "size": 608,
+      "sha256": "547bc914e39337fa75cb516b8ad745aa95a057cbc35cc8f01aa69ebfe1f1c4fd"
+    },
+    {
+      "path": "components/section-hero/section-hero.css",
+      "size": 1854,
+      "sha256": "25668f71c6eb5a809d610b095468f2ccf15d062269494accd90e6349c5176897"
+    },
+    {
+      "path": "components/section-hero/section-hero.html",
+      "size": 453,
+      "sha256": "094b9c322b588bb0e1a872add5bca3b3c62478b5206d1573184b9b8fefa92c4d"
+    },
+    {
+      "path": "components/section-intro/section-intro.css",
+      "size": 950,
+      "sha256": "ace47cfa37d60f770f7061a383773fde4bf7780763086cf1f5f702067443cf65"
+    },
+    {
+      "path": "components/section-intro/section-intro.html",
+      "size": 266,
+      "sha256": "9813b217080b59d70cc85ffdc618ad33d6f5f6a33bf0c5e2cdbba3dd37890e53"
+    },
+    {
+      "path": "components/section-split/section-split.css",
+      "size": 2754,
+      "sha256": "5cc0d517e08a8442fc6481cbf514e75d70103387b4ad0b2a521db7e17f044c83"
+    },
+    {
+      "path": "components/section-split/section-split.html",
+      "size": 515,
+      "sha256": "5ee403a8f3c5d8e6f8d61680fcd2ae0417601f89195eb0db080a5fb71df2c684"
+    },
+    {
+      "path": "components/site-footer/site-footer.css",
+      "size": 693,
+      "sha256": "f9246fd96b769673e785d8d0558ad62c63a23e4e17a546f2aa953aba428179ff"
+    },
+    {
+      "path": "components/site-footer/site-footer.html",
+      "size": 294,
+      "sha256": "f6bc214fb82300de6064363647c079dfd221ab8f46c68430082919fad492896f"
+    },
+    {
+      "path": "components/site-header/site-header.css",
+      "size": 1074,
+      "sha256": "e886091bc4656b6eebb3ca771e48565f37088b408372bb89012dd0f9c64b6e8d"
+    },
+    {
+      "path": "components/site-header/site-header.html",
+      "size": 157,
+      "sha256": "693a370de46c0b81b60afb00debb9a139bab72a4ed2db0d124f5b621417b9b38"
+    },
+    {
+      "path": "images/favicon.svg",
+      "size": 203,
+      "sha256": "0ba846bfb3bb07cf881db892e5b6a645b98889d489e416477538c0f45e87beed"
+    },
+    {
+      "path": "images/social-card.png",
+      "size": 59044,
+      "sha256": "db3d738fe69f31a55b7b746cb2d8706b65f5fdfd1ec3c62a932750cca3837a48"
+    },
+    {
+      "path": "images/studio-desk.svg",
+      "size": 2162,
+      "sha256": "c6dd75fbd7bddec0250c274d8da3901c9929b026cca1bc16e0922ca8f7754651"
+    },
+    {
+      "path": "index.html",
+      "size": 5629,
+      "sha256": "5fea14c2ef5ef1e8ccbb79aca8034cfedc8bd710f20008f87dbc5e369be1cbda"
+    },
+    {
+      "path": "robots.txt",
+      "size": 76,
+      "sha256": "93da3eae798d9a0f2d4e6b32468cecd4d7669c83c111c40335291082621b995e"
+    },
+    {
+      "path": "styles/elements.css",
+      "size": 1656,
+      "sha256": "ac01b9eb31a0d100fe64e80a23a6f72a0d547ce10cd009bf4a4a8043ba02277b"
+    },
+    {
+      "path": "styles/layout.css",
+      "size": 1763,
+      "sha256": "1b6573358a05f2faac8cc24bf65c2ee69b2d06175d39a3f680cb46b7b0018da9"
+    },
+    {
+      "path": "styles/sections.css",
+      "size": 2049,
+      "sha256": "762edb3b30bdae25878f493c3063602a50246fc891d445bc6fcce99596a43148"
+    },
+    {
+      "path": "styles/site.css",
+      "size": 1058,
+      "sha256": "74a795fa722e8c0f2dd2ceb37e1ff63a6b15fdbd7de8ec09ebb30d0195a26b98"
+    },
+    {
+      "path": "styles/tokens.css",
+      "size": 2175,
+      "sha256": "555ac12c217873cabb36bae453b608b11305c33fe4399757280f1c90ce6d2f11"
+    },
+    {
+      "path": "styles/tones.css",
+      "size": 6137,
+      "sha256": "872884d57b696c922251395a6c91266de452a53653e9d6d7379a9289a1f112dc"
+    },
+    {
+      "path": "styles/utilities.css",
+      "size": 1157,
+      "sha256": "5a920eabf7e8d150be99ca7f35c2e3114c3199972d50505b941b34fb285ccaac"
+    },
+    {
+      "path": "work/fern-and-kettle/index.html",
+      "size": 3155,
+      "sha256": "12271bf01eff9b6e2297892f68d560391e3faed5886fd3e78d206d8fb004ce2b"
+    },
+    {
+      "path": "work/harbour-lane-pottery/index.html",
+      "size": 3117,
+      "sha256": "0da7434898392de0df906e016eee7e57f4e590cb853a90d3ab8de0476f738f1d"
+    },
+    {
+      "path": "work/meadow-row-allotments/index.html",
+      "size": 3172,
+      "sha256": "1fef2eab4d00bfa465f84b69a3fb3ff97a1a2f8f10ba558c35570fb5dc6fa7cd"
+    }
+  ],
+  "inline": [
+    {
+      "path": ".editor/config.json",
+      "content": "{\n  \"site\": {\n    \"name\": \"Larkspur Studio\",\n    \"url\": \"https://native-site-editor-starter-test.lexvd.workers.dev\"\n  }\n}\n"
+    }
+  ]
+}

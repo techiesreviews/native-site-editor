@@ -1,0 +1,23 @@
+/* The site's shared styles, in cascade order. The layer order comes first
+   (tokens.css declares it too), so each file's @layer block lands in its
+   place whatever order the rules are read in. The imports are not put in a
+   layer themselves: each file wraps its rules in its own layer. A component's
+   own stylesheet is not in a layer, so it wins over all of them. */
+@layer tokens, elements, tones, layout, sections, utilities;
+@import url("tokens.css");
+@import url("elements.css");
+@import url("tones.css");
+@import url("layout.css");
+@import url("sections.css");
+@import url("utilities.css");
+
+/* Components stay hidden until components.js has defined them, so a page
+   never shows them unstyled. Only with scripting on: without JS, their
+   content still shows. :not(:defined) matches custom elements only (every
+   built-in element is defined); data-unloaded is the loader's mark on one it
+   could not load, which then shows its own content. */
+@media (scripting: enabled) {
+  :not(:defined):not([data-unloaded]) {
+    visibility: hidden;
+  }
+}

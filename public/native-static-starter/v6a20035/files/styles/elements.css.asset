@@ -1,0 +1,59 @@
+@layer elements {
+  /* A link to a part of a page (/#work, /about/#contact) scrolls it clear of
+     the sticky header. */
+  html {
+    scroll-padding-top: var(--space-5xl);
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: var(--text-m);
+    line-height: 1.5;
+    color: var(--ink);
+    background: var(--page);
+  }
+
+  /* No margins on elements: spacing comes from the container (.flow, or gap
+     in a component). Not on an element a page slots into a component: a page
+     rule there beats the component's ::slotted() rules, so the component sets
+     its parts' margins (a page rule that names a part still can). */
+  :is(h1, h2, h3, h4, h5, h6, p, ul, ol, dl, dd, figure, blockquote, pre, address):not([slot]) {
+    margin: 0;
+  }
+
+  /* Not on a heading a page slots into a component: the component sizes it,
+     and a page rule would win over the ::slotted() twin components.js gives
+     the component's rule. */
+  h1:not([slot]) {
+    font-size: var(--text-4xl);
+    line-height: 1.15;
+  }
+
+  h2:not([slot]) {
+    font-size: var(--text-2xl);
+  }
+
+  /* Links in running text. Buttons and navigation set their own colour. */
+  p a,
+  li a {
+    color: var(--accent);
+  }
+
+  /* A whole-title link keeps the title's look, even inside a list item. */
+  :is(h1, h2, h3, h4, h5, h6, [slot="title"]) > a:only-child {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  :is(h1, h2, h3, h4, h5, h6, [slot="title"]) > a:only-child:hover {
+    text-decoration: underline;
+  }
+
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: var(--radius-s);
+  }
+}

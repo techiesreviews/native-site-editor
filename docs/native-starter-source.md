@@ -8,7 +8,7 @@ its own assets by setting `STARTER_SOURCE`:
 | `STARTER_SOURCE` | Starter site |
 | --- | --- |
 | unset | template repository tarball (production and generic deploys) |
-| `native-static` | `public/native-static-starter/v6a9ca44/`, read through `ASSETS` only |
+| `native-static` | `public/native-static-starter/v6a20035/`, read through `ASSETS` only |
 | anything else | Create site and Start your site fail with a clear error |
 
 Both entry points, Create site (`POST /api/repositories` with
@@ -24,9 +24,13 @@ npx wrangler dev --var STARTER_SOURCE:native-static
 
 ## The vendored files
 
-`v6a9ca44` is starter commit `6a9ca44`: six ready routes (`index.html`,
-`about/`, three `work/` pages, `404.html`), `styles/`, `images/` and
-`robots.txt`, copied byte for byte. Each file is stored as
+`v6a20035` is starter commit `6a20035`: six ready routes (`index.html`,
+`about/`, three `work/` pages, `404.html`), `styles/` (including `tones.css`),
+`images/`, `robots.txt`, `components/` (templates, CSS and `components.js`) and
+`AGENTS.md`, copied byte for byte.
+Each route loads `<script type="module" src="/components/components.js"></script>`;
+the site loader fetches component templates and CSS without a build step.
+Each file is stored as
 `files/<path>.asset` so asset HTML handling cannot redirect or rewrite it.
 `manifest.json` lists every file with its size and SHA-256, and carries
 `.editor/config.json` inline. The worker checks the manifest (version, safe
