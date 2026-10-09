@@ -1,6 +1,6 @@
 ---
 title: 11 failing tests in the actual-starter group
-status: ready-for-agent
+status: closed
 assignee:
 blocked_by: []
 ---
@@ -26,3 +26,13 @@ Sol saw 4 of them on `a47abed`, so some predate today.
 Each failure is either fixed in the product, or the spec is updated because
 the actual starter (`~/Projects/native-site-editor-starter`) changed, with the
 reason recorded; the actual group passes on dev.
+
+## Resolution (2026-10-09)
+
+All 11 were specs left behind by intended changes, not product bugs (bisected
+in the release triage): in-row text editing (`36b643f`), history spanning
+files (`dbee5e2`) and fields before Monaco (`06c2469`). The specs now assert
+today's behaviour, waiting on observable state; product code is unchanged.
+The actual group passes 45 / 1 skipped (the skip is native-static only).
+Reviewed by Sol in three rounds. Tech debt 11 tracks the one remaining
+silent case (Redo after new typing).

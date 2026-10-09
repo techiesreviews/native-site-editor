@@ -11,7 +11,7 @@ the slice tickets `p5-16` to `p5-22`, the review results in the root
 | --- | --- | --- |
 | 01 | main.ts is 6,220 lines; ticket 08 wanted about 500 | needs-triage |
 | 02 | Byte budget headroom: 351 of 355 KB | needs-triage |
-| 03 | 11 failing tests in the actual-starter group | ready-for-agent |
+| 03 | 11 failing tests in the actual-starter group | closed |
 | 04 | A test server on 5216 died mid-suite, cause unknown | needs-info |
 | 05 | CI deploy-preview has no Cloudflare token | ready-for-human |
 | 06 | Boot memory known limits | needs-triage |
