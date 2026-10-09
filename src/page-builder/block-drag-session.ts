@@ -109,6 +109,8 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
       if (probing) return;
       if (!fresh(at)) run();
       else if (altChanged || restep) { restep = false; render(); }
+      // The pointer still: Structure keeps showing the same spot (a redraw there drops its marks).
+      else ports.tree?.mirror(latest);
     },
     step(by) {
       // A Section only snaps between bands: Tab does nothing else meanwhile.

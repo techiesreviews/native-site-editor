@@ -63,10 +63,11 @@ function bandPick(rows: readonly TreeRow[], y: number, block: DraggedBlock, item
   const container = main && structureContainer(main.item, itemsSlots);
   if (!main || !container) return { target: undefined };
   const bands = rows.filter((row) => childOf(row, main));
-  // Folded <main>: its bands do not show, so the drop goes at the end.
-  const index = bands.length ? snapIndex(bands.map((row) => ({ index: last(row), top: row.top, height: row.end - row.top })), y) : container.count;
+  // Folded <main>: above its row (the header) is the first gap, anything below the last.
+  const index = bands.length ? snapIndex(bands.map((row) => ({ index: last(row), top: row.top, height: row.end - row.top })), y)
+    : y < main.top ? 0 : container.count;
   const next = bands.find((row) => last(row) >= index);
-  const lineY = next ? next.top - 1 : bands.length ? bands[bands.length - 1].end + 1 : main.bottom + 1;
+  const lineY = next ? next.top - 1 : bands.length ? bands[bands.length - 1].end + 1 : index ? main.bottom + 1 : main.top - 1;
   return { target: target(block, container, index), line: { y: lineY, level: main.level + 1 }, row: main.item.node };
 }
 
@@ -79,20 +80,28 @@ export function treeDrop(rows: readonly TreeRow[], y: number, level: number, blo
   if (isBand(block)) return bandPick(rows, y, block, itemsSlots);
   const byNode = new Map(rows.map((row) => [key(row.item.node), row]));
   const parentOf = (row: TreeRow) => byNode.get(key(row.item.node.slice(0, -1)));
+  // Inside a component instance only its items slots hold page blocks: a Section or
+  // Div in any other slot (or a template part) is the component's, not a container.
+  const open = (row: TreeRow) => {
+    for (let child = row, up = parentOf(row); up; child = up, up = parentOf(up)) {
+      if (up.item.tag.includes("-") && !itemsSlots(up.item.tag).includes(child.item.slot.trim())) return false;
+    }
+    return true;
+  };
   const shown = block.kind === "move" ? rows.filter((row) => !within(row.item.node, block.path)) : rows;
   let gap = shown.findIndex((row) => y < (row.top + row.bottom) / 2);
   if (gap < 0) gap = shown.length;
   const prev = shown[gap - 1], next = shown[gap];
   const options: { level: number; container: DropContainer; index: number; y: number }[] = [];
   const among = (parent: TreeRow | undefined, child: TreeRow, at: number, index: number, lineY: number) => {
-    const container = parent && structureContainer(parent.item, itemsSlots, child.item);
+    const container = parent && open(parent) && structureContainer(parent.item, itemsSlots, child.item);
     if (container) options.push({ level: at, container, index, y: lineY });
   };
   if (prev && next && next.level > prev.level) {
     // An open row and its first child: only before that child.
     among(parentOf(next), next, next.level, last(next), next.top - 1);
   } else if (prev) {
-    const inside = structureContainer(prev.item, itemsSlots);
+    const inside = open(prev) ? structureContainer(prev.item, itemsSlots) : undefined;
     if (inside) options.push({ level: prev.level + 1, container: inside, index: dropEndIndex(inside), y: prev.end + 1 });
     // After the previous row, or after any of its ancestors down to the next row's level.
     const floor = next ? next.level : 1;
@@ -153,7 +162,8 @@ export function createStructureDrop(view: StructureDropView, block: DraggedBlock
   return {
     aim(x, y) {
       if (!view.over(x, y)) return undefined;
-      mirrored = "";
+      // Back over the canvas (or off both) the tree's line is drawn anew.
+      mirrored = "tree";
       view.edgeScroll(y);
       const { left, step } = view.indent();
       const pick = treeDrop(view.rows(), y, levelAt(x, left, step), block, itemsSlots);
@@ -161,12 +171,13 @@ export function createStructureDrop(view: StructureDropView, block: DraggedBlock
       return { target: pick.target };
     },
     mirror(drop) {
-      // Each frame asks again: unfold and scroll only when the target changes.
+      // Asked again and again: unfold and scroll only when the target changes;
+      // the line is measured each time (a redrawn tree moves it).
       const id = drop ? `${key(drop.container.path)}/${drop.index}/${drop.ok}` : "";
-      if (id === mirrored) return;
+      const changed = id !== mirrored;
       mirrored = id;
-      if (drop) view.unfold(drop.container.path);
-      show(drop, drop && treeLineFor(view.rows(), drop), true);
+      if (drop && changed) view.unfold(drop.container.path);
+      show(drop, drop && treeLineFor(view.rows(), drop), changed);
     },
     end(kept) {
       view.mark(undefined, false);

@@ -94,6 +94,22 @@ test("a component instance takes drops only through its items slot", () => {
   assert.equal(structureContainer(list[2].item, slots)?.slot, "");
 });
 
+test("a Section or Div in a component's named slot is the component's, not a container", () => {
+  const card = items([["main", [["section", [["card-x", [["div", [["p"]], { slot: "body", open: true }]], { open: true }]], { open: true }]], { open: true }]]);
+  const list = rowsOf(card);
+  const inBody = treeDrop(list, list[4].bottom + 1, 5, paragraph, noSlots).target!;
+  assert.deepEqual(inBody.container.path, [0, 0]);
+  // Through an items slot it is a page block, and takes drops.
+  const open = treeDrop(list, list[4].bottom + 1, 5, paragraph, (tag) => (tag === "card-x" ? ["body"] : [])).target!;
+  assert.deepEqual(open.container.path, [0, 0, 0, 0]);
+});
+
+test("over a folded <main> a Section goes first from above its row, last from below", () => {
+  const folded = rowsOf(items([["header"], ["main", [["section"], ["section"]]], ["footer"]]));
+  assert.deepEqual(pick(folded[0].top + 2, 2, section, folded), { path: "1", index: 0, ok: true, level: 2, y: folded[1].top - 1 });
+  assert.deepEqual(pick(folded[2].top + 2, 2, section, folded), { path: "1", index: 2, ok: true, level: 2, y: folded[1].bottom + 1 });
+});
+
 test("a Section snaps between page bands, by each band's rows", () => {
   const upper = pick(at("1.0").top + 4, 5, section)!;
   assert.deepEqual(upper, { path: "1", index: 0, ok: true, level: 2, y: at("1.0").top - 1 });
@@ -137,7 +153,9 @@ test("the tree's side of a drag unfolds to a canvas target once, draws it and fo
   const drop: DropTarget = { container: div, index: 1, level: 0, ok: true };
   drag.mirror(drop);
   drag.mirror(drop);
-  assert.deepEqual(calls, ["unfold 1.0.1 keep -", `mark 4@${at("1.0.1.1").top - 1}:1.0.1:true true 1.0.0`]);
+  // Unfolded and scrolled to once; the line measured again each time.
+  const mark = `mark 4@${at("1.0.1.1").top - 1}:1.0.1:true`;
+  assert.deepEqual(calls, ["unfold 1.0.1 keep -", `${mark} true 1.0.0`, `${mark} false 1.0.0`]);
   calls.length = 0;
   assert.equal(drag.aim(300, 10), undefined);
   // Where it already is: nothing drawn.
@@ -145,6 +163,11 @@ test("the tree's side of a drag unfolds to a canvas target once, draws it and fo
   const back = drag.aim(60, (own.top + own.bottom) / 2)!;
   assert.deepEqual([back.target?.container.path, back.target?.index], [[1, 0], 1]);
   assert.deepEqual(calls, ["scroll", "mark - false 1.0.0"]);
+  calls.length = 0;
+  // Off the tree and the canvas: the tree's line goes.
+  drag.aim(60, at("1.0.1.1").top + 2);
+  drag.mirror(undefined);
+  assert.deepEqual(calls.slice(-1), ["mark - true 1.0.0"]);
   calls.length = 0;
   drag.end(drop);
   assert.deepEqual(calls, ["mark - false -", "unfold - keep 1.0.1"]);
