@@ -28,5 +28,5 @@ Pure deletion, before anything else ([02](../../tickets/02-masters-become-compon
 ## Done (2026-10-09)
 
 - Masters, page parts, section links, Save shared / Update saved section, `.editor/page-builder.json` and sidecar re-keying are gone with their hooks, 13 unit files, 16 browser specs, three Playwright projects and five docs (90 files, about 12.4k lines removed). With `nativePageActions` gone, the old "Make component…" fallback for containers shows again; slice 02 adds its refusals.
-- Commits 70fed15 (Sol), af4d148 and the test/ticket commit after it. No new unit tests (pure deletion); `native-components.spec.ts` asserts no Save shared / Update on a plain section.
+- Commits 90e89a7 (Sol), 8d915ab, 4ddae30, 486b515, 3d72bbd; preview ca09dfb5. No new unit tests (pure deletion); `native-components.spec.ts` asserts no Save shared / Update on a plain section.
 - Byte budget: 351 KB to 317 KB gzip before first paint (index.js 277 KB to 244 KB). Full native-save suite, smoke, `@actual` and `@native-static` green.
