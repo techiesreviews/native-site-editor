@@ -1,7 +1,7 @@
 ---
 title: Fixed parts are locked on the page
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [41-edit-mode-shell]
 builder: sol
@@ -20,3 +20,8 @@ Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §7.
 ## Done when
 
 - Nightly spec: clicking a fixed paragraph selects the instance and shows the hint; Edit component opens the mode with that paragraph selected; Structure lists only slots.
+
+## Done (2026-10-09)
+
+- Outside Edit component mode a click on a fixed template part selects the instance and the label reads "○ Paragraph fixed in `<section-work>`" with Edit component, which opens the mode on that instance with that part selected. The lock rides only on that host selection while the template is unchanged; slot placeholders carry none. Fixed parts take no text editing; drops inside them refuse with the reason (their edges pass the drop beside them). Structure already listed only slots.
+- Commits 92481a2, d183005 (built by Sol, reviewed and fixed by Claude). Unit tests: `nativeLockedComponentPart`, the controller's lock handoff (refresh, template change, replay), the fixed drop refusal and report. Spec `native-locked-fixed-parts-actual.spec.ts` (@actual: hint, no text edit, Structure slots only, Edit component on the part, drop refusal, a second fixed part).
