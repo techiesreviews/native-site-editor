@@ -172,8 +172,9 @@ export interface EditBarModel {
   // template's own): a chip before the name selects that instance.
   context?: { label: string; title: string; onSelect: () => void; onEdit?: () => void };
   // Shown after the name: Edit component mode's slot chip (slot-chip.ts),
-  // kept by its owner across renders so a click waiting on it survives one.
-  chip?: HTMLElement;
+  // kept by its owner across renders so a click waiting on it survives one;
+  // `key` says what it shows (the bar renders again when it changes).
+  chip?: { key: string; element: HTMLElement };
 }
 
 // A point in the frame's viewport, as the page inside it measures it.
@@ -983,7 +984,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       chip.title = model.context.title;
       label.prepend(chip);
     }
-    if (model.chip) label.append(model.chip);
+    if (model.chip) label.append(model.chip.element);
     // Controls fall into groups (name, style, content, arrange) with a thin
     // rule between neighbours, so the bar reads as a few clusters, not a row.
     let group = "name";

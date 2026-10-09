@@ -3,7 +3,9 @@
 // a double-click as click (detail 1), click (detail 2), dblclick: the second
 // click drops the waiting one and the double-click acts alone. A click from
 // the keyboard (detail 0) can't be the start of a double-click, so it acts at
-// once.
+// once. A double-click is two clicks within the wait (the prototype's 240 ms,
+// tried live): a slower pair, which the system may still call a double-click,
+// acts as a click and then as a double-click.
 
 /** How long a click waits for a second one. */
 export const CLICK_WAIT_MS = 240;

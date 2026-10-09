@@ -31,6 +31,15 @@ test("a click acts once after the wait; a double-click acts alone, never as a cl
     mock.timers.tick(CLICK_WAIT_MS * 4);
     assert.deepEqual(seen, ["double"]);
 
+    // Slower than the wait, a pair is a click, then a double-click.
+    seen.length = 0;
+    timing.click(1);
+    mock.timers.tick(CLICK_WAIT_MS + 60);
+    timing.click(2);
+    timing.doubleClick();
+    mock.timers.tick(CLICK_WAIT_MS * 4);
+    assert.deepEqual(seen, ["click", "double"]);
+
     // A third click in the run starts nothing either.
     seen.length = 0;
     timing.click(3);

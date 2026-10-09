@@ -443,9 +443,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const moded = editMode?.active();
     const template = moded && selection.path === moded.templatePath && selection.node?.length ? deps.sources()[moded.templatePath] : undefined;
     let chip = template === undefined ? undefined : slotChipState(template, selection.node!, (tag) => templateOf(tag)?.source);
-    // Showing this page's content, an items slot counts the page's items.
+    // Showing this page's content, an items slot counts what it shows there: the page's items, its fallback's, or none.
     const page = chip?.state === "items" && moded!.show === "page" ? instanceAt(moded!.path, [...moded!.node]) : undefined;
-    if (page && chip?.state === "items") chip = { ...chip, count: (page.instance.fills.get(chip.name) ?? []).filter((item) => item.type === "element").length };
+    const state = page && chip ? page.states.get(chip.name) : undefined;
+    if (state && chip?.state === "items" && (state.filled || !state.shown))
+      chip = { ...chip, count: (page!.instance.fills.get(chip.name) ?? []).filter((item) => item.type === "element").length };
     if (chip) out.chip = editMode!.chip(selection.node!, chip);
     return out;
   }

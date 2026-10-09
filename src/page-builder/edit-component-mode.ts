@@ -119,7 +119,7 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
         const report = (): SlotChipReport => ({ action: "toggle", template, node: [...at], chip: state });
         shownChip = { key, element: slotChip(state, { onToggle: () => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail: report() })) }) };
       }
-      return shownChip.element;
+      return shownChip;
     },
     /** The slim bar around the host's Used on and Done controls. */
     parts(usedOn: Element, done: Element) {
