@@ -335,6 +335,23 @@ export function nativeHeadingLevel(source: string, parentPath: readonly number[]
   const level = (heading ? Number(heading.name[1]) : 2) + (instance ? 1 : divs);
   return level >= 4 ? 4 : level === 3 ? 3 : 2;
 }
+/** An element of the page as the strict source tree holds it (body paths); components are `opaque`. */
+export interface NativeOutline { name: string; className: string; opaque: boolean; heading: string; children: NativeOutline[]; parent?: NativeOutline }
+/** The page's element tree for rules that read structure, not geometry; undefined when the source is not exact. */
+export function nativeOutline(source: string): NativeOutline | undefined {
+  const root = tree(source);
+  if (!root) return undefined;
+  const text = (node: SourceNode) => decodeHtmlEntities(source.slice(node.openEnd, node.closeStart).replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
+  const map = (node: SourceNode, parent?: NativeOutline): NativeOutline => {
+    const open = source.slice(node.start, node.openEnd), tag = startTags(open)[0];
+    const className = tag ? decodeHtmlEntities(startTagAttribute(open, tag, "class")?.value ?? "", true) : "";
+    const heading = node.name === "section" ? node.children.find(child => /^h[1-6]$/.test(child.name)) : undefined;
+    const out: NativeOutline = { name: node.name, className, opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent };
+    out.children = node.children.map(child => map(child, out));
+    return out;
+  };
+  return map(root);
+}
 function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">) {
   const root = tree(source);
   const moving = root && atPath(root, from);

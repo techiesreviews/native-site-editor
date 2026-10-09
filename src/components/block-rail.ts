@@ -5,6 +5,8 @@ import { elementIcon } from "./element-icons";
 /** Boot controls; the Add toggle owns whether a native visual preview is open. */
 export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElement, options: {
   onPick?: (kind: NativeElementKind) => void;
+  /** Escape on a block: the selection's container is selected, as Escape in the page does. */
+  onUp?: () => void;
 } = {}) {
   const rail = document.createElement("nav");
   rail.className = "block-rail";
@@ -44,6 +46,12 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
     button.addEventListener("click", () => { hideTip(); options.onPick?.(kind); });
     // Like the edit bar, controls stay in tab order; arrows also move focus.
     button.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !event.altKey && !event.ctrlKey && !event.metaKey && options.onUp) {
+        event.preventDefault();
+        hideTip();
+        options.onUp();
+        return;
+      }
       if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;

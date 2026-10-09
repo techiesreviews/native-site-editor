@@ -72,8 +72,9 @@ for (const colorScheme of ["light", "dark"] as const) {
     await buttons.first().hover();
     await page.mouse.down();
     await expect(tip(page)).toBeHidden();
+    // The click inserts a Section after the last band (native-blocks.spec.ts covers the rule).
     await page.mouse.up();
-    await expect(page.frameLocator(".native-preview-frame").locator("main > section")).toHaveCount(3);
+    await expect(page.frameLocator(".native-preview-frame").locator("main > section")).toHaveCount(4);
     await page.locator(".sidebar-resize").press("Enter");
     await expect(page.getByRole("tree", { name: "Page structure" })).toBeHidden();
     await expect(rail(page)).toBeVisible();

@@ -266,6 +266,9 @@
   overflow: hidden;
   pointer-events: none;
 }
+.pb-canvas-layer--flash {
+  z-index: 29;
+}
 .pb-empty {
   position: absolute;
   display: flex;
@@ -404,6 +407,60 @@
   }
 }
 
+.pb-flash.is-refused {
+  box-shadow: 0 0 0 2px var(--danger), 0 0 0 7px color-mix(in oklch, var(--danger) 18%, transparent);
+  background: color-mix(in oklch, var(--danger) 8%, transparent);
+}
+/* Where a block just went, or why it was refused: at the block's top right. */
+.pb-flash-label {
+  position: absolute;
+  max-width: min(420px, calc(100% - 16px));
+  padding: 3px 8px;
+  border: 1px solid var(--component);
+  border-radius: 6px;
+  background: var(--component-surface);
+  color: var(--component-text);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+}
+.pb-flash-label.is-centred {
+  transform: translateX(-50%);
+}
+.pb-flash-label.is-refused {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  white-space: normal;
+}
+.pb-flash-label[hidden] {
+  display: none;
+}
+.pb-flash-label.is-on {
+  animation: pb-flash-label 1800ms ease-out forwards;
+}
+.pb-flash-label.is-refused.is-on {
+  animation-duration: 2600ms;
+}
+.pb-flash.is-refused.is-on {
+  animation-duration: 2600ms;
+}
+@keyframes pb-flash-label {
+  0% {
+    opacity: 0;
+  }
+  8%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pb-add-panel {
     animation: none;
@@ -415,7 +472,8 @@
     transition: none;
   }
   /* Still marked, without the fade: on, then off. */
-  .pb-flash.is-on {
+  .pb-flash.is-on,
+  .pb-flash-label.is-on {
     animation: none;
     opacity: 1;
   }

@@ -3108,6 +3108,11 @@
       emitSelection(wanted, "click");
       return;
     }
+    // Escape on the editor's block rail: up a level, as Escape in the page.
+    if (msg.type === "select-parent") {
+      if (selected && selected.isConnected && !sectionDrag) canvasSelectParent();
+      return;
+    }
     if (msg.type === "inspect") {
       inspectWhenSettled(msg);
       return;

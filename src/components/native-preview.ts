@@ -1235,6 +1235,18 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         inspections.delete(id);
       }
     },
+    /** The selection's container is selected (Escape on the block rail); above the top, nothing. */
+    selectParent() {
+      if (frameState.active) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-parent" }, "*");
+    },
+    /** The next selection of this element (a block just inserted) flashes `where` at it. */
+    flashInsert(request: NativeNodeRequest, where: string) {
+      pageBuilder.flash(request, where);
+    },
+    /** A refused insert: its red reason flashes at the selection. */
+    flashRefusal(reason: string) {
+      pageBuilder.refuse(reason);
+    },
     /** Select this element once the next update (the one carrying an edit) has rendered. */
     selectAfterUpdate(request: NativeNodeRequest | undefined, options?: { reveal?: "center" }) {
       selectNode = request && options?.reveal ? { ...request, reveal: options.reveal } : request;

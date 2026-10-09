@@ -5,6 +5,7 @@ import type { VariantLookup, VariantLookupFactory } from "./page-builder/variant
 import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController } from "./controllers/media-controller";
+import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
 import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
@@ -314,7 +315,10 @@ function mountWorkspace() {
     if (menuPanel.matches(":popover-open")) { void agentController.ensure().catch(errorMessage); void setupController.mount().catch(errorMessage); }
   });
   repositorySelect = element<HTMLSelectElement>("repository");
-  blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"));
+  blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"), {
+    onPick: kind => void loadBlockInsert().then(blocks => blocks.click(kind)).catch(errorMessage),
+    onUp: () => nativePreview?.selectParent(),
+  });
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
     app.querySelector<HTMLElement>(".sidebar")!,
@@ -696,6 +700,44 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     errorMessage(error);
   }
 }
+
+// The block rail's clicks (and later drags): one source edit per block, the new block selected.
+// Loaded with the first click.
+const blockInsertPorts: BlockInsertPorts = {
+  target: () => {
+    const route = nativePreview?.route();
+    const path = route !== undefined && nativeSite && !versionView ? nativeSite.routes[route] : undefined;
+    if (!path) return undefined;
+    // A part of a component's template stands for its instance on the page.
+    const selection = appStore.selection.value;
+    const host = selection && [selection.host, ...selection.hostChain ?? []].find(item => item?.path === path && item.node);
+    return { path, node: selection?.path === path ? selection.node : host?.node };
+  },
+  source: path => nativeEffectiveSource(path),
+  exists: nativePathExists,
+  proof: () => {
+    const epoch = generation, scope = setupScope();
+    return () => epoch === generation && scope === setupScope() && !versionView;
+  },
+  open: async path => {
+    if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) {
+      const epoch = generation;
+      await restoreFile(path, epoch, { linkDefaultStyle: false });
+      if (epoch !== generation) return false;
+    }
+    return appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
+  },
+  apply: op => applyNativeOperation(op),
+  select: (request, where) => {
+    nativePreview?.selectAfterUpdate(request);
+    if (request && where) nativePreview?.flashInsert(request, where);
+  },
+  refuse: reason => {
+    nativePreview?.flashRefusal(reason);
+    announce(reason);
+  },
+};
+const loadBlockInsert = lazyModule(async () => (await import("./controllers/block-insert-controller")).createBlockInsertController(blockInsertPorts));
 
 const historyController = createHistoryController({
   capture: () => {
@@ -2101,6 +2143,8 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
     const draft = scope ? draftStore().get(scope, path) : undefined;
     if (draft) nativeDraftAssets.add(path);
     if (draft?.upload && scope) return uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
+    // An SVG written as text here (the block placeholder, an edited one) shows its draft.
+    if (draft && !draft.deleted && !draft.opaque && !draft.sourceSha && type === "image/svg+xml") return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(draft.content)}`;
     const entry = draft?.deleted ? undefined : draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path);
     if (!live() || !entry) return undefined;
     try {

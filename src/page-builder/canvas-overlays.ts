@@ -140,22 +140,56 @@ export function createEmptyCanvas(layer: HTMLElement, handlers: EmptyCanvasHandl
   };
 }
 
-/** The brief highlight around a section just added. */
+/**
+ * The brief highlight around a block just added, with a label naming where
+ * it went ("Into Section › after Heading"); a refused insert's red reason.
+ */
 export function createInsertFlash(layer: HTMLElement) {
   const box = node("div", "pb-flash");
-  box.hidden = true;
-  layer.append(box);
-  let armed: { path: string; node: string; until: number } | undefined;
+  const label = node("div", "pb-flash-label");
+  box.hidden = label.hidden = true;
+  layer.append(box, label);
+  let armed: { path: string; node: string; until: number; where?: string } | undefined;
   let timer = 0;
+  let shown: SelectionRect | undefined;
 
   function place(rect: SelectionRect) {
+    shown = rect;
     Object.assign(box.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    // Under the block, clear of its edit bar (above it); at its top right when the canvas ends first.
+    const below = rect.top + rect.height + 8;
+    if (below + 28 <= layer.clientHeight) Object.assign(label.style, { left: `${Math.max(8, rect.left)}px`, right: "", top: `${below}px` });
+    else Object.assign(label.style, { left: "", right: `${Math.max(8, layer.clientWidth - rect.left - rect.width)}px`, top: `${Math.max(rect.top - 30, 4)}px` });
+  }
+  function hide() {
+    box.hidden = label.hidden = true;
+    box.classList.remove("is-on");
+    label.classList.remove("is-on");
+    shown = undefined;
+  }
+  function show(rect: SelectionRect | undefined, text: string | undefined, refused: boolean) {
+    if (rect) place(rect);
+    else Object.assign(label.style, { left: "50%", right: "", top: "12px" });
+    box.hidden = !rect;
+    label.hidden = !text;
+    label.textContent = text ?? "";
+    box.classList.toggle("is-refused", refused);
+    label.classList.toggle("is-refused", refused);
+    label.classList.toggle("is-centred", !rect);
+    // Restart the fade for a second insert in a row.
+    box.classList.remove("is-on");
+    label.classList.remove("is-on");
+    void box.offsetWidth;
+    box.classList.add("is-on");
+    label.classList.add("is-on");
+    clearTimeout(timer);
+    timer = window.setTimeout(hide, refused ? 2600 : text ? 1800 : 1400);
   }
 
   return {
-    /** The next selection of this element (the one an insert asked for) is highlighted. */
-    arm(path: string, nodePath: number[]) {
-      armed = { path, node: nodePath.join("."), until: Date.now() + 5000 };
+    /** The next selection of this element (the one an insert asked for) is highlighted, with `where` when given. */
+    arm(path: string, nodePath: number[], where?: string) {
+      armed = { path, node: nodePath.join("."), until: Date.now() + 5000, where };
     },
     /** The runtime selected an element: highlighted when it is the armed one. */
     selected(path: string, nodePath: number[] | undefined, rect: SelectionRect | undefined) {
@@ -165,27 +199,24 @@ export function createInsertFlash(layer: HTMLElement) {
         return false;
       }
       if (armed.path !== path || armed.node !== nodePath.join(".")) return false;
+      const where = armed.where;
       armed = undefined;
-      place(rect);
-      box.hidden = false;
-      // Restart the fade for a second insert in a row.
-      box.classList.remove("is-on");
-      void box.offsetWidth;
-      box.classList.add("is-on");
-      clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        box.hidden = true;
-        box.classList.remove("is-on");
-      }, 1400);
+      show(rect, where, false);
       return true;
+    },
+    /** A refused insert: the reason in red at `rect` (the selection), or atop the canvas. */
+    refuse(rect: SelectionRect | undefined, reason: string) {
+      armed = undefined;
+      show(rect, reason, true);
     },
     /** The selection moved (scroll, layout): the highlight follows. */
     move(rect: SelectionRect) {
-      if (!box.hidden) place(rect);
+      if (shown) place(rect);
     },
     clear() {
       armed = undefined;
-      box.hidden = true;
+      clearTimeout(timer);
+      hide();
     },
   };
 }

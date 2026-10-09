@@ -39,12 +39,16 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   const { pane, frame } = deps;
   let points: InsertPoint[] = [];
   let selection: { path: string; node?: number[] } | undefined;
+  let selectedRect: SelectionRect | undefined;
   let addButton: HTMLButtonElement | undefined;
   // History shows an earlier version: nothing is added until it is left.
   let viewing = false;
   let refreshTimer = 0;
   const canvas = createCanvasLayer(pane, frame);
-  const flash = createInsertFlash(canvas.layer);
+  // The flash goes above the card and insert controls, below the edit bar.
+  const flashLayer = createCanvasLayer(pane, frame);
+  flashLayer.layer.classList.add("pb-canvas-layer--flash");
+  const flash = createInsertFlash(flashLayer.layer);
   const canvasWidth = () => frame.clientWidth || 1200;
 
   function preview(tag: string) {
@@ -132,17 +136,28 @@ export function createPageBuilder(deps: PageBuilderDeps) {
      */
     selected(path: string, node: number[] | undefined, rect: SelectionRect | undefined, instance?: { path: string; node: number[] }) {
       selection = instance ?? (path ? { path, node } : undefined);
+      selectedRect = path ? rect : undefined;
       // A section just added is highlighted and shown whole (as much as fits).
       if (flash.selected(path, node, rect) && rect) {
         const height = frame.clientHeight;
-        const below = rect.bottom - (height - 24);
+        // Room under it for the label naming where it went.
+        const below = rect.bottom - (height - 48);
         const dy = below > 0 ? Math.min(below, rect.top - 24) : rect.top < 0 ? rect.top - 24 : 0;
         if (dy) deps.scroll(dy, true);
       }
       panel.retarget();
     },
     selectionRect(rect: SelectionRect) {
+      selectedRect = rect;
       flash.move(rect);
+    },
+    /** A block is being inserted: its selection after the render flashes `where`. */
+    flash(request: { path: string; node: number[] }, where: string) {
+      if (!viewing) flash.arm(request.path, request.node, where);
+    },
+    /** An insert was refused: the reason flashes in red at the selection. */
+    refuse(reason: string) {
+      flash.refuse(selectedRect, reason);
     },
     /** The preview's sources changed: thumbnails follow, a moment later. */
     sourcesChanged() {
@@ -155,7 +170,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     /** The page on show changed or went away. */
     clear() {
       points = [];
-      selection = undefined;
+      selection = selectedRect = undefined;
       empty.clear();
       flash.clear();
       panel.retarget();
@@ -201,6 +216,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       clearTimeout(refreshTimer);
       panel.destroy();
       canvas.destroy();
+      flashLayer.destroy();
     },
   };
 }
