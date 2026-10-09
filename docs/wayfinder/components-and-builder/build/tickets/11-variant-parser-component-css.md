@@ -1,7 +1,7 @@
 ---
 title: "Variant parser: a component's own CSS"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -23,3 +23,9 @@ One pure function in `shared/` (for example `shared/variants.ts`) over CSS sourc
 ## Done when
 
 - `tests/variants.test.ts` covers research 06 edge cases 1–13 as they apply, both nested forms, conditions, exclusions, the two warnings and the labels.
+
+## Done (2026-10-09)
+
+- `shared/variants.ts`: `componentVariants(css, { scriptAttributes })` reads a component's own CSS (at-rules, both nested forms) into choice and yes-no variants with conditions, `defaultValue`, exclusions and the two warnings; `variantLabel` / `valueLabel`. The walker helpers of `shared/slotted-css.ts` are now exported for it.
+- Built by Sol, checked and fixed by Claude (`[data-x=""]` reads as presence).
+- Tests: `tests/variants.test.ts` (21 tests: research 06 edge cases, nesting, conditions, exclusions, warnings, labels, twins).

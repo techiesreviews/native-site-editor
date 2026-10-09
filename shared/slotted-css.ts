@@ -133,9 +133,9 @@ function lastCompoundStart(selector: string) {
 
 const normalized = (selector: string) => selector.replace(/\s+/g, " ").replace(/\s*([>+~(),])\s*/g, "$1").trim();
 
-const withoutComments = (text: string) => text.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ");
+export const withoutComments = (text: string) => text.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, " ");
 
-function skipSpace(css: string, pos: number) {
+export function skipSpace(css: string, pos: number) {
   while (pos < css.length) {
     if (/\s/.test(css[pos])) pos++;
     else if (css.startsWith("/*", pos)) {
@@ -148,7 +148,7 @@ function skipSpace(css: string, pos: number) {
 
 // The index of the `{`, `;` or `}` that ends the statement starting at `pos`
 // (outside comments, strings, parentheses and brackets), or the end.
-function preludeEnd(css: string, pos: number) {
+export function preludeEnd(css: string, pos: number) {
   let depth = 0, quote = "";
   for (let index = pos; index < css.length; index++) {
     const char = css[index];
@@ -169,7 +169,7 @@ function preludeEnd(css: string, pos: number) {
 }
 
 // Just past the `}` matching the `{` at `open`.
-function blockEnd(css: string, open: number) {
+export function blockEnd(css: string, open: number) {
   let depth = 0;
   for (let index = open; index < css.length; index++) {
     const stop = preludeEnd(css, index);
