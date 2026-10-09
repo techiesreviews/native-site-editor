@@ -1,0 +1,29 @@
+:host {
+  display: block;
+}
+
+section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+.media img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #d9e2ec;
+}
+
+@media (width > 720px) {
+  :host([data-layout="content-left"]) .content {
+    grid-row: 1;
+    grid-column: 1;
+  }
+}
+
+:host([data-layout="centered"]) section {
+  grid-template-columns: 1fr;
+  text-align: center;
+}

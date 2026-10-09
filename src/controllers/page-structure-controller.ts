@@ -147,6 +147,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
         },
       });
     }
+    // A component instance's variants (src/page-builder/components.ts).
+    if (ports.componentTools) controls.push(...ports.componentTools.variantControls(selection));
     // The link the selected text sits in, inside the selected text element.
     let textLink: { node: number[]; text: NativeTextSelection } | undefined;
     if (range?.close && ports.nativeTextTags.has(selection.tag)) {

@@ -271,6 +271,58 @@
   margin: 0;
   accent-color: var(--primary);
 }
+/* A variant's select or checkbox with its name before it, and where it
+   applies after it ("wide screens only"): in the bar, and stacked in the
+   Variants popover with the selects lined up. */
+.edit-bar__labelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--size-compact);
+  padding: 0 4px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.edit-bar__caption {
+  color: var(--muted);
+}
+.edit-bar__check .edit-bar__caption {
+  color: inherit;
+}
+.edit-bar__condition {
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+.edit-bar__labelled:has(:focus-visible) {
+  border-radius: var(--radius);
+  outline: var(--focus-ring);
+  outline-offset: 0;
+}
+.edit-bar__labelled .edit-bar__select:focus-visible,
+.edit-bar__check input:focus-visible {
+  outline: none;
+}
+.edit-bar__fields {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 2px;
+}
+/* Each field's caption and select take the two columns; a checkbox spans both. */
+.edit-bar__fields > .edit-bar__labelled {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  padding: 0;
+}
+.edit-bar__fields > .edit-bar__check {
+  display: flex;
+}
+.edit-bar__fields > :not(.edit-bar__check) > .edit-bar__condition {
+  grid-column: 2;
+  margin-top: -4px;
+}
 .edit-bar__options[hidden] {
   display: none;
 }

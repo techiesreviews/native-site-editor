@@ -808,19 +808,17 @@ export function slotTextEdit(source: string, template: string, instance: Instanc
   return edit ?? { error: "That change could not be placed in the source. Change text within one formatting at a time." };
 }
 
-/** Sets (or, with `undefined`, removes) an attribute on the start tag at `tag`. */
-export function attributeEdit(source: string, tag: StartTag, name: string, value: string | undefined): RangeEdit {
+/** Sets (or, with `undefined`, removes) an attribute on the start tag at `tag`; `true` writes it bare (`data-featured`). */
+export function attributeEdit(source: string, tag: StartTag, name: string, value: string | true | undefined): RangeEdit {
   const current = startTagAttribute(source, tag, name);
-  const escaped = value === undefined ? "" : escapeAttribute(value);
-  if (current) {
-    // The whole attribute is written again, double-quoted and escaped, so a
-    // value with a quote or a space never spills into another attribute.
-    return { start: current.start, end: current.end, text: value === undefined ? "" : ` ${name}="${escaped}"` };
-  }
+  // The whole attribute is written again, double-quoted and escaped, so a
+  // value with a quote or a space never spills into another attribute.
+  const text = value === undefined ? "" : value === true ? ` ${name}` : ` ${name}="${escapeAttribute(value)}"`;
+  if (current) return { start: current.start, end: current.end, text };
   if (value === undefined) return { start: tag.end, end: tag.end, text: "" };
   let at = source[tag.end - 2] === "/" ? tag.end - 2 : tag.end - 1;
   while (at > tag.nameEnd && /[\t\n\f\r ]/.test(source[at - 1])) at--;
-  return { start: at, end: at, text: ` ${name}="${escaped}"` };
+  return { start: at, end: at, text };
 }
 
 /** Why `name` cannot be an attribute name, or nothing. */

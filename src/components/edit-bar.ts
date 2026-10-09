@@ -37,12 +37,16 @@ export type EditBarControl =
       className?: string;
       onPress: () => void;
     }
+  | SelectControl
+  | CheckboxControl
   | {
-      kind: "select";
+      // A button opening several selects and checkboxes together in a
+      // popover (Variants past two), each shown with its label. The popover
+      // stays open as its fields change.
+      kind: "fields";
       label: string;
-      options: { label: string; value: string }[];
-      value: string;
-      onChange: (value: string) => void;
+      title?: string;
+      fields: (SelectControl | CheckboxControl)[];
     }
   | {
       // A button that opens a menu of actions (More, Replace).
@@ -99,12 +103,33 @@ export type EditBarControl =
       onSend: (text: string) => Promise<string | undefined>;
     };
 
+export interface SelectControl {
+  kind: "select";
+  label: string;
+  options: { label: string; value: string }[];
+  value: string;
+  // The label shows before the select (a variant's name), not only in its tooltip.
+  caption?: boolean;
+  // Where it applies, after it ("wide screens only").
+  note?: string;
+  onChange: (value: string) => void;
+}
+export interface CheckboxControl {
+  kind: "checkbox";
+  label: string;
+  checked: boolean;
+  // Where it applies, after the label ("wide screens only").
+  note?: string;
+  onChange: (checked: boolean) => void;
+}
+
 export type AddressExtra =
   | { kind: "checkbox"; label: string; checked: boolean; onChange: (checked: boolean) => void }
   | { kind: "text"; label: string; value: string; placeholder?: string; onInput: (value: string) => void };
 
 type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
+type FieldsControl = Extract<EditBarControl, { kind: "fields" }>;
 
 export type IconName = "link" | "unlink" | "up" | "down" | "left" | "right" | "add" | "duplicate" | "remove" | "grip" | "ask";
 
@@ -221,6 +246,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const fieldMeaning = (control: AddressControl) => control.identity ?? control.label;
   const targetIdentity = (model: EditBarModel) => JSON.stringify([model.kind, model.origin?.path, model.origin?.revision, model.origin?.node]);
   let openAddress: { target: string; meaning: string; onClose?: () => void; label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
+  // The open fields popover (Variants), kept across re-renders while its control persists.
+  let openFields: { target: string; label: string } | undefined;
   // Ask agent's note, kept across re-renders with what is typed in it, and
   // a sent one shrinking away, which the bar keeps clear of until it is gone.
   let note: Note | undefined;
@@ -229,7 +256,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   const controlLabel = (item: HTMLElement) => item.getAttribute("aria-label") ?? item.textContent ?? "";
 
   function focusable() {
-    return [...bar.querySelectorAll<HTMLElement>(":scope > .edit-bar__label > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > select")];
+    return [...bar.querySelectorAll<HTMLElement>(":scope > .edit-bar__label > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > button:not([disabled]), :scope > .edit-bar__controls > .edit-bar__group > select, :scope > .edit-bar__controls > .edit-bar__group > label > :is(select, input)")];
   }
 
   function closePopover(restoreFocus: boolean) {
@@ -237,6 +264,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const trigger = popoverButton;
     const address = openAddress;
     openAddress = undefined;
+    openFields = undefined;
     popover.hidden = true;
     popover.replaceChildren();
     popoverButton = undefined;
@@ -820,6 +848,58 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     position();
   }
 
+  // A select (with its label before it when `caption`) and a checkbox with
+  // its label, in the bar or in a fields popover; a note says where it applies.
+  function selectField(control: SelectControl, caption = control.caption) {
+    const select = document.createElement("select");
+    select.className = "edit-bar__select";
+    const name = control.note ? `${control.label} (${control.note})` : control.label;
+    select.setAttribute("aria-label", name);
+    select.title = name;
+    for (const option of control.options) select.append(new Option(option.label, option.value));
+    select.value = control.value;
+    select.addEventListener("change", () => {
+      if (select.value !== control.value) control.onChange(select.value);
+    });
+    if (!caption) return select;
+    const field = node("label", "edit-bar__labelled");
+    field.append(node("span", "edit-bar__caption", control.label), select);
+    if (control.note) field.append(node("span", "edit-bar__condition", control.note));
+    return field;
+  }
+  function checkboxField(control: CheckboxControl) {
+    const field = node("label", "edit-bar__check edit-bar__labelled");
+    const check = document.createElement("input");
+    check.type = "checkbox";
+    check.checked = control.checked;
+    check.setAttribute("aria-label", control.note ? `${control.label} (${control.note})` : control.label);
+    check.addEventListener("change", () => control.onChange(check.checked));
+    field.append(check, node("span", "edit-bar__caption", control.label));
+    if (control.note) field.append(node("span", "edit-bar__condition", control.note));
+    return field;
+  }
+  const fieldsContent = (control: FieldsControl) => {
+    const list = node("div", "edit-bar__fields");
+    list.append(...control.fields.map((field) => field.kind === "select" ? selectField(field, true) : checkboxField(field)));
+    return list;
+  };
+  const fieldInputs = () => [...popover.querySelectorAll<HTMLElement>(".edit-bar__fields :is(select, input)")];
+  function openFieldsPopover(item: HTMLButtonElement, control: FieldsControl) {
+    openPopover(item, [fieldsContent(control)], "dialog");
+    openFields = { target: addressTarget, label: control.label };
+    fieldInputs()[0]?.focus();
+  }
+  // The fields again after a change re-rendered the bar: the popover stays
+  // open, the focus on the same field.
+  function refillFields(item: HTMLButtonElement, control: FieldsControl) {
+    popoverButton = item;
+    item.setAttribute("aria-expanded", "true");
+    const active = document.activeElement as HTMLElement | null;
+    const focused = active && popover.contains(active) ? active.getAttribute("aria-label") : null;
+    popover.replaceChildren(fieldsContent(control));
+    if (focused !== null) (fieldInputs().find((input) => input.getAttribute("aria-label") === focused) ?? fieldInputs()[0])?.focus();
+  }
+
   function addressButton(control: AddressControl) {
     const item = button(control.icon ? "" : control.warning ?? control.label, () => {
       if (popoverButton === item) { closePopover(true); return; }
@@ -848,8 +928,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // Ask agent's note stays open the same way, with its text.
     const keptPrompt = note && model.controls.find((control): control is PromptControl =>
       control.kind === "prompt" && control.label === note?.label);
+    const keptFields = openFields && openFields.target === addressTarget
+      ? model.controls.find((control): control is FieldsControl => control.kind === "fields" && control.label === openFields?.label) : undefined;
     if (kept && openAddress) openAddress.control = kept;
-    else closePopover(false);
+    else if (!keptFields) closePopover(false);
     if (keptPrompt && note) note.control = keptPrompt;
     else closeNote(false);
     onFormat = model.onFormat;
@@ -903,7 +985,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     let group = "name";
     let target: HTMLElement = panel;
     const groupOf = (control: EditBarControl) =>
-      control.kind === "select" ? "style"
+      control.kind === "select" || control.kind === "checkbox" || control.kind === "fields" ? "style"
       : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
       : "content";
     for (const control of model.controls) {
@@ -969,23 +1051,26 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         item.setAttribute("aria-expanded", String(keptPrompt === control));
         if (keptPrompt === control && note) note.trigger = item;
         target.append(item);
+      } else if (control.kind === "fields") {
+        const item = button(control.label, () => {
+          if (popoverButton === item) { closePopover(true); return; }
+          openFieldsPopover(item, control);
+        }, "edit-bar__button edit-bar__address");
+        item.setAttribute("aria-haspopup", "dialog");
+        item.setAttribute("aria-expanded", "false");
+        if (control.title) item.title = control.title;
+        if (control === keptFields) refillFields(item, control);
+        target.append(item);
+      } else if (control.kind === "checkbox") {
+        target.append(checkboxField(control));
       } else {
-        const select = document.createElement("select");
-        select.className = "edit-bar__select";
-        select.setAttribute("aria-label", control.label);
-        select.title = control.label;
-        for (const option of control.options) select.append(new Option(option.label, option.value));
-        select.value = control.value;
-        select.addEventListener("change", () => {
-          if (select.value !== control.value) control.onChange(select.value);
-        });
-        target.append(select);
+        target.append(selectField(control));
       }
     }
     // A selection with no controls shows its label alone.
     if (!panel.childElementCount) panel.remove();
     bar.dataset.model = "1";
-    if (kept && popoverButton) placePopover(popoverButton);
+    if ((kept || keptFields) && popoverButton) placePopover(popoverButton);
     return opening;
   }
 

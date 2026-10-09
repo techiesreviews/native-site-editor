@@ -619,6 +619,7 @@ function mountComponentTools() {
       const route = nativePreview?.route();
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
+    refreshBar: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
   });
 }
 

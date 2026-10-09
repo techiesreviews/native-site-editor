@@ -9,6 +9,9 @@
 // - Edit component: the template opens in the code pane at the matching
 //   part; the canvas bar says which component is edited, where it is used
 //   (Used on, a list of the pages) and holds the way back (Done).
+// - Variants: a dropdown per variant and a checkbox per yes/no variant in
+//   the edit bar, read from the CSS that can style the instance
+//   (shared/variants.ts); past two, behind one Variants button.
 // - Make component and Detach: an element becomes a component, an instance
 //   becomes plain markup again, each shown before it is done.
 //
@@ -22,9 +25,12 @@ import { mountComponentPanelResize } from "./component-panel-resize";
 import { mountDropdown } from "../components/dropdown";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
-import { nativePageBody, type NativeSite } from "../../shared/native-project";
+import { nativeComponentCssPath, nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
+import { expandStyleImports } from "../../shared/css-imports";
 import type { NativePreviewSelection } from "../components/native-preview";
-import type { EditBarControl, EditBarModel } from "../components/edit-bar";
+import type { CheckboxControl, EditBarControl, EditBarModel, SelectControl } from "../components/edit-bar";
+import type { VariantField } from "./variant-fields";
+import { handleChunkLoadFailure } from "../chunk-recovery";
 import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange } from "../native-source-location";
 import { componentLabel } from "../native-insert";
 import {
@@ -120,6 +126,8 @@ export interface ComponentDeps {
   codeTitle: HTMLElement;
   /** The page file the preview shows (for Done, back from a template). */
   previewPage: () => string | undefined;
+  /** Shows the edit bar again for the current selection (once the variant reader has loaded). */
+  refreshBar: () => void;
 }
 
 /** An instance found for a selection: where it is written and what it holds. */
@@ -435,6 +443,58 @@ export function createComponentTools(deps: ComponentDeps) {
       out.push({ kind: "button", label: "Make component…", title: "Turn this element into a component the site can reuse", className: "edit-bar__component-action", onPress: () => void openMakeComponent(selection) });
     }
     return out;
+  }
+
+  // ---- Variants (ticket 07 §5). ----
+
+  /**
+   * The selected instance's variants as edit bar controls, read from its
+   * component's CSS and the stylesheets of the page it shows on: up to two
+   * in the bar, more behind one Variants button. Each pick is one undo step.
+   */
+  let variantReader: typeof import("./variant-fields") | undefined;
+  let variantLoad: Promise<void> | undefined;
+  function variantControls(selection: NativePreviewSelection): EditBarControl[] {
+    const current = site();
+    if (!current || !isComponent(selection.tag) || !selection.node?.length) return [];
+    const reader = variantReader;
+    if (!reader) {
+      // The bar shows again with them once the reader is here.
+      variantLoad ??= import("./variant-fields").then((module) => { variantReader = module; deps.refreshBar(); })
+        .catch((error) => { variantLoad = undefined; void handleChunkLoadFailure(error); });
+      return [];
+    }
+    const at = instanceAt(selection.path, selection.node);
+    if (!at || !openingSourceSafe(at.source, at.range.tag)) return [];
+    const sources = deps.sources();
+    // An instance inside a template takes the site styles of the page the preview shows.
+    const page = Object.values(current.routes).includes(at.path) ? at.path : deps.previewPage();
+    const linked = page ? nativePageStylesheets(sources[page] ?? "", page).filter((path) => sources[path] !== undefined) : [];
+    const sheets = expandStyleImports(linked, (path) => sources[path]).sheets;
+    const revision = deps.revision();
+    const pick = (field: VariantField, choice: string) => {
+      const now = instanceAt(at.path, at.node);
+      if (!now || now.source !== at.source || now.tag !== at.tag || deps.revision() !== revision) {
+        deps.announce("The instance changed. Select it again to pick a variant.");
+        return;
+      }
+      if (now.instance.attributes.filter((item) => item.name === field.attribute).length > 1) {
+        deps.announce(`${field.attribute} is written twice; edit it in the code.`);
+        return;
+      }
+      const value = reader.variantAttribute(field, choice);
+      const option = field.options.find((item) => item.value === choice)?.label ?? "";
+      const message = field.kind === "yes-no" ? `${field.label} ${value ? "on" : "off"}`
+        : value === undefined ? `${field.label}: default` : `${field.label}: ${option}`;
+      change(at.path, [attributeEdit(at.source, at.range.tag, field.attribute, value)], message, at.node);
+    };
+    const fields = reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(at.templatePath)] ?? "", sheets, at.instance.attributes).map((field): SelectControl | CheckboxControl => {
+      const note = field.note ? { note: field.note } : {};
+      return field.kind === "yes-no"
+        ? { kind: "checkbox", label: field.label, checked: field.value === "on", ...note, onChange: (on) => pick(field, on ? "on" : "") }
+        : { kind: "select", label: field.label, caption: true, options: field.options, value: field.value, ...note, onChange: (choice) => pick(field, choice) };
+    });
+    return fields.length > 2 ? [{ kind: "fields", label: "Variants", title: `${componentLabel(at.tag)} variants`, fields }] : fields;
   }
 
   // ---- Edit component. ----
@@ -1466,6 +1526,7 @@ export function createComponentTools(deps: ComponentDeps) {
     },
     structure,
     controls,
+    variantControls,
     /** The selection changed or the page re-rendered: the panel follows. */
     show,
     /** The open file or the sources changed: the canvas bar follows. */

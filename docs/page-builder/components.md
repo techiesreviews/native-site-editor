@@ -56,6 +56,29 @@ asynchronously; this is not a guarantee about its first paint.
 
 Fields capture the exact instance source, template, scope, mounted model/session and version on first focus. Their own typing advances that proof and forms one edit group; external source or context changes refuse further writes. Closing a stale field cannot close another model's edit group. New-attribute drafts keep their first-open proof through rerenders. The host's Structure wiring and real editor Undo/Redo integration checks remain pending for this leaf.
 
+## Variants in the edit bar
+
+A selected instance shows its variants in the edit bar (ticket 07 §5): a
+dropdown per variant, with its name before it, and a checkbox per yes/no
+variant. Past two, they sit behind one Variants button whose popover stays
+open while its fields change. The variants are read by `shared/variants.ts`
+from the component's own CSS and the stylesheets the page links (imports
+expanded): tag-named rules, site `:host()` rules and global attributes. The
+reader is loaded the first time an instance is selected
+(`src/page-builder/variant-fields.ts`), and the bar shows again with it.
+
+- The first option is the default look and removes the attribute (named after
+  a default value alias, "Image left (default)", when the CSS has one).
+- A value no rule knows shows as "Custom" and stays until another is picked.
+- A variant or value styled only inside a media or container query says where
+  it shows: "wide screens only", "narrow screens only", "dark mode only".
+- A yes/no variant is written bare (`data-featured`); off removes it.
+- Each pick is one edit of the page through the open editor, one undo step.
+  The Structure panel keeps its raw attribute list.
+
+Attributes the site's own scripts set are not left out yet: the editor does
+not read the site's script files.
+
 ## Edit component
 
 The complete component-root name button in the edit bar (or *Edit* on its Structure root row) opens its template and selects the template root in the code pane. While any component's template is open, the canvas bar over the preview wears the
@@ -166,6 +189,10 @@ The seam browser test runs the production component controller with mocked compo
   keep formatting, filling and emptying slots in template order, attribute
   edits, usage counting through nested components, detach, make component and
   tag names.
+- `tests/variant-fields.test.ts` (unit) and
+  `tests/native-save/native-variants.spec.ts` (browser, fixture
+  `native-variants`): variant fields, Custom, conditions, bare yes/no
+  attributes, the Variants button and one undo step per pick.
 - `tests/native-save/native-components.spec.ts` (browser): the accent in the
   bar, structure and canvas and the chip back to the instance; the instance fields’
   text, link, optional, reset and attribute edits as source with undo; Edit
@@ -177,8 +204,6 @@ The seam browser test runs the production component controller with mocked compo
 
 - Editing a template's slot *definitions* (adding a slot, renaming one) is done
   in the code pane; Structure edits instances.
-- Variants (`:host([variant])` rules) are not offered as choices yet;
-  attributes are edited as plain text.
 - Make component does not offer to move CSS, and does not create a loader for
   a site without one.
 

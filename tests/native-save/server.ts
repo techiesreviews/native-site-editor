@@ -27,6 +27,8 @@ import { staticAssetHeaders } from "./production-headers";
 // with components, layered shared styles and a folder with no page, and
 // `fixtures/native-cards` is `native-cards` (id 540), a home page whose
 // card grid links to subpages under /work/ (the page builder's cards).
+// `fixtures/native-variants` is `native-variants` (id 541), components whose
+// own CSS and the site's style them by `data-*` attributes (variants).
 //
 // Onboarding controls (per browser session, like the other /__demo/ controls;
 // send them after the first page load has minted the session cookie, with
@@ -314,6 +316,10 @@ if (!demoMode)
     // The page builder's card grids: a home page whose cards link to subpages under /work/.
     root: resolve(projectRoot, "fixtures/native-cards"),
     repo: { ...DEMO_REPO, id: 540, name: "native-cards", full_name: `${DEMO_LOGIN}/native-cards` },
+  }, {
+    // Variants in the edit bar: component, tag-named site and global variant rules.
+    root: resolve(projectRoot, "fixtures/native-variants"),
+    repo: { ...DEMO_REPO, id: 541, name: "native-variants", full_name: `${DEMO_LOGIN}/native-variants` },
   });
 const initialFixtureGits = new Map<string, Git>();
 
