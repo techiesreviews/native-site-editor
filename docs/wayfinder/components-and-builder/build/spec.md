@@ -328,3 +328,5 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   `get_site`'s variants work over MCP.
 - Nothing has gone to `main`, production or the starter's `main` without
   Lex's word.
+
+**Amended (Lex, 2026-10-09):** decision 10 narrowed: Make component only on container elements (section, div, article, aside, figure, nav, a non-page header/footer), not on text, images, links, buttons or lists (slice 80).

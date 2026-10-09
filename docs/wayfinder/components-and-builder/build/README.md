@@ -24,6 +24,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | --- | --- | --- |
 | [01 Remove the masters code and Save shared](tickets/01-remove-masters-and-save-shared.md) | sol | – |
 | [02 Put Make component back on the edit bar](tickets/02-make-component-on-edit-bar.md) | sol | 01 |
+| [80 Make component only on container elements](tickets/80-make-component-containers-only.md) | sol | 02, 19 |
 | [03 Reword the conventions for the header, footer and skip link](tickets/03-conventions-header-footer-wording.md) | sol | – |
 | [04 Cut the element catalogue to the six blocks](tickets/04-six-block-catalogue.md) | sol | – |
 | [05 Starter: move the skip link into each page](tickets/05-starter-skip-link.md) | sol | – |
