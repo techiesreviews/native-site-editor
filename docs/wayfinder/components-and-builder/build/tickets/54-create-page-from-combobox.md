@@ -18,3 +18,5 @@ Ticket [09](../../tickets/09-prototype-add-existing-page.md) §3: typing an addr
 
 - Unit test: title → address under the folder; a taken address.
 - Nightly spec: create a page from the combobox; the page exists, the card links to it; one undo removes both.
+
+**Added (2026-10-10, from slice 52):** ticket 09 applies card-first to every grid: on plain HTML and collection grids (e.g. the starter's own `div.cards` Recent work), Add card no longer opens the old "New card with its own page" popover; it places the card (a copy of the last item with its text reset, as today) and opens slice 52's "Link to a page…" combobox, with this slice's Create page option. Remove the old popover and update its specs (not loosened).
