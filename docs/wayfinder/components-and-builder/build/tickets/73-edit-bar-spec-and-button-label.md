@@ -1,7 +1,7 @@
 ---
 title: "Edit bar: update the controls spec for Make component; call a.btn a Button"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -17,3 +17,9 @@ From slices 02 and 31 (see their Done notes):
 ## Done when
 
 - That spec passes; a unit or spec check that `a.btn` is labelled Button in the edit bar and Structure.
+
+## Done (2026-10-09)
+
+- `native-edit-bar.spec.ts` expects Make component… as the heading bar's last control (exact list, Tab/arrow/End walks kept).
+- An `<a>` with the `btn` class token is named Button in the edit bar, Page Structure and the empty-name placeholder (`nativeKindLabel(tag, className)`, reusing slice 31's `isButtonBlock`); the runtime's structure report now carries the class. Plain links stay Link.
+- Commits: COMMITS. Tests: `tests/native-structure.test.ts` (1 unit test), `native-block-bars.spec.ts` (Button/Link label checks, empty Button placeholder).

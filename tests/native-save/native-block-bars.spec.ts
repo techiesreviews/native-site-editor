@@ -43,6 +43,10 @@ test("Div Layout swaps classes and back, preserves selection, one undo per pick"
 
 test("Button offers site Variant and Size, retains Address, Default removes attributes, one undo each", async ({ page }) => {
   await frame(page).getByRole("link", { name: "Button", exact: true }).click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Button");
+  const row = page.getByRole("treeitem", { name: "Button Button", exact: true });
+  await expect(row).toHaveAttribute("aria-selected", "true");
+  await expect(row.locator(".page-structure__kind")).toHaveAttribute("title", "Button");
   const variant = bar(page).getByRole("combobox", { name: "Variant", exact: true });
   const size = bar(page).getByRole("combobox", { name: "Size", exact: true });
   await expect(variant.locator("option")).toHaveText(["Default", "Secondary", "Ghost"]);
@@ -102,6 +106,8 @@ test("Heading, Paragraph, Section and ordinary links have no variant controls", 
     await expect(bar(page).getByRole("combobox", { name: "Color scheme", exact: true })).toHaveCount(0);
     await expect(bar(page).getByRole("button", { name: "Variants", exact: true })).toHaveCount(0);
   }
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
+  await expect(page.getByRole("treeitem", { name: "Link Plain link", exact: true })).toHaveAttribute("aria-selected", "true");
   await frame(page).getByRole("heading", { name: "Block edit bars" }).click();
   await frame(page).getByRole("heading", { name: "Block edit bars" }).press("Escape");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
@@ -128,4 +134,19 @@ test("Button without matching stylesheet rules shows no variant fields", async (
   await expect(bar(page).getByRole("combobox", { name: "Variant", exact: true })).toHaveCount(0);
   await expect(bar(page).getByRole("combobox", { name: "Size", exact: true })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Variants", exact: true })).toHaveCount(0);
+});
+
+test("an empty Button asks what this button does", async ({ page }) => {
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/source-editor.ts");
+    const html = editor.getMountedSource("blocks.html")!;
+    const text = ">Button</a>";
+    const start = html.indexOf(text);
+    editor.replaceActiveRanges([{ path: "blocks.html", start, end: start + text.length, text: "></a>", expected: text }]);
+  });
+  await expect(frame(page).locator("a.btn")).toHaveText("");
+  await frame(page).locator("a.btn").click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Button");
+  await bar(page).getByRole("button", { name: "Needs a name", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveAttribute("placeholder", "What this button does");
 });

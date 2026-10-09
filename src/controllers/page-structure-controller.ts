@@ -96,7 +96,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     const source = ports.nativeEditableSource(path) ?? "";
     const range = node ? ports.locateNativeElementRange(source, node) : undefined;
-    const kind = nativeElementLabel(selection.tag, Boolean(ports.nativeSite && Object.hasOwn(ports.nativeSite.components, selection.tag)));
+    const className = range ? ports.startTagAttribute(source, range.tag, "class")?.value : undefined;
+    const kind = nativeElementLabel(selection.tag, Boolean(ports.nativeSite && Object.hasOwn(ports.nativeSite.components, selection.tag)), className);
     // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
     if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
       editor.closeActiveEditGroup(nativeNewLink.path);
@@ -461,7 +462,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         label: "Name",
         warning: "Needs a name",
         value: "",
-        placeholder: `What this ${nativeKindLabel(selection.tag).toLowerCase()} does`,
+        placeholder: `What this ${nativeKindLabel(selection.tag, className).toLowerCase()} does`,
         onInput: (value) => { if (node) live(node, selection.tag, (latest, tag) => [setAttributeEdit(latest, tag, "aria-label", value || undefined)], value ? "Name added" : "Name removed"); },
         onClose: () => editor.closeActiveEditGroup(path),
       });

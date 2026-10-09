@@ -1164,6 +1164,7 @@
       var heading = ownHeading(child);
       out.push({
         tag: child.localName,
+        className: (child.getAttribute("class") || "").slice(0, 500),
         node: path,
         text: textWithBreaks(child).replace(/\s+/g, " ").trim().slice(0, 80),
         heading: heading ? slotAwareText(heading).replace(/\s+/g, " ").trim().slice(0, 80) : "",

@@ -224,3 +224,16 @@ test("attribute edits safely replace single-quoted and unquoted values", () => {
   const unquoted = `<img alt=old>`;
   assert.equal(apply(unquoted, [setAttributeEdit(unquoted, rangeAt(unquoted, 0).tag, "alt", `hello world" onerror="alert(1)`)]), `<img alt="hello world&quot; onerror=&quot;alert(1)">`);
 });
+
+test("button class tokens name anchors Button in the edit bar and structure", () => {
+  for (const [className, kind] of [
+    ["btn", "Button"], ["btn primary", "Button"], ["primary\tbtn\n\f\r", "Button"],
+    ["btn-x", "Link"], [undefined, "Link"], ["primary\u00a0btn", "Link"], ["BTN", "Link"],
+  ] as const) {
+    assert.equal(nativeKindLabel("a", className), kind);
+    assert.equal(nativeElementLabel("a", false, className), kind);
+    assert.deepEqual(structureLabel({ tag: "a", className, text: "Go", heading: "", children: { length: 0 } }, false), { kind, text: "Go" });
+  }
+  assert.equal(nativeKindLabel("p", "btn"), "Paragraph");
+  assert.equal(nativeElementLabel("card-note", true, "btn"), "Card note");
+});

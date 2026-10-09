@@ -5,10 +5,12 @@
 
 import { startTagAttribute, startTags, textRangeInSource, type ElementRange, type StartTag } from "./native-source-location";
 import { componentLabel } from "./native-insert";
+import { isButtonBlock } from "./page-builder/block-fields";
 
 // What the edit bar and the page structure call an element: a kind in the
 // user's words, or the tag itself for anything else.
-export function nativeKindLabel(tag: string) {
+export function nativeKindLabel(tag: string, className = "") {
+  if (isButtonBlock(tag, [{ name: "class", value: className }])) return "Button";
   if (/^h[1-6]$/.test(tag)) return "Heading";
   const labels: Record<string, string> = {
     p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video",
@@ -20,13 +22,14 @@ export function nativeKindLabel(tag: string) {
 }
 
 /** What the edit bar and the page structure call an element: a component's name ("Section split") for an instance, else its kind. */
-export function nativeElementLabel(tag: string, component: boolean) {
-  return component ? componentLabel(tag) : nativeKindLabel(tag);
+export function nativeElementLabel(tag: string, component: boolean, className = "") {
+  return component ? componentLabel(tag) : nativeKindLabel(tag, className);
 }
 
 /** One rendered page element as the runtime reports it for the page structure. */
 export interface StructureItemInfo {
   tag: string;
+  className?: string;
   text: string;
   heading: string;
   children: { length: number };
@@ -40,7 +43,7 @@ export interface StructureItemInfo {
  * its own text, and so is a component instance holding only text.
  */
 export function structureLabel(item: StructureItemInfo, component: boolean) {
-  const kind = nativeElementLabel(item.tag, component);
+  const kind = nativeElementLabel(item.tag, component, item.className);
   const container = component || item.children.length > 0;
   // An instance holding only text (<card-note>Cafe · 2025</card-note>) with no heading is named by that text.
   const text = container ? item.heading || (component && !item.children.length ? item.text : "") : item.text;

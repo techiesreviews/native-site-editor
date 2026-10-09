@@ -173,6 +173,7 @@ export interface NativeWarning {
 /** One page element in the structure the runtime reports after a render. */
 export interface NativeStructureItem {
   tag: string;
+  className?: string;
   node: number[];
   text: string;
   heading: string;
@@ -881,7 +882,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           if (typeof item.tag !== "string" || !Array.isArray(item.node) || item.node.length > 500 ||
             !item.node.every((index) => Number.isInteger(index) && index >= 0)) return [];
           const text = (key: string) => (typeof item[key] === "string" ? (item[key] as string).slice(0, 80) : "");
-          return [{ tag: item.tag.slice(0, 100), node: item.node as number[], text: text("text"), heading: text("heading"), slot: text("slot"), children: readItems(item.children, depth + 1) }];
+          return [{ tag: item.tag.slice(0, 100), node: item.node as number[], className: typeof item.className === "string" ? item.className.slice(0, 500) : "", text: text("text"), heading: text("heading"), slot: text("slot"), children: readItems(item.children, depth + 1) }];
         });
       };
       handlers.onStructure?.({ path, items: readItems(raw.items, 0), paintedSource });
