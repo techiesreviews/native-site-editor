@@ -1,7 +1,7 @@
 ---
 title: Drag blocks from the rail onto the canvas
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [28-block-rail, 33-drop-target-model, 34-section-snap]
 builder: claude ★
@@ -23,3 +23,9 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §5.
 
 - `@smoke` spec (for example `tests/native-save/native-block-drag.spec.ts`): drag a Paragraph from the rail between two items of a nested Div; it lands there, one undo step.
 - Nightly: sideways line in a grid, empty Div area, Alt steps up, Esc cancels, a named slot refuses.
+
+## Done (2026-10-09)
+
+- Rail blocks drag onto the canvas through `makeInsertDraggable` (now any target, 7 px, contexts may load lazily): `block-drag.ts` probes the containers under the pointer one probe at a time, takes slice 33's target (Alt/Tab up, Shift+Tab back, reset over a new innermost container) or slice 34's band snap for a Section, and draws a line (sideways in rows and grids), an empty container's "Drop into the empty Div (stack)" area or a refusal's red outline (`drop-indicator.ts`), named in the pointer's label. Drops go through slice 30's insert (`drop` in the block-insert controller, refused when the page changed since it was measured). Items slots refuse until slice 40. Empty Sections/Divs keep 72 px dashed in the preview. "Drop section here" is now "Drop here".
+- Commits `b92d6f3`, `24ffcc7`, `9257037`. Boot +1.4 KB gzip; lazy chunk 2.5 KB + 0.4 KB CSS.
+- Tests: `tests/drop-indicator.test.ts`; `tests/block-insert-controller.test.ts` (drop); `tests/native-save/native-block-drag.spec.ts` (@smoke: Paragraph between two cards of the nested grid, one undo; nightly: Alt and Tab up, Esc cancels, title slot refuses, empty Div area, Section snaps).

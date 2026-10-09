@@ -52,9 +52,15 @@ plus buttons between sections used to open.
   `script-src 'self'` holds.
 - `src/page-builder/insert-target.ts` (pure): where a click goes (`defaultInsertPoint`) and
   which gap a drag is over (`pointAt`), both picked among the runtime's insert points.
-- `src/page-builder/insert-drag.ts`: the drag. The editor holds the pointer (captured on the
-  item) and asks the runtime to scroll (`scroll-by`); the drop band is the plus layer's drag
-  display (`showDrop` in `src/components/insert-controls.ts`).
+- `src/page-builder/insert-drag.ts`: the drag, shared with the block rail's. It starts after
+  7 px; the editor holds the pointer (captured on the item) and asks the runtime to scroll
+  (`scroll-by`); the context says what is under the pointer. For a section from this panel
+  the drop band is the plus layer's drag display (`showDrop` in
+  `src/components/insert-controls.ts`, "Drop here"). A rail block's context
+  (`src/page-builder/block-drag.ts`, lazy) probes the containers under the pointer and draws a
+  line between their items, sideways in rows and grids, an empty container's tinted area or a
+  refusing container's red outline (`drop-indicator.ts`), with the target named in the label
+  by the pointer; Alt or Tab steps up a level, Shift+Tab back; a Section snaps between bands.
 - `src/page-builder/canvas-overlays.ts`: the empty state and the highlight, in a layer over the
   frame (editor chrome, never part of the page).
 - `src/page-builder/page-builder.ts`: wires these to the preview; `native-preview.ts` passes on
