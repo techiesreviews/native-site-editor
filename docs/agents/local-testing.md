@@ -27,6 +27,8 @@ servers share these ports, and a pattern kill takes theirs down too.
 
 ## Which tests
 
+- Nightly (`browser-tests.yml`): default fixture in 4 shards plus the `@actual`
+  and `@native-static` groups. Per-push (`deploy-preview.yml`): only `@smoke`.
 - Default group: `port.sh npx playwright test --project=native-save --workers=1 <files>`.
 - Tagged groups need their own fixture and command:
   `port.sh bash -c 'npm run test:browser:native-static -- --port $ASE_TEST_PORT --workers=1'`,

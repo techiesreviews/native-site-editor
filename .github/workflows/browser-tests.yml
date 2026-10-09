@@ -1,7 +1,8 @@
 # The full browser suite (every project in playwright.config.ts, default
-# fixture), nightly and on "Run workflow", in 4 shards. Each shard uploads a
-# blob report; the last job merges them into one HTML report, uploaded as the
-# artifact "playwright-report". Every push runs only the @smoke slice
+# fixture) in 4 shards plus the @actual and @native-static fixture groups,
+# nightly and on "Run workflow". Each run uploads a blob report; the last job
+# merges them into one HTML report, uploaded as the artifact
+# "playwright-report". Every push runs only the @smoke slice
 # (deploy-preview.yml).
 name: Browser tests (full suite)
 
@@ -52,9 +53,45 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
+  tagged:
+    if: github.repository == 'techiesreviews/native-site-editor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [actual, native-static]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium-headless-shell
+      - name: Browser tests, @${{ matrix.group }}
+        run: npm run test:browser:${{ matrix.group }} -- --reporter=list,blob
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.group }}.zip
+      - name: Upload the group's blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: blob-report-${{ matrix.group }}
+          path: blob-report/
+          retention-days: 3
+      - name: Upload the group's failure traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.group }}
+          path: .scratch/*/results/
+          include-hidden-files: true
+          retention-days: 14
+
   report:
     if: ${{ !cancelled() && github.repository == 'techiesreviews/native-site-editor' }}
-    needs: test
+    needs: [test, tagged]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -68,7 +105,7 @@ jobs:
           path: all-blob-reports
           pattern: blob-report-*
           merge-multiple: true
-      - name: Merge the shards into one HTML report
+      - name: Merge the shards and tagged groups into one HTML report
         run: npx playwright merge-reports --reporter=html ./all-blob-reports
       - uses: actions/upload-artifact@v7
         with:
