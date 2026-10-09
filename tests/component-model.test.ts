@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { startTags } from "../shared/html-source.ts";
 import {
@@ -264,12 +265,12 @@ test("detach writes what the instance shows: slots filled, hidden parts left out
   assert.deepEqual(detachMarkup(loose, `<h2>a</h2><p>b</p>`, readInstance(loose, rangeOf(loose, "x-two"))), { markup: `<h2>a</h2><p>b</p>`, dropped: ["id"] });
 });
 
-test("make component: a section becomes a template with slots and an instance holding its content", () => {
+test("make component: a section becomes a template of whole-element slots and an instance holding its content", () => {
   const source = `<main>
   <section class="hero" id="top" data-key="hero">
     <h1 data-key="hero-title">A native <em>browser</em> preview</h1>
     <p class="lead">Edit plain HTML.</p>
-    <img class="hero-image" src="/images/placeholder.svg">
+    <img class="hero-image" src="/images/placeholder.svg" alt="A placeholder">
     <div class="actions"><a class="button" href="/about/">About</a></div>
   </section>
 </main>`;
@@ -277,32 +278,210 @@ test("make component: a section becomes a template with slots and an instance ho
   const plan = makeComponentPlan(source, range, "section-hero");
   assert.ok(!("error" in plan));
   assert.equal(plan.template, `<section class="hero" data-key="hero">
-  <h1 data-key="hero-title"><slot name="title">A native <em>browser</em> preview</slot></h1>
-  <p class="lead"><slot name="lead">Edit plain HTML.</slot></p>
-  <slot name="hero-image"><img class="hero-image" src="/images/placeholder.svg"></slot>
-  <div class="actions"><slot name="button"><a class="button" href="/about/">About</a></slot></div>
+  <slot name="title"><h1 data-key="hero-title">A native <em>browser</em> preview</h1></slot>
+  <slot name="text"><p class="lead">Edit plain HTML.</p></slot>
+  <slot name="image"><img class="hero-image" src="/images/placeholder.svg" alt="A placeholder"></slot>
+  <div class="actions"><slot name="link"><a class="button" href="/about/">About</a></slot></div>
 </section>
 `);
   assert.equal(plan.instance, `<section-hero id="top">
-    <span slot="title">A native <em>browser</em> preview</span>
-    <span slot="lead">Edit plain HTML.</span>
-    <img slot="hero-image" class="hero-image" src="/images/placeholder.svg">
-    <a slot="button" class="button" href="/about/">About</a>
+    <h1 slot="title" data-key="hero-title">A native <em>browser</em> preview</h1>
+    <p slot="text" class="lead">Edit plain HTML.</p>
+    <img slot="image" class="hero-image" src="/images/placeholder.svg" alt="A placeholder">
+    <a slot="link" class="button" href="/about/">About</a>
   </section-hero>`);
   assert.equal(plan.css, ":host {\n  display: block;\n}\n");
-  assert.deepEqual(plan.slots.map((slot) => [slot.name, slot.kind]), [["title", "text"], ["lead", "text"], ["hero-image", "image"], ["button", "link"]]);
+  // Each planned slot: its element's path inside the section, kind, name, chosen by the rule, not fixed.
+  assert.deepEqual(plan.slots.map(({ path, name, kind, text, byDefault, fixed }) => ({ path, name, kind, text, byDefault, fixed })), [
+    { path: [0], name: "title", kind: "text", text: "A native browser preview", byDefault: true, fixed: false },
+    { path: [1], name: "text", kind: "text", text: "Edit plain HTML.", byDefault: true, fixed: false },
+    { path: [2], name: "image", kind: "image", text: "A placeholder", byDefault: true, fixed: false },
+    { path: [3, 0], name: "link", kind: "link", text: "About", byDefault: true, fixed: false },
+  ]);
   // The template with the instance's content renders what the page had: each slot's fallback is the page's copy.
   const replaced = source.slice(0, range.start) + plan.instance + source.slice(range.end);
   const instance = readInstance(replaced, rangeOf(replaced, "section-hero"));
-  for (const slot of templateSlots(plan.template)) assert.equal(slotStates(plan.template, instance).get(slot.name)?.shown, true);
+  const states = slotStates(plan.template, instance);
+  for (const slot of templateSlots(plan.template)) {
+    assert.equal(states.get(slot.name)?.shown, true);
+    // Kind from the fallback element.
+    assert.equal(slot.kind, plan.slots.find((planned) => planned.name === slot.name)?.kind);
+  }
   // A single line of text fills the unnamed slot.
   const line = `<p class="note">Shared <b>note</b></p>`;
   const note = makeComponentPlan(line, rangeOf(line, "p"), "site-note");
   assert.ok(!("error" in note));
   assert.equal(note.template, `<p class="note"><slot>Shared <b>note</b></slot></p>\n`);
   assert.equal(note.instance, `<site-note>Shared <b>note</b></site-note>`);
-  const already = `<x-y><p>a</p></x-y>`;
-  assert.deepEqual(makeComponentPlan(already, rangeOf(already, "x-y"), "x-z"), { error: "This is a component already." });
+  assert.deepEqual(note.slots.map(({ path, name, kind }) => ({ path, name, kind })), [{ path: [], name: "", kind: "text" }]);
+});
+
+test("make component refuses <main>, <body>, components and anything inside an instance", () => {
+  const page = `<body>
+  <site-header></site-header>
+  <main>
+    <section-hero><h1 slot="title">Hi</h1><div slot="extra"><p>Inside</p></div></section-hero>
+    <section><h2>Ok</h2></section>
+  </main>
+  <site-footer></site-footer>
+</body>`;
+  const refused = (name: string, nth = 0) => {
+    const plan = makeComponentPlan(page, rangeOf(page, name, nth), "section-new");
+    return "error" in plan ? plan.error : undefined;
+  };
+  assert.match(refused("main") ?? "", /<main> cannot be a component/);
+  assert.match(refused("body") ?? "", /<body> cannot be a component/);
+  assert.equal(refused("site-header"), "This is a component already.");
+  assert.equal(refused("site-footer"), "This is a component already.");
+  assert.equal(refused("section-hero"), "This is a component already.");
+  assert.match(refused("h1") ?? "", /inside the component instance <section-hero>/);
+  assert.match(refused("p") ?? "", /inside the component instance <section-hero>/);
+  assert.equal(refused("section"), undefined);
+  const holding = `<section><slot name="x"></slot></section>`;
+  assert.ok("error" in makeComponentPlan(holding, rangeOf(holding, "section"), "section-x"));
+  const unclosed = `<section><h2>Open`;
+  assert.ok("error" in makeComponentPlan(unclosed, rangeOf(unclosed, "section"), "section-x"));
+});
+
+test("make component: text keeps its rich inline content; images, pictures and standalone links are slots; svg stays fixed", () => {
+  const source = `<div class="promo">
+  <svg class="icon" viewBox="0 0 8 8"><path d="M0 0h8v8z"/></svg>
+  <h2>Big <strong>news</strong></h2>
+  <p>Read <a href="/a/">the story</a> or <em>skip</em> it.<br>Thanks.</p>
+  <picture><source srcset="/a.webp"><img src="/a.jpg" alt="Shop front"></picture>
+  <img src="/deco.png" alt="">
+  <a href="/more/">More</a>
+</div>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "div"), "block-promo");
+  assert.ok(!("error" in plan));
+  assert.equal(plan.template, `<div class="promo">
+  <svg class="icon" viewBox="0 0 8 8"><path d="M0 0h8v8z"/></svg>
+  <slot name="title"><h2>Big <strong>news</strong></h2></slot>
+  <slot name="text"><p>Read <a href="/a/">the story</a> or <em>skip</em> it.<br>Thanks.</p></slot>
+  <slot name="image"><picture><source srcset="/a.webp"><img src="/a.jpg" alt="Shop front"></picture></slot>
+  <slot name="image-2"><img src="/deco.png" alt=""></slot>
+  <slot name="link"><a href="/more/">More</a></slot>
+</div>
+`);
+  assert.deepEqual(plan.slots.map(({ path, name, kind }) => [path.join("."), name, kind]), [
+    ["1", "title", "text"],
+    ["2", "text", "text"],
+    ["3", "image", "image"],
+    ["4", "image-2", "image"],
+    ["5", "link", "link"],
+  ]);
+  assert.equal(plan.instance, `<block-promo>
+  <h2 slot="title">Big <strong>news</strong></h2>
+  <p slot="text">Read <a href="/a/">the story</a> or <em>skip</em> it.<br>Thanks.</p>
+  <picture slot="image"><source srcset="/a.webp"><img src="/a.jpg" alt="Shop front"></picture>
+  <img slot="image-2" src="/deco.png" alt="">
+  <a slot="link" href="/more/">More</a>
+</block-promo>`);
+});
+
+test("make component names slots by role, numbers repeats and breaks ties by class", () => {
+  // One part per role: the role name, whatever the class.
+  const card = `<article class="card"><h3 class="card__heading">A</h3><p class="lead">B</p></article>`;
+  const named = (source: string, name: string) => {
+    const plan = makeComponentPlan(source, rangeOf(source, name), "card-x");
+    assert.ok(!("error" in plan));
+    return plan.slots.map((slot) => slot.name);
+  };
+  assert.deepEqual(named(card, "article"), ["title", "text"]);
+  // Repeats without telling classes are numbered.
+  assert.deepEqual(named(`<section><h2>A</h2><h3>B</h3><p>C</p><p>D</p><p>E</p></section>`, "section"), ["title", "title-2", "text", "text-2", "text-3"]);
+  // A tie is broken by each part's own class (a BEM element's last part); shared or missing classes are numbered.
+  assert.deepEqual(named(`<section><p class="eyebrow">A</p><h1>B</h1><p class="hero__lead">C</p><p class="small">D</p><p class="small">E</p><p>F</p></section>`, "section"),
+    ["eyebrow", "title", "lead", "text", "text-2", "text-3"]);
+  // Generated names never collide.
+  assert.deepEqual(named(`<section><h2>A</h2><h3>B</h3><p class="title-2">C</p><p>D</p></section>`, "section"), ["title", "title-2", "title-2-2", "text"]);
+});
+
+test("make component takes parts to keep fixed, slot renames and parts made slots by hand", () => {
+  const source = `<section class="intro">
+  <h2>Hello</h2>
+  <p class="lead">Lead text</p>
+  <p>Body</p>
+  <div class="price">£40</div>
+</section>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-intro", {
+    fixed: [[2]],
+    names: [{ path: [0], name: "heading" }, { path: [1], name: "text-2" }],
+    slots: [[3]],
+  });
+  assert.ok(!("error" in plan));
+  assert.equal(plan.template, `<section class="intro">
+  <slot name="heading"><h2>Hello</h2></slot>
+  <slot name="text-2"><p class="lead">Lead text</p></slot>
+  <p>Body</p>
+  <slot name="content"><div class="price">£40</div></slot>
+</section>
+`);
+  assert.equal(plan.instance, `<section-intro>
+  <h2 slot="heading">Hello</h2>
+  <p slot="text-2" class="lead">Lead text</p>
+  <div slot="content" class="price">£40</div>
+</section-intro>`);
+  // The fixed part keeps the name it would have, for its struck chip; the part made by hand is not a default slot.
+  assert.deepEqual(plan.slots.map(({ path, name, kind, byDefault, fixed }) => [path.join("."), name, kind, byDefault, fixed]), [
+    ["0", "heading", "text", true, false],
+    ["1", "text-2", "text", true, false],
+    ["2", "text", "text", true, true],
+    ["3", "content", "content", false, false],
+  ]);
+  // A part made a slot by hand inside a part kept fixed: the fixed part stays, its child becomes the slot.
+  const nested = `<section><p>Call <strong>now</strong></p></section>`;
+  const inner = makeComponentPlan(nested, rangeOf(nested, "section"), "section-call", { fixed: [[0]], slots: [[0, 0]] });
+  assert.ok(!("error" in inner));
+  assert.equal(inner.template, `<section><p>Call <slot name="text-2"><strong>now</strong></slot></p></section>\n`);
+  // Fixing every part leaves nothing for the page.
+  const none = makeComponentPlan(nested, rangeOf(nested, "section"), "section-call", { fixed: [[0]] });
+  assert.ok(!("error" in none));
+  assert.equal(none.instance, `<section-call></section-call>`);
+});
+
+test("make component on the starter's contact section: whole-element slots, the mail link kept as rich text", () => {
+  const source = readFileSync(new URL("../fixtures/actual-starter/about/index.html", import.meta.url), "utf8");
+  const range = rangeOf(source, "section", 2);
+  const plan = makeComponentPlan(source, range, "section-contact");
+  assert.ok(!("error" in plan));
+  assert.equal(plan.template, `<section class="contact flow">
+  <slot name="title"><h2>Get in touch</h2></slot>
+  <slot name="text"><p>We are usually booking two to three months ahead. If you have a project in mind, write to us with a few lines about what you need and when you hope to launch.</p></slot>
+  <slot name="text-2"><p><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p></slot>
+</section>
+`);
+  assert.equal(plan.instance, `<section-contact id="contact">
+      <h2 slot="title">Get in touch</h2>
+      <p slot="text">We are usually booking two to three months ahead. If you have a project in mind, write to us with a few lines about what you need and when you hope to launch.</p>
+      <p slot="text-2"><a href="mailto:hello@larkspur.example">hello@larkspur.example</a></p>
+    </section-contact>`);
+});
+
+test("make component: a part's lines move to the instance's indentation; a text element kept fixed can hold a slot", () => {
+  const source = `<main>
+  <section>
+    <picture>
+      <source srcset="/a.webp">
+      <img src="/a.jpg" alt="A">
+    </picture>
+  </section>
+</main>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-pic");
+  assert.ok(!("error" in plan));
+  assert.equal(plan.instance, `<section-pic>
+    <picture slot="image">
+      <source srcset="/a.webp">
+      <img src="/a.jpg" alt="A">
+    </picture>
+  </section-pic>`);
+  // The element itself is a line of text kept fixed, with its emphasis made a slot by hand.
+  const line = `<p>Call <strong>now</strong></p>`;
+  const kept = makeComponentPlan(line, rangeOf(line, "p"), "block-call", { fixed: [[]], slots: [[0]] });
+  assert.ok(!("error" in kept));
+  assert.equal(kept.template, `<p>Call <slot name="text"><strong>now</strong></slot></p>\n`);
+  assert.equal(kept.instance, `<block-call>\n  <strong slot="text">now</strong>\n</block-call>`);
+  assert.deepEqual(kept.slots.map(({ path, name, fixed }) => [path.join("."), name, fixed]), [["", "", true], ["0", "text", false]]);
 });
 
 test("new component names: a dash, lowercase, free", () => {
@@ -344,13 +523,6 @@ test("review: usage counts elements, not text in scripts, textareas or comments"
   const site = { routes: { "/": "index.html" }, components: { "x-card": "components/x-card/x-card.html" } };
   const sources = { "index.html": `<body><script>const example = "<x-card></x-card>";</script><textarea><x-card></x-card></textarea><!-- <x-card> --></body>`, "components/x-card/x-card.html": `<p></p>` };
   assert.deepEqual(componentUsage(site, sources, "x-card"), { instances: 0, pages: [], components: [] });
-});
-
-test("review: generated slot names never collide", () => {
-  const source = `<section><h2>A</h2><h3>B</h3><p class="title-2">C</p></section>`;
-  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-x");
-  assert.ok(!("error" in plan));
-  assert.deepEqual(plan.slots.map((slot) => slot.name), ["title", "title-2", "title-2-2"]);
 });
 
 test("review: detach preserves slot boundary spaces, forwarded text and pre whitespace", () => {

@@ -1118,9 +1118,10 @@ export function createComponentTools(deps: ComponentDeps) {
         return;
       }
       const { tag, made } = planned;
-      const slots = made.slots.map((slot) => slot.name ? `“${slot.name}”` : "its content").join(", ");
-      result.textContent = made.slots.length
-        ? `<${tag}> gets ${made.slots.length === 1 ? "a slot" : `${made.slots.length} slots`} (${slots}); this page keeps its text, links and images in the instance.`
+      const slotted = made.slots.filter((slot) => !slot.fixed);
+      const slots = slotted.map((slot) => slot.name ? `“${slot.name}”` : "its content").join(", ");
+      result.textContent = slotted.length
+        ? `<${tag}> gets ${slotted.length === 1 ? "a slot" : `${slotted.length} slots`} (${slots}); this page keeps its text, links and images in the instance.`
         : `<${tag}> has no text of its own to slot: every instance shows the same content.`;
       files.replaceChildren(
         codeBlock(`components/${tag}/${tag}.html (new)`, made.template),

@@ -1,8 +1,8 @@
 ---
 title: "Slot plan: whole-element slots named by role"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: claude (slice runner)
 blocked_by: []
 builder: claude ★
 phase: 2
