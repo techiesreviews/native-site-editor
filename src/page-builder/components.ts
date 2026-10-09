@@ -575,6 +575,7 @@ export function createComponentTools(deps: ComponentDeps) {
     // A failed load is told only while this entry still stands (below), never after it was left.
     const modeLoad = framed && loadEditMode().then((mode) => ({ mode }), (error: unknown) => ({ error }));
     // The mode's edits of the template are undo steps of the framed page (from this opening); an entry that never starts the mode lets go.
+    const entry = latestEntry = {};
     const release = framed ? deps.shareHistory?.(template.path, framed.path) : undefined;
     const share: EntryShare | undefined = release && { release };
     if (share) { letGo(entryShare); entryShare = share; }
@@ -596,7 +597,8 @@ export function createComponentTools(deps: ComponentDeps) {
     const nodePath = preserved ?? (element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0]);
     if (framed && modeLoad) void modeLoad.then((loaded) => {
       // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
-      if (explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
+      // A later Edit component (another instance) supersedes this one.
+      if (latestEntry !== entry || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
         || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return; }
       if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return; }
       // A mode already on (another instance) gives way: its share goes, the frame is told only the new mode.
@@ -644,6 +646,9 @@ export function createComponentTools(deps: ComponentDeps) {
   type EntryShare = { release: () => void; opened?: object };
   let modeShare: (() => void) | undefined;
   let entryShare: EntryShare | undefined;
+  // The latest Edit component entry: only it may start the mode. A share ends the template
+  // pane's binding only at its next opening (as the stylesheet pane keeps the page's journal).
+  let latestEntry: object | undefined;
   function letGo(share: EntryShare | undefined) {
     if (!share || entryShare !== share) return;
     entryShare = undefined;
