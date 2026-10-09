@@ -24,5 +24,5 @@ Ticket [09](../../tickets/09-prototype-add-existing-page.md) §4–5, as a pure 
 ## Done (2026-10-09)
 
 - `cardFill({ template, page, siteUrl })` in `src/page-builder/card-fill.ts`: title/description/og:image/address onto the title, body, image and link slots; other slots by a matching component or class (an empty match keeps the fallback); one row per slot with its source, then an "added" title link for a card without a link slot and "not used" page facts.
-- Commits 4b51dd3 (built by Sol), f21388b (review fix: any fallback class matches).
+- Commits db5fd84 (built by Sol), 80f3814 (review fix: any fallback class matches).
 - Tests: `tests/card-fill.test.ts`, 12 cases covering the ticket's list plus origin stripping, forwarding and duplicate slots.
