@@ -96,16 +96,17 @@ export async function createComponentFileDrafts(
     undo: () => {
       const problem = undoProblem();
       if (problem) return refuse(problem);
+      // Ownership follows what the store holds, whatever its write reported.
       const dropped: SavedDraft[] = [];
       for (const [path, record] of own) {
-        if (!transaction.drop(scope, path)) {
+        const done = transaction.drop(scope, path);
+        if (!store.get(scope, path)) { own.delete(path); dropped.push(record); }
+        if (!done) {
           // Put back the exact drafts taken so far: all of them stay, with the page.
-          for (const back of dropped) if (store.save(back)) own.set(back.path, back);
+          for (const back of dropped) if (!store.get(scope, back.path)) { store.save(back); if (store.get(scope, back.path) === back) own.set(back.path, back); }
           if (transaction.isCurrent()) transaction.refresh();
           return refuse(`${path} could not be taken back; the component was kept.`);
         }
-        own.delete(path);
-        dropped.push(record);
       }
       if (transaction.isCurrent()) transaction.refresh();
       return undefined;

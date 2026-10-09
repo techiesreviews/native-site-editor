@@ -16,7 +16,7 @@ function harness() {
     save: (record: SavedDraft) => { records.set(key(record, record.path), record); if (++saves === fail) { store.error = "storage failed"; return false; } return true; },
   };
   const transaction: ComponentDraftTransaction = { scope, store, isCurrent: () => current, exists: () => false, checkPath: async () => undefined, isOpen: () => false, drop: (scope, path) => records.delete(key(scope, path)), refresh: () => { refresh++; }, announce: message => messages.push(message) };
-  return { scope, records, key, transaction, messages, setCurrent: (value: boolean) => { current = value; }, failOn: (count: number) => { fail = count; }, refresh: () => refresh };
+  return { scope, records, key, transaction, messages, setCurrent: (value: boolean) => { current = value; }, failOn: (count: number) => { fail = count; }, failNext: () => { fail = saves + 1; }, refresh: () => refresh };
 }
 
 test("the final lookup switching repositories saves no file", async () => {
@@ -122,14 +122,27 @@ test("an open component model prevents cleanup of its exact draft", async () => 
 test("Undo that cannot drop a file puts back the ones it took and refuses; files already gone leave nothing behind", async () => {
   const h = harness(); const { receipt } = await createComponentFileDrafts(files, h.transaction);
   const { companion } = receipt!;
-  h.transaction.drop = (scope, path) => path !== files[1].path && h.records.delete(h.key(scope, path));
+  const failing = (forgets: boolean) => (scope: DraftScope, path: string) => {
+    if (path !== files[1].path) return h.records.delete(h.key(scope, path));
+    // A store that forgets the draft yet reports the write failed (DraftStore over a failing localStorage).
+    if (forgets) h.records.delete(h.key(scope, path));
+    return false;
+  };
+  for (const forgets of [false, true]) {
+    h.transaction.drop = failing(forgets);
+    assert.match(companion.undo()!, /could not be taken back/);
+    assert.equal(h.records.size, 2); assert.equal(receipt!.isCurrent(), true);
+  }
+  // Putting one back that the store keeps but reports failed still owns it: a later Undo takes it.
+  h.failNext();
   assert.match(companion.undo()!, /could not be taken back/);
-  assert.equal(h.records.size, 2); assert.equal(receipt!.isCurrent(), true);
+  h.transaction.store.error = null;
+  assert.equal(receipt!.isCurrent(), true);
   h.transaction.drop = (scope, path) => h.records.delete(h.key(scope, path));
+  assert.equal(companion.undo(), undefined); assert.equal(h.records.size, 0);
   // A Redo whose write failed took its files back: Undo then takes the page back alone.
-  assert.equal(companion.undo(), undefined);
-  h.failOn(4);
+  h.failNext();
   assert.equal(companion.redo(), "storage failed"); assert.equal(h.records.size, 0);
-  h.transaction.store.error = null; h.failOn(0);
+  h.transaction.store.error = null;
   assert.equal(await companion.ready!("undo"), undefined); assert.equal(companion.undo(), undefined);
 });
