@@ -51,7 +51,7 @@ h1 {
   border: 2px solid var(--accent);
   border-radius: var(--radius-full);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   text-decoration: none;
 }

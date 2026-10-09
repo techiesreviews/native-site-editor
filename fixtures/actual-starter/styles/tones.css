@@ -1,0 +1,150 @@
+/* Colour from the one brand colour (--brand in tokens.css), and the tones a
+   page band takes with data-tone: light (the default, no attribute), dark,
+   brand and accent. Text keeps at least 4.5:1 (WCAG AA) against its band
+   and buttons at least 3:1, whatever --brand is: the editor's
+   shared/tone.ts proves these formulas over every brand colour. Written by
+   hand, the rules work on any element; the editor offers them on page bands
+   only (section components, plain sections, the header and the footer). */
+@layer tones {
+  /* The page is light. "light dark" here follows the visitor's setting: the
+     colour roles in tokens.css are light-dark() pairs. */
+  :root {
+    color-scheme: light;
+  }
+
+  /* Every band paints its own background and text from the colour roles. */
+  [data-tone="light"],
+  [data-tone="dark"],
+  [data-tone="brand"],
+  [data-tone="accent"] {
+    background-color: var(--page);
+    color: var(--ink);
+  }
+
+  /* A band in the page's column reaches the window's edges: border-image
+     draws its background past both sides without widening the page. */
+  main > :is([data-tone="light"], [data-tone="dark"], [data-tone="brand"], [data-tone="accent"]) {
+    padding-block: var(--space-3xl);
+    border-image: conic-gradient(var(--page) 0 0) fill 0 / / 0 100vmax;
+  }
+
+  /* Light and dark flip the colour roles' light-dark() pairs. */
+  [data-tone="light"] {
+    color-scheme: light;
+  }
+
+  [data-tone="dark"] {
+    color-scheme: dark;
+  }
+
+  /* Browsers without light-dark() take the dark values of tokens.css
+     directly. */
+  @supports not (color: light-dark(#000, #fff)) {
+    [data-tone="dark"] {
+      --ink: #e6e9e2;
+      --muted: #a8b1a5;
+      --surface: #20241e;
+      --page: #161915;
+      --accent: #e6e9e2;
+      --on-accent: #161915;
+      --line: #353b32;
+    }
+  }
+
+  /* Brand and accent: everything in the band takes the surface and its
+     text. Buttons invert (their fill is the text colour, their label the
+     surface); links take the text colour, underlined. */
+  [data-tone="brand"],
+  [data-tone="accent"] {
+    --page: var(--tone-surface);
+    --surface: var(--tone-surface);
+    --ink: var(--tone-text);
+    --muted: var(--tone-text);
+    --accent: var(--tone-text);
+    --on-accent: var(--tone-surface);
+    --line: var(--tone-line);
+  }
+
+  /* Fixed colours for browsers without relative colour syntax. */
+  [data-tone="brand"] {
+    --tone-surface: #20231f;
+    --tone-text: #ffffff;
+    --tone-line: #4b5148;
+  }
+
+  [data-tone="accent"] {
+    --tone-surface: #eef1ea;
+    --tone-text: #20231f;
+    --tone-line: #c6cdc0;
+  }
+
+  @supports (color: oklch(from red l c h)) {
+    /* A gamut map into sRGB that keeps a colour's WCAG luminance, and so its
+       contrast: the colour moves toward the grey of the same luminance until
+       it fits; colours already in sRGB are left as they are. Write
+       color(from <colour> srgb-linear calc(var(--tone-y) + var(--tone-t) *
+       (r - var(--tone-y))) …same for g and b… / 1) to map <colour>. Both
+       name the channels r, g and b, so they only work inside that. */
+    :root {
+      --tone-y: clamp(0, 0.2126 * r + 0.7152 * g + 0.0722 * b, 1);
+      --tone-t: min(1,
+        max(1e-9, 1 - var(--tone-y)) / max(1e-9, max(r, g, b) - var(--tone-y)),
+        max(1e-9, var(--tone-y)) / max(1e-9, var(--tone-y) - min(r, g, b)));
+    }
+
+    /* Brand: the brand colour, its OKLCH lightness moved out of the middle
+       band to at most 0.50 or at least 0.72 (whichever side of 0.61 it is
+       on), then mapped into sRGB. */
+    [data-tone="brand"] {
+      --tone-raw: oklch(from var(--brand) calc(
+        min(l, 0.50) * clamp(0, 1 / (0.61 - l), 1) +
+        max(l, 0.72) * (1 - clamp(0, 1 / (0.61 - l), 1))) c h / 1);
+      --tone-surface: color(from var(--tone-raw) srgb-linear
+        calc(var(--tone-y) + var(--tone-t) * (r - var(--tone-y)))
+        calc(var(--tone-y) + var(--tone-t) * (g - var(--tone-y)))
+        calc(var(--tone-y) + var(--tone-t) * (b - var(--tone-y))) / 1);
+    }
+
+    /* Accent: a soft tint of the brand colour. */
+    [data-tone="accent"] {
+      --tone-surface: oklch(from var(--brand) 0.95 min(c, 0.04) h / 1);
+    }
+
+    /* Text: near-white on a surface darker than 0.61, near-black on a
+       lighter one; the line between cards is a mix of the two. */
+    [data-tone="brand"],
+    [data-tone="accent"] {
+      --tone-text: oklch(from var(--tone-surface)
+        calc(0.99 + (0.01 - 0.99) * (1 - clamp(0, 1 / (0.61 - l), 1))) 0 0 / 1);
+      --tone-line: color-mix(in oklab, var(--tone-text) 30%, var(--tone-surface));
+    }
+
+    /* The accent colour (links, buttons, focus rings) for the page and the
+       light and dark tones: the brand colour at OKLCH lightness 0.50 or
+       below on light, 0.72 or above on dark, mapped into sRGB. It keeps
+       4.5:1 against the page and surface colours in tokens.css, and white or
+       black button labels on it more. */
+    @supports (color: light-dark(#000, #fff)) {
+      :root {
+        --accent: light-dark(
+          color(from oklch(from var(--brand) min(l, 0.50) c h / 1) srgb-linear
+            calc(var(--tone-y) + var(--tone-t) * (r - var(--tone-y)))
+            calc(var(--tone-y) + var(--tone-t) * (g - var(--tone-y)))
+            calc(var(--tone-y) + var(--tone-t) * (b - var(--tone-y))) / 1),
+          color(from oklch(from var(--brand) max(l, 0.72) c h / 1) srgb-linear
+            calc(var(--tone-y) + var(--tone-t) * (r - var(--tone-y)))
+            calc(var(--tone-y) + var(--tone-t) * (g - var(--tone-y)))
+            calc(var(--tone-y) + var(--tone-t) * (b - var(--tone-y))) / 1));
+        --on-accent: light-dark(#ffffff, #000000);
+      }
+    }
+  }
+
+  /* Where the browser has contrast-color(), it picks the text instead. */
+  @supports (color: contrast-color(red)) {
+    [data-tone="brand"],
+    [data-tone="accent"] {
+      --tone-text: contrast-color(var(--tone-surface));
+    }
+  }
+}

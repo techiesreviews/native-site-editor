@@ -10,8 +10,11 @@
     color: var(--muted);
   }
 
-  /* A link styled as a button, including inside a .flow block. */
-  .btn {
+  /* A link styled as a button, including inside a .flow block, and the
+     links in a row of buttons (.cta). In a brand or accent band the accent
+     roles invert, so the button does too. */
+  .btn,
+  .cta a {
     display: inline-block;
     padding: var(--space-xs) var(--space-m);
     border: 2px solid var(--accent);
@@ -22,7 +25,8 @@
     text-decoration: none;
   }
 
-  .btn:hover {
+  .btn:hover,
+  .cta a:hover {
     filter: brightness(0.92);
   }
 
@@ -36,20 +40,6 @@
 
   .flow > .cta {
     margin-top: var(--space-l);
-  }
-
-  .cta a {
-    padding: var(--space-xs) var(--space-m);
-    border: 2px solid var(--accent);
-    border-radius: var(--radius-full);
-    background: var(--accent);
-    color: #fff;
-    font-weight: 600;
-    text-decoration: none;
-  }
-
-  .cta a:hover {
-    filter: brightness(0.92);
   }
 
   .cta a + a {
@@ -87,7 +77,7 @@
     height: var(--space-xl);
     border-radius: var(--radius-full);
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font-weight: 700;
   }
 

@@ -283,9 +283,9 @@ test("nesting with & twice keeps every pairing of a parent list", () => {
   assert.deepEqual(flatRules(`.a, .b { & + & { color: red; } }`, "s.css")[0].selectors, [":is(.a, .b) + :is(.a, .b)"]);
 });
 
-test("a base rule that excluded slots follows a newly slotted part without that guard", () => {
+test("a base rule that excluded slots follows a newly slotted part, for slotted parts only", () => {
   const plan = made(intro, `h2:not([slot]) { font-size: 2rem; }\n[slot="title"] { color: red; }`);
-  assert.equal(copied(plan.css), "h2 {\n  font-size: 2rem;\n}\n");
+  assert.equal(copied(plan.css), "h2:where([slot]) {\n  font-size: 2rem;\n}\n");
   assert.deepEqual(plan.notes, []);
 });
 
@@ -293,10 +293,10 @@ test("a grouped base reset is copied before spacing, keeping other subject exclu
   const plan = made(intro, `:is(h2, p):not([slot]) { margin: 0; }
 .intro .lead:not([slot]):not(.compact) { line-height: 1.6; }
 .intro > * + * { margin-top: 1rem; }`);
-  assert.equal(copied(plan.css), `:is(h2, p) {
+  assert.equal(copied(plan.css), `:is(h2, p):where([slot]) {
   margin: 0;
 }
-.intro .lead:not(.compact) {
+.intro .lead:where([slot]):not(.compact) {
   line-height: 1.6;
 }
 .intro > * + * {
@@ -308,8 +308,20 @@ test("a grouped base reset is copied before spacing, keeping other subject exclu
 
 test("an ancestor's slot exclusion is kept when the subject becomes a part", () => {
   const plan = made(intro, `.intro:not([slot]) h2:not([slot]) { font-size: 2rem; }`);
-  assert.equal(copied(plan.css), ".intro:not([slot]) h2 {\n  font-size: 2rem;\n}\n");
+  assert.equal(copied(plan.css), ".intro:not([slot]) h2:where([slot]) {\n  font-size: 2rem;\n}\n");
   assert.deepEqual(plan.notes, []);
+});
+
+test("a copied base reset leaves a part kept fixed in the template to the page's layered spacing", () => {
+  const page = `<!doctype html>\n<html>\n<head><link rel="stylesheet" href="/styles/site.css"></head>\n<body>\n<main>\n<section class="flow">\n  <h2>Hello</h2>\n  <p>Kept in the template.</p>\n</section>\n</main>\n</body>\n</html>\n`;
+  const range = rangeOf(page, "section");
+  const plan = makeComponentPlan(page, range, "section-intro", { fixed: [[1]] }, []);
+  assert.ok(!("error" in plan), "error" in plan ? plan.error : "");
+  const css = `@layer elements { :is(h2, p):not([slot]) { margin: 0; } }\n@layer layout { .flow > * + * { margin-top: 1rem; } }`;
+  const done = withPageCss(plan, page, range, "section-intro", [{ path: "styles/site.css", source: css }]);
+  // The heading is slotted and takes the reset; the fixed paragraph still gets its margin from the page's layout rule.
+  assert.equal(copied(done.css), ":is(h2, p):where([slot]) {\n  margin: 0;\n}\n");
+  assert.deepEqual(done.notes, []);
 });
 
 test("a slot-name exclusion is not treated as a base reset guard", () => {

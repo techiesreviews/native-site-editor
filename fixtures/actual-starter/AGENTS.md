@@ -11,7 +11,7 @@ index.html                           /
 about/index.html                     /about/
 work/<slug>/index.html               /work/<slug>/
 404.html                             the not-found page (Cloudflare serves it for unknown paths)
-styles/site.css                      shared styles; @imports tokens, elements, layout, sections, utilities
+styles/site.css                      shared styles; @imports tokens, elements, tones, layout, sections, utilities
 components/components.js             the component loader
 components/<tag>/<tag>.html          a component's template
 components/<tag>/<tag>.css           its styles (optional)
@@ -178,7 +178,9 @@ Tones work this way where the site's CSS defines them (look for `[data-tone="…
 
 ## Styles
 
-`styles/site.css` sets the layer order and imports, in order: `tokens.css` (custom properties), `elements.css` (plain elements), `layout.css` (`.page`, `.flow`, `.cards`), `sections.css` (page sections: `.hero`, `.lead`, `.cta`, `.steps`, `.contact`; `.btn` for a link styled as a button, `<a class="btn" href="…">Label</a>`), `utilities.css` (`.skip` for the page's skip link, then `.text-s` … `.text-4xl`, which the editor's Text size writes). A new shared file is imported from `site.css`. Elements have no margins: text blocks take `flow`, components use `gap`.
+`styles/site.css` sets the layer order and imports, in order: `tokens.css` (custom properties), `elements.css` (plain elements), `tones.css` (the page's colour scheme, the accent colour and the `data-tone` rules, all from `--brand`), `layout.css` (`.page`, `.flow`, `.cards`), `sections.css` (page sections: `.hero`, `.lead`, `.cta`, `.steps`, `.contact`; `.btn` for a link styled as a button, `<a class="btn" href="…">Label</a>`), `utilities.css` (`.skip` for the page's skip link, then `.text-s` … `.text-4xl`, which the editor's Text size writes). A new shared file is imported from `site.css`. Elements have no margins: text blocks take `flow`, components use `gap`.
+
+Colour comes from one token, `--brand` in `tokens.css`: change it and the accent (links, buttons, focus rings) and the `brand` and `accent` tones follow, with their text kept readable. Each colour role (`--ink`, `--muted`, `--surface`, `--page`, `--line`, `--accent`, and `--on-accent` for text on an accent fill) has a light and a dark value (`light-dark()`): the page is light (`color-scheme: light` in `tones.css`; `light dark` follows the visitor's setting), and `data-tone="dark"` or `"light"` on a band picks the other side. A toned band directly in `<main>` reaches the window's edges and gets room above and below. Components and page CSS use these roles, never fixed colours.
 
 In a `.cards` grid, a title whose only element is a link stretches that link over the whole item, whether a plain card or a card component. A card component's title link also stretches when the card sits in another component's items slot (`<section-work><card-project><h3 slot="title"><a …>`). That part of the rule goes by structure: it matches a slotted title whose component sits inside another component, so a non-card component nested in a named slot gets it too. The rule uses `:only-child`, which ignores text, so make the link the title's whole content. Card components (and any nested component with a title link) set `:host { position: relative; }` to bound it; other links stay clickable. A section component's own title link (its tag sits in `<main>`, `<body>`, a `<section>` or a `<div>`) and a card component on its own outside a `.cards` grid cover only the title. Whole-title links keep the heading's colour, with an underline on hover.
 

@@ -1,16 +1,24 @@
 /* The layer order for every shared stylesheet. Keep this file first in
    site.css's imports so the order is set before any layer is used. A
    component's own stylesheet is not in a layer, so it wins over all of them. */
-@layer tokens, elements, layout, sections, utilities;
+@layer tokens, elements, tones, layout, sections, utilities;
 
 @layer tokens {
   :root {
-    /* Colour */
+    /* The site's one colour. tones.css derives the accent and the brand and
+       accent tones from it, keeping their text readable whatever it is. */
+    --brand: #2f6d3a;
+
+    /* Colour roles. These plain values are for browsers without
+       light-dark(); the pairs below give each role a light and a dark value,
+       picked by color-scheme (tones.css). Where the browser has relative
+       colour syntax, tones.css derives the accent from --brand; elsewhere
+       it is these fixed, readable values. */
     --ink: #20231f;
     --muted: #5c665a;
     --surface: #ffffff;
     --page: #f6f7f3;
-    --accent: #2f6d3a;
+    --accent: #20231f; /* Links, buttons, focus rings: see tones.css. */
     --on-accent: #fff; /* Text on an accent background. */
     --line: #e2e6de;
 
@@ -46,5 +54,17 @@
     /* Measure */
     --page-width: 960px;
     --reading-width: 64ch;
+  }
+
+  @supports (color: light-dark(#000, #fff)) {
+    :root {
+      --ink: light-dark(#20231f, #e6e9e2);
+      --muted: light-dark(#5c665a, #a8b1a5);
+      --surface: light-dark(#ffffff, #20241e);
+      --page: light-dark(#f6f7f3, #161915);
+      --accent: light-dark(#20231f, #e6e9e2);
+      --on-accent: light-dark(#fff, #161915);
+      --line: light-dark(#e2e6de, #353b32);
+    }
   }
 }
