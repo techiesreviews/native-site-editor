@@ -3,7 +3,7 @@ title: "Alt+↑/↓ moves any block among its siblings on the canvas"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [39-alt-left-right-depth]
+blocked_by: [39-alt-arrow-depth-keys]
 builder: sol
 phase: 4
 ---
