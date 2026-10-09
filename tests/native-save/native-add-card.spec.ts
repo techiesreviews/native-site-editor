@@ -154,6 +154,10 @@ test("a fresh card shows Link to a page… at its foot: the cards' folder first,
   await expect(list.getByRole("group")).toHaveCount(2);
   await expect(under.getByRole("option")).toHaveText([/^Fern & Kettle\/work\/fern-and-kettle\/In this grid$/, /^Harbour Lane Pottery\/work\/harbour-lane-pottery\/$/]);
   await expect(under.getByRole("option").first()).toHaveAttribute("aria-disabled", "true");
+  // A page in the grid can't be picked: clicking it leaves the combobox open and the card as it is.
+  await under.getByRole("option").first().click({ force: true });
+  await expect(input).toBeFocused();
+  expect(await source(page)).toBe(added);
   await expect(other.getByRole("option")).toHaveText([/^About us\/about\/$/]);
   await expect(list.getByRole("option", { name: /Larkspur|Small websites/ })).toHaveCount(0);
   // The first page that can be picked is active, and arrows skip the greyed one.

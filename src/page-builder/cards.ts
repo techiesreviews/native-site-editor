@@ -21,10 +21,11 @@ import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
-import { cardSlotAddEdit } from "./card-slot";
+import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
 import { pageTitle } from "./card-fill";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
+import { nativeLinkTarget } from "../../shared/native-routes";
 
 interface RangeEdit {
   start: number;
@@ -312,11 +313,12 @@ export function createCards(deps: CardsDeps) {
   function linkPages(card: NewCard): CardLinkPages | undefined {
     const site = deps.site();
     if (!site) return undefined;
-    const index = card.node[card.node.length - 1];
-    const items = gridFor(card.path, card.node.slice(0, -1))?.grid.items ?? [];
+    const source = deps.source(card.path);
+    const route = routeOf(card.path);
+    if (source === undefined || !route) return undefined;
     return {
       own: card.path,
-      inGrid: items.flatMap((item) => (item.index !== index && item.route ? [item.route] : [])),
+      inGrid: slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, site.routes)),
       pages: Object.entries(site.routes).map(([route, file]) => ({ route, file, title: pageTitle(deps.source(file) ?? "", route).title })),
     };
   }

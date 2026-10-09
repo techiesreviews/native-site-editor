@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cardSlotAddEdit, cardSlotOf, freshCardMarkup } from "../src/page-builder/card-slot.ts";
+import { cardSlotAddEdit, cardSlotOf, freshCardMarkup, slotCardLinks } from "../src/page-builder/card-slot.ts";
 import { applyGuardedSourceEdit, nativeInstanceInsertEdit } from "../src/page-builder/native-operations.ts";
 
 const templates: Record<string, string> = {
@@ -99,4 +99,16 @@ test("an image fallback is copied as written, a srcset included", () => {
   const result = cardSlotAddEdit(source, [0, 0], templateOf);
   assert.ok(result);
   assert.equal(applyGuardedSourceEdit(source, result.edit), page('<section-photos>\n      <card-photo slot="photos">\n        <img slot="image" src="/a.jpg" srcset="/a.jpg 1x, /a@2x.jpg 2x" alt="">\n        <h3 slot="title">Photo</h3>\n      </card-photo>\n    </section-photos>'));
+});
+
+test("the pages a fresh card's slot already links to: its own slot's other cards, any page, the card itself left out", () => {
+  const routes: Record<string, string> = { "/": "index.html", "/about/": "about/index.html", "/work/a/": "work/a/index.html", "/work/b/": "work/b/index.html" };
+  const route = (href: string) => (Object.hasOwn(routes, href) ? href : undefined);
+  const linked = (title: string, href: string, slot = "") => `<card-project${slot ? ` slot="${slot}"` : ""}>\n        <h3 slot="title">${title}</h3>\n        <a slot="link" href="${href}">Read</a>\n      </card-project>`;
+  const source = page(`<section-pair>\n      <h2 slot="title"><a href="/work/b/">Two</a></h2>\n      ${linked("A", "/work/a/")}\n      ${linked("About", "/about/")}\n      ${linked("B", "/work/b/", "quotes")}\n      ${linked("Off", "https://example.com/")}\n      ${linked("New", "/work/a/")}\n    </section-pair>`);
+  // The unnamed slot's cards: a top-level page counts too, other slots and links off the site do not.
+  assert.deepEqual(slotCardLinks(source, [0, 0, 5], route), ["/work/a/", "/about/"]);
+  // In the named slot, only its own (here none but the card).
+  assert.deepEqual(slotCardLinks(source, [0, 0, 3], route), []);
+  assert.deepEqual(slotCardLinks(source, [0, 0, 9], route), []);
 });

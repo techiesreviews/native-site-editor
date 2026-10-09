@@ -49,10 +49,17 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     active = index;
     entries.forEach(({ option }, at) => option.setAttribute("aria-selected", String(at === active)));
     const hit = entries[active];
-    if (hit) {
-      input.setAttribute("aria-activedescendant", hit.option.id);
-      hit.option.scrollIntoView({ block: "nearest" });
-    } else input.removeAttribute("aria-activedescendant");
+    if (hit) input.setAttribute("aria-activedescendant", hit.option.id);
+    else input.removeAttribute("aria-activedescendant");
+    reveal();
+  };
+  // The active page in view within the list (only the list scrolls, never the pane).
+  const reveal = () => {
+    const option = entries[active]?.option;
+    if (!option || list.hidden) return;
+    const top = option.offsetTop - list.offsetTop;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (top + option.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + option.offsetHeight - list.clientHeight;
   };
   const pick = (page: PageChoice) => {
     if (!page.inGrid) options.onPick(page);
@@ -120,6 +127,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   const showList = (shown: boolean) => {
     list.hidden = !shown;
     input.setAttribute("aria-expanded", String(shown));
+    reveal();
   };
   box.addEventListener("focusin", () => showList(true));
   box.addEventListener("focusout", (event) => { if (!box.contains(event.relatedTarget as Node | null)) showList(false); });
@@ -131,18 +139,30 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     /**
      * Hangs the combobox from the foot of `card` (pane pixels), over it when
      * there is no room below in `view` (the frame's box in the pane); hidden
-     * while the card is out of view or unknown. The first time it shows, it
-     * takes focus.
+     * while the card is out of view or unknown. The first time it shows it
+     * takes focus; then, with `scroll`, when it does not fit below, it stays
+     * hidden and returns how far the page should scroll up to make room
+     * (keeping the card's top and the edit bar over it in view).
      */
-    place(card: FrameBox | undefined, view: FrameBox) {
+    place(card: FrameBox | undefined, view: FrameBox, scroll = false): number {
       const bottom = view.top + view.height;
       box.hidden = !card || card.top + card.height < view.top + 20 || card.top > bottom - 20;
-      if (!card || box.hidden) return;
+      if (!card || box.hidden) return 0;
+      // Measured as it first shows: with its list open, as it is while focused.
+      if (!focused) showList(true);
       const width = Math.min(Math.max(320, card.width), view.width - 16);
       box.style.width = `${width}px`;
       box.style.left = `${Math.max(view.left + 8, Math.min(card.left + (card.width - width) / 2, view.left + view.width - width - 8))}px`;
       const below = card.top + card.height - 6;
+      list.style.maxHeight = "280px";
+      const short = below + box.offsetHeight - (bottom - 8);
+      const room = Math.min(short, card.top - view.top - 72);
+      if (scroll && short > 0 && room > 0) {
+        box.hidden = true;
+        return room;
+      }
       list.style.maxHeight = `${Math.max(120, Math.min(280, bottom - below - 96))}px`;
+      reveal();
       const height = box.offsetHeight;
       const above = card.top - height + 6;
       box.style.top = `${below + height <= bottom - 8 || above < view.top + 8 ? Math.min(below, bottom - height - 8) : above}px`;
@@ -150,6 +170,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
         focused = true;
         input.focus({ preventScroll: true });
       }
+      return 0;
     },
     destroy() {
       box.remove();

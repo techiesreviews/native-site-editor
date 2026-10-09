@@ -224,7 +224,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   }
 
   // "Link to a page…" on the card just added, while it stays selected.
-  let linker: { card: NewCard; picker?: CardLinkPicker; seen: boolean } | undefined;
+  let linker: { card: NewCard; picker?: CardLinkPicker; seen: boolean; scrolled?: boolean } | undefined;
 
   function addCard(grid: ItemGridReport) {
     closeLinker();
@@ -262,7 +262,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (!mine && linker.seen) { closeLinker(); return; }
     linker.seen ||= Boolean(mine);
     const { frameRect, left, top } = geometry();
-    linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, { left, top, width: frameRect.width, height: frameRect.height });
+    const view = { left, top, width: frameRect.width, height: frameRect.height };
+    const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, !linker.scrolled) ?? 0;
+    // Once, when it does not fit below the card: the page scrolls up to make room (its report places it again).
+    if (dy > 0 && frame instanceof HTMLIFrameElement) {
+      const entry = linker;
+      entry.scrolled = true;
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy }, "*");
+      // A page that could not scroll sends no new report: it shows where it fits then.
+      window.setTimeout(() => { if (linker === entry) placeLinker(); }, 250);
+    }
   }
 
   function closeLinker() {

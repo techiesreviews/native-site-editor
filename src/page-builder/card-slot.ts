@@ -9,7 +9,7 @@
 // (card-grid.ts `itemCopy`). Pure: src/page-builder/cards.ts writes the edit
 // as one undo step.
 
-import { isCardComponent, templateSlots, type TemplateOf } from "./component-model";
+import { descendants, isCardComponent, parseSource, startTagAttributes, templateSlots, type SourceElement, type TemplateOf } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { itemsSlotRule } from "./block-insert";
 import { slotMarkup } from "../native-insert";
@@ -62,4 +62,30 @@ export function cardSlotAddEdit(source: string, parent: readonly number[], templ
   const index = last < 0 ? kids.length : last + 1;
   const edit = nativeInstanceInsertEdit(source, parent, index, markup, itemsSlotRule(templateOf), chosen.slot);
   return edit ? { edit, index, card: chosen.card, slot: chosen.slot } : undefined;
+}
+
+/**
+ * The pages the other cards in the slot of the card at `card` (a body path)
+ * link to: each of their links that `route` names a page of the site, in
+ * order. Only the card's own slot counts, so two lists of one instance stay
+ * apart (ticket 09 §2, "In this grid").
+ */
+export function slotCardLinks(source: string, card: readonly number[], route: (href: string) => string | undefined): string[] {
+  const kids = (element: SourceElement) => element.children.filter((node): node is SourceElement => node.type === "element");
+  const attribute = (element: SourceElement, name: string) => {
+    const value = startTagAttributes(source, element.tag).find((entry) => entry.name === name)?.value;
+    return value === undefined ? undefined : decodeHtmlEntities(value, true);
+  };
+  let parent = [...descendants(parseSource(source))].find((element) => element.name === "body");
+  for (const step of card.slice(0, -1)) parent = parent && kids(parent)[step];
+  const siblings = parent ? kids(parent) : [];
+  const own = siblings[card[card.length - 1]];
+  if (!own) return [];
+  const slot = attribute(own, "slot") ?? "";
+  return siblings.flatMap((sibling) => sibling === own || (attribute(sibling, "slot") ?? "") !== slot ? [] :
+    [sibling, ...descendants(sibling.children)].flatMap((element) => {
+      const href = element.name === "a" ? attribute(element, "href") : undefined;
+      const page = href === undefined ? undefined : route(href);
+      return page ? [page] : [];
+    }));
 }
