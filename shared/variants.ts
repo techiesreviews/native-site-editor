@@ -9,7 +9,7 @@ import { blockEnd, preludeEnd, skipSpace, withoutComments } from "./slotted-css"
 export function scriptSetAttributes(source: string): string[] {
   const tokens = source.match(/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[\w$]+|\?\.|\|\|=|&&=|\?\?=|[+*/%-]=|\+\+|--|===|==|=>|\S/g)?.filter((token) => !token.startsWith("//") && !token.startsWith("/*")) ?? [];
   const names = new Set<string>();
-  const literal = (token = "") => /^(["'])[\w-]+\1$/.test(token) ? token.slice(1, -1) : undefined;
+  const literal = (token = "") => /^(["'`])[\w-]+\1$/.test(token) ? token.slice(1, -1) : undefined;
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     if (tokens[index - 1] !== "." && tokens[index - 1] !== "?.") continue;

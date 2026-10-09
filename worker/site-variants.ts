@@ -10,8 +10,8 @@ export interface ComponentVariants { variants: Variant[]; variantWarnings?: Vari
 
 /** Scripts read for the attributes they set, at most. */
 const scriptLimit = 100;
-/** Rounds of `@import`s the tab did not list (a component's own, or new ones). */
-const importRounds = 4;
+/** Rounds of `@import`s the tab did not list (a component's own, or new ones), one level each. */
+const importRounds = 10;
 
 export async function componentVariantsOf(files: SiteFiles, site: NonNullable<EditorContext["site"]>): Promise<Map<string, ComponentVariants>> {
   const scripts = (await files.paths())
@@ -21,7 +21,9 @@ export async function componentVariantsOf(files: SiteFiles, site: NonNullable<Ed
   const roots = site.stylesheets.map(({ file }) => file);
   const componentCss = site.components.flatMap(({ css }) => (css ? [css] : []));
   const asked = new Set([...roots, ...site.stylesheets.flatMap(({ imports }) => imports), ...componentCss, ...scripts]);
-  const sources = await files.texts(asked);
+  // One read budget for every round, so one call stays within the Worker's subrequests.
+  const budget = { singles: 16 };
+  const sources = await files.texts(asked, budget);
   const expand = (paths: string[]) => {
     const missing = new Set<string>();
     const sheets = expandStyleImports(paths, (path) => {
@@ -34,7 +36,7 @@ export async function componentVariantsOf(files: SiteFiles, site: NonNullable<Ed
     const missing = [roots, ...componentCss.map((css) => [css])].flatMap((paths) => [...expand(paths).missing]);
     if (!missing.length) break;
     for (const path of missing) asked.add(path);
-    for (const [path, text] of await files.texts(missing)) sources.set(path, text);
+    for (const [path, text] of await files.texts(missing, budget)) sources.set(path, text);
   }
 
   const shared = siteVariants(expand(roots).sheets);

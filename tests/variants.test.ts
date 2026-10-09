@@ -11,8 +11,8 @@ test("script-set attributes include literal setters and dataset writes in source
     el.setAttribute("DATA-OPEN", "true"); el.toggleAttribute('data-wide');
     el.dataset.fooBar = 'x'; el.dataset['colorScheme'] ||= 'dark';
     el.dataset["count"]++; el.dataset.fooBar = 'again';
-    el?.setAttribute('data-ready', '');
-  `), ["data-open", "data-wide", "data-foo-bar", "data-color-scheme", "data-count", "data-ready"]);
+    el?.setAttribute('data-ready', ''); el.setAttribute(\`data-plain\`, "");
+  `), ["data-open", "data-wide", "data-foo-bar", "data-color-scheme", "data-count", "data-ready", "data-plain"]);
 });
 
 test("script discovery ignores comments, strings, reads and dynamic attribute names", () => {

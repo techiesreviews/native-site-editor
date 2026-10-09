@@ -172,9 +172,10 @@ export class SiteFiles {
   /**
    * The texts of those `paths` that are readable text files, drafts applied;
    * missing, binary and too large ones are left out. Saved texts are read in
-   * batched queries first, and only a few one by one.
+   * batched queries first, and only a few one by one: `budget.singles` is
+   * shared by calls that pass the same budget.
    */
-  async texts(paths: Iterable<string>): Promise<Map<string, string>> {
+  async texts(paths: Iterable<string>, budget = { singles: exportSingleReads }): Promise<Map<string, string>> {
     const entries = new Map((await this.entries()).map((entry) => [entry.path, entry]));
     const out = new Map<string, string>();
     const saved = [];
@@ -186,9 +187,8 @@ export class SiteFiles {
       else saved.push({ path, sha: entry!.sha });
     }
     await this.github.prefetchTexts(this.repo, saved.map(({ sha }) => sha));
-    let singles = 0;
     for (const { path, sha } of saved) {
-      if (!this.github.hasText(this.repo, sha) && ++singles > exportSingleReads)
+      if (!this.github.hasText(this.repo, sha) && --budget.singles < 0)
         throw new HttpError(503, "Too many files to read one by one in one call.");
       out.set(path, await this.github.file(this.repo, sha));
     }
