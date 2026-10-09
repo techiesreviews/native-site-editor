@@ -115,6 +115,23 @@ function boxless(group: string, fields: Field[]) {
   }
 }
 
+// Structure edits a row's text in place and keeps a link's address, an image and its alt in a
+// card attached under the row (36b643f). The row's field is the label's own text: no box, ring
+// or underline, the lift is on the row. The card's fields are neutral: no border or outline, a
+// thin inset ring and no accent.
+function structureFields(group: string, fields: Field[]) {
+  expect(fields.length, `${group}: fields found`).toBeGreaterThan(0);
+  expect(fields.filter((field) => field.focused).length, `${group}: the row's field has focus`).toBe(1);
+  for (const field of fields) {
+    expect.soft(field.outline, `${group} ${field.label} outline`).toBe("none");
+    expect.soft(clear(field.border) || field.borderWidth === "0px", `${group} ${field.label} border ${field.borderWidth} ${field.border}`).toBe(true);
+    if (field.focused) {
+      expect.soft(field.shadow, `${group} ${field.label} in-row field ring`).toBe("none");
+      expect.soft(clear(field.background), `${group} ${field.label} in-row field background ${field.background}`).toBe(true);
+    } else expect.soft(field.shadow, `${group} ${field.label} card field ring`).toMatch(/^\S.* 0px 0px 0px 1px inset$/);
+  }
+}
+
 const tree = (page: Page) => page.locator(".page-structure__tree");
 async function showPages(page: Page) {
   if (!await page.locator("#explorer").evaluate((el) => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
@@ -141,7 +158,7 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     await titleRow.locator(".page-structure__action[aria-label='Edit Title']").click();
     const titleText = page.getByRole("textbox", { name: "Title: Text", exact: true });
     await expect(titleText).toBeFocused();
-    report.structureSlot = await audit(page, ".page-structure__inline");
+    report.structureSlot = await audit(page, ".page-structure__tree [role=treeitem][data-slot=title], .page-structure__inline");
     await page.screenshot({ path: `${shots}/fields-structure-slot-${name}.png` });
     await titleText.fill("Inline & exact");
     await titleText.press("Tab");
@@ -153,8 +170,10 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     const linkRow = tree(page).locator("[role=treeitem][data-slot=primary]").filter({ visible: true }).first();
     await linkRow.hover();
     await linkRow.locator(".page-structure__action[aria-label='Edit Primary']").click();
-    await expect(page.locator(".page-structure__inline :is(input, textarea)").first()).toBeFocused();
-    report.structureLink = await audit(page, ".page-structure__inline");
+    // The link's text is edited in place in its row; its address stays in the card attached below.
+    await expect(page.getByRole("textbox", { name: "Primary: Button text", exact: true })).toBeFocused();
+    await expect(page.getByRole("combobox", { name: "Primary: Link / URL", exact: true })).toBeVisible();
+    report.structureLink = await audit(page, ".page-structure__tree [role=treeitem][data-slot=primary], .page-structure__inline");
     expect(report.structureLink.length).toBeGreaterThanOrEqual(2);
     await page.screenshot({ path: `${shots}/fields-structure-link-${name}.png` });
     await page.keyboard.press("Escape");
@@ -198,10 +217,16 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     const linkButton = page.locator(".edit-bar").getByRole("button", { name: /^(Link|Address|Edit link)/ }).first();
     if (await linkButton.isVisible().catch(() => false)) await linkButton.click();
     await page.waitForTimeout(300);
+    // At rest: the pointer leaves the field it clicked through, so no hover fill is measured.
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(200);
     report.editBar = await audit(page, ".edit-bar, .edit-bar__popover");
     await page.screenshot({ path: `${shots}/fields-edit-bar-${name}.png` });
 
     await writeFile(`${shots}/fields-audit-${name}.json`, JSON.stringify(report, null, 2));
-    for (const [group, fields] of Object.entries(report)) boxless(group, fields);
+    for (const [group, fields] of Object.entries(report)) {
+      if (group === "structureSlot" || group === "structureLink") structureFields(group, fields);
+      else boxless(group, fields);
+    }
   });
 }

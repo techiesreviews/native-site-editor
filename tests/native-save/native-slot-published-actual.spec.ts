@@ -46,6 +46,15 @@ async function toggle(page: Page, card: number, label: string, to: boolean) {
   await expect(button).toHaveAttribute("aria-pressed", String(!to));
   await button.click();
 }
+/** Showing a slot opens its inline fields in its row, and an edited row has no row actions (36b643f):
+ * Done ends the edit, writing nothing when nothing was typed, and the eye is back. */
+async function done(page: Page, card: number, label: string) {
+  const row = slotRow(page, card, label);
+  const before = await mounted(page);
+  await row.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Done", exact: true })).toHaveCount(0);
+  expect(await mounted(page)).toBe(before);
+}
 const history = (page: Page, direction: "undo" | "redo") => page.locator(direction === "undo" ? ".code-editor__undo" : ".code-editor__redo").first().click();
 
 /** The latest slot report the preview sent for card `card` (what a canvas fill-in reads). */
@@ -163,6 +172,8 @@ test("Structure fills, hides and edits optional slots, and only authored bytes a
   const P2 = P0.replace(link0, '          <a slot="link" href="">Link</a>\n');
   await toggle(page, 0, "Link", true);
   await expect.poll(() => mounted(page)).toBe(P2);
+  await expect(slotRow(page, 0, "Link").getByRole("textbox", { name: "Link: Button text", exact: true })).toBeFocused();
+  await done(page, 0, "Link");
   await agree(page, 0, "Link", "link", "p.actions", true);
   await history(page, "undo");
   await expect.poll(() => mounted(page)).toBe(P1);
@@ -178,6 +189,9 @@ test("Structure fills, hides and edits optional slots, and only authored bytes a
   await text.press("Enter");
   const P3 = P2.replace('<a slot="link" href="">Link</a>', '<a slot="link" href="">Visit Fern &amp; Kettle</a>');
   await expect.poll(() => mounted(page)).toBe(P3);
+  // Enter commits and closes the row's edit; the pencil opens it again for the address in its card.
+  await slotRow(page, 0, "Link").hover();
+  await slotRow(page, 0, "Link").locator(".page-structure__action[aria-label='Edit Link']").click();
   const href = tree(page).getByRole("combobox", { name: "Link: Link / URL", exact: true });
   await href.fill("/work/fern-and-kettle/");
   await href.press("Enter");
@@ -202,6 +216,7 @@ test("Structure fills, hides and edits optional slots, and only authored bytes a
   const P6 = P5.replace(title2, `<img slot="image" src="" alt="">\n          ${title2}`);
   await toggle(page, 2, "Image", true);
   await expect.poll(() => mounted(page)).toBe(P6);
+  await done(page, 2, "Image");
   await agree(page, 2, "Image", "image", "figure.media", true);
   await history(page, "undo");
   await expect.poll(() => mounted(page)).toBe(P5);

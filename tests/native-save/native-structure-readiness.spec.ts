@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { requireActualFixture } from "./fixture-contract";
 
-// Structure painted before the code editor module loaded must gain its
-// component fields (instance rows, slot badges, slot-only rows) once the
-// editor mounts on the same bytes, with no source edit in between.
+// Structure reads the draft store, not Monaco (06c2469): painted before the
+// code editor module loads, it already has its component fields (instance
+// rows, slot badges, slot-only rows), and keeps exactly those once the editor
+// mounts on the same bytes, with no source edit in between.
 // Runs on the actual starter: ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
 requireActualFixture();
 
@@ -27,23 +28,27 @@ async function openHeld(page: Page, baseURL: string | undefined, codeHidden: boo
   await page.waitForTimeout(800);
   const before = await counts(page);
   expect(before.monaco).toBe(0);
-  expect(before.slotBadges).toBe(0);
+  expect(before.slotBadges).toBeGreaterThan(0);
+  expect(before.instanceRows).toBeGreaterThan(0);
+  expect(before.slotOnly).toBeGreaterThan(0);
   release();
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
   return before;
 }
 
 for (const codeHidden of [false, true]) {
-  test(`Structure gains component fields once the editor mounts on the same bytes${codeHidden ? " (code pane hidden)" : ""}`, { tag: "@actual" }, async ({ page, baseURL }) => {
-    await openHeld(page, baseURL, codeHidden);
+  test(`Structure has component fields before the editor mounts and keeps them on the same bytes${codeHidden ? " (code pane hidden)" : ""}`, { tag: "@actual" }, async ({ page, baseURL }) => {
+    const before = await openHeld(page, baseURL, codeHidden);
     const start = await source(page);
     expect(typeof start).toBe("string");
     expect(start!.length).toBeGreaterThan(0);
     if (codeHidden) await expect(page.getByRole("separator", { name: "Resize code" })).toHaveAttribute("aria-valuenow", "0");
-    await expect.poll(async () => (await counts(page)).slotBadges, { timeout: 15_000 }).toBeGreaterThan(0);
-    const after = await counts(page);
-    expect(after.instanceRows).toBeGreaterThan(0);
-    expect(after.slotOnly).toBeGreaterThan(0);
+    // Once the editor has mounted, Structure shows the same rows and fields as before.
+    if (!codeHidden) await expect.poll(async () => (await counts(page)).monaco, { timeout: 15_000 }).toBeGreaterThan(0);
+    await page.waitForTimeout(500);
+    const { monaco: _monaco, ...after } = await counts(page);
+    const { monaco: _before, ...fields } = before;
+    expect(after).toEqual(fields);
     // No source edit was needed for the fields to appear.
     expect(await source(page)).toBe(start);
     if (process.env.ASE_READINESS_SHOTS) await page.screenshot({ path: `${process.env.ASE_READINESS_SHOTS}/readiness-after-mount${codeHidden ? "-code-hidden" : ""}.png` });
