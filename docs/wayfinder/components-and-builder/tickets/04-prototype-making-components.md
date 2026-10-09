@@ -35,3 +35,4 @@ Decided with Lex by reacting live to five variants on `dev` behind `?proto=compo
 11. **Where it starts:** "+ New component" at the top of the Add panel's component list.
 12. **Form:** a name, made valid as typed, and its tag. Create places a blank component (a section with a title slot and an empty items slot) on the current page and opens it in Edit component mode, where it is built with the block set (ticket 14).
 
+**Extended by ticket 09 (2026-10-09):** Add card is a split button; its ▾ and a look chip on the card choose another card component or variant. The plain Add card still adds the slot's card component.
