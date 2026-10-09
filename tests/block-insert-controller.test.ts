@@ -95,3 +95,17 @@ test("a selection painted from other bytes is refused; the click's own target is
   assert.equal(log.ops.length, 1);
   assert.deepEqual(log.ops[0].selection.after, { path: "index.html", node: [0, 0, 1] });
 });
+
+test("a drop inserts at its place, one step; a page changed since it was measured refuses", async () => {
+  const { controller, log } = setup();
+  await controller.drop("paragraph", { parent: [0, 0], index: 0, where: "Into Section › before Heading" }, page);
+  assert.equal(log.ops.length, 1);
+  assert.match(log.ops[0].edits.get("index.html")!, /<section class="flow">\s*<p>Text<\/p>\s*<h2>Work<\/h2>/);
+  assert.deepEqual(log.ops[0].selection, { before: { path: "index.html", node: [0, 0, 0] }, after: { path: "index.html", node: [0, 0, 0] } });
+  assert.equal(log.ops[0].done, "Paragraph added. Into Section › before Heading");
+  const stale = setup();
+  await stale.controller.drop("paragraph", { parent: [0, 0], index: 0, where: "" }, page.replace("Work", "Play"));
+  await stale.controller.drop("paragraph", { parent: [0, 0], index: 0, where: "" }, undefined);
+  assert.equal(stale.log.ops.length, 0);
+  assert.deepEqual(stale.log.refusals, ["The page is still updating. Try again in a moment.", "The page is still updating. Try again in a moment."]);
+});

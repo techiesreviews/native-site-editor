@@ -1,8 +1,8 @@
 // Inserting a block (Section, Div, Heading, Paragraph, Image, Button) into a
 // page: one source edit and one undo step, with the new block selected and
 // its place flashed. The rail's click (`click`) picks the place from the
-// selection (src/page-builder/block-insert.ts); dragging and templates pass
-// their own place to `insert`.
+// selection (src/page-builder/block-insert.ts); a drag (`drop`) brings the
+// place it was dropped on; templates pass their own place to `insert`.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
 import { blockMarkup, blockNames, clickTarget } from "../page-builder/block-insert";
@@ -94,6 +94,19 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (error) ports.refuse(error);
   }
 
-  return { insert, click };
+  /**
+   * A rail block dropped on the canvas at `place` (a body path and index
+   * measured on the page's `painted` bytes): inserted there, or the reason
+   * flashes when the page has changed since.
+   */
+  async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string }, painted: string | undefined, at = ports.target()) {
+    const source = at && ports.source(at.path);
+    if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
+    if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
+    const error = await insert({ path: at.path, ...place, kind, before: at.node ? { path: at.path, node: at.node } : undefined });
+    if (error) ports.refuse(error);
+  }
+
+  return { insert, click, drop };
 }
 export type BlockInsertController = ReturnType<typeof createBlockInsertController>;

@@ -22,7 +22,8 @@ import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
-import { createPageBuilder, type PageBuilder } from "../page-builder/page-builder";
+import { createPageBuilder } from "../page-builder/page-builder";
+import type { DropTarget } from "../page-builder/drop-target";
 import type { NativeElementKind } from "../page-builder/native-elements";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
@@ -407,7 +408,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (wanted.length) handlers.onComponentStyles?.(wanted);
     },
     scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
-    probe: (at, bands) => probeDrop(at, undefined, bands),
     dock: handlers.addPanelDock,
   });
   let slotSelection: { path: string; node: number[]; tag?: string; exact: boolean } | undefined;
@@ -1099,9 +1099,23 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
 
   return {
     probeDrop,
-    /** A block from the rail dragged over the page (none without a page on show to drop into). */
-    blockDrag(kind: NativeElementKind, ports: Parameters<PageBuilder["blockDrag"]>[1]) {
-      return site && frameState.active && !alone ? pageBuilder.blockDrag(kind, ports) : undefined;
+    /**
+     * A block from the rail dragged over the page (none without a page on
+     * show to drop into). A drop gives the page source its target was
+     * measured on, so a page that changed since refuses it.
+     */
+    blockDrag(kind: NativeElementKind, ports: { drop(target: DropTarget, where: string, painted: string | undefined): void; announce(text: string): void }) {
+      if (!site || !frameState.active || alone) return undefined;
+      let painted: string | undefined;
+      return pageBuilder.blockDrag(kind, {
+        probe: (at, bands) => {
+          // With no update waiting (or the probe is refused), the frame shows the last sources sent.
+          const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site!.routes[route]] : undefined;
+          return probeDrop(at, undefined, bands).then((report) => { if (report) painted = shown; return report; });
+        },
+        drop: (target, where) => ports.drop(target, where, painted),
+        announce: (text) => ports.announce(text),
+      });
     },
     /** Send an already scheduled source change immediately after a direct user action. */
     flushPendingUpdate() {

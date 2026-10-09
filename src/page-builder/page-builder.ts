@@ -34,8 +34,6 @@ export interface PageBuilderDeps {
   prepare(tags: string[]): void;
   // Scroll the canvas by `dy` (the runtime's `scroll-by`), smoothly unless motion is reduced.
   scroll(dy: number, smooth?: boolean): void;
-  // The containers under a frame-viewport point (the preview's `probeDrop`).
-  probe: BlockDragPorts["probe"];
   // Where the Add panel docks; the preview pane's left edge when not given.
   dock?: () => { left: number; top: number; bottom: number; width: number } | undefined;
 }
@@ -217,9 +215,9 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       if (!active) panel.close(false);
     },
     /** A rail block dragged onto the canvas: its line, label and target (none while History shows an earlier version). */
-    blockDrag(kind: NativeElementKind, ports: Pick<BlockDragPorts, "drop" | "announce">) {
+    blockDrag(kind: NativeElementKind, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce">) {
       if (viewing) return undefined;
-      return createBlockDrag(kind, { ...ports, frame, layer: canvas.layer, probe: deps.probe, scroll: (dy) => deps.scroll(dy) });
+      return createBlockDrag(kind, { ...ports, frame, layer: canvas.layer, scroll: (dy) => deps.scroll(dy) });
     },
     insertPointKey,
     destroy() {
