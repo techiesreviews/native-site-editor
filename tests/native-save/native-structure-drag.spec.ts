@@ -216,8 +216,12 @@ test("a card's row in a section component's items slot drags below the other car
   await pressAndMove(page, { x: first.x, y: first.y }, { x: first.x, y: first.y + 12 });
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
   await expect(row(page, "1.1.1")).toHaveClass(/is-drag-source/);
-  await page.mouse.move(await levelX(page, 3), (await box(row(page, "1.1.2"))).bottom - 3, { steps: 4 });
+  // x at level 3 first: a deeper x over the folded second card would open it (slice 38);
+  // then the gap under that card, which no held row springs open.
+  await page.mouse.move(await levelX(page, 3), first.y + 12, { steps: 2 });
+  await page.mouse.move(await levelX(page, 3), (await box(row(page, "1.1.2"))).bottom + 1, { steps: 4 });
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Card project");
+  await expect(row(page, "1.1.2")).toHaveAttribute("aria-expanded", "false");
   await page.mouse.up();
   await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
   await expect.poll(async () => flat(await source(page))).toMatch(/Harbour Lane Pottery<\/h3>.*Fern &amp; Kettle<\/h3>.*<\/section-work>/);

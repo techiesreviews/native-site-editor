@@ -118,8 +118,15 @@ export function treeDrop(rows: readonly TreeRow[], y: number, level: number, blo
   const prev = shown[gap - 1], next = shown[gap];
   const options: { level: number; container: DropContainer; index: number; y: number }[] = [];
   const among = (parent: TreeRow | undefined, child: TreeRow, at: number, index: number, lineY: number) => {
-    const container = parent && open(parent) && structureContainer(parent.item, itemsSlots, child.item);
-    if (container) options.push({ level: at, container, index, y: lineY });
+    if (!parent || !open(parent)) return;
+    const container = structureContainer(parent.item, itemsSlots, child.item);
+    if (container) { options.push({ level: at, container, index, y: lineY }); return; }
+    // Among an open instance's named parts (sprung open, say) a block goes to the
+    // end of its items slot, and the line shows there.
+    const items = structureContainer(parent.item, itemsSlots);
+    if (!items) return;
+    const end = dropEndIndex(items);
+    options.push({ level: at, container: items, index: end, y: treeLineFor(rows, { container: items, index: end })?.line.y ?? lineY });
   };
   if (prev && next && next.level > prev.level) {
     // An open row and its first child: only before that child.
@@ -139,7 +146,7 @@ export function treeDrop(rows: readonly TreeRow[], y: number, level: number, blo
 }
 
 /** Where a target (from the canvas) shows in the tree: none while its container's row does not show. */
-export function treeLineFor(rows: readonly TreeRow[], drop: DropTarget): { line: TreeLine; row: readonly number[] } | undefined {
+export function treeLineFor(rows: readonly TreeRow[], drop: Pick<DropTarget, "container" | "index">):{ line: TreeLine; row: readonly number[] } | undefined {
   const own = rows.find((row) => key(row.item.node) === key(drop.container.path));
   if (!own) return undefined;
   const kids = rows.filter((row) => childOf(row, own));

@@ -87,9 +87,10 @@ test("a component instance takes drops only through its items slot", () => {
   const slots = (tag: string) => (tag === "card-grid" ? [""] : []);
   const after = treeDrop(list, list[3].bottom + 1, 4, paragraph, slots).target!;
   assert.deepEqual([after.container.kind, after.container.slot, after.index, after.ok], ["items", "", 1, true]);
-  // Next to a named slot's element there is no items place; the Section takes it.
-  const title = treeDrop(list, list[4].bottom + 1, 4, paragraph, slots).target!;
-  assert.deepEqual(title.container.path, [0, 0]);
+  // Next to a named slot's element the place at that depth is the items slot's end; one level up, the Section.
+  const title = treeDrop(list, list[4].bottom + 1, 4, paragraph, slots);
+  assert.deepEqual([title.target!.container.path, title.target!.container.slot, title.target!.index, title.line], [[0, 0, 0], "", 1, { y: list[3].end + 1, level: 4 }]);
+  assert.deepEqual(treeDrop(list, list[4].bottom + 1, 3, paragraph, slots).target!.container.path, [0, 0]);
   assert.equal(structureContainer(list[3].item, slots), undefined);
   assert.equal(structureContainer(list[2].item, slots)?.slot, "");
 });
@@ -102,9 +103,11 @@ test("a Section or Div in a component's named slot is the component's, not a con
   // Through an items slot it is a page block, and takes drops.
   const open = treeDrop(list, list[4].bottom + 1, 5, paragraph, (tag) => (tag === "card-x" ? ["body"] : [])).target!;
   assert.deepEqual(open.container.path, [0, 0, 0, 0]);
-  // Slot names match exactly, as the browser assigns them.
+  // Slot names match exactly, as the browser assigns them: the Div in " body " is a part,
+  // and beside it the place is the end of the card's own "body" items slot.
   const spaced = rowsOf(items([["main", [["section", [["card-x", [["div", [["p"]], { slot: " body ", open: true }]], { open: true }]], { open: true }]], { open: true }]]));
-  assert.deepEqual(treeDrop(spaced, spaced[4].bottom + 1, 5, paragraph, (tag) => (tag === "card-x" ? ["body"] : [])).target!.container.path, [0, 0]);
+  const beside = treeDrop(spaced, spaced[4].bottom + 1, 5, paragraph, (tag) => (tag === "card-x" ? ["body"] : [])).target!;
+  assert.deepEqual([beside.container.path, beside.container.slot], [[0, 0, 0], "body"]);
 });
 
 test("over a folded <main> a Section goes first from above its row, last from below", () => {
@@ -307,4 +310,16 @@ test("fold-back only closes drag-opened rows below y and off the target's way", 
   assert.deepEqual(foldRows(rows, at("1.0").top, [1, 1], opened), [[1, 0, 1]]);
   assert.deepEqual(foldRows(rows, at("1.0.1").top, [1, 1], opened), []);
   assert.deepEqual(foldRows(rows, at("1.0").top, [1, 1], new Set()), []);
+});
+
+test("in an instance sprung open, the gaps among its named parts drop at its items slot's end", () => {
+  // A card with an unnamed items slot, open on its title and body parts.
+  const card = items([["main", [["section", [["card-x", [["h3", [], { slot: "title" }], ["p", [], { slot: "body" }]], { open: true }]], { open: true }]], { open: true }]]);
+  const list = rowsOf(card);
+  const slots = (tag: string) => (tag === "card-x" ? [""] : []);
+  for (const y of [list[3].top + 2, list[3].bottom + 1]) {
+    const found = treeDrop(list, y, 4, paragraph, slots);
+    assert.deepEqual([found.target!.container.kind, found.target!.container.path, found.target!.index, found.target!.ok], ["items", [0, 0, 0], 2, true]);
+    assert.deepEqual(found.line, { y: list[4].end + 1, level: 4 });
+  }
 });
