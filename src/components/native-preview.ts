@@ -1462,6 +1462,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     setAssets(next: Record<string, string>) {
       assets = next;
       postAssets();
+      cardGrids?.sourcesChanged();
     },
     /** Attach the frame parked so its runtime loads before the first page is known. */
     preload() {

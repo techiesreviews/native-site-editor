@@ -99,6 +99,10 @@ test("Add card as… a look: another card component or a variant, in the same sl
 test("a fresh card's variant: bare, or its value quoted and escaped", () => {
   assert.match(freshCardMarkup("card-quote", templateOf, { name: "data-tilt", value: true })!, /^<card-quote data-tilt>\n/);
   assert.match(freshCardMarkup("card-quote", templateOf, { name: "data-tilt", value: 'a"b' })!, /^<card-quote data-tilt="a&quot;b">\n/);
+  // Angle brackets too, so the instance insert takes it.
+  const source = work();
+  const result = cardSlotAddEdit(source, [0, 0], templateOf, undefined, { tag: "card-project", attribute: { name: "data-label", value: "a<b>&c" } });
+  assert.match(applyGuardedSourceEdit(source, result!.edit)!, /<card-project data-label="a&lt;b&gt;&amp;c">/);
 });
 
 test("no card slot, no card: plain grids and other elements keep today's copy", () => {

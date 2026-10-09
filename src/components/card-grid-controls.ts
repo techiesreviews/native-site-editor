@@ -154,6 +154,13 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   looks.setAttribute("aria-expanded", "false");
   looks.append(icon("caret-down", 14));
   looks.hidden = true;
+  // Esc on ▾ while the gallery is still loading: nothing opens.
+  looks.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !gallery) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeGallery(true);
+  });
   const buttons = node("span", "card-ghost__buttons");
   buttons.append(add, looks);
   ghost.append(buttons);
@@ -691,6 +698,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   });
   function onPointerDown(event: PointerEvent) {
     const target = event.target as Node;
+    // A press elsewhere while the gallery is still loading: it does not open (once open, it closes itself).
+    if (gallery && !gallery.view && !looks.contains(target)) closeGallery(false);
     if (!open || popover.contains(target) || add.contains(target) || folderMenu?.contains(target)) return;
     close(false);
   }

@@ -38,7 +38,7 @@ export function cardSlotOf(tag: string, templateOf: TemplateOf): CardSlot[] {
 /** A fresh instance of the card component `tag`, one slot's copy a line, with the variant `attribute` when given; undefined when the site has no such component. */
 export function freshCardMarkup(tag: string, templateOf: TemplateOf, attribute?: CardLook["attribute"]): string | undefined {
   const template = templateOf(tag);
-  const set = !attribute ? "" : attribute.value === true ? ` ${attribute.name}` : ` ${attribute.name}="${attribute.value.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"`;
+  const set = !attribute ? "" : attribute.value === true ? ` ${attribute.name}` : ` ${attribute.name}="${attribute.value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}"`;
   return template === undefined ? undefined : [`<${tag}${set}>`, ...slotMarkup(template).map((line) => `  ${line}`), `</${tag}>`].join("\n");
 }
 

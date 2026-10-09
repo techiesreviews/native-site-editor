@@ -379,3 +379,25 @@ test("Add card ▾ lists the card looks, rendered, and places a blank card of th
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(withQuote);
 });
+
+test("Add card ▾ dismissed while its gallery loads opens nothing", async ({ page, baseURL }) => {
+  await openSectionWork(page, baseURL, 1);
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  let requested = false;
+  await page.route(/card-look-gallery(?:\.ts|-[\w-]+\.js)/, async (route) => { requested = true; await held; await route.continue(); });
+  await frame(page).locator("section-work > card-project").hover();
+  const looks = page.getByRole("button", { name: "Add a card to Recent work as…" });
+  await looks.click();
+  await expect.poll(() => requested).toBe(true);
+  await expect(looks).toHaveAttribute("aria-expanded", "true");
+  await looks.press("Escape");
+  await expect(looks).toHaveAttribute("aria-expanded", "false");
+  release();
+  // The module arrives after it was dismissed: no gallery.
+  await page.waitForFunction(() => import("/src/components/card-look-gallery.ts").then(() => true));
+  await expect(page.getByRole("dialog", { name: "Add card as…" })).toHaveCount(0);
+  // Opened again, it shows.
+  await looks.click();
+  await expect(page.getByRole("dialog", { name: "Add card as…" })).toBeVisible();
+});

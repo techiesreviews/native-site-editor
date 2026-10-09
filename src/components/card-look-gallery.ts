@@ -5,6 +5,7 @@ import { createThumbnail, type Thumbnail } from "../page-builder/thumbnail";
 import { thumbnailDocument, type ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import { expandStyleImports } from "../../shared/css-imports";
 import { nativeComponentCssPath, nativeDefaultRoute, nativePageStylesheets } from "../../shared/native-project";
+import { startTags } from "../../shared/html-source";
 import "./card-look-gallery.css";
 
 // "Add card as…" from the ▾ of a card slot's Add card (wayfinder
@@ -51,6 +52,19 @@ function looksOf(inputs: ThumbnailInputs, card: string) {
   return { templateOf, looks: cardLooks({ tags: Object.keys(site.components), templateOf, current: card, css, sheets: pageSheets(inputs) }) };
 }
 
+/** The card components and every component their templates use, nested, for their stylesheets. */
+function cardTagsAndParts(inputs: ThumbnailInputs) {
+  const { site, sources } = inputs;
+  const seen = new Set<string>();
+  const visit = (tag: string) => {
+    if (seen.has(tag) || !Object.hasOwn(site.components, tag)) return;
+    seen.add(tag);
+    for (const part of startTags(sources[site.components[tag]] ?? "")) visit(part.name);
+  };
+  Object.keys(site.components).filter((tag) => tag.startsWith("card-")).forEach(visit);
+  return [...seen];
+}
+
 const lookKey = (look: CardLook) => `${look.tag}|${look.attribute?.name ?? ""}|${String(look.attribute?.value ?? "")}`;
 
 export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, options: CardLookGalleryOptions) {
@@ -74,6 +88,8 @@ export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, op
     const keys = looks.map(lookKey);
     // The same looks: only their pictures follow the sources.
     if (keys.join("\n") !== tiles.map((entry) => entry.key).join("\n")) {
+      // The tile with focus keeps it when the looks change (a stylesheet read late adds variants).
+      const focused = tiles.find((entry) => entry.tile === document.activeElement)?.key;
       for (const entry of tiles) entry.thumb.destroy();
       tiles = looks.map((look, at) => {
         const tile = button("", () => options.onPick(look), "card-looks__tile");
@@ -87,6 +103,8 @@ export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, op
       });
       grid.replaceChildren(...tiles.map((entry) => entry.tile));
       if (!tiles.length) grid.append(node("p", "card-looks__empty", "No card components on this site."));
+      if (focused !== undefined) (tiles.find((entry) => entry.key === focused) ?? tiles[0])?.tile.focus({ preventScroll: true });
+      if (placed) place();
     }
     for (const { thumb, look } of tiles) {
       const markup = freshCardMarkup(look.tag, templateOf, look.attribute) ?? "";
@@ -94,8 +112,9 @@ export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, op
     }
   }
 
+  let placed = false;
   const inputs = options.inputs();
-  if (inputs) options.prepare(Object.keys(inputs.site.components).filter((tag) => tag.startsWith("card-")));
+  if (inputs) options.prepare(cardTagsAndParts(inputs));
   render();
 
   // Arrows move between tiles, row by row; Esc closes.
@@ -133,6 +152,7 @@ export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, op
     const top = below + height <= paneRect.height - 12 || above < 12 ? Math.max(12, Math.min(below, paneRect.height - 12 - height)) : above;
     box.style.top = `${top}px`;
     box.style.left = `${Math.max(12, Math.min(a.right - paneRect.left - width, paneRect.width - 12 - width))}px`;
+    placed = true;
   }
   place();
   tiles[0]?.tile.focus({ preventScroll: true });
