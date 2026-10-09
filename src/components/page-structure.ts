@@ -15,7 +15,7 @@ import "./page-structure.css";
 import type { TemplateStructureItem } from "../page-builder/component-model";
 import type { ComponentStructureModel } from "../page-builder/components";
 import type { DragPress } from "../page-builder/insert-drag";
-import type { StructureDropView, TreeRow } from "../page-builder/tree-drop";
+import { foldRows, type StructureDropView, type TreeRow } from "../page-builder/tree-drop";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
 // fed by the runtime's index paths after each render. A row selects its
@@ -29,7 +29,8 @@ import type { StructureDropView, TreeRow } from "../page-builder/tree-drop";
 // inside a component instance) drags as the page's blocks do (7 px of
 // movement starts it, so a plain press still selects); while a block is
 // dragged, the tree shows where it lands as an indented line (dropView,
-// tree-drop.ts).
+// tree-drop.ts). Folded containers open after a hold or as the target;
+// only rows the drag opened fold back when it moves on or ends.
 
 export type PageMetaField = "title" | "description";
 
@@ -1003,6 +1004,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // ---- A block dragged over the page or the tree (tree-drop.ts decides). ----
   // Rows a drag unfolded: folded back once it moves on or ends.
   const dragOpened = new Set<string>();
+  let springMarked: HTMLElement | undefined;
   let marked: { sig?: string; row?: HTMLElement; moving?: HTMLElement } = {};
   const subtreeEnd = (el: HTMLElement) => {
     const group = el.nextElementSibling;
@@ -1019,7 +1021,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const item = el.dataset.node !== undefined ? items.get(el.dataset.node) : undefined;
       if (!item) return [];
       const { top, bottom } = el.getBoundingClientRect();
-      return [{ item, level: Number(el.getAttribute("aria-level")) || 1, top, bottom, end: subtreeEnd(el) }];
+      return [{ item, folded: el.getAttribute("aria-expanded") === "false", level: Number(el.getAttribute("aria-level")) || 1, top, bottom, end: subtreeEnd(el) }];
     }),
     indent: () => ({
       left: tree.getBoundingClientRect().left + LINE_LEFT,
@@ -1037,6 +1039,25 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         const id = key(target.slice(0, depth)), el = rows.get(id), item = items.get(id);
         if (el && item && el.hasAttribute("aria-expanded") && isFolded(id)) { fold(item, el, false); dragOpened.add(id); }
       }
+    },
+    open(target) {
+      const id = key(target), el = rows.get(id), item = items.get(id);
+      if (el && item && el.hasAttribute("aria-expanded") && isFolded(id)) { fold(item, el, false); dragOpened.add(id); }
+    },
+    foldBelow(y, target) {
+      for (const path of [...foldRows(dropView.rows(), y, target, dragOpened)].reverse()) {
+        const id = key(path), el = rows.get(id), item = items.get(id);
+        if (!el || !item) continue;
+        dragOpened.delete(id);
+        fold(item, el, true);
+      }
+    },
+    spring(target) {
+      const el = target && rows.get(key(target));
+      if (el === springMarked) return;
+      springMarked?.classList.remove("is-spring");
+      springMarked = el;
+      springMarked?.classList.add("is-spring");
     },
     mark(shown, reveal, moving) {
       const sig = JSON.stringify([shown, moving]);

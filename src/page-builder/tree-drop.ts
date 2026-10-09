@@ -1,4 +1,4 @@
-// A block's drag over Page Structure (ticket 12 §6 and §8). In the tree the
+// A block's drag over Page Structure (ticket 12 §6–8). In the tree the
 // gap between the rows under the pointer is the place and the pointer's x
 // picks the depth, one level per indent step, as in file trees: of the
 // depths that gap allows, the nearest whose container takes the block wins
@@ -8,14 +8,16 @@
 // the same spot. Containers come from the structure itself: <main>,
 // Sections, Divs and a component instance's items slots. The decisions are
 // pure; `createStructureDrop` drives page-structure.ts's view with them.
+// Folded containers spring open after a 400 ms hold, or at once when picked.
+// Drag-opened rows below the pointer fold back when off the target's way.
 
 import type { NativeStructureItem } from "../components/native-preview";
 import type { DropContainer, DropRect } from "./drop-report";
 import { dropEndIndex, dropRefusal, dropStays, isBand, type DraggedBlock, type DropTarget } from "./drop-target";
 import { snapIndex } from "./section-snap";
 
-/** An element's row on show, measured in the editor's viewport; `end` is the bottom of its open subtree. */
-export interface TreeRow { item: NativeStructureItem; level: number; top: number; bottom: number; end: number }
+/** An element's visible row in viewport coordinates; `folded` hides children, `end` includes its open subtree. */
+export interface TreeRow { item: NativeStructureItem; level: number; folded: boolean; top: number; bottom: number; end: number }
 /** A line between rows: viewport y and the level a row there would have. */
 export interface TreeLine { y: number; level: number }
 /** Where a drop in the tree goes, its line and the container's row (tinted). */
@@ -50,6 +52,34 @@ export function structureContainer(item: NativeStructureItem, itemsSlots: ItemsS
   return { ...base, kind: "items", slot, children: children(assigned), empty: !assigned.length };
 }
 
+/** Only items slots inside a component instance hold editable page containers. */
+function openRows(rows: readonly TreeRow[], itemsSlots: ItemsSlots) {
+  const byNode = new Map(rows.map((row) => [key(row.item.node), row]));
+  const parentOf = (row: TreeRow) => byNode.get(key(row.item.node.slice(0, -1)));
+  // Inside a component instance only its items slots hold page blocks: a Section or
+  // Div in any other slot (or a template part) is the component's, not a container.
+  return (row: TreeRow) => {
+    for (let child = row, up = parentOf(row); up; child = up, up = parentOf(up)) {
+      if (up.item.tag.includes("-") && !itemsSlots(up.item.tag).includes(child.item.slot)) return false;
+    }
+    return true;
+  };
+}
+
+/** The folded row under y that takes this block, including the instance slot rule. */
+export function springRow(rows: readonly TreeRow[], y: number, block: DraggedBlock, itemsSlots: ItemsSlots): readonly number[] | undefined {
+  if (isBand(block)) return undefined;
+  const row = rows.find((row) => y >= row.top && y < row.bottom);
+  if (!row?.folded || !openRows(rows, itemsSlots)(row)) return undefined;
+  const container = structureContainer(row.item, itemsSlots);
+  return container && !dropRefusal(block, container) ? row.item.node : undefined;
+}
+
+/** Only drag-opened rows below the pointer and off the target's way fold without moving the row under it. */
+export function foldRows(rows: readonly TreeRow[], y: number, target: readonly number[] | undefined, opened: ReadonlySet<string>): readonly number[][] {
+  return rows.filter((row) => opened.has(key(row.item.node)) && row.top > y && !row.folded && !(target && within(target, row.item.node))).map((row) => row.item.node);
+}
+
 /** The level the pointer's x asks for: level 1 at `left`, one more per `indent` px. */
 export const levelAt = (x: number, left: number, indent: number) => Math.max(1, Math.round((x - left) / Math.max(indent, 1)) + 1);
 
@@ -81,14 +111,7 @@ export function treeDrop(rows: readonly TreeRow[], y: number, level: number, blo
   if (isBand(block)) return bandPick(rows, y, block, itemsSlots);
   const byNode = new Map(rows.map((row) => [key(row.item.node), row]));
   const parentOf = (row: TreeRow) => byNode.get(key(row.item.node.slice(0, -1)));
-  // Inside a component instance only its items slots hold page blocks: a Section or
-  // Div in any other slot (or a template part) is the component's, not a container.
-  const open = (row: TreeRow) => {
-    for (let child = row, up = parentOf(row); up; child = up, up = parentOf(up)) {
-      if (up.item.tag.includes("-") && !itemsSlots(up.item.tag).includes(child.item.slot)) return false;
-    }
-    return true;
-  };
+  const open = openRows(rows, itemsSlots);
   const shown = block.kind === "move" ? rows.filter((row) => !within(row.item.node, block.path)) : rows;
   let gap = shown.findIndex((row) => y < (row.top + row.bottom) / 2);
   if (gap < 0) gap = shown.length;
@@ -136,6 +159,12 @@ export interface StructureDropView {
   indent(): { left: number; step: number };
   /** Unfolds the rows down to `node` and `node` itself; rows unfolded so before and off that way fold back (none: all, but `keep`'s way). */
   unfold(node: readonly number[] | undefined, keep?: readonly number[]): void;
+  /** Opens one folded row and records it as drag-opened; user-opened rows stay untracked. */
+  open(node: readonly number[]): void;
+  /** Folds only drag-opened rows below y and off the target's way. */
+  foldBelow(y: number, target: readonly number[] | undefined): void;
+  /** Marks the folded row waiting to spring open (none: clears the cue). */
+  spring(node: readonly number[] | undefined): void;
   /** The line and the tinted container row (none: clears); `reveal` scrolls the line into view; `moving` fades the dragged row. */
   mark(shown: { line: TreeLine; row?: readonly number[]; ok: boolean } | undefined, reveal: boolean, moving?: readonly number[]): void;
   /** Scrolls the tree when y is near its top or bottom edge. */
@@ -155,23 +184,65 @@ export interface StructureDrop {
   painted(): string | undefined;
 }
 
-export function createStructureDrop(view: StructureDropView, block: DraggedBlock, itemsSlots: ItemsSlots): StructureDrop {
+/** Schedules a spring hold and returns its cancellation, so tests can drive time. */
+export type SpringTimer = (ms: number, opened: () => void) => () => void;
+const springTimer: SpringTimer = (ms, opened) => {
+  const timer = setTimeout(opened, ms);
+  return () => clearTimeout(timer);
+};
+
+export function createStructureDrop(view: StructureDropView, block: DraggedBlock, itemsSlots: ItemsSlots, after: SpringTimer = springTimer): StructureDrop {
   const moving = block.kind === "move" ? block.path : undefined;
   let mirrored = "";
+  let pending: { node: readonly number[]; cancel: () => void } | undefined;
+  let pointerY = 0;
+  const cancelSpring = () => {
+    if (!pending) return;
+    pending.cancel();
+    pending = undefined;
+    view.spring(undefined);
+  };
+  const spring = (node: readonly number[] | undefined) => {
+    if (node && pending && key(node) === key(pending.node)) { view.spring(node); return; }
+    cancelSpring();
+    if (!node) return;
+    view.spring(node);
+    pending = { node, cancel: after(400, () => {
+      const current = springRow(view.rows(), pointerY, block, itemsSlots);
+      pending = undefined;
+      view.spring(undefined);
+      if (current && key(current) === key(node)) view.open(node);
+    }) };
+  };
   const show = (drop: DropTarget | undefined, at: { line: TreeLine; row?: readonly number[] } | undefined, reveal: boolean) =>
     view.mark(drop && at && !dropStays(block, drop) ? { ...at, ok: drop.ok } : undefined, reveal, moving);
   return {
     aim(x, y) {
-      if (!view.over(x, y)) return undefined;
+      if (!view.over(x, y)) { cancelSpring(); return undefined; }
+      pointerY = y;
       // Back over the canvas (or off both) the tree's line is drawn anew.
       mirrored = "tree";
       view.edgeScroll(y);
       const { left, step } = view.indent();
-      const pick = treeDrop(view.rows(), y, levelAt(x, left, step), block, itemsSlots);
+      const level = levelAt(x, left, step);
+      let pick = treeDrop(view.rows(), y, level, block, itemsSlots);
+      const path = pick.target?.ok ? pick.target.container.path : undefined;
+      if (!isBand(block)) {
+        view.foldBelow(y, path);
+        // A folded container picked opens at once, and the place is picked again
+        // among its children on show (Lex, 2026-10-09).
+        const own = path && view.rows().find((row) => key(row.item.node) === key(path));
+        if (own && own.folded) {
+          view.open(own.item.node);
+          pick = treeDrop(view.rows(), y, level, block, itemsSlots);
+        }
+      }
+      spring(springRow(view.rows(), y, block, itemsSlots));
       show(pick.target, pick.line && { line: pick.line, row: pick.row }, false);
       return { target: pick.target };
     },
     mirror(drop) {
+      cancelSpring();
       // Asked again and again: unfold and scroll only when the target changes;
       // the line is measured each time (a redrawn tree moves it).
       const id = drop ? `${key(drop.container.path)}/${drop.index}/${drop.ok}` : "";
@@ -181,6 +252,7 @@ export function createStructureDrop(view: StructureDropView, block: DraggedBlock
       show(drop, drop && treeLineFor(view.rows(), drop), changed);
     },
     end(kept) {
+      cancelSpring();
       view.mark(undefined, false);
       view.unfold(undefined, kept?.container.path);
     },

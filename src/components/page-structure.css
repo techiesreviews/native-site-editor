@@ -1,5 +1,6 @@
 /* The page structure tree in the sidebar: one row per page element,
-   indented by depth, the preview's selection marked. */
+   indented by depth, the preview's selection marked. A folded drop container
+   turns its caret during the hold before opening, unless motion is reduced. */
 .page-structure {
   /* One level per step, wide enough for a drag's depth to follow the pointer's x. */
   --structure-indent: 14px;
@@ -84,7 +85,8 @@
 .page-structure__row.is-drag-source {
   opacity: 0.55;
 }
-.page-structure__row.is-drop-target {
+.page-structure__row.is-drop-target,
+.page-structure__row.is-spring {
   background: color-mix(in oklab, var(--primary) 9%, transparent);
 }
 .page-structure__row.is-drop-refused {
@@ -173,6 +175,20 @@
 }
 .page-structure__row[aria-expanded="false"] .page-structure__toggle::before {
   mask-image: var(--icon-caret-right);
+}
+/* The caret counts the hold before opening; the tint remains without motion. */
+.page-structure__row.is-spring .page-structure__toggle {
+  color: var(--primary);
+}
+.page-structure__row.is-spring[aria-expanded="false"] .page-structure__toggle::before {
+  animation: structure-spring 400ms linear;
+  animation-fill-mode: forwards;
+}
+@keyframes structure-spring {
+  to { transform: rotate(90deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-structure__row.is-spring .page-structure__toggle::before { animation: none; }
 }
 .page-structure__row[aria-expanded] .page-structure__toggle:hover {
   color: var(--text);

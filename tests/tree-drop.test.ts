@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { NativeStructureItem } from "../src/components/native-preview";
 import type { DraggedBlock, DropTarget } from "../src/page-builder/drop-target";
-import { createStructureDrop, levelAt, structureContainer, treeDrop, treeLineFor, type StructureDropView, type TreeRow } from "../src/page-builder/tree-drop";
+import { createStructureDrop, foldRows, springRow, type SpringTimer, levelAt, structureContainer, treeDrop, treeLineFor, type StructureDropView, type TreeRow } from "../src/page-builder/tree-drop";
 
 // A page as Structure shows it; `open` rows show their children.
 type Spec = [tag: string, children?: Spec[], extra?: { cls?: string; slot?: string; open?: boolean }];
@@ -16,7 +16,7 @@ function items(specs: Spec[], parent: number[] = []): NativeStructureItem[] {
 function rowsOf(list: NativeStructureItem[], level = 1, out: TreeRow[] = []): TreeRow[] {
   for (const item of list) {
     const top = out.length * 22;
-    const row: TreeRow = { item, level, top, bottom: top + 20, end: top + 20 };
+    const row: TreeRow = { item, level, folded: Boolean(item.children.length) && !(item as NativeStructureItem & { open?: boolean }).open, top, bottom: top + 20, end: top + 20 };
     out.push(row);
     if ((item as NativeStructureItem & { open?: boolean }).open) {
       rowsOf(item.children, level + 1, out);
@@ -145,6 +145,9 @@ test("the tree's side of a drag unfolds to a canvas target once, draws it and fo
     over: (x) => x < 200,
     rows: () => rows,
     indent: () => ({ left: 0, step: 14 }),
+    open: () => {},
+    foldBelow: () => {},
+    spring: () => {},
     unfold: (node, keep) => calls.push(`unfold ${node?.join(".") ?? "-"} keep ${keep?.join(".") ?? "-"}`),
     mark: (shown, reveal, moving) => calls.push(`mark ${shown ? `${shown.line.level}@${shown.line.y}:${shown.row?.join(".")}:${shown.ok}` : "-"} ${reveal} ${moving?.join(".") ?? "-"}`),
     edgeScroll: () => calls.push("scroll"),
@@ -175,4 +178,133 @@ test("the tree's side of a drag unfolds to a canvas target once, draws it and fo
   drag.end(drop);
   assert.deepEqual(calls, ["mark - false -", "unfold - keep 1.0.1"]);
   assert.equal(drag.painted(), "<p>");
+});
+
+
+test("springRow accepts only folded containers under y that take the block", () => {
+  const folded = at("1.1");
+  assert.deepEqual(springRow(rows, folded.top + 2, paragraph, noSlots), [1, 1]);
+  assert.equal(springRow(rows, at("1.0").top + 2, paragraph, noSlots), undefined);
+  assert.equal(springRow(rows, at("1.0.0").top + 2, paragraph, noSlots), undefined);
+  assert.equal(springRow(rows, folded.bottom + 1, paragraph, noSlots), undefined);
+  assert.equal(springRow(rows, folded.top + 2, section, noSlots), undefined);
+  const moved: DraggedBlock = { kind: "move", path: [1, 1], band: false };
+  assert.equal(springRow(rows, folded.top + 2, moved, noSlots), undefined);
+  const main = rowsOf(items([["main", [["section"]]]]));
+  assert.equal(springRow(main, 2, paragraph, noSlots), undefined);
+});
+
+test("springRow shares the tree's exact items slot rule, including deeper containers", () => {
+  const body: Spec = ["div", [["div", [["p"]]]], { slot: "body", open: true }];
+  const card: Spec = ["card-x", [body], { open: true }];
+  const list = rowsOf(items([["main", [["section", [card], { open: true }]], { open: true }]]));
+  const div = list[4];
+  assert.equal(springRow(list, div.top + 2, paragraph, noSlots), undefined);
+  const slots = (tag: string) => tag === "card-x" ? ["body"] : [];
+  assert.deepEqual(springRow(list, div.top + 2, paragraph, slots), div.item.node);
+  const instance = list.map((row) => row === list[2] ? { ...row, folded: true } : row);
+  assert.deepEqual(springRow(instance, list[2].top + 2, paragraph, slots), list[2].item.node);
+  assert.equal(springRow(instance, list[2].top + 2, paragraph, noSlots), undefined);
+  assert.equal(springRow(list, div.top + 2, paragraph, () => [" body "]), undefined);
+});
+
+// A deterministic clock and a view that changes folded state when opened.
+function springDrag(block = paragraph) {
+  let now = 0;
+  const timers = new Set<{ at: number; run: () => void }>();
+  const opened: string[] = [];
+  const cues: (string | undefined)[] = [];
+  let shown = rows.map((row) => ({ ...row }));
+  const view = {
+    over: (x: number) => x < 200,
+    rows: () => shown,
+    indent: () => ({ left: 0, step: 14 }),
+    open: (node: readonly number[]) => {
+      opened.push(node.join("."));
+      shown = shown.map((row) => row.item.node.join(".") === node.join(".") ? { ...row, folded: false } : row);
+    },
+    foldBelow: () => {},
+    spring: (node: readonly number[] | undefined) => {
+      const id = node?.join(".");
+      if (id !== cues.at(-1)) cues.push(id);
+    },
+    unfold: () => {},
+    mark: () => {},
+    edgeScroll: () => {},
+    painted: () => undefined,
+  } satisfies StructureDropView;
+  const after: SpringTimer = (ms, run) => {
+    const timer = { at: now + ms, run };
+    timers.add(timer);
+    return () => { timers.delete(timer); };
+  };
+  return {
+    drag: createStructureDrop(view, block, noSlots, after), opened, cues, timers,
+    fold: (id: string) => { shown = shown.map((row) => row.item.node.join(".") === id ? { ...row, folded: true } : row); },
+    advance: (ms: number) => {
+      now += ms;
+      for (const timer of [...timers]) if (timer.at <= now) { timers.delete(timer); timer.run(); }
+    },
+  };
+}
+
+test("spring hold opens at 400 ms without restarting on each aim", () => {
+  const h = springDrag();
+  // The upper half picks the preceding Section, so this row waits for its hold.
+  const y = at("1.1").top + 2;
+  h.drag.aim(28, y);
+  assert.deepEqual(h.cues, ["1.1"]);
+  h.advance(399);
+  h.drag.aim(28, y);
+  assert.deepEqual(h.opened, []);
+  h.advance(1);
+  assert.deepEqual(h.opened, ["1.1"]);
+  assert.deepEqual(h.cues, ["1.1", undefined]);
+});
+
+test("another folded row restarts the spring hold", () => {
+  const h = springDrag();
+  h.fold("1.0.1");
+  h.drag.aim(28, at("1.1").top + 2);
+  h.advance(300);
+  h.drag.aim(28, at("1.0.1").top + 2);
+  h.advance(100);
+  assert.deepEqual(h.opened, []);
+  h.advance(300);
+  assert.deepEqual(h.opened, ["1.0.1"]);
+});
+
+test("leaving the tree, mirroring the canvas or ending cancels the spring hold", () => {
+  for (const leave of ["aim", "mirror", "end"]) {
+    const h = springDrag();
+    h.drag.aim(28, at("1.1").top + 2);
+    h.advance(200);
+    if (leave === "aim") h.drag.aim(300, 0);
+    else if (leave === "mirror") h.drag.mirror(undefined);
+    else h.drag.end();
+    h.advance(400);
+    assert.deepEqual(h.opened, [], leave);
+    assert.equal(h.timers.size, 0);
+    assert.equal(h.cues.at(-1), undefined);
+  }
+});
+
+test("an ok pick opens its folded container at once; a Section drag never opens", () => {
+  const h = springDrag();
+  h.drag.aim(28, at("1.1").bottom - 2);
+  assert.deepEqual(h.opened, ["1.1"]);
+  assert.equal(h.timers.size, 0);
+  const band = springDrag(section);
+  band.fold("1");
+  band.drag.aim(28, at("1.1").bottom - 2);
+  assert.deepEqual(band.opened, []);
+  assert.equal(band.timers.size, 0);
+});
+
+test("fold-back only closes drag-opened rows below y and off the target's way", () => {
+  const opened = new Set(["1.0", "1.0.1"]);
+  assert.deepEqual(foldRows(rows, at("1.0").top, [1, 0, 1], opened), []);
+  assert.deepEqual(foldRows(rows, at("1.0").top, [1, 1], opened), [[1, 0, 1]]);
+  assert.deepEqual(foldRows(rows, at("1.0.1").top, [1, 1], opened), []);
+  assert.deepEqual(foldRows(rows, at("1.0").top, [1, 1], new Set()), []);
 });

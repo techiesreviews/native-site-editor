@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { DropContainer, DropRect, DropReport } from "../src/page-builder/drop-report";
 import type { DraggedBlock, DropTarget } from "../src/page-builder/drop-target";
 import type { DragAim } from "../src/page-builder/insert-drag";
-import { createBlockDragSession } from "../src/page-builder/block-drag-session";
+import { createBlockDragSession, type BlockDragSessionPorts } from "../src/page-builder/block-drag-session";
 
 const rect = (left: number, top: number, width: number, height: number): DropRect => ({ left, top, width, height });
 const layout = { display: "block", cols: 0, dir: "row", wrap: "nowrap" };
@@ -211,4 +211,31 @@ test("over Page Structure the tree picks the target; over the canvas the tree mi
   assert.equal(shown.at(-1)?.where, "Release to cancel");
   assert.equal(tree.mirrored.at(-1), undefined);
   assert.equal(session.drop(undefined, false), false);
+});
+
+
+test("leaving Structure clears its spring hold before the canvas probe answers", () => {
+  const mirrored: (DropTarget | undefined)[] = [];
+  let resolveProbe: ((report: DropReport | undefined) => void) | undefined;
+  const ports = {
+    frame: {} as HTMLElement,
+    draw: () => {},
+    probe: () => new Promise<DropReport | undefined>((resolve) => { resolveProbe = resolve; }),
+    scroll: () => {},
+    drop: () => {},
+    announce: () => {},
+    tree: {
+      aim: () => ({ target: undefined }),
+      mirror: (target: DropTarget | undefined) => { mirrored.push(target); },
+      end: () => {},
+      painted: () => undefined,
+    },
+  } satisfies BlockDragSessionPorts;
+  const session = createBlockDragSession({ kind: "new", block: "paragraph" }, ports);
+  session.aim(undefined, false, () => {}, { x: 100, y: 150 });
+  session.aim({ x: 400, y: 150 }, false, () => {}, { x: 900, y: 150 });
+  assert.deepEqual(mirrored, [undefined]);
+  assert.ok(resolveProbe);
+  session.clear(false);
+  resolveProbe(undefined);
 });

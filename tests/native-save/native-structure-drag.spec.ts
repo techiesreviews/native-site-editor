@@ -1,11 +1,13 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { editorMounted } from "./drafts";
 
-// Page Structure in a block's drag (ticket 12 §6 and §8): over the canvas the
+// Page Structure in a block's drag (ticket 12 §6–8): over the canvas the
 // tree unfolds to the target and shows the same spot as an indented line;
 // dragged in the tree (a row, or a block from the rail) the gap under the
 // pointer is the place and its x the depth, as in file trees; a Section
-// snaps between page bands. Default fixture group: native-cards (#repo=540),
+// snaps between page bands. Folded containers spring open during a hold or
+// open at once when targeted, then fold back unless opened by the user.
+// Default fixture group: native-cards (#repo=540),
 // <main> › hero, #work (h2, Div (grid) › two cards), #services (h2, ul).
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const rail = (page: Page) => page.getByRole("navigation", { name: "Blocks" });
@@ -55,11 +57,11 @@ async function pointIn(page: Page, selector: string, fx = 0.5, fy = 0.5, dx = 0)
 }
 
 /** Presses at `from` and moves past the 7 px threshold to `to`. */
-async function pressAndMove(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+async function pressAndMove(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 8) {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(from.x, from.y + 10, { steps: 2 });
-  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await page.mouse.move(to.x, to.y, { steps });
   await expect(ghost(page)).toBeVisible();
 }
 
@@ -105,12 +107,15 @@ test("a row dragged in Structure takes its depth from the pointer's x", async ({
   const original = await source(page);
   await unfold(page, "1.1");
   await unfold(page, "1.2");
+  await unfold(page, "1.1.1");
+  await unfold(page, "1.1.1.0");
+  await unfold(page, "1.1.1.1");
   const heading = await box(row(page, "1.2.0"));
   await pressAndMove(page, { x: heading.x, y: heading.y }, { x: heading.x, y: heading.y - 12 });
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
   await expect(row(page, "1.2.0")).toHaveClass(/is-drag-source/);
-  // The gap below the folded grid: in the grid (level 4) or after it in the Section (level 3).
-  const y = (await box(row(page, "1.1.1"))).bottom - 3;
+  // After the grid's open subtree, the pointer stays in the gap while x changes depth.
+  const y = (await box(row(page, "1.2"))).top - 1;
   await page.mouse.move(await levelX(page, 4), y, { steps: 4 });
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   expect(await depth(page)).toBe("3");
@@ -166,8 +171,9 @@ test("a block from the rail drops in Structure at the depth the pointer's x pick
   await open(page, baseURL);
   const original = await source(page);
   await unfold(page, "1.1");
+  await unfold(page, "1.1.1");
   const button = await box(rail(page).getByRole("button", { name: "Paragraph", exact: true }));
-  const y = (await box(row(page, "1.1.1"))).bottom - 3;
+  const y = (await box(row(page, "1.2"))).top - 1;
   await pressAndMove(page, button, { x: await levelX(page, 4), y });
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
   expect(await depth(page)).toBe("3");
@@ -217,4 +223,68 @@ test("a card's row in a section component's items slot drags below the other car
   await expect.poll(async () => flat(await source(page))).toMatch(/Harbour Lane Pottery<\/h3>.*Fern &amp; Kettle<\/h3>.*<\/section-work>/);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
+});
+
+test("a held rail Paragraph springs a folded Section open and a drop elsewhere folds it back", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const original = await source(page);
+  const hero = row(page, "1.0");
+  await expect(hero).toHaveAttribute("aria-expanded", "false");
+  const button = await box(rail(page).getByRole("button", { name: "Paragraph", exact: true }));
+  // The upper half picks before the Section; the row itself waits for the hold.
+  await pressAndMove(page, button, { x: await levelX(page, 2), y: (await box(hero)).top + 3 }, 1);
+  await expect(hero).toHaveAttribute("aria-expanded", "true");
+  await expect(hero).not.toHaveClass(/is-spring/);
+  // Drop in another Section, so the spring-opened branch closes at drag end.
+  await page.mouse.move(await levelX(page, 3), (await box(row(page, "1.2"))).bottom - 3);
+  await expect(row(page, "1.2")).toHaveAttribute("aria-expanded", "true");
+  await expect(ghost(page)).toHaveAttribute("data-where", /^Into Section/);
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/<p>Text<\/p>/);
+  await expect(hero).toHaveAttribute("aria-expanded", "false");
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});
+
+test("fold-back affects only drag-opened rows below the pointer; user-opened rows survive a drop", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const original = await source(page);
+  await unfold(page, "1.1");
+  const button = await box(rail(page).getByRole("button", { name: "Paragraph", exact: true }));
+  const services = row(page, "1.2");
+  await expect(services).toHaveAttribute("aria-expanded", "false");
+  await pressAndMove(page, button, { x: await levelX(page, 2), y: (await box(services)).top + 3 }, 1);
+  await expect(services).toHaveAttribute("aria-expanded", "true");
+  // Move above the drag-opened Section: it closes without shifting this row.
+  await page.mouse.move(await levelX(page, 3), (await box(row(page, "1.1.0"))).bottom - 3);
+  await expect(services).toHaveAttribute("aria-expanded", "false");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Heading");
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/<h2>Recent work<\/h2><p>Text<\/p>/);
+  await expect(row(page, "1.1")).toHaveAttribute("aria-expanded", "true");
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});
+
+test("x asking for inside a folded Div opens its row immediately, including under reduced motion", async ({ page, baseURL }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page, baseURL);
+  const original = await source(page);
+  await unfold(page, "1.1");
+  const div = row(page, "1.1.1");
+  await expect(div).toHaveAttribute("aria-expanded", "false");
+  const button = await box(rail(page).getByRole("button", { name: "Paragraph", exact: true }));
+  await pressAndMove(page, button, { x: await levelX(page, 4), y: (await box(div)).bottom - 3 });
+  await expect(div).toHaveAttribute("aria-expanded", "true");
+  await expect(div).not.toHaveClass(/is-spring/);
+  await expect(row(page, "1.1.1.0")).toBeVisible();
+  await expect(div).toHaveClass(/is-drop-target/);
+  await expect(line(page)).toBeVisible();
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › before Card project");
+  expect(await depth(page)).toBe("3");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(div).toHaveAttribute("aria-expanded", "false");
+  await expect(row(page, "1.1")).toHaveAttribute("aria-expanded", "true");
+  expect(await source(page)).toBe(original);
 });

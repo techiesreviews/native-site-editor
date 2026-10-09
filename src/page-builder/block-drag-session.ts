@@ -9,7 +9,8 @@
 // asked again on the next aim. A release the last probe did not see is
 // probed once more, and that answer decides the drop. Over Page Structure
 // the tree picks the target itself (tree-drop.ts), at once; over the canvas
-// the tree mirrors the canvas's target. No DOM.
+// the tree mirrors the canvas's target. Leaving the tree clears its spring
+// hold before a canvas probe answers, so a row never opens after leaving. No DOM.
 
 import type { DropReport } from "./drop-report";
 import { dropLabel, dropStays, isBand, type DraggedBlock, type DropTarget } from "./drop-target";
@@ -105,6 +106,7 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
           : { target: undefined, where: picked ? "No place here" : "Release to cancel" });
         return;
       }
+      if (overTree) ports.tree?.mirror(undefined);
       overTree = false;
       if (probing) return;
       if (!fresh(at)) run();
