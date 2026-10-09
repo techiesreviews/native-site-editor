@@ -1,7 +1,7 @@
 ---
 title: "Starter: variants on its components"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -22,3 +22,8 @@ Show the variant contract ([07](../../tickets/07-variant-contract.md) §1, §6) 
 
 - Each variant renders as intended when set by hand in a page; the default look is unchanged.
 - One commit on the starter's `dev` branch; screenshots of each variant.
+
+## Done (2026-10-09)
+
+- Starter `dev` commit `ef6ffb7`: `data-layout="centered"` on `section-hero` and `section-intro`; `data-layout="content-left"` (inside `@media (width > 720px)`, so the editor shows it as wide screens only; the image stays above the text on narrow screens) and `"centered"` (one column, image at the text's measure) on `section-split`, whose default stays image-left, so no `image-left` value; yes/no `data-featured` on `card-project` (accent edge, same size). All `:host([data-…])`, no tone, no annotations.
+- Checked: `componentVariants` from `shared/variants.ts` finds exactly these with no warnings; in Chromium each variant set by hand on the real home page renders as intended at 1280 and 390px, featured cards keep equal row heights and the stretched title link; `/`, `/about/`, `/work/fern-and-kettle/` are pixel-identical to before. Sol review: no defects; its note on fractional widths between the 720/721px queries led to `width > 720px`.
