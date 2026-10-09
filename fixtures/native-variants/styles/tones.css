@@ -1,0 +1,7 @@
+body { margin: 0; font-family: system-ui, sans-serif; }
+body > header, body > footer, main > section { padding: 24px; }
+main { display: grid; gap: 24px; }
+[data-tone="light"] { color: #202020; background: #fff; }
+[data-tone="dark"] { color: #fff; background: #202020; }
+[data-tone="brand"] { color: #fff; background: #254b36; }
+[data-tone="accent"] { color: #202020; background: #e4f0e8; }

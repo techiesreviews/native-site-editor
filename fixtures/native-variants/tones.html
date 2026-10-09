@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page tones</title>
+  <link rel="stylesheet" href="/styles/tones.css">
+  <script type="module" src="/components/components.js"></script>
+</head>
+<body>
+  <header><h2>Page header</h2></header>
+  <main>
+    <section id="plain-band">
+      <h2>Plain band</h2>
+      <section><h3>Nested section</h3></section>
+      <card-tip><h3 slot="title">Plain band card</h3></card-tip>
+    </section>
+    <section-split>
+      <h2 slot="title">Component band</h2>
+      <card-tip slot="lede"><h3 slot="title">Component band card</h3></card-tip>
+    </section-split>
+  </main>
+  <footer><h2>Page footer</h2></footer>
+</body>
+</html>

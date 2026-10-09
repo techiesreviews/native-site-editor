@@ -6,7 +6,7 @@ import { expect, test, type Page } from "@playwright/test";
 // past two, behind one Variants button. The fixture `native-variants`
 // (id 541, fixtures/native-variants): a section-split with Layout (its
 // content-left only on wide screens) and the global Color scheme; two
-// card-tips with Size, Tone (site CSS), Featured (wide screens only), Pinned and
+// card-tips with Size, Emphasis (tag-named site CSS), Featured (wide screens only), Pinned and
 // Color scheme, the first written with a size no rule knows. The site script
 // owns Open, so the edit bar excludes it; Pinned must be written as "true".
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -73,7 +73,7 @@ test("past two variants they sit behind Variants: Custom kept, a yes/no checkbox
   const size = fields.getByRole("combobox", { name: "Size", exact: true });
   await expect(size.locator("option")).toHaveText(["Default", "Small", "Custom"]);
   await expect(size).toHaveValue("=huge");
-  await expect(fields.getByRole("combobox", { name: "Tone", exact: true }).locator("option")).toHaveText(["Default", "Accent"]);
+  await expect(fields.getByRole("combobox", { name: "Emphasis", exact: true }).locator("option")).toHaveText(["Default", "Accent"]);
   await expect(fields.getByRole("combobox", { name: "Color scheme", exact: true })).toBeVisible();
 
   await expect(fields.getByRole("checkbox", { name: "Pinned", exact: true })).toBeVisible();

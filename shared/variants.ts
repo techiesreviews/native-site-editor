@@ -558,6 +558,11 @@ export function variantsForClass(className: string, site: SiteVariants): Variant
   return variantsOf(mergeAxes(site.sheets.flatMap((sheet) => sheet.rules.filter((rule) => rule.key === key).map(({ axes }) => axes))));
 }
 
+/** Attribute-only site rules that style plain elements as well as component hosts. */
+export function globalVariants(site: SiteVariants): Variant[] {
+  return variantsOf(mergeAxes(site.sheets.flatMap((sheet) => sheet.rules.filter((rule) => rule.key === "global").map(({ axes }) => axes))));
+}
+
 export function valueLabel(value: string) {
   const label = value.replace(/[-_]+/g, " ").trim();
   return label.charAt(0).toUpperCase() + label.slice(1);

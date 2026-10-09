@@ -164,7 +164,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         },
       });
     }
-    // Component instance and Button block variants (src/page-builder/components.ts).
+    // Component instance, Button block and page band variants (src/page-builder/components.ts).
     if (ports.componentTools) controls.push(...ports.componentTools.variantControls(selection));
     // The link the selected text sits in, inside the selected text element.
     let textLink: { node: number[]; text: NativeTextSelection } | undefined;

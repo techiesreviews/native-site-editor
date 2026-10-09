@@ -21,7 +21,7 @@ body {
   color: #f5f5f7;
 }
 
-card-tip[data-tone="accent"] {
+card-tip[data-emphasis="accent"] {
   background: #fde9c4;
 }
 

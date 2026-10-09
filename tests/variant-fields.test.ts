@@ -113,7 +113,7 @@ test("edit bar excludes script-set own CSS names but keeps site and global names
   const sheets = [{ path: "site.css", source: 'card-tip[data-ready="true"] {} [data-color-scheme=dark] {}' }];
   const scripts = [{ path: "tips.mjs", source: 'tip.toggleAttribute("data-open"); tip.dataset.ready = ""; document.documentElement.dataset.colorScheme = "dark";' }];
   const read = () => instanceVariantFields("card-tip", css, sheets, [], scripts);
-  assert.deepEqual(read().map(field => field.attribute), ["data-tone", "data-ready", "data-color-scheme"]);
+  assert.deepEqual(read().map(field => field.attribute), ["data-ready", "data-color-scheme"]);
   assert.equal(read().find(field => field.attribute === "data-ready")?.form, "true");
   // A draft replacing the same path must invalidate the script scan.
   scripts[0].source = 'tip.dataset.tone = "dark";';

@@ -1,15 +1,37 @@
-// An instance's (or a Button's) variants as edit bar fields (ticket 07 §5): a dropdown per
+// An instance's, Button's or page band's variants as edit bar fields (ticket 07 §5): a dropdown per
 // choice, a checkbox per yes/no variant. Leaving the attribute off is the
 // default look, so the default option removes it; a value no rule knows
 // shows as "Custom" and stays until something else is picked. A variant (or
 // a value) styled only inside a media or container query says where it
 // shows ("wide screens only").
 
-// Loaded when an instance or a Button (`a.btn`) is first selected
+// Loaded when an instance, Button (`a.btn`) or potential page band is first selected
 // (src/page-builder/components.ts),
 // so the variant parser stays out of the boot bundle.
 
-import { scriptsSetAttributes, siteVariants, valueLabel, variantsForClass, variantsForComponent, type Variant } from "../../shared/variants";
+import { isSectionTemplate, startTags } from "../../shared/html-source";
+import { globalVariants, scriptsSetAttributes, siteVariants, valueLabel, variantsForClass, variantsForComponent, type Variant } from "../../shared/variants";
+
+/** A page band has no enclosing band or component instance, even when neither has a tone set. */
+export function isToneBand(chain: readonly string[], page: boolean, template: (tag: string) => string | undefined): boolean {
+  if (!page || !chain.length) return false;
+  const band = (tag: string, ancestors: readonly string[]) => {
+    const html = template(tag);
+    if (html !== undefined) {
+      const root = startTags(html)[0];
+      return isSectionTemplate(html) || Boolean(root && ["header", "footer"].includes(root.name) && /^[\s]*$/.test(html.slice(0, root.start).replace(/<!--[\s\S]*?-->/g, "")));
+    }
+    return tag === "section" || (["header", "footer"].includes(tag) && !ancestors.some((name) => ["article", "aside", "main", "nav", "section"].includes(name)));
+  };
+  const ancestors = chain.slice(0, -1);
+  return band(chain.at(-1)!, ancestors) && !ancestors.some((tag, index) => template(tag) !== undefined || band(tag, ancestors.slice(0, index)));
+}
+
+/** Light is the absent tone unless CSS explicitly declares another default alias. */
+export function toneDefault(variant: Variant): Variant {
+  return variant.attribute === "data-tone" && variant.defaultValue === undefined && variant.values.some(({ value }) => value === "light")
+    ? { ...variant, defaultValue: "light" } : variant;
+}
 
 export interface VariantField {
   attribute: string;
@@ -72,8 +94,14 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
 }
 
 /** Instance fields from component/page CSS, excluding script-set names only from the component CSS. */
-export function instanceVariantFields(tag: string, css: string, sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[], scripts: readonly { path: string; source: string }[] = []) {
-  return variantFields(variantsForComponent(tag, { css, site: siteVariants(sheets), scriptAttributes: scriptsSetAttributes(scripts) }).variants, attributes);
+export function instanceVariantFields(tag: string, css: string, sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[], scripts: readonly { path: string; source: string }[] = [], band = false) {
+  const variants = variantsForComponent(tag, { css, site: siteVariants(sheets), scriptAttributes: scriptsSetAttributes(scripts) }).variants;
+  return variantFields(variants.filter((variant) => band || variant.attribute !== "data-tone").map(toneDefault), attributes);
+}
+
+/** Plain page bands offer only Tone, from global attribute rules. */
+export function bandVariantFields(sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
+  return variantFields(globalVariants(siteVariants(sheets)).filter((variant) => variant.attribute === "data-tone").map(toneDefault), attributes);
 }
 
 /**
@@ -88,5 +116,5 @@ export function variantAttribute(field: VariantField, choice: string): string | 
 
 /** Button axes use only the site's explicit .btn rules, never global component axes. */
 export function buttonVariantFields(sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
-  return variantFields(variantsForClass("btn", siteVariants(sheets)), attributes);
+  return variantFields(variantsForClass("btn", siteVariants(sheets)).filter((variant) => variant.attribute !== "data-tone"), attributes);
 }

@@ -465,7 +465,7 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- Variants (ticket 07 §5). ----
 
   /**
-   * Instance and Button variants as edit bar controls, read from component
+   * Instance, Button and page band variants as edit bar controls, read from component
    * CSS or .btn rules in the page's stylesheets: up to two
    * in the bar, more behind one Variants button. Each pick is one undo step.
    */
@@ -479,7 +479,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (source === undefined || !range || range.tag.name !== selection.tag) return [];
     const attributes = startTagAttributes(source, range.tag);
     const button = isButtonBlock(selection.tag, attributes);
-    if (!button && !isComponent(selection.tag)) return [];
+    if (!button && !isComponent(selection.tag) && !["section", "header", "footer"].includes(selection.tag)) return [];
     const reader = variantReader;
     if (!reader) {
       // The bar shows again with them once the reader is here.
@@ -487,8 +487,9 @@ export function createComponentTools(deps: ComponentDeps) {
         .catch((error) => { variantLoad = undefined; void handleChunkLoadFailure(error); });
       return [];
     }
-    const instance = button ? undefined : instanceAt(selection.path, selection.node);
-    if ((!button && !instance) || !openingSourceSafe(source, range.tag)) return [];
+    const instance = isComponent(selection.tag) ? instanceAt(selection.path, selection.node) : undefined;
+    const band = reader.isToneBand(elementChain(source, selection.node)?.map((element) => element.localName) ?? [], Object.values(current.routes).includes(selection.path), (tag) => templateOf(tag)?.source);
+    if ((!button && !instance && !band) || !openingSourceSafe(source, range.tag)) return [];
     const at = { path: selection.path, node: selection.node, source, range, tag: selection.tag };
     const sources = deps.sources();
     // An instance inside a template takes the site styles of the page the preview shows.
@@ -499,7 +500,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const pick = (field: VariantField, choice: string) => {
       const now = deps.sources()[at.path];
       if (now !== at.source || deps.revision() !== revision) {
-        deps.announce(`The ${button ? "button" : "instance"} changed. Select it again to pick a variant.`);
+        deps.announce(`The ${button ? "button" : instance ? "instance" : "band"} changed. Select it again to pick a variant.`);
         return;
       }
       if (attributes.filter((item) => item.name === field.attribute).length > 1) {
@@ -513,7 +514,8 @@ export function createComponentTools(deps: ComponentDeps) {
       change(at.path, [attributeEdit(at.source, at.range.tag, field.attribute, value)], message, at.node);
     };
     const variants = button ? reader.buttonVariantFields(sheets, attributes)
-      : reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(instance!.templatePath)] ?? "", sheets, attributes, deps.scripts());
+      : instance ? reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(instance.templatePath)] ?? "", sheets, attributes, deps.scripts(), band)
+        : reader.bandVariantFields(sheets, attributes);
     const fields = variants.map((field): SelectControl | CheckboxControl => {
       const note = field.note ? { note: field.note } : {};
       return field.kind === "yes-no"
