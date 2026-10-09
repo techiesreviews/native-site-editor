@@ -82,9 +82,10 @@
    in the panel it opens, until dismissed. */
 .edit-mode__note {
   display: inline-flex;
-  flex: 0 1 auto;
+  /* Gives way first in a narrow bar: the Show toggle keeps its words. */
+  flex: 0 1000 auto;
   align-items: center;
-  min-width: 0;
+  min-width: 96px;
   max-width: 340px;
   border-radius: var(--radius);
   background: color-mix(in oklch, var(--component) 12%, transparent);
