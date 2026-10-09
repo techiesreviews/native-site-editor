@@ -1,7 +1,7 @@
 ---
 title: Browser check of the starter's tones
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [60-starter-tone-rules]
 builder: sol
@@ -21,3 +21,10 @@ Ticket [08](../../tickets/08-accessible-tone-text.md) §3: the CSS must match th
 - The other tests that use `fixtures/actual-starter`, the drift test included, still pass.
 
 **Note (2026-10-09), from slice 60:** computed colours on the starter now read back as `color(srgb-linear …)` rather than `rgb(…)`; specs comparing against exact `rgb()` values need a tolerance after `fixtures/actual-starter` is refreshed. Check both `prefers-color-scheme` modes (slice 75).
+
+## Done (2026-10-09)
+
+- `tests/native-save/native-tones-actual.spec.ts` (`@actual`, nightly): the starter's home and About pages (plus intro/split/quote, `.btn`, `.cta`, `.steps` and a form mounted on home), every band (header, `main > *`, footer) in each tone (none, light, dark, brand, accent), 14 brands (the starter's, `oklch(0.61 0.12 h)` every 45°, #ffd400, #0066cc, #ff0000, #808080, `oklch(0.7 0.3 150)`), `prefers-color-scheme` light and dark, with Chromium's `contrast-color()` and with the computed-text fallback. Colours are read back through a canvas pixel, so `color(srgb-linear …)` and `oklch(…)` need no parsing; 0.02 tolerance for 8-bit rounding. 21,840 checks in ~8 s; worst text and fill both 4.935:1. Compositing helper unit-tested in `tests/tone-contrast.test.ts`.
+- `fixtures/actual-starter` was already at the starter's `dev` head `6a20035` (slice 77); unchanged. By hand: with the nudge removed from `tones.css` the spec fails 1,656 checks, all on the computed-text fallback (e.g. hue 0 brand header 3.94:1); `contrast-color()` alone masks a missing nudge, hence both passes.
+- `npm run check`, `npm test` pass; the `@actual` group and the drift test pass except `native-edit-bar-label-actual.spec.ts` at 760 px (fails on `origin/dev` too, see slice 77).
+- Only Chromium was run: WebKit lacks system libraries on this machine (`libevent`, `libavif`, `libmanette`) and Firefox is not installed. Built by Sol, checked by Claude. Commits: <commits>.
