@@ -24,7 +24,7 @@ The fixture is used by:
 - `tests/component-model.test.ts`, testing Make component on its contact and
   Recent work sections.
 - The `@actual`-tagged browser specs under `tests/native-save/`
-  (`npm run test:browser:actual`; `grep -l @actual tests/native-save`).
+  (`npm run test:browser:actual`; `grep -rl @actual tests/native-save`).
 - `tests/native-save/fixture-contract.ts`, identifying the actual fixture,
   and `scripts/native-browser-tests.mjs`, selecting it for the actual group
   (`npm run test:browser:actual`).
