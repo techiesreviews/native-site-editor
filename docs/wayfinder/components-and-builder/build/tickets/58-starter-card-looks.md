@@ -1,7 +1,7 @@
 ---
 title: "Starter: a second card look"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -18,3 +18,8 @@ So the gallery has something to show ([09](../../tickets/09-prototype-add-existi
 
 - Both looks render in a grid alongside `card-project`; the variant works when set by hand.
 - One commit on the starter's `dev` branch; screenshots.
+
+## Done (2026-10-09)
+
+- Starter `dev` commit `b670408`: new `components/card-quote/` (heading slot `title`, slot `body`, no image or link slot; accent edge, larger italic quote, fills its grid cell, `:host { position: relative; }`); `card-project` gains `:host([data-layout="centered"])`; `AGENTS.md` mentions both, and its "add a component" example now names `card-person`. Real pages unchanged.
+- Checked in Chromium (Sol's throwaway page on the starter): card-quote and card-project mixed in one `.cards` grid with equal row heights, the centred variant set by hand, light and dark bands, 1280 and 390px, card-quote's title link stretched with a visible focus ring; the six real pages are pixel-identical. Screenshots in `.scratch/cb-build-shots/58/`. Sol review: no defects.
