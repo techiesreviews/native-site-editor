@@ -134,6 +134,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [77 Conventions: a band with no tone follows the page](tickets/77-chapter-tone-default.md) | sol | 75 |
 | [61 Tone in the edit bar, on page bands only](tickets/61-tone-on-bands-only.md) | sol | 13 |
 | [62 Browser check of the starter's tones](tickets/62-tone-contrast-browser-check.md) | sol | 60 |
+| [84 Nightly CI runs the @actual and @native-static groups](tickets/84-nightly-runs-tagged-groups.md) | sol | – |
 | [63 Vendor the new starter for the preview editor](tickets/63-vendor-starter-for-preview.md) | sol | 05, 06, 15, 17, 58, 60, 65 |
 
 ## Finding the frontier
