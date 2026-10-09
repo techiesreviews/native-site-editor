@@ -1,7 +1,7 @@
 ---
 title: Fill the card from a page, with the info strip
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [51-card-fill-mapping, 52-link-to-page-combobox]
 builder: claude ★
@@ -20,3 +20,9 @@ Ticket [09](../../tickets/09-prototype-add-existing-page.md) §4–5.
 
 - `@smoke` spec (for example `tests/native-save/native-add-card.spec.ts`): Add card, pick an existing page: the card shows its title, description, image and link, the strip lists the sources; undo takes the fill back, then the card.
 - Nightly: Change page refills; close hides the strip.
+
+## Done (2026-10-10)
+
+- Picking a page in "Link to a page…" fills the fresh card as one undo step (`fillCard` in `src/page-builder/cards.ts`, writing `cardFill`'s rows with the pure `cardFillMarkup` in `card-fill.ts`): text, image (srcset and picture sources dropped), link slot "Read about …"; a slot with no element gets its fallback's shape in template order; a card without a link slot gets its title wrapped in a plain link (decision 3). The combobox gives way to an information strip (`src/components/card-fill-strip.ts`, lazy): the page, each slot and its source, Change page (fills again from the card as added; Esc goes back) and close. Undoing the fill, or any change to the card, drops the strip.
+- Commits "Picking a page fills the new card; a strip lists each slot's source" and a review-fix commit on `dev`. Byte budget: about +2.6 KB gzip before first paint.
+- Tests: 8 `cardFillMarkup` cases in `tests/card-fill.test.ts`; `@smoke` fill/strip/undo-twice and nightly Change page / Esc / close cases in `native-add-card.spec.ts`.
