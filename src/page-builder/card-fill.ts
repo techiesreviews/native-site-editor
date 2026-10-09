@@ -184,7 +184,9 @@ function fillElementEdits(source: string, element: SourceElement, row: CardFillR
   if (row.role === "image") {
     const img = inside("img");
     if (!img || row.src === undefined) return [];
-    const sources = [...descendants(element.children)].filter((child) => child.name === "source").map((child) => {
+    // Only the image's own picture: a video's sources beside it stay.
+    const picture = img.parent?.name === "picture" ? img.parent.children : [];
+    const sources = picture.filter((child): child is SourceElement => child.type === "element" && child.name === "source").map((child) => {
       const lead = leadOf(source, child.start);
       const start = lead === undefined ? child.start : Math.max(0, child.start - lead.length - (source[child.start - lead.length - 2] === "\r" ? 2 : 1));
       return { start, end: child.end, text: "" };
@@ -211,12 +213,12 @@ function newSlotElement(template: string, row: CardFillRow, link?: string): stri
     return first?.type === "element" && attribute(line, first, "slot") === name;
   });
   if (copy) return filled(copy);
-  const slot = `slot="${escapeAttribute(name)}"`;
   const fallback = templateSlots(template).find((entry) => entry.name === name)?.fallback ?? "";
   const nodes = parseSource(fallback);
   const [only, ...more] = nodes.filter((node): node is SourceElement => node.type === "element");
   if (only && !more.length && nodes.every((node) => node === only || !/[^\t\n\f\r ]/.test(fallback.slice(node.start, node.end))))
-    return filled(`${fallback.slice(only.start, only.tag.nameEnd)} ${slot}${fallback.slice(only.tag.nameEnd, only.end)}`);
+    return filled(applyEdits(fallback.slice(only.start, only.end), [attributeEdit(fallback, only.tag, "slot", name)].map((edit) => ({ ...edit, start: edit.start - only.start, end: edit.end - only.start }))));
+  const slot = `slot="${escapeAttribute(name)}"`;
   if (row.role === "image") return `<img ${slot} src="${escapeAttribute(row.src ?? "")}" alt="">`;
   if (row.role === "link") return `<a ${slot} href="${escapeAttribute(row.href ?? "")}">${escapeText(row.text ?? "")}</a>`;
   return filled(`<span ${slot}></span>`);

@@ -257,7 +257,7 @@ test("a matched component's slot without an element gets the fallback's element,
   const card = `<article><slot name="title"><h3>Title</h3></slot><slot name="badge"><card-badge class="pill">Old badge</card-badge></slot></article>`;
   const page = source.replace("<h1>", "<card-badge>New badge</card-badge><h1>");
   assert.equal(write("<card-x></card-x>", page, card),
-    '<card-x><h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3><card-badge slot="badge" class="pill">New badge</card-badge></card-x>');
+    '<card-x><h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3><card-badge class="pill" slot="badge">New badge</card-badge></card-x>');
 });
 
 test("a picture's sources go with its old image", () => {
@@ -271,4 +271,13 @@ test("a picture's sources go with its old image", () => {
     "</card-project>",
   ].join("\n");
   assert.match(write(markup, source, card, "https://example.test"), /<picture slot="image">\n {4}<img src="\/images\/social-card\.png" alt="">\n {2}<\/picture>/);
+});
+
+test("an image's fill leaves a video's sources beside it, and a fallback's own slot attribute is replaced", () => {
+  const card = `<slot name="image"><img src="/placeholder.svg" alt=""></slot>${template}`;
+  const markup = '<card-project><figure slot="image"><img src="/old.jpg" alt=""><video><source src="/film.mp4"></video></figure></card-project>';
+  assert.match(write(markup, source, card, "https://example.test"), /<figure slot="image"><img src="\/images\/social-card\.png" alt=""><video><source src="\/film\.mp4"><\/video><\/figure>/);
+  const forwarded = `<article><slot name="title"><h3>Title</h3></slot><slot name="badge"><card-badge slot="inner">Old badge</card-badge></slot></article>`;
+  const page = source.replace("<h1>", "<card-badge>New badge</card-badge><h1>");
+  assert.match(write("<card-x></card-x>", page, forwarded), /<card-badge slot="badge">New badge<\/card-badge>/);
 });
