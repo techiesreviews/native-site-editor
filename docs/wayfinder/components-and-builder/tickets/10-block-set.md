@@ -31,3 +31,5 @@ Decided with Lex.
 6. **Existing code.** The hidden element catalogue (`native-elements.ts`) becomes the block set: its markup code is kept, cut to these six blocks and wired back into Add. List, video, embed, divider and form choices are deleted. The disabled Columns/Grid go, replaced by the Div's Layout choice. `static-section-defaults.ts` goes with the masters (ticket 02).
 
 **Amended by ticket 04 (2026-10-09):** any slot holding repeated items, named or unnamed, accepts drops of any block and gets Add card. Other named slots still refuse drops.
+
+**Amended by ticket 12 (2026-10-09):** Image and Button insert placeholders without dialogs (a placeholder image; `href="#"`); the picker and the address are set afterwards from the edit bar. Blocks live in an icon rail beside Structure, not in Add.
