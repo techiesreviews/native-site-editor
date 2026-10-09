@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { DropContainer, DropRect } from "../src/page-builder/drop-report";
-import { dropLabel, dropRefusal, dropTarget, type DraggedBlock } from "../src/page-builder/drop-target";
+import { dropLabel, dropRefusal, dropStays, dropTarget, type DraggedBlock } from "../src/page-builder/drop-target";
 
 const rect = (left: number, top: number, width: number, height: number): DropRect => ({ left, top, width, height });
 const layout = { display: "block", cols: 0, dir: "row", wrap: "nowrap" };
@@ -245,4 +245,14 @@ test("an item of one items slot is not a sibling of another items slot of the sa
   const title = box([1, 0, 3], "slot", rect(60, 320, 200, 100), [], { slot: "title" });
   const moving: DraggedBlock = { kind: "move", path: [1, 0, 1], band: false };
   assert.equal(dropTarget([title, b, main], { x: 200, y: 370 }, moving)!.container, title);
+});
+
+test("beside itself an item stays only in the items slot it fills; another slot of its instance is a move", () => {
+  const card: DraggedBlock = { kind: "move", path: [1, 0, 1], band: false };
+  const own = box([1, 0], "items", rect(0, 0, 800, 400), [child(1, rect(0, 0, 380, 200), "card-project")], { slot: "items" });
+  const more = box([1, 0], "items", rect(0, 400, 800, 400), [child(2, rect(0, 400, 380, 200), "card-project")], { slot: "more" });
+  for (const index of [1, 2]) {
+    assert.equal(dropStays(card, { ok: true, container: own, index }), true);
+    assert.equal(dropStays(card, { ok: true, container: more, index }), false);
+  }
 });

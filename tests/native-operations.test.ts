@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
 import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, nativeEditInside, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeElementMovePlan } from "../src/page-builder/native-move-choices.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
   const source = '<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
@@ -321,6 +322,17 @@ test("moves between instances rewrite or remove the old slot and preserve card p
   assert.equal(compactMove(page, [0, 0, 0], [0, 1], 0), '<main><div></div><section-work><p>Page block</p></section-work></main>');
   // Between plain containers the page's own bytes stay as written.
   assert.equal(compactMove('<main><div><p slot="old">Kept</p></div><div></div></main>', [0, 0, 0], [0, 1], 0), '<main><div></div><div><p slot="old">Kept</p></div></main>');
+});
+
+test("beside itself into another items slot of the same instance is a move, not a stay", () => {
+  const source = '<main><section-work><card-project slot="items">A</card-project><p slot="more">B</p></section-work></main>';
+  for (const index of [0, 1]) {
+    assert.equal(compactMove(source, [0, 0, 0], [0, 0], index, "more"), '<main><section-work><card-project slot="more">A</card-project><p slot="more">B</p></section-work></main>');
+    const plan = nativeElementMovePlan(source, [0, 0, 0], { parent: [0, 0], index, slot: "more" }, workItems);
+    assert.equal(plan.status, "moved");
+    if (plan.status === "moved") assert.deepEqual(plan.selection, [0, 0, 0]);
+    assert.deepEqual(nativeElementMovePlan(source, [0, 0, 0], { parent: [0, 0], index, slot: "items" }, workItems), { status: "stayed", reason: "already-position" });
+  }
 });
 
 test("items paths open at every items boundary while non-items, card parts and template content stay sealed", () => {

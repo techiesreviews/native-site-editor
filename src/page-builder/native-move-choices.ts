@@ -13,12 +13,10 @@ const same = (a: readonly number[], b: readonly number[]) => a.length === b.leng
 /** A fresh guarded edit and the moved element's path after removal/insertion; `items` opens instances' items slots. */
 export function nativeElementMovePlan(source: string, from: readonly number[], destination: NativeElementMoveDestination, items?: ItemsSlotRule): NativeElementMoveResult {
   const refusal: NativeElementMoveResult = { status: "refused", error: "This destination cannot accept the selected element." };
-  if (from.length && same(destination.parent, from.slice(0, -1)) && [from.at(-1)!, from.at(-1)! + 1].includes(destination.index)) {
-    return nativeMoveDestinationValid(source, from, destination, items, destination.slot)
-      ? { status: "stayed", reason: "already-position" } : refusal;
-  }
   const edit = nativeMoveEdit(source, from, destination, items, destination.slot);
-  if (!edit) return refusal;
+  // Beside itself in the slot it already fills: it stays (another items slot of its instance moves it).
+  if (!edit) return from.length && same(destination.parent, from.slice(0, -1)) && [from.at(-1)!, from.at(-1)! + 1].includes(destination.index) &&
+    nativeMoveDestinationValid(source, from, destination, items, destination.slot) ? { status: "stayed", reason: "already-position" } : refusal;
   const oldParent = from.slice(0, -1), oldIndex = from.at(-1)!;
   const parent = [...destination.parent];
   // Removing a preceding sibling shifts the destination container and every

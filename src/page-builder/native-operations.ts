@@ -485,12 +485,13 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
   if (!valid) return undefined;
   const { moving, parent } = valid;
   const index = from[from.length - 1];
-  if (moving.parent === parent && [index, index + 1].includes(destination.index)) return undefined;
+  const sameSlot = moving.parent === parent && (!valid.instance || slotOf(source, moving) === slot);
+  // Where it is, in the slot it fills: nothing to write. Beside itself into another slot of its instance is a move.
+  if (sameSlot && [index, index + 1].includes(destination.index)) return undefined;
   const lineStart = source.lastIndexOf("\n", moving.start - 1) + 1;
   const lead = source.slice(lineStart, moving.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
   const element = source.slice(moving.start, moving.end);
-  const sameSlot = moving.parent === parent && (!valid.instance || slotOf(source, moving) === slot);
   let assigned = element;
   // Leaving an instance or entering another slot: the old assignment goes before the destination's is written, never doubled.
   if (!sameSlot && (valid.instance || (moving.parent && isInstance(moving.parent)))) {

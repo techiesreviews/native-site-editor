@@ -143,12 +143,13 @@ export function dropContainerName(container: DropContainer) {
   return `${componentLabel(container.tag)} › ${container.slot ? `“${container.slot}” slot` : "items"}`;
 }
 
-/** Whether a move target is the place the block already is. */
+/** Whether a move target is the place the block already is (for an items slot, one the block already fills). */
 export function dropStays(block: DraggedBlock, target: DropTarget) {
   if (block.kind !== "move") return false;
   const parent = block.path.slice(0, -1), i = block.path[block.path.length - 1];
-  return target.container.path.length === parent.length && parent.every((step, at) => target.container.path[at] === step) &&
-    (target.index === i || target.index === i + 1);
+  const container = target.container;
+  return container.path.length === parent.length && parent.every((step, at) => container.path[at] === step) &&
+    (target.index === i || target.index === i + 1) && (container.kind !== "items" || container.children.some((child) => child.index === i));
 }
 
 /** The label by the pointer: "Into Div (stack) › after Paragraph", or the refusal's reason. */
