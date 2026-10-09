@@ -774,6 +774,21 @@
         rect: hidden ? null : area && area.width && area.height ? area : own };
     });
   }
+  function bandRect(el, depth) {
+    if (getComputedStyle(el).display === "none") return { left: 0, top: 0, width: 0, height: 0 };
+    var r = dropRect(el);
+    if ((r.width && r.height) || depth > 10) return r;
+    // Hidden kids (styles included) measure zero; a slot shows what it is assigned.
+    var assigned = el.localName === "slot" ? el.assignedElements() : [];
+    var kids = Array.prototype.slice.call(assigned.length ? assigned : el.shadowRoot ? el.shadowRoot.children : el.children);
+    var parts = kids.map(function (kid) { return bandRect(kid, depth + 1); }).filter(function (part) { return part.width && part.height; });
+    if (!parts.length) return r;
+    var top = Math.min.apply(null, parts.map(function (part) { return part.top; }));
+    var left = Math.min.apply(null, parts.map(function (part) { return part.left; }));
+    var bottom = Math.max.apply(null, parts.map(function (part) { return part.top + part.height; }));
+    var right = Math.max.apply(null, parts.map(function (part) { return part.left + part.width; }));
+    return { left: left, top: top, width: right - left, height: bottom - top };
+  }
   function dropContainers(x, y, moving, bands) {
     if (!pageEl || !state) return [];
     var moved = Array.isArray(moving) ? walkNodePath(pageEl, moving) : null;
@@ -791,7 +806,12 @@
     // Keep the moved band too: insertion indices still refer to the source.
     if (bands === true) {
       var main = pageEl.querySelector("main");
-      return main ? [entry(main, "main", dropKids(main), dropRect(main), main, Array.prototype.slice.call(main.childNodes))] : [];
+      if (!main) return [];
+      var kids = dropKids(main);
+      var report = entry(main, "main", kids, dropRect(main), main, Array.prototype.slice.call(main.childNodes));
+      // A band without a box of its own (display: contents, an inline host) spans what it shows.
+      report.children.forEach(function (child) { child.rect = bandRect(kids[child.index], 0); });
+      return [report];
     }
     // Only zero-size wrappers need a search below their own box.
     function under(el) {

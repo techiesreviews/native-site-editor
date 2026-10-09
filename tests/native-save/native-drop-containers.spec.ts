@@ -78,12 +78,13 @@ type Harness = {
   send: (raw: unknown) => void;
 };
 
-async function setup(page: Page) {
+const probeSources = { "index.html": '<html><body><main><section style="padding:20px"><div id="target" style="height:100px">Probe</div></section></main></body></html>' };
+
+async function setup(page: Page, sources: Record<string, string> = probeSources) {
   await page.goto("/tests/fixtures/native-elements-compat.html");
-  await page.evaluate(async () => {
+  await page.evaluate(async (sources) => {
     const { createNativePreview } = await import("/src/components/native-preview.ts");
     const { resolveNativeProject } = await import("/shared/native-project.ts");
-    const sources = { "index.html": '<html><body><main><section style="padding:20px"><div id="target" style="height:100px">Probe</div></section></main></body></html>' };
     const site = resolveNativeProject(Object.keys(sources));
     if (!site.ok) throw new Error(site.error);
     const held: unknown[] = [];
@@ -108,7 +109,7 @@ async function setup(page: Page) {
     Object.assign(window, { dropTest: state });
     state.preview.activate(site.site);
     state.preview.update({ sources });
-  });
+  }, sources);
   await expect(page.frameLocator(".native-preview-frame").locator("#target")).toBeVisible();
   await expect.poll(() => page.evaluate(async () => Boolean(await (window as unknown as { dropTest: Harness }).dropTest.preview.probeDrop({ x: 40, y: 40 })))).toBe(true);
 }
@@ -214,4 +215,20 @@ test("items slots alone open the seal, including empty areas and zero-size wrapp
   expect(fallback.containers[0]).toMatchObject({ kind: "slot", slot: "body" });
   expect(fallback.containers[0].rect.width).toBeGreaterThan(0);
   await page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.preview.destroy());
+});
+
+test("a bands probe through the preview spans a box-less band and snaps by it", async ({ page }) => {
+  await setup(page, { "index.html": '<html><body style="margin:0"><header style="height:50px">Head</header><main>' +
+    '<section id="target" style="height:100px">A</section><section style="display:contents"><div style="height:100px">B</div></section>' +
+    '</main><footer style="height:50px">Foot</footer></body></html>' });
+  const snap = (y: number) => page.evaluate(async (y) => {
+    const report = await (window as unknown as { dropTest: Harness }).dropTest.preview.probeDrop({ x: 10, y }, undefined, true);
+    const { sectionSnap } = await import("/src/page-builder/section-snap.ts");
+    const main = report!.containers[0];
+    return { kinds: report!.containers.map(c => c.kind), heights: main.children.map(c => c.rect.height), index: sectionSnap(main, y).index };
+  }, y);
+  expect(await snap(20)).toEqual({ kinds: ["main"], heights: [100, 100], index: 0 });
+  expect((await snap(170)).index).toBe(1);
+  expect((await snap(230)).index).toBe(2);
+  expect((await snap(280)).index).toBe(2);
 });
