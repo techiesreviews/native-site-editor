@@ -87,11 +87,21 @@ test("past two variants they sit behind Variants: Custom kept, a yes/no checkbox
 
   // Picking a known size replaces the custom one, which then leaves the list.
   await fields.getByRole("combobox", { name: "Size", exact: true }).selectOption({ label: "Small" });
-  await expect.poll(() => source(page)).toBe(on.replace('data-size="huge"', 'data-size="small"'));
+  const small = on.replace('data-size="huge"', 'data-size="small"');
+  await expect.poll(() => source(page)).toBe(small);
   await expect(fields.getByRole("combobox", { name: "Size", exact: true }).locator("option")).toHaveText(["Default", "Small"]);
 
-  await undo(page);
-  await expect.poll(() => source(page)).toBe(on);
-  await undo(page);
-  await expect.poll(() => source(page)).toBe(before);
+  // Off removes the bare attribute; the default removes the size; the popover stays open throughout.
+  await fields.getByRole("checkbox", { name: "Featured (wide screens only)" }).uncheck();
+  const off = small.replace(" data-featured", "");
+  await expect.poll(() => source(page)).toBe(off);
+  await expect(fields.getByRole("checkbox", { name: "Featured (wide screens only)" })).toBeFocused();
+  await fields.getByRole("combobox", { name: "Size", exact: true }).selectOption({ label: "Default" });
+  await expect.poll(() => source(page)).toBe(off.replace('<card-tip data-size="small">', "<card-tip>"));
+  await expect(fields).toBeVisible();
+
+  for (const step of [off, small, on, before]) {
+    await undo(page);
+    await expect.poll(() => source(page)).toBe(step);
+  }
 });

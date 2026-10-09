@@ -25,11 +25,11 @@ test("a value no rule knows shows as Custom and stays an option", () => {
   assert.deepEqual([empty.value, empty.options.at(-1)], ["=", { label: "Custom", value: "=" }]);
 });
 
-test("a yes/no variant is on when the attribute is there, unless it says false", () => {
+test("a yes/no variant is on when the attribute is there, whatever its value, as its presence rule matches", () => {
   const css = `:host {} :host([data-featured]) {}`;
   assert.deepEqual(fields(css)[0], { attribute: "data-featured", label: "Featured", kind: "yes-no", options: [], value: "" });
   assert.equal(fields(css, [{ name: "data-featured", value: "" }])[0].value, "on");
-  assert.equal(fields(css, [{ name: "data-featured", value: "False" }])[0].value, "");
+  assert.equal(fields(css, [{ name: "data-featured", value: "surprise" }])[0].value, "on");
 });
 
 test("a conditional variant says where it shows; a conditional value says it in its option", () => {
@@ -54,6 +54,12 @@ test("conditions read plainly", () => {
   assert.equal(conditionsNote(["@media (hover: hover)"]), "some screens only");
   assert.equal(conditionsNote(["@media (min-width: 40rem)", "@media (min-width: 60rem)"]), "wide screens only");
   assert.equal(conditionsNote(["@media (min-width: 40rem)", "@media (max-width: 20rem)"]), "some screens only");
+  // What it cannot tell for sure is said neutrally, never as the opposite range.
+  assert.equal(conditionsNote(["@media not all and (min-width: 40rem)"]), "some screens only");
+  assert.equal(conditionsNote(["@media (min-width: 40rem), (max-width: 20rem)"]), "some screens only");
+  assert.equal(conditionsNote(["@media (min-width: 40rem) and (max-width: 60rem)"]), "some screens only");
+  assert.equal(conditionsNote(["@media (min-width: 40rem) and @container (max-width: 20rem)"]), "some screens only");
+  assert.equal(conditionsNote(["@container card (width < 20rem)"]), "narrow containers only");
 });
 
 test("a default value alias reads as the default and shows as its own option only when written", () => {

@@ -16,22 +16,28 @@ export interface VariantField {
   kind: "choice" | "yes-no";
   /** Choice options: `""` leaves the attribute off, `=value` writes it. None for yes/no. */
   options: { label: string; value: string }[];
-  /** The option the instance has now; for yes/no, `"on"` or `""`. */
+  /** The option the instance has now; for yes/no, `"on"` (the attribute is there, whatever its value: a presence rule styles it) or `""`. */
   value: string;
   /** Where the whole variant shows, when only somewhere ("wide screens only"). */
   note?: string;
 }
 
-/** One condition chain (`@media (width > 720px) and @container …`) said plainly. */
+/**
+ * One condition chain (`@media (width > 720px) and @container …`) said
+ * plainly; anything it cannot tell for sure (a negation, a list of queries,
+ * both bounds, screen and container together) reads "some screens only".
+ */
 function conditionNote(condition: string) {
   const text = condition.toLowerCase();
+  const media = text.includes("@media"), container = text.includes("@container");
+  if (/\bnot\b|,/.test(text) || media && container) return "some screens only";
   if (/prefers-color-scheme\s*:\s*dark/.test(text)) return "dark mode only";
   if (/prefers-color-scheme\s*:\s*light/.test(text)) return "light mode only";
   if (/^@media\s+print\b/.test(text)) return "print only";
-  const container = text.includes("@container");
-  if (/min-(?:inline-)?(?:width|size)\s*:|(?:width|inline-size)\s*>/.test(text)) return container ? "wide containers only" : "wide screens only";
-  if (/max-(?:inline-)?(?:width|size)\s*:|(?:width|inline-size)\s*</.test(text)) return container ? "narrow containers only" : "narrow screens only";
-  return container ? "some containers only" : "some screens only";
+  const wide = /min-(?:inline-)?(?:width|size)\s*:|(?:width|inline-size)\s*>/.test(text);
+  const narrow = /max-(?:inline-)?(?:width|size)\s*:|(?:width|inline-size)\s*</.test(text);
+  const where = container ? "containers" : "screens";
+  return wide && !narrow ? `wide ${where} only` : narrow && !wide ? `narrow ${where} only` : `some ${where} only`;
 }
 
 /** Where a variant or value with these conditions shows, or nothing when it shows everywhere. */
@@ -47,7 +53,7 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
     const set = attributes.find((attribute) => attribute.name === variant.attribute);
     const note = conditionsNote(variant.conditions);
     if (variant.kind === "yes-no") {
-      return { attribute: variant.attribute, label: variant.label, kind: "yes-no", options: [], value: set && set.value.toLowerCase() !== "false" ? "on" : "", ...(note ? { note } : {}) };
+      return { attribute: variant.attribute, label: variant.label, kind: "yes-no", options: [], value: set ? "on" : "", ...(note ? { note } : {}) };
     }
     const options = [{ label: variant.defaultValue === undefined ? "Default" : `${valueLabel(variant.defaultValue)} (default)`, value: "" }];
     for (const { value, label, conditions } of variant.values) {

@@ -36,7 +36,7 @@ test("slot seam rejects stale snapshots and fills duplicated outlets as one nati
       preview: () => ({ selectAfterUpdate: (request: any) => requests.push(request), selectNode() {} }),
       openFile: async () => { opens++; return false; }, announce() {}, error(error: unknown) { throw error; },
       images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
-      createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {},
+      createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {}, refreshBar() {},
     });
     tools.show(selection);
     const target = { pagePath, pageNode: [0], tag: "test-card", templatePath, expectedRevision: revision,
@@ -134,7 +134,7 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
           sources: () => sources, editor: () => editor, currentPath: () => pagePath, selection: () => selection, previewPage: () => pagePath,
           preview: () => ({ selectAfterUpdate() {}, selectNode() {} }), openFile: async () => false, announce() {}, error(error: unknown) { throw error; },
           images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
-          createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {},
+          createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {}, refreshBar() {},
         });
         const before = tools.structure(pagePath, [0])?.slots.find((slot: any) => slot.name === entry.name);
         let accepted: boolean;
