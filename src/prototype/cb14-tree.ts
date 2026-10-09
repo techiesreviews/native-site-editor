@@ -18,6 +18,7 @@ import { structureLabel } from "../native-structure";
 import { componentLabel } from "../native-insert";
 import { deps, el, latest, mode, isItemsSlot, templatePath, frameSelect, type Model, type TNode, type Target } from "./cb14-core";
 import { renameInput, renaming, startRename, setHoverFromTree, formerSlots, toggleSlot, unfix, hooks as layerHooks } from "./cb14-layer";
+import { slotBadge } from "./cb14-label";
 
 export const treeHooks: { crumb?: (index: number) => void; drill?: (n: TNode) => void } = {};
 let panel: HTMLElement | undefined;
@@ -168,22 +169,15 @@ export function drawTree(model: Model) {
           if (!treeInput) treeInput = renameInput(renaming.original ?? "", "cb14-mode__field cb14-mode__field--tree");
           row.append(treeInput);
         } else {
-          const badge = el("button", `cb14-sbadge${isItemsSlot(d.slot) ? " is-items" : ""}`, d.slot.slot!.name || "items");
-          badge.type = "button";
-          badge.title = `${d.page ? "This page's content in" : "Fallback of"} the slot “${d.slot.slot!.name || "unnamed"}” · click: keep fixed · double-click: rename`;
           const slotNode = d.slot;
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          badge.addEventListener("click", (e) => { e.stopPropagation(); clearTimeout(timer); timer = setTimeout(() => toggleSlot(slotNode), 240); });
-          badge.addEventListener("dblclick", (e) => { e.preventDefault(); e.stopPropagation(); clearTimeout(timer); startRename(slotNode); });
+          const badge = slotBadge({ name: d.slot.slot!.name, on: true, items: isItemsSlot(d.slot), onToggle: () => toggleSlot(slotNode), onRename: () => startRename(slotNode) });
           row.append(badge);
         }
       }
     } else if (d.node && formerSlots.some((f) => f.path.join(".") === d.node!.key)) {
       const g = formerSlots.find((f) => f.path.join(".") === d.node!.key)!;
-      const ghost = el("button", "cb14-sbadge is-fixed", `○ ${g.name}`);
-      ghost.type = "button";
-      ghost.title = `Fixed: click to make it the slot “${g.name}” again`;
-      ghost.addEventListener("click", (e) => { e.stopPropagation(); unfix(g); });
+      // Unchecked: the badge stays, muted and struck through.
+      const ghost = slotBadge({ name: g.name, on: false, onToggle: () => unfix(g) });
       row.append(ghost);
     }
     if (d.open) {

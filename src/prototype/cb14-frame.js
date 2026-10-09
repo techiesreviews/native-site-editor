@@ -307,6 +307,24 @@
     reportHover(hit, slot);
   }, true);
   document.documentElement.addEventListener("mouseleave", function () { if (state.on) reportHover(null, null); });
+  // Outside Edit component mode: a click on a fixed part of an instance's template (not a slot's
+  // fallback, not an element holding slots). The runtime selects the instance and offers no editing;
+  // the editor shows "○ fixed in <tag>" in the name label, with a way into Edit component.
+  window.addEventListener("click", function (e) {
+    if (state.on) return;
+    var path = e.composedPath();
+    var el = null;
+    for (var i = 0; i < path.length; i++) { if (path[i] instanceof Element && path[i].localName !== "slot") { el = path[i]; break; } }
+    var root = el && el.getRootNode();
+    if (!(root instanceof ShadowRoot)) { post({ type: "fixed", tag: null }); return; }
+    var host = root.host;
+    var inFallback = false;
+    for (var at = el.parentElement; at; at = at.parentElement) if (at.localName === "slot") inFallback = true;
+    var holdsSlots = !!el.querySelector("slot");
+    var page = pageEl();
+    if (inFallback || holdsSlots || el.parentNode === root || !page || host.getRootNode() !== document || !page.contains(host)) { post({ type: "fixed", tag: null }); return; }
+    post({ type: "fixed", tag: host.localName, p: pathIn(root, el), host: pathIn(page, host), t: el.localName });
+  }, true);
   // A click on the template's root element (or the instance's own box) selects the root in the
   // template; the runtime alone would select the instance on the page and the template would close.
   window.addEventListener("click", function (e) {

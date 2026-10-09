@@ -90,7 +90,8 @@ export function toFrame(x: number, y: number) {
 let ids = 0;
 const waiting = new Map<number, (data: unknown) => void>();
 export interface FramePress { phase: "start" | "move" | "end" | "cancel"; x: number; y: number; p?: number[]; t?: string }
-export const frameEvents: { dump?: (model: Model) => void; hover?: (p: number[] | null, slot: number[] | null) => void; key?: (key: string) => void; press?: (press: FramePress) => void } = {};
+export interface FixedClick { tag: string | null; p?: number[]; host?: number[]; t?: string }
+export const frameEvents: { fixed?: (click: FixedClick) => void; dump?: (model: Model) => void; hover?: (p: number[] | null, slot: number[] | null) => void; key?: (key: string) => void; press?: (press: FramePress) => void } = {};
 /** The template's root element: selected by path (a click on it would select the instance on the page). */
 function selectRoot(p: number[] | null | undefined) {
   const path = templatePath();
@@ -102,6 +103,7 @@ window.addEventListener("message", (event) => {
   if (data.type === "hover") { frameEvents.hover?.(data.p ?? null, data.slot ?? null); return; }
   if (data.type === "key") { frameEvents.key?.(data.key ?? ""); return; }
   if (data.type === "root") selectRoot(data.p);
+  if (data.type === "fixed") { frameEvents.fixed?.(data as unknown as FixedClick); return; }
   if (data.type === "press") { frameEvents.press?.(data as unknown as FramePress); return; }
   if (data.type === "dump" && data.dump) {
     const model = new Model(data.dump);

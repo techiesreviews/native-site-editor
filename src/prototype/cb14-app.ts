@@ -23,7 +23,10 @@ import { clearLayer, drawLayer, hooks as layerHooks, setFrameState, setHover, en
 import { drawTree, removeTree, treeHooks, treePanel } from "./cb14-tree";
 import { buildHooks, dragging, mountRail } from "./cb14-build";
 import { miniView, refreshViews, type MiniView } from "./cb14-mini";
-import { decorateLabel, watchLabel } from "./cb14-label";
+import { decorateLabel, lock, watchLabel } from "./cb14-label";
+import { createdSlots } from "./cb14-layer";
+import { locateNativeElementRange } from "../native-source-location";
+import { fillInsertEdit, fillMarkup, readInstance, slotStates, templateSlots } from "../page-builder/component-model";
 import { elementPathAt } from "../native-source-location";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { nativePageBody } from "../../shared/native-project";
@@ -40,6 +43,11 @@ export function install(host: Cb14Host) {
   mountSwitcher();
   mountRail();
   watchLabel();
+  frameEvents.fixed = (c) => {
+    lock.click = c.tag ? { ...c, page: deps().previewPage() ?? deps().currentPath() ?? "", at: Date.now() } : undefined;
+    for (const ms of [60, 250, 600]) setTimeout(decorateLabel, ms);
+  };
+  lock.edit = (tag, part) => void requestEdit(tag, part);
   idleReadout();
   frameEvents.dump = (model) => redraw(model);
   frameEvents.hover = (p, slot) => setHover(p, slot);
@@ -137,7 +145,7 @@ function firstInstance(file: string, tag: string) {
   const found = [...descendants(parseSource(html, body.start, body.end))].find((e) => e.name === tag);
   return found ? elementPathAt(html, found.start) : undefined;
 }
-export async function requestEdit(tag: string) {
+export async function requestEdit(tag: string, part?: number[]) {
   const sel = deps().selection();
   const now = mode.now;
   if (now) {
@@ -149,9 +157,9 @@ export async function requestEdit(tag: string) {
     if (n) { await drill(n); return; }
     await exit(false);
   }
-  await enter(tag);
+  await enter(tag, deps().selection(), part);
 }
-async function enter(tag: string, sel = deps().selection()) {
+async function enter(tag: string, sel = deps().selection(), part?: number[]) {
   const page = deps().previewPage() ?? deps().currentPath();
   if (!page || !isComponentTag(tag)) return;
   let topNode = sel && sel.path === page && sel.tag === tag && !sel.host && sel.node ? [...sel.node] : undefined;
@@ -163,10 +171,10 @@ async function enter(tag: string, sel = deps().selection()) {
   mode.now = { page, topNode, chain: [{ tag }], show: "fallbacks", splitPage: page };
   lastEdit.text = undefined;
   activate();
-  await openTemplate(tag, true);
+  await openTemplate(tag, true, part);
   remember();
 }
-async function openTemplate(tag: string, first = false) {
+async function openTemplate(tag: string, first = false, part?: number[]) {
   opening = true;
   try {
     setFrameState(true);
@@ -182,6 +190,8 @@ async function openTemplate(tag: string, first = false) {
         const leaf = variant !== "A" ? m.all().find((n) => n.p.length > 1 && !n.slot && !n.hid && n.r[3] > 0) : undefined;
         if (leaf) { await frameSelect(leaf.p); await wait(120); }
         await frameSelect([0]);
+        // Entered from a locked part on the page: that part is selected.
+        if (part && m.get(part)) { await wait(150); await frameSelect(part); }
         framePost("reveal", { p: null, block: "center" });
         setTimeout(() => framePost("reveal", { p: null, block: "center" }), 700);
         // The code pane folds a template's top element on opening: the caret inside unfolds it.
@@ -239,7 +249,41 @@ async function exit(back = true) {
   for (let i = 0; i < 20 && deps().currentPath() !== now.page; i++) await wait(100);
   if (now.topNode) deps().preview()?.selectNode({ path: now.page, node: now.topNode });
   idleReadout();
+  if (now.topNode && createdSlots.some((c) => c.tag === now.chain[0].tag)) {
+    for (let i = 0; i < 30 && !deps().editor()?.isMounted(now.page); i++) await wait(100);
+    await wait(300);
+    try { fillNewSlots(now.page, now.topNode, now.chain[0].tag); } catch (error) { deps().error(error); }
+  }
 }
+/**
+ * Back on the page after Done: slots made in the template this session get this page's own copy
+ * of their fallback (as a new instance starts with every fallback copied in, ticket 03 rule 7), so
+ * they show on the page and are edited there. The real build does this on every page that uses the
+ * component in the same undo step as the template change; the prototype can only write this page.
+ */
+function fillNewSlots(page: string, node: number[], tag: string) {
+  const names = [...new Set(createdSlots.filter((s) => s.tag === tag).map((s) => s.name))];
+  for (let i = createdSlots.length - 1; i >= 0; i--) if (createdSlots[i].tag === tag) createdSlots.splice(i, 1);
+  const filled: string[] = [];
+  for (const name of names) {
+    const source = deps().sources()[page];
+    const template = deps().sources()[site()?.components[tag] ?? ""];
+    const editor = deps().editor();
+    if (source === undefined || template === undefined || !editor || deps().currentPath() !== page) break;
+    const range = locateNativeElementRange(source, node);
+    if (!range?.close || range.tag.name !== tag) break;
+    const instance = readInstance(source, range);
+    const slots = templateSlots(template);
+    const slot = slots.find((s) => s.name === name);
+    if (!slot || slotStates(template, instance).get(name)?.filled) continue;
+    const edit = fillInsertEdit(source, instance, slots, name, fillMarkup(template, slot));
+    if (!edit) continue;
+    editor.replaceActiveRange({ path: page, start: edit.start, end: edit.end, expected: source.slice(edit.start, edit.end), text: edit.text });
+    filled.push(name);
+  }
+  if (filled.length) readout(`Back on the page`, [`This page now fills the new slot${filled.length > 1 ? "s" : ""} ${filled.map((n) => `“${n}”`).join(", ")} with ${filled.length > 1 ? "their" : "its"} fallback, so ${filled.length > 1 ? "they show" : "it shows"} and can be edited here (one undo step each).`, "The real build fills every page using the component, in the same undo step as the template change."], "done");
+}
+
 /** The code pane moved to another file (Files, ⌘P): the mode ends without moving it back. */
 async function leaveQuietly() {
   if (!mode.now) return;

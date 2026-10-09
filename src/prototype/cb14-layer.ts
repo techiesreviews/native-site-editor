@@ -60,6 +60,8 @@ export function clearLayer() {
 
 // ---- Slots switched to fixed in this session: their chip reads "○ name" and checks them again. ----
 export const formerSlots: { name: string; path: number[]; tag: string; items: boolean }[] = [];
+/** Slots made (or checked again) in this session, by component: Done fills them on the page so they show there. */
+export const createdSlots: { tag: string; name: string }[] = [];
 
 // ---- Hover. ----
 const hover: { p: number[] | null; slot: number[] | null } = { p: null, slot: null };
@@ -112,6 +114,7 @@ export function unfix(g: (typeof formerSlots)[number]) {
   const edit = wrapEdit(source, g.path, g.name);
   if (edit && writeTemplate(edit, `<${g.tag}> → slot “${g.name}” again`, [...g.path, 0])) {
     formerSlots.splice(formerSlots.indexOf(g), 1);
+    createdSlots.push({ tag: tagNow()!, name: g.name });
     done(`Slot “${g.name}” is back`, ["Pages' own content for it shows again."]);
   }
 }
@@ -303,8 +306,10 @@ export function makeSlot(n: TNode) {
   const name = roleName(n, slotNames());
   const source = deps().sources()[templatePath()!] ?? "";
   const edit = wrapEdit(source, n.p, name);
-  if (edit && writeTemplate(edit, `Made <${n.t}> a slot “${name}”`, [...n.p, 0]))
-    done(`“+ slot” on <${n.t}>: now slot “${name}”`, [`Its markup is the slot's fallback; pages can fill <… slot="${name}">.`]);
+  if (edit && writeTemplate(edit, `Made <${n.t}> a slot “${name}”`, [...n.p, 0])) {
+    createdSlots.push({ tag: tagNow()!, name });
+    done(`<${n.t}> is now the slot “${name}”`, [`Its markup is the slot's fallback; pages can fill <… slot="${name}">. Done fills it on this page so it shows and can be edited there.`]);
+  }
 }
 
 export function setFrameState(on: boolean) {
