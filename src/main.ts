@@ -642,6 +642,7 @@ function mountComponentTools() {
         isCurrent: () => epoch === generation && key === setupScope(),
         exists: path => Boolean(pathNow(path)),
         checkPath: branchPathProblem,
+        isOpen: (scope, path) => Boolean(editor?.draftOpen(scope, path)),
         drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
         refresh: afterFileChanges,
         announce,
@@ -4747,6 +4748,7 @@ const agentSiteActions: AgentSiteActions = {
           }
           return branchPathProblem(path);
         },
+        isOpen: (scope, path) => Boolean(editor?.draftOpen(scope, path)),
         drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
         refresh: afterFileChanges,
         announce,

@@ -36,6 +36,7 @@ import type { VariantField } from "./variant-fields";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange } from "../native-source-location";
 import type { InsertPoint } from "../components/insert-controls";
+import type { HistoryCompanion } from "../draft-store";
 import { blankComponentFiles } from "./blank-component";
 import { componentLabel, nativeInsertEdit } from "../native-insert";
 import {
@@ -78,8 +79,10 @@ type CodeEditor = typeof import("../components/source-editor");
 /** File operations stay bound to their original scope and exact created drafts. */
 export interface ComponentFileReceipt {
   isCurrent(): boolean;
+  /** Takes back the drafts it still owns (a creation that did not go through). */
   undo(): void;
-  redo(): void | Promise<void>;
+  /** The files' side of the page edit's undo step: all of them or a refusal, before the page moves. */
+  companion: HistoryCompanion;
 }
 export type ComponentFileCreation = { error: string } | { receipt: ComponentFileReceipt };
 
@@ -1355,7 +1358,8 @@ export function createComponentTools(deps: ComponentDeps) {
    * Writes the new component's files (and its card component's) as drafts
    * and replaces the element with an instance, its items with card
    * instances, as one undo step: undoing the page's edit takes the new files
-   * back, redoing writes them again. Resolves to why nothing was made, if so.
+   * back, redoing writes them again, each whole or refused before the page
+   * moves. Resolves to why nothing was made, if so.
    */
   async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; unchanged: () => boolean }) {
     const { path, nodePath, tag, source, range, made, unchanged } = request;
@@ -1378,10 +1382,7 @@ export function createComponentTools(deps: ComponentDeps) {
     }
     deps.preview()?.selectAfterUpdate({ path, node: nodePath });
     try {
-      editor.replaceActiveRange({ path, start: range.start, end: range.end, text: made.instance, expected: source.slice(range.start, range.end) }, false, {
-        undo: () => receipt.undo(),
-        redo: () => void receipt.redo(),
-      });
+      editor.replaceActiveRange({ path, start: range.start, end: range.end, text: made.instance, expected: source.slice(range.start, range.end) }, false, receipt.companion);
       deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${made.cards.map((card) => `, and <${card.tag}>`).join("")}`);
     } catch (error) {
       receipt.undo();
@@ -1420,10 +1421,7 @@ export function createComponentTools(deps: ComponentDeps) {
     }
     deps.preview()?.selectAfterUpdate({ path, node: [...parent, index] });
     try {
-      editor.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, false, {
-        undo: () => receipt.undo(),
-        redo: () => void receipt.redo(),
-      });
+      editor.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, false, receipt.companion);
     } catch (error) {
       receipt.undo();
       deps.preview()?.selectAfterUpdate(undefined);

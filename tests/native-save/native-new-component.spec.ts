@@ -89,3 +89,37 @@ test("New component uses the gap when Add opens between sections", async ({ page
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", templatePath);
   await expect(frame(page).locator("main > section-services:first-child + section.hero")).toHaveCount(1);
 });
+
+test("Redo of New component refuses whole when a file is at its path again; plain Redo still works", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const before = await effectiveSource(page, baseURL, "index.html");
+  await panel(page).getByRole("textbox", { name: "Component name" }).fill("services");
+  await panel(page).getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", templatePath);
+  await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(frame(page).locator("section-services")).toHaveCount(0);
+  for (const path of [templatePath, cssPath]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
+
+  // Another writer (a second tab, an agent) puts a file where the template went.
+  const store = (action: "save" | "remove") => page.evaluate(async ({ action, path }) => {
+    const drafts = (await import("/src/drafts.ts")).draftStore();
+    const scope = { account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" };
+    if (action === "save") drafts.save({ ...scope, version: 1, path, baseSha: null, original: "", content: "<p>Theirs</p>", updatedAt: Date.now() });
+    else drafts.remove(scope, path);
+  }, { action, path: templatePath });
+  await store("save");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(page.locator("#status")).toContainText(`${templatePath} already exists.`);
+  // Nothing half-applied: no instance, the page as it was, their file kept, no CSS drafted.
+  await expect(frame(page).locator("section-services")).toHaveCount(0);
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
+  expect((await storedDraft(page, templatePath))?.content).toBe("<p>Theirs</p>");
+  expect(await storedDraft(page, cssPath)).toBeUndefined();
+
+  await store("remove");
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(frame(page).locator("section-services")).toHaveCount(1);
+  for (const file of blankComponentFiles("section-services")) await expect.poll(async () => (await storedDraft(page, file.path))?.content).toBe(file.content);
+});

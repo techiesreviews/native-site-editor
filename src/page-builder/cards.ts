@@ -36,7 +36,7 @@ export interface CardsDeps {
   isSection(tag: string): boolean;
   editor(): {
     isMounted(path: string): boolean;
-    replaceActiveRange(edit: RangeEdit & { path: string; expected: string }, group?: boolean, companion?: { undo(): void; redo(): void }): void;
+    replaceActiveRange(edit: RangeEdit & { path: string; expected: string }, group?: boolean, companion?: { undo(): void; redo(): void | string }): void;
   } | undefined;
   preview(): NativePreview | undefined;
   /** Opens a page file in the editor unless it is open; resolves to whether it is mounted then. */
@@ -291,9 +291,14 @@ export function createCards(deps: CardsDeps) {
     const file = target.value.file;
     const failed = deps.saveNewDraft(file, content);
     if (failed) return failed;
+    // Redo writes the page again only where nothing is now: else it refuses, with the card.
     const companion = {
       undo: () => deps.dropNewDraft(file),
-      redo: () => { deps.saveNewDraft(file, content); },
+      redo: () => {
+        const problem = deps.exists(file) ? `${file} already exists.` : deps.saveNewDraft(file, content);
+        if (problem) deps.announce(problem);
+        return problem;
+      },
     };
     preview.selectAfterUpdate({ path, node: [...grid.parent, last.index + 1] });
     try {

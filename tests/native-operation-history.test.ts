@@ -189,3 +189,20 @@ test("repeated adoption keeps one lease per model, and disposal releases it", ()
   receipt.dispose();
   assert.deepEqual([...held.values()], [0, 0, 0]);
 });
+test("Redo of a created file refuses whole when a file is there again, with the reason", () => {
+  const f = fixture();
+  const image: SavedDraft = { ...scope, version: 1, path: "images/placeholder.svg", baseSha: null, original: "", content: "<svg/>", updatedAt: 1 };
+  f.plan.before.set(image.path, undefined); f.plan.after.set(image.path, image); f.plan.afterSources.set(image.path, image.content);
+  // An unmounted file's source is its stored draft, as the host reads it.
+  const host = { ...f.host, source: (path: string) => f.models.get(path)?.text ?? f.records.get(path)?.content };
+  const receipt = prepareNativeTextHistory(host, f.plan)!;
+  assert.equal(receipt.apply(), true); assert.equal(receipt.undo(), true);
+  const theirs = { ...image, content: "<svg>theirs</svg>", updatedAt: 2 };
+  f.records.set(image.path, theirs);
+  assert.equal(receipt.redo(), false);
+  assert.equal(receipt.error(), "images/placeholder.svg already exists.");
+  assert.equal(f.records.get(image.path), theirs); assert.equal(f.records.has("index.html"), false); assert.equal(f.models.get("index.html")!.text, "before");
+  // Once it is gone again, plain Redo puts both back.
+  f.records.delete(image.path);
+  assert.equal(receipt.redo(), true); assert.equal(f.records.get(image.path), image); assert.equal(f.models.get("index.html")!.text, "after");
+});

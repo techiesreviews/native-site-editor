@@ -91,7 +91,7 @@ test("discarding an open group restores its first state and leaves no undo or re
   store.edit({ scope, path: "a.html", history: "h", text: "aXb" });
   const before = store.get(scope, "a.html")!.revision;
   const log: string[] = [];
-  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 2, end: 2, text: "y" }], companion: { undo: () => log.push("undo"), redo: () => log.push("redo") } });
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 2, end: 2, text: "y" }], companion: { undo: () => { log.push("undo"); }, redo: () => { log.push("redo"); } } });
   store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 3, end: 3, text: "z" }] });
   assert.equal(store.text(scope, "a.html"), "aXyzb");
   assert.equal(store.discardGroup("h"), true);
@@ -113,7 +113,7 @@ test("grouped edits are one step until the group closes; companions follow the s
   const { store } = setup();
   store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });
   const log: string[] = [];
-  const companion = (name: string) => ({ undo: () => log.push(`undo ${name}`), redo: () => log.push(`redo ${name}`) });
+  const companion = (name: string) => ({ undo: () => { log.push(`undo ${name}`); }, redo: () => { log.push(`redo ${name}`); } });
   store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 1, end: 1, text: "x" }], companion: companion("one") });
   store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 2, end: 2, text: "y" }], companion: companion("two") });
   store.closeGroup("h");
@@ -129,13 +129,57 @@ test("grouped edits are one step until the group closes; companions follow the s
   assert.deepEqual(log.slice(2), ["redo one", "redo two"]);
 });
 
+test("a companion's ready refuses the move whole while history waits; the step stays and later moves", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });
+  const log: string[] = [];
+  let reason: string | undefined, release = () => {};
+  const companion = {
+    undo: () => { log.push("undo"); }, redo: () => { log.push("redo"); },
+    ready: (direction: "undo" | "redo") => new Promise<string | undefined>(resolve => { log.push(`ready ${direction}`); release = () => resolve(reason); }),
+  };
+  store.edit({ scope, path: "a.html", history: "h", changes: [{ start: 1, end: 1, text: "x" }], companion });
+  const undoing = store.undo("h");
+  // While it is asked, Undo and Redo wait.
+  assert.equal(store.canUndo("h"), false);
+  assert.deepEqual(await store.redo("h"), { ok: false, error: "Undo and Redo wait for the current change to finish." });
+  release(); assert.equal((await undoing).ok, true);
+  assert.equal(store.text(scope, "a.html"), "ab");
+  reason = "x.html already exists.";
+  const redoing = store.redo("h"); release();
+  assert.deepEqual(await redoing, { ok: false, error: "x.html already exists." });
+  assert.equal(store.text(scope, "a.html"), "ab");
+  assert.equal(store.canRedo("h"), true);
+  reason = undefined;
+  const again = store.redo("h"); release();
+  assert.equal((await again).ok, true);
+  assert.equal(store.text(scope, "a.html"), "axb");
+  assert.deepEqual(log, ["ready undo", "undo", "ready redo", "ready redo", "redo"]);
+});
+
+test("a companion refusing as it runs takes back those that ran, and the text does not move", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });
+  const log: string[] = [];
+  let refuse = false;
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 1, end: 1, text: "x" }], companion: { undo: () => { log.push("undo one"); }, redo: () => { log.push("redo one"); } } });
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 2, end: 2, text: "y" }], companion: { undo: () => { log.push("undo two"); }, redo: () => refuse ? "two refused" : void log.push("redo two") } });
+  store.closeGroup("h");
+  assert.equal((await store.undo("h")).ok, true);
+  refuse = true;
+  assert.deepEqual(await store.redo("h"), { ok: false, error: "two refused" });
+  assert.equal(store.text(scope, "a.html"), "ab");
+  assert.deepEqual(log, ["undo two", "undo one", "redo one", "undo one"]);
+  assert.equal(store.canRedo("h"), true);
+});
+
 test("attachCompanion only ties to the latest, current step", async () => {
   const { store } = setup();
   store.open(scope, "a.css", { text: "a{}", baseSha: sha("a") });
   const result = store.edit({ scope, path: "a.css", history: "h", text: "a{color:red}" });
   assert.ok(result.ok && result.step);
   let undone = 0;
-  assert.equal(store.attachCompanion("h", result.step!, { undo: () => undone++, redo: () => {} }), true);
+  assert.equal(store.attachCompanion("h", result.step!, { undo: () => { undone++; }, redo: () => {} }), true);
   store.edit({ scope, path: "a.css", history: "h", text: "a{color:blue}" });
   assert.equal(store.attachCompanion("h", result.step!, { undo: () => {}, redo: () => {} }), false);
   await store.undo("h"); await store.undo("h");

@@ -17,7 +17,7 @@
 //   / Discard: verified range edits or a whole text, with a label, one undo
 //   step each; `group` keeps an inline edit's keystrokes in one step until
 //   `closeGroup`; a `companion` (another file changed with it) is undone and
-//   redone with it.
+//   redone with it, or refuses the move whole (`ready`, a reason).
 // - `applyReceipt` is `prepareHistorySources` + `prepareNativeTextHistory`: a
 //   multi-file step (texts and draft records, including deletions and moves)
 //   that is applied, undone and redone whole or refused whole, never partly.
@@ -108,8 +108,18 @@ export interface DraftFile extends Readonly<FileState> {
 }
 /** Replace `[start, end)` (UTF-16 offsets of the current text); `expected`, when given, must be what is there. */
 export interface TextChange { start: number; end: number; text: string; expected?: string }
-/** A change outside the edited file that belongs to an edit's undo step. */
-export interface HistoryCompanion { undo(): void; redo(): void }
+/**
+ * A change outside the edited file that belongs to an edit's undo step. Before an edit step moves,
+ * `ready` is asked while Undo and Redo wait (it may await a lookup); then `undo` or `redo` runs,
+ * before the step's text changes. A reason (a string) from either refuses the move whole: the
+ * step stays where it is and nothing has changed. (Typing steps and a discarded group run their
+ * companions after the text and take no refusal.)
+ */
+export interface HistoryCompanion {
+  undo(): void | string;
+  redo(): void | string;
+  ready?: (direction: "undo" | "redo") => string | undefined | Promise<string | undefined>;
+}
 /** Returning false refuses the step and keeps it in place. */
 export type HistoryActionCallback = () => void | boolean | Promise<void | boolean>;
 
@@ -708,6 +718,19 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       if (step.kind === "edit" || step.kind === "typing") { for (const old of [...found.undo, ...found.redo]) disposeStep(old); found.undo.length = 0; found.redo.length = 0; emitHistory(history); }
       return { ok: false, error };
     }
+    // A companion that may refuse is asked first, with the history waiting, then the step is checked again.
+    const asking = step.kind === "edit" ? (direction === "undo" ? [...step.companions].reverse() : step.companions).filter(companion => companion.ready) : [];
+    if (asking.length) {
+      running.add(history);
+      emitHistory(history);
+      let refusal: string | undefined;
+      try { for (const companion of asking) if ((refusal = await companion.ready!(direction))) break; }
+      catch (error) { refusal = error instanceof Error ? error.message : "The change could not be checked."; }
+      finally { running.delete(history); emitHistory(history); }
+      if (refusal) return { ok: false, error: refusal };
+      if (blocked(history)) return { ok: false, error: "Undo and Redo wait for the current change to finish." };
+      if (journals.get(history) !== found || candidate(found, direction) !== step || stepError(step, direction)) return { ok: false, error: "The history changed meanwhile." };
+    }
     /** Moves exactly `step` between the stacks; false when it is no longer on top of `from`. */
     const move = (from: Step[], to: Step[] | undefined) => {
       if (journals.get(history) !== found || from.at(-1) !== step) return false;
@@ -753,17 +776,25 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
           const entry = files.get(step.key)!;
           const previous = { text: entry.text, revision: entry.revision };
           const applied = applyChanges(entry.text, direction === "undo" ? step.inverse : step.changes);
+          // Companions go first: one that refuses, or a text that cannot be kept, takes back those that ran.
+          const opposite = direction === "undo" ? "redo" : "undo";
+          const ran: HistoryCompanion[] = [];
+          const takeBack = () => { for (const companion of ran.reverse()) companion[opposite](); };
+          for (const companion of direction === "undo" ? [...step.companions].reverse() : step.companions) {
+            const refusal = companion[direction]();
+            if (typeof refusal === "string") { takeBack(); return { ok: false, error: refusal }; }
+            ran.push(companion);
+          }
           entry.text = applied.text;
           entry.revision = direction === "undo" ? step.before : step.after;
           if (!persist(entry, step.records[direction === "undo" ? "before" : "after"])) {
             entry.text = previous.text; entry.revision = previous.revision; persist(entry);
+            takeBack();
             return { ok: false, error: persistence?.error ?? `Could not update ${entry.path}.` };
           }
           move(from, to);
           step.records[direction === "undo" ? "before" : "after"] = entry.record;
           textEvent(entry, direction, applied.changes);
-          const companions = direction === "undo" ? [...step.companions].reverse() : step.companions;
-          for (const companion of companions) companion[direction]();
         } else {
           const failed = setSnapshots(step.files.map(file => ({ ...file, to: direction === "undo" ? file.before : file.after })), direction);
           if (failed) return { ok: false, error: failed };

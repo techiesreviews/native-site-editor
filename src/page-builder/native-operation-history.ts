@@ -72,7 +72,9 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       const changedDraft = [...records].find(([path, record]) => host.store.get(scope, path) !== record);
       const changedModel = [...proofs].find(([path, proof]) => !proof.isCurrent() || !host.persistentModels && host.mounted(path) !== mounted.get(path));
       const changedSource = [...texts].find(([path, text]) => host.source(path) !== text);
-      lastError = !host.isLive() ? "The repository changed." : changedDraft ? `The draft for ${changedDraft[0]} changed.` : changedModel ? `The editor model for ${changedModel[0]} changed.` : changedSource ? `The source for ${changedSource[0]} changed.` : "The owned source history step changed.";
+      // A file this step creates, there again since (another tab, an agent): Redo would overwrite it.
+      const arrived = changedDraft && changedDraft[1] === undefined && texts.get(changedDraft[0]) === undefined;
+      lastError = !host.isLive() ? "The repository changed." : changedDraft ? arrived ? `${changedDraft[0]} already exists.` : `The draft for ${changedDraft[0]} changed.` : changedModel ? `The editor model for ${changedModel[0]} changed.` : changedSource ? `The source for ${changedSource[0]} changed.` : "The owned source history step changed.";
       return false;
     }
     lastError = undefined;

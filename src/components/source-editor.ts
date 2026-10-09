@@ -420,12 +420,15 @@ export function discardNewFile(path: string) {
  * stored draft and anything the editor kept for it.
  */
 export function dropDraft(scope: DraftScope, path: string) {
-  const key = draftKey(scope, path);
-  const kept = docs.get(key);
-  if (kept && [...liveMounted].some((editor) => editor.doc === kept)) return false;
+  if (draftOpen(scope, path)) return false;
   sourceStore().drop(scope, path, true);
-  docs.delete(key);
+  docs.delete(draftKey(scope, path));
   return true;
+}
+/** The file's draft is in a code pane now, so `dropDraft` would keep it. */
+export function draftOpen(scope: DraftScope, path: string) {
+  const kept = docs.get(draftKey(scope, path));
+  return Boolean(kept && [...liveMounted].some((editor) => editor.doc === kept));
 }
 /**
  * Forgets what the editor kept for `path` (a draft not mounted), leaving its
