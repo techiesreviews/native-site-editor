@@ -1,7 +1,7 @@
 ---
 title: "Starter: title links look like the title, stretched only in cards"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [65-starter-card-link-rule]
 builder: sol
@@ -20,3 +20,8 @@ Follow-ups from slice 65 (Lex, 2026-10-09), in `~/Projects/native-site-editor-st
 
 - A card title wrapped in a link reads like the title on light and dark bands, with hover underline and focus ring; the stretch still covers plain cards and card components; a section component's title link doesn't stretch.
 - Browser check script (as in slice 65) passes; screenshots in `.scratch/cb-build-shots/67/`.
+
+## Done (2026-10-09)
+
+- Starter `dev` commits `3b8039a` (rules) and `14a6875` (AGENTS.md wording): in `styles/elements.css`, `:is(h1, …, h6, [slot="title"]) > a:only-child` takes the heading's colour with no underline, underlines on hover, keeps the focus ring (beats `p a, li a`); in `styles/layout.css` the stretch is now `.cards > * :is(h2, h3, h4, [slot="title"]) > a:only-child::after` only, so a section component's title link (or a card component outside a `.cards` grid) covers just the title.
+- Checked in Chromium (Sol's script): colour/underline/hover on light and dark bands and in a list item, stretch and second links on plain items and `card-project`, Tab focus rings, a `section-intro` title link that doesn't stretch; the real pages are pixel-identical to before. Sol review: no defects; its wording note went into `AGENTS.md`.
