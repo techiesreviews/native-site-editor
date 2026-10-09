@@ -24,4 +24,4 @@ The second slice of [02](../../tickets/02-masters-become-components.md) §2: Mak
 ## Done (2026-10-09)
 
 - "Make component…" is offered on any page element with an end tag (section, card, div, heading…); refused on `<main>`, `<body>`, the page's own `<header>`/`<footer>` (not inside sectioning content or `<main>`), void elements (the dialog needs an end tag), components (Edit component instead) and anything inside an instance. Pure rule `makeComponentOffered` in `component-model.ts`.
-- Commit a84590d (Sol). Tests: `tests/make-component-offer.test.ts` (3 unit tests); `native-components.spec.ts` brings back the two Make component tests removed in 7856813 and adds the refusal and card/card-header cases.
+- Commits 825f08a (Sol), 4470054. Tests: `tests/make-component-offer.test.ts` (3 unit tests); `native-components.spec.ts` brings back the two Make component tests removed in 7856813 and adds the refusal and card/card-header cases.
