@@ -411,7 +411,7 @@ export function createCards(deps: CardsDeps) {
     return undefined;
   }
 
-  cb09Install(deps); // PROTOTYPE cb09
+  cb09Install(deps, { subpageDocument, planPage }); // PROTOTYPE cb09
   return {
     describe,
     plan(report: ItemGridReport, request: CardPageRequest): Checked<{ route: string }> {

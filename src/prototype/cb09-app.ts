@@ -1,25 +1,26 @@
 // PROTOTYPE (wayfinder ticket 09, components-and-builder). Throwaway; not kept for the real build.
 //
 // Loaded only with ?proto=cards. Mounts the variant switcher, makes the test
-// material once (two draft pages under /work/ that no card links to yet, and
-// a scratch grid whose cards aren't links), and sends Add card to the
-// current variant: ?variant=A (popover tab), B (page picker sheet), C (card
-// first, link after).
+// material once (two draft pages under /work/ that no card links to yet, two
+// more card components and two card-project variants, and a scratch grid
+// whose cards aren't links), and sends Add card to round 2's variants, all
+// built on C (card first, link after): C, D (look chip on the card), E (pick
+// the look first: Add card's ▾), F (look in the strip).
 
 import type { CardsDeps } from "../page-builder/cards";
-import { cb09Variant, type Cb09AddRequest, type Cb09PopoverRequest, type Cb09Variant } from "./cb09";
-import { state, el, btn, toast, deps, frameRects, DRAFT_PAGES, draftPageDocument, SCRATCH } from "./cb09-core";
-import { decorate, nonLinkPopover } from "./cb09-a";
-import { openSheet } from "./cb09-b";
+import { cb09Variant, type Cb09AddRequest, type Cb09CardsHost, type Cb09Variant } from "./cb09";
+import { state, el, btn, toast, deps, frameRects, readGrid, gridLook, DRAFT_PAGES, DRAFT_COMPONENTS, CARD_PROJECT_VARIANTS, draftPageDocument, SCRATCH } from "./cb09-core";
 import { cardFirst } from "./cb09-c";
+import { lookGallery } from "./cb09-look";
 import "./cb09.css";
 
-const NAMES: Record<Cb09Variant, string> = { A: "A · Popover tab", B: "B · Page picker sheet", C: "C · Card first, link after" };
-const ORDER: Cb09Variant[] = ["A", "B", "C"];
+const NAMES: Record<Cb09Variant, string> = { C: "C · Card first, link after", D: "D · Look chip on the card", E: "E · Pick the look first", F: "F · Look in the strip" };
+const ORDER: Cb09Variant[] = ["C", "D", "E", "F"];
 let mounted = false;
 
-export function install(cardsDeps: CardsDeps) {
+export function install(cardsDeps: CardsDeps, cardsHost: Cb09CardsHost) {
   state.deps = cardsDeps;
+  state.host = cardsHost;
   if (mounted) return;
   mounted = true;
   document.documentElement.dataset.cb09Variant = cb09Variant();
@@ -29,15 +30,31 @@ export function install(cardsDeps: CardsDeps) {
   setInterval(() => void frameRects("", []), 1200);
 }
 
+// E: a press on the ▾ inside Add card opens the gallery instead of adding.
+let splitPressed = 0;
+
 export function activate(request: Cb09AddRequest) {
-  const variant = cb09Variant();
-  if (variant === "A") return nonLinkPopover(request);
-  if (variant === "B") return openSheet(request);
-  return cardFirst(request);
+  if (cb09Variant() === "E" && Date.now() - splitPressed < 1500) {
+    splitPressed = 0;
+    const now = readGrid(request.grid);
+    if (!now) return;
+    lookGallery(request.anchor, gridLook(now), request.about.noun, (look) => cardFirst(request, look));
+    return;
+  }
+  cardFirst(request);
 }
 
-export function decoratePopover(request: Cb09PopoverRequest) {
-  decorate(request);
+/** E: Add card becomes a split button, "+ Add card │ ▾". */
+export function ghost(request: Cb09AddRequest) {
+  const add = request.anchor;
+  if (add.querySelector(".cb09-split")) return;
+  const split = el("span", "cb09-split", "▾");
+  split.title = "Add a card in another look…";
+  split.setAttribute("aria-label", "Choose the card's look");
+  split.addEventListener("pointerdown", () => { splitPressed = Date.now(); }, true);
+  split.addEventListener("click", () => { splitPressed = Date.now(); }, true);
+  add.append(split);
+  add.classList.add("cb09-has-split");
 }
 
 // ---- The switcher: ← label →, outside the design. ----
@@ -87,6 +104,14 @@ async function seed() {
   for (const page of DRAFT_PAGES) {
     if (d.exists(page.file)) continue;
     if (!d.saveNewDraft(page.file, draftPageDocument(page))) made.push(page.route);
+  }
+  if (!d.exists(DRAFT_COMPONENTS[0].path)) {
+    const css = "components/card-project/card-project.css";
+    const now = d.source(css);
+    const edits = new Map<string, string>();
+    if (now !== undefined && !now.includes("data-layout")) edits.set(css, `${now.replace(/\s*$/, "\n")}${CARD_PROJECT_VARIANTS}`);
+    const failed = await d.operation({ creates: DRAFT_COMPONENTS, edits, done: "PROTOTYPE cb09: made card-feature, card-quote and card-project's layout variants", undone: "PROTOTYPE cb09: took the draft card components back" });
+    if (!failed) made.push("card-feature and card-quote components, card-project data-layout compact | wide");
   }
   const source = d.source("index.html");
   if (source !== undefined && !source.includes('id="cb09-scratch"') && d.editor()?.isMounted("index.html")) {

@@ -4,7 +4,7 @@ import type { Checked } from "../native-create";
 import { cardPrefixRequest } from "../page-builder/cards";
 import { aOr } from "../page-builder/card-grid";
 import "./card-grid-controls.css";
-import { cb09Activate, cb09Popover } from "../prototype/cb09"; // PROTOTYPE cb09
+import { cb09Activate, cb09Ghost } from "../prototype/cb09"; // PROTOTYPE cb09
 
 // "Add card" over the native preview: a dashed ghost where one more item of
 // a grid would go (after its last item), with a "+ Add card" button in it,
@@ -147,6 +147,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       return;
     }
     shown = { grid, about };
+    cb09Ghost({ grid, about, anchor: add }); // PROTOTYPE cb09
     // Down a column (a list), the button starts the line, as a list's next item would, and keeps clear of the section plus.
     const column = !grid.row;
     const box = { ...grid.ghost, height: column ? Math.max(grid.ghost.height, 32) : grid.ghost.height };
@@ -255,7 +256,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const actions = node("div", "card-add__actions");
     actions.append(only, create);
     popover.replaceChildren(heading, where, field, url, message, actions);
-    queueMicrotask(() => cb09Popover({ popover, grid, about, close: () => close(false), place: placePopover })); // PROTOTYPE cb09
     // Beside the popover in the pane, not in it: the popover's opening
     // animation moves it, and that would carry a fixed list with it.
     folderMenu?.remove();
