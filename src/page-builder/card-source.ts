@@ -7,6 +7,7 @@
 import { MARK, markedRange, parseMarked, type ElementRange } from "../native-source-location";
 import { nativeLinkTarget, isFolderRoute } from "../../shared/native-routes";
 import { normalizeRoute } from "../native-create";
+import { componentLabel } from "../native-insert";
 import { collectionParent, elementTree, itemKind, itemNoun, NOT_GRIDS, repeatedRun, type SourceElement } from "./card-grid";
 
 /** A grid (or list) of repeated items in a page's source. */
@@ -106,6 +107,13 @@ function gridIn(source: string, parsed: Parsed, container: Element | ParentNode,
   }
   const noun = itemNoun(run.kind);
   return { parent, kind: run.kind, noun, label: gridLabel(container, noun), items, collection: collectionParent(items.map((item) => item.route)) };
+}
+
+/** What an instance with a card slot (at `parent`) is called: its own first heading ("Recent work"), else its tag ("Section work"). */
+export function instanceLabel(source: string, parent: number[]): string | undefined {
+  const el = childAt(parseMarked(source).root, parent);
+  if (!(el instanceof Element)) return undefined;
+  return el.querySelector(HEADING)?.textContent?.replace(/\s+/g, " ").trim() || componentLabel(el.localName);
 }
 
 /** The grid whose container is at `parent`, if it is one. */

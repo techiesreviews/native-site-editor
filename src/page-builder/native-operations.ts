@@ -315,15 +315,18 @@ function structuralIndent(markup: string, newline: string, indent: string, remov
     return `${newline}${indent}${remove && spaces.startsWith(remove) ? spaces.slice(remove.length) : spaces}`;
   });
 }
-function insertion(source: string, parent: SourceNode, index: number, markup: string): SourceEdit {
+/** The indentation of an insert at `index` of `parent`: its neighbour's (`indent`), and the new line's (`childIndent`, one step in when it has none). */
+function insertIndent(source: string, parent: SourceNode, index: number) {
   const next = parent.children[index];
   const previous = parent.children[index - 1];
   const anchor = next ?? previous ?? parent;
   const line = source.lastIndexOf("\n", anchor.start - 1) + 1;
   const lead = source.slice(line, anchor.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
-  const nl = source.includes("\r\n") ? "\r\n" : "\n";
-  const childIndent = !next && !previous ? `${indent}  ` : indent;
+  return { next, previous, indent, childIndent: !next && !previous ? `${indent}  ` : indent, nl: source.includes("\r\n") ? "\r\n" : "\n" };
+}
+function insertion(source: string, parent: SourceNode, index: number, markup: string): SourceEdit {
+  const { next, previous, indent, childIndent, nl } = insertIndent(source, parent, index);
   const text = structuralIndent(markup, nl, childIndent);
   if (next) return { start: next.start, end: next.start, text: `${text}${nl}${indent}` };
   if (previous) return { start: previous.end, end: previous.end, text: `${nl}${indent}${text}` };
@@ -352,6 +355,34 @@ export function nativeMarkupInsertEdit(source: string, parentPath: readonly numb
   }
   if (!canContain(parent, fragment.children, instance)) return undefined;
   const edit = insertion(source, parent, index, markup);
+  return { ...edit, original: source.slice(edit.start, edit.end), source };
+}
+/**
+ * A new component instance (`markup`: one custom element, no attributes,
+ * whose content is plain markup as nativeMarkupInsertEdit takes, its lines
+ * after the first indented relative to the first) at `index` of the element
+ * at `parentPath`, as nativeMarkupInsertEdit places blocks: into an instance
+ * only at an items slot (`slot`, written on it), the instance's content
+ * indented to its line.
+ */
+export function nativeInstanceInsertEdit(source: string, parentPath: readonly number[], index: number, markup: string, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
+  const root = tree(source);
+  const fragment = tree(markup);
+  const parent = root && atPath(root, parentPath, itemsOpener(source, items));
+  const only = fragment?.children[0];
+  if (!parent || !fragment || fragment.children.length !== 1 || !only || !isInstance(only) || !Number.isInteger(index) || index < 0 || index > parent.children.length) return undefined;
+  const open = markup.slice(only.start, only.openEnd);
+  if (only.start !== 0 || only.end !== markup.length || open !== `<${only.name}>`) return undefined;
+  const content = markup.slice(only.openEnd, only.closeStart);
+  const inner = tree(content);
+  if (!inner || !validFragment(inner, content)) return undefined;
+  const instance = isInstance(parent);
+  if (instance && !items?.(parent.name, slot)) return undefined;
+  if (!canContain(parent, [only], instance)) return undefined;
+  const { childIndent, nl } = insertIndent(source, parent, index);
+  const attribute = instance && slot ? ` slot="${slot.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"` : "";
+  const text = `<${only.name}${attribute}>${content}</${only.name}>`.replace(/\r?\n/g, `${nl}${childIndent}`);
+  const edit = insertion(source, parent, index, text);
   return { ...edit, original: source.slice(edit.start, edit.end), source };
 }
 /** The level a new Heading block takes at this insert parent (ticket 10 §2). */

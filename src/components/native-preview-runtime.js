@@ -1237,7 +1237,61 @@
     });
     return best;
   }
+  // An instance's card slot (src/page-builder/card-slot.ts): an items slot
+  // whose fallback is card components only. Its items are a grid however
+  // few they are, none included, since Add card adds the fallback's card.
+  function cardSlot(slot) {
+    var fallback = dropMeaningful(slot.childNodes);
+    return fallback.length > 0 && fallback.every(dropCard);
+  }
+  function cardSlotItems(host, slot) {
+    return slot.assignedElements().filter(function (child) { return child.parentElement === host && !injectedStyle(child); });
+  }
+  // The card slot grid around `el`: the item of a card slot it is or is in,
+  // else an instance with a card slot that it is or is inside its template
+  // (its last item counts, as a grid's gap does), else an instance with an
+  // empty card slot it is anywhere in.
+  function cardSlotGridOf(el) {
+    var current = el;
+    var fromTemplate = false;
+    while (pageEl && current && current !== pageEl) {
+      var host = current.parentElement;
+      var assigned = current.assignedSlot;
+      if (host && assigned && pageEl.contains(host) && cardSlot(assigned))
+        return { container: host, item: current, items: cardSlotItems(host, assigned), slot: assigned };
+      if (current.shadowRoot && pageEl.contains(current)) {
+        var slots = Array.prototype.filter.call(current.shadowRoot.querySelectorAll("slot"), cardSlot);
+        var empty = slots.filter(function (slot) { return !cardSlotItems(current, slot).length; })[0];
+        var chosen = current === el || fromTemplate ? slots[0] : empty;
+        if (chosen) {
+          var items = cardSlotItems(current, chosen);
+          return { container: current, item: items[items.length - 1] || null, items: items, slot: chosen };
+        }
+      }
+      fromTemplate = false;
+      if (!host) {
+        var root = current.getRootNode && current.getRootNode();
+        current = root instanceof ShadowRoot ? root.host : null;
+        fromTemplate = true;
+        continue;
+      }
+      current = host;
+    }
+    return null;
+  }
+  // Whether `outer` holds `inner`, across shadow roots.
+  function holds(outer, inner) {
+    for (var at = inner; at; at = at.parentNode || (at instanceof ShadowRoot ? at.host : null)) if (at === outer) return true;
+    return false;
+  }
+  // The nearest grid around `el`: a card slot's, unless a grid of repeated items sits inside it.
   function gridItemOf(el) {
+    var slotted = cardSlotGridOf(el);
+    var repeated = repeatedGridOf(el);
+    if (!slotted || !repeated) return slotted || repeated;
+    return repeated.container !== slotted.container && holds(slotted.item || slotted.container, repeated.container) ? repeated : slotted;
+  }
+  function repeatedGridOf(el) {
     var current = el;
     // An item itself first (a card holding a grid of its own is still its grid's card); then
     // the grid itself (the gap between its items), which counts as its last item.
@@ -1263,8 +1317,10 @@
   function gridReport(found) {
     if (!found || !state) return null;
     var parentPath = elementIndexPath(found.container);
-    var itemPath = elementIndexPath(found.item);
-    if (!parentPath || !itemPath) return null;
+    var itemPath = found.item ? elementIndexPath(found.item) : null;
+    if (!parentPath || (found.item && !itemPath)) return null;
+    var slotName = found.slot ? found.slot.getAttribute("name") || "" : null;
+    if (!found.items.length) return emptySlotReport(found, parentPath, slotName);
     var rects = found.items.map(function (item) { return item.getBoundingClientRect(); });
     var last = rects[rects.length - 1];
     var box = found.container.getBoundingClientRect();
@@ -1279,6 +1335,15 @@
         rowGap = Math.max(0, rects[i].top - rects[i - 1].bottom);
       }
     }
+    // One card in a slot: its slot's box lays it out in a row when it is a grid of columns or a flex row.
+    var holder = found.slot && rects.length === 1 ? found.slot.parentElement : null;
+    if (holder) {
+      var layout = dropLayout(holder);
+      var held = getComputedStyle(holder);
+      row = (/grid/.test(layout.display) && layout.cols > 1) || (/flex/.test(layout.display) && layout.dir.indexOf("row") === 0);
+      gap = row ? parseFloat(held.columnGap) || 0 : 0;
+      box = holder.getBoundingClientRect();
+    }
     var ghost;
     var beside = row && last.right + gap + last.width <= box.right + 1;
     if (beside) {
@@ -1288,14 +1353,29 @@
     } else {
       ghost = { left: last.left, top: last.bottom + Math.max(rowGap, 8), width: last.width, height: Math.min(last.height, 120) };
     }
-    var round = function (n) { return Math.round(n); };
-    // Below the grid the ghost stops where the page's next content starts,
-    // so it never covers it (the page itself never moves): it fills the room
-    // there is, or, with less than a button's height, is a strip of that
-    // height ending at the next content, over the bottom of the last row.
-    // From the last item: the grid's own trailing children (a "View all"
-    // link) count before what follows the grid.
-    var next = beside ? null : nextContentTop(found.items[found.items.length - 1], last.bottom, ghost.left, ghost.left + ghost.width);
+    return withSlot({
+      path: String(state.pagePaths[state.route] || ""),
+      parent: parentPath,
+      index: itemPath[itemPath.length - 1],
+      position: found.items.indexOf(found.item),
+      count: found.items.length,
+      row: row,
+      beside: beside,
+      ghost: clipGhost(ghost, found.items[found.items.length - 1], last.bottom, beside)
+    }, slotName);
+  }
+  function withSlot(report, slotName) {
+    if (slotName !== null) report.slot = slotName;
+    return report;
+  }
+  // Below the grid the ghost stops where the page's next content starts,
+  // so it never covers it (the page itself never moves): it fills the room
+  // there is, or, with less than a button's height, is a strip of that
+  // height ending at the next content, over the bottom of the last row.
+  // From the last item: the grid's own trailing children (a "View all"
+  // link) count before what follows the grid.
+  function clipGhost(ghost, from, bottom, beside) {
+    var next = beside ? null : nextContentTop(from, bottom, ghost.left, ghost.left + ghost.width);
     if (next !== null && ghost.top + ghost.height > next) {
       // In whole pixels, ending at or above the next content; a box only
       // when taller than the strip, so a 32px ghost below is always a strip.
@@ -1305,16 +1385,40 @@
         ? { left: ghost.left, top: top, width: ghost.width, height: nextTop - top }
         : { left: ghost.left, top: nextTop - GHOST_STRIP, width: ghost.width, height: GHOST_STRIP };
     }
-    return {
+    var round = function (n) { return Math.round(n); };
+    return { top: round(ghost.top), left: round(ghost.left), width: round(ghost.width), height: round(ghost.height) };
+  }
+  // An empty card slot's grid: where its first card would go. Its box when
+  // it has one (an empty one may be hidden, and its wrapper with it), else
+  // below what comes before it in its template, else the instance's top;
+  // one column of a grid wide.
+  function emptySlotReport(found, parentPath, slotName) {
+    var place = null;
+    for (var at = found.slot; at && !place; at = at.parentElement) {
+      var r = at === found.slot ? null : at.getBoundingClientRect();
+      if (r && r.width && r.height) { place = { left: r.left, top: r.top, width: r.width }; break; }
+      for (var prev = at.previousElementSibling; prev && !place; prev = prev.previousElementSibling) {
+        var shown = prev.localName === "slot" ? dropUnion(prev.assignedNodes().length ? prev.assignedNodes() : Array.prototype.slice.call(prev.childNodes))
+          : injectedStyle(prev) || getComputedStyle(prev).display === "none" ? null : dropRect(prev);
+        if (shown && shown.width && shown.height) place = { left: shown.left, top: shown.top + shown.height + 16, width: shown.width };
+      }
+    }
+    if (!place) { var hostBox = found.container.getBoundingClientRect(); place = { left: hostBox.left, top: hostBox.top, width: hostBox.width }; }
+    var layoutEl = found.slot.parentElement;
+    var tracks = layoutEl ? getComputedStyle(layoutEl).gridTemplateColumns.replace(/\[[^\]]*\]/g, "").trim() : "";
+    var first = tracks && tracks !== "none" ? parseFloat(tracks.split(/\s+/)[0]) : 0;
+    var width = first > 0 ? Math.min(first, place.width) : place.width;
+    var ghost = { left: place.left, top: place.top, width: width, height: 120 };
+    return withSlot({
       path: String(state.pagePaths[state.route] || ""),
       parent: parentPath,
-      index: itemPath[itemPath.length - 1],
-      position: found.items.indexOf(found.item),
-      count: found.items.length,
-      row: row,
-      beside: beside,
-      ghost: { top: round(ghost.top), left: round(ghost.left), width: round(ghost.width), height: round(ghost.height) }
-    };
+      index: -1,
+      position: -1,
+      count: 0,
+      row: false,
+      beside: false,
+      ghost: clipGhost(ghost, found.slot, place.top, false)
+    }, slotName);
   }
   // Where the page's next content below a grid starts: the highest top,
   // at or below `minTop`, of the rendered elements after `el` that share

@@ -28,10 +28,16 @@ export interface ItemGridReport {
   path: string;
   /** The container's element-child indexes from the page root. */
   parent: number[];
-  /** The item's index among the container's element children, its place among the items and their count. */
+  /** The item's index among the container's element children, its place among the items and their count (-1, -1 and 0 for an empty card slot). */
   index: number;
   position: number;
   count: number;
+  /**
+   * The container is an instance and these are its card slot's items (by
+   * the slot's name, "" the unnamed one): an items slot whose fallback is a
+   * card component, a grid with any number of items (src/page-builder/card-slot.ts).
+   */
+  slot?: string;
   /** Whether the items run in a row (left to right) rather than down a column, and whether one more fits beside the last. */
   row: boolean;
   beside: boolean;
@@ -161,7 +167,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     addLabel.textContent = `Add ${name}`;
     const where = about.label ? ` to ${about.label}` : "";
     add.setAttribute("aria-label", about.collection ? `Add ${aOr(name)} with its own page${where}` : `Add ${aOr(name)}${where}`);
-    add.title = about.collection ? `New page and ${name}${where}` : `Add ${aOr(name)}${where}, a copy with placeholder text`;
+    add.title = about.collection ? `New page and ${name}${where}` : grid.slot !== undefined ? `Add ${aOr(name)}${where}` : `Add ${aOr(name)}${where}, a copy with placeholder text`;
     ghost.classList.toggle("is-compact", box.width < 120 || (!column && !strip && box.height < 40));
     // Below the last item, the button sits near the top, a short way from the items.
     ghost.classList.toggle("is-below", !grid.beside && !strip && box.height > 96);
