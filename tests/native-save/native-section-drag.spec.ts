@@ -272,16 +272,26 @@ test("a drag by the name needs 7 px, cancels on Escape and records nothing for a
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
-test("a press and move inside the selected section drags the section itself", async ({ page }) => {
+test("a press and move on a block inside the selected section drags that block; on the section's own background, the section", async ({ page }) => {
   await select(page, "section.cards");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await clearStatus(page);
-  // On a card inside the selection: the selection moves, not the card.
+  // On a card inside the selection: the card moves, not the selection (fix-lex-2: what is pressed is what drags).
   const card = (await frame(page).locator(".cards project-card").first().boundingBox())!;
   const hero = (await frame(page).locator("section.hero").boundingBox())!;
   await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
   await page.mouse.down();
   await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2 - 20, { steps: 4 });
+  await expect(ghost(page)).toHaveText("Project card");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
+  // On the section's own background (between its cards): the section moves.
+  await select(page, "section.cards");
+  const gap = await sectionPoint(page);
+  await page.mouse.move(gap.x, gap.y);
+  await page.mouse.down();
+  await page.mouse.move(gap.x, gap.y - 20, { steps: 4 });
   await expect(ghost(page)).toHaveText("Section");
   await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 8, { steps: 6 });

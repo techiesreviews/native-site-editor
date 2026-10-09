@@ -39,6 +39,33 @@ test("within 8 px of a container's edge the target escapes to its parent, before
   assert.deepEqual(dropTarget([main], { x: 2, y: 2 }, { kind: "new", block: "section" })!.container.path, [1]);
 });
 
+test("at a page band's edge a block stays in the band, at that end, rather than refused between bands (fix-lex-2)", () => {
+  const band = [section, main];
+  const top = dropTarget(band, { x: 400, y: 3 }, paragraph)!;
+  assert.deepEqual([top.container.path, top.index, top.ok, top.level], [[1, 0], 0, true, 0]);
+  const bottom = dropTarget(band, { x: 400, y: 596 }, paragraph)!;
+  assert.deepEqual([bottom.container.path, bottom.index, bottom.ok], [[1, 0], 2, true]);
+  // A Div flush with its band's edge: past both edges, the band takes it beside the Div.
+  const flush = box([1, 0, 1], "div", rect(0, 100, 800, 500), [child(0, rect(0, 100, 800, 100))]);
+  const beside = dropTarget([flush, section, main], { x: 3, y: 250 }, paragraph)!;
+  assert.deepEqual([beside.container.path, beside.index, beside.ok], [[1, 0], 1, true]);
+  // Stepping up on purpose still reaches the bands and says why they refuse.
+  assert.equal(dropTarget(band, { x: 400, y: 3 }, paragraph, 1)!.ok, false);
+  // A Section is not affected: it still takes <main>.
+  assert.deepEqual(dropTarget(band, { x: 400, y: 3 }, { kind: "new", block: "section" })!.container.path, [1]);
+});
+
+test("over an item at the edge of a Div without padding the drop stays in the Div, beside the item (fix-lex-2)", () => {
+  // A Div whose first and last items touch its edges.
+  const tight = box([1, 0, 1], "div", rect(40, 100, 720, 200), [child(0, rect(40, 100, 720, 40)), child(1, rect(40, 260, 720, 40))], { cls: "flow" });
+  const first = dropTarget([tight, section, main], { x: 400, y: 104 }, paragraph)!;
+  assert.deepEqual([first.container.path, first.index], [[1, 0, 1], 0]);
+  const last = dropTarget([tight, section, main], { x: 400, y: 297 }, paragraph)!;
+  assert.deepEqual([last.container.path, last.index], [[1, 0, 1], 2]);
+  // Its edge beside no item still leaves it.
+  assert.deepEqual(dropTarget([tight, section, main], { x: 44, y: 200 }, paragraph)!.container.path, [1, 0]);
+});
+
 test("a level steps up from the innermost (Alt or Tab) and back down (Shift+Tab)", () => {
   const p = { x: 400, y: 200 };
   assert.deepEqual(dropTarget(chain, p, paragraph, 1)!.container.path, [1, 0]);
@@ -233,8 +260,9 @@ test("a moved leaf item (no containers of its own) over a sibling's box takes th
   // Flush with the grid's left edge: still beside the sibling, not out to the Section.
   const edge = dropTarget([grid, section, main], { x: 42, y: 200 }, moving)!;
   assert.deepEqual([edge.container.path, edge.index], [[1, 0, 1], 0]);
-  // A new block keeps the edge escape there.
-  assert.deepEqual(dropTarget([grid, section, main], { x: 42, y: 200 }, paragraph)!.container.path, [1, 0]);
+  // A new block over an item at the grid's edge goes beside it too (fix-lex-2); the edge beside no item still escapes.
+  assert.deepEqual(dropTarget([grid, section, main], { x: 42, y: 200 }, paragraph)!.container.path, [1, 0, 1]);
+  assert.deepEqual(dropTarget([grid, section, main], { x: 42, y: 410 }, paragraph)!.container.path, [1, 0]);
   // Over itself nothing changes.
   assert.equal(dropLabel(dropTarget([grid, section, main], { x: 100, y: 460 }, moving)!, moving), "Stays where it is");
 });

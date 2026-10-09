@@ -83,6 +83,19 @@ const nearEdge = (p: { x: number; y: number }, { left, top, width, height }: Dro
   p.x - left < DROP_EDGE || left + width - p.x < DROP_EDGE || p.y - top < DROP_EDGE || top + height - p.y < DROP_EDGE;
 
 /**
+ * Whether the pointer leaves `containers[i]` for its parent: near its edge,
+ * and not over one of its items (a Div without padding has its first and
+ * last items at its edges; over them the drop goes beside them, inside it).
+ * The item holding the container just left does not count.
+ */
+function escapes(containers: readonly DropContainer[], i: number, p: { x: number; y: number }) {
+  const container = containers[i];
+  if (!nearEdge(p, container.rect)) return false;
+  const from = i > 0 ? containers[i - 1].path[container.path.length] : undefined;
+  return !container.children.some((child) => child.index !== from && shown(child) && inside(p, child.rect));
+}
+
+/**
  * The target for `block` at the pointer, from the containers under it
  * (innermost first). `level` steps up from a moved item's sibling container,
  * or where the edges leave the pointer; past the top it stays outermost.
@@ -103,9 +116,12 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
   const first = containers[0];
   if (!sibling && level <= 0 && !isBand(block) && (first.kind === "slot" || (first.kind === "fixed" || first.kind === "component") && !nearEdge(p, first.rect))) return at(0);
   let i = sibling?.j ?? 0;
-  if (!sibling) while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
+  if (!sibling) while (i < containers.length - 1 && escapes(containers, i, p)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);
   for (let j = i; j < containers.length; j++) if (!dropRefusal(block, containers[j])) return at(j);
+  // The edges led only to containers that refuse it (a band's edge leads to
+  // <main>): the nearest one they passed that takes it, at that edge.
+  if (!sibling && level <= 0) for (let j = i - 1; j >= 0; j--) if (!dropRefusal(block, containers[j])) return at(j);
   return at(i);
 }
 

@@ -2986,9 +2986,12 @@
     reportHover();
   });
   // A block pressed in the page and moved 7 px drags itself (ticket 12
-  // §10): the block is the selection when the press is inside it, else the
-  // pressed element (an inline one gives its block; a part of an instance
-  // gives the outermost instance, which moves whole). Only the page's own
+  // §10): the pressed element, also inside a selected container (an inline
+  // one gives its text block, but an image or a button placed straight in a
+  // Section or Div is a block of its own; a part of an instance gives the
+  // outermost instance, which moves whole, but an item in an items slot
+  // moves itself). The selection moves only when the press is on it and not
+  // on a block inside it (fix-lex-2). Only the page's own
   // blocks inside <main> drag; the header and footer don't. The pointer
   // stays with this document (captured), so each step is relayed to the
   // editor as `press-drag` (start, move, end, cancel); the editor runs the
@@ -3004,11 +3007,16 @@
     while (el && el.getRootNode() instanceof ShadowRoot) el = el.getRootNode().host;
     return el;
   }
+  // A Section or Div holding blocks, not a run of text with inline formatting.
+  function holdsBlocks(el) {
+    return (el.localName === "section" || el.localName === "div") && !Array.prototype.some.call(el.childNodes, function (n) {
+      return n.nodeType === 3 && /[^\t\n\f\r ]/.test(n.textContent);
+    });
+  }
   function pressBlock(target) {
     var el = lightElement(target);
     if (!el || !pageEl || el === pageEl || !pageEl.contains(el)) return null;
-    if (selected && selected.isConnected && selected !== pageEl && selected.getRootNode() === document && selected.contains(el)) el = selected;
-    while (el.parentElement && el.parentElement !== pageEl && getComputedStyle(el).display === "inline") el = el.parentElement;
+    while (el.parentElement && el.parentElement !== pageEl && !holdsBlocks(el.parentElement) && getComputedStyle(el).display === "inline") el = el.parentElement;
     // A sealed ancestor takes the press, unless the way down from it goes through one of its items slots.
     for (var child = el, at = el.parentElement; at && at !== pageEl; child = at, at = at.parentElement) if (dropSealed(at) && !dropItem(child)) el = at;
     if (dropSealed(el) && el.localName.indexOf("-") < 0) return null;
@@ -3676,8 +3684,16 @@
   });
   pageEl = document.getElementById("page");
   new MutationObserver(function () { scheduleSlotGhosts(); }).observe(pageEl, { childList: true, subtree: true, attributes: true });
-  // Layout can shift without a render (fonts, component CSS arriving).
-  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); scheduleSlotGhosts(); drawEditMode(); }).observe(pageEl);
+  // Layout can shift without a render (fonts, component CSS, an image
+  // arriving): the hover and selection boxes and the edit bar follow it.
+  var relayout = 0;
+  function scheduleBoxes() {
+    if (relayout) return;
+    relayout = requestAnimationFrame(function () { relayout = 0; if (!pressDragging()) updateBoxes(true); });
+  }
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(function () { scheduleInsertPoints(); scrollToTarget(); schedulePins(); scheduleItemGrids(); scheduleSlotGhosts(); drawEditMode(); scheduleBoxes(); }).observe(pageEl);
+  // An image loading inside a page that keeps its height (a min-height) resizes nothing observed.
+  document.addEventListener("load", function (e) { if (e.target && e.target.localName === "img") scheduleBoxes(); }, true);
   // Which load of the host's frame this document is, so a late `ready` from
   // the document it replaced is not taken for this one's.
   var frameLoad = document.querySelector('meta[name="ase-frame-load"]');

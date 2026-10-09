@@ -230,4 +230,14 @@ test("a card pressed in a section component's items slot swaps with the second c
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
   await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  // With the section component selected (as after Make component and Done), a press on a card still drags the card (fix-lex-2).
+  await frame(page).locator("section-work").evaluate(el => (el as HTMLElement).click());
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section work");
+  await pressAndMove(page, await pointIn(page, "section-work card-project:nth-of-type(1) h3[slot=title]"), await pointIn(page, "section-work card-project:nth-of-type(2) h3[slot=title]", 0.8));
+  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Card project");
+  await page.mouse.up();
+  await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
 });
