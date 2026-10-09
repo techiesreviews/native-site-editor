@@ -161,3 +161,61 @@ test("a fixed template part refuses drops inside it; at its edge the drop goes b
   assert.equal(edge.container.kind, "section");
   assert.equal(edge.ok, true);
 });
+
+for (const kind of ["div", "items"] as const) {
+  for (const axis of ["row", "column"] as const) {
+    test(`a moved ${kind} item targets both halves of a sibling along ${axis}, above its insides`, () => {
+      const parent = box([1, 0, 1], kind, rect(40, 100, 720, 400), [
+        child(1, rect(60, 120, 200, 100), "card-work"),
+        child(3, rect(300, 120, 200, 100), "card-work"),
+      ], { axis, count: 4, layout: { ...layout, display: kind === "div" ? "inline-grid" : "block" } });
+      const moving: DraggedBlock = { kind: "move", path: [1, 0, 1, 1], band: false };
+      for (const innerKind of ["slot", "items", "div", "fixed"] as const) {
+        const inner = box([1, 0, 1, 3], innerKind, rect(300, 120, 200, 100), [], { slot: "title" });
+        // The nested Div has a deeper source path; slots share the card instance's path.
+        const nested = box([1, 0, 1, 3, 0], "div", rect(310, 130, 180, 80));
+        const containers = innerKind === "div" ? [nested, inner, parent, section, main] : [inner, parent, section, main];
+        for (const [p, index] of [[{ x: 350, y: 145 }, 3], [{ x: 450, y: 195 }, 4]] as const) {
+          const target = dropTarget(containers, p, moving)!;
+          assert.equal(target.container, parent);
+          assert.equal(target.index, index);
+          assert.equal(target.ok, true);
+          assert.equal(dropTarget(containers, p, moving, 1)!.container, section);
+        }
+      }
+      // Directly over a grid gap, the ordinary point index still applies.
+      const gap = { x: 280, y: 170 };
+      assert.equal(dropTarget([parent, section, main], gap, moving)!.index,
+        dropTarget([parent, section, main], gap, paragraph)!.index);
+      // Over itself, a named slot still refuses; its items slot escapes to the parent.
+      const ownSlot = box(moving.path.slice(), "slot", rect(60, 120, 200, 100), [], { slot: "body" });
+      assert.equal(dropTarget([ownSlot, parent, section, main], { x: 100, y: 150 }, moving)!.container, ownSlot);
+      const ownItems = { ...ownSlot, kind: "items" as const, slot: "" };
+      assert.equal(dropLabel(dropTarget([ownItems, parent, section, main], { x: 100, y: 150 }, moving)!, moving), "Stays where it is");
+    });
+  }
+}
+
+test("new blocks and moves from another parent retain the innermost rule", () => {
+  const grid = { ...stack, layout: { ...layout, display: "grid" } };
+  const slot = box([1, 0, 1, 2], "slot", rect(60, 300, 680, 100), [], { slot: "body" });
+  const items = { ...slot, kind: "items" as const, slot: "" };
+  const elsewhere: DraggedBlock = { kind: "move", path: [1, 0, 0], band: false };
+  const sameStack: DraggedBlock = { kind: "move", path: [1, 0, 1, 0], band: false };
+  for (const block of [paragraph, elsewhere]) {
+    assert.equal(dropTarget([slot, grid, section, main], { x: 400, y: 350 }, block)!.container, slot);
+    assert.equal(dropTarget([items, grid, section, main], { x: 400, y: 350 }, block)!.container, items);
+  }
+  assert.equal(dropTarget([slot, stack, section, main], { x: 400, y: 350 }, sameStack)!.container, slot);
+});
+
+test("an items slot sharing its section instance path is not a hovered child", () => {
+  const items = box([1, 0], "items", rect(40, 100, 720, 400), [child(1, rect(60, 120, 200, 100), "card-work"), child(3, rect(300, 120, 200, 100), "card-work")], { count: 4 });
+  const fixed = box([1, 0], "fixed", rect(40, 100, 720, 400));
+  const moving: DraggedBlock = { kind: "move", path: [1, 0, 1], band: false };
+  assert.equal(dropTarget([fixed, items, main], { x: 400, y: 200 }, moving)!.container, fixed);
+  const title = box([1, 0, 3], "slot", rect(300, 120, 200, 100), [], { slot: "title" });
+  const target = dropTarget([title, items, fixed, main], { x: 400, y: 150 }, moving)!;
+  assert.equal(target.container, items);
+  assert.equal(target.ok, true);
+});

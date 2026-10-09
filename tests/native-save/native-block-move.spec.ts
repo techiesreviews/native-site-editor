@@ -69,29 +69,46 @@ test("cards reorder sideways by dragging one", async ({ page, baseURL }) => {
   // Over itself: it stays, and nothing is drawn.
   await expect(where(page)).toHaveText("Stays where it is");
   await expect(page.locator(".pb-drop__line")).toHaveCount(0);
-  // Over the first card's text its slot refuses: a release there moves nothing.
+  // Over another card's text, the grid targets the gap before that card.
   const before = await pointIn(page, "#work card-project:nth-child(1) p[slot=body]", 0.2, 0.5);
   await page.mouse.move(before.x, before.y, { steps: 6 });
-  await expect(where(page)).toHaveText(/^The “body” slot is filled by editing its text/);
-  await expect(page.locator(".pb-drop__refused")).toBeVisible();
-  await page.mouse.up();
-  // The reason stays on screen by the pointer after the label goes, and in #status.
-  await expect(page.locator("#status")).toHaveText(/^The “body” slot is filled by editing its text/);
-  await expect(page.locator(".refusal-note")).toHaveText(/^The “body” slot is filled by editing its text/);
-  expect(await source(page)).toBe(original);
-  // Alt steps up to the grid: before that card.
-  await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(2) p[slot=body]"), before);
-  await page.keyboard.down("Alt");
   await expect(where(page)).toHaveText("Into Div (grid) › before Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
-  await page.mouse.up();
-  // The page relays the release: Alt lets go once the drop is in.
-  await expect(ghost(page)).toHaveCount(0);
+  await expect(page.locator(".pb-drop__refused")).toHaveCount(0);
+  // Alt now steps up from the grid to the surrounding Section.
+  await page.keyboard.down("Alt");
+  await expect(where(page)).toHaveText("Into Section › after Heading");
   await page.keyboard.up("Alt");
+  await expect(where(page)).toHaveText("Into Div (grid) › before Card project");
+  await page.mouse.up();
+  await expect(ghost(page)).toHaveCount(0);
   await expect.poll(async () => flat(await source(page)).indexOf("Harbour Lane Pottery</h3>")).toBeLessThan(flat(await source(page)).indexOf("Fern &amp; Kettle</h3>"));
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card project");
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
+});
+
+test("a card dragged over the third card's title reorders in the grid, one undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  // Add the third card in this test; the shared fixture keeps its two cards.
+  await frame(page).locator("#work card-project").first().hover();
+  await page.locator(".card-ghost__add").click();
+  await page.getByRole("dialog", { name: "New card with its own page" }).getByRole("button", { name: "Card only" }).click();
+  const titles = frame(page).locator("#work card-project > h3[slot=title]");
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "Untitled project"]);
+  const original = await source(page);
+  // Clear the newly added card's selection so the press drags the first card.
+  await page.keyboard.press("Escape");
+  // The title's middle, a little into its after half so the side never rests on a rounding.
+  const to = await pointIn(page, "#work card-project:nth-child(3) h3[slot=title]", 0.6);
+  await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(1) h3[slot=title]"), to);
+  await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
+  await expect(page.locator(".pb-drop__line--v")).toBeVisible();
+  await page.mouse.up();
+  await expect(titles).toHaveText(["Harbour Lane Pottery", "Untitled project", "Fern & Kettle"]);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "Untitled project"]);
 });
 
 test("a plain click still edits text, a press in typed text selects it, and the name chip moves it", async ({ page, baseURL }) => {

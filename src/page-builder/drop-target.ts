@@ -2,7 +2,9 @@
 // the innermost container under the pointer that may take the block, unless
 // the pointer is within DROP_EDGE px of its edge (then its parent, and so on)
 // or the user has stepped up levels (Alt or Tab; Shift+Tab steps back). The
-// index runs along the container's axis, sideways in rows and grids. Where
+// exception is a moved grid/items-slot child over a sibling: its parent wins,
+// before or after that sibling, and levels step up from that parent.
+// The index runs along the container's axis, sideways in rows and grids. Where
 // blocks may go: ticket 10 §5 with the ticket 04 amendment. A dragged Section
 // snaps between page bands on the canvas (slice 34); here it can only take
 // <main>. Pure.
@@ -75,8 +77,8 @@ const nearEdge = (p: { x: number; y: number }, { left, top, width, height }: Dro
 
 /**
  * The target for `block` at the pointer, from the containers under it
- * (innermost first). `level` steps up from where the edges leave the
- * pointer; past the top it stays at the outermost container.
+ * (innermost first). `level` steps up from a moved item's sibling container,
+ * or where the edges leave the pointer; past the top it stays outermost.
  */
 export function dropTarget(containers: readonly DropContainer[], p: { x: number; y: number }, block: DraggedBlock, level = 0): DropTarget | undefined {
   if (!containers.length) return undefined;
@@ -87,12 +89,18 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
     const reason = dropRefusal(block, container);
     return { container, index, level: j, ok: !reason, ...(reason ? { reason } : {}) };
   };
-  // A named slot refuses where it is, rather than passing the drop up; a fixed
-  // part does too, except at its edges (below), where the drop goes beside it.
+  const sibling = block.kind === "move" ? containers.findIndex((container, j) => {
+    if (j === 0 || !(container.kind === "items" || container.layout.display.includes("grid")) ||
+      container.path.length !== block.path.length - 1 || !container.path.every((step, at) => block.path[at] === step)) return false;
+    const hovered = containers[j - 1].path[container.path.length];
+    return hovered !== undefined && hovered !== block.path[block.path.length - 1];
+  }) : -1;
+  // Otherwise a named slot refuses where it is; a fixed part does too, except
+  // at its edges (below), where the drop goes beside it.
   const first = containers[0];
-  if (level <= 0 && !isBand(block) && (first.kind === "slot" || first.kind === "fixed" && !nearEdge(p, first.rect))) return at(0);
-  let i = 0;
-  while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
+  if (sibling < 0 && level <= 0 && !isBand(block) && (first.kind === "slot" || first.kind === "fixed" && !nearEdge(p, first.rect))) return at(0);
+  let i = Math.max(0, sibling);
+  if (sibling < 0) while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);
   for (let j = i; j < containers.length; j++) if (!dropRefusal(block, containers[j])) return at(j);
   return at(i);
