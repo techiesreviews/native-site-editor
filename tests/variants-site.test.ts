@@ -152,11 +152,18 @@ test("cache reuses sheets by path and content, reparses changes and evicts oldes
   assert.notStrictEqual(siteVariants([original]).sheets[0], first.sheets[0]);
 });
 
-test(":is() and :where() subjects name their alternatives, not every component", () => {
+test(":is() and :where() alternatives are separate subjects", () => {
   const parsed = site(`:is(section-hero)[data-tone=dark] {} :where(.btn, main .btn)[data-size=small] {}
-    :is([data-a], [data-b])[data-scheme=dark] {}`);
-  assert.deepEqual(choices(variantsForComponent("section-hero", { css: "", site: parsed }).variants), [["data-tone", ["dark"]], ["data-a", []], ["data-b", []], ["data-scheme", ["dark"]]]);
-  assert.deepEqual(choices(variantsForComponent("site-footer", { css: "", site: parsed }).variants), [["data-a", []], ["data-b", []], ["data-scheme", ["dark"]]]);
+    :is([data-a], [data-b])[data-scheme=dark] {}
+    :is(section-hero[data-layout=wide], site-footer[data-compact]) {}
+    :where(main[data-ancestor=x] section-hero)[data-gap=wide] {}
+    :is(section-hero, [data-c])[data-mixed=x] {}`);
+  const tag = (name: string) => choices(variantsForComponent(name, { css: "", site: parsed }).variants);
+  assert.deepEqual(tag("section-hero"), [
+    ["data-tone", ["dark"]], ["data-a", []], ["data-scheme", ["dark"]], ["data-b", []],
+    ["data-layout", ["wide"]], ["data-gap", ["wide"]], ["data-mixed", ["x"]], ["data-c", []],
+  ]);
+  assert.deepEqual(tag("site-footer"), [["data-a", []], ["data-scheme", ["dark"]], ["data-b", []], ["data-compact", []], ["data-c", []], ["data-mixed", ["x"]]]);
   assert.deepEqual(choices(variantsForClass("btn", parsed)), [["data-size", ["small"]]]);
 });
 
