@@ -401,8 +401,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const editBar = createEditBar(pane, frame,
     (event, chip) => handlers.onBlockPress?.({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, alt: event.altKey, source: chip, hold: true }),
     (rect) => pins?.row(rect) ?? { offset: 0, next: pinRequests.length + 1 });
-  // A block pressed in the page: the runtime keeps the pointer and relays it here.
+  // A block pressed in the page: the runtime keeps the pointer and relays it
+  // here. A frame reloaded or gone sends no release: its drag is cancelled.
   let pressFeed: DragFeed | undefined;
+  const endPress = () => { pressFeed?.cancel(); pressFeed = undefined; };
   const insertControls = createInsertControls(pane, frame, {
     onOpen: (point) => pageBuilder.openFor(point),
     onClose: () => pageBuilder.closeGap(),
@@ -743,8 +745,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const box = frame.getBoundingClientRect();
       const x = box.left + frame.clientLeft + Number(raw.x), y = box.top + frame.clientTop + Number(raw.y);
       if (raw.phase === "start") {
-        pressFeed?.cancel();
-        pressFeed = undefined;
+        endPress();
         if (!site || data.context !== context || viewing || !indexes(raw.node) || !raw.node.length || typeof raw.tag !== "string" || !Number.isFinite(x) || !Number.isFinite(y)) return;
         const painted = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site.routes[route]] : undefined;
         pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: raw.alt === true, relayed: true },
@@ -753,7 +754,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
       if (raw.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, raw.alt === true);
       else if (raw.phase === "end" && Number.isFinite(x) && Number.isFinite(y)) { pressFeed?.up(x, y); pressFeed = undefined; }
-      else if (raw.phase === "end" || raw.phase === "cancel") { pressFeed?.cancel(); pressFeed = undefined; }
+      else if (raw.phase === "end" || raw.phase === "cancel") endPress();
       return;
     }
     // Esc or Ctrl/⌘+↑ climbed past the top, or the breadcrumb's body was chosen.
@@ -803,6 +804,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // A late `ready` from the document the last reload replaced.
       const load = (data as { load?: unknown }).load;
       if (load !== undefined && load !== String(frameLoads)) return;
+      endPress();
       sentAssets.clear();
       postedRoutes.clear();
       shownRoute = undefined;
@@ -1418,6 +1420,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     deactivate() {
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
+      endPress();
       site = undefined;
       shownRoute = undefined;
       postedRoutes.clear();
@@ -1441,6 +1444,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     destroy() {
       endProbe();
+      endPress();
       frameState.destroy();
       window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);

@@ -805,7 +805,8 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   const from = pressed ?? (selection?.node && selection.path === at?.path
     ? { node: selection.node, tag: selection.tag, cls: "", band: isNativeSectionTag(selection.tag), painted: selection.paintedSource } : undefined);
   if (!at || !from) return undefined;
-  const current = blockInsertPorts.proof();
+  // Another page shown meanwhile ends it too: its probes measure that page.
+  const proof = blockInsertPorts.proof(), current = () => proof() && blockInsertPorts.target()?.path === at.path;
   const block = { kind: "move", path: from.node, band: from.band } as const;
   // The chip says the name; a press in the page names it once the drag code is in.
   let name = press.source?.textContent?.trim() || from.tag;
@@ -816,8 +817,11 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
       drop: (target, where, painted) => {
         if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
         const place = { parent: target.container.path, index: target.index, where };
-        // Measured on the bytes the press was: a page that changed since refuses it.
-        const shown = painted === from.painted ? painted : undefined;
+        // Measured on the bytes the press was (the bar's selection repainted
+        // since, as after typing committed by the press): a page that changed refuses it.
+        const now = appStore.selection.value;
+        const fromPainted = !pressed && now?.path === at.path && now.node?.join() === from.node.join() ? now.paintedSource : from.painted;
+        const shown = painted === fromPainted ? painted : undefined;
         if (current()) void loadBlockInsert().then(blocks => current() ? blocks.move(from.node, name, place, shown, at) : undefined).catch(errorMessage);
       },
       announce,

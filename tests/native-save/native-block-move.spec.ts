@@ -69,10 +69,16 @@ test("cards reorder sideways by dragging one", async ({ page, baseURL }) => {
   // Over itself: it stays, and nothing is drawn.
   await expect(where(page)).toHaveText("Stays where it is");
   await expect(page.locator(".pb-drop__line")).toHaveCount(0);
-  // Over the first card's text its slot refuses; Alt steps up to the grid: before that card.
+  // Over the first card's text its slot refuses: a release there moves nothing.
   const before = await pointIn(page, "#work card-project:nth-child(1) p[slot=body]", 0.2, 0.5);
   await page.mouse.move(before.x, before.y, { steps: 6 });
   await expect(where(page)).toHaveText(/^The “body” slot is filled by editing its text/);
+  await expect(page.locator(".pb-drop__refused")).toBeVisible();
+  await page.mouse.up();
+  await expect(page.locator("#status")).toHaveText("Card project was not moved");
+  expect(await source(page)).toBe(original);
+  // Alt steps up to the grid: before that card.
+  await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(2) p[slot=body]"), before);
   await page.keyboard.down("Alt");
   await expect(where(page)).toHaveText("Into Div (grid) › before Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
@@ -100,33 +106,44 @@ test("a plain click still edits text, a press in typed text selects it, and the 
   expect((await lead.evaluate(() => document.getSelection()?.toString() ?? "")).length).toBeGreaterThan(0);
   await page.keyboard.press("End");
   await page.keyboard.type(" Typed.");
-  await page.keyboard.press("Enter");
-  await expect.poll(async () => flat(await source(page))).toMatch(/what they get\. Typed\.<\/p>/);
-  // The bar's name drags the paragraph after the services list.
-  await lead.click();
+  // Still typing, the bar's name drags the paragraph after the services list; the press commits the text.
   const chip = bar(page).locator(".edit-bar__handle");
   await expect(chip).toHaveText("Paragraph");
   const c = (await chip.boundingBox())!;
   await pressAndMove(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 }, await pointIn(page, "#services ul", 0.5, 0.6));
   await expect(where(page)).toHaveText("Into Section › after List");
   await page.mouse.up();
-  await expect.poll(async () => flat(await source(page))).toMatch(/<\/ul><p class="lead">One or two sentences/);
+  await expect.poll(async () => flat(await source(page))).toMatch(/<\/ul><p class="lead">One or two sentences[^<]*what they get\. Typed\.<\/p>/);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
 });
 
-test("the header does not drag from the page; Escape cancels a block's drag", async ({ page, baseURL }) => {
+test("6 px is a click and 7 px a drag; the header does not drag; Escape cancels", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const original = await source(page);
-  const header = await pointIn(page, "site-header", 0.5, 0.5);
-  await pressAndMove(page, header, { x: header.x, y: header.y + 120 });
-  await page.waitForTimeout(150);
-  await expect(ghost(page)).toHaveCount(0);
+  // 6 px on a heading: the release is a click that selects it.
+  const heading = await pointIn(page, "#services h2", 0.9);
+  await page.mouse.move(heading.x, heading.y);
+  await page.mouse.down();
+  await page.mouse.move(heading.x, heading.y + 6, { steps: 3 });
   await page.mouse.up();
-  // Escape leaves a dragged block where it was.
-  await pressAndMove(page, await pointIn(page, "#services h2", 0.9), await pointIn(page, ".hero", 0.5, 0.2));
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+  await expect(ghost(page)).toHaveCount(0);
+  // Moved 30 px across the header: no drag, the release is a click on it.
+  const header = await pointIn(page, "site-header", 0.3, 0.5);
+  await page.mouse.move(header.x, header.y);
+  await page.mouse.down();
+  await page.mouse.move(header.x + 30, header.y, { steps: 4 });
+  await page.mouse.up();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText(/header/i);
+  await expect(ghost(page)).toHaveCount(0);
+  // 7 px on the heading: a drag.
+  await page.mouse.move(heading.x, heading.y);
+  await page.mouse.down();
+  await page.mouse.move(heading.x, heading.y + 7, { steps: 3 });
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
   await page.keyboard.press("Escape");
   await expect(ghost(page)).toHaveCount(0);
-  await expect(page.locator("#status")).toHaveText("Heading was not moved");
   await page.mouse.up();
+  await expect(page.locator("#status")).toHaveText("Heading was not moved");
   expect(await source(page)).toBe(original);
 });

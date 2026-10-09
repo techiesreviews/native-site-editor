@@ -182,9 +182,9 @@ async function pressHandle(page: Page) {
 
 test("the name in the edit bar drags a selected section between page bands, one undo step", async ({ page }) => {
   await select(page, "section.cards");
-  // The name is the handle: no grip dots, named and titled.
+  // The name is the handle: no grip dots, named by the block, titled.
   await expect(handle(page)).toHaveText("Section");
-  await expect(handle(page)).toHaveAccessibleName("Drag to move");
+  await expect(handle(page)).toHaveAccessibleName("Section");
   await expect(handle(page)).toHaveAttribute("title", "Drag to move");
   await expect(handle(page).locator("svg")).toHaveCount(0);
   const hero = (await frame(page).locator("section.hero").boundingBox())!;

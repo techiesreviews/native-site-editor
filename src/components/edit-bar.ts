@@ -331,7 +331,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   });
   const chipName = node("span", "edit-bar__kind");
   chip.append(chipName);
-  chip.setAttribute("aria-label", "Drag to move");
+  // Named by the block's name; the title says what a press does.
   chip.title = "Drag to move";
   chip.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !event.isPrimary || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !drag) return;
@@ -894,7 +894,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     editNameAction = undefined;
     chip.classList.remove("edit-bar__component-name");
     chip.querySelector(".edit-bar__component-edit")?.remove();
-    chip.setAttribute("aria-label", "Drag to move");
+    chip.removeAttribute("aria-label");
     chip.title = "Drag to move";
     if (model.component?.onEdit) {
       const onEdit = model.component.onEdit;

@@ -2770,9 +2770,11 @@
     press = null;
     if (!was.dragging) return;
     document.documentElement.style.userSelect = was.userSelect;
-    // The click a release makes is not a click on the page.
-    swallowClick = true;
-    setTimeout(function () { swallowClick = false; }, 400);
+    // The click a release makes is not a click on the page (a cancel makes none).
+    if (phase === "end") {
+      swallowClick = true;
+      setTimeout(function () { swallowClick = false; }, 400);
+    }
     emit("press-drag", { phase: phase, x: e.clientX, y: e.clientY });
   }
   window.addEventListener("pointerup", function (e) { endPress(e, "end"); }, true);

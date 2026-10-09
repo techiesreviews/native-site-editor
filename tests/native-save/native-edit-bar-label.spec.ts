@@ -91,7 +91,7 @@ test("a heading's name is a label above its controls, the bar's height includes 
 test("a section's name is its handle: the controls sit under it, it moves the section by keyboard and by drag as one undo step", async ({ page }) => {
   await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).click());
   const toolbar = bar(page);
-  const grip = toolbar.getByRole("button", { name: "Drag to move" });
+  const grip = toolbar.locator(".edit-bar__handle");
   await expect(grip).toBeVisible();
   expectLabelAbove(await rows(toolbar));
   // All section actions stay in the bar.
@@ -332,7 +332,7 @@ test("roving focus from the grip skips the disabled Move up of the first section
   await frame(page).locator("section.hero").evaluate((el) => (el as HTMLElement).click());
   const toolbar = bar(page);
   await expect(toolbar.getByRole("button", { name: "Move up", exact: true })).toBeDisabled();
-  await toolbar.getByRole("button", { name: "Drag to move" }).focus();
+  await toolbar.locator(".edit-bar__handle").focus();
   // Grip, then Label, then Move down: the disabled Move up between them is skipped.
   await page.keyboard.press("ArrowRight");
   await expect(toolbar.getByRole("button", { name: "Label", exact: true })).toBeFocused();
@@ -341,7 +341,7 @@ test("roving focus from the grip skips the disabled Move up of the first section
   await page.keyboard.press("ArrowLeft");
   await expect(toolbar.getByRole("button", { name: "Label", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowLeft");
-  await expect(toolbar.getByRole("button", { name: "Drag to move" })).toBeFocused();
+  await expect(toolbar.locator(".edit-bar__handle")).toBeFocused();
 });
 
 // A card of a grid has no move arrows, and Alt+Right in the page does not move it.
