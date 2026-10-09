@@ -126,6 +126,19 @@ test("slot chip toggles and renames the template in one undo step without reload
   await expect.poll(source).toBe(workTemplate.replace('name="title"', 'name="heading"'));
   await expect(chip(page)).toHaveText("heading");
   if (shots) await page.screenshot({ path: `${shots}/apply-renamed.png` });
+  // Made fixed, it keeps the name it had: made a slot again, it is "heading" once more.
+  const renamed = workTemplate.replace('name="title"', 'name="heading"');
+  await chip(page).click();
+  await expect.poll(source).toBe(workTemplate.replace('<slot name="title"><h2>Section title</h2></slot>', '<h2>Section title</h2>'));
+  await expect(chip(page)).toHaveClass(/slot-chip--fixed/);
+  await expect(chip(page)).toHaveText("heading");
+  if (shots) await page.screenshot({ path: `${shots}/apply-made-fixed.png` });
+  await chip(page).click();
+  await expect.poll(source).toBe(renamed);
+  await expect(chip(page)).toHaveClass(/slot-chip--slot/);
+  await undo();
+  await undo();
+  await expect.poll(source).toBe(renamed);
   await undo();
   await expect.poll(source).toBe(workTemplate);
   await expect(chip(page)).toHaveText("title");
@@ -138,6 +151,15 @@ test("slot chip toggles and renames the template in one undo step without reload
   await rename("text");
   await expect(chip(page)).toHaveText("title");
   expect(await source()).toBe(slotted);
+  await undo();
+  await expect.poll(source).toBe(workTemplate);
+
+  // The items slot made fixed: its card stays, the slot goes; one undo brings it back.
+  await work.locator("h3:visible", { hasText: "Untitled project" }).click();
+  await expect(chip(page)).toHaveText("items ×1");
+  await chip(page).click();
+  await expect.poll(source).toBe(workTemplate.replace("<slot>\n      <card-project></card-project>\n    </slot>", "<card-project></card-project>"));
+  await expect(work.locator("h3:visible", { hasText: "Untitled project" })).toBeVisible();
   await undo();
   await expect.poll(source).toBe(workTemplate);
   await unchangedFrame();

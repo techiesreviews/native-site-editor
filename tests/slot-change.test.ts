@@ -118,3 +118,19 @@ test("a slot on its own lines unwraps to its children at its indentation; a part
   assert.ok("source" in back);
   assert.equal(back.source, card);
 });
+test("a fixed part takes the name its chip offers, unless a slot has it; text that keeps its spaces is left as it is", () => {
+  const chip = slotChipState(source, [0, 1])!;
+  assert.equal(chip.state, "fixed");
+  const named = slotChange(source, { node: [0, 1], chip: { ...chip, name: "lead" }, action: "toggle" });
+  assert.ok("source" in named);
+  assert.equal(named.source, source.replace('<p class="lede">Intro</p>', '<slot name="lead"><p class="lede">Intro</p></slot>'));
+  assert.deepEqual(named.change, { kind: "made-slot", name: "lead", part: [0, 1] });
+  assert.ok("error" in slotChange(source, { node: [0, 1], chip: { ...chip, name: "title" }, action: "toggle" }));
+  const pre = `<div>\n  <pre>first\n  second</pre>\n</div>`;
+  const wrapped = slotChange(pre, { node: [0, 0], chip: slotChipState(pre, [0, 0])!, action: "toggle" });
+  assert.ok("source" in wrapped);
+  assert.match(wrapped.source, /<slot name="[^"]+"><pre>first\n  second<\/pre><\/slot>/);
+  const back = slotChange(wrapped.source, { node: wrapped.select, chip: slotChipState(wrapped.source, wrapped.select)!, action: "toggle" });
+  assert.ok("source" in back);
+  assert.equal(back.source, pre);
+});

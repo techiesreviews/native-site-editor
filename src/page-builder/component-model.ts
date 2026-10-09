@@ -1199,8 +1199,9 @@ export function slotChange(template: string, input: SlotChangeInput, templateOf:
   { source: string; change: SlotChange; select: number[] } | { error: string } {
   const current = slotChipState(template, input.node, templateOf);
   const path = (chip: SlotChipState) => chip.state === "fixed" ? chip.part : chip.slot;
-  // Items can show the page's count; their identity is the slot, not that count.
-  if (!current || current.state !== input.chip.state || current.name !== input.chip.name
+  // Items can show the page's count; their identity is the slot, not that count. A fixed
+  // part's name is the one it would get: the editor may offer the name it had.
+  if (!current || current.state !== input.chip.state || (current.state !== "fixed" && current.name !== input.chip.name)
     || JSON.stringify(path(current)) !== JSON.stringify(path(input.chip)))
     return { error: "The part changed; select it again before changing its slot." };
   let nodes = parseSource(template);
@@ -1219,15 +1220,17 @@ export function slotChange(template: string, input: SlotChangeInput, templateOf:
       { kind: "renamed", from: current.name, to: input.name }, [...input.node]);
   }
   const indent = indentOf(template, element.start), eol = lineEnding(template);
-  if (current.state === "fixed") {
+  if (input.chip.state === "fixed") {
+    const name = input.chip.name;
+    if (!name || templateSlots(template).some(slot => slot.name === name)) return { error: `Slot “${name}” already exists in this component.` };
     const part = template.slice(element.start, element.end);
-    const open = `<slot name="${escapeAttribute(current.name)}">`;
-    // A part over several lines goes inside on its own lines, one step in.
-    const text = part.includes("\n")
+    const open = `<slot name="${escapeAttribute(name)}">`;
+    // A part over several lines goes inside on its own lines, one step in (text that keeps its spaces stays as it is).
+    const text = part.includes("\n") && !KEEPS_SPACES.test(part)
       ? `${open}${eol}${indent}  ${part.split(/\r?\n/).map((line, at) => (at && line.trim() ? `  ${line}` : line.trim() ? line : "")).join(eol)}${eol}${indent}</slot>`
       : `${open}${part}</slot>`;
     return apply({ start: element.start, end: element.end, text },
-      { kind: "made-slot", name: current.name, part: [...at] }, [...at, 0]);
+      { kind: "made-slot", name, part: [...at] }, [...at, 0]);
   }
   if (!element.close) return { error: "The slot has no closing tag; fix its source first." };
   const tail = input.node.slice(at.length);
@@ -1237,8 +1240,11 @@ export function slotChange(template: string, input: SlotChangeInput, templateOf:
     { kind: "made-fixed", name: current.name }, select);
 }
 
+const KEEPS_SPACES = /<(?:pre|textarea|listing|xmp|plaintext)[\s>]/i;
+
 /** A slot's children where the slot was: on their own lines inside it, they move out to its indentation. */
 function unwrapped(inner: string, indent: string, eol: string) {
+  if (KEEPS_SPACES.test(inner)) return inner;
   const lines = /^[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*$/.exec(inner)?.[1].split(/\r?\n/);
   if (!lines) return inner;
   const cut = Math.min(...lines.filter((line) => line.trim()).map((line) => /^[ \t]*/.exec(line)![0].length));

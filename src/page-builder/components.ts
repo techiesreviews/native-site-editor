@@ -463,6 +463,8 @@ export function createComponentTools(deps: ComponentDeps) {
     const moded = editMode?.active();
     const template = moded && selection.path === moded.templatePath && selection.node?.length ? deps.sources()[moded.templatePath] : undefined;
     let chip = template === undefined ? undefined : slotChipState(template, selection.node!, (tag) => templateOf(tag)?.source);
+    if (chip?.state === "fixed" && keptName?.template === moded!.templatePath && keptName.source === template && keptName.node === JSON.stringify(selection.node))
+      chip = { ...chip, name: keptName.name };
     // Showing this page's content, an items slot counts what it shows there: the page's items, its fallback's, or none.
     const page = chip?.state === "items" && moded!.show === "page" ? instanceAt(moded!.path, [...moded!.node]) : undefined;
     const state = page && chip ? page.states.get(chip.name) : undefined;
@@ -651,6 +653,9 @@ export function createComponentTools(deps: ComponentDeps) {
   let editMode: EditComponentMode | undefined;
   let editModeLoad: Promise<EditComponentMode> | undefined;
   let chipEvent: string | undefined;
+  let destroyed = false;
+  // A slot just made fixed: its chip offers the name it had while the template is as that left it.
+  let keptName: { template: string; source: string; node: string; name: string } | undefined;
   function applyChip(event: Event) {
     const report = (event as CustomEvent<SlotChipReport>).detail;
     const mode = editMode?.active();
@@ -679,6 +684,8 @@ export function createComponentTools(deps: ComponentDeps) {
       if (!current()) return;
       if (error) { deps.announce(error); editMode?.resetChip(); }
       else if (report.action === "toggle") {
+        keptName = change.kind === "made-fixed" && change.name
+          ? { template: report.template, source: plan.source, node: JSON.stringify(plan.select), name: change.name } : undefined;
         const now = deps.selection();
         if (now === selected || now?.path === report.template && JSON.stringify(now.node) === JSON.stringify(report.node)) {
           const preview = deps.preview(), target = { path: report.template, node: plan.select };
@@ -711,13 +718,14 @@ export function createComponentTools(deps: ComponentDeps) {
   /** Ends the mode, if it is on; the instance it was on. */
   function leaveMode() {
     const was = editMode?.leave();
+    keptName = undefined;
     modeShare?.();
     modeShare = undefined;
     return was;
   }
   const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode, SLOT_CHIP_EVENT }) => {
     chipEvent = SLOT_CHIP_EVENT;
-    window.addEventListener(chipEvent, applyChip);
+    if (!destroyed) window.addEventListener(chipEvent, applyChip);
     return editMode = createEditComponentMode({
       frame: (mode) => deps.preview()?.editComponent?.(mode),
       // The slot chip of an items slot counts what the slots now show.
@@ -1814,6 +1822,7 @@ export function createComponentTools(deps: ComponentDeps) {
     newComponent,
     fillInstanceSlot,
     destroy() {
+      destroyed = true;
       if (chipEvent) window.removeEventListener(chipEvent, applyChip);
       destroyResize?.();
       panel.remove();
