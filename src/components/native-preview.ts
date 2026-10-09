@@ -1006,7 +1006,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function readItemGrid(raw: unknown): ItemGridReport | null {
     if (!raw || typeof raw !== "object" || !site) return null;
     const grid = raw as Record<string, unknown>;
-    const box = readRect(grid.ghost && typeof grid.ghost === "object" ? { ...(grid.ghost as object), bottom: 0, right: 0 } : undefined);
+    const frameBox = (value: unknown) => {
+      const read = readRect(value && typeof value === "object" ? { ...value, bottom: 0, right: 0 } : undefined);
+      return read && { top: read.top, left: read.left, width: read.width, height: read.height };
+    };
+    const box = frameBox(grid.ghost);
+    const item = frameBox(grid.item);
     if (typeof grid.path !== "string" || site.routes[route] !== grid.path || !indexes(grid.parent) || !box) return null;
     // An empty card slot has no item: index and position -1, count 0.
     const slot = typeof grid.slot === "string" ? grid.slot : undefined;
@@ -1020,8 +1025,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       count: grid.count as number,
       row: grid.row === true,
       beside: grid.beside === true,
-      ghost: { top: box.top, left: box.left, width: box.width, height: box.height },
+      ghost: box,
       ...(slot === undefined ? {} : { slot }),
+      ...(item ? { item } : {}),
     };
   }
   function readHost(raw: unknown) {

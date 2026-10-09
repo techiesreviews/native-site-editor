@@ -28,7 +28,8 @@ export function createCardsController(ports: CardsControllerPorts) {
     preview: {
       describe: (grid) => cards?.describe(grid),
       plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: NO_SITE },
-      addCard: (grid) => void cards?.addCard(grid),
+      addCard: (grid) => cards?.addCard(grid) ?? Promise.resolve(undefined),
+      linkPages: (card) => cards?.linkPages(card),
       addPage: (grid, title) => cards?.addPage(grid, title) ?? Promise.resolve(NO_SITE),
     } satisfies CardGridHandlers as CardGridHandlers,
     controls(selection: NativePreviewSelection, source: string) {

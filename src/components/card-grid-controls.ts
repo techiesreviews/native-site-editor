@@ -3,6 +3,8 @@ import { icon } from "../icons";
 import type { Checked } from "../native-create";
 import { cardPrefixRequest } from "../page-builder/cards";
 import { aOr } from "../page-builder/card-grid";
+import type { SitePage } from "../page-builder/page-choices";
+import type { CardLinkPicker } from "./card-link-picker";
 import "./card-grid-controls.css";
 
 // "Add card" over the native preview: a dashed ghost where one more item of
@@ -13,7 +15,8 @@ import "./card-grid-controls.css";
 // popover, Framer-like: the new page's title, the URL it gets, "Create page
 // and card" (Enter) and "Card only"; for any other grid it adds the card at
 // once. The preview runtime reports the grids (`item-grids`); the editor
-// says what each is and does the adding.
+// says what each is and does the adding. A fresh card of an instance's card
+// slot gets "Link to a page…" at its foot (card-link-picker.ts, loaded then).
 
 export interface FrameBox {
   top: number;
@@ -43,6 +46,8 @@ export interface ItemGridReport {
   beside: boolean;
   /** Where one more item would go, in frame-viewport pixels; below the grid, it stops where the page's next content starts. */
   ghost: FrameBox;
+  /** The item's own box, in frame-viewport pixels (none for an empty card slot). */
+  item?: FrameBox;
 }
 
 export interface ItemGridsReport {
@@ -71,12 +76,26 @@ export interface CardPageRequest {
   newFolder?: string;
 }
 
+/** A card just added that a page can be linked to: its page file and body path. */
+export interface NewCard {
+  path: string;
+  node: number[];
+}
+
+/** What a new card can link to: the site's pages, the card's page file, and the pages its grid's other cards link to. */
+export interface CardLinkPages {
+  pages: SitePage[];
+  own: string;
+  inGrid: string[];
+}
+
 export interface CardGridHandlers {
   describe(grid: ItemGridReport): GridDescription | undefined;
   /** The URL the new page gets, or why it cannot be made. */
   plan(grid: ItemGridReport, request: CardPageRequest): Checked<{ route: string }>;
-  /** Adds a card with placeholder text after the last one. */
-  addCard(grid: ItemGridReport): void;
+  /** Adds a card after the last one; resolves to it when a page can be linked to it (a card slot's fresh card). */
+  addCard(grid: ItemGridReport): Promise<NewCard | undefined>;
+  linkPages(card: NewCard): CardLinkPages | undefined;
   /** Creates the page and its card; resolves to an error to show, or nothing. */
   addPage(grid: ItemGridReport, request: CardPageRequest): Promise<string | undefined>;
 }
@@ -145,6 +164,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function layout() {
     pane.dispatchEvent(new Event("card-controls-layout"));
+    placeLinker();
     const { frameRect, left, top } = geometry();
     Object.assign(layer.style, { left: `${left}px`, top: `${top}px`, width: `${frameRect.width}px`, height: `${frameRect.height}px` });
     const grid = current();
@@ -193,7 +213,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (!grid || !about) return;
     if (!about.collection) {
       close(false);
-      handlers.addCard(grid);
+      addCard(grid);
       return;
     }
     if (open && gridKey(open.grid) === gridKey(grid)) {
@@ -203,12 +223,60 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     openPopover(grid, about);
   }
 
+  // "Link to a page…" on the card just added, while it stays selected.
+  let linker: { card: NewCard; picker?: CardLinkPicker; seen: boolean } | undefined;
+
+  function addCard(grid: ItemGridReport) {
+    closeLinker();
+    void handlers.addCard(grid).then((card) => {
+      const pages = card && handlers.linkPages(card);
+      if (!card || !pages) return;
+      closeLinker();
+      const entry: NonNullable<typeof linker> = { card, seen: false };
+      linker = entry;
+      import("./card-link-picker").then(({ createCardLinkPicker }) => {
+        if (linker !== entry) return;
+        entry.picker = createCardLinkPicker(pane, {
+          pages,
+          // Filling the card from the page comes with slice 53.
+          onPick: () => closeLinker(),
+          onEscape: () => {
+            closeLinker();
+            if (!ghost.hidden) add.focus();
+          },
+        });
+        placeLinker();
+      }).catch(() => { if (linker === entry) linker = undefined; });
+    });
+  }
+
+  // Hung from the card while the selection is the card (the runtime reports
+  // its box); gone once the selection has been it and moved on (another
+  // element, or Undo took the card away).
+  function placeLinker() {
+    if (!linker) return;
+    const grid = reports.selected;
+    const node = linker.card.node;
+    const mine = grid?.item && grid.path === linker.card.path && grid.parent.length === node.length - 1 &&
+      [...grid.parent, grid.index].every((step, at) => step === node[at]) ? grid.item : undefined;
+    if (!mine && linker.seen) { closeLinker(); return; }
+    linker.seen ||= Boolean(mine);
+    const { frameRect, left, top } = geometry();
+    linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, { left, top, width: frameRect.width, height: frameRect.height });
+  }
+
+  function closeLinker() {
+    linker?.picker?.destroy();
+    linker = undefined;
+  }
+
   function trackGrid(grid?: ItemGridReport) {
     if (!(frame instanceof HTMLIFrameElement)) return;
     frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "item-grid-track", grid }, "*");
   }
 
   function openPopover(grid: ItemGridReport, about: GridDescription) {
+    closeLinker();
     open = { grid, about, live: false };
     trackGrid(grid);
     add.setAttribute("aria-expanded", "true");
@@ -256,7 +324,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const only = button(`${about.noun[0].toUpperCase()}${about.noun.slice(1)} only`, () => {
       const target = open?.grid;
       close(false);
-      if (target) handlers.addCard(target);
+      if (target) addCard(target);
     }, "card-add__only");
     only.title = `Add ${aOr(about.noun)} with placeholder text and no page`;
     const actions = node("div", "card-add__actions");
@@ -511,7 +579,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       const grid = reports.selected;
       const about = grid ? handlers.describe(grid) : undefined;
       if (!grid || !about) return;
-      if (!about.collection) { handlers.addCard(grid); return; }
+      if (!about.collection) { addCard(grid); return; }
       reports = { ...reports, hover: null };
       layout();
       openPopover(grid, about);
@@ -519,6 +587,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     },
     clear() {
       close(false);
+      closeLinker();
       clearTimeout(leaveTimer);
       hoverGone = false;
       reports = { hover: null, selected: null };
@@ -529,6 +598,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       trackGrid();
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
+      closeLinker();
       layer.remove();
       popover.remove();
       folderMenu?.remove();

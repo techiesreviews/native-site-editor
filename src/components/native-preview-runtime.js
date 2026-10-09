@@ -1422,7 +1422,8 @@
       count: found.items.length,
       row: row,
       beside: beside,
-      ghost: clipGhost(ghost, found.items[found.items.length - 1], last.bottom, beside)
+      ghost: clipGhost(ghost, found.items[found.items.length - 1], last.bottom, beside),
+      item: roundBox(found.item.getBoundingClientRect())
     }, slotName);
   }
   function withSlot(report, slotName) {
@@ -1446,8 +1447,10 @@
         ? { left: ghost.left, top: top, width: ghost.width, height: nextTop - top }
         : { left: ghost.left, top: nextTop - GHOST_STRIP, width: ghost.width, height: GHOST_STRIP };
     }
-    var round = function (n) { return Math.round(n); };
-    return { top: round(ghost.top), left: round(ghost.left), width: round(ghost.width), height: round(ghost.height) };
+    return roundBox(ghost);
+  }
+  function roundBox(box) {
+    return { top: Math.round(box.top), left: Math.round(box.left), width: Math.round(box.width), height: Math.round(box.height) };
   }
   // An empty card slot's grid: where its first card would go. Its box when
   // it has one (an empty one may be hidden, and its wrapper with it), else

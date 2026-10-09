@@ -127,3 +127,61 @@ test("of two named card slots, the one whose part of the template is under the p
   const [a, b] = await Promise.all([0, 1].map((n) => frame(page).locator("section-pair > card-project[slot=second]").nth(n).boundingBox()));
   expect(Math.abs(a!.y - b!.y)).toBeLessThan(2);
 });
+
+test("a fresh card shows Link to a page… at its foot: the cards' folder first, then Other pages; Esc leaves the card blank", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "about/index.html", content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>About · Larkspur Studio</title>\n</head>\n<body>\n  <main>\n    <h1>About us</h1>\n  </main>\n</body>\n</html>\n' } });
+  const made = await openSectionWork(page, baseURL, 1);
+  await frame(page).locator("section-work > card-project").hover();
+  await addCard(page).click();
+  const added = made.replace("</card-project>\n    </section-work>", `</card-project>\n      ${fresh}\n    </section-work>`);
+  await expect.poll(() => source(page)).toBe(added);
+
+  const picker = page.getByRole("group", { name: "Link the new card to a page" });
+  const input = page.getByRole("combobox", { name: "Link to a page" });
+  await expect(input).toBeFocused();
+  // Hung from the new card's foot, or over its top when the pane has no room below it.
+  const [card, box] = await Promise.all([frame(page).locator("section-work > card-project").nth(1).boundingBox(), picker.boundingBox()]);
+  expect(Math.min(Math.abs(box!.y - (card!.y + card!.height - 6)), Math.abs(box!.y + box!.height - (card!.y + 6)))).toBeLessThan(3);
+  expect(box!.x).toBeLessThan(card!.x + card!.width);
+  expect(box!.x + box!.width).toBeGreaterThan(card!.x);
+
+  // The cards' folder first, the page they link to greyed; then the rest, not the grid's own page.
+  const list = page.getByRole("listbox", { name: "Pages" });
+  const under = list.getByRole("group", { name: "Under /work/" });
+  const other = list.getByRole("group", { name: "Other pages" });
+  await expect(list.getByRole("group")).toHaveCount(2);
+  await expect(under.getByRole("option")).toHaveText([/^Fern & Kettle\/work\/fern-and-kettle\/In this grid$/, /^Harbour Lane Pottery\/work\/harbour-lane-pottery\/$/]);
+  await expect(under.getByRole("option").first()).toHaveAttribute("aria-disabled", "true");
+  await expect(other.getByRole("option")).toHaveText([/^About us\/about\/$/]);
+  await expect(list.getByRole("option", { name: /Larkspur|Small websites/ })).toHaveCount(0);
+  // The first page that can be picked is active, and arrows skip the greyed one.
+  await expect(under.getByRole("option", { name: /Harbour Lane Pottery/ })).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowDown");
+  await expect(other.getByRole("option")).toHaveAttribute("aria-selected", "true");
+  await input.press("ArrowDown");
+  await expect(under.getByRole("option", { name: /Harbour Lane Pottery/ })).toHaveAttribute("aria-selected", "true");
+  // Search covers every page, by title or address.
+  await input.fill("abo");
+  await expect(list.getByRole("group")).toHaveCount(1);
+  await expect(other.getByRole("option")).toHaveText([/^About us/]);
+  await input.fill("harbour-lane");
+  await expect(list.getByRole("option")).toHaveText([/^Harbour Lane Pottery/]);
+  await input.fill("nothing like it");
+  await expect(list).toHaveText("No page matches.");
+
+  // Esc closes it and leaves the card blank, still selected.
+  await input.press("Escape");
+  await expect(picker).toHaveCount(0);
+  await expect.poll(() => source(page)).toBe(added);
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(/Card project/);
+
+  // Undo takes the next card away, and its combobox with it.
+  await frame(page).locator("section-work > card-project").nth(1).hover();
+  await addCard(page).click();
+  await expect(input).toBeFocused();
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(added);
+  await expect(picker).toHaveCount(0);
+});

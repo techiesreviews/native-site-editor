@@ -64,6 +64,17 @@ function matchSlot(slot: TemplateSlot, template: string, source: string, page: S
   return undefined;
 }
 
+/** A page's title as a card takes it: its h1 (main's first), else its `<title>` without the site's name, else its address's last part. */
+export function pageTitle(source: string, route: string, document = [...descendants(parseSource(source))]): { title: string; from: "h1" | "<title>" | "address" } {
+  const main = document.find(element => element.name === "main");
+  const h1 = (main && [...descendants(main.children)].find(element => element.name === "h1")) || document.find(element => element.name === "h1");
+  const h1Text = h1 ? elementText(source, h1) : "";
+  const titleTag = document.find(element => element.name === "title");
+  const titleText = titleTag ? elementText(source, titleTag).split(/ [·|–—-] /)[0].trim() : "";
+  const title = h1Text || titleText || plainText(route.split("/").filter(Boolean).at(-1) || route);
+  return { title, from: h1Text ? "h1" : titleText ? "<title>" : "address" };
+}
+
 /** Map a chosen page's facts to a card's slots; missing facts keep fallbacks. */
 export function cardFill(input: { template: string; page: { route: string; source: string }; siteUrl?: string }): CardFill {
   const { template, page: { source, route }, siteUrl } = input;
@@ -72,12 +83,7 @@ export function cardFill(input: { template: string; page: { route: string; sourc
   const body = document.find(element => element.name === "body");
   const scope = main ?? body;
   const content = scope ? [...descendants(scope.children)] : document;
-  const h1 = (main && content.find(element => element.name === "h1")) || document.find(element => element.name === "h1");
-  const h1Text = h1 ? elementText(source, h1) : "";
-  const titleTag = document.find(element => element.name === "title");
-  const titleText = titleTag ? elementText(source, titleTag).split(/ [·|–—-] /)[0].trim() : "";
-  const title = h1Text || titleText || plainText(route.split("/").filter(Boolean).at(-1) || route);
-  const titleFrom = h1Text ? "h1" : titleText ? "<title>" : "address";
+  const { title, from: titleFrom } = pageTitle(source, route, document);
   const meta = (name: string, value: string) => {
     const found = document.find(element => element.name === "meta" && attribute(source, element, name)?.toLowerCase() === value);
     return found ? squash(attribute(source, found, "content") ?? "") : "";

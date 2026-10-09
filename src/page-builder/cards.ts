@@ -14,7 +14,7 @@
 import { refuse as showRefusal } from "../components/refusal-note";
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
-import type { CardPageRequest, GridDescription, ItemGridReport } from "../components/card-grid-controls";
+import type { CardLinkPages, CardPageRequest, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
 import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, type NativeSite } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
@@ -22,6 +22,7 @@ import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit } from "./card-slot";
+import { pageTitle } from "./card-fill";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
 
@@ -286,7 +287,8 @@ export function createCards(deps: CardsDeps) {
   // Adds a card after the grid's last item and selects it: in an instance's
   // card slot (`slot`, else the slot its last item fills) a fresh card of the
   // slot's card component, else a copy of the last item with placeholder text.
-  async function addCard(path: string, parent: number[], slot?: string) {
+  // Resolves to the fresh card, which a page can be linked to next (ticket 09 §1).
+  async function addCard(path: string, parent: number[], slot?: string): Promise<NewCard | undefined> {
     if (!(await deps.ensureOpen(path))) return;
     const found = gridFor(path, parent);
     const route = routeOf(path);
@@ -294,8 +296,8 @@ export function createCards(deps: CardsDeps) {
     const lastSlot = last && startTagAttribute(found.source, last.range.tag, "slot")?.value;
     const fresh = route && slotAddFor(path, parent, slot ?? decodeHtmlEntities(lastSlot ?? "", true));
     if (fresh) {
-      deps.change(path, fresh.edit.source, [fresh.edit], [...parent, fresh.index], `${capital(fresh.noun)} added to ${fresh.label}`);
-      return;
+      const node = [...parent, fresh.index];
+      return deps.change(path, fresh.edit.source, [fresh.edit], node, `${capital(fresh.noun)} added to ${fresh.label}`) ? { path, node } : undefined;
     }
     if (!found || !route || !last) { refuse("That grid is not on the page any more."); return; }
     const { source, grid } = found;
@@ -304,6 +306,19 @@ export function createCards(deps: CardsDeps) {
     const what = capital(grid.noun);
     deps.change(path, source, [edit], [...grid.parent, last.index + 1],
       copy.reset ? `${what} added to ${grid.label}` : `${what} added to ${grid.label}, a copy of the last one (its text could not be reset)`);
+  }
+
+  /** The pages the new card can link to (page-choices.ts): the site's, its page file, and those the grid's other cards link to. */
+  function linkPages(card: NewCard): CardLinkPages | undefined {
+    const site = deps.site();
+    if (!site) return undefined;
+    const index = card.node[card.node.length - 1];
+    const items = gridFor(card.path, card.node.slice(0, -1))?.grid.items ?? [];
+    return {
+      own: card.path,
+      inGrid: items.flatMap((item) => (item.index !== index && item.route ? [item.route] : [])),
+      pages: Object.entries(site.routes).map(([route, file]) => ({ route, file, title: pageTitle(deps.source(file) ?? "", route).title })),
+    };
   }
 
   // Creates a page under the grid's URL and its card after the last one, as
@@ -464,6 +479,7 @@ export function createCards(deps: CardsDeps) {
     },
     addCard: (report: ItemGridReport) => addCard(report.path, report.parent, report.slot),
     addPage: (report: ItemGridReport, request: CardPageRequest) => addPage(report.path, report.parent, request),
+    linkPages,
     move,
     controls,
 
