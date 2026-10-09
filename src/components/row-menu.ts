@@ -30,7 +30,8 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
     element.hidden = true;
     element.replaceChildren();
     document.removeEventListener("pointerdown", outside, true);
-    opener?.setAttribute("aria-expanded", "false");
+    // Only a menu button says whether its menu is open; a tree row's aria-expanded is its folding.
+    if (opener?.getAttribute("aria-haspopup")) opener.setAttribute("aria-expanded", "false");
     const target = opener;
     api.opener = opener = undefined;
     if (returnFocus && target?.isConnected) target.focus();

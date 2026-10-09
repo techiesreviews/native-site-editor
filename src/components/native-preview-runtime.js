@@ -2351,7 +2351,7 @@
     emit("default-styles", payload);
   }
 
-  function emitSelection(el, reason) {
+  function emitSelection(el, reason, menuAt) {
     var path = ownerPath(el);
     if (!path) return;
     var link = nearestLinkHref(el);
@@ -2388,6 +2388,7 @@
       if (pageNode) payload.pageNode = pageNode;
     }
     payload.crumbs = canvasCrumbs(el);
+    if (menuAt) payload.menu = menuAt;
     lastRect = JSON.stringify(payload.rect);
     emit("select", payload);
     lastSlotGhosts = "";
@@ -2891,9 +2892,9 @@
     e.stopPropagation();
     selected = target;
     updateBoxes();
-    emitSelection(target, "click");
+    // The menu's point rides on the selection, so the editor opens it for exactly this one.
     contextMenuOpen = true;
-    emit("context-menu", { x: e.clientX, y: e.clientY });
+    emitSelection(target, "click", { x: e.clientX, y: e.clientY });
   });
   document.addEventListener("mousemove", function (e) {
     if (pressDragging()) return;

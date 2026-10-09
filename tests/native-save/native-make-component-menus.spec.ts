@@ -11,7 +11,15 @@ const menu = (page: Page) => page.getByRole("menu").filter({ has: page.getByRole
 
 async function clickSection(page: Page, button: "left" | "right" = "right") {
   const section = frame(page).locator("section.hero");
-  const position = await section.evaluate(el => ({ x: el.clientWidth - 8, y: el.clientHeight - 8 }));
+  await section.scrollIntoViewIfNeeded();
+  // A point of the section's own, not of a child.
+  const position = await section.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    for (let y = 2; y < box.height; y += 4) for (const x of [4, box.width - 4]) {
+      if (el.ownerDocument.elementFromPoint(box.left + x, box.top + y) === el) return { x, y };
+    }
+    throw new Error("no point of the section's own");
+  });
   await section.click({ button, position });
 }
 
@@ -67,8 +75,13 @@ test("main, heading, page components and instance contents have no Make componen
     await target.click({ button: "right" });
     await expect(menu(page)).toHaveCount(0);
   }
+  // Each right-click is seen (the edit bar leaves the section first) and opens no menu.
+  const kind = page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind");
   for (const selector of [".hero h1", "site-header", "site-footer", "project-card .project-card__title"]) {
+    await clickSection(page, "left");
+    await expect(kind).toHaveText("Section");
     await frame(page).locator(selector).first().click({ button: "right" });
+    await expect(kind).not.toHaveText("Section");
     await expect(menu(page)).toHaveCount(0);
   }
 });
@@ -144,4 +157,41 @@ test("typing and History viewing keep the browser context menu", async ({ page, 
   await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
   expect(await browserMenuAllowed()).toBe(true);
   await expect(menu(page)).toHaveCount(0);
+});
+
+test("after following a link in the preview, one right-click makes that page's section a component", async ({ page, baseURL }) => {
+  await frame(page).getByRole("link", { name: "About", exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(frame(page).getByRole("heading", { name: "About this project" })).toBeVisible();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  // The selection opens about/index.html; the menu it came with stays open meanwhile.
+  await clickSection(page);
+  await expect(menu(page)).toBeVisible();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  await expect(menu(page)).toBeVisible();
+  await menu(page).getByRole("menuitem", { name: "Make component", exact: true }).click();
+  await expect(page.locator(".edit-mode__title")).toHaveText("Editing<section-about-this-project>");
+  await expect.poll(() => effectiveSource(page, baseURL, "about/index.html")).toContain("<section-about-this-project>");
+});
+
+test("the Structure menu opens the page first when a stylesheet is the open file", async ({ page, baseURL }) => {
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Files" }).click();
+  await page.locator("#files").getByRole("button", { name: "styles", exact: true }).click();
+  await page.locator("#files").getByRole("button", { name: "site.css", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "styles/site.css");
+  await page.keyboard.press("Escape");
+  await sectionRow(page).click({ button: "right" });
+  await menu(page).getByRole("menuitem", { name: "Make component", exact: true }).click();
+  await expect(page.locator(".edit-mode__title")).toHaveText(`Editing<${tag}>`);
+  await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toContain(`<${tag}>`);
+});
+
+test("closing a row's menu leaves the row's folding as it was", async ({ page }) => {
+  await sectionRow(page).locator(".page-structure__toggle").click();
+  await expect(sectionRow(page)).toHaveAttribute("aria-expanded", "true");
+  await sectionRow(page).click({ button: "right" });
+  await expect(menu(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu(page)).toHaveCount(0);
+  await expect(sectionRow(page)).toHaveAttribute("aria-expanded", "true");
 });

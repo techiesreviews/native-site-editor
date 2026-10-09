@@ -210,7 +210,9 @@ export interface NativeTextEdit {
 export interface PressedBlock { node: number[]; tag: string; cls: string; band: boolean; painted: string | undefined }
 
 export interface NativePreviewHandlers {
-  onContextMenu?: (point: { x: number; y: number }, anchor: HTMLIFrameElement) => void;
+  /** A right-click in the frame selected `selection`: open its element menu at `point` (host viewport). */
+  onContextMenu?: (point: { x: number; y: number }, anchor: HTMLIFrameElement, selection: NativePreviewSelection) => void;
+  /** A press, scroll, re-render with other bytes or History view: close that menu. */
   onDismissContextMenu?: () => void;
   /** The frame drew another page (the first, a followed link, a file opened): the host reads its images. */
   onRouteShown?: (route: string) => void;
@@ -784,19 +786,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       endProbe(valid ? parseDropReport(data, probe.path) : undefined);
       return;
     }
-    if (data.type !== "ready" && data.context !== context) {
-      if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
-      return;
-    }
+    // A press or scroll in the frame closes the element menu, from any render.
     if (data.type === "dismiss-context-menu") {
       handlers.onDismissContextMenu?.();
       return;
     }
-    if (data.type === "context-menu") {
-      const raw = data as { x?: unknown; y?: unknown };
-      if (!site || viewing || typeof raw.x !== "number" || typeof raw.y !== "number" || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return;
-      const box = frame.getBoundingClientRect();
-      handlers.onContextMenu?.({ x: box.left + frame.clientLeft + raw.x, y: box.top + frame.clientTop + raw.y }, frame);
+    if (data.type !== "ready" && data.context !== context) {
+      if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
       return;
     }
     if (data.type === "slot-ghosts") {
@@ -943,6 +939,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         host?: unknown;
         hostChain?: unknown;
         crumbs?: unknown;
+        menu?: { x?: unknown; y?: unknown };
       };
       // Geometry refreshes of the chosen element keep its menu usable.
       if (raw.reason !== "refresh" || raw.path === "") handlers.onDismissContextMenu?.();
@@ -974,7 +971,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const instance = indexes(raw.pageNode) && pagePath ? { path: pagePath, node: raw.pageNode } : undefined;
       pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect), instance);
       canvas.setCrumbs(readCrumbs(raw.crumbs));
-      handlers.onSelect?.({
+      const selection: NativePreviewSelection = {
         path: raw.path,
         paintedSource: painted?.sources[raw.path],
         tag: typeof raw.tag === "string" ? raw.tag : "",
@@ -991,7 +988,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         selector: typeof raw.selector === "string" ? raw.selector.slice(0, 2000) : undefined,
         host: readHost(raw.host),
         hostChain: readHostChain(raw.hostChain),
-      });
+      };
+      handlers.onSelect?.(selection);
+      // A right-click: the element menu at the pointer (frame points to the host's).
+      const menuX = raw.menu?.x, menuY = raw.menu?.y;
+      if (typeof menuX === "number" && typeof menuY === "number" && Number.isFinite(menuX) && Number.isFinite(menuY)) {
+        const box = frame.getBoundingClientRect();
+        handlers.onContextMenu?.({ x: box.left + frame.clientLeft + menuX, y: box.top + frame.clientTop + menuY }, frame, selection);
+      }
       return;
     }
     if (data.type === "default-styles" && site) {
@@ -1199,7 +1203,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     update(input: UpdateInput) {
       // An element menu stays open while the same bytes are reported again (a code pane mounting).
-      const changed = Object.hasOwn(input, "component") || Boolean(input.route) ||
+      const changed = (Object.hasOwn(input, "component") && (input.component ?? "") !== focusTag) || Boolean(input.route && input.route !== route) ||
         (Object.hasOwn(input, "editableTemplatePath") && input.editableTemplatePath !== editableTemplatePath) ||
         (input.sources && !samePreviewFiles(sources, input.sources)) ||
         (input.componentStyles && !samePreviewFiles(componentStyles, input.componentStyles)) ||

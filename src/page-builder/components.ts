@@ -488,7 +488,12 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   function menuItems(target: ElementMenuTarget): MenuItem[] {
-    return makeComponentOfferedFor(target) ? [{ label: "Make component", run: () => void openMakeComponent(target) }] : [];
+    if (!makeComponentOfferedFor(target)) return [];
+    // From Structure the page may not be the open file (a stylesheet is); it opens first, as a selection would.
+    return [{ label: "Make component", run: () => void (async () => {
+      if (deps.currentPath() !== target.path && !(await deps.openFile(target.path))) return;
+      await openMakeComponent(target);
+    })() }];
   }
 
   // ---- Variants (ticket 07 §5). ----

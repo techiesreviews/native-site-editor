@@ -457,18 +457,11 @@ function mountWorkspace() {
   previewElementMenu?.close(false);
   previewElementMenu?.element.remove();
   previewElementMenu = createRowMenu(app);
-  let menuSelection: NativePreviewSelection | undefined;
   nativePreview = createNativePreview(element("main"), {
     ...previewSelection.handlers(),
-    onSelect: selection => {
-      menuSelection = selection;
-      previewSelection.handlers().onSelect?.(selection);
-    },
     onDismissContextMenu: () => previewElementMenu?.close(false),
-    onContextMenu: (point, anchor) => {
-      const selection = appStore.selection.value;
-      // Shared-template clicks may still be waiting for their real instance selection.
-      if (!selection || selection.path !== menuSelection?.path || selection.tag !== menuSelection.tag || selection.node?.join(".") !== menuSelection.node?.join(".")) return;
+    // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
+    onContextMenu: (point, anchor, selection) => {
       const target = componentTools?.instanceSelection(selection);
       const entries = target ? elementMenuItems(target) : [];
       if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
