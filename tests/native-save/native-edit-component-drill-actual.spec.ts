@@ -102,8 +102,17 @@ test("nested card opens in place, edits its template and returns by the breadcru
   await toolbar(page).getByRole("button", { name: "Open Card project component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", CARD);
   await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>›<card-project>");
+  // The longer title still fits the narrowest window (slice 89): the crumb and Done are on screen and take clicks.
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await expect(canvasBar(page)).toHaveAttribute("data-fit", "wrap");
+  await expect.poll(() => canvasBar(page).evaluate((bar) => [".edit-mode__crumb", ".canvas-component__done"].every((selector) => {
+    const control = bar.querySelector(selector)!, r = control.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return r.width > 0 && r.left >= 0 && r.right <= innerWidth && !!hit && control.contains(hit);
+  }))).toBe(true);
   await canvasBar(page).getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true })).toBeVisible();
   expect(await frameMark(page)).toBe("slice-47");
   expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toBe(srcdoc);
