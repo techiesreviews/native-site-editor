@@ -1,8 +1,8 @@
 ---
 title: "Slot plan: nested instances and card links"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: claude (slice runner)
 blocked_by: [07-slot-plan-whole-elements]
 builder: claude ★
 phase: 2
@@ -19,3 +19,10 @@ Ticket [03](../../tickets/03-default-editables.md) §2 and §6, with card links 
 ## Done when
 
 - Unit tests: a nested `<card-note>` becomes an ordinary whole slot; a link-wrapped card gives a title slot holding the link and `:host { position: relative; }` in its CSS; a text-less link wrapper is one slot.
+
+## Done (2026-10-09)
+
+- `makeComponentPlan`: a nested instance is one ordinary whole slot named from its tag (`card-note` → `note`); a link wrapping more than text is one whole slot (`link`). A link-wrapped card made a component becomes an `<article>`, its title (the first heading the plan slots, else the first line) holds the link in the `title` slot, the CSS gets `:host { position: relative; }` and `notes` says the card stays clickable, while that slot keeps its name and isn't fixed. A link card inside a bigger element stays one whole slot (its stretch would cover the whole host).
+- Commits "Slot plan: nested instances and link-wrapped cards" and two review-fix commits on `dev`. Choice paths inside the title name the element's own parts; the id leaves the element before planning.
+- Tests in `tests/component-model.test.ts`: nested instances (prefixes, kept fixed, fixed groups), link cards (title choice, link attributes, class ties, renames, summaries, grouped rows, fixed title, choices inside the title), text-less wrappers at the root and inside.
+- Open: `templateSlots` reads a slot whose fallback is one `card-…` instance (`<slot name="note"><card-note>`) as an items slot, so the planned ordinary slot reads back as items; slice 40 needs a rule that tells it from slice 10's card fallback.
