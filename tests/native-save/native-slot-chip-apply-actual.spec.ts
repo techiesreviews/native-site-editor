@@ -136,7 +136,14 @@ test("slot chip toggles and renames the template in one undo step without reload
   await chip(page).click();
   await expect.poll(source).toBe(renamed);
   await expect(chip(page)).toHaveClass(/slot-chip--slot/);
+  // Undo makes it fixed again, still offering "heading"; Redo makes it that slot.
   await undo();
+  await expect(chip(page)).toHaveClass(/slot-chip--fixed/);
+  await expect(chip(page)).toHaveText("heading");
+  await redo();
+  await expect.poll(source).toBe(renamed);
+  await undo();
+  await expect(chip(page)).toHaveText("heading");
   await undo();
   await expect.poll(source).toBe(renamed);
   await undo();

@@ -463,8 +463,8 @@ export function createComponentTools(deps: ComponentDeps) {
     const moded = editMode?.active();
     const template = moded && selection.path === moded.templatePath && selection.node?.length ? deps.sources()[moded.templatePath] : undefined;
     let chip = template === undefined ? undefined : slotChipState(template, selection.node!, (tag) => templateOf(tag)?.source);
-    if (chip?.state === "fixed" && keptName?.template === moded!.templatePath && keptName.source === template && keptName.node === JSON.stringify(selection.node))
-      chip = { ...chip, name: keptName.name };
+    const kept = chip?.state === "fixed" ? keptNames.get(keptKey(moded!.templatePath, template!, selection.node!)) : undefined;
+    if (chip && kept) chip = { ...chip, name: kept };
     // Showing this page's content, an items slot counts what it shows there: the page's items, its fallback's, or none.
     const page = chip?.state === "items" && moded!.show === "page" ? instanceAt(moded!.path, [...moded!.node]) : undefined;
     const state = page && chip ? page.states.get(chip.name) : undefined;
@@ -654,8 +654,10 @@ export function createComponentTools(deps: ComponentDeps) {
   let editModeLoad: Promise<EditComponentMode> | undefined;
   let chipEvent: string | undefined;
   let destroyed = false;
-  // A slot just made fixed: its chip offers the name it had while the template is as that left it.
-  let keptName: { template: string; source: string; node: string; name: string } | undefined;
+  // Slots made fixed in this mode: the chip offers the name each had while the template reads
+  // as that change left it (Undo and Redo bring it back too). Keyed by template, source and part.
+  const keptNames = new Map<string, string>();
+  const keptKey = (template: string, source: string, node: readonly number[]) => JSON.stringify([template, source, node]);
   function applyChip(event: Event) {
     const report = (event as CustomEvent<SlotChipReport>).detail;
     const mode = editMode?.active();
@@ -684,8 +686,7 @@ export function createComponentTools(deps: ComponentDeps) {
       if (!current()) return;
       if (error) { deps.announce(error); editMode?.resetChip(); }
       else if (report.action === "toggle") {
-        keptName = change.kind === "made-fixed" && change.name
-          ? { template: report.template, source: plan.source, node: JSON.stringify(plan.select), name: change.name } : undefined;
+        if (change.kind === "made-fixed" && change.name) keptNames.set(keptKey(report.template, plan.source, plan.select), change.name);
         const now = deps.selection();
         if (now === selected || now?.path === report.template && JSON.stringify(now.node) === JSON.stringify(report.node)) {
           const preview = deps.preview(), target = { path: report.template, node: plan.select };
@@ -718,7 +719,7 @@ export function createComponentTools(deps: ComponentDeps) {
   /** Ends the mode, if it is on; the instance it was on. */
   function leaveMode() {
     const was = editMode?.leave();
-    keptName = undefined;
+    keptNames.clear();
     modeShare?.();
     modeShare = undefined;
     return was;
