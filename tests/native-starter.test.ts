@@ -7,6 +7,9 @@ import { handle, type Env, type StoredSession } from "../worker/app.ts";
 import { HttpError } from "../worker/github.ts";
 import { NATIVE_STARTER_VERSION, nativeStarterFiles, parseNativeManifest, starterProvider } from "../worker/starter.ts";
 import { tarball } from "./tar-helper.ts";
+import { nativePageStylesheets } from "../shared/native-project.ts";
+import { expandStyleImports } from "../shared/css-imports.ts";
+import { instanceVariantFields, isToneBand } from "../src/page-builder/variant-fields.ts";
 
 // The native static Starter: vendored ready files read through ASSETS only.
 
@@ -91,6 +94,24 @@ test("nativeStarterFiles reads only ASSETS and returns the six routes, component
   const card = files.find((file) => file.path === "images/social-card.png")!;
   assert.ok("base64" in card);
   assert.deepEqual(Buffer.from(card.base64, "base64"), readFileSync(`${base}files/images/social-card.png.asset`));
+});
+
+// Lex's report (2026-10-09): a site started from the earlier vendored starter
+// (v6a9ca44: plain sections, no tone rules) showed no Layout or Tone on its hero.
+test("the Starter site's hero is a band instance whose edit bar offers Layout and Tone", async () => {
+  const files = await nativeStarterFiles("My site", assets());
+  const read = (path: string) => files.some((file) => file.path === path) ? text(files, path) : undefined;
+  const home = text(files, "index.html");
+  assert.match(home, /<main[^>]*>\s*<section-hero>/);
+  const sheets = expandStyleImports(nativePageStylesheets(home, "index.html"), read).sheets;
+  const band = isToneBand(["html", "body", "main", "section-hero"], true, (tag) => read(`components/${tag}/${tag}.html`));
+  assert.ok(band);
+  const scripts = files.filter((file) => file.path.endsWith(".js")).map((file) => ({ path: file.path, source: text(files, file.path) }));
+  const fields = instanceVariantFields("section-hero", read("components/section-hero/section-hero.css")!, sheets, [], scripts, band);
+  assert.deepEqual(fields.map((field) => [field.label, field.options.map((option) => option.label)]), [
+    ["Layout", ["Default", "Centered"]],
+    ["Tone", ["No tone (follows the page)", "Light", "Dark", "Brand", "Accent"]],
+  ]);
 });
 
 test("each caller gets its own files", async () => {

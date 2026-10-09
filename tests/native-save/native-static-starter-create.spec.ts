@@ -171,3 +171,41 @@ test('Create site commits the native starter and every public page works without
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
 });
+
+// Lex's report (2026-10-09): Start your site → Starter site in an empty
+// repository, then the hero: its edit bar offers Layout and Tone, both while
+// the starter is only drafts and once it is saved.
+test('the Starter site drafted into an empty repository offers Layout and Tone on its hero, before and after the first save', { tag: '@native-static' }, async ({ page, baseURL }) => {
+  test.skip(!process.env.ASE_NATIVE_STARTER_SOURCE, 'Run test:browser:native-static -- --spec native-static-starter-create.');
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const frame = page.frameLocator('.native-preview-frame');
+  const bar = page.getByRole('toolbar', { name: 'Edit bar', exact: true });
+  await page.goto(baseURL!);
+  const control = (data: unknown) => page.request.post(`${baseURL}/__demo/onboarding`, { data });
+  await control({ reset: true });
+  await control({ repositories: 'none', add: [{ name: 'starter-drafts', kind: 'empty' }] });
+  const repositories = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
+  const repository = repositories.find(entry => entry.name === 'starter-drafts')!;
+  await page.goto(`${baseURL}/#repo=${repository.id}&branch=main`);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Start your site' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /^Starter site/ }).click();
+  const heroFields = async () => {
+    const heading = frame.locator('section-hero > h1[slot="title"]');
+    await expect(heading).toBeVisible({ timeout: 30_000 });
+    await heading.click({ position: { x: 5, y: 5 } });
+    await heading.press('Escape');
+    await expect(bar.locator('.edit-bar__kind')).toHaveText('Section hero');
+    await expect(bar.getByRole('combobox', { name: 'Layout', exact: true }).locator('option')).toHaveText(['Default', 'Centered']);
+    await expect(bar.getByRole('combobox', { name: 'Tone', exact: true }).locator('option')).toHaveText(['No tone (follows the page)', 'Light', 'Dark', 'Brand', 'Accent']);
+  };
+  await heroFields();
+  expect((await (await page.request.get(`${baseURL}/__demo/head?repo=starter-drafts`)).json()).commit, 'drafts only').toBeNull();
+
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.locator('.publish-menu__message')).toContainText('Saved to GitHub', { timeout: 30_000 });
+  await page.reload();
+  await heroFields();
+  expect(errors).toEqual([]);
+});

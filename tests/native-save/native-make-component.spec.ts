@@ -101,3 +101,25 @@ test("Make component names a div block-…, a card card-…, and sections with n
     expect(await storedDraft(page, `components/${made}/${made}.html`)).toBeDefined();
   }
 });
+
+// Lex's report (2026-10-09): "◇ Section work › ⠿ Section" in Edit component
+// mode. No ⠿ grip on the edit bar (ticket 12 §10): on the page a section's
+// name chip is the drag handle itself, and in the mode nothing drags.
+test("the edit bar's name shows no grip, on the page or in Edit component mode, where it is no drag handle", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const label = bar(page).locator(".edit-bar__label");
+  await row(page, "Section A native browser preview").locator(".page-structure__label").first().click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  await expect(label.locator(".edit-bar__handle")).toHaveAttribute("title", "Drag to move");
+  await expect(label.locator("svg")).toHaveCount(0);
+  await expect(label).not.toContainText("⠿");
+
+  await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText(`Editing<${tag}>`);
+  // The template's root is selected, under the instance's chip.
+  await expect(label).toHaveAttribute("title", "Section a native browser › Section");
+  await expect(label.locator(".edit-bar__context .component-mark")).toHaveCount(1);
+  await expect(label.locator("svg:not(.component-mark)")).toHaveCount(0);
+  await expect(label.locator(".edit-bar__handle, [title='Drag to move']")).toHaveCount(0);
+  await expect(label).not.toContainText("⠿");
+});
