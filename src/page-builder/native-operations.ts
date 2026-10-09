@@ -329,7 +329,9 @@ export function nativeHeadingLevel(source: string, parentPath: readonly number[]
     if (section.name === "div") divs++;
     if (section.name.includes("-")) instance = true;
   }
-  const heading = section?.children.flatMap(node => ["header", "hgroup"].includes(node.name) ? node.children : [node]).find(node => /^h[1-6]$/.test(node.name));
+  // The section's own heading, or the first one anywhere in a direct header or hgroup.
+  const within = (node: SourceNode): SourceNode[] => [node, ...node.children.flatMap(within)];
+  const heading = section?.children.flatMap(node => ["header", "hgroup"].includes(node.name) ? within(node) : [node]).find(node => /^h[1-6]$/.test(node.name));
   const level = (heading ? Number(heading.name[1]) : 2) + (instance ? 1 : divs);
   return level >= 4 ? 4 : level === 3 ? 3 : 2;
 }

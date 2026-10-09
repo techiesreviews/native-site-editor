@@ -35,6 +35,8 @@ test("the first section heading sets the base, including direct header and hgrou
     const source = `<main><section><${wrapper}><p>Selected work</p><h3>Projects</h3></${wrapper}><h2>Later heading</h2><div class="cards"></div></section></main>`;
     assert.equal(nativeHeadingLevel(source, [0, 0, 2]), 4);
   }
+  const wrapped = '<main><section><header><div><h3>Projects</h3></div></header><div></div></section></main>';
+  assert.equal(nativeHeadingLevel(wrapped, [0, 0, 1]), 4);
   const nested = '<main><section><div><h6>Card title</h6></div><h2>Projects</h2><article><figure><div></div></figure></article></section></main>';
   assert.equal(nativeHeadingLevel(nested, [0, 0, 2, 0, 0]), 3);
   const inner = '<main><section><h6>Outer</h6><div><section><h1>Inner</h1><div></div></section></div></section></main>';

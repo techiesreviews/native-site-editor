@@ -1,7 +1,7 @@
 ---
 title: Heading level from position
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [04-six-block-catalogue]
 builder: sol
