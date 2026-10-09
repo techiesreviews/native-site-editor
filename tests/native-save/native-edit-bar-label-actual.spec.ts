@@ -63,6 +63,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       await bar(page).locator(".edit-bar__context").click();
       const grip = bar(page).locator(".edit-bar__grip");
       await expect(grip).toBeVisible();
+      // The starter's tones.css names no default tone: an untoned band follows the page (slice 77).
+      await expect(bar(page).getByRole("combobox", { name: "Tone", exact: true }).locator("option")).toHaveText(["No tone (follows the page)", "Light", "Dark", "Brand", "Accent"]);
       await labelAbove(page);
       await clearOfHeader(page);
       for (const move of ["Move up", "Move down"]) await expect(bar(page).getByRole("button", { name: move, exact: true })).toBeVisible();
