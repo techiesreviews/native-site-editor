@@ -100,6 +100,13 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
     if (new Set(layout.map((entry) => entry.top)).size > 1) wrapped++;
     const box = (await bar.boundingBox())!;
     expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width + 1);
+    // A wrapped panel ends at its widest row, with no empty space after it.
+    const rightGap = await bar.evaluate((el) => {
+      const panel = el.querySelector(":scope > .edit-bar__controls")!;
+      const controls = [...panel.querySelectorAll(".edit-bar__group > :not(.edit-bar__rule)")].filter((control) => control.getClientRects().length);
+      return panel.getBoundingClientRect().right - Math.max(...controls.map((control) => control.getBoundingClientRect().right));
+    });
+    expect(rightGap).toBeLessThanOrEqual(6);
     const labels = layout.map((entry) => entry.label);
     for (const [a, b] of mustShare) {
       expect(labels).toContain(a); expect(labels).toContain(b);

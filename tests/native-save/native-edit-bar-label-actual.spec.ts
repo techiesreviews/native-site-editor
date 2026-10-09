@@ -32,7 +32,8 @@ async function labelAbove(page: Page) {
     return {
       labelBottom: label.getBoundingClientRect().bottom,
       controlTop: Math.min(...controls.map((item) => item.getBoundingClientRect().top)),
-      rightGap: panel.getBoundingClientRect().right - Math.max(...controls.map((item) => item.getBoundingClientRect().right)),
+      // Measured to the group's items: a labelled select's wrapper (its focus ring's room) is part of it.
+      rightGap: panel.getBoundingClientRect().right - Math.max(...[...el.querySelectorAll(".edit-bar__group > :not(.edit-bar__rule)")].filter((item) => item.getClientRects().length).map((item) => item.getBoundingClientRect().right)),
       labels: [...label.children].map((item) => item.textContent?.trim()),
     };
   });

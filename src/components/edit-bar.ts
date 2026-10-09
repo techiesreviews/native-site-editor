@@ -498,6 +498,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const frameRight = frameRect.right - paneRect.left;
     const frameBottom = frameRect.bottom - paneRect.top;
     bar.style.maxWidth = `${Math.max(180, frameRect.width - 16)}px`;
+    fitPanel();
     const width = bar.offsetWidth;
     const height = bar.offsetHeight;
     const gap = 8;
@@ -527,6 +528,21 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
     bar.style.top = `${top}px`;
     if (!popover.hidden && popoverButton) placePopover(popoverButton);
+  }
+  // A wrapped flex box keeps the width of the line it wrapped from, so a
+  // panel that wraps would end in empty space: fit it to its widest row.
+  function fitPanel() {
+    const panel = bar.querySelector<HTMLElement>(":scope > .edit-bar__controls");
+    if (!panel || panel.hidden) return;
+    panel.style.width = "";
+    const items = [...panel.querySelectorAll<HTMLElement>(":scope > :not(.edit-bar__group), :scope > .edit-bar__group > :not(.edit-bar__rule)")]
+      .filter((item) => item.getClientRects().length);
+    const rects = items.map((item) => item.getBoundingClientRect());
+    // One row's controls are centred on it, so they overlap vertically.
+    if (!rects.length || Math.max(...rects.map((r) => r.top)) < Math.min(...rects.map((r) => r.bottom))) return;
+    const style = getComputedStyle(panel);
+    const end = parseFloat(style.paddingRight) + parseFloat(style.borderRightWidth);
+    panel.style.width = `${Math.ceil(Math.max(...rects.map((r) => r.right)) - panel.getBoundingClientRect().left + end)}px`;
   }
   const resize = new ResizeObserver(() => position());
   resize.observe(frame);
