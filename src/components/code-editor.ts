@@ -1,6 +1,8 @@
 import { createVariantLookup, variantSuggestions, variantHover, variantValueMarkers, variantCssMarkers } from "../page-builder/variant-intelligence";
 import { cssVariableCompletion, cssVariableDeclarations, cssVariableReference, isCssPath } from "../page-builder/css-intelligence";
 import { monaco } from "./monaco";
+// @ts-expect-error Monaco's internal JS modules have no declarations.
+import { FoldingController } from "monaco-editor/editor/contrib/folding/browser/folding.js";
 import type { DraftScope } from "../drafts";
 import type { TypingSession } from "../draft-store";
 import { node } from "../ui/dom";
@@ -83,6 +85,30 @@ export function defaultFoldLines(source: string) {
     if (lineAt(match.index) > line && !lines.includes(line)) lines.push(line);
   }
   return lines.sort((a, b) => a - b);
+}
+
+type FoldRegion = { startLineNumber: number; endLineNumber: number; isCollapsed: boolean };
+type FoldingModel = { getRegionAtLine(line: number): FoldRegion | null; toggleCollapseState(regions: FoldRegion[]): void };
+const folding = FoldingController as { get(editor: monaco.editor.ICodeEditor): { getFoldingModel(): Promise<FoldingModel | null> | null } | null };
+
+// Collapses the default lines (0-based) once Monaco has the folding ranges,
+// which come from the HTML worker and may still be loading when a person (or
+// a canvas selection) puts the cursor in the code. A region that would hide a
+// cursor stays open: folding over it would move the cursor to the region's
+// first line, and typing would land there.
+function foldDefaults(editor: monaco.editor.ICodeEditor, model: monaco.editor.ITextModel, lines: number[]) {
+  void folding.get(editor)?.getFoldingModel()?.then((ranges) => {
+    if (!ranges || editor.getModel() !== model) return;
+    const cursors = editor.getSelections() ?? [];
+    const regions = lines.flatMap((line) => {
+      const region = ranges.getRegionAtLine(line + 1);
+      const hides = region && cursors.some((cursor) => cursor.endLineNumber > region.startLineNumber && cursor.startLineNumber <= region.endLineNumber);
+      return region && !region.isCollapsed && !hides ? [region] : [];
+    });
+    ranges.toggleCollapseState(regions);
+    const at = editor.getPosition();
+    if (at) editor.revealPositionInCenterIfOutsideViewport(at);
+  });
 }
 
 // The Monaco view of the source editor (src/components/source-editor.ts):
@@ -464,8 +490,7 @@ export const monacoView: PaneViewFactory = (host) => {
       // A component's template opens whole: its root is the component (Edit component shows it beside the page).
       else if (model.getLanguageId() === "html" && !host.path.startsWith(NATIVE_COMPONENTS_DIR)) {
         const lines = defaultFoldLines(model.getValue());
-        if (lines.length)
-          void editor.getAction("editor.fold")?.run({ selectionLines: lines, levels: 1 });
+        if (lines.length) foldDefaults(editor, model, lines);
       }
       destroyView = () => {
         unguard();
