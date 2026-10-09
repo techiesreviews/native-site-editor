@@ -48,6 +48,8 @@ test("a Heading pressed in the page moves into another container's Div, one undo
   await expect(ghost(page)).toHaveText("Heading");
   await expect(ghost(page).locator("svg.element-icon")).toHaveAttribute("width", "14");
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
+  // The label names the block only; the line is the place.
+  await expect(where(page)).toBeHidden();
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);

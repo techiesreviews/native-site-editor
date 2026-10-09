@@ -71,6 +71,8 @@ test("a canvas drag unfolds Structure to its target and shows the spot as an ind
   const between = await pointIn(page, "#work .cards card-project:nth-child(2)", 0, 0.3, -3);
   await pressAndMove(page, from, between);
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
+  // The label names the block only; the line is the place.
+  await expect(where(page)).toBeHidden();
   // Down to the grid, one level in, before the second card's row; the grid's row tinted.
   await expect(row(page, "1.1")).toHaveAttribute("aria-expanded", "true");
   await expect(row(page, "1.1.1")).toHaveAttribute("aria-expanded", "true");

@@ -63,6 +63,8 @@ test("a sidebar row dragged onto a gap between bands reorders the page as one un
   await expect(drop).toBeVisible();
   expect(Math.abs((await drop.boundingBox())!.y - hero.top)).toBeLessThan(3);
   await expect(ghost(page)).toHaveAttribute("data-where", "Between page bands › before Section");
+  // The label names the block only; the line is the place.
+  await expect(where(page)).toBeHidden();
   await page.mouse.up();
   await expect.poll(() => sectionOrder(page)).toEqual(["cards", "hero", "filler"]);
   await expect(status(page)).toHaveText("Section moved. Between page bands › before Section");
