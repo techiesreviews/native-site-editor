@@ -607,6 +607,10 @@ test("make component: later groups are items-2, items-3; one item alone or items
   assert.ok(!("error" in grouped));
   assert.deepEqual(grouped.slots.map(({ name, items }) => [name, items]), [["", [[0], [1]]], ["items-2", [[2], [3]]]]);
   assert.equal(grouped.template, `<section><slot></slot><slot name="items-2"></slot></section>\n`);
+  // Names come from position: the first group kept fixed leaves the second named items-2.
+  const firstFixed = makeComponentPlan(mixed, rangeOf(mixed, "section"), "section-x", { fixed: [[0]] });
+  assert.ok(!("error" in firstFixed));
+  assert.deepEqual(firstFixed.slots.map(({ name, fixed }) => [name, fixed]), [["", true], ["items-2", false]]);
   // Comments between items keep them one group and move with them.
   const commented = `<div>\n  <!-- first -->\n  <article class="card">A</article>\n  <!-- second -->\n  <article class="card">B</article>\n</div>`;
   const run = makeComponentPlan(commented, rangeOf(commented, "div"), "block-x");
