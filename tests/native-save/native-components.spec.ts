@@ -355,7 +355,7 @@ test("Detach replaces an instance with the markup it shows, after showing it", a
   await expect(frame(page).locator("section.cards > project-card")).toHaveCount(3);
 });
 
-test("a plain page section and heading offer Make component without writing source", async ({ page }) => {
+test("a plain page section offers Make component but its heading does not, without writing source", async ({ page }) => {
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
@@ -365,9 +365,9 @@ test("a plain page section and heading offer Make component without writing sour
   expect(await editorText(page)).toBe(before);
   expect(await storedDraft(page, indexPath)).toBeUndefined();
   expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
-  // Headings can become components too.
+  // Headings are not containers.
   await frame(page).locator("section.hero h1").first().click();
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
 });
 
 test("image and conditional slots: an address, alt text and a part shown only when filled", async ({ page, baseURL }) => {

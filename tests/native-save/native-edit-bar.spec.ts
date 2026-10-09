@@ -191,24 +191,21 @@ test("a selected link takes an address as typed with page suggestions, and the b
   })))).toEqual([
     { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
     { name: "Bold", disabled: false }, { name: "Italic", disabled: false },
-    { name: "Make component…", disabled: false },
   ]);
+  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toHaveCount(0);
   // Tab walks every enabled control; native selects retain their own arrow keys.
   await bar(page).getByRole("combobox", { name: "Heading level" }).focus();
   for (const control of [
     bar(page).getByRole("combobox", { name: "Text size", exact: true }),
     bar(page).getByRole("button", { name: "Bold", exact: true }),
     bar(page).getByRole("button", { name: "Italic", exact: true }),
-    bar(page).getByRole("button", { name: "Make component…", exact: true }),
   ]) {
     await page.keyboard.press("Tab");
     await expect(control).toBeFocused();
   }
   await bar(page).getByRole("button", { name: "Bold" }).focus();
-  for (const name of ["Italic", "Make component…"]) {
-    await page.keyboard.press("ArrowRight");
-    await expect(bar(page).getByRole("button", { name, exact: true })).toBeFocused();
-  }
+  await page.keyboard.press("ArrowRight");
+  await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
@@ -219,7 +216,7 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(bar(page).getByRole("combobox", { name: "Heading level" })).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("End");
-  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeFocused();
+  await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();
 
   // A section gets a bar without text controls; the page's main container none at all.
   await child!.evaluate(() => (document.querySelector("section.hero") as HTMLElement).click());

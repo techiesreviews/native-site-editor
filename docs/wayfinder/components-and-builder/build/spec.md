@@ -110,8 +110,10 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   and three Playwright projects, in one slice.
 - **Make component returns to the edit bar** in the place the masters' actions
   free ([02](../tickets/02-masters-become-components.md) §2), as a second slice,
-  on any element except `<main>`, `<body>`, the header and footer components
-  and anything inside an instance (decision 10 below).
+  on containers only: `section`, `div`, `article`, `aside`, `figure`, `nav`, or a
+  `header`/`footer` inside article, aside, main, nav or section. Document
+  elements, head content, the page's own header/footer, components and anything
+  inside an instance are refused (decision 10 below).
 - **Conventions wording** for the header, footer and skip link, and the
   register step dropped ([02](../tickets/02-masters-become-components.md) §3).
 - **The element catalogue becomes the six blocks** (Section, Div, Image,
@@ -297,7 +299,7 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 7. **Placeholder image:** the site file `images/placeholder.svg`, written the first time an Image block is inserted (same undo step), then reused.
 8. **No making mode; one way to mark slots** (changed by Lex after handoff, 2026-10-09: "When making a component, why is there a modal? I just want it created, the code should know how."): Make component creates at once with the default slot rule, the card component and the copied page CSS, named automatically from its first heading (else `section-1`, `section-2`…), in one undo step, and then opens Edit component mode on the new instance, where the plan's notes show in the bar. Slots are marked there with ticket 14's label chip (after the element name, the same control as the Structure badge): click toggles slot ↔ fixed, double-click edits the name in place; Structure badges; right-click Make slot, Rename slot, Remove slot. No canvas chips, no "+ slot" on hover. The component is renamed by double-clicking its tag in the mode's bar (slice 76). + New component keeps its small name form. Supersedes the making mode of ticket 04 §2–4 and slices 22–25 as first written.
 9. **Names without a hyphen** get a prefix from what they were made from: `section-`, `card-`, else `block-`; + New component's form shows the result as typed, and so does renaming in Edit component mode's bar.
-10. **Make component works on any element** (section, card, div), except `<main>`, `<body>`, the header and footer components and anything inside an instance.
+10. **Make component works on containers only:** `section`, `div`, `article`, `aside`, `figure`, `nav`, or a `header`/`footer` inside article, aside, main, nav or section. Headings, paragraphs, other text elements, images, links, buttons, lists and forms are refused, as are document elements (including `<main>` and `<body>`), head content, the page's own header/footer, components and anything inside an instance.
 11. **Touch drag** is out of scope for this run; click-insert works on touch.
 12. **Content kept aside on a look swap** lives in the editor while the page is open (a swap back restores it); it is gone after a reload or page switch; nothing is written to the HTML.
 

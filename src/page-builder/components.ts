@@ -53,6 +53,7 @@ import {
   fixedSlotPaths,
   makeComponentPlan,
   makeComponentOffered,
+  makeComponentContainers,
   readInstance,
   slotLabel,
   slotStates,
@@ -1331,6 +1332,9 @@ export function createComponentTools(deps: ComponentDeps) {
     if (problem) return problem;
     const initial = makeComponentPlan(source, range, tag, {}, taken);
     if ("error" in initial) return initial.error;
+    // After the plan's own refusals (a component, inside an instance, <main>), which say more.
+    const chain = elementChain(source, nodePath)?.map((element) => element.localName) ?? [];
+    if (!makeComponentOffered(chain)) return `Make component works only on ${makeComponentContainers}; <${range.tag.name}> cannot become a component here.`;
     const paths = fixedSlotPaths(initial.slots, fixed);
     if ("error" in paths) return paths.error;
     const bare = makeComponentPlan(source, range, tag, { fixed: paths.fixed }, taken);

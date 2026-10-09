@@ -1068,22 +1068,24 @@ export function tagNameProblem(name: string, taken: Iterable<string>) {
   return undefined;
 }
 
+/** The containers Make component accepts, also named in agent refusals. */
+export const makeComponentContainers = "section, div, article, aside, figure, nav, or header/footer inside article, aside, main, nav or section";
+
 /**
- * Whether Make component is offered for the page element at the end of
- * `chain` (lowercase tag names from the file's root element down): any
- * element with an end tag, except `<html>`, `<body>`, `<main>`, what is in
- * `<head>`, the page's own header and footer, a component (it keeps Edit
- * component) and anything inside one.
+ * Whether Make component is offered for the page container at the end of
+ * `chain` (lowercase tag names from the file's root element down): section,
+ * div, article, aside, figure, nav, or a header/footer inside article, aside,
+ * main, nav or section. Refuses document elements, head content, the page's
+ * own header/footer, components and anything inside an instance.
  */
 export function makeComponentOffered(chain: readonly string[]): boolean {
   const tag = chain.at(-1);
   if (!tag || chain.includes("head") || chain.some((name) => name.includes("-"))) return false;
-  if (["html", "body", "main"].includes(tag) || VOID_ELEMENTS.has(tag)) return false;
   // The page's header and footer (HTML-AAM banner and contentinfo): not inside sectioning content or <main>.
   if (tag === "header" || tag === "footer") {
     return chain.slice(0, -1).some((name) => ["article", "aside", "main", "nav", "section"].includes(name));
   }
-  return true;
+  return ["section", "div", "article", "aside", "figure", "nav"].includes(tag);
 }
 
 const slug = (text: string, words = 3) => text.toLowerCase().replace(/&[a-z]+;/g, " ").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).slice(0, words).join("-");
