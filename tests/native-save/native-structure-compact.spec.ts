@@ -296,7 +296,7 @@ test('a slot named attributes keeps its own field apart from the Attributes pane
 
 // A paint proven current (its bytes equal the page source) that still lacks the
 // shown slot's element at its path with the exact slot name gives the request up
-// plainly; no later matching paint opens an editor or takes focus.
+// plainly (a refusal note); no later matching paint opens an editor or takes focus.
 for (const shape of ['reshaped element','raw whitespace slot name']) test(`a Show on a current paint with a ${shape} drops the request and says so`,async({page})=>{
  await harness(page);
  await page.evaluate(()=>{(window as any).slotHarness.hold=true;});
@@ -309,7 +309,8 @@ for (const shape of ['reshaped element','raw whitespace slot name']) test(`a Sho
   s.sidebar.update({path:'index.html',items,paintedSource:s.source});
  },[shape,node] as const);
  await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
- expect((await H(page)).notices.at(-1)).toBe('The optional slot is shown, but its element could not be found in Structure; select it on the page to edit it.');
+ // A refusal (slice 83) shows its reason on screen and in #status, not through announce.
+ await expect(page.locator('.refusal-note')).toHaveText('The optional slot is shown, but its element could not be found in Structure; select it on the page to edit it.');
  await page.evaluate(()=>{const s=(window as any).slotHarness;s.hold=false;s.update();});
  await expect(page.locator(OPEN_EDITOR)).toHaveCount(0);await expect(page.locator('#canvas-caret')).toBeFocused();
 });
