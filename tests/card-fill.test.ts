@@ -1,0 +1,166 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { cardFill } from "../src/page-builder/card-fill.ts";
+
+const template = `<article>
+  <card-note><slot name="note" slot="text"><p>Project</p></slot></card-note>
+  <slot name="title"><h3>Untitled project</h3></slot>
+  <slot name="body"><p class="body">No description yet.</p></slot>
+  <slot></slot>
+  <p class="actions"><slot name="link"></slot></p>
+</article>`;
+const description = "A one-page site for a neighbourhood cafe, with a printable menu the owners update themselves each morning.";
+const source = `<!doctype html><html lang="en-GB"><head>
+<title>Fern &amp; Kettle · Larkspur Studio</title>
+<meta name="description" content="${description}">
+<meta property="og:image" content="https://example.test/images/social-card.png">
+</head><body><site-header></site-header>
+<main class="page" id="main"><section class="hero flow">
+<card-note><p slot="text">Cafe · Identity and site · 2025</p></card-note>
+<h1>Fern &amp; Kettle</h1>
+<p class="lead">A one-page site with a menu the owners change themselves.</p>
+</section></main><site-footer></site-footer></body></html>`;
+const route = "/work/fern-and-kettle/";
+const fill = (html = source, card = template, siteUrl?: string) => cardFill({ template: card, page: { route, source: html }, siteUrl }).rows;
+
+test("a full starter card maps facts, matches its note and keeps the default slot", () => {
+  assert.deepEqual(fill(), [
+    { slot: "note", label: "Note", role: "other", from: "matched", status: "filled", text: "Cafe · Identity and site · 2025", matched: "<card-note>" },
+    { slot: "title", label: "Title", role: "title", from: "h1", status: "filled", text: "Fern & Kettle" },
+    { slot: "body", label: "Body", role: "body", from: "meta description", status: "filled", text: description },
+    { slot: "", label: "Content", role: "other", from: "kept", status: "kept", text: "" },
+    { slot: "link", label: "Link", role: "link", from: "address", status: "filled", href: route, text: "Read about Fern & Kettle" },
+    { label: "Image", role: "image", from: "not used", status: "not-used", src: "https://example.test/images/social-card.png" },
+  ]);
+  assert.deepEqual(fill().map(row => row.from), ["matched", "h1", "meta description", "kept", "address", "not used"]);
+});
+
+test("image slots strip only the site's origin, retaining query and fragment", () => {
+  const card = `${template}<slot name="image"><img src="/placeholder.svg" alt=""></slot>`;
+  assert.equal(fill(source, card, "https://example.test/subpath/").find(row => row.role === "image")?.src, "/images/social-card.png");
+  assert.equal(fill(source, card).find(row => row.role === "image")?.src, "https://example.test/images/social-card.png");
+  for (const image of ["https://example.test.evil/images/a.png", "https://other.test/a.png", "/images/a.png", "not a URL"]) {
+    const page = source.replace("https://example.test/images/social-card.png", image);
+    assert.equal(fill(page, card, "https://example.test").find(row => row.role === "image")?.src, image);
+  }
+  const page = source.replace("social-card.png", "social-card.png?size=2&amp;mode=wide#preview");
+  assert.equal(fill(page, card, "https://example.test").find(row => row.role === "image")?.src, "/images/social-card.png?size=2&mode=wide#preview");
+});
+
+test("main h1 wins over an earlier h1; outside main h1 is the next choice", () => {
+  const page = source.replace("<site-header>", "<h1>Outside</h1><site-header>");
+  assert.equal(fill(page).find(row => row.role === "title")?.text, "Fern & Kettle");
+  const outside = page.replace("<h1>Fern &amp; Kettle</h1>", "");
+  assert.equal(fill(outside).find(row => row.role === "title")?.text, "Outside");
+});
+
+test("no h1 uses the document title without the site suffix; no title uses the address", () => {
+  const page = source.replace("<h1>Fern &amp; Kettle</h1>", "");
+  for (const separator of [" · ", " | ", " – ", " — ", " - "]) {
+    const title = fill(page.replace(" · Larkspur Studio", `${separator}Larkspur Studio`)).find(row => row.role === "title");
+    assert.equal(title?.from, "<title>");
+    assert.equal(title?.text, "Fern & Kettle");
+  }
+  const noTitle = page.replace(/<title>.*?<\/title>/, "");
+  const title = fill(noTitle).find(row => row.role === "title");
+  assert.equal(title?.from, "address");
+  assert.equal(title?.text, "fern-and-kettle");
+});
+
+test("missing description and image keep role fallbacks, without unused rows", () => {
+  const page = source.replace(/<meta[^>]+>/g, "");
+  assert.deepEqual(fill(page).find(row => row.role === "body"), {
+    slot: "body", label: "Body", role: "body", from: "kept", status: "kept", text: "No description yet.",
+  });
+  assert.ok(!fill(page).some(row => row.from === "not used"));
+  const card = `${template}<slot name="image"><img src="/placeholder.svg"></slot>`;
+  assert.equal(fill(page, card).find(row => row.role === "image")?.src, "/placeholder.svg");
+  assert.equal(fill(page, card).find(row => row.role === "image")?.from, "kept");
+});
+
+test("body uses the last text slot before the title when none follow it", () => {
+  const card = `<slot name="earlier"><p>Earlier</p></slot><slot name="quote"><p>Quote</p></slot>
+    <slot name="heading"><h3>Who said it</h3></slot><slot name="link"></slot>`;
+  assert.equal(fill(source, card).find(row => row.role === "body")?.slot, "quote");
+  assert.equal(fill(source, card).find(row => row.role === "body")?.text, description);
+});
+
+test("other slots prefer the component match, respect forwarding and match class tokens in main", () => {
+  const card = `<slot name="title"><h3>Title</h3></slot><slot name="body"><p>Body</p></slot>
+    <card-note><slot name="note" slot="text"><p class="tag extra">Fallback</p></slot></card-note>
+    <slot name="tag_line"><p class="tag extra">Fallback tag</p></slot>
+    <slot name="badge"><card-badge>Fallback badge</card-badge></slot>`;
+  const page = `<body><p class="tag">Outside</p><main>
+    <p class="not-tag">Wrong</p><p class="extra tag"> Class &amp; <b>text</b> </p>
+    <card-note><p slot="other">Ignore</p><p slot="text"> Component &#38;\n text </p></card-note>
+    <card-badge><span>Badge &amp; text</span></card-badge>
+  </main></body>`;
+  const rows = fill(page, card);
+  assert.equal(rows.find(row => row.slot === "note")?.text, "Component & text");
+  assert.equal(rows.find(row => row.slot === "note")?.matched, "<card-note>");
+  assert.equal(rows.find(row => row.slot === "tag_line")?.text, "Class & text");
+  assert.equal(rows.find(row => row.slot === "tag_line")?.matched, ".tag");
+  assert.equal(rows.find(row => row.slot === "tag_line")?.label, "Tag line");
+  assert.equal(rows.find(row => row.slot === "badge")?.text, "Badge & text");
+  assert.equal(rows.find(row => row.slot === "badge")?.matched, "<card-badge>");
+  const unmatched = fill("<main></main><card-note>Outside main</card-note>", card);
+  assert.equal(unmatched.find(row => row.slot === "note")?.from, "kept");
+  assert.equal(unmatched.find(row => row.slot === "note")?.text, "Fallback");
+  const noMain = fill("<body><p class='tag'>Body match</p></body>", card);
+  assert.equal(noMain.find(row => row.slot === "tag_line")?.text, "Body match");
+});
+
+test("a card without a link slot requests a link around its title", () => {
+  const rows = fill(source, `<slot name="title"><h3>Title</h3></slot>`);
+  assert.deepEqual(rows[1], { label: "Link", role: "link", from: "address", status: "added", href: route, text: "Fern & Kettle" });
+  assert.deepEqual(rows.map(row => row.from), ["h1", "address", "not used", "not used"]);
+  assert.equal(rows[2].text, description);
+  const noTitle = fill(source, `<slot></slot>`);
+  assert.equal(noTitle[0].from, "kept");
+  assert.equal(noTitle[1].role, "link");
+  assert.equal(noTitle[1].from, "not used");
+  assert.equal(noTitle[1].status, "not-used");
+});
+
+test("roles use the first eligible slot, heading before title name, and named title as fallback", () => {
+  const card = `<slot name="title"><p>Named title</p></slot><slot name="heading"><h4>Heading</h4></slot>
+    <slot name="body"><p>Body</p></slot><slot name="more"><p>More</p></slot>
+    <slot name="image"><img src="/one.png"></slot><slot name="photo"><img src="/two.png"></slot>
+    <slot name="link"></slot><slot name="action"><a href="/kept/">Kept link</a></slot>`;
+  const rows = fill(source, card);
+  assert.deepEqual(rows.map(row => row.role), ["other", "title", "body", "other", "image", "other", "link", "other"]);
+  assert.equal(rows[5].src, "/two.png");
+  assert.equal(rows[7].href, "/kept/");
+  assert.equal(rows[7].text, "Kept link");
+  assert.equal(fill(source, `<slot name="title">Untitled</slot>`)[0].from, "h1");
+});
+
+test("metadata decodes entities and collapses whitespace without treating attribute text as markup", () => {
+  const page = `<meta name="description" content="  Fern &amp; Kettle\n uses &lt;menus&gt;.  "><h1> Fern\n &amp; <em>Kettle</em> </h1>`;
+  assert.equal(fill(page).find(row => row.role === "title")?.text, "Fern & Kettle");
+  assert.equal(fill(page).find(row => row.role === "body")?.text, "Fern & Kettle uses <menus>.");
+});
+
+test("default content stays kept and duplicate slot names use the first fallback", () => {
+  const card = `<slot><h3>Default &amp; content</h3></slot>
+    <slot name="title"><h3>Title</h3></slot><slot name="body"><p>First &amp; fallback</p></slot>
+    <slot name="body"><p>Second fallback</p></slot>`;
+  const rows = fill("<main><h1>Page title</h1></main>", card);
+  assert.deepEqual(rows.map(row => row.slot), ["", "title", "body", undefined]);
+  assert.equal(rows[0].role, "other");
+  assert.equal(rows[0].text, "Default & content");
+  assert.equal(rows[0].from, "kept");
+  assert.equal(rows[2].text, "First & fallback");
+});
+
+test("an empty component match falls through to the class match, then the fallback", () => {
+  const card = `<slot name="title"><h3>Title</h3></slot><slot name="body"><p>Body</p></slot>
+    <card-note><slot name="note" slot="text"><p class="tag">Fallback</p></slot></card-note>`;
+  const page = `<main><p class="tag">Class text</p><card-note><p slot="text"></p></card-note></main>`;
+  const note = fill(page, card).find(row => row.slot === "note");
+  assert.equal(note?.matched, ".tag");
+  assert.equal(note?.text, "Class text");
+  const bare = fill(`<main><card-note><p slot="text"> </p></card-note></main>`, card).find(row => row.slot === "note");
+  assert.equal(bare?.from, "kept");
+  assert.equal(bare?.text, "Fallback");
+});
