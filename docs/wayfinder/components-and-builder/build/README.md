@@ -85,6 +85,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [73 Edit bar: update the controls spec for Make component; call a.btn a Button](tickets/73-edit-bar-spec-and-button-label.md) | sol | – |
 | [36 Blocks drag themselves](tickets/36-drag-existing-blocks.md) | claude ★ | 35 |
 | [88 A dragged card targets the gaps between cards](tickets/88-card-drag-targets-grid.md) | sol | 36 |
+| [93 Items in a component's items slot can be moved on the page](tickets/93-move-items-in-component-slots.md) | sol | 88 |
 | [79 Click selects, double-click edits, everywhere on the page](tickets/79-click-selects-double-click-edits.md) | claude ★ | 36 |
 | [81 Delete key removes the selected element; no delete icon on Structure rows](tickets/81-delete-key-and-no-row-delete.md) | sol | 79 |
 | [83 Refusal reasons show on screen](tickets/83-visible-refusals.md) | sol | – |
