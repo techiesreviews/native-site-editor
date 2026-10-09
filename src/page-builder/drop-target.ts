@@ -45,7 +45,11 @@ export function dropRefusal(block: DraggedBlock, container: DropContainer): stri
 }
 
 const shown = (child: DropChild) => child.rect.width > 0 && child.rect.height > 0;
-const endIndex = (container: DropContainer) => (container.children.length ? container.children[container.children.length - 1].index + 1 : container.count);
+// A slot's end is after its last assigned child; anything else ends after all its children (the report may list fewer).
+const endIndex = (container: DropContainer) => {
+  const last = container.children[container.children.length - 1];
+  return (container.kind === "items" || container.kind === "slot") && last ? last.index + 1 : container.count;
+};
 
 /** The insertion index under the point among a container's items, along its axis. */
 function pointIndex(container: DropContainer, p: { x: number; y: number }) {
@@ -93,9 +97,9 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
 
 /** "Paragraph", "Div (stack)", "Button", or a component's name. */
 function blockName(tag: string, cls: string) {
-  const classes = ` ${cls} `;
-  if (tag === "div") return classes.includes(" cards ") ? "Div (grid)" : classes.includes(" flow ") ? "Div (stack)" : "Div";
-  if (tag === "a" && classes.includes(" btn ")) return "Button";
+  const classes = cls.split(/\s+/);
+  if (tag === "div") return classes.includes("cards") ? "Div (grid)" : classes.includes("flow") ? "Div (stack)" : "Div";
+  if (tag === "a" && classes.includes("btn")) return "Button";
   return tag.includes("-") ? componentLabel(tag) : nativeKindLabel(tag);
 }
 

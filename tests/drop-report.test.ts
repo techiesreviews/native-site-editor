@@ -59,8 +59,8 @@ test("parseDropReport drops bad containers and children", () => {
     { ...c, layout: { ...layout, cols: Infinity } }, { ...c, empty: "false" }, { ...c, kind: "slot" },
     { ...c, path: Array(1) }, { ...c, tag: `x-${"y".repeat(100)}` }, { ...c, kind: "slot", slot: "s".repeat(101) },
     { ...c, count: -1 }, { ...c, count: undefined }];
-  const parsed = parseDropReport(report([...bad, { ...c, children: [null, { index: -1, rect: rect() },
-    child(0, rect(Infinity)), { index: 1, rect: rect() }, child(2, rect(), "x".repeat(101)), { ...child(4), cls: null }, child(3)] }]), "index.html")!;
+  const parsed = parseDropReport(report([...bad, { ...c, count: 5, children: [null, { index: -1, rect: rect() },
+    child(0, rect(Infinity)), { index: 1, rect: rect() }, child(2, rect(), "x".repeat(101)), { ...child(4), cls: null }, child(5), child(3)] }]), "index.html")!;
   assert.equal(parsed.containers.length, 1);
   assert.deepEqual(parsed.containers[0].children, [child(3)]);
 });

@@ -61,7 +61,7 @@ export function parseDropReport(raw: unknown, expectedPath: string): DropReport 
       ((c.kind === "items" || c.kind === "slot") && !name(c.slot))) return [];
     const children = c.children.slice(0, 500).flatMap((raw): DropChild[] => {
       const child = object(raw), r = rect(child?.rect);
-      return child && index(child.index) && r && name(child.tag) && typeof child.cls === "string"
+      return child && index(child.index) && child.index < (c.count as number) && r && name(child.tag) && typeof child.cls === "string"
         ? [{ index: child.index, rect: r, tag: child.tag, cls: child.cls.slice(0, 1000) }] : [];
     });
     const layout = { display: l.display.slice(0, 100), cols: l.cols, dir: l.dir.slice(0, 100), wrap: l.wrap.slice(0, 100) };

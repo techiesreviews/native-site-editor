@@ -72,6 +72,11 @@ test("rows and grids index sideways, wrapped rows by line", () => {
   assert.equal(dropTarget([inner, grid], { x: 215, y: 40 }, paragraph)!.index, 2);
 });
 
+test("the end of a container counts children the report left out", () => {
+  const long = box([1, 0, 1], "div", rect(0, 0, 100, 100), [child(0, rect(0, 0, 100, 10))], { count: 600 });
+  assert.equal(dropTarget([long], { x: 50, y: 90 }, paragraph)!.index, 600);
+});
+
 test("empty containers and empty items slots take the drop at their end", () => {
   const empty = box([1, 0, 1], "div", rect(40, 100, 720, 400));
   assert.equal(dropTarget([empty, section, main], { x: 400, y: 300 }, paragraph)!.index, 0);
@@ -127,6 +132,8 @@ test("the label names the container and the neighbour", () => {
   const grid = box([1, 0, 2], "div", rect(0, 0, 220, 80), [child(0, rect(0, 0, 100, 80), "a", "btn"), child(1, rect(120, 0, 100, 80), "card-work")], { cls: "cards", axis: "row" });
   assert.equal(dropLabel(dropTarget([grid], { x: 190, y: 40 }, paragraph)!, paragraph), "Into Div (grid) › after Card work");
   assert.equal(dropLabel(dropTarget([grid], { x: 10, y: 40 }, paragraph)!, paragraph), "Into Div (grid) › before Button");
+  const tabbed = box([1, 0, 2], "div", rect(0, 0, 220, 80), [child(0, rect(0, 0, 100, 80), "a", "x\tbtn")], { cls: "wide\nflow" });
+  assert.equal(dropLabel(dropTarget([tabbed], { x: 10, y: 70 }, paragraph)!, paragraph), "Into Div (stack) › after Button");
   const empty = box([1, 0, 1], "div", rect(40, 100, 720, 400));
   assert.equal(dropLabel(dropTarget([empty], { x: 400, y: 300 }, paragraph)!, paragraph), "Into Div › empty");
   const items = box([1, 0, 3], "items", rect(0, 0, 400, 200), [child(2, rect(0, 0, 400, 80), "img")], { slot: "", count: 3 });
