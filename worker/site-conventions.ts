@@ -148,7 +148,7 @@ Tones work this way where the site's CSS defines them (look for \`[data-tone="â€
 \`\`\`
 
 ## Styles and scripts
-- A page's shared styles are the stylesheets its head links, usually \`/styles/site.css\`, which sets the layer order and \`@import\`s the rest (\`tokens.css\`, \`elements.css\`, \`layout.css\`, \`sections.css\`, \`utilities.css\` in the starter). A new shared file is imported from \`site.css\`. get_site lists the linked stylesheets and their imports.
+- A page's shared styles are the stylesheets its head links, usually \`/styles/site.css\`, which sets the layer order and \`@import\`s the rest (\`tokens.css\`, \`elements.css\`, \`tones.css\` for colour schemes and band tones, \`layout.css\`, \`sections.css\`, \`utilities.css\` in the starter). A new shared file is imported from \`site.css\`. get_site lists the linked stylesheets and their imports.
 - Avoid \`style\` attributes and \`<style>\` elements; put CSS in the stylesheets.
 - The editor's preview does not run the site's own scripts: it strips \`<script>\`, inline event handlers and \`javascript:\` URLs and renders components itself. Content must not depend on other scripts.
 
