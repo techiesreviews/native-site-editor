@@ -312,3 +312,4 @@ html.cb04-moding .edit-bar, html.cb04-wip-on .edit-bar { display: none !importan
 .cb04-chip-field.is-warning { border-color: #c2410c; color: #9a3412; }
 /* The items chip (with its note) sits inside its box's top-left corner. */
 .cb04-mode--e .cb04-mode__slot.is-items-group > .cb04-mode__chip { top: 6px; left: 6px; transform: none; border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / .25); }
+.cb04-mode__items-hint { position: absolute; z-index: 3; padding: 2px 8px; border-radius: 6px; background: #4c1d95; color: #fff; font: 500 11px/1.5 system-ui, sans-serif; white-space: nowrap; }
