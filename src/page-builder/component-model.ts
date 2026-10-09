@@ -1187,6 +1187,64 @@ export type SlotChipState =
   | { state: "items"; name: string; slot: number[]; count: number }
   | { state: "fixed"; name: string; part: number[] };
 
+export type SlotChangeInput = { node: readonly number[]; chip: SlotChipState } &
+  ({ action: "toggle" } | { action: "rename"; name: string });
+export type SlotChange =
+  | { kind: "made-slot"; name: string; part: number[] }
+  | { kind: "made-fixed"; name: string }
+  | { kind: "renamed"; from: string; to: string };
+
+/** One template change; page rewrites can join its operation's edits map. */
+export function slotChange(template: string, input: SlotChangeInput, templateOf: TemplateOf = () => undefined):
+  { source: string; change: SlotChange; select: number[] } | { error: string } {
+  const current = slotChipState(template, input.node, templateOf);
+  const path = (chip: SlotChipState) => chip.state === "fixed" ? chip.part : chip.slot;
+  // Items can show the page's count; their identity is the slot, not that count.
+  if (!current || current.state !== input.chip.state || current.name !== input.chip.name
+    || JSON.stringify(path(current)) !== JSON.stringify(path(input.chip)))
+    return { error: "The part changed; select it again before changing its slot." };
+  let nodes = parseSource(template);
+  let element: SourceElement | undefined;
+  const at = path(current);
+  for (const index of at) { element = elements(nodes)[index]; nodes = element?.children ?? []; }
+  if (!element) return { error: "The part is no longer there." };
+  const apply = (edit: RangeEdit, change: SlotChange, select: number[]) => ({
+    source: template.slice(0, edit.start) + edit.text + template.slice(edit.end), change, select,
+  });
+  if (input.action === "rename") {
+    if (current.state === "fixed") return { error: "Make this part a slot before renaming it." };
+    if (input.name === current.name) return { error: "The slot already has that name." };
+    if (templateSlots(template).some(slot => slot.name === input.name)) return { error: `Slot “${input.name}” already exists in this component.` };
+    return apply(attributeEdit(template, element.tag, "name", input.name),
+      { kind: "renamed", from: current.name, to: input.name }, [...input.node]);
+  }
+  const indent = indentOf(template, element.start), eol = lineEnding(template);
+  if (current.state === "fixed") {
+    const part = template.slice(element.start, element.end);
+    const open = `<slot name="${escapeAttribute(current.name)}">`;
+    // A part over several lines goes inside on its own lines, one step in.
+    const text = part.includes("\n")
+      ? `${open}${eol}${indent}  ${part.split(/\r?\n/).map((line, at) => (at && line.trim() ? `  ${line}` : line.trim() ? line : "")).join(eol)}${eol}${indent}</slot>`
+      : `${open}${part}</slot>`;
+    return apply({ start: element.start, end: element.end, text },
+      { kind: "made-slot", name: current.name, part: [...at] }, [...at, 0]);
+  }
+  if (!element.close) return { error: "The slot has no closing tag; fix its source first." };
+  const tail = input.node.slice(at.length);
+  const select = tail.length ? [...at.slice(0, -1), at.at(-1)! + tail[0], ...tail.slice(1)]
+    : elements(element.children).length ? [...at] : at.slice(0, -1);
+  return apply({ start: element.start, end: element.end, text: unwrapped(template.slice(element.tag.end, element.close.start), indent, eol) },
+    { kind: "made-fixed", name: current.name }, select);
+}
+
+/** A slot's children where the slot was: on their own lines inside it, they move out to its indentation. */
+function unwrapped(inner: string, indent: string, eol: string) {
+  const lines = /^[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*$/.exec(inner)?.[1].split(/\r?\n/);
+  if (!lines) return inner;
+  const cut = Math.min(...lines.filter((line) => line.trim()).map((line) => /^[ \t]*/.exec(line)![0].length));
+  return lines.map((line, at) => (!line.trim() ? "" : at ? indent + line.slice(cut) : line.slice(cut))).join(eol);
+}
+
 /**
  * The slot chip of the template's part at `path` (element-child indexes, as
  * the preview selects them): its nearest `<slot>`, itself included; else, for

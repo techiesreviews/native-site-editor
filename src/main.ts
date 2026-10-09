@@ -616,6 +616,7 @@ function mountComponentTools() {
     sources: () => nativeSources(),
     scripts: () => Object.entries(nativeVariantSources(/\.(?:m?js)$/i)).map(([path, source]) => ({ path, source })),
     structureFields: true,
+    operation: op => applyNativeOperation(op),
     editor: () => editorModule,
     preview: () => nativePreview,
     currentPath: () => appStore.openFile.value,

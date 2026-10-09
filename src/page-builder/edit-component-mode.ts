@@ -152,6 +152,8 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       return now && { ...now, node: [...now.node] };
     },
     setShow,
+    /** An operation refused its optimistic rename: draw the name from source again. */
+    resetChip() { shownChip = undefined; },
     /** The slot chip of the template's part at `node`, for the edit bar label. */
     chip(at: readonly number[], state: SlotChipState) {
       if (!now) return undefined;

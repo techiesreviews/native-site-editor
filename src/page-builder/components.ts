@@ -59,6 +59,7 @@ import {
   readInstance,
   slotLabel,
   slotChipState,
+  slotChange,
   slotStates,
   slotTextEdit,
   slotValue,
@@ -74,7 +75,7 @@ import {
 } from "./component-model";
 import { componentIcon, mark, type ComponentMark } from "./component-icon";
 import type { EditComponentFrameMode } from "../components/native-preview";
-import type { EditComponentMode } from "./edit-component-mode";
+import type { EditComponentMode, SlotChipReport } from "./edit-component-mode";
 import "../components/create-dialog.css";
 
 type CodeEditor = typeof import("../components/source-editor");
@@ -151,6 +152,9 @@ export interface ComponentDeps {
    * opened on, so Undo there after Done takes them back). Returns the release.
    */
   shareHistory?: (path: string, owner: string) => () => void;
+  /** Applies template edits as one history step; page edits can join the same map. */
+  operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; done: string; undone: string;
+    current?: () => boolean; selection?: { before: { path: string; node: number[] }; after: { path: string; node: number[] } } }) => Promise<string | undefined>;
 }
 
 /** An instance found for a selection: where it is written and what it holds. */
@@ -646,6 +650,51 @@ export function createComponentTools(deps: ComponentDeps) {
   // Edit component mode (edit-component-mode.ts), loaded on its first use.
   let editMode: EditComponentMode | undefined;
   let editModeLoad: Promise<EditComponentMode> | undefined;
+  let chipEvent: string | undefined;
+  function applyChip(event: Event) {
+    const report = (event as CustomEvent<SlotChipReport>).detail;
+    const mode = editMode?.active();
+    const refuse = (reason: string) => { event.preventDefault(); deps.announce(reason); };
+    if (!mode || report.template !== mode.templatePath || deps.currentPath() !== mode.templatePath
+      || explicitTemplate?.revision !== deps.revision()) { refuse("Select a part in Edit component mode before changing its slot."); return; }
+    const source = deps.sources()[report.template];
+    if (source === undefined || !deps.operation) { refuse("The template is not available for editing."); return; }
+    const plan = slotChange(source, report, tag => templateOf(tag)?.source);
+    if ("error" in plan) { refuse(plan.error); return; }
+    const revision = deps.revision(), entry = explicitTemplate, selected = deps.selection();
+    const current = () => deps.revision() === revision && explicitTemplate === entry
+      && deps.currentPath() === report.template && editMode?.active()?.templatePath === report.template;
+    const change = plan.change;
+    const name = change.kind === "renamed" ? undefined : change.name || "items";
+    const done = change.kind === "made-slot" ? `Made “${name}” a slot.` : change.kind === "made-fixed" ? `Made “${name}” fixed.`
+      : `Renamed slot “${change.from || "items"}” to “${change.to}”.`;
+    const undone = change.kind === "made-slot" ? `Undid making “${name}” a slot.` : change.kind === "made-fixed" ? `Undid making “${name}” fixed.`
+      : `Undid renaming slot “${change.from || "items"}” to “${change.to}”.`;
+    // Let every listener refuse a cancelable rename before the operation starts.
+    void Promise.resolve().then(async () => {
+      if (event.defaultPrevented || !current()) return;
+      const error = await deps.operation!({ expectedSources: new Map([[report.template, source]]),
+        edits: new Map([[report.template, plan.source]]), done, undone, current,
+        selection: { before: { path: report.template, node: [...report.node] }, after: { path: report.template, node: plan.select } } });
+      if (!current()) return;
+      if (error) { deps.announce(error); editMode?.resetChip(); }
+      else if (report.action === "toggle") {
+        const now = deps.selection();
+        if (now === selected || now?.path === report.template && JSON.stringify(now.node) === JSON.stringify(report.node)) {
+          const preview = deps.preview(), target = { path: report.template, node: plan.select };
+          preview?.selectAfterUpdate(target);
+          preview?.flushPendingUpdate?.();
+          preview?.selectNode(target);
+        }
+      }
+      deps.refreshBar();
+    }).catch((error: unknown) => {
+      if (!current()) return;
+      deps.announce(error instanceof Error ? error.message : "The slot could not be changed.");
+      editMode?.resetChip();
+      deps.refreshBar();
+    });
+  }
   // Shares of the page's history (deps.shareHistory): the mode's, let go as it ends, and the
   // latest entry's until it starts the mode, or its opening of the template is left first.
   type EntryShare = { release: () => void; opened?: object };
@@ -666,12 +715,16 @@ export function createComponentTools(deps: ComponentDeps) {
     modeShare = undefined;
     return was;
   }
-  const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode }) => editMode = createEditComponentMode({
-    frame: (mode) => deps.preview()?.editComponent?.(mode),
-    // The slot chip of an items slot counts what the slots now show.
-    changed: () => { barKey = ""; renderBar(); deps.refreshBar(); },
-    announce: (text) => deps.announce(text),
-  })).catch((error: unknown) => { editModeLoad = undefined; throw error; });
+  const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode, SLOT_CHIP_EVENT }) => {
+    chipEvent = SLOT_CHIP_EVENT;
+    window.addEventListener(chipEvent, applyChip);
+    return editMode = createEditComponentMode({
+      frame: (mode) => deps.preview()?.editComponent?.(mode),
+      // The slot chip of an items slot counts what the slots now show.
+      changed: () => { barKey = ""; renderBar(); deps.refreshBar(); },
+      announce: (text) => deps.announce(text),
+    });
+  }).catch((error: unknown) => { editModeLoad = undefined; throw error; });
 
   // ---- The canvas bar over a component's template. ----
 
@@ -1761,6 +1814,7 @@ export function createComponentTools(deps: ComponentDeps) {
     newComponent,
     fillInstanceSlot,
     destroy() {
+      if (chipEvent) window.removeEventListener(chipEvent, applyChip);
       destroyResize?.();
       panel.remove();
       if (barKey) deps.canvasComponent(undefined);
