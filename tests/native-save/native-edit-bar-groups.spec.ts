@@ -106,6 +106,7 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
       const controls = [...panel.querySelectorAll(".edit-bar__group > :not(.edit-bar__rule)")].filter((control) => control.getClientRects().length);
       return panel.getBoundingClientRect().right - Math.max(...controls.map((control) => control.getBoundingClientRect().right));
     });
+    expect(rightGap).toBeGreaterThanOrEqual(0); // no control past the panel's end
     expect(rightGap).toBeLessThanOrEqual(6);
     const labels = layout.map((entry) => entry.label);
     for (const [a, b] of mustShare) {

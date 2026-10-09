@@ -38,6 +38,7 @@ async function labelAbove(page: Page) {
     };
   });
   expect(layout.labelBottom).toBeLessThanOrEqual(layout.controlTop);
+  expect(layout.rightGap).toBeGreaterThanOrEqual(0); // no control past the panel's end
   expect(layout.rightGap).toBeLessThanOrEqual(6);
   const area = (await page.locator(".native-preview-frame").boundingBox())!;
   const box = (await bar(page).boundingBox())!;
