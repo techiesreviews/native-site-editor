@@ -1265,15 +1265,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       cardGrids?.sourcesChanged();
     },
     /**
-     * Select an element of the rendered page now, as a click would, and bring
-     * it into the middle of the frame; with `edit`, as a double-click would:
-     * text is typed into, the caret at its end.
+     * Select an element of the rendered page now and bring it into the
+     * middle of the frame; with `edit` false, as a click would (no longer
+     * typed in), true as a double-click would (text typed into, the caret at
+     * its end).
      */
     selectNode(request: NativeNodeRequest, edit?: boolean) {
       if (!frameState.active) return;
       // The caret needs the frame's focus.
       if (edit) frame.focus();
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request, ...(edit ? { edit } : {}) }, "*");
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request, ...(edit === undefined ? {} : { edit }) }, "*");
     },
     /**
      * Sets an element's text in the page at once, ahead of the render its

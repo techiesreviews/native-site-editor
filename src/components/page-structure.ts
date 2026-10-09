@@ -95,7 +95,7 @@ export interface PageStructureHandlers {
    * and the rows inside it the accent's rail).
    */
   label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean };
-  /** A row was chosen: select this element in the preview; `edit` (a double-click): type into its text there. */
+  /** A row was chosen: select this element in the preview, not typing in it (`edit` false: a click), or typing in its text there (true: a double-click). */
   onSelect: (path: string, node: number[], edit?: boolean) => void;
   /**
    * Alt+Up/Down on a row: move that element one sibling position. "moved",
@@ -464,7 +464,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (inEditor(event.target)) return;
       // A second click on the row (it has focus from the first) edits its text in place.
       if (canEdit && inPlace(slot) && secondClick(event, el, label)) { requestSlotEdit({ model, slot }, event.detail > 1 ? undefined : caretAt(event, label)); return; }
-      if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node]); }
+      if (structure?.path) { setSelected(undefined); el.focus(); handlers.onSelect(model.host.path, [...model.host.node], false); }
     });
     el.addEventListener("keydown", event => {
       if (event.target !== el) return;
@@ -682,8 +682,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // starts typing only in text), unless the row's text edits in place here.
     el.addEventListener("dblclick", (event) => {
       if (!structure?.path || inEditor(event.target) || !(event.target instanceof Node && label.contains(event.target))) return;
-      if (slotContext && inPlace(slotContext.slot)) return;
-      handlers.onSelect(structure.path, item.node, true);
+      if ((slotContext && inPlace(slotContext.slot)) || outerRows.has(item)) return;
+      const at = rowTarget(item, structure.path);
+      handlers.onSelect(at.path, at.node, true);
     });
     el.addEventListener("keydown", (event) => {
       // Keys typed in the row's field or on its Done button are theirs, not the tree's.
@@ -779,8 +780,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (outerRows.has(item)) { rows.get(itemKey(item))?.focus(); return; }
     setSelected(itemKey(item));
     rows.get(itemKey(item))?.focus();
+    const at = rowTarget(item, structure.path);
+    handlers.onSelect(at.path, at.node, false);
+  }
+  // The element a row stands for: a template's own row its file's element, the page's otherwise.
+  function rowTarget(item: NativeStructureItem, page: string) {
     const root = templateRoots.get(item);
-    handlers.onSelect(root?.path ?? templatePaths.get(item) ?? structure.path, root?.node ?? item.node);
+    return { path: root?.path ?? templatePaths.get(item) ?? page, node: root?.node ?? item.node };
   }
 
   // Rows that are on show, in tree order, for the arrow keys.

@@ -3718,12 +3718,13 @@
       return;
     }
     // The editor's page structure asks for an element by index path: it is
-    // selected like a click and brought to the middle of the frame; with
-    // `edit` (a double-click on its row), text is typed into, the caret at its end.
+    // selected and brought to the middle of the frame; `edit` false (a click
+    // on its row) ends typing in it, true (a double-click) types into its
+    // text, the caret at its end.
     if (msg.type === "select-node") {
       var wanted = resolveNodePath(msg.request);
       if (!wanted) return;
-      if (editing && editing !== wanted) stopEditing(true);
+      if (editing && (editing !== wanted || msg.edit === false)) stopEditing(true);
       selected = wanted;
       updateBoxes();
       var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;

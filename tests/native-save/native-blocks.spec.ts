@@ -45,6 +45,27 @@ test("clicking Section, Div, Heading, Paragraph builds a nested section, one und
   }
 });
 
+test("a block clicked in while text is typed in lands selected, not typed in, and the typing is kept", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501, ".hero h1");
+  const heading = frame(page).locator(".hero h1");
+  await heading.dblclick();
+  await expect(heading).toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(" typed");
+  // Focus leaving the page commits the typing; the heading stays the one typed in.
+  const paragraph = rail(page).getByRole("button", { name: "Paragraph", exact: true });
+  await paragraph.focus();
+  await expect.poll(async () => flat(await source(page))).toContain("A native browser preview typed</h1>");
+  await expect(heading).toHaveAttribute("contenteditable", /.+/);
+  await paragraph.click();
+  await expect(label(page)).toHaveText(/› after Heading$/);
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect.poll(async () => flat(await source(page))).toMatch(/A native browser preview typed<\/h1><p>Text<\/p>/);
+  // Neither the new Paragraph nor the heading is typed in.
+  await expect(frame(page).locator(".hero h1 + p")).toHaveText("Text");
+  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+});
+
 test("the first Image drafts images/placeholder.svg in its undo step; a second writes no file", async ({ page, baseURL }) => {
   await open(page, baseURL, 540, ".hero h1");
   const original = await source(page);

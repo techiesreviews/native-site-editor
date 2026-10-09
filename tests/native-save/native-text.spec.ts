@@ -215,7 +215,13 @@ test("a link is selected by a click and typed into on a double-click; Enter type
   await page.keyboard.press("Escape");
   await expect(link).not.toHaveAttribute("contenteditable", /.+/);
   await expect(link).toHaveText(label);
+  await expect(kind).toHaveText("Link");
+  // Escape, not typing, selects the parent.
+  await page.keyboard.press("Escape");
+  await expect(kind).toHaveText("Section");
   // Enter on the selected link types at its end; Enter again finishes, still selected.
+  await link.click();
+  await expect(kind).toHaveText("Link");
   await page.keyboard.press("Enter");
   await expect(link).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.type("!");
@@ -223,15 +229,16 @@ test("a link is selected by a click and typed into on a double-click; Enter type
   await expect(link).not.toHaveAttribute("contenteditable", /.+/);
   await expect(link).toHaveText(`${label}!`);
   await expect.poll(() => editorText(page, "#content")).toContain(`data-key="more">${label}!</a>`);
-  // Escape, not typing, selects the parent.
-  await page.keyboard.press("Escape");
-  await expect(kind).toHaveText("Section");
+  await expect(kind).toHaveText("Link");
 });
 
 test("a click on a Structure row selects; a double-click types into its text on the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const heading = frame.locator(".hero h1");
-  const row = page.getByRole("treeitem", { name: /A native browser preview/ }).first();
+  // The hero section's row is named by its heading; the heading's row is its first child.
+  const section = page.getByRole("treeitem", { name: /A native browser preview/ }).first();
+  if (await section.getAttribute("aria-expanded") === "false") await section.locator(".page-structure__toggle").click();
+  const row = section.locator("xpath=following-sibling::*[1]").getByRole("treeitem").first();
   await row.locator(".page-structure__label").click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
@@ -243,4 +250,10 @@ test("a click on a Structure row selects; a double-click types into its text on 
   await page.keyboard.press("Enter");
   await expect(heading).toHaveText("A native browser preview today");
   await expect.poll(() => editorText(page, "#content")).toContain(">A native browser preview today</h1>");
+  // Typing on the page, a click on the same row selects it, no longer typed in.
+  await heading.dblclick();
+  await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await row.locator(".page-structure__label").click();
+  await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
 });
