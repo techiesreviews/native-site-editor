@@ -219,6 +219,7 @@ export interface NativePreviewHandlers {
   /** Caller must check current source and revision before filling the page instance. */
   onSlotGhostFill?: (target: SlotGhostFillTarget) => void;
   onSelect?: (selection: NativePreviewSelection) => void;
+  onSelectionRect?: (rect: SelectionRect) => void;
   onComponentStyles?: (tags: string[]) => void;
   // The rules styling the page's <body>, whenever they change.
   onDefaultStyles?: (styles: { selectors: NativeSelectedRule[]; cascade?: NativeCascade }) => void;
@@ -920,6 +921,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (rect) {
         editBar.move(rect);
         pageBuilder.selectionRect(rect);
+        handlers.onSelectionRect?.(rect);
       }
       return;
     }

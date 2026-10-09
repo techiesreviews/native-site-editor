@@ -193,11 +193,16 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
         if (was.epoch === ports.generation()) void select(was.selection);
       }
     },
-    handlers(): Required<Pick<NativePreviewHandlers, "onSelect" | "onItemGrids" | "onTextSelection">> {
+    handlers(): Required<Pick<NativePreviewHandlers, "onSelect" | "onSelectionRect" | "onItemGrids" | "onTextSelection">> {
       // Each preview starts with no grid report, as each mount did before.
       selectedGrid = "";
       return {
         onSelect: (selection) => void select(selection),
+        onSelectionRect: (rect) => {
+          // Lazy control refreshes and pending reveals share this report.
+          // Keep its geometry current without replaying the selection.
+          if (store.selection.value) store.selection.value.rect = rect;
+        },
         onItemGrids: (report) => {
           const key = JSON.stringify(report.selected && [report.selected.path, report.selected.parent, report.selected.index, report.selected.row]);
           if (key === selectedGrid) return;

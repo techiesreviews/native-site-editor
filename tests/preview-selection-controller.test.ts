@@ -37,7 +37,7 @@ function fixture() {
     openFile: { value: undefined as string | undefined },
     snapshot: { value: {} as unknown },
   };
-  const ports: PreviewSelectionPorts = {
+  const ports = {
     generation: () => state.generation,
     scope: () => state.scope,
     store,
@@ -75,9 +75,9 @@ function fixture() {
     beginReveal: () => { log.push("beginReveal"); return ++state.request; },
     styleRequest: () => state.request,
     clearStyles: () => log.push("clearStyles"),
-  };
+  } satisfies PreviewSelectionPorts;
   const controller = createPreviewSelectionController(ports);
-  return { controller, state, log, store, opens };
+  return { controller, state, log, store, opens, ports };
 }
 // Element names by source and node, standing in for the host's DOM parse.
 function tagAt(source: string, node: readonly number[]) {
@@ -251,4 +251,48 @@ test("text and grid reports re-render the bar only when they change", () => {
   handlers.onItemGrids(grid);
   handlers.onItemGrids(grid);
   assert.deepEqual(f.log, [`editBar ${PAGE}`, `editBar ${PAGE}`]);
+});
+
+test("scroll reports update the selection used by later control refreshes", async () => {
+  const f = fixture();
+  f.store.openFile.value = PAGE;
+  f.state.mounted.add(PAGE);
+  const rendered: NativePreviewSelection[] = [];
+  f.ports.renderEditBar = selection => rendered.push({ ...selection });
+  const selection = pick({ rect: { top: 360, left: 76, right: 384, bottom: 550, width: 308, height: 190 } });
+  await f.controller.select(selection);
+  const handlers = f.controller.handlers();
+  const rect = { top: 160, left: 76, right: 384, bottom: 350, width: 308, height: 190 };
+  handlers.onSelectionRect(rect);
+  // Existing selection callbacks and delayed refreshes must see current geometry too.
+  assert.equal(selection.rect, rect);
+  assert.equal(f.store.selection.value?.rect, rect);
+  assert.equal(rendered.length, 1);
+  handlers.onTextSelection({ start: 0, end: 2, text: "Hi", wrappers: [] });
+  assert.equal(rendered.length, 2);
+  assert.equal(rendered[1].rect, rect);
+});
+
+test("a scroll report with no selected element does not create a selection", () => {
+  const f = fixture();
+  f.controller.handlers().onSelectionRect({ top: 160, left: 76, right: 384, bottom: 350, width: 308, height: 190 });
+  assert.equal(f.store.selection.value, undefined);
+  assert.deepEqual(f.log, []);
+});
+
+
+test("a selection waiting for its file to open renders with the latest scroll geometry", async () => {
+  const f = fixture();
+  const rendered: NativePreviewSelection[] = [];
+  f.ports.renderEditBar = selection => rendered.push({ ...selection });
+  const pending = f.controller.select(pick({ rect: { top: 360, left: 76, right: 384, bottom: 550, width: 308, height: 190 } }));
+  assert.equal(f.opens.length, 1);
+  f.store.openFile.value = PAGE;
+  f.state.mounted.add(PAGE);
+  const rect = { top: 160, left: 76, right: 384, bottom: 350, width: 308, height: 190 };
+  f.controller.handlers().onSelectionRect(rect);
+  f.opens[0].done.resolve();
+  await pending;
+  assert.equal(rendered.length, 1);
+  assert.equal(rendered[0].rect, rect);
 });

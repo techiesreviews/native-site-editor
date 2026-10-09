@@ -22,7 +22,7 @@ test('root name reveals a sliding icon with fixed bounds; keyboard and reduced m
  const hidden=await overlay.evaluate(el=>({transform:getComputedStyle(el).transform,transition:getComputedStyle(el).transitionProperty,duration:getComputedStyle(el).transitionDuration,pointer:getComputedStyle(el).pointerEvents}));
  expect(hidden.transform).not.toBe('none');expect(hidden.transition).toBe('transform, opacity');expect(hidden.duration).toBe('0.14s, 0.14s');expect(hidden.pointer).toBe('none');
  await button.hover();await expect(overlay).toHaveCSS('opacity','1');expect(await nameBounds()).toEqual(before);
- const overlayBox=(await overlay.boundingBox())!,buttonBox=(await button.boundingBox())!;expect(overlayBox.x+overlayBox.width).toBeLessThanOrEqual(buttonBox.x+buttonBox.width+1);
+ const bounds=await button.evaluate(el=>({overlay:el.querySelector('.edit-bar__component-edit')!.getBoundingClientRect().right,button:el.getBoundingClientRect().right}));expect(bounds.overlay).toBeLessThanOrEqual(bounds.button+1);
  await page.mouse.move(0,0);await expect(overlay).toHaveCSS('opacity','0');
  await button.focus();await page.keyboard.press('Tab');await page.keyboard.press('Shift+Tab');
  await expect(button).toBeFocused();await expect(overlay).toHaveCSS('opacity','1');await expect(overlay).toHaveCSS('transition-duration','0s');
