@@ -21,5 +21,5 @@ Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §3 and §6.
 
 ## Done (2026-10-09)
 
-- Fixed text and slot fallbacks are typed into in the framed instance (slice 41's runtime already wrote each Enter as one step on `components/<tag>/<tag>.html`, the code pane following). New: while the mode is on, the template records its undo steps in the framed page's history (`ComponentDeps.shareHistory`, as the stylesheet pane follows the page's), so after Done one Undo on the page takes the change back on every page; the share ends with the mode.
-- Commit 609836d. `@smoke` spec `native-edit-component.spec.ts` (a fallback and a fixed heading edited in place, About shows it, one Undo on Home takes the heading back, Redo); no new pure rules (unit tests unchanged).
+- Fixed text and slot fallbacks are typed into in the framed instance (slice 41's runtime already wrote each Enter as one step on `components/<tag>/<tag>.html`, the code pane following). New: while the mode is on, the template records its undo steps in the framed page's history (`ComponentDeps.shareHistory`, as the stylesheet pane follows the page's), so after Done one Undo on the page takes the change back on every page; the share ends with the mode (a pane opened under it keeps the page's journal until it is opened again, as the stylesheet pane does).
+- Commits f8d1d78, 4e45170, 6cade15. `@smoke` spec `native-edit-component.spec.ts` (a fallback and a fixed heading edited in place, About shows it, one Undo on Home takes the heading back, Redo); no new pure rules (unit tests unchanged).
