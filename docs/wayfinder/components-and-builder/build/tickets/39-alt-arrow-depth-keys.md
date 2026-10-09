@@ -24,5 +24,5 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §11: Alt+↑/↓ moves
 ## Done (2026-10-09)
 
 - `nativeElementDepthMove` (`src/page-builder/native-move-choices.ts`): out puts the element right after its parent in a Section or Div; in puts it at the end of the Section or Div just above it; Sections and anything directly in `<main>` refuse, as do a component above, `<main>` as the new parent and parts inside an instance. Alt+←/→ on the canvas (runtime keydown, not while typing) and on Structure rows (focus follows the moved row), one undo step each. Whole component instances now move through `nativeMoveEdit` (the same line as slice 36).
-- Commits: see `git log --grep "slice 39"`.
+- Commits `976cfc0` (built by Sol), `deb5649` (review: a row moved into a folded container unfolds it and keeps focus).
 - Tests: `tests/native-move-choices.test.ts` (out, in, round trip, refusals), `tests/native-operations.test.ts` / `tests/native-elements.test.ts` (instances move whole); nightly `native-move-keys.spec.ts` covers Alt+←/→ in Structure and on the canvas on the native-cards fixture.
