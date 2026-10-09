@@ -38,7 +38,7 @@ interface State {
 
 /** Owns only the captured draft records, source steps, and newly staged bytes. */
 export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransaction<State> {
-  const refuse = (reason: string) => { host.announce(reason); showRefusal(reason); };
+  const refuse = (reason: string, history?: "undo" | "redo") => { host.announce(reason); showRefusal(reason, { history }); };
   const changedSince = "The images or pages of this change were edited since; edit them directly instead.";
   const scope = { ...host.scope };
   const pathsOf = (batch: MediaWorkspaceBatch) => [...new Set([
@@ -152,9 +152,9 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         try {
           host.assertLive();
           const expected = applied ? state.after : state.before;
-          if (undo !== applied || !unchanged(expected) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince); return false; }
+          if (undo !== applied || !unchanged(expected) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince, undo ? "undo" : "redo"); return false; }
           const desired = undo ? state.before : state.after;
-          if (!(undo ? state.sources.undo() : state.sources.redo())) { refuse(changedSince); return false; }
+          if (!(undo ? state.sources.undo() : state.sources.redo())) { refuse(changedSince, undo ? "undo" : "redo"); return false; }
           advanceOwnedSources(batch, state);
           const writes = capture(expected);
           try { for (const [path, record] of desired) { try { write(path, record); } finally { writes.set(path, host.store.get(scope, path)); } } }
@@ -181,7 +181,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         const restaged = { ...state, ownedKeys: new Set<string>(), releases: [] as (() => void)[] };
         try {
           host.assertLive();
-          if (applied || !unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince); return false; }
+          if (applied || !unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince, "redo"); return false; }
           for (const upload of state.staged.values()) {
             const key = uploadKey(scope, upload.sha);
             restaged.releases.push(holdUploadKey(key));
