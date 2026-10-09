@@ -1153,14 +1153,26 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- Make component. ----
 
   async function openMakeComponent(selection: NativePreviewSelection) {
+    // The page CSS the component takes along (ticket 64) is worked out by a module loaded here.
+    let carry: typeof import("./component-css");
+    try {
+      carry = await import("./component-css");
+    } catch (error) {
+      void handleChunkLoadFailure(error);
+      deps.announce("Make component could not load. Try again.");
+      return;
+    }
     const path = selection.path;
     const nodePath = selection.node;
-    const source = deps.sources()[path];
+    const sources = deps.sources();
+    const source = sources[path];
     const current = site();
     const revision = deps.revision();
     if (!nodePath || source === undefined || !current) return;
     const range = locateNativeElementRange(source, nodePath);
     if (!range?.close) { deps.announce("The element's end tag could not be found in the source."); return; }
+    const linked = nativePageStylesheets(source, path).filter((file) => sources[file] !== undefined);
+    const sheets = expandStyleImports(linked, (file) => sources[file]).sheets;
     const taken = Object.keys(current.components);
     const nameField = node("label", "create-dialog__field");
     nameField.append("Component name");
@@ -1175,13 +1187,17 @@ export function createComponentTools(deps: ComponentDeps) {
     const files = node("div", "component-dialog__files");
     const loader = Object.values(current.routes).some((file) => /components\/components\.js/.test(deps.sources()[file] ?? ""));
     const notes = node("div", "component-dialog__notes");
+    const styles = node("div");
+    notes.append(styles);
     const plan = () => {
       const tag = input.value.trim();
       const problem = tagNameProblem(tag, taken);
       if (problem) return { problem };
-      const made = makeComponentPlan(source, range, tag, {}, taken);
-      if ("error" in made) return { problem: made.error };
-      return { tag, made };
+      const bare = makeComponentPlan(source, range, tag, {}, taken);
+      if ("error" in bare) return { problem: bare.error };
+      const made = carry.withPageCss(bare, source, range, tag, sheets);
+      const copied = made.css !== bare.css || made.cards.some((card, index) => card.css !== bare.cards[index].css);
+      return { tag, made, copied };
     };
     const update = () => {
       const planned = plan();
@@ -1189,9 +1205,10 @@ export function createComponentTools(deps: ComponentDeps) {
       if (planned.problem || !planned.made) {
         result.textContent = planned.problem ?? "";
         files.replaceChildren();
+        styles.replaceChildren();
         return;
       }
-      const { tag, made } = planned;
+      const { tag, made, copied } = planned;
       const slotted = made.slots.filter((slot) => !slot.fixed);
       const slots = slotted.map((slot) => slot.name ? `“${slot.name}”` : "its content").join(", ");
       const cards = made.cards.map((card) => ` Its repeated items become <${card.tag}>, a card component, each keeping its own content.`).join("");
@@ -1202,10 +1219,15 @@ export function createComponentTools(deps: ComponentDeps) {
         ...madeFiles(tag, made).map((file) => codeBlock(`${file.path} (new)`, file.content)),
         codeBlock(`${path} (replaces the <${range.tag.name}>)`, made.instance, { source, at: range.start }),
       );
+      styles.replaceChildren(
+        node("p", "create-dialog__result", copied
+          ? "The rules that styled this element are copied into the component's CSS, rewritten to start at it. The site's stylesheets stay as they are."
+          : "Styles stay where they are: the site's stylesheets reach the component as they reached the page."),
+        ...[...made.notes, ...made.cards.flatMap((card) => card.notes)].map((note) => node("p", "create-dialog__result", note)),
+      );
     };
     input.addEventListener("input", update);
     update();
-    notes.append(node("p", "create-dialog__result", "Styles stay where they are: the site's stylesheets reach the component as they reached the page."));
     if (!loader) notes.append(node("p", "create-dialog__result is-error", "No page loads components/components.js, so the live site will not show components until it does."));
     const ok = await ask("Make component", [nameField, result, files, notes], "Make component", () => {
       const planned = plan();

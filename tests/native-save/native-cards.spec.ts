@@ -789,3 +789,65 @@ test("Make component on a grid of plain cards makes the section and a card compo
   expect(await homeDraft(page)).toBe(written);
   for (const file of ["section-work/section-work.html", "section-work/section-work.css", "card-work/card-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeDefined();
 });
+
+test("Make component copies the rules that styled the section into its CSS, so its heading, lead and links look the same", async ({ page, baseURL }) => {
+  // A section styled by rules scoped to its class (one through an ancestor), and one rule for something inside a slotted part.
+  const home = readFileSync("fixtures/native-cards/index.html", "utf8").replace(`    <section class="flow" id="work">`, `    <section class="intro">
+      <h2>Made to be changed</h2>
+      <p class="lead">Every page is <em>plain HTML</em> you can open and edit.</p>
+      <div class="actions">
+        <a href="/work/fern-and-kettle/">See the work</a>
+        <a href="/#services">What we do</a>
+      </div>
+    </section>
+    <section class="flow" id="work">`);
+  const css = `${readFileSync("fixtures/native-cards/styles/site.css", "utf8")}
+@layer sections {
+  .intro h2 { letter-spacing: 3px; text-transform: uppercase; color: rgb(120, 40, 20); }
+}
+.intro .lead { font-style: italic; word-spacing: 4px; }
+.intro .lead em { color: rgb(200, 0, 0); }
+@media (min-width: 1px) {
+  main .intro .actions a { text-decoration: none; font-weight: 700; padding: 4px 10px; border: 2px solid currentColor; }
+}
+`;
+  await open(page, baseURL);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "styles/site.css", content: css } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "index.html", content: home } });
+  await page.reload();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
+  const properties = ["letter-spacing", "text-transform", "color", "font-size", "font-style", "word-spacing", "text-decoration-line", "font-weight", "padding-left", "border-top-width"];
+  const looks = (locator: import("@playwright/test").Locator) => locator.evaluateAll((elements, names) =>
+    elements.map((element) => names.map((name) => `${name}: ${getComputedStyle(element).getPropertyValue(name)}`)), properties);
+  const section = frame(page).locator("section.intro");
+  await expect(section.locator("h2")).toHaveText("Made to be changed");
+  const before = [await looks(section.locator("h2")), await looks(section.locator(".lead")), await looks(section.locator(".actions a"))];
+  expect(before[0][0]).toContain("letter-spacing: 3px");
+  expect(before[2][1]).toContain("font-weight: 700");
+
+  await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section Made to be changed/ }).locator(".page-structure__label").first().click();
+  await bar(page).getByRole("button", { name: "Make component…", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Make component" });
+  await dialog.getByRole("textbox", { name: "Component name" }).fill("section-intro");
+  await expect(dialog).toContainText("The rules that styled this element are copied into the component's CSS");
+  await expect(dialog).toContainText("1 rule can't follow the parts into the component: .intro .lead em.");
+  await dialog.getByRole("button", { name: "Make component" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(status(page)).toContainText("Made the component <section-intro>");
+
+  // The rules, rewritten to start at the section, in the component's CSS; the site's stylesheet as it was.
+  await expect.poll(async () => (await storedDraft(page, "components/section-intro/section-intro.css"))?.content ?? "").toContain(".intro .actions a {");
+  const written = (await storedDraft(page, "components/section-intro/section-intro.css"))!.content;
+  expect(written).toContain(".intro h2 {\n  letter-spacing: 3px;");
+  expect(written).toContain(".intro .lead {\n  font-style: italic;");
+  expect(written).toContain("@media (min-width: 1px) {\n  .intro .actions a {");
+  expect(written).not.toContain("@layer");
+  expect(written).not.toContain(".lead em");
+  expect(await storedDraft(page, "styles/site.css")).toBeUndefined();
+
+  // The page looks the same: the heading, lead and links, now slotted into the component.
+  const made = frame(page).locator("section-intro");
+  await expect(made.locator(":scope > h2")).toHaveText("Made to be changed");
+  await expect.poll(async () => [await looks(made.locator(":scope > h2")), await looks(made.locator(":scope > .lead")), await looks(made.locator(":scope > a"))]).toEqual(before);
+});
