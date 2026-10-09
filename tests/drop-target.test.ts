@@ -238,3 +238,11 @@ test("a moved leaf item (no containers of its own) over a sibling's box takes th
   // Over itself nothing changes.
   assert.equal(dropLabel(dropTarget([grid, section, main], { x: 100, y: 460 }, moving)!, moving), "Stays where it is");
 });
+
+test("an item of one items slot is not a sibling of another items slot of the same instance", () => {
+  // The moved card [1, 0, 1] sits in the unnamed items slot; the pointer is over a card in the "more" one.
+  const b = box([1, 0], "items", rect(40, 300, 720, 150), [child(3, rect(60, 320, 200, 100), "card-work")], { slot: "more", count: 4 });
+  const title = box([1, 0, 3], "slot", rect(60, 320, 200, 100), [], { slot: "title" });
+  const moving: DraggedBlock = { kind: "move", path: [1, 0, 1], band: false };
+  assert.equal(dropTarget([title, b, main], { x: 200, y: 370 }, moving)!.container, title);
+});

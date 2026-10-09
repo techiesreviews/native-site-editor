@@ -122,6 +122,8 @@ function siblingUnder(containers: readonly DropContainer[], p: { x: number; y: n
     const hovered = j > 0 ? containers[j - 1].path[container.path.length]
       : container.children.find((child) => shown(child) && inside(p, child.rect))?.index;
     if (hovered === undefined) continue;
+    // An instance's items slots share its path: both items must be in this one.
+    if (container.kind === "items" && ![own, hovered].every((index) => container.children.some((item) => item.index === index))) continue;
     return hovered === own ? undefined : { j, hovered };
   }
   return undefined;
