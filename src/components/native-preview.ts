@@ -22,17 +22,11 @@ import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
-import { createPageBuilder, type PageBuilderDeps } from "../page-builder/page-builder";
+import { createPageBuilder } from "../page-builder/page-builder";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
 import { linkCodeToCanvas } from "../page-builder/code-link";
-import { composeNativeMasterEdit, type NativeMasterComposition, type NativeMasterEditInput } from "./native-master-preview";
-export type { NativeMasterEditInput } from "./native-master-preview";
-import { composeNativePagePartEdit, type NativePagePartComposition, type NativePagePartEditInput } from "./native-page-part-preview";
 import { createPreviewFrameState } from "./preview-frame-state";
-export type NativePagePartMasterEditInput = NativePagePartEditInput & { kind: "page-part"; rootTag: "header" | "footer" };
-type NativeEditingInput = NativeMasterEditInput | NativePagePartMasterEditInput;
-type NativeEditingComposition = NativeMasterComposition | NativePagePartComposition;
 import "./native-preview.css";
 
 // Browser-native preview: a persistent sandboxed iframe that renders a
@@ -86,19 +80,7 @@ interface UpdateInput {
   component?: string;
   /** A template explicitly opened through Files or Edit component. */
   editableTemplatePath?: string;
-  /**
-   * An explicit native master session: the page on show renders with its one
-   * copy replaced by the master's root, editable as the master file.
-   * Header/footer masters use the explicit `kind: "page-part"` variant.
-   * `undefined` ends the session; an invalid one is refused (see masterEditStatus).
-   */
-  masterEdit?: NativeEditingInput;
 }
-
-/** Whether a master session is on show, or why the last one was refused or ended. */
-export type NativeMasterEditStatus =
-  | { active: true; session: string; pagePath: string; masterPath: string }
-  | { active: false; error?: string };
 
 // The home page's `<main …>` start tag, or a plain one when it has none.
 function pageContainer(pageHtml: string) {
@@ -160,8 +142,6 @@ export interface NativePreviewSelection {
   hostChain?: NonNullable<NativePreviewSelection["host"]>[];
   /** Source bytes from this selection's sent render snapshot. */
   paintedSource?: string;
-  /** The master session this selection belongs to, when `path` is its master file. */
-  masterSession?: string;
 }
 
 // A text selection inside the selected element: offsets into its DOM text
@@ -209,8 +189,6 @@ export interface NativeTextEdit {
   node: number[];
   before: string;
   after: string;
-  /** The master session the text was typed in, when `path` is its master file. */
-  masterSession?: string;
 }
 
 export interface NativePreviewHandlers {
@@ -236,10 +214,6 @@ export interface NativePreviewHandlers {
   onStructure?: (structure: NativeStructure | undefined) => void;
   // Components offered between page sections, and what to do with a choice.
   insertChoices?: () => InsertChoice[];
-  insertExtraChoices?: AddPanelHandlers["extraChoices"];
-  insertNotice?: AddPanelHandlers["notice"];
-  // A thumbnail for an extra choice: its markup and the preview inputs to render it with.
-  insertPreview?: PageBuilderDeps["previewChoice"];
   insertPointFor?: AddPanelHandlers["pointFor"];
   insertDestinationText?: AddPanelHandlers["destinationText"];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
@@ -329,7 +303,6 @@ function composePayload(
   selectText: { start: number; end: number } | undefined,
   hash?: string,
   editableTemplatePath?: string,
-  master?: { composition: NativeEditingComposition; token: string },
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -337,8 +310,6 @@ function composePayload(
     pagePaths[routePath] = filePath;
     pages[routePath] = pageOf(sources[filePath] ?? "");
   }
-  // A master session: the page on show with its copy swapped (editor-only, in the frame).
-  if (master && !alone) pages[route] = master.composition.pageBody;
   // A component on its own: a page of just one instance, belonging to no
   // file, so only clicks inside the component select anything. It sits in
   // the same page container the home page uses, so it gets the page's width.
@@ -358,9 +329,7 @@ function composePayload(
   // Relative image paths resolve against the page's URL, as on the live site.
   const base = alone ? "/" : route;
   return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assetChanges, sectionTags, route, base, context, selectNode, selectText, hash, editableTemplatePath,
-    master: master && !alone ? { path: master.composition.input.masterPath, session: master.token, node: [...master.composition.input.node], ...("masterPart" in master.composition
-      ? { kind: "page-part", rootTag: master.composition.rootTag, part: master.composition.masterPart }
-      : { section: master.composition.masterSection }) } : undefined };
+  };
 }
 
 export function createNativePreview(host: HTMLElement, handlers: NativePreviewHandlers = {}) {
@@ -425,14 +394,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     insertControls: () => insertControls,
     inputs: () => site && { site, sources, componentStyles, assets, route: alone ? "/" : route },
     choices: () => handlers.insertChoices?.() ?? [],
-    extraChoices: handlers.insertExtraChoices,
-    notice: handlers.insertNotice,
-    previewChoice: handlers.insertPreview,
     pointFor: handlers.insertPointFor,
     destinationText: handlers.insertDestinationText,
     // An earlier version on show (History) is not edited: its places are not the source's.
-    // Nor is a page while a master session is on show: only the master is edited then.
-    insert: (point, choice) => { if (!viewing && !master) handlers.onInsert?.(point, choice); },
+    insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
     prepare: (tags) => {
       const wanted = site ? tags.filter((tag) => Object.hasOwn(site!.components, tag) && !componentStyles[tag]) : [];
       if (wanted.length) handlers.onComponentStyles?.(wanted);
@@ -503,12 +468,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
   let editableTemplatePath: string | undefined;
-  // The master session input as the host last gave it, its checked composition
-  // and a token unique to this activation (stamped on the runtime's messages).
-  let masterInput: NativeEditingInput | undefined;
-  let master: { composition: NativeEditingComposition; token: string } | undefined;
-  let masterError: string | undefined;
-  let masterEpoch = 0;
   let context = "";
   let probeId = 0;
   let probe: { id: number; context: string; path: string; done: (report?: DropReport) => void } | undefined;
@@ -517,7 +476,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     probe = undefined;
     pending?.done(report);
   }
-  let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>>; master?: { path: string; source: string; token: string } } | undefined;
+  let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>> } | undefined;
   let renderVersion = 0;
   // A click reported against an older render. The runtime re-reports its
   // selection as a refresh after the next update, and that refresh then counts
@@ -580,7 +539,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // of any other source (Undo, another edit) drops it first, so the page never
   // shows typed text its source does not have.
   // `others`: every other source as it was when typing began (templates,
-  // masters, shared files): a change to any of them drops the patch too.
+  // shared files): a change to any of them drops the patch too.
   let livePatch: { path: string; base: string; others: Record<string, string> } | undefined;
   let lastPatchRequest: NativeNodeRequest | undefined;
   const postPatch = (message: Record<string, unknown>) =>
@@ -620,58 +579,17 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     rafHandle = 0;
     if (!site || !frameState.ready || !frameState.active) return;
     if (livePatch && (sources[livePatch.path] !== livePatch.base || othersChanged(livePatch.others, livePatch.path))) dropPatch();
-    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath, master);
+    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, selectNode, selectText, scrollHash, editableTemplatePath);
     selectNode = undefined;
     selectText = undefined;
     scrollHash = undefined;
-    sentStructureSnapshot = { context, sources: { ...sources }, master: master && !alone
-      ? { path: master.composition.input.masterPath, source: master.composition.input.masterSource, token: master.token } : undefined };
+    sentStructureSnapshot = { context, sources: { ...sources } };
     postedRoutes.set(++messageId, alone ? "/" : route);
     frame.contentWindow?.postMessage(
       { source: "astro-native-preview-host", type: "update", id: messageId, payload },
       "*",
     );
   }
-  // Re-checks the master session against the sources and page on show; an
-  // invalid or ended one goes back to the plain page, and its messages are refused.
-  function syncMaster() {
-    const before = master;
-    if (!masterInput || !site) master = undefined;
-    else {
-      const pagePart = "kind" in masterInput && masterInput.kind === "page-part";
-      const composed = pagePart
-        ? composeNativePagePartEdit(masterInput, { sources, pagePath: alone ? undefined : site.routes[route] })
-        : composeNativeMasterEdit(masterInput, { sources, pagePath: alone ? undefined : site.routes[route] });
-      if (!("error" in composed) && pagePart
-        && (!("rootTag" in masterInput) || !("rootTag" in composed) || composed.rootTag !== masterInput.rootTag)) {
-        master = undefined; masterInput = undefined; masterError = "The page part master has a different root tag.";
-      } else if ("error" in composed) {
-        master = undefined;
-        masterInput = undefined;
-        masterError = composed.error;
-      } else {
-        masterError = undefined;
-        const same = before && before.composition.input.session === composed.input.session && before.composition.input.masterPath === composed.input.masterPath &&
-          before.composition.input.pagePath === composed.input.pagePath && before.composition.input.node.join() === composed.input.node.join();
-        master = { composition: composed, token: same ? before.token : `${++masterEpoch}:${composed.input.session}` };
-      }
-    }
-    if (before && (!master || master.token !== before.token)) codeLink.cancel();
-    syncAddLock();
-  }
-  // "+ Add" and its docked panel: unavailable while History shows an earlier
-  // version or a master session is on show; back only when neither is.
-  let addLocked = false;
-  let addButtonEl: HTMLButtonElement | undefined;
-  function syncAddLock() {
-    const locked = Boolean(viewing) || Boolean(master && !alone);
-    if (locked !== addLocked) {
-      addLocked = locked;
-      pageBuilder.setViewing(locked);
-    }
-    if (addButtonEl && locked && !viewing) addButtonEl.title = "Finish editing the saved section to add sections to the page";
-  }
-  const masterPath = () => (master && !alone ? master.composition.input.masterPath : undefined);
   // The route each posted render shows, until the runtime acknowledges it
   // (after the frame drew it): the host reads that page's images only then,
   // so no image is read before the page is on screen.
@@ -697,7 +615,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function schedule() {
     endProbe();
     if (!site) return;
-    syncMaster();
     slotGhosts.clear();
     slotSelection = undefined;
     renderVersion++;
@@ -717,7 +634,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function styleSourcePaths() {
     return new Set([
       ...(site ? nativeSitePaths(site) : []),
-      ...(masterPath() ? [masterPath()!] : []),
       ...Object.values(componentStyles),
       ...(site ? (() => {
         const linked = routeStylesheets(site, sources, alone ? "/" : route);
@@ -733,7 +649,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // Desktop files dropped onto a source-owned canvas image, including shadow roots.
     if (data.type === "image-drop" && site) {
       const raw = data as unknown as { path?: unknown; node?: unknown; width?: unknown; files?: unknown };
-      if (master || data.context !== context || typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
+      if (data.context !== context || typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       if (!Array.isArray(raw.node) || !raw.node.length || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
       if (!Array.isArray(raw.files) || !raw.files.every((file) => file instanceof File)) return;
       handlers.onImageDrop?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined }, raw.files);
@@ -751,15 +667,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // when a render was requested since.
     if (data.type === "text-edit" && site) {
       const raw = data as unknown as Record<string, unknown>;
-      // While a master session is on show only its master takes typing, and
-      // only from this very session; page text and stale sessions are refused.
-      const inMaster = Boolean(master && raw.path === masterPath() && raw.session === master.token);
-      if (typeof raw.path !== "string" || (master ? !inMaster : raw.session !== undefined || !nativeSitePaths(site).includes(raw.path))) return;
+      if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       if (typeof raw.before !== "string" || typeof raw.after !== "string" || raw.after.length > 100_000) return;
       if (!Array.isArray(raw.node) || raw.node.length > 500 || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
-      if (inMaster && raw.node[0] !== 0) return;
       const edit: NativeTextEdit = { path: raw.path, node: raw.node as number[], before: raw.before, after: raw.after };
-      if (inMaster) edit.masterSession = master!.composition.input.session;
       handlers.onTextEdit?.(edit);
       return;
     }
@@ -785,8 +696,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "move") {
       const direction = (data as { direction?: unknown }).direction;
-      // A master session moves no page sections.
-      if (!master && (direction === "up" || direction === "down")) handlers.onMove?.(direction);
+      if (direction === "up" || direction === "down") handlers.onMove?.(direction);
       return;
     }
     if (data.type === "section-drag" && site) {
@@ -797,7 +707,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // start or target is ignored; a stale end (or any cancel, including the
       // one the runtime sends when a render replaces the page under a drag)
       // ends the drag with nothing moved, announced as cancelled.
-      if (raw.phase === "cancel" || master || (stale && raw.phase === "end")) {
+      if (raw.phase === "cancel" || (stale && raw.phase === "end")) {
         editBar.dragEnded();
         insertControls.dragEnd();
         handlers.onSectionDrag?.(undefined);
@@ -844,7 +754,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return;
     }
     if (data.type === "slot-ghosts") {
-      const report = site && frameState.active && !viewing && !master && readSlotGhostReport((data as { report?: unknown }).report,
+      const report = site && frameState.active && !viewing && readSlotGhostReport((data as { report?: unknown }).report,
         { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
       if (report) slotGhosts.update(report); else slotGhosts.clear(false);
       return;
@@ -891,7 +801,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (typeof path !== "string" || site.routes[route] !== path || !Array.isArray(raw.points)) return;
       // An earlier version on show (History): its gaps are counted in its
       // markup, not the current source's, so nothing is offered there.
-      if (viewing || master) {
+      if (viewing) {
         insertControls.update([]);
         pageBuilder.points([]);
         return;
@@ -931,7 +841,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "item-grids" && site) {
       const raw = data as { hover?: unknown; selected?: unknown };
-      const report = master ? { hover: null, selected: null } : { hover: readItemGrid(raw.hover), selected: readItemGrid(raw.selected) };
+      const report = { hover: readItemGrid(raw.hover), selected: readItemGrid(raw.selected) };
       cardGrids?.update(report);
       handlers.onItemGrids?.(report);
       return;
@@ -1002,10 +912,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         return;
       }
       const painted = sentStructureSnapshot && sentStructureSnapshot.context === data.context ? sentStructureSnapshot : undefined;
-      // The master's own elements, from the render that painted this master session.
-      const masterSelection = typeof raw.path === "string" && Boolean(painted?.master && master && painted.master.token === master.token && raw.path === painted.master.path);
-      if (typeof raw.path !== "string" || (!masterSelection && !nativeSitePaths(site).includes(raw.path))) return;
-      if (masterSelection && !(indexes(raw.node) && raw.node[0] === 0)) return;
+      if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
       const selectors = readSelectedRules(raw.selectors, styleSourcePaths());
       const selectedNode = indexes(raw.node) ? raw.node : undefined;
       // Inside a component's template: the page's instance it renders in.
@@ -1020,8 +927,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       canvas.setCrumbs(readCrumbs(raw.crumbs));
       handlers.onSelect?.({
         path: raw.path,
-        paintedSource: masterSelection ? painted!.master!.source : painted?.sources[raw.path],
-        masterSession: masterSelection ? master!.composition.input.session : undefined,
+        paintedSource: painted?.sources[raw.path],
         tag: typeof raw.tag === "string" ? raw.tag : "",
         text: typeof raw.text === "string" ? raw.text : "",
         reason,
@@ -1167,7 +1073,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   avoidWatch.observe(editBar.element, { attributes: true, attributeFilter: ["style", "hidden"], childList: true });
 
   const codeLink = linkCodeToCanvas({
-    owns: (path) => Boolean(site && frameState.active && frameState.ready && !viewing && (nativeSitePaths(site).includes(path) || path === masterPath())),
+    owns: (path) => Boolean(site && frameState.active && frameState.ready && !viewing && nativeSitePaths(site).includes(path)),
     hint: (request) => toCanvas({ type: "canvas-hint", request: request ?? null }),
     select: (request) => toCanvas({ type: "canvas-code-select", request }),
   });
@@ -1214,10 +1120,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     update(input: UpdateInput) {
       if (Object.hasOwn(input, "editableTemplatePath")) editableTemplatePath = input.editableTemplatePath;
-      if (Object.hasOwn(input, "masterEdit")) {
-        masterInput = input.masterEdit;
-        masterError = undefined;
-      }
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
       if (input.assets) assets = input.assets;
@@ -1252,16 +1154,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         cardGrids?.clear();
       }
       schedule();
-      // A session refused before any site is shown still reports why.
-      if (!site && masterInput) { masterInput = undefined; masterError = "No site is shown."; }
       pageBuilder.sourcesChanged();
-    },
-    /** Whether the master session given to `update` is on show, or why it was refused or ended. */
-    masterEditStatus(): NativeMasterEditStatus {
-      if (site && masterInput) syncMaster();
-      if (!master || alone) return masterError ? { active: false, error: masterError } : { active: false };
-      const { session, pagePath, masterPath: path } = master.composition.input;
-      return { active: true, session, pagePath, masterPath: path };
     },
     /** Select an element of the rendered page now, as a click would, and bring it into the middle of the frame. */
     selectNode(request: NativeNodeRequest) {
@@ -1384,7 +1277,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       viewing?.remove();
       viewing = bar;
       pane.classList.toggle("is-viewing", Boolean(bar));
-      syncAddLock();
+      pageBuilder.setViewing(Boolean(viewing));
       if (bar) {
         pane.insertBefore(bar, canvas.bar);
         canvas.setCrumbs([]);
@@ -1397,11 +1290,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** The top bar's "+ Add" opens the Add panel (src/page-builder/add-panel.ts). */
     attachAddButton(addButton: HTMLButtonElement) {
-      addButtonEl = addButton;
       pageBuilder.attachAddButton(addButton);
       pageBuilder.setActive(frameState.active);
-      if (addLocked) pageBuilder.setViewing(true);
-      syncAddLock();
+      pageBuilder.setViewing(Boolean(viewing));
     },
     /** The grid of repeated items around the selection, as the runtime last reported it. */
     selectedItemGrid() {
@@ -1470,9 +1361,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       shownRoute = undefined;
       postedRoutes.clear();
       editableTemplatePath = undefined;
-      masterInput = undefined;
-      master = undefined;
-      syncAddLock();
+      pageBuilder.setViewing(Boolean(viewing));
       componentStyles = {};
       loadError = false;
       insertControls.clear();

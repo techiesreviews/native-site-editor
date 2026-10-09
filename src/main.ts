@@ -1,6 +1,8 @@
+import type { InsertChoice, InsertPoint } from "./components/insert-controls";
+import { nativeChoiceMarkup } from "./page-builder/native-elements";
+import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
-import { createSharedSectionsController } from "./controllers/shared-sections-controller";
 import { createMediaController } from "./controllers/media-controller";
 import { createCardsController } from "./controllers/cards-controller";
 import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
@@ -71,10 +73,9 @@ import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { nativeElementSiblingMove } from "./page-builder/native-move-choices";
-import { isSectionTemplate } from "./native-insert";
+import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
-import { planSidecarPages, routeLinkRewrite } from "./page-builder/sidecar-pages";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import * as sourceEditor from "./components/source-editor";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
@@ -84,15 +85,9 @@ import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
-import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
-import { deriveNativeRoutes, nativePageRoute } from "../shared/native-routes";
-import { EDITOR_PAGE_BUILDER_PATH } from "./page-builder/page-builder-document";
-import { listSectionChoices, readSectionCatalog } from "./page-builder/static-sections";
-import { createNativePagePartController } from "./page-builder/native-page-part-controller";
-import { readPagePartCatalog } from "./page-builder/native-page-parts";
+import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
+import { nativePageRoute } from "../shared/native-routes";
 
-import { createNativeSectionMasterController } from "./page-builder/native-section-master-controller";
-import { createMasterBanner } from "./components/master-banner";
 
 
 
@@ -440,11 +435,8 @@ function mountWorkspace() {
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
-    insertExtraChoices: nativeStaticSectionChoices,
-    insertNotice: nativeStaticSectionNotice,
-    insertPreview: nativeStaticSectionThumbnail,
     insertPointFor: nativeElementAddPoint,
-    insertDestinationText: point => point ? sharedSections.destinationText(point) ?? positionText(point) : "Choose a section destination.",
+    insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => {
       if (!structure) { nativeShownStructure = undefined; pageStructure?.update(undefined); return; }
@@ -496,8 +488,6 @@ function mountWorkspace() {
     onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
     componentSlots: (path, node) => componentTools?.structure(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,
-    nativeSharedRoot,
-    nativeFieldsRevision: nativeSharedFieldsRevision,
     pageMeta: nativePageMeta,
     onPageSettings: (path) => void openNativePageSettings(path),
     onNavigation: (path) => void openNativeNavigation(path),
@@ -511,8 +501,6 @@ function mountWorkspace() {
     applyUrl: changeNativeUrl,
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     onMove: (path, item, direction) => {
-      // A master on show keeps the page read-only: no move, and no file switch that would end it.
-      if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return "stayed"; }
       const paintedSource = nativeStructurePaintedSources.get(item);
       if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
         announce("The source changed. Wait for the preview before moving this element."); return "stayed";
@@ -525,7 +513,6 @@ function mountWorkspace() {
     },
     canDrag: (item) => isNativeSectionTag(item.tag),
     onMoveTo: (path, item, index) => {
-      if (nativeMasterEdit()) { announce("The page is read-only while its master is open. Choose Done to edit it."); return undefined; }
       return moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index);
     },
     announce: (text) => { element("status").textContent = text; },
@@ -630,107 +617,78 @@ function mountComponentTools() {
       const route = nativePreview?.route();
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
-    nativePageActions: nativeSectionSaveControls,
   });
 }
 
-// Update saved section: a page's own plain <section> root that matches exactly one record of the
-// loaded editor JSON updates that record. The page, its stylesheets and copies already on pages
-// are never written. Any other section shows no action: nothing is guessed or loaded on press.
-const sharedSections = createSharedSectionsController({
-  generation: () => generation, fileGeneration: () => fileGeneration, setupScope, draftScope,
-  versionView: () => versionView, site: () => nativeSite, textIndexed: () => nativeTextIndexed,
-  store: appStore, editor: () => editorModule, preview: () => nativePreview, codePanes: () => codePanes,
-  masterController: () => masterController, pagePartController: () => pagePartController,
-  nativeFiles, nativeSources, nativeEffectiveSource, ensureNativeTextIndex, wantNativeTextIndex,
-  restoreFile, applyNativeOperation, announce, errorMessage,
-  status: message => { element("status").textContent = message; },
-  codeCollapsed: () => element("main").classList.contains("code-collapsed"),
-  renderNativeEditBar, renderMasterBanner, updateNativePreviewSources, renderNativeShownStructure,
-  nativeStructureEdit, paintedSource: item => nativeStructurePaintedSources.get(item),
-  selectionEpoch: () => previewSelection.selectionEpoch(), nativeClassCount, nativeSharedCatalogs,
-  nativeCanonicalCopy, locateNativeElement, locateNativeElementRange, startTagAttribute,
-  readSectionCatalog, listSectionChoices, isNativeSectionTag, parseCssImports, nativePageStylesheets, isSectionTemplate, setTimer: callback => setTimeout(callback),
-});
-const masterController = createNativeSectionMasterController(sharedSections.masterHost);
-const pagePartController = createNativePagePartController(sharedSections.masterHost);
-function nativeMasterSelection(...args: Parameters<typeof sharedSections.nativeMasterSelection>): ReturnType<typeof sharedSections.nativeMasterSelection> { return sharedSections.nativeMasterSelection(...args); }
-function nativeSectionSaveControls(...args: Parameters<typeof sharedSections.sectionSaveControls>): ReturnType<typeof sharedSections.sectionSaveControls> { return sharedSections.sectionSaveControls(...args); }
-function masterRevision(...args: Parameters<typeof sharedSections.masterRevision>): ReturnType<typeof sharedSections.masterRevision> { return sharedSections.masterRevision(...args); }
-function activeMaster(...args: Parameters<typeof sharedSections.activeMaster>): ReturnType<typeof sharedSections.activeMaster> { return sharedSections.activeMaster(...args); }
-function nativeMasterEdit(...args: Parameters<typeof sharedSections.nativeMasterEdit>): ReturnType<typeof sharedSections.nativeMasterEdit> { return sharedSections.nativeMasterEdit(...args); }
-function nativeOpenMaster(...args: Parameters<typeof sharedSections.nativeOpenMaster>): ReturnType<typeof sharedSections.nativeOpenMaster> { return sharedSections.nativeOpenMaster(...args); }
-function nativeEditableSource(...args: Parameters<typeof sharedSections.editableSource>): ReturnType<typeof sharedSections.editableSource> { return sharedSections.editableSource(...args); }
-function nativeMasterIdentity(...args: Parameters<typeof sharedSections.masterIdentity>): ReturnType<typeof sharedSections.masterIdentity> { return sharedSections.masterIdentity(...args); }
-function runMasterEdit(...args: Parameters<typeof sharedSections.runMasterEdit>): ReturnType<typeof sharedSections.runMasterEdit> { return sharedSections.runMasterEdit(...args); }
-function nativeSectionChoices(...args: Parameters<typeof sharedSections.insertChoices>): ReturnType<typeof sharedSections.insertChoices> { return sharedSections.insertChoices(...args); }
-function nativeElementAddPoint(...args: Parameters<typeof sharedSections.nativeElementAddPoint>): ReturnType<typeof sharedSections.nativeElementAddPoint> { return sharedSections.nativeElementAddPoint(...args); }
-function insertNativeComponent(...args: Parameters<typeof sharedSections.insertNativeComponent>): ReturnType<typeof sharedSections.insertNativeComponent> { return sharedSections.insertNativeComponent(...args); }
-function nativeStaticSectionChoices(...args: Parameters<typeof sharedSections.nativeStaticSectionChoices>): ReturnType<typeof sharedSections.nativeStaticSectionChoices> { return sharedSections.nativeStaticSectionChoices(...args); }
-function nativeStaticSectionNotice(...args: Parameters<typeof sharedSections.nativeStaticSectionNotice>): ReturnType<typeof sharedSections.nativeStaticSectionNotice> { return sharedSections.nativeStaticSectionNotice(...args); }
-function nativeStaticSectionThumbnail(...args: Parameters<typeof sharedSections.nativeStaticSectionThumbnail>): ReturnType<typeof sharedSections.nativeStaticSectionThumbnail> { return sharedSections.nativeStaticSectionThumbnail(...args); }
-function nativeSharedFieldsRevision(...args: Parameters<typeof sharedSections.nativeSharedFieldsRevision>): ReturnType<typeof sharedSections.nativeSharedFieldsRevision> { return sharedSections.nativeSharedFieldsRevision(...args); }
-function nativeSharedRoot(...args: Parameters<typeof sharedSections.sharedRoot>): ReturnType<typeof sharedSections.sharedRoot> { return sharedSections.sharedRoot(...args); }
-function isPrivateMasterPath(...args: Parameters<typeof sharedSections.isPrivateMasterPath>): ReturnType<typeof sharedSections.isPrivateMasterPath> { return sharedSections.isPrivateMasterPath(...args); }
-
-function nativeCanonicalCopy(source: string, range: { start: number; end: number }) {
-  const node = elementPathAt(source, range.start);
-  const located = node && locateNativeElementRange(source, node);
-  return located && located.start === range.start && located.end === range.end ? { node: [...node!], range: { start: located.start, end: located.end } } : undefined;
-}
-let nativeSharedClassCount: { source: string; count: (name: string) => number } | undefined;
-// How many elements of the page's body carry class `name`, as the browser builds the page.
-function nativeClassCount(source: string, name: string) {
-  if (nativeSharedClassCount?.source !== source) {
-    const doc = new DOMParser().parseFromString(source, "text/html");
-    nativeSharedClassCount = { source, count: (cls) => doc.body.getElementsByClassName(cls).length };
-  }
-  return nativeSharedClassCount.count(name);
-}
-// The section and page part catalogs of `docText`, read once per JSON text; undefined when either
-// can't be read (an unsupported version, say), so no shared label or action is offered from it.
-let nativeSharedCatalogRead: { text: string | undefined; catalogs: { sections: ReturnType<typeof readSectionCatalog>; parts: ReturnType<typeof readPagePartCatalog> } | undefined } | undefined;
-function nativeSharedCatalogs(docText: string | undefined) {
-  if (!nativeSharedCatalogRead || nativeSharedCatalogRead.text !== docText) {
-    let catalogs;
-    try { catalogs = { sections: readSectionCatalog(docText), parts: readPagePartCatalog(docText) }; } catch { catalogs = undefined; }
-    nativeSharedCatalogRead = { text: docText, catalogs };
-  }
-  return nativeSharedCatalogRead.catalogs;
+function nativeEditableSource(path: string): string | undefined {
+  return nativeSources()[path];
 }
 
-let masterBanner: ReturnType<typeof createMasterBanner> | undefined;
-let masterBannerContent: HTMLElement | undefined;
-const masterBannerObserved = new WeakSet<HTMLElement>();
-function renderMasterBanner() {
-  const content = document.getElementById("content");
-  // A workspace that was rebuilt holds a new code pane: the old line is dropped and made again there.
-  if (masterBanner && (!masterBanner.element.isConnected || masterBannerContent !== content)) {
-    masterBanner.element.remove();
-    masterBanner = undefined;
+function nativeSectionChoices(): InsertChoice[] {
+  if (!nativeSite) return [];
+  // The Add panel lists every section component: their templates are the text index.
+  if (!nativeTextIndexed) wantNativeTextIndex();
+  const sources = nativeSources();
+  return Object.entries(nativeSite.components)
+    .filter(([, path]) => isSectionTemplate(sources[path] ?? ""))
+    .map(([tag]) => ({ tag, label: componentLabel(tag) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+// Puts a new instance of a section component into the page at `point`, as
+// one undo step, and selects it. The page file opens first when another
+// file is in the editor, since edits go through the mounted editor.
+const nativeAddPoints = new WeakMap<InsertPoint, { source: string; epoch: number; scope: string; description: string }>();
+function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
+  const markup = nativeChoiceMarkup(choice.tag);
+  if (!markup) return fallback;
+  if (versionView || !nativeSite) return;
+  const selected = appStore.selection.value;
+  const path = selected?.path && Object.values(nativeSite.routes).includes(selected.path) ? selected.path : fallback?.path;
+  const source = path && nativeEffectiveSource(path);
+  if (!path || source === undefined) return;
+  const destinations = selected?.path === path && selected.node ? nativeDestinations(source, path, selected.node) : [];
+  const candidates = mode !== "click" ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
+  if (fallback?.path === path) candidates.push({ point: fallback, description: `Inside ${fallback.tag || "page"}, at this gap`, placement: "inside", selection: [] });
+  const found = candidates.find(item => nativeMarkupInsertEdit(source, item.point.parent, item.point.index, markup));
+  if (!found) return;
+  const point = { ...found.point, parent: [...found.point.parent] };
+  nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description });
+  return point;
+}
+async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
+  const path = point.path;
+  const native = nativeChoiceMarkup(choice.tag);
+  const captured = nativeAddPoints.get(point);
+  const sourceBefore = captured?.source ?? nativeEffectiveSource(path);
+  const epochBefore = captured?.epoch ?? generation, scopeBefore = captured?.scope ?? setupScope();
+  const current = () => !versionView && generation === epochBefore && setupScope() === scopeBefore && nativeEffectiveSource(path) === sourceBefore;
+  if (native && !current()) { errorMessage(new Error("The insertion source changed. Choose the destination again.")); return; }
+  if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
+  if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) {
+    const epoch = generation;
+    await restoreFile(path, epoch, { linkDefaultStyle: false });
+    if (epoch !== generation || appStore.openFile.value !== path || !editorModule?.isMounted(path)) return;
   }
-  if (!masterBanner) {
-    if (!content) return;
-    masterBannerContent = content;
-    masterBanner = createMasterBanner(content, {
-      done: () => sharedSections.doneMaster(),
-      update: () => sharedSections.updateMaster(),
-    });
+  const editor = editorModule;
+  const preview = nativePreview;
+  if (!editor || !preview) return;
+  const template = nativeSources()[nativeSite.components[choice.tag] ?? ""] ?? "";
+  const source = nativeSources()[path] ?? "";
+  if (native && !current()) { errorMessage(new Error("The insertion source changed. Choose the destination again.")); return; }
+  const edit = native ? nativeMarkupInsertEdit(source, point.parent, point.index, native) : nativeInsertEdit(source, point.parent, point.index, choice.tag, template);
+  if (!edit) {
+    errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
+    return;
   }
-  // One line only: over the code, or, while the person keeps Code hidden, at the foot of the
-  // preview, so Done and Update copies stay reachable without reopening Code.
-  if (!content) return;
-  const main = content.closest("main"), preview = main?.querySelector<HTMLElement>(":scope.has-preview > .preview-pane");
-  if (main && !masterBannerObserved.has(main)) {
-    masterBannerObserved.add(main);
-    new MutationObserver(() => { if (masterBanner) renderMasterBanner(); }).observe(main, { attributes: true, attributeFilter: ["class"] });
+  preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
+  try {
+    editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
+    element("status").textContent = `${choice.label} added`;
+  } catch (error) {
+    preview.selectAfterUpdate(undefined);
+    errorMessage(error);
   }
-  const floating = Boolean(preview && main?.classList.contains("code-collapsed"));
-  if (floating && masterBanner.element.parentElement !== preview) preview!.append(masterBanner.element);
-  else if (!floating && masterBanner.element.nextElementSibling !== content) content.before(masterBanner.element);
-  // Shown while the master itself is open; another file hides it, and coming back shows it again.
-  const context = activeMaster()?.context;
-  masterBanner.show(context && appStore.openFile.value === context.htmlPath ? context : undefined);
 }
 
 const historyController = createHistoryController({
@@ -1199,9 +1157,6 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   const request = reveal ? ++linkedStyleRequest : linkedStyleRequest;
   const epoch = generation;
   const page = selection.path;
-  const master = nativeOpenMaster(), scopeKey = setupScope(), mountedScope = draftScope();
-  const masterProof = master && mountedScope ? editorModule?.captureFileModelState(mountedScope, master.masterPath) : undefined;
-  const currentMaster = () => !master || nativeOpenMaster()?.session === master.session && setupScope() === scopeKey && nativeEffectiveSource(master.masterPath) === master.masterSource && masterProof?.isCurrent() !== false;
   // An element no rule matches shows what it inherits from: the <body> rules.
   const styles = selection.selectors.length
     ? { rules: selection.selectors, cascade: selection.cascade, node: selection.node }
@@ -1229,7 +1184,7 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   linkedStyle = { page, css, rules };
   const current = () => {
     const draft = fallbackCss && scope ? draftStore().get(scope, fallbackCss) : undefined;
-    return request === linkedStyleRequest && epoch === generation && page === appStore.openFile.value && currentMaster() &&
+    return request === linkedStyleRequest && epoch === generation && page === appStore.openFile.value &&
       (!fallbackCss || (!draft?.deleted && !draft?.upload && !draft?.opaque && nativeEffectiveSource(fallbackCss) !== undefined));
   };
   if (css && !(await openSecondary(css, current))) return;
@@ -1248,9 +1203,7 @@ const previewSelection = createPreviewSelectionController({
   store: appStore,
   site: () => nativeSite,
   sources: () => nativeSources(),
-  effectiveSource: (path) => nativeEffectiveSource(path),
   editableSource: (path) => nativeEditableSource(path),
-  masterEdit: () => nativeMasterEdit(),
   preview: () => nativePreview,
   editor: () => editorModule,
   componentTag: (path) => nativeComponentTagForPath(path),
@@ -1266,8 +1219,6 @@ const previewSelection = createPreviewSelectionController({
   hideComponentTools: () => componentTools?.show(undefined),
   agentContext: () => updateAgentContext(),
   announce: (message) => announce(message),
-  setTimer: (callback, ms) => setTimeout(callback, ms),
-  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
   beginReveal: () => {
     const request = ++linkedStyleRequest;
     fileGeneration++;
@@ -1352,7 +1303,6 @@ const pageStructureController = createPageStructureController({
   get appStore() { return appStore; },
   get componentTools() { return componentTools; },
   get nativeEditableSource() { return nativeEditableSource; },
-  get nativeOpenMaster() { return nativeOpenMaster; },
   get nativeSite() { return nativeSite; },
   get element() { return element; },
   get generation() { return generation; },
@@ -1376,11 +1326,7 @@ const pageStructureController = createPageStructureController({
   // cardsController is declared later in this module: read it at call time.
   cardControls: (selection, source) => cardsController.controls(selection, source),
   get agentController() { return agentController; },
-  get activeMaster() { return activeMaster; },
-  get nativeMasterIdentity() { return nativeMasterIdentity; },
-  get isPrivateMasterPath() { return isPrivateMasterPath; },
   get announce() { return announce; },
-  get nativeMasterEdit() { return nativeMasterEdit; },
   get restoreFile() { return restoreFile; },
   get updateNativePreviewSources() { return updateNativePreviewSources; },
   get nativeEditableTemplatePath() { return nativeEditableTemplatePath; },
@@ -1388,14 +1334,6 @@ const pageStructureController = createPageStructureController({
   get nativePageLabelOf() { return nativePageLabelOf; },
   get nativeShownStructure() { return nativeShownStructure; },
   get pageStructure() { return pageStructure; },
-  get masterRevision() { return masterRevision; },
-  get nativeMasterSelection() { return nativeMasterSelection; },
-  get pagePartController() { return pagePartController; },
-  get masterController() { return masterController; },
-  get runMasterEdit() { return runMasterEdit; },
-  get nativeTextIndexed() { return nativeTextIndexed; },
-  get nativeSharedCatalogs() { return nativeSharedCatalogs; },
-  get nativeFiles() { return nativeFiles; },
   get locateNativeElementRange() { return locateNativeElementRange; },
   get startTagAttribute() { return startTagAttribute; },
   get elementPathAt() { return elementPathAt; },
@@ -1428,12 +1366,6 @@ function applyNativeTextEdit(...args: Parameters<typeof pageStructureController.
   return pageStructureController.applyNativeTextEdit(...args);
 }
 
-function renderNativeShownStructure(...args: Parameters<typeof pageStructureController.renderNativeShownStructure>) {
-  return pageStructureController.renderNativeShownStructure(...args);
-}
-function nativeStructureEdit(...args: Parameters<typeof pageStructureController.nativeStructureEdit>) {
-  return pageStructureController.nativeStructureEdit(...args);
-}
 function repaintNativeStructure(...args: Parameters<typeof pageStructureController.repaintNativeStructure>) {
   return pageStructureController.repaintNativeStructure(...args);
 }
@@ -1624,7 +1556,7 @@ function nativeSettingsController() {
   const scope = setupScope(), epoch = generation;
   if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
   // Pin page data (bytes or absence) with the pages.
-  const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH, EDITOR_PAGE_BUILDER_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
+  const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
   let routes = JSON.stringify(nativeSite?.routes);
   // After this dialog's own Apply succeeds, its result is the new baseline,
   // so input kept from meanwhile can be applied on top of it. The operation
@@ -1822,9 +1754,7 @@ function nativeLinkedSheets(site: NativeSite, sources: Record<string, string>) {
 function nativePageStyles() {
   if (!nativeSite) return [];
   const sources = nativeSources();
-  // With a master open, the styles are those of the page it is shown in.
-  const master = nativeOpenMaster();
-  const route = nativeRouteForPath(master ? master.pagePath : appStore.openFile.value) ?? nativeDefaultRoute(nativeSite);
+  const route = nativeRouteForPath(appStore.openFile.value) ?? nativeDefaultRoute(nativeSite);
   const linked = routeStylesheets(nativeSite, sources, route);
   return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path]).imported])];
 }
@@ -1849,7 +1779,6 @@ function updateNativePreview() {
     route: nativeRouteForPath(appStore.openFile.value),
     component: appStore.openFile.value ? nativeComponentTagForPath(appStore.openFile.value) : undefined,
     editableTemplatePath: nativeEditableTemplatePath(),
-    masterEdit: nativeMasterEdit(),
   });
 }
 
@@ -1864,14 +1793,13 @@ function nativeShownPaths() {
   const site = nativeSite, scope = draftScope(), files = new Set(nativeFiles(scope));
   const route = nativePreview?.route();
   const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
-  const master = nativeOpenMaster();
-  const pages = [page, ...(appStore.openFile.value ? [appStore.openFile.value] : []), ...(master ? [master.pagePath] : [])];
+  const pages = [page, ...(appStore.openFile.value ? [appStore.openFile.value] : [])];
   return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path)).files, ...nativePageStyles()]);
 }
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
   nativePreviewBehind = false;
-  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath(), masterEdit: nativeMasterEdit() });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
   void loadNativeShownFiles();
@@ -2089,16 +2017,12 @@ function nativePageShownSources(site: NativeSite, file: string) {
   return Object.fromEntries(Object.entries(sources).filter(([path]) => shown.has(path)));
 }
 // The sources of the page at `route` (the home page's for a component shown
-// alone), with an open master's copy, so its images are found.
+// alone), so its images are found.
 function nativeRouteShownSources(route: string | undefined) {
   if (!nativeSite) return {};
   const site = nativeSite;
   const file = (route && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
   const sources = nativePageShownSources(site, file);
-  const master = nativeOpenMaster();
-  // Asset discovery only: the master is shown in this page, never at its private file URL.
-  // Keep the page's own assets too; no preview or published source is changed.
-  if (master) sources[master.pagePath] = (sources[master.pagePath] ?? "") + master.masterSource;
   return sources;
 }
 // The page the preview last drew; nothing before its first draw, so no
@@ -2250,9 +2174,6 @@ const mediaController = createMediaController({
   applyBatch: applyMediaBatch,
   openPage: openAfter,
   load: loadMedia,
-  isPrivateMasterPath,
-  master: nativeOpenMaster,
-  modelProof: path => { const scope = draftScope(); return scope ? editorModule?.captureFileModelState(scope, path) : undefined; },
   openFile: () => appStore.openFile.value,
   viewingVersion: () => Boolean(versionView),
   restoreFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
@@ -2549,7 +2470,6 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     // The page about to open shows at once (its file opens next).
     route: nativeRouteForPath(appStore.openFile.value ?? openPath) ?? nativeDefaultRoute(site),
     editableTemplatePath: nativeEditableTemplatePath(),
-    masterEdit: nativeMasterEdit(),
   });
   updateAgentContext();
   startNativeTextIndex(repo, site, scope, epoch, request, true);
@@ -2690,8 +2610,7 @@ function flushPendingNativePageTitles() {
 }
 
 async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, live: () => boolean) {
-  // Read the editor's page data with the pages for shared sections.
-  const files = nativeFiles(scope).filter((path) => isNativeTextFile(path) || path === EDITOR_PAGE_BUILDER_PATH).slice(0, 2000);
+  const files = nativeFiles(scope).filter((path) => isNativeTextFile(path)).slice(0, 2000);
   const wanted = files.filter((path) => {
     const draft = scope ? draftStore().get(scope, path) : undefined;
     return !nativeBaseSources.has(path) && draft?.baseSha !== null && !draft?.deleted;
@@ -2769,7 +2688,6 @@ function setCurrentPage(path?: string) {
   }
   updateCurrentPageLabel();
   element("primary-title").textContent = path ?? "";
-  if (masterBanner) renderMasterBanner();
   componentTools?.refresh();
   element("explorer-toggle").title = path
     ? `Pages & files — ${path}`
@@ -3597,69 +3515,6 @@ async function branchText(path: string): Promise<{ sha: string; text: string } |
 }
 
 /**
- * The editor's JSON (`.editor/page-builder.json`) follows an operation that
- * moves or deletes pages, in that same operation (one draft write, one Undo):
- * page entries are re-keyed or dropped and shared copies' link bases follow a
- * URL change (src/page-builder/sidecar-pages.ts). The JSON is pinned as read
- * (or as absent). Resolves to the operation to apply, or an error.
- */
-async function withSidecarPages(op: NativeOperation): Promise<NativeOperation | string> {
-  const SIDE = EDITOR_PAGE_BUILDER_PATH;
-  const moves = op.moves ?? [], deletes = op.deletes ?? [];
-  // Entries are keyed by page; only a page moved or deleted can need them changed.
-  if (![...moves.map((move) => move.from), ...deletes].some((path) => nativePageRoute(path) !== undefined)) return op;
-  // The file itself moving or going takes its entries with it.
-  if (deletes.includes(SIDE) || moves.some((move) => move.from === SIDE || move.to === SIDE)) return op;
-  const changed = "The repository or source changed meanwhile. Review the latest files and try again.";
-  // Every touched path is pinned as the caller computed from it, before any await.
-  const expectedSources = new Map(op.expectedSources ?? []);
-  for (const path of [...moves.flatMap((move) => [move.from, move.to]), ...deletes, ...(op.creates ?? []).map((file) => file.path), ...(op.edits?.keys() ?? [])])
-    if (!expectedSources.has(path)) expectedSources.set(path, nativeEffectiveSource(path));
-  const created = op.creates?.find((file) => file.path === SIDE);
-  const exists = nativeFiles().includes(SIDE);
-  if (!created && !exists && !op.edits?.has(SIDE)) {
-    if (!expectedSources.has(SIDE)) expectedSources.set(SIDE, undefined);
-    return { ...op, expectedSources };
-  }
-  // The JSON, and the pages whose links may be rebased, are read before they are changed.
-  const scope = setupScope(), epoch = generation;
-  const unloaded = () => exists && nativeEffectiveSource(SIDE) === undefined ||
-    moves.some((move) => nativePageRoute(move.from) !== undefined && nativeEffectiveSource(move.from) === undefined);
-  if (unloaded()) {
-    const error = await ensureNativeTextIndex();
-    if (error) return error;
-    if (scope !== setupScope() || epoch !== generation) return "The repository changed meanwhile. Try again.";
-    if ([...expectedSources].some(([path, source]) => source !== undefined && nativeEffectiveSource(path) !== source)) return changed;
-    if (unloaded()) return `${SIDE} could not be read, so nothing was changed.`;
-  }
-  const beforeText = exists ? nativeEffectiveSource(SIDE) : undefined;
-  if (expectedSources.has(SIDE) && expectedSources.get(SIDE) !== beforeText) return changed;
-  expectedSources.set(SIDE, beforeText);
-  const afterText = op.edits?.get(SIDE) ?? created?.content ?? beforeText;
-  const files = nativeFiles();
-  const afterFiles = new Set(files);
-  for (const move of moves) { afterFiles.delete(move.from); afterFiles.add(move.to); }
-  for (const path of deletes) afterFiles.delete(path);
-  for (const file of op.creates ?? []) afterFiles.add(file.path);
-  const moved = new Map(moves.map((move) => [move.to, move.from]));
-  const before: Record<string, string | undefined> = {}, after: Record<string, string | undefined> = {};
-  for (const path of files) before[path] = nativeEffectiveSource(path);
-  for (const path of afterFiles)
-    after[path] = op.edits?.get(path) ?? op.creates?.find((file) => file.path === path)?.content ?? nativeEffectiveSource(moved.get(path) ?? path);
-  const moveMap = new Map(moves.map((move) => [move.from, move.to]));
-  let text: string | undefined;
-  try {
-    text = planSidecarPages(beforeText, afterText, { before, after, moves: moveMap, deletes,
-      rewriteLinks: routeLinkRewrite(deriveNativeRoutes(files), deriveNativeRoutes([...afterFiles]), moveMap) });
-  } catch (error) {
-    return error instanceof Error ? error.message : "The editor's page data could not follow this change.";
-  }
-  if (text === undefined) return { ...op, expectedSources };
-  if (created) return { ...op, expectedSources, creates: op.creates!.map((file) => file.path === SIDE ? { ...file, content: text } : file) };
-  return { ...op, expectedSources, edits: new Map([...(op.edits ?? []), [SIDE, text]]) };
-}
-
-/**
  * Moves, deletes, creates and edits files as one operation: drafts written, routes found again,
  * the trees drawn, the file that was open open where it went. Undo in the
  * open file's editor right after puts every draft back as it was. Resolves
@@ -3669,12 +3524,6 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   // Its undo step is recorded in the open page's history, in the draft store
   // (no Monaco needed). Pinned before awaiting: an operation asked for in one
   // repository, branch or account never lands in another one opened meanwhile.
-  const askedEpoch = generation, askedScope = setupScope();
-  const planned = await withSidecarPages(op);
-  if (askedEpoch !== generation || askedScope !== setupScope())
-    return "The repository or source changed meanwhile. Review the latest files and try again.";
-  if (typeof planned === "string") return planned;
-  op = planned;
   const scope = draftScope();
   if (!scope || !appStore.repository.value) return "Open a repository first.";
   const store = draftStore();
@@ -4577,8 +4426,6 @@ async function mountSource(
       renderDraftFiles();
       historyController.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
-      // The master line shows at once whether the master can update copies.
-      if (masterBanner) renderMasterBanner();
       // An open template's banner counts its instances again.
       componentTools?.refresh();
       // The Page fields follow the page's head (typed, undone or redone).

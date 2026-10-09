@@ -1,24 +1,21 @@
-import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { editorMounted } from "./drafts";
 
 const panel = (page: Page) => page.locator(".pb-add-panel:visible");
 async function open(page: Page, baseURL: string | undefined) {
-  await seedSavedSections(page, baseURL, ["intro", "split"]);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible();
   await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
 }
 
-// Single HTML elements (Section, Div, Heading, Paragraph, Image, Button) left the Add panel when it
-// became sections-only; plain HTML sections show whole, like components.
+// Section component thumbnails show the whole section.
 test("section thumbnails show the whole section at the canvas's width, with no code peek", async ({ page, baseURL }) => {
   await open(page, baseURL);
   // Monaco loads after the preview paints: compare against the mounted source.
   await editorMounted(page);
   const before = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
   const add = panel(page);
-  for (const name of [/^Feature block/, /^Intro HTML$/, /^Split HTML$/]) {
+  for (const name of [/^Feature block/]) {
     const option = add.getByRole("option", { name });
     await option.scrollIntoViewIfNeeded();
     await expect(option.locator(".pb-thumb")).toHaveClass(/is-ready/);
@@ -47,7 +44,7 @@ async function probe(page: Page, baseURL: string | undefined) {
     canvas.style.cssText = "position:fixed;left:700px;top:200px;width:400px;height:400px;z-index:90;background:var(--surface)";
     document.body.append(canvas);
     const view = createAddPanel({
-      choices: () => [], extraChoices: () => nativeElementChoices,
+      choices: () => [...nativeElementChoices],
       pointFor: choice => { calls++; if (choice.tag === "native:div") return undefined; return nativeMarkupInsertEdit(effectiveSource, point.parent, point.index, nativeChoiceMarkup(choice.tag)!) ? { ...point } : undefined; },
       preview: tag => { const markup = nativeChoiceMarkup(tag)!; return { markup, doc: `<html><body><main>${markup}</main></body></html>` }; },
       canvasWidth: () => 1000, points: () => [point], defaultPoint: () => point,

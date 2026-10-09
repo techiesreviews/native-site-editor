@@ -9,7 +9,7 @@
 import type { InsertChoice, InsertPoint } from "../components/insert-controls";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { addCatalog, matchesQuery, type AddItem, type AddChoice } from "./add-catalog";
+import { addCatalog, matchesQuery, type AddItem } from "./add-catalog";
 import { positionText } from "./insert-target";
 import { makeInsertDraggable, type InsertDragContext } from "./insert-drag";
 import { createThumbnail, type Thumbnail } from "./thumbnail";
@@ -21,10 +21,6 @@ const isElement = (item: AddItem) => item.kind === "native" && item.tag.startsWi
 
 export interface AddPanelHandlers {
   choices(): InsertChoice[];
-  // Optional native choices join the same searchable catalogue. Keys must be unique.
-  extraChoices?(): readonly AddChoice[];
-  // Why some choices are missing (e.g. unreadable editor data), shown inline in the panel.
-  notice?(): string | undefined;
   // Native/container targets can differ from section-component targets.
   pointFor?(choice: InsertChoice, fallback: InsertPoint | undefined, mode?: "click" | "drop" | "gap"): InsertPoint | undefined;
   destinationText?(point: InsertPoint | undefined): string;
@@ -51,8 +47,6 @@ export const insertPointKey = (point: InsertPoint) => `${point.path}|${point.par
 const keyOf = insertPointKey;
 let panelId = 0;
 
-const PLAIN_SECTIONS_GROUP = "Plain HTML sections";
-
 export function createAddPanel(handlers: AddPanelHandlers) {
   const id = `pb-add-${++panelId}`;
   const panel = node("div", "pb-add-panel");
@@ -76,9 +70,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   search.placeholder = "Search components";
   search.setAttribute("aria-label", "Search components");
   search.autocomplete = "off";
-  const notice = node("p", "pb-add-panel__hint pb-add-panel__notice");
-  notice.setAttribute("role", "status");
-  notice.hidden = true;
   const list = node("div", "pb-add-panel__list");
   list.setAttribute("role", "listbox");
   list.setAttribute("aria-label", "Components");
@@ -88,7 +79,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   body.append(list, message);
   const live = node("span", "sr-only");
   live.setAttribute("role", "status");
-  panel.append(head, position, search, notice, body, live);
+  panel.append(head, position, search, body, live);
   document.body.append(panel);
 
   let open = false;
@@ -155,7 +146,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   // The list is built once per set of components, so thumbnails are not
   // reloaded as the search changes; a search hides what does not match.
   function build() {
-    const choices = [...handlers.choices(), ...(handlers.extraChoices?.() ?? [])];
+    const choices = handlers.choices();
     const hasNative = choices.some((choice) => "kind" in choice && choice.kind === "native");
     search.placeholder = hasNative ? "Search elements and components" : "Search components";
     search.setAttribute("aria-label", search.placeholder);
@@ -171,16 +162,10 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       for (const group of addCatalog(choices)) {
         const groupRoot = node("div", "pb-add-group");
         groupRoot.setAttribute("role", "group");
-        // The site's own plain sections (main.ts names their group) lead the
-        // list without a visible heading; assistive tech still hears a plain
-        // group name, distinct from the components' "Sections".
-        if (group.name === PLAIN_SECTIONS_GROUP) groupRoot.setAttribute("aria-label", "Page sections");
-        else {
-          const heading = node("h3", "pb-add-group__title", group.name);
-          heading.id = `${id}-group-${groups.length}`;
-          groupRoot.setAttribute("aria-labelledby", heading.id);
-          groupRoot.append(heading);
-        }
+        const heading = node("h3", "pb-add-group__title", group.name);
+        heading.id = `${id}-group-${groups.length}`;
+        groupRoot.setAttribute("aria-labelledby", heading.id);
+        groupRoot.append(heading);
         for (const item of group.items) groupRoot.append(buildItem(item));
         groups.push({ root: groupRoot, tags: group.items.map((item) => item.tag) });
         list.append(groupRoot);
@@ -266,9 +251,6 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     }
     for (const group of groups) group.root.hidden = group.tags.every((tag) => entries.get(tag)!.root.hidden);
     search.hidden = !total;
-    const why = handlers.notice?.();
-    notice.hidden = !why;
-    if (notice.textContent !== (why ?? "")) notice.textContent = why ?? "";
     list.hidden = !shown;
     message.hidden = Boolean(shown);
     if (!total) {

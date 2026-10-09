@@ -8,13 +8,13 @@ npm run test:browser:actual -- --port 5296 --output .scratch/browser-actual
 npm run test:browser:native-static -- --port 5297 --output .scratch/browser-native-static
 ```
 
-The native-static command needs the archived fixture at `.scratch/native-static-preview`. It sets both `ASE_NATIVE_SAVE_FIXTURE` and `STATIC_SECTIONS_FIXTURE=native`. The actual/default commands require `STATIC_SECTIONS_FIXTURE` unset. The static-sections spec contains separate actual and native groups; its existing group guards select the appropriate assertions.
+The native-static command needs the archived fixture at `.scratch/native-static-preview`. It sets both `ASE_NATIVE_SAVE_FIXTURE` and `STATIC_SECTIONS_FIXTURE=native`. The actual/default commands require `STATIC_SECTIONS_FIXTURE` unset.
 
 Use `--check` to print the selected files without starting a server. Use `--list` to ask Playwright to list tests without starting a server. `--spec` filters the group by a filename substring; other options, including `--grep` and `--output`, pass to Playwright:
 
 ```sh
 npm run test:browser:actual -- --check
-npm run test:browser:actual -- --list --spec native-editor-json-lifecycle.spec
+npm run test:browser:actual -- --list --spec native-add-catalog-actual.spec
 npm run test:browser:actual -- --spec native-site-settings --port 5296
 ```
 

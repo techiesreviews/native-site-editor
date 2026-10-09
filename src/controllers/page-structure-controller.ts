@@ -8,20 +8,12 @@ import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEd
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { agentElement } from "../agent-site";
 import { isSectionTemplate } from "../native-insert";
-import { EDITOR_PAGE_BUILDER_PATH } from "../page-builder/page-builder-document";
-import { resolveNativeSectionLinks } from "../page-builder/native-section-links";
-import { resolvePagePartLinks } from "../page-builder/native-page-parts";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
-import { type createNativeSectionMasterController, type MasterSelection } from "../page-builder/native-section-master-controller";
-import { type createNativePagePartController } from "../page-builder/native-page-part-controller";
 import { type NativeSite } from "../../shared/native-project";
 import type * as sourceEditor from "../components/source-editor";
 import type { PreviewSelectionController } from "./preview-selection-controller";
-
-import type { readSectionCatalog } from "../page-builder/static-sections";
-import type { readPagePartCatalog } from "../page-builder/native-page-parts";
 
 /** Workspace values are live host getters; operations and parsers stay injected. */
 export interface PageStructurePorts {
@@ -30,7 +22,6 @@ export interface PageStructurePorts {
   readonly appStore: { openFile: { readonly value: string | undefined }; selection: { readonly value: NativePreviewSelection | undefined } };
   readonly componentTools: ComponentTools | undefined;
   readonly nativeEditableSource: (path: string) => string | undefined;
-  readonly nativeOpenMaster: () => import("../page-builder/native-section-master-controller").MasterPreviewInput | undefined;
   readonly nativeSite: NativeSite | undefined;
   readonly element: <T extends HTMLElement>(id: string) => T;
   readonly generation: number;
@@ -40,7 +31,7 @@ export interface PageStructurePorts {
   readonly nativeSources: (site?: NativeSite | undefined) => Record<string, string>;
   readonly nativePageStyles: () => string[];
   readonly nativeTextTags: Set<string>;
-  readonly previewSelection: Pick<PreviewSelectionController, "textSelection" | "waitFor">;
+  readonly previewSelection: Pick<PreviewSelectionController, "textSelection">;
   readonly wholeWrapper: (inner: string, tags: string[]) => { open: number; openEnd: number; closeAt: number; closeEnd: number; } | undefined;
   readonly nativeLinkParents: Set<string>;
   readonly errorMessage: (error: unknown) => void;
@@ -54,11 +45,7 @@ export interface PageStructurePorts {
   /** The card grid controls for a selection, move arrows already left out (cards controller). */
   cardControls(selection: NativePreviewSelection, source: string): EditBarControl[];
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "captureAsk">;
-  readonly activeMaster: () => { context: { label: string } } | undefined;
-  readonly nativeMasterIdentity: (selection: NativePreviewSelection) => { kind: string; component: { tag: string; onEdit: () => void; }; } | undefined;
-  readonly isPrivateMasterPath: (path: string) => boolean;
   readonly announce: (text: string) => void;
-  readonly nativeMasterEdit: () => import("../page-builder/native-section-master-controller").MasterPreviewInput | undefined;
   readonly restoreFile: (path: string, epoch: number, options?: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; }) => Promise<void>;
   readonly updateNativePreviewSources: () => void;
   readonly nativeEditableTemplatePath: () => string | undefined;
@@ -66,14 +53,6 @@ export interface PageStructurePorts {
   readonly nativePageLabelOf: (file: string) => string;
   readonly nativeShownStructure: NativeStructure | undefined;
   readonly pageStructure: Pick<ReturnType<typeof createPageStructure>, "update"> | undefined;
-  readonly masterRevision: () => string;
-  readonly nativeMasterSelection: (selection?: NativePreviewSelection | undefined) => MasterSelection | undefined;
-  readonly pagePartController: Pick<ReturnType<typeof createNativePagePartController>, "identity" | "context">;
-  readonly masterController: Pick<ReturnType<typeof createNativeSectionMasterController>, "identity" | "context">;
-  readonly runMasterEdit: (controller: { context(): { htmlPath: string; } | undefined; }, edit: () => Promise<void>, proof: { isCurrent(): boolean; }, pagePath: string, revision: string) => void;
-  readonly nativeTextIndexed: boolean;
-  readonly nativeSharedCatalogs: (docText: string | undefined) => { sections: ReturnType<typeof readSectionCatalog>; parts: ReturnType<typeof readPagePartCatalog>; } | undefined;
-  readonly nativeFiles: (scope?: { account: string; repoId: number; repo: string; branch: string; } | undefined) => string[];
   readonly locateNativeElementRange: (html: string, path: number[]) => ElementRange | undefined;
   readonly startTagAttribute: (html: string, tag: StartTag, name: string) => import("../../shared/html-source").TagAttribute | undefined;
   readonly elementPathAt: (html: string, start: number) => number[] | undefined;
@@ -117,8 +96,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     const source = ports.nativeEditableSource(path) ?? "";
     const range = node ? ports.locateNativeElementRange(source, node) : undefined;
-    // In the open master: one plain section, edited in place, never moved, copied or removed.
-    const inMaster = ports.nativeOpenMaster()?.masterPath === path;
     const kind = nativeElementLabel(selection.tag, Boolean(ports.nativeSite && Object.hasOwn(ports.nativeSite.components, selection.tag)));
     // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
     if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
@@ -126,11 +103,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       nativeNewLink = undefined;
     }
     const announce = (text: string) => { ports.element("status").textContent = text; };
-    const masterSession = ports.nativeOpenMaster()?.session, epoch = ports.generation, scopeKey = ports.setupScope();
-    const draft = ports.draftScope(), modelProof = draft ? editor.captureFileModelState(draft, path) : undefined;
-    const currentMaster = () => !inMaster || ports.nativeOpenMaster()?.session === masterSession && ports.generation === epoch && ports.setupScope() === scopeKey && ports.appStore.openFile.value === path;
     const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
-      if (!currentMaster() || inMaster && modelProof?.isCurrent() === false) { announce("The master or source changed. Select the element again."); return false; }
       return applyNativeChange(path, source, edits, next, message);
     };
     const controls: EditBarControl[] = [];
@@ -304,7 +277,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // the element at `target` (found again in the source as it is now), grouped
     // into one undo step until the field closes.
     const live = (target: number[], tagName: string, build: (latest: string, tag: StartTag) => { start: number; end: number; text: string }[], message: string) => {
-      if (!node || !currentMaster()) return;
+      if (!node) return;
       const latest = ports.nativeEditableSource(path) ?? "";
       const tag = ports.locateNativeElementRange(latest, target)?.tag;
       if (!tag || tag.name !== tagName) { announce("The element could not be found in the source."); return; }
@@ -451,7 +424,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (range && selection.tag === "img") {
       const src = attribute("src");
       const alt = attribute("alt");
-      controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node && currentMaster()) void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
+      controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node) void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
       // Alt text applies as typed; opening with no alt written applies the
       // file's name at once; emptied, the image is decorative (alt="").
       controls.push({
@@ -499,7 +472,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // as do plain Up/Down on the bar's grip, whose drag moves it in the page.
     let onMove: EditBarModel["onMove"];
     let draggable = false;
-    if (range && node && isNativeSectionTag(selection.tag) && !inMaster) {
+    if (range && node && isNativeSectionTag(selection.tag)) {
       const parent = node.slice(0, -1);
       const index = node[node.length - 1];
       const before = index > 0 ? ports.locateNativeElementRange(source, [...parent, index - 1]) : undefined;
@@ -541,10 +514,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // Only a whole section moves from the bar or the keyboard (Lex: "remove
     // this on not the sections"), so a card's own move arrows are left out and
     // no element move is offered here; the page structure still moves rows.
-    if (!isNativeSectionTag(selection.tag) && !inMaster) controls.push(...ports.cardControls(selection, source));
+    if (!isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
     nativeElementMoveAction = onMove;
     // Edit component, Make component… (src/page-builder/components.ts).
-    if (ports.componentTools && !inMaster) controls.push(...ports.componentTools.controls(selection));
+    if (ports.componentTools) controls.push(...ports.componentTools.controls(selection));
     // Ask agent: a request about this element for a connected agent, pinned on it.
     const menu = ports.agentController.captureAsk();
     if (node && menu?.connected() && ports.nativeSite) {
@@ -567,28 +540,12 @@ export function createPageStructureController(ports: PageStructurePorts) {
         },
       });
     }
-    const master = inMaster ? ports.activeMaster()?.context : undefined;
-    const masterRoot = Boolean(master && node?.length === 1);
     const model: EditBarModel = {
       origin: { path, source, revision: `${ports.setupScope()}:${ports.generation}`, node: node?.slice() },
-      kind: masterRoot ? master!.label : kind, controls, onFormat: (format) => nativeFormatActions[format]?.(),
-      onMove: inMaster ? undefined : onMove, draggable: inMaster ? false : draggable,
-      ...(inMaster ? {} : { ...ports.componentTools?.identity(selection), ...ports.nativeMasterIdentity(selection) }),
-      // Inside the master: "Intro › Heading", the chip selecting the master's section.
-      ...(master && !masterRoot ? { context: { label: master.label, title: `In the ${master.label} master: select its section`, onSelect: () => { if (currentMaster()) ports.nativePreview?.selectNode({ path, node: [0] }); } } } : {}),
+      kind, controls, onFormat: (format) => nativeFormatActions[format]?.(),
+      onMove, draggable,
+      ...ports.componentTools?.identity(selection),
     };
-    // A child of a linked page copy, outside any master: "Shared hero › Heading", the chip selecting
-    // that copy's root. Never set over an identity's own context; the child gets no Edit from it.
-    if (!inMaster && !model.context && node && node.length > 1) {
-      const linked = nativeLinkedAncestor(path, source, node);
-      if (linked) {
-        const scope = ports.draftScope(), proof = scope && ports.editorModule?.captureFileModelState(scope, path), epoch = ports.generation, scopeKey = ports.setupScope();
-        model.context = { label: linked.label, title: `In a linked copy of ${linked.label}: select it`, onSelect: () => {
-          if (proof?.isCurrent() && epoch === ports.generation && scopeKey === ports.setupScope() && ports.appStore.openFile.value === path && ports.nativeEffectiveSource(path) === source) ports.nativePreview?.selectNode({ path, node: linked.node });
-          else announce("The page changed. Select the element again.");
-        } };
-      }
-    }
     nativeEditBarModel = model;
     preview.showEditBar(model, rect, ports.previewSelection.textSelection());
     ports.componentTools?.show(selection);
@@ -615,12 +572,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const preview = ports.nativePreview;
     const editor = ports.editorModule;
     if (!preview || !editor) return false;
-    // A master file is written only as the open file of its live session (a control from a closed
-    // session, or for another file, writes nothing).
-    if (ports.isPrivateMasterPath(path) && ports.nativeOpenMaster()?.masterPath !== path) {
-      ports.announce("That master is no longer open. Choose Edit on the section again.");
-      return false;
-    }
+
     if (ports.nativeEditableSource(path) !== source) {
       ports.announce("The source changed. Select the element again and try again.");
       return false;
@@ -685,12 +637,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // still cannot be made is said so rather than passed off as the end of the
   // list.
   async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
-    // Never while a master is on show: opening the page would end it.
-    if (ports.nativeMasterEdit()) { ports.announce("The page is read-only while its master is open. Choose Done to edit it."); return; }
     const epoch = ports.generation, scope = ports.setupScope(), draft = ports.draftScope();
     const cachedModel = draft ? ports.editorModule?.captureFileModelState(draft, target.path, true) : undefined;
-    await ports.restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === ports.generation && scope === ports.setupScope() && ports.nativeEffectiveSource(target.path) === paintedSource && !ports.nativeMasterEdit() });
-    if (ports.nativeMasterEdit()) { ports.announce("The page is read-only while its master is open. Choose Done to edit it."); return; }
+    await ports.restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === ports.generation && scope === ports.setupScope() && ports.nativeEffectiveSource(target.path) === paintedSource });
     if (epoch !== ports.generation || scope !== ports.setupScope() || ports.appStore.openFile.value !== target.path || ports.nativeEffectiveSource(target.path) !== paintedSource) {
       if (epoch !== ports.generation || scope !== ports.setupScope()) return;
       if (draft && ports.nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !ports.editorModule?.isMounted(target.path)) ports.editorModule?.forgetDraftModel(draft, target.path);
@@ -770,35 +719,20 @@ export function createPageStructureController(ports: PageStructurePorts) {
     return { start: range.tag.end + span.start, end: range.tag.end + span.end, text };
   }
 
-  function prepareNativeTextEdit({ path, node, before, after, masterSession }: NativeTextEdit) {
+  function prepareNativeTextEdit({ path, node, before, after }: NativeTextEdit) {
     if (!ports.nativePreview) return undefined;
     const openingEpoch = ports.generation, openingScope = ports.setupScope();
-    // While a master is on show, only text typed in that very session's master is taken; it is
-    // the open file, with the bytes the preview painted. Page text is read-only meanwhile.
-    const masterAt = ports.nativeMasterEdit();
-    const masterPainted = masterAt ? ports.nativeEffectiveSource(masterAt.masterPath) : undefined;
-    // Pinned through every await: the same session, and the master still exactly as painted
-    // (never a fresher source blessing an older edit).
-    const masterAllowed = () => {
-      const now = ports.nativeMasterEdit();
-      return Boolean(masterAt && now && masterSession === masterAt.session && now.session === masterAt.session
-        && path === now.masterPath && ports.appStore.openFile.value === path && !ports.versionView && ports.nativeEffectiveSource(path) === masterPainted);
-    };
-    // A page edit stays a page edit only while no master is on show, checked live: a master opened
-    // meanwhile refuses it, and it can neither write the page nor leave the master.
-    const allowed = () => openingEpoch === ports.generation && openingScope === ports.setupScope() && (masterAt || masterSession !== undefined
-      ? masterAllowed()
-      : !ports.nativeMasterEdit() && (path === ports.nativeSite?.routes[ports.nativePreview?.route() ?? ""] || path === ports.nativeEditableTemplatePath()));
-    if (!allowed() || masterAt && masterPainted !== masterAt.masterSource) {
-      ports.announce(masterAt || masterSession !== undefined ? "While the master is open, edit the master's section; choose Done to edit the page." : "Edit the page instance in Structure, or choose Edit for its shared template.");
+    const allowed = () => openingEpoch === ports.generation && openingScope === ports.setupScope() && (path === ports.nativeSite?.routes[ports.nativePreview?.route() ?? ""] || path === ports.nativeEditableTemplatePath());
+    if (!allowed()) {
+      ports.announce("Edit the page instance in Structure, or choose Edit for its shared template.");
       ports.updateNativePreviewSources();
       return undefined;
     }
     // A page's text committed before its file was mounted, whose page was then
     // left (another page opened): it goes into that page's draft as one
     // operation rather than being lost. Same account, repository and branch
-    // only, never a master's.
-    const page = !masterAt && masterSession === undefined && Boolean(ports.nativeSite && Object.values(ports.nativeSite.routes).includes(path));
+    // only.
+    const page = Boolean(ports.nativeSite && Object.values(ports.nativeSite.routes).includes(path));
     const draftLeftPage = async () => {
       if (!page || ports.versionView || openingEpoch !== ports.generation || openingScope !== ports.setupScope()) return;
       // Back on the page meanwhile: the edit goes in there.
@@ -831,7 +765,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const editor = ports.editorModule;
     const preview = ports.nativePreview;
     if (!editor || !preview || !allowed()) return;
-    const source = (masterAt ? ports.nativeEffectiveSource(path) : ports.nativeSources()[path]) ?? "";
+    const source = ports.nativeSources()[path] ?? "";
     const edit = nativeTextSourceEdit(source, node, before, after);
     if (!edit) {
       preview.refresh();
@@ -850,58 +784,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
   }
 
-  function renderNativeShownStructure() {
-    if (ports.nativeShownStructure) ports.pageStructure?.update(ports.nativeShownStructure);
-  }
-
-  // Structure's Edit selects nothing by itself: it asks the preview for a real selection of the
-  // root, waits for that selection as painted, and only then opens the master from it.
-  async function nativeStructureEdit(path: string, node: number[], painted: string, part: boolean) {
-    const scope = ports.draftScope(), revision = ports.masterRevision();
-    const refuse = () => ports.announce("The page changed. Select the element again.");
-    if (!scope || !ports.editorModule || !ports.nativePreview || ports.nativeMasterEdit() || ports.appStore.openFile.value !== path || ports.nativeEffectiveSource(path) !== painted) { refuse(); return; }
-    // The page model as Edit was pressed: the same proof is checked after the selection, never retaken.
-    const proof = ports.editorModule.captureFileModelState(scope, path, true);
-    const selected = ports.previewSelection.waitFor(path, node, 5000);
-    ports.nativePreview.selectNode({ path, node });
-    const selection = await selected;
-    if (!selection || !proof.isCurrent() || selection.paintedSource !== painted || ports.appStore.selection.value !== selection || ports.masterRevision() !== revision || ports.nativeMasterEdit() || ports.appStore.openFile.value !== path || ports.nativeEffectiveSource(path) !== painted) { refuse(); return; }
-    const at = ports.nativeMasterSelection(selection);
-    const identity = at && (part ? ports.pagePartController.identity(at) : ports.masterController.identity(at));
-    if (!at || !identity || !identity.linked) { refuse(); return; }
-    ports.runMasterEdit(part ? ports.pagePartController : ports.masterController, identity.onEdit, proof, path, revision);
-  }
-
-  // The innermost whole section/header/footer around `node` that is a resolved linked copy (by its
-  // exact range in the editor JSON), with its record's label; undefined otherwise.
-  function nativeLinkedAncestor(path: string, source: string, node: readonly number[]): { node: number[]; label: string } | undefined {
-    // Links are resolved against every page, so only once the text index has read them all.
-    if (!ports.nativeTextIndexed) return undefined;
-    const docText = ports.nativeEffectiveSource(EDITOR_PAGE_BUILDER_PATH);
-    const catalogs = ports.nativeSharedCatalogs(docText);
-    if (docText === undefined || !catalogs) return undefined;
-    const sources: Record<string, string | undefined> = { ...ports.nativeSources(), [path]: source };
-    for (const file of ports.nativeFiles().filter(ports.isPrivateMasterPath)) sources[file] = ports.nativeEffectiveSource(file);
-    let sections: ReturnType<typeof resolveNativeSectionLinks> | undefined, parts: ReturnType<typeof resolvePagePartLinks> | undefined;
-    for (let depth = node.length - 1; depth >= 1; depth--) {
-      const at = node.slice(0, depth), range = ports.locateNativeElementRange(source, at), tag = range?.tag.name.toLowerCase();
-      if (!range || (tag !== "section" && tag !== "header" && tag !== "footer")) continue;
-      const exact = (link: { page: string; start: number; end: number }) => link.page === path && link.start === range.start && link.end === range.end;
-      if (tag === "section") {
-        sections ??= resolveNativeSectionLinks({ documentText: docText, sources });
-        const own = "error" in sections ? [] : sections.links.filter(exact);
-        const label = own.length === 1 ? catalogs.sections[own[0].link.recordId]?.label : undefined;
-        if (label) return { node: at, label };
-      } else {
-        parts ??= resolvePagePartLinks({ documentText: docText, sources });
-        const own = "error" in parts ? [] : parts.links.filter(exact);
-        const record = own.length === 1 ? catalogs.parts[own[0].link.recordId] : undefined;
-        if (record?.rootTag === tag) return { node: at, label: record.label };
-      }
-    }
-    return undefined;
-  }
-
   function repaintNativeStructure() {
     const shown = ports.nativeShownStructure;
     if (!shown?.path || shown.path !== ports.appStore.openFile.value || shown.paintedSource === undefined || ports.nativeEffectiveSource(shown.path) !== shown.paintedSource) return;
@@ -911,8 +793,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     renderEditBar: renderNativeEditBar,
     moveSection: moveNativeSection,
     moveSectionTo: moveNativeSectionTo,
-    editSharedRoot: nativeStructureEdit,
-    linkedAncestor: nativeLinkedAncestor,
     repaint: repaintNativeStructure,
     renderNativeEditBar,
     removeEmptyNewLink,
@@ -925,9 +805,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     applyNativeTextEdit,
     nativeTextSourceEdit,
     prepareNativeTextEdit,
-    renderNativeShownStructure,
-    nativeStructureEdit,
-    nativeLinkedAncestor,
     repaintNativeStructure,
     get nativeFormatActions() { return nativeFormatActions; },
     get nativeEditBarModel() { return nativeEditBarModel; },

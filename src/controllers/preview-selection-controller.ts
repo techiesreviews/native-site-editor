@@ -31,9 +31,7 @@ export interface PreviewSelectionPorts {
   };
   site(): Pick<NativeSite, "routes" | "components"> | undefined;
   sources(): Record<string, string>;
-  effectiveSource(path: string): string | undefined;
   editableSource(path: string): string | undefined;
-  masterEdit(): { session: string; masterPath: string } | undefined;
   preview(): PreviewSelectionPreview | undefined;
   editor(): PreviewSelectionEditor | undefined;
   componentTag(path: string): string | undefined;
@@ -52,8 +50,6 @@ export interface PreviewSelectionPorts {
   hideComponentTools(): void;
   agentContext(): void;
   announce(message: string): void;
-  setTimer(callback: () => void, ms: number): unknown;
-  clearTimer(timer: unknown): void;
   /** Bumps the linked-style, file and secondary requests; returns the linked-style request. */
   beginReveal(): number;
   styleRequest(): number;
@@ -70,10 +66,6 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
   let pending: { selection: NativePreviewSelection; epoch: number } | undefined;
   let pendingInstance: PendingInstance | undefined;
   let sourceIntent: { path: string; epoch: number; scope: string } | undefined;
-  // Counts changes of the selected element: a Save shared in flight refuses when the person selects another.
-  let epochCount = 0;
-  // Callbacks waiting for the preview's own selection of a node (Structure's explicit Edit).
-  const waiters = new Set<(selection: NativePreviewSelection) => void>();
   // Text selected inside the selected element, bound to that element.
   let text: BoundTextSelection | undefined;
   let selectedGrid = "";
@@ -114,16 +106,6 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
   async function select(selection: NativePreviewSelection) {
     ports.clearMoveAction();
     const sources = ports.sources();
-    // While a master is on show, only its own copy can be selected, from this session; the rest
-    // of the page is read-only until Done.
-    const masterAt = ports.masterEdit();
-    // (A cleared selection has no path and always passes.)
-    if (selection.path && (masterAt || selection.masterSession !== undefined)) {
-      if (!masterAt || selection.masterSession !== masterAt.session || selection.path !== masterAt.masterPath || store.openFile.value !== masterAt.masterPath) {
-        refuse(selection, masterAt ? "The page is read-only while its master is open. Choose Done to edit it." : "That master is no longer open.");
-        return;
-      }
-    }
     if (pendingInstance) {
       const was = pendingInstance;
       pendingInstance = undefined;
@@ -132,8 +114,7 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
         refuse(selection, "The instance changed before it could be selected. Select it again."); return;
       }
     }
-    // A master is editor-private (not among the public sources): its bytes are its effective source.
-    const selectedSource = masterAt && selection.path === masterAt.masterPath ? ports.effectiveSource(selection.path) : sources[selection.path];
+    const selectedSource = sources[selection.path];
     if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== selectedSource) {
       refuse(selection, "The source changed. Wait for the preview before selecting this element."); return;
     }
@@ -141,7 +122,7 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
     const pagePath = site?.routes[ports.preview()?.route() ?? ""];
     if (selection.reason !== "refresh" && selection.path === pagePath) sourceIntent = undefined;
     const scopePath = selection.reason !== "refresh" && selection.path === pagePath ? pagePath : editableTemplatePath() ?? pagePath;
-    if (selection.path && scopePath && site && !masterAt) {
+    if (selection.path && scopePath && site) {
       const mapped = nativeComponentScopeSelection(selection, scopePath, site.components, sources, (source, node) => ports.tagName(source, node), (source, node, tag) => ports.instanceContent(source, node, tag));
       if (!mapped) { refuse(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
       if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
@@ -155,10 +136,7 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
       }
     }
     const reveal = selection.reason !== "refresh";
-    const current = store.selection.value;
-    if (selection.path !== current?.path || selection.node?.join(".") !== current?.node?.join(".")) epochCount++;
     store.selection.value = selection.path ? selection : undefined;
-    for (const waiter of [...waiters]) waiter(selection);
     // Agents see the selection (get_selection).
     if (reveal) ports.agentContext();
     ports.structureSelect(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
@@ -185,9 +163,8 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
       ports.clearStyles();
       return;
     }
-    // The open master is selectable in its own session (checked above) though it is not a site page.
     const shown = ports.site();
-    if (!store.snapshot.value || !shown || !(nativeSitePaths(shown as NativeSite).includes(selection.path) || masterAt?.masterPath === selection.path)) return;
+    if (!store.snapshot.value || !shown || !nativeSitePaths(shown as NativeSite).includes(selection.path)) return;
     const epoch = ports.generation();
     if (store.openFile.value !== selection.path) {
       await ports.openFile(selection.path, epoch);
@@ -203,7 +180,6 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
     refuse,
     recordIntent,
     editableTemplatePath,
-    selectionEpoch: () => epochCount,
     textSelection: () => text,
     /**
      * Replays a click that arrived before `path` was mounted. Called before
@@ -216,17 +192,6 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
         pending = undefined;
         if (was.epoch === ports.generation()) void select(was.selection);
       }
-    },
-    /** Resolves with the preview's own selection of `node`, or undefined after `ms`. */
-    waitFor(path: string, node: readonly number[], ms: number) {
-      return new Promise<NativePreviewSelection | undefined>((resolve) => {
-        const timer = ports.setTimer(() => { waiters.delete(waiter); resolve(undefined); }, ms);
-        const waiter = (selection: NativePreviewSelection) => {
-          if (selection.path !== path || selection.node?.join(".") !== node.join(".")) return;
-          ports.clearTimer(timer); waiters.delete(waiter); resolve(selection);
-        };
-        waiters.add(waiter);
-      });
     },
     handlers(): Required<Pick<NativePreviewHandlers, "onSelect" | "onItemGrids" | "onTextSelection">> {
       // Each preview starts with no grid report, as each mount did before.

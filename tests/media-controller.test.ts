@@ -24,7 +24,7 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
     identity: () => identity, generation: () => 1, source: (path) => sources.get(path), listPaths: async () => [],
     findEntry: async () => ({ sha: "sha", size: 12 }), entry: () => ({ sha: "sha", size: 12 }), readText: async () => "read text", rememberSource: (path, source) => { sources.set(path, source); },
     uploadedBlob: async () => undefined, readBlob: async () => new Blob(["image"], { type: "image/png" }), applyBatch: async () => {}, openPage: async () => {}, load: async () => module,
-    isPrivateMasterPath: () => false, master: () => undefined, modelProof: () => undefined, openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
+    openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
     change: (_path, _source, edits) => { changes.push(edits[0].text); return true; }, galleryHost: () => element, galleryVisible: () => visible, imagesSelected: () => true, gallerySignature: () => signature,
     locateElement: (source) => { const tag = startTags(source).find((item) => item.name === "img"); return tag && { tag }; },
     observeBusy: (_element, changed) => { observerCallback = changed; return { disconnect() {} }; }, announce: () => {}, error: (error) => errors.push(error), ...overrides,
@@ -59,14 +59,6 @@ test("picker refuses navigation after lazy load and source drift during restore"
   assert.equal(restoring.changes.length, 0);
 });
 
-test("private-master replacement rejects a changed model proof", async () => {
-  let current = true;
-  const f = fixture({ isPrivateMasterPath: () => true, master: () => ({ masterPath: "index.html", session: "master-a" }), modelProof: () => ({ isCurrent: () => current }) });
-  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
-  current = false;
-  await assert.rejects(async () => f.pick()!.onPick!({ path: "images/new.png", alt: "New" }), /master changed/);
-  assert.equal(f.changes.length, 0);
-});
 
 test("workspace read cannot populate host caches after navigation", async () => {
   const f = fixture();

@@ -1,6 +1,6 @@
 # Add panel
 
-The Add panel lists authored section components and user-saved plain HTML sections as live thumbnails and adds one to
+The Add panel lists authored section components as live thumbnails and adds one to
 the page by a click or by dragging it onto the canvas. It replaces the small picker that the
 plus buttons between sections used to open.
 
@@ -27,9 +27,8 @@ plus buttons between sections used to open.
   top and bottom edges; **Esc** or a release off the canvas cancels. A drop is the same edit
   as a click on that gap's plus.
 - **Start an empty page.** A page whose `<main>` has nothing in it shows **Start with a
-  section** over the empty area, with available authored or saved sections as thumbnails (a click adds
-  one) and **Browse all sections** (the panel). Unsaved Intro, Features, Split and Contact defaults
-  are not offered there or in Add. The empty area is also a drop target ("Release
+  section** over the empty area, with available authored section components as thumbnails (a click adds
+  one) and **Browse all sections** (the panel). The empty area is also a drop target ("Release
   to add Hero"). The plus at the end of that `<main>` gives way to it.
 - **See what changed.** After any insert (panel, plus, empty state, drag) the new section is
   selected, scrolled fully into view and outlined in the component violet for a moment (a

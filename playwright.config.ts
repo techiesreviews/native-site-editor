@@ -57,9 +57,6 @@ const app: Use = {
   permissions: ["clipboard-read", "clipboard-write"],
 };
 
-// Component harnesses (no app server): small viewport, short timeouts.
-const harness: Use = { viewport: { width: 800, height: 700 }, reducedMotion: "reduce", screenshot: "only-on-failure" };
-
 export default defineConfig({
   testDir: "./tests",
   workers: 1,
@@ -85,31 +82,6 @@ export default defineConfig({
       expect: { timeout: 15_000 },
       outputDir: ".scratch/native-preview/results",
       use: { ...app, baseURL: external ?? `http://127.0.0.1:${previewPort}` },
-    },
-    {
-      name: "native-shared-authoring",
-      testDir: "./tests/native-shared-authoring",
-      timeout: 30_000,
-      expect: { timeout: 5_000 },
-      outputDir: ".scratch/native-shared-authoring/results",
-      use: harness,
-    },
-    {
-      name: "native-shared-structure",
-      testDir: "./tests/native-shared-structure",
-      timeout: 30_000,
-      expect: { timeout: 5_000 },
-      outputDir: ".scratch/native-shared-structure/results",
-      use: harness,
-    },
-    {
-      // Standalone real-preview bridge and the section bridge regressions.
-      name: "native-page-part-preview",
-      testMatch: ["native-page-part-preview/*.spec.ts", "native-master-preview/*.spec.ts"],
-      timeout: 60_000,
-      expect: { timeout: 10_000 },
-      outputDir: ".scratch/native-page-part-preview/results",
-      use: { viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce", screenshot: "only-on-failure", trace: "retain-on-failure" },
     },
   ],
   webServer: external ? [] : [

@@ -150,7 +150,7 @@ test("a page whose <main> holds no section offers one place at the end of <main>
   await expect(page.getByRole("toolbar", { name: "Edit bar" })).toBeVisible();
   await end.click();
   await expect(picker(page).locator(".pb-add-panel__position")).toBeHidden();
-  // With no authored components or saved sections, Add explains the empty catalogue.
+  // With no authored components, Add explains the empty catalogue.
   await expect(picker(page).getByRole("option")).toHaveCount(0);
   await expect(picker(page).locator(".pb-add-panel__message")).toBeVisible();
   await picker(page).getByRole("button", { name: "Close", exact: true }).click();

@@ -7,7 +7,6 @@ import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, ty
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type RouteChange } from "../native-page-moves";
 import { assetInUseProblem, assetMoves, assetUsers, planAssetReferenceRewrites } from "../page-builder/asset-references";
 import { nativePageRoute } from "../../shared/native-routes";
-import { EDITOR_PAGE_BUILDER_PATH } from "../page-builder/page-builder-document";
 import { NATIVE_HOME_PAGE, NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH, resolveNativeProject, type NativeSite } from "../../shared/native-project";
 
 export interface FileOperationsTreeState {
@@ -324,7 +323,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   function nativeMovePins(): { expectedSources: Map<string, string | undefined>; current: () => boolean } {
     const scope = ports.draftScope(), epoch = ports.generation(), setup = ports.setupScope();
     const expectedSources = new Map<string, string | undefined>(Object.entries(ports.nativeLinkSources()));
-    for (const path of [EDITOR_PAGE_BUILDER_PATH, NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH]) expectedSources.set(path, ports.nativeEffectiveSource(path, scope));
+    for (const path of [NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH]) expectedSources.set(path, ports.nativeEffectiveSource(path, scope));
     const key = ports.nativeFiles(scope).sort().join("\n");
     return { expectedSources, current: () => ports.generation() === epoch && ports.setupScope() === setup && ports.nativeFiles(ports.draftScope()).sort().join("\n") === key
       && [...expectedSources].every(([path, text]) => ports.nativeEffectiveSource(path) === text) };

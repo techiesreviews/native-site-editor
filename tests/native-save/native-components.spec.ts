@@ -1,7 +1,5 @@
-import { seedSavedSections } from "./static-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
-import { publishButton } from "./publish";
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
@@ -354,21 +352,17 @@ test("Detach replaces an instance with the markup it shows, after showing it", a
   await expect(frame(page).locator("section.cards > project-card")).toHaveCount(3);
 });
 
-test("native-first: a plain page section without a saved record offers no Update and never Make component", async ({ page }) => {
-  // Native pages stay plain HTML: the edit bar does not convert sections or their children into components.
+test("a plain page section keeps the Make component fallback without writing source", async ({ page }) => {
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
-  await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
   const before = await editorText(page);
-  // This section was not added from a saved section, so there is nothing to update.
-  await expect(bar(page).getByRole("button", { name: /^Update |Save section/ })).toHaveCount(0);
   expect(await editorText(page)).toBe(before);
-  expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
   expect(await storedDraft(page, indexPath)).toBeUndefined();
   expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
-  // A child of the section: neither action.
+  // A heading is not a container eligible for the fallback.
   await frame(page).locator("section.hero h1").first().click();
-  await expect(bar(page).getByRole("button", { name: /Make component|^Update |Save section/ })).toHaveCount(0);
+  await expect(bar(page).getByRole("button", { name: /Make component/ })).toHaveCount(0);
 });
 
 test("image and conditional slots: an address, alt text and a part shown only when filled", async ({ page, baseURL }) => {
@@ -485,60 +479,6 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
     return text;
   });
   expect(text).toBe("Hello  world");
-});
-
-// A page change made while Update Intro awaits the editor JSON's branch text
-// must not let the save land: the JSON is not written and the change stays.
-test("Update Intro refuses a page change made while it reads the editor JSON", async ({ page, baseURL }) => {
-  await seedSavedSections(page, baseURL, ["intro"]);
-  // The current document loaded this repository before the seed. Reload so
-  // open() reads the seeded branch instead of the existing snapshot.
-  await page.reload();
-  await open(page, baseURL);
-  const sidecar = ".editor/page-builder.json";
-  const addPanel = page.getByRole("dialog", { name: "Add to the page" });
-  await select(page, "section.hero");
-  if (!(await addPanel.isVisible())) await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
-  const option = addPanel.getByRole("option", { name: /^Intro HTML$/ });
-  await option.focus();
-  await option.press("Enter");
-  await expect(frame(page).locator("section.section-intro h2")).toHaveText("Section heading");
-  await expect.poll(async () => (await storedDraft(page, sidecar))?.content ?? "").toContain("section-intro");
-  await publishButton(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  await page.keyboard.press("Escape");
-  await expect.poll(() => storedDraft(page, sidecar)).toBeUndefined();
-  const json = await (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(sidecar)}`)).text();
-  expect(json).toContain("section-intro");
-
-  // A real inline edit, so the section differs from its saved record.
-  const heading = frame(page).locator("section.section-intro h2");
-  await heading.click();
-  await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
-  await page.keyboard.press("ControlOrMeta+A");
-  await page.keyboard.type("Edited heading");
-  await page.keyboard.press("Enter");
-  const mounted = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
-  await expect.poll(mounted).toContain("<h2>Edited heading</h2>");
-  await frame(page).locator("section.section-intro").click({ position: { x: 5, y: 5 } });
-  const save = bar(page).getByRole("button", { name: "Update Intro", exact: true });
-  await expect(save).toBeVisible();
-
-  // Press Save, then in the same turn (while it awaits the JSON's branch text)
-  // change the page through the editor's public module.
-  const foreign = "Foreign heading";
-  await save.evaluate(async (button, foreign) => {
-    const editor = await import("/src/components/code-editor.ts");
-    const source = editor.getMountedSource("index.html")!;
-    (button as HTMLElement).click();
-    const start = source.indexOf("Edited heading");
-    editor.replaceActiveRange({ path: "index.html", start, end: start + "Edited heading".length, expected: "Edited heading", text: foreign });
-  }, foreign);
-  await expect(page.locator("#notice")).toContainText("The repository or source changed meanwhile. Review the latest files and try again.");
-  expect(await mounted()).toContain(foreign);
-  expect(await storedDraft(page, sidecar)).toBeUndefined();
-  expect((await storedDraft(page, "styles/sections.css"))).toBeUndefined();
-  expect((await storedDraft(page, indexPath))?.content).toContain(foreign);
 });
 
 test("replaced component pencils cannot navigate after selection changes", async ({ page }) => {

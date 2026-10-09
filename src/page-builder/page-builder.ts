@@ -23,10 +23,6 @@ export interface PageBuilderDeps {
   // What the preview renders: the site, its sources, styles and images, and the route on show.
   inputs(): ThumbnailInputs | undefined;
   choices(): InsertChoice[];
-  extraChoices?: AddPanelHandlers["extraChoices"];
-  notice?: AddPanelHandlers["notice"];
-  // An extra choice's own thumbnail: its markup and the inputs to render it with (e.g. its stylesheet linked).
-  previewChoice?(tag: string, inputs: ThumbnailInputs): { markup: string; inputs: ThumbnailInputs } | undefined;
   pointFor?: AddPanelHandlers["pointFor"];
   destinationText?: AddPanelHandlers["destinationText"];
   insert(point: InsertPoint, choice: InsertChoice): void;
@@ -53,8 +49,6 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   function preview(tag: string) {
     const inputs = deps.inputs();
     if (!inputs) return undefined;
-    const custom = deps.previewChoice?.(tag, inputs);
-    if (custom) return { markup: custom.markup, doc: thumbnailDocument(custom.inputs, custom.markup) };
     const native = nativeChoiceMarkup(tag);
     if (native) return { markup: native, doc: thumbnailDocument(inputs, native) };
     if (!Object.hasOwn(inputs.site.components, tag)) return undefined;
@@ -63,7 +57,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     return { markup, doc: thumbnailDocument(inputs, markup) };
   }
 
-  const allChoices = (): InsertChoice[] => [...deps.choices(), ...(deps.extraChoices?.() ?? [])];
+  const allChoices = (): InsertChoice[] => deps.choices();
 
   function insert(point: InsertPoint, choice: InsertChoice) {
     if (viewing) return;
@@ -86,8 +80,6 @@ export function createPageBuilder(deps: PageBuilderDeps) {
 
   const panel = createAddPanel({
     choices: () => deps.choices(),
-    extraChoices: deps.extraChoices,
-    notice: deps.notice,
     pointFor: deps.pointFor,
     destinationText: deps.destinationText,
     preview,

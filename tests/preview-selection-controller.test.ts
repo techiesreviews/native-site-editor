@@ -11,7 +11,7 @@ function deferred<T>() {
 }
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-const PAGE = "index.html", CARD = "components/x-card.html", MASTER = ".editor/masters/hero.html";
+const PAGE = "index.html", CARD = "components/x-card.html";
 const pageSource = "<!doctype html><html><body><x-card></x-card><p>Hi</p></body></html>";
 const cardSource = "<h2>Card</h2>";
 
@@ -27,12 +27,10 @@ function fixture() {
     generation: 1, scope: "s1", request: 0,
     sources: { [PAGE]: pageSource, [CARD]: cardSource } as Record<string, string>,
     components: { "x-card": CARD } as Record<string, string>,
-    master: undefined as { session: string; masterPath: string } | undefined,
     mounted: new Set<string>(),
     editingScope: undefined as string | undefined,
   };
   const log: string[] = [];
-  const timers: { callback: () => void; cleared: boolean }[] = [];
   const opens: { path: string; epoch: number; done: ReturnType<typeof deferred<void>> }[] = [];
   const store = {
     selection: { value: undefined as NativePreviewSelection | undefined },
@@ -45,9 +43,7 @@ function fixture() {
     store,
     site: () => ({ routes: { "/": PAGE }, components: state.components }),
     sources: () => ({ ...state.sources }),
-    effectiveSource: path => path === MASTER ? "<section>Hero</section>" : state.sources[path],
     editableSource: path => state.sources[path],
-    masterEdit: () => state.master,
     preview: () => ({
       route: () => "/",
       selectNode: target => log.push(`selectNode ${target.path} ${target.node.join(".")}`),
@@ -76,50 +72,21 @@ function fixture() {
     hideComponentTools: () => log.push("hideTools"),
     agentContext: () => log.push("agent"),
     announce: message => log.push(`announce ${message}`),
-    setTimer: (callback) => { const timer = { callback, cleared: false }; timers.push(timer); return timer; },
-    clearTimer: timer => { (timer as { cleared: boolean }).cleared = true; },
     beginReveal: () => { log.push("beginReveal"); return ++state.request; },
     styleRequest: () => state.request,
     clearStyles: () => log.push("clearStyles"),
   };
   const controller = createPreviewSelectionController(ports);
-  return { controller, state, log, store, opens, timers };
+  return { controller, state, log, store, opens };
 }
 // Element names by source and node, standing in for the host's DOM parse.
 function tagAt(source: string, node: readonly number[]) {
   const key = node.join(".");
   if (source === pageSource) return ({ "0": "x-card", "1": "p" } as Record<string, string>)[key];
-  if (source === "<section>Hero</section>") return key === "0" ? "section" : undefined;
   return key === "0" ? "h2" : undefined;
 }
 const announced = (log: string[]) => log.filter(line => line.startsWith("announce "));
 
-test("an open master refuses page selections and selections from another session", async () => {
-  const f = fixture();
-  f.state.master = { session: "m1", masterPath: MASTER };
-  f.store.openFile.value = MASTER;
-  f.store.selection.value = pick();
-  await f.controller.select(pick());
-  assert.deepEqual(announced(f.log), ["announce The page is read-only while its master is open. Choose Done to edit it."]);
-  assert.equal(f.store.selection.value, undefined);
-  assert.ok(f.log.includes("clearSelection") && f.log.includes("hideTools") && f.log.includes("structure none"));
-  f.log.length = 0;
-  f.state.master = undefined;
-  await f.controller.select(pick({ path: MASTER, masterSession: "m1" }));
-  assert.deepEqual(announced(f.log), ["announce That master is no longer open."]);
-});
-
-test("the open master's own copy in its session is selectable", async () => {
-  const f = fixture();
-  f.state.master = { session: "m1", masterPath: MASTER };
-  f.store.openFile.value = MASTER;
-  f.state.mounted.add(MASTER);
-  const selection = pick({ path: MASTER, masterSession: "m1", node: [0], paintedSource: "<section>Hero</section>" });
-  await f.controller.select(selection);
-  assert.equal(f.store.selection.value, selection);
-  assert.deepEqual(announced(f.log), []);
-  assert.ok(f.log.includes(`editBar ${MASTER}`));
-});
 
 test("a selection painted from older source is refused; a refresh refusal is silent", async () => {
   const f = fixture();
@@ -136,11 +103,9 @@ test("an instance click redirects to its host and keeps the selection until the 
   f.store.openFile.value = PAGE;
   f.state.mounted.add(PAGE);
   const before = f.store.selection.value;
-  const epoch = f.controller.selectionEpoch();
   await f.controller.select(instanceClick());
   assert.deepEqual(f.log, ["clearMove", `selectNode ${PAGE} 0`]);
   assert.equal(f.store.selection.value, before);
-  assert.equal(f.controller.selectionEpoch(), epoch);
   // Unchanged snapshot: the host selection goes through.
   await f.controller.select(pick({ tag: "x-card", node: [0] }));
   assert.equal(f.store.selection.value?.node?.join("."), "0");
@@ -272,38 +237,6 @@ test("a page click clears the source intent", async () => {
   void f.controller.select(pick());
   await flush();
   assert.equal(f.controller.editableTemplatePath(), undefined);
-});
-
-test("waitFor resolves with the matching selection after the store is written, or times out", async () => {
-  const f = fixture();
-  f.store.openFile.value = PAGE;
-  f.state.mounted.add(PAGE);
-  const waited = f.controller.waitFor(PAGE, [1], 5000);
-  let seen: NativePreviewSelection | undefined;
-  void waited.then(selection => { seen = selection; });
-  await f.controller.select(pick({ node: [0], tag: "x-card" }));
-  await flush();
-  assert.equal(seen, undefined);
-  const selection = pick();
-  await f.controller.select(selection);
-  assert.equal(await waited, selection);
-  assert.equal(f.store.selection.value, selection);
-  assert.equal(f.timers[0].cleared, true);
-  const late = f.controller.waitFor(PAGE, [9], 5000);
-  f.timers[1].callback();
-  assert.equal(await late, undefined);
-});
-
-test("the selection counter moves only when the path or node changes", async () => {
-  const f = fixture();
-  f.store.openFile.value = PAGE;
-  f.state.mounted.add(PAGE);
-  await f.controller.select(pick());
-  assert.equal(f.controller.selectionEpoch(), 1);
-  await f.controller.select(pick({ reason: "refresh" }));
-  assert.equal(f.controller.selectionEpoch(), 1);
-  await f.controller.select(pick({ node: [0], tag: "x-card" }));
-  assert.equal(f.controller.selectionEpoch(), 2);
 });
 
 test("text and grid reports re-render the bar only when they change", () => {

@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { storedDraft } from "./drafts";
 import { requireActualFixture } from "./fixture-contract";
 
 requireActualFixture();
@@ -18,7 +17,6 @@ test("a fresh Add panel offers authored components without unsaved defaults or s
   const position = panel.locator(".pb-add-panel__position");
   await expect(position).toBeHidden();
   expect(await position.evaluate(element => element.getBoundingClientRect().height)).toBe(0);
-  expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
@@ -30,5 +28,4 @@ test("a fresh Add panel offers authored components without unsaved defaults or s
   const empty = page.getByRole("region", { name: "Empty page", exact: true });
   await expect(empty).toBeVisible();
   for (const label of ["Intro", "Features", "Split", "Contact"]) await expect(empty.getByRole("button", { name: `Add ${label}`, exact: true })).toHaveCount(0);
-  expect(await storedDraft(page, ".editor/page-builder.json")).toBeUndefined();
 });

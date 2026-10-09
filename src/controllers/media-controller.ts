@@ -37,9 +37,6 @@ export interface MediaControllerPorts {
   applyBatch(scope: DraftScope, assertLive: () => void, batch: MediaWorkspaceBatch): Promise<void>;
   openPage(path: string): Promise<void>;
   load(): Promise<MediaModule>;
-  isPrivateMasterPath(path: string): boolean;
-  master(): { masterPath: string; session: string } | undefined;
-  modelProof(path: string): { isCurrent(): boolean } | undefined;
   openFile(): string | undefined;
   viewingVersion(): boolean;
   restoreFile(path: string, generation: number): Promise<unknown>;
@@ -118,10 +115,6 @@ export function createMediaController(ports: MediaControllerPorts) {
 
   async function chooseImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
     const epoch = ports.generation(), identity = ports.identity();
-    const privateMaster = ports.isPrivateMasterPath(target.path), master = ports.master();
-    if (privateMaster && master?.masterPath !== target.path) { ports.announce("That master is no longer open. Choose Edit on the section again."); return; }
-    const proof = privateMaster ? ports.modelProof(target.path) : undefined;
-    const currentMaster = () => !privateMaster || ports.master()?.session === master?.session && ports.openFile() === target.path && proof?.isCurrent() === true;
     const source = ports.source(target.path);
     const locate = ports.locateElement ?? locateNativeElementRange;
     const initial = source === undefined ? undefined : locate(source, target.node);
@@ -129,14 +122,13 @@ export function createMediaController(ports: MediaControllerPorts) {
     const expected = source!.slice(initial.tag.start, initial.tag.end);
     const initialAlt = mediaExistingAlt(expected);
     const { openMediaPicker } = await load();
-    if (epoch !== ports.generation() || identity !== ports.identity() || !currentMaster() || ports.source(target.path) !== source) return;
+    if (epoch !== ports.generation() || identity !== ports.identity() || ports.source(target.path) !== source) return;
     await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
       if (epoch !== ports.generation() || identity !== ports.identity()) throw new Error("The repository changed. Choose an image again.");
-      if (!currentMaster()) throw new Error("The master changed. Choose an image again.");
       if (ports.openFile() !== target.path) await ports.restoreFile(target.path, epoch);
       const latest = ports.source(target.path);
       const range = latest === undefined ? undefined : locate(latest, target.node);
-      if (epoch !== ports.generation() || identity !== ports.identity() || !currentMaster() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
+      if (epoch !== ports.generation() || identity !== ports.identity() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
       const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
       if (!ports.change(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
     } }).catch((error: unknown) => ports.error(error));

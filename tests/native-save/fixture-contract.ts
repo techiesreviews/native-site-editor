@@ -36,8 +36,3 @@ export function requireActualFixture() {
     throw new Error(`This spec requires the actual starter, received ${kind}. Run npm run test:browser:actual.`);
   }
 }
-
-export function requireStaticFixture() {
-  if (process.env.STATIC_SECTIONS_FIXTURE === "native") fixtureKind();
-  else requireActualFixture();
-}

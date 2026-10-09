@@ -48,11 +48,6 @@ or editor runtime in the site.
 Cards are ordinary HTML in static grids. Add card copies a card and can create a
 linked page in the same undo step.
 
-The deletable `.editor/page-builder.json` sidecar keeps reusable sections,
-`pages[path].sections`, `pages[path].pageParts` and unknown metadata. The next
-write removes retired recipe and custom-field metadata without changing the version.
-Deleting `.editor` leaves the website's HTML and CSS intact.
-
 Styling, image positioning and grid layout are edited in the Source editor.
 Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Empty section slots and wrappers hide automatically.
 
@@ -75,5 +70,4 @@ Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Empty 
   ("+ Add image", "+ Add text") where they would appear; click an image to replace it,
   drop a file on it, remove an optional part with its ×, type into text in place.
 
-Page settings provides General, Search and Social. Other sidecar metadata,
-including `pages[path].date`, remains preserved.
+Page settings provides General, Search and Social.

@@ -8,8 +8,7 @@ import { nativeDestinations, nativeMarkupInsertEdit, applyGuardedSourceEdit } fr
 let source = '<main><section><p>Existing text</p></section></main>';
 const destination = () => nativeDestinations(source, 'index.html', [0, 0]).find(item => item.placement === 'inside');
 const panel = createAddPanel({
-  choices: () => [{ tag: 'feature-block', label: 'Feature block' }],
-  extraChoices: () => nativeElementChoices,
+  choices: () => [{ tag: 'feature-block', label: 'Feature block' }, ...nativeElementChoices],
   preview: key => {
     const markup = nativeChoiceMarkup(key) ?? '<feature-block></feature-block>';
     return { markup, doc: `<!doctype html><html><body>${markup}</body></html>` };

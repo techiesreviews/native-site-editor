@@ -1,4 +1,3 @@
-import { seedSavedSections } from "./static-sections";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -9,12 +8,9 @@ import { expect, test, type Page } from "@playwright/test";
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
-const featurePath = "components/feature-block/feature-block.html";
-const featureSource = readFileSync(resolve(fixture, featurePath), "utf8");
 const nativeHash = `#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`;
 
 test.beforeEach(async ({ page, baseURL }) => {
-  await seedSavedSections(page, baseURL);
   await page.goto(`${baseURL}/${nativeHash}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
@@ -44,7 +40,7 @@ async function hoverIn(page: Page, selector: string) {
 }
 const picker = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
 
-test("a section plus inserts a component from its section-only group alongside native HTML", async ({ page }) => {
+test("a section plus inserts a component from its section-only group into the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   // One plus per gap among <main>'s sections, including both ends.
   await expect(page.locator(".insert-point__plus")).toHaveCount(4);
@@ -75,9 +71,9 @@ test("a section plus inserts a component from its section-only group alongside n
   await expect(before).toHaveAttribute("aria-expanded", "true");
   await expect(picker(page)).toBeVisible();
   await expect(picker(page)).toContainText("Goes before “Scroll to verify”");
-  await expect(picker(page).getByRole("searchbox", { name: "Search elements and components" })).toBeFocused();
-  // The component group contains only section templates; saved HTML has a separate group.
-  const options = picker(page).getByRole("group", { name: "More sections" }).getByRole("option");
+  await expect(picker(page).getByRole("searchbox", { name: "Search components" })).toBeFocused();
+  // The component group contains only section templates.
+  const options = picker(page).getByRole("group", { name: "Sections" }).getByRole("option");
   await expect(options).toHaveText([/^Feature block\s*<feature-block>$/]);
 
   const topLevel = await frame.locator("main > *").count();
@@ -123,7 +119,7 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   await scrollFrame(page, "bottom");
   await hoverIn(page, "section.filler p:last-child");
   await end.click();
-  const search = picker(page).getByRole("searchbox", { name: "Search elements and components" });
+  const search = picker(page).getByRole("searchbox", { name: "Search components" });
   await expect(picker(page).locator(".pb-add-panel__position")).toBeHidden();
   await page.keyboard.type("zzz");
   await expect(picker(page)).toContainText("No items match “zzz”");
@@ -142,18 +138,9 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
 
   // Keyboard focus shows a plus without hovering.
   await expect(end.locator("xpath=..")).toHaveCSS("opacity", "1");
-  // Enter inserts only a single match: "feat" matches Features and Feature block, so nothing yet.
   await end.click();
-  await page.keyboard.type("feat");
-  await expect(picker(page).getByRole("option")).toHaveCount(2);
-  await page.keyboard.press("Enter");
-  await expect(picker(page)).toBeVisible();
-  await expect(page.frameLocator(".native-preview-frame").locator("feature-block")).toHaveCount(0);
-  // Read without moving focus: the picker closes when focus leaves it.
-  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(indexSource);
-  // Typed on to one match, Enter inserts it at the end of the page's sections.
+  await page.keyboard.type("Feature block");
   const topLevel = await page.frameLocator(".native-preview-frame").locator("main > *").count();
-  await page.keyboard.type("ure block");
   await expect(picker(page).getByRole("option")).toHaveCount(1);
   await page.keyboard.press("Enter");
   await expect(page.frameLocator(".native-preview-frame").locator("section.filler + feature-block")).toHaveCount(1);
@@ -161,43 +148,6 @@ test("the picker searches, moves by keyboard and closes back to its plus", async
   await expect.poll(() => editorText(page, "#content")).toContain(
     `  </section>\n  <feature-block>\n    <span slot="title">A feature worth sharing</span>\n    <span slot="body">Describe what makes it useful.</span>\n  </feature-block>\n</main>`,
   );
-});
-
-test("with no section component the picker still offers the native page sections", async ({ page, baseURL }) => {
-  // Feature block's template made a <div>: nothing fits between sections.
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(featurePath)}`);
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", featurePath, { timeout: 30_000 });
-  const textbox = page.locator("#content [role='textbox']").first();
-  await expect(textbox).toBeAttached({ timeout: 20_000 });
-  await page.evaluate(async (text) => navigator.clipboard.writeText(text), featureSource.replaceAll("section", "div"));
-  await textbox.evaluate((el) => (el as HTMLElement).focus());
-  await page.keyboard.press("ControlOrMeta+A");
-  await page.keyboard.press("ControlOrMeta+V");
-  await expect.poll(() => editorText(page, "#content")).toBe(featureSource.replaceAll("section", "div"));
-
-  await page.goto(`${baseURL}/${nativeHash}`);
-  await page.reload();
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
-  await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  await hoverIn(page, "section.hero");
-  await plus(page, "Add a section before “A native browser preview”").click();
-  await expect(picker(page).getByRole("searchbox")).toBeVisible();
-  await expect(picker(page).getByRole("option", { name: /Feature block/ })).toHaveCount(0);
-  await expect(picker(page).getByRole("group", { name: "More sections" })).toHaveCount(0);
-  await expect(picker(page).getByRole("group", { name: "Page sections" }).getByRole("option")).toHaveText([/^Intro/, /^Features/, /^Split/, /^Contact/]);
-  await expect(picker(page).getByRole("option", { name: /^Heading/ })).toHaveCount(0);
-  // Choosing one writes an ordinary section before the hero; Undo restores the page exactly.
-  const frame = page.frameLocator(".native-preview-frame");
-  const topLevel = await frame.locator("main > *").count();
-  await picker(page).getByRole("option", { name: /^Intro/ }).click();
-  await expect(frame.locator("main > *")).toHaveCount(topLevel + 1);
-  await expect(frame.locator("main > section.section-intro:first-child h2")).toHaveText("Section heading");
-  await expect(frame.locator("main > section:first-child + section.hero")).toHaveCount(1);
-  await expect.poll(() => editorText(page, "#content")).toMatch(/<main class="page" data-key="main">\n\s*<section class="[^"]+">[\s\S]*<\/section>\n\s*<section class="hero"/);
-  expect(await editorText(page, "#content")).not.toContain("<feature-block>");
-  await page.locator("#content [role='textbox']").first().focus();
-  await page.keyboard.press("ControlOrMeta+Z");
-  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
 test("inserting while a component file is open edits the page", async ({ page }) => {

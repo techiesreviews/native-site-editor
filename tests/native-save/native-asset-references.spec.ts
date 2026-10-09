@@ -6,18 +6,16 @@ import { storedDraft, storedDrafts } from "./drafts";
 // refused. External URLs never change.
 test.beforeEach(({ page }) => page.setDefaultTimeout(10_000));
 
-const side = ".editor/page-builder.json";
 const item = "work/lifecycle/index.html";
 const card = '<article><a href="/work/lifecycle/">Lifecycle</a><img src="/images/studio-desk.svg" alt="Lifecycle"></article>';
 const external = '<img src="https://example.com/images/studio-desk.svg" alt="">';
 const home = `<!doctype html><html><head><title>Card proof</title></head><body><main><div id="proof-cards">${card}</div><p>${external}</p></main></body></html>`;
 const source = '<!doctype html><html><head><title>Lifecycle</title><meta name="description" content="Original description"><meta property="og:image" content="/images/studio-desk.svg"></head><body><main><h1>Lifecycle</h1></main></body></html>';
-const sidecarText = JSON.stringify({ version: 1, pages: { [item]: { sections: { keep: "yes" } } }, futureKey: { keep: true } }, null, 2) + "\n";
 const mounted = (page: Page, path: string) => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
 
 async function seed(page: Page, baseURL: string | undefined) {
   await page.goto(baseURL!);
-  for (const [path, content] of [["index.html", home], [item, source], [side, sidecarText]])
+  for (const [path, content] of [["index.html", home], [item, source]])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
@@ -43,7 +41,6 @@ test("renaming a linked image updates the page, its meta tag and the cards as on
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(renamedHome);
   // The external image with the same file name is not this site's file.
   expect(renamedHome).toContain(external);
-  expect(await storedDraft(page, side)).toBeUndefined();
   expect((await storedDraft(page, "images/lifecycle.svg"))).toBeTruthy();
   // One Undo puts every file back; Redo does it again.
   await page.locator(".code-editor__undo").first().click();
@@ -69,9 +66,8 @@ test("renaming a folder with a page and its image moves every reference, keeps t
   const extra = `<p><img srcset="${photo} 2x" src="${photo}" alt=""></p>`;
   const folderCard = card.replace("/images/studio-desk.svg", photo);
   const folderHome = `<!doctype html><html><head><title>Card proof</title><meta property="og:image" content="${photo}"></head><body><main><div id="proof-cards">${folderCard}</div>${extra}</main></body></html>`;
-  const folderSidecar = JSON.parse(sidecarText);
   await page.goto(baseURL!);
-  for (const [path, content] of [["index.html", folderHome], [item, itemSource], [side, JSON.stringify(folderSidecar, null, 2) + "\n"], ["work/lifecycle/photo.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>']])
+  for (const [path, content] of [["index.html", folderHome], [item, itemSource], ["work/lifecycle/photo.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"></svg>']])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.frameLocator(".native-preview-frame").locator("#proof-cards a")).toHaveText("Lifecycle");
@@ -97,9 +93,6 @@ test("renaming a folder with a page and its image moves every reference, keeps t
   expect(homeAfter).toContain(`<meta property="og:image" content="${moved}">`);
   expect(homeAfter).toContain(`<img srcset="${moved} 2x" src="${moved}" alt="">`);
   expect(homeAfter).toContain(`<article><a href="/work/renamed/">Lifecycle</a><img src="${moved}" alt="Lifecycle"></article>`);
-  const json = JSON.parse((await storedDraft(page, side))!.content);
-  expect(json.futureKey).toEqual({ keep: true });
-  expect(json.pages["work/renamed/index.html"]).toEqual({ sections: { keep: "yes" } });
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => storedDrafts(page)).toEqual([]);
   expect(await mounted(page, "index.html")).toBe(folderHome);
