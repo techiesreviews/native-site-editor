@@ -19,4 +19,4 @@ Lex (2026-10-09, annotations on the preview): remove the locked-part hint that s
 ## Done (2026-10-09)
 
 - A click on a fixed part of any component selects the instance with its normal edit bar: the "○ … fixed in `<tag>`" text and its Edit component button are gone, with their CSS, the lock carried on the selection (`nativeLockedComponentPart`, the controller's handoff, the `editingComponent` port) and Edit component's open-on-a-part path. Still locked: no text editing, drops refused.
-- Commit 7818224a (built by Sol, checked and finished by Claude). Lock-handoff unit tests removed with the code; `native-locked-fixed-parts-actual.spec.ts` asserts the normal instance bar and the hint's absence on two fixed paragraphs, the text lock, Structure slots and the drop refusal.
+- Commit acbebbc8 (built by Sol, checked and finished by Claude). Lock-handoff unit tests removed with the code; `native-locked-fixed-parts-actual.spec.ts` asserts the normal instance bar and the hint's absence on two fixed paragraphs, the text lock, Structure slots and the drop refusal.
