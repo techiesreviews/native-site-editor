@@ -34,6 +34,12 @@ export interface TemplateStructureItem extends NativeStructureItem {
   opens?: boolean;
 }
 
+/** A single non-slot template root, addressed by its element path. */
+export function templateRoot(source: string): number[] | undefined {
+  const roots = parseSource(source).filter(node => node.type === "element");
+  return roots.length === 1 && roots[0].name !== "slot" ? [0] : undefined;
+}
+
 /** The rendered fallbacks, with source paths preserved through invisible slot wrappers. */
 export function templateStructure(template: string, templateOf: TemplateOf = () => undefined): TemplateStructureItem[] {
   const roots = elements(parseSource(template));

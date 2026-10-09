@@ -61,6 +61,7 @@ import {
   slotLabel,
   slotChipState,
   templateStructure,
+  templateRoot,
   type TemplateStructureItem,
   slotChange,
   slotStates,
@@ -736,10 +737,6 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!mode || mode.path !== path || mode.node.join() !== at.join()) return undefined;
     const sources = mode.chain.map((level) => deps.sources()[level.templatePath]);
     if (sources.some((source) => source === undefined)) return undefined;
-    const rootOf = (source: string) => {
-      const roots = parseSource(source).filter(node => node.type === "element");
-      return roots.length === 1 && roots[0].name !== "slot" ? [0] : undefined;
-    };
     const last = mode.chain.length - 1;
     const levelRows = (k: number) => {
       const templatePath = mode.chain[k].templatePath;
@@ -757,10 +754,10 @@ export function createComponentTools(deps: ComponentDeps) {
       const holder = find(level);
       if (!holder) break;
       holder.opens = false;
-      holder.opened = { path: mode.chain[k].templatePath, root: rootOf(sources[k]!), current: k === last };
+      holder.opened = { path: mode.chain[k].templatePath, root: templateRoot(sources[k]!), current: k === last };
       holder.children = level = levelRows(k);
     }
-    return { path: mode.templatePath, root: rootOf(sources[0]!), nested: last > 0, items,
+    return { path: mode.templatePath, root: templateRoot(sources[0]!), nested: last > 0, items,
       badge: (node: readonly number[]) => {
         const state = templateChip(node);
         return state && editMode?.badge(node, state);
@@ -1947,6 +1944,13 @@ export function createComponentTools(deps: ComponentDeps) {
     },
     structure,
     templateRows,
+    /** The root of the template currently edited cannot move, duplicate or be removed. */
+    isTemplateRoot(selection: NativePreviewSelection): boolean {
+      const mode = editMode?.active();
+      const source = mode && deps.sources()[mode.templatePath];
+      const root = source === undefined ? undefined : templateRoot(source);
+      return Boolean(mode && selection.path === mode.templatePath && root && selection.node?.join() === root.join());
+    },
     controls,
     variantControls,
     /** The selection changed or the page re-rendered: the panel follows. */

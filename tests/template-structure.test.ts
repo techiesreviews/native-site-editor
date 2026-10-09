@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { slotChipState, templateStructure } from "../src/page-builder/component-model.ts";
+import { slotChipState, templateRoot, templateStructure } from "../src/page-builder/component-model.ts";
+
+test("only a single non-slot element is a template root", () => {
+  assert.deepEqual(templateRoot('<!-- Template -->\n<section><section>Child</section></section>\n'), [0]);
+  assert.deepEqual(templateRoot('<article><slot></slot></article>'), [0]);
+  for (const source of ['', 'Text only', '<slot><section>Fallback</section></slot>', '<section></section><article></article>'])
+    assert.equal(templateRoot(source), undefined);
+});
 
 test("slot wrappers disappear; the first fallback carries the slot's chip at its source path", () => {
   const source = '<section><slot name="title"><h2>Title</h2><p>More</p></slot><p class="lede">Fixed</p></section>';

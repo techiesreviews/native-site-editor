@@ -53,9 +53,9 @@ function homeWithWork() {
     </section-work>${home.slice(end)}`;
 }
 
-async function seed(page: Page, baseURL: string | undefined) {
+async function seed(page: Page, baseURL: string | undefined, template = workTemplate) {
   await page.goto(baseURL!);
-  for (const [path, content] of [[TEMPLATE, workTemplate], ["components/section-work/section-work.css", workCss], ["index.html", homeWithWork()]])
+  for (const [path, content] of [[TEMPLATE, template], ["components/section-work/section-work.css", workCss], ["index.html", homeWithWork()]])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Recent work", { timeout: 30_000 });
@@ -65,6 +65,56 @@ async function seed(page: Page, baseURL: string | undefined) {
 // A mark on the frame's window: still there only if the document was never replaced.
 const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as unknown as { aseMark: string }).aseMark = "slice-41"; });
 const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as unknown as { aseMark?: string }).aseMark);
+
+test("template roots have no move, duplicate or remove actions; children keep theirs", { tag: "@actual" }, async ({ page, baseURL }) => {
+  const template = workTemplate.replace('  <div class="cards">', '  <section><h2>Nested section</h2></section>\n  <div class="cards">');
+  await seed(page, baseURL, template);
+  const root = page.getByRole("treeitem", { name: /^Section work/ }).first();
+  await root.locator(".page-structure__label").click();
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+
+  const source = (path: string) => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
+  const noRootActions = async (row: ReturnType<Page["getByRole"]>, path: string) => {
+    await expect(row).toHaveAttribute("data-template-path", path);
+    await row.locator(".page-structure__label").click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
+    await expect(toolbar(page)).toBeVisible();
+    for (const name of ["Move up", "Move down", "Duplicate", "Remove"]) {
+      await expect(toolbar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+      await expect(row.getByRole("button", { name, exact: true })).toHaveCount(0);
+    }
+    const before = await source(path);
+    expect(before).toBeTruthy();
+    expect(await page.evaluate(async () => (await import("/src/page-builder/commands.ts")).availableCommands()
+      .filter(command => command.group === "Selection" && ["Move up", "Move down", "Duplicate", "Remove"].includes(command.title))
+      .map(command => command.title))).toEqual([]);
+    await expect(toolbar(page).locator(".edit-bar__handle")).toHaveCount(0);
+    await toolbar(page).locator(".edit-bar__label").evaluate(label => { label.tabIndex = -1; label.focus(); });
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowDown");
+    // Page focus routes these keys through the same bar controls as the palette.
+    await page.locator("body").evaluate(body => { body.tabIndex = -1; body.focus(); });
+    for (const key of ["Delete", "Backspace", "ControlOrMeta+d", "Alt+ArrowUp", "Alt+ArrowDown"])
+      await page.keyboard.press(key);
+    expect(await source(path)).toBe(before);
+  };
+  await noRootActions(root, TEMPLATE);
+
+  // A real nested section still has all four section actions.
+  const child = page.getByRole("treeitem", { name: /^Section Nested section/ }).first();
+  await child.locator(".page-structure__label").click();
+  for (const name of ["Move up", "Move down", "Duplicate", "Remove"])
+    await expect(toolbar(page).getByRole("button", { name, exact: true })).toBeVisible();
+
+  // Opening the nested card protects its article root too.
+  const card = page.getByRole("treeitem", { name: /^Card project/ }).first();
+  await card.hover();
+  await card.getByRole("button", { name: "Open Card project component", exact: true }).click();
+  const cardPath = "components/card-project/card-project.html";
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
+  await noRootActions(card, cardPath);
+});
 
 test("Edit component opens Recent work in place: placeholders, template edit, Done, with no preview reload", { tag: "@actual" }, async ({ page, baseURL }) => {
   await seed(page, baseURL);

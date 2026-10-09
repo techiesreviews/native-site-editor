@@ -496,8 +496,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // as do plain Up/Down on the bar's name. Any block of the page's <main>
     // drags by its name in the bar (ticket 12 §10).
     let onMove: EditBarModel["onMove"];
-    const draggable = Boolean(node && nativeMovableBlock(source, node, ports.itemsSlots()));
-    if (range && node && isNativeSectionTag(selection.tag)) {
+    const templateRoot = ports.componentTools?.isTemplateRoot(selection);
+    const draggable = Boolean(!templateRoot && node && nativeMovableBlock(source, node, ports.itemsSlots()));
+    if (!templateRoot && range && node && isNativeSectionTag(selection.tag)) {
       const parent = node.slice(0, -1);
       const index = node[node.length - 1];
       const before = index > 0 ? ports.locateNativeElementRange(source, [...parent, index - 1]) : undefined;
@@ -538,7 +539,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // Only a whole section moves from the bar or the keyboard (Lex: "remove
     // this on not the sections"), so a card's own move arrows are left out and
     // no element move is offered here; the page structure still moves rows.
-    if (!isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
+    if (!templateRoot && !isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
     nativeElementMoveAction = onMove;
     // Edit component, Make component (src/page-builder/components.ts).
     if (ports.componentTools) controls.push(...ports.componentTools.controls(selection));
