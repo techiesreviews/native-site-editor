@@ -245,7 +245,8 @@ export function createComponentTools(deps: ComponentDeps) {
   usedOnButton.type = "button";
   usedOnButton.setAttribute("aria-haspopup", "menu");
   const usedOnLabel = node("span", "canvas-component__used-label");
-  usedOnButton.append(usedOnLabel, icon("caret-down", 12));
+  const usedOnShort = node("span", "canvas-component__used-short");
+  usedOnButton.append(usedOnLabel, usedOnShort, icon("caret-down", 12));
   const usedOn = node("div", "component-menu");
   usedOn.id = "component-used-on";
   usedOn.setAttribute("role", "menu");
@@ -458,11 +459,6 @@ export function createComponentTools(deps: ComponentDeps) {
     let chip = template === undefined ? undefined : slotChipState(template, selection.node!, (tag) => templateOf(tag)?.source);
     const kept = chip?.state === "fixed" ? keptNames.get(keptKey(moded!.templatePath, template!, selection.node!)) : undefined;
     if (chip && kept) chip = { ...chip, name: kept };
-    // Showing this page's content, an items slot counts what it shows there: the page's items, its fallback's, or none.
-    const page = chip?.state === "items" && moded!.show === "page" ? levelInstance(moded!, moded!.chain.length - 1) : undefined;
-    const state = page && chip ? page.states.get(chip.name) : undefined;
-    if (state && chip?.state === "items" && (state.filled || !state.shown))
-      chip = { ...chip, count: (page!.instance.fills.get(chip.name) ?? []).filter((item) => item.type === "element").length };
     if (chip) out.chip = editMode!.chip(selection.node!, chip);
     return out;
   }
@@ -567,30 +563,6 @@ export function createComponentTools(deps: ComponentDeps) {
   let explicitTemplate: { path: string; revision: string } | undefined;
   let modeOpening = false;
 
-  type ModeNow = NonNullable<ReturnType<EditComponentMode["active"]>>;
-  /** What fills the slots of the mode's level `k`: the page's instance, else the instance in the level above's template. */
-  function levelInstance(moded: ModeNow, k: number) {
-    return k === 0 ? instanceAt(moded.path, [...moded.node]) : instanceAt(moded.chain[k - 1].templatePath, [...moded.chain[k].node]);
-  }
-  /** Whether the element at `node` of level `k`'s template sits in a slot that, with what fills the level, doesn't show its fallback: filled, or hidden (a section's unfilled slot). */
-  function hiddenAt(moded: ModeNow, k: number, node: readonly number[]) {
-    const slots = elementChain(deps.sources()[moded.chain[k].templatePath] ?? "", node)?.filter((el) => el.localName === "slot");
-    if (!slots?.length) return false;
-    const filler = levelInstance(moded, k);
-    return slots.some((slot) => {
-      const state = filler?.states.get(slot.getAttribute("name") ?? "");
-      return !!state && (state.filled || !state.shown);
-    });
-  }
-  /** Why this page's content can't show while drilled: it would hide an opened instance. */
-  function pageContentRefusal(): string | undefined {
-    const moded = editMode?.active();
-    if (!moded) return undefined;
-    const at = moded.chain.findIndex((level, j) => j > 0 && hiddenAt(moded, j - 1, level.node));
-    return at < 0 ? undefined
-      : `This page's content would hide <${moded.chain[at].tag}>: go back to <${moded.chain[at - 1].tag}> to show it.`;
-  }
-
   /**
    * Opens the template of a nested instance in the mode (`step`), or goes back to the chain's
    * level `index`, on the same framed page instance. Resolves to whether it did.
@@ -608,8 +580,6 @@ export function createComponentTools(deps: ComponentDeps) {
     const pageSource = deps.sources()[before.path];
     const proof = JSON.stringify(before);
     const fromPath = deps.currentPath();
-    // A fallback instance inside a filled slot is hidden until placeholders show.
-    const needsPlaceholders = index === undefined && !!step && before.show === "page" && hiddenAt(before, before.chain.length - 1, step.node);
     // A nested template's edits are undo steps of the framed page too (shared before it opens, as the mode's first).
     const release = index === undefined ? deps.shareHistory?.(template.path, before.path) : undefined;
     let done = false;
@@ -621,17 +591,13 @@ export function createComponentTools(deps: ComponentDeps) {
         || deps.sources()[template.path] !== template.source || JSON.stringify(mode.active()) !== proof
         || sources.some(([path, source]) => deps.sources()[path] !== source)) return false;
       explicitTemplate = { path: template.path, revision };
-      if (needsPlaceholders) {
-        mode.setShow("placeholders");
-        deps.announce(`Showing placeholders because this page fills the slot containing <${level.tag}>.`);
-      }
       if (index === undefined && step) { mode.drill(step); if (release) levelShares.push(release); }
       else if (index !== undefined) { mode.back(index); letGoLevels(index); }
       done = true;
       deps.editor()?.focusEditor?.(template.path);
       // Back selects the instance we opened from, ready to offer Open again.
       deps.preview()?.selectNode({ path: template.path, node: index === undefined ? [0] : [...(before.chain[index + 1]?.node ?? [0])] });
-      if (!needsPlaceholders) deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`);
+      deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`);
       return true;
     } finally {
       if (!done) release?.();
@@ -814,11 +780,8 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!destroyed) window.addEventListener(chipEvent, applyChip);
     return editMode = createEditComponentMode({
       frame: (mode) => deps.preview()?.editComponent?.(mode),
-      // The slot chip of an items slot counts what the slots now show.
       changed: () => { barKey = ""; renderBar(); deps.refreshBar(); },
-      announce: (text) => deps.announce(text),
       back: (index) => { void navigateMode(index); },
-      refuseShow: (next) => next === "page" ? pageContentRefusal() : undefined,
     });
   }).catch((error: unknown) => { editModeLoad = undefined; throw error; });
 
@@ -844,13 +807,15 @@ export function createComponentTools(deps: ComponentDeps) {
       return;
     }
     const found = usage(tag);
-    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}\n${inMode ? JSON.stringify([inMode.show, inMode.chain]) : ""}`;
+    const key = `${tag}\n${usageSummary(found)}\n${found.pages.length}\n${found.components.length}\n${inMode ? JSON.stringify(inMode.chain) : ""}`;
     if (key === barKey) return;
     barKey = key;
     barTag = tag;
     const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
     const where = [found.pages.length ? count(found.pages.length, "page") : "", found.components.length ? count(found.components.length, "component") : ""].filter(Boolean);
     usedOnLabel.textContent = where.length ? `${inMode ? "used" : "Used"} on ${where.join(", ")}` : "Not used yet";
+    usedOnShort.textContent = where.join(", ") || "Not used yet";
+    usedOnButton.setAttribute("aria-label", usedOnLabel.textContent);
     usedOnButton.disabled = !where.length;
     if (!where.length) usedOnDropdown.close();
     else if (usedOn.matches(":popover-open")) renderUsedOn(tag);

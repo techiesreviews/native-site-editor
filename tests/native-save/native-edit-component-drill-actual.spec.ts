@@ -109,7 +109,7 @@ test("nested card opens in place, edits its template and returns by the breadcru
   expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toBe(srcdoc);
 });
 
-test("this page's content can't hide the fallback card opened; a deeper level gets placeholders; Esc keeps the chain", { tag: "@actual" }, async ({ page, baseURL }) => {
+test("the fallback card opened stays shown; a deeper level gets placeholders; Esc keeps the chain", { tag: "@actual" }, async ({ page, baseURL }) => {
   await seed(page, baseURL);
   await markFrame(page);
   await page.getByRole("treeitem", { name: /^Section work/ }).first().locator(".page-structure__label").click();
@@ -118,10 +118,7 @@ test("this page's content can't hide the fallback card opened; a deeper level ge
   await frame(page).locator("section-work").getByText("Untitled project", { exact: true }).filter({ visible: true }).click();
   await toolbar(page).getByRole("button", { name: "Open Card project component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", CARD);
-  // This page's content would hide the fallback card opened: refused, placeholders stay.
-  await bar.getByRole("button", { name: "Show this page's content", exact: true }).click();
-  await expect(page.locator("#status")).toContainText("would hide <card-project>");
-  await expect(bar.getByRole("button", { name: "Show placeholders", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // The mode always shows placeholders: the fallback card opened stays shown.
   await expect(frame(page).locator("section-work").getByText("Untitled project", { exact: true }).filter({ visible: true })).toBeVisible();
   // The card's own nested note opens from its label too: its text selected, then the note through the chip before it.
   await frame(page).locator("section-work").getByText("Project", { exact: true }).filter({ visible: true }).click();
@@ -146,17 +143,14 @@ test("this page's content can't hide the fallback card opened; a deeper level ge
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
 });
 
-test("this page's content can't hide an opened fallback in a section's unfilled slot either", { tag: "@actual" }, async ({ page, baseURL }) => {
+test("an opened fallback in a section's unfilled slot stays shown", { tag: "@actual" }, async ({ page, baseURL }) => {
   // The page fills only the title: a section component hides its unfilled items slot, and the fallback card with it.
   await seed(page, baseURL, false);
   await page.getByRole("treeitem", { name: /^Section work/ }).first().locator(".page-structure__label").click();
   await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
-  const bar = canvasBar(page);
   await frame(page).locator("section-work").getByText("Untitled project", { exact: true }).filter({ visible: true }).click();
   await toolbar(page).getByRole("button", { name: "Open Card project component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", CARD);
-  await bar.getByRole("button", { name: "Show this page's content", exact: true }).click();
-  await expect(page.locator("#status")).toContainText("would hide <card-project>");
-  await expect(bar.getByRole("button", { name: "Show placeholders", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(frame(page).locator("section-work").getByText("Untitled project", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
 });

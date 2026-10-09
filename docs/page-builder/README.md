@@ -71,3 +71,10 @@ Visibility per breakpoint is CSS (`@media … { .x { display: none } }`). Empty 
   drop a file on it, remove an optional part with its ×, type into text in place.
 
 Page settings provides General, Search and Social.
+
+Edit component mode always shows the template's placeholders inside its frame.
+The canvas bar shows the component tag, usage, plan notes when present, and Done.
+As space runs out, notes become an icon with their count, then usage shortens to
+"N pages"; their accessible names retain the full text. At narrower widths the
+mode controls wrap and the device tools occupy a separate row. Done leaves the
+mode and restores the page's assigned slot content without reloading the preview.

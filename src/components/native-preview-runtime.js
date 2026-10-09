@@ -719,8 +719,8 @@
   // One instance on the page shows its template where it sits, inside a
   // frame in the component accent; the rest of the page is shaded, visible
   // but not clickable. Clicks inside the frame select the template's parts
-  // (the page content a slot shows stands for the part around the slot).
-  // With placeholders on, what the page put in the instance is sent to a
+  // (a slot's fallback stands for the part around the slot).
+  // What the page put in the instance is always sent to a
   // slot no template has, as the page renders, so the template's fallbacks
   // show (its own slots, and the CSS naming them, stay as written). It is
   // part of the render, so a render never flickers between the two.
@@ -767,7 +767,7 @@
     return el && el.shadowRoot ? el : null;
   }
   function placeholdersOn(host) {
-    return !!editMode && editMode.show === "placeholders" && !!host && editLevelHosts().indexOf(host) >= 0;
+    return !!editMode && !!host && editLevelHosts().indexOf(host) >= 0;
   }
   // In the page's fresh copy, the edited instance's own content goes to no
   // slot: each child's `slot` names one no template has, and its text is
@@ -775,13 +775,13 @@
   // Opened nested instances take none of their template's content either
   // (placeholderNested), so every level shows its own fallbacks.
   function placeholderContent(content) {
-    if (!editMode || editMode.show !== "placeholders" || !state || state.pagePaths[state.route] !== editMode.path) return;
+    if (!editMode || !state || state.pagePaths[state.route] !== editMode.path) return;
     var el = content;
     for (var i = 0; el && i < editMode.node.length; i++) el = el.children[editMode.node[i]] || null;
     if (el && el !== content && el.localName === editMode.tag) toPlaceholders(el);
   }
   function placeholderNested(host, content) {
-    if (!editMode || editMode.show !== "placeholders" || !editMode.nested.length) return;
+    if (!editMode || !editMode.nested.length) return;
     var at = editLevelHosts().indexOf(host), step = at >= 0 ? editMode.nested[at] : null;
     if (!step) return;
     var el = content;
@@ -881,7 +881,7 @@
     if (at < 0) return null;
     for (var i = 0; i < at; i++) {
       var n = path[i];
-      // Slots show; the page's own content in one stands for the part around it.
+      // A slot's fallback stands for the part around it.
       if (!(n instanceof Element) || n instanceof HTMLSlotElement || n.getRootNode() === document) continue;
       // A nested instance's template is not this one's: the instance stands for it.
       if (templateLocked(n)) continue;
@@ -920,9 +920,9 @@
       return step && typeof step.tag === "string" && Array.isArray(step.node) && step.node.length &&
         step.node.every(function (i) { return Number.isInteger(i) && i >= 0; });
     }));
-    editMode = valid ? { path: next.path, node: next.node.slice(), tag: next.tag, nested: (next.nested || []).map(function (step) { return { tag: step.tag, node: step.node.slice() }; }), show: next.show === "page" ? "page" : "placeholders" } : null;
+    editMode = valid ? { path: next.path, node: next.node.slice(), tag: next.tag, nested: (next.nested || []).map(function (step) { return { tag: step.tag, node: step.node.slice() }; }) } : null;
     var after = editHostElement();
-    // The page renders again as it now should: the instance's fallbacks or its page content.
+    // Entering shows the instance's fallbacks; leaving restores its assigned content.
     if ((before || after) && state) renderPage();
     // What is selected outside the frame is left.
     if (after && selected && !editContains(after, selected)) {

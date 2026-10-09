@@ -3,8 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Edit component mode, in place (build slice 41): the starter's Recent work
 // made a section component, opened from its edit bar. The instance shows its
-// template where it sits, framed, the page shaded; placeholders first, then
-// this page's content; Done leaves. The preview's document is never replaced.
+// template where it sits, framed, the page shaded; placeholders always show.
+// Done leaves. The preview's document is never replaced.
 // ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
 // ASE_EDIT_MODE_SHOTS=<dir> saves screenshots there.
 test.skip(!process.env.ASE_NATIVE_SAVE_FIXTURE?.endsWith("actual-starter"), "Set ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.");
@@ -66,7 +66,7 @@ async function seed(page: Page, baseURL: string | undefined) {
 const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as unknown as { aseMark: string }).aseMark = "slice-41"; });
 const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as unknown as { aseMark?: string }).aseMark);
 
-test("Edit component opens Recent work in place: placeholders, this page's content, Done, with no preview reload", { tag: "@actual" }, async ({ page, baseURL }) => {
+test("Edit component opens Recent work in place: placeholders, template edit, Done, with no preview reload", { tag: "@actual" }, async ({ page, baseURL }) => {
   await seed(page, baseURL);
   await markFrame(page);
   const loads = await page.locator(".native-preview-frame").getAttribute("srcdoc");
@@ -79,10 +79,6 @@ test("Edit component opens Recent work in place: placeholders, this page's conte
   // The slim bar.
   await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
   await expect(canvasBar(page).getByRole("button", { name: /^used on 1 page/ })).toBeVisible();
-  const showPage = canvasBar(page).getByRole("button", { name: "Show this page's content", exact: true });
-  const showPlaceholders = canvasBar(page).getByRole("button", { name: "Show placeholders", exact: true });
-  await expect(showPlaceholders).toHaveAttribute("aria-pressed", "true");
-  await expect(showPage).toHaveAttribute("aria-pressed", "false");
   await expect(canvasBar(page).locator(".canvas-crumbs")).toBeHidden();
 
   // Placeholders: the template's fallbacks show, not the page's cards; the frame and the shade are drawn.
@@ -120,22 +116,6 @@ test("Edit component opens Recent work in place: placeholders, this page's conte
   await page.mouse.click(framed.x + 40, framed.y + framed.height + 30);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
   await expect(page.locator(".edit-bar__label")).toContainText("Heading");
-
-  // This page's content: the page's cards and title in the template's slots.
-  await showPage.click();
-  await expect(showPage).toHaveAttribute("aria-pressed", "true");
-  await expect(work.getByText("Fern & Kettle", { exact: true })).toBeVisible();
-  await expect(work.getByText("Recent work", { exact: true })).toBeVisible();
-  // Still in view, below the site's sticky header.
-  await expect.poll(async () => {
-    const header = (await frame(page).locator("site-header").boundingBox())!;
-    const shown = (await work.getByText("Recent work", { exact: true }).boundingBox())!;
-    return shown.y >= header.y + header.height && shown.y + shown.height <= canvas.y + canvas.height;
-  }).toBe(true);
-  await expect(fallbackCard).toHaveCount(0);
-  if (shots) await page.screenshot({ path: `${shots}/page-content.png` });
-  await showPlaceholders.click();
-  await expect(fallbackCard).toHaveCount(1);
 
   // Done only leaves: the page again, the instance selected, its content shown.
   await canvasBar(page).getByRole("button", { name: "Done editing component", exact: true }).click();

@@ -333,3 +333,5 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   Lex's word.
 
 **Amended (Lex, 2026-10-09):** decision 10 narrowed: Make component only on container elements (section, div, article, aside, figure, nav, a non-page header/footer), not on text, images, links, buttons or lists (slice 80).
+
+**Amended (Lex, 2026-10-09):** Edit component mode has no "Show this page's content / Show placeholders" toggle: the mode always shows the template's placeholders; its bar is "Editing <tag> · used on N pages ▾ · note · Done" (slice 89).

@@ -393,3 +393,7 @@
     transition: none;
   }
 }
+
+.canvas-component__used-short {
+  display: none;
+}

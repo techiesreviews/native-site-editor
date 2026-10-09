@@ -1,7 +1,7 @@
 ---
 title: "Edit component mode's bar fits at every width"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -17,3 +17,9 @@ From slices 22 and 85 (see their Done notes): Edit component mode's bar ("Editin
 - Nightly spec at 1440 (with a note), 1024, 760 and the narrowest supported width: every control visible, not overlapping, clickable; screenshots of each.
 
 **Changed (Lex, 2026-10-09):** remove the Show this page's content / Show placeholders toggle entirely; the mode always shows the template's placeholders.
+
+## Done (2026-10-09)
+
+- Show toggle removed (Lex, 2026-10-09): the mode always shows the template's placeholders; the toggle, its CSS, the page-content view path (frame mode `show`, runtime, items-slot count) and its spec steps are gone (slices 22, 23, 41 specs follow).
+- The bar fits by measured stages (`src/page-builder/edit-mode-bar-fit.ts`): off-screen copies measure each stage once per content change, a ResizeObserver picks the first that fits: the note shrinks to an info mark and its count, then "used on N pages" to "N pages" (accessible names keep the full text), then the bar wraps with the device tools on their own row. Done always visible.
+- Tests: `tests/edit-mode-bar-fit.test.ts`; nightly `native-edit-mode-bar-fits.spec.ts` (1440, 1024, 760, 390 with a plan note, light and dark: every control visible, inside, not overlapping, clickable). Screenshots in `.scratch/cb-build-shots/89/`.

@@ -103,13 +103,6 @@ test("Edit component mode shows each part's slot chip after its name; a click re
   expect(items).toMatchObject({ before: "Card project›", last: true, kind: "slot-chip--items", pressed: "true", struck: "none" });
   expect(items.background).not.toBe(title.background);
   if (shots) await page.screenshot({ path: `${shots}/items-slot.png` });
-  // Showing this page's content, the items slot counts the page's cards.
-  const canvasBar = page.locator(".canvas-bar");
-  await canvasBar.getByRole("button", { name: "Show this page's content", exact: true }).click();
-  await expect(chip(page)).toHaveText("items ×3");
-  await canvasBar.getByRole("button", { name: "Show placeholders", exact: true }).click();
-  await expect(chip(page)).toHaveText("items ×1");
-
   // A fixed part: grey, struck through, with the name it would get.
   await work.getByText(LEDE, { exact: true }).click();
   await expect(chip(page)).toHaveText("text");
@@ -137,7 +130,7 @@ test("Edit component mode shows each part's slot chip after its name; a click re
   expect((await reports())[1]).toMatchObject({ node: [0, 0, 0], chip: { state: "slot", name: "title", slot: [0, 0] } });
 
   // Outside the mode no chip shows.
-  await canvasBar.getByRole("button", { name: "Done editing component", exact: true }).click();
+  await page.locator(".canvas-bar").getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(toolbar(page)).toBeVisible();
   await expect(page.locator(".slot-chip")).toHaveCount(0);

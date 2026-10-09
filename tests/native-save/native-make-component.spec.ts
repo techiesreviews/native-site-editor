@@ -50,7 +50,7 @@ test("Make component makes a section a component at once, named from its heading
   await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toContain(":host");
   // The mode frames the new instance, its placeholders showing.
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
-  await expect(canvasBar(page).getByRole("button", { name: "Show placeholders", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText(`Editing<${tag}>`);
   // No notes for this plan.
   await expect(canvasBar(page).locator(".edit-mode__note")).toHaveCount(0);
 

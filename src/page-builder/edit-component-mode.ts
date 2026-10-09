@@ -4,18 +4,16 @@
 // The instance Edit component was chosen on shows its template where it sits
 // on the page, inside a frame, the rest of the page shaded (the preview's
 // runtime draws both). The canvas bar becomes the mode's slim bar: "Editing
-// <tag> · used on N pages ▾ · Show this page's content / Show placeholders ·
-// Done". Placeholders (the template's fallbacks) show first. Opened by Make
-// component (build slice 22), the bar also holds the plan's notes until they
-// are dismissed. Every change is
-// an edit of the template as it is made, so Done only leaves the mode. The
+// <tag> · used on N pages ▾ · note · Done". The template's placeholders
+// always show. Opened by Make component (build slice 22), the bar also holds
+// the plan's notes until dismissed. Every change edits the template as it is
+// made, so Done only leaves the mode. The
 // preview is never reloaded for any of it: the frame gets the mode as a
 // message and renders the instance again in place.
 //
 // Nested instances add levels to the chain; crumbs return to earlier templates.
 // The page instance stays the target for Done; placeholders show every
-// level's own fallbacks, and this page's content is refused while it would
-// hide the instance opened.
+// level's own fallbacks.
 //
 // Selecting a part of the template shows its slot chip after the element's
 // name in the edit bar label (slot-chip.ts). The chip reports a click, and a
@@ -23,16 +21,16 @@
 // SLOT_CHIP_EVENT.
 
 import { drillChain, backChain, type EditComponentLevel } from "./edit-component-chain";
+import { EDIT_MODE_FITS, editModeBarFit } from "./edit-mode-bar-fit";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
+import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
 import { mountDropdown } from "../components/dropdown";
 import { componentIcon } from "./component-icon";
 import { slotChip } from "../components/slot-chip";
 import type { EditComponentFrameMode } from "../components/native-preview";
 import type { SlotChipState } from "./component-model";
 import "./edit-component-mode.css";
-
-export type EditComponentShow = EditComponentFrameMode["show"];
 
 /**
  * A slot chip's report, on `window`: toggle the part at `node` of `template`
@@ -60,30 +58,16 @@ export interface EditComponentModePorts {
   frame: (mode: EditComponentFrameMode | undefined) => void;
   /** The slim bar changed: the canvas bar takes its parts again. */
   changed: () => void;
-  announce: (text: string) => void;
   back: (index: number) => void;
-  /** Why the slots can't show `next` now (it would hide the instance opened), if so. */
-  refuseShow: (next: EditComponentShow) => string | undefined;
 }
 
 export function createEditComponentMode(ports: EditComponentModePorts) {
-  let now: (EditComponentTarget & { show: EditComponentShow; chain: EditComponentLevel[] }) | undefined;
+  let now: (EditComponentTarget & { chain: EditComponentLevel[] }) | undefined;
   // The chip shown, kept while it says the same of the same part.
   let shownChip: { key: string; element: HTMLElement } | undefined;
   let notes: string[] = [];
 
   const title = node("span", "edit-mode__title");
-  const show = node("span", "edit-mode__show");
-  show.setAttribute("role", "group");
-  show.setAttribute("aria-label", "Slot content");
-  const choices: [EditComponentShow, HTMLButtonElement][] = [
-    ["page", button("Show this page's content", () => setShow("page"), "edit-mode__show-item")],
-    ["placeholders", button("Show placeholders", () => setShow("placeholders"), "edit-mode__show-item")],
-  ];
-  for (const [value, choice] of choices) {
-    choice.title = value === "page" ? "The slots show what this page puts in them" : "The slots show the template's fallbacks";
-    show.append(choice);
-  }
   const dot = () => {
     const out = node("span", "edit-mode__dot", "·");
     out.setAttribute("aria-hidden", "true");
@@ -96,8 +80,13 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   note.setAttribute("role", "note");
   const noteButton = node("button", "edit-mode__note-text");
   noteButton.type = "button";
+  const noteCount = node("span", "edit-mode__note-count");
+  // Shrunk, the note is an info mark and its count (not a page icon: "1 page" sits beside it).
+  const noteMark = document.createElement("template");
+  noteMark.innerHTML = infoIcon.replace("<svg ", `<svg class="icon" width="12" height="12" aria-hidden="true" focusable="false" `);
+  noteCount.append(noteMark.content.firstElementChild!, node("span", "edit-mode__note-number"));
   const noteLabel = node("span", "edit-mode__note-label");
-  noteButton.append(node("span", "edit-mode__note-kind", "Note"), noteLabel);
+  noteButton.append(node("span", "edit-mode__note-kind", "Note"), noteLabel, noteCount);
   const noteList = node("ul", "edit-mode__notes");
   noteList.id = "edit-mode-notes";
   noteList.setAttribute("aria-label", "Notes");
@@ -117,8 +106,63 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   dismiss.append(icon("x", 12));
   note.append(noteButton, dismiss);
 
+  let fitBar: HTMLElement | undefined;
+  let fitObserver: ResizeObserver | undefined;
+  let fitFrame: number | undefined;
+  let fitKey = "";
+  let widths: Record<typeof EDIT_MODE_FITS[number], number> | undefined;
+  function applyFit() {
+    if (!fitBar || !widths) return;
+    const stage = editModeBarFit(fitBar.getBoundingClientRect().width, widths);
+    if (fitBar.dataset.fit !== stage) fitBar.dataset.fit = stage;
+  }
+  function fit() {
+    if (!now) return;
+    const bar = title.closest<HTMLElement>(".canvas-bar");
+    if (!bar) return;
+    if (fitBar !== bar) {
+      fitObserver?.disconnect();
+      fitBar = bar;
+      let observedWidth = -1;
+      fitObserver = new ResizeObserver(([entry]) => {
+        const width = entry.borderBoxSize[0]?.inlineSize ?? entry.contentRect.width;
+        if (width === observedWidth) return;
+        observedWidth = width;
+        // A stage can change the observed bar's height. Write outside observer
+        // delivery, and ignore height-only changes, to avoid resize-loop errors.
+        if (fitFrame !== undefined) cancelAnimationFrame(fitFrame);
+        fitFrame = requestAnimationFrame(() => {
+          fitFrame = undefined;
+          applyFit();
+        });
+      });
+      fitObserver.observe(bar);
+      fitKey = "";
+    }
+    const key = JSON.stringify([title.textContent, notes, bar.querySelector(".canvas-component__used")?.getAttribute("aria-label")]);
+    if (key !== fitKey) {
+      fitKey = key;
+      // Off-screen copies measure natural widths once per content change. Resize
+      // callbacks only compare cached numbers: changing height cannot feed back
+      // into width measurement or oscillate between fit stages.
+      const copies = EDIT_MODE_FITS.map((stage) => {
+        const copy = bar.cloneNode(true) as HTMLElement;
+        copy.dataset.fit = stage;
+        copy.classList.add("edit-mode--measure");
+        copy.setAttribute("aria-hidden", "true");
+        copy.inert = true;
+        copy.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
+        document.body.append(copy);
+        return copy;
+      });
+      widths = Object.fromEntries(copies.map((copy, index) => [EDIT_MODE_FITS[index], Math.ceil(copy.getBoundingClientRect().width)])) as Record<typeof EDIT_MODE_FITS[number], number>;
+      copies.forEach((copy) => copy.remove());
+    }
+    applyFit();
+  }
+
   function send() {
-    ports.frame(now && { path: now.path, node: [...now.node], tag: now.tag, show: now.show,
+    ports.frame(now && { path: now.path, node: [...now.node], tag: now.tag,
       nested: now.chain.slice(1).map(({ tag, node }) => ({ tag, node: [...node] })) });
   }
   function render() {
@@ -133,26 +177,17 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       else crumb.setAttribute("aria-label", `Back to <${level.tag}>`);
       title.append(crumb);
     });
-    for (const [value, choice] of choices) choice.setAttribute("aria-pressed", String(now.show === value));
     noteLabel.textContent = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0] ?? "";
     noteButton.title = notes.join("\n");
+    noteButton.setAttribute("aria-label", `Note: ${notes.join("; ")} (${notes.length} ${notes.length === 1 ? "note" : "notes"})`);
+    noteCount.lastElementChild!.textContent = String(notes.length);
     noteList.replaceChildren(...notes.map((text) => node("li", "edit-mode__notes-item", text)));
-  }
-  function setShow(next: EditComponentShow) {
-    if (!now || now.show === next) return;
-    const refused = ports.refuseShow(next);
-    if (refused) { ports.announce(refused); return; }
-    now.show = next;
-    render();
-    send();
-    ports.changed();
-    ports.announce(next === "page" ? "Showing this page's content in the slots." : "Showing the template's placeholders in the slots.");
   }
 
   return {
     /** Starts the mode on `target`, its placeholders showing, with `notes` to tell in the bar. */
     enter(target: EditComponentTarget, withNotes: readonly string[] = []) {
-      now = { path: target.path, node: [...target.node], tag: target.tag, templatePath: target.templatePath, show: "placeholders", chain: [{ tag: target.tag, templatePath: target.templatePath, node: [...target.node] }] };
+      now = { path: target.path, node: [...target.node], tag: target.tag, templatePath: target.templatePath, chain: [{ tag: target.tag, templatePath: target.templatePath, node: [...target.node] }] };
       notes = [...withNotes];
       render();
       send();
@@ -161,6 +196,12 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     leave() {
       const was = now;
       if (!was) return undefined;
+      fitObserver?.disconnect();
+      if (fitFrame !== undefined) cancelAnimationFrame(fitFrame);
+      fitFrame = undefined;
+      if (fitBar) delete fitBar.dataset.fit;
+      fitBar = undefined;
+      fitKey = "";
       now = undefined;
       shownChip = undefined;
       notes = [];
@@ -188,7 +229,6 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       send();
       ports.changed();
     },
-    setShow,
     /** An operation refused its optimistic rename: draw the name from source again. */
     resetChip() { shownChip = undefined; },
     /** The slot chip of the template's part at `node`, for the edit bar label. */
@@ -214,7 +254,8 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     /** The slim bar around the host's Used on and Done controls. */
     parts(usedOn: Element, done: HTMLElement) {
       doneButton = done;
-      return { lead: [title, dots[0], usedOn, dots[1], show, ...(notes.length ? [note] : [])], end: [done] };
+      queueMicrotask(fit);
+      return { lead: [title, dots[0], usedOn, ...(notes.length ? [dots[1], note] : [])], end: [done] };
     },
   };
 }

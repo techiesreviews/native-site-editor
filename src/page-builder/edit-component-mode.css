@@ -1,6 +1,5 @@
 /* Edit component mode's slim bar (edit-component-mode.ts): the canvas bar's
-   crumbs step aside for "Editing <tag> · used on N pages · Show this page's
-   content / Show placeholders · Done". */
+   crumbs step aside for "Editing <tag> · used on N pages · note · Done". */
 .canvas-bar--component:has(.edit-mode__title) .canvas-crumbs {
   display: none;
 }
@@ -24,51 +23,10 @@
 .edit-mode__dot {
   color: color-mix(in oklch, var(--component-text) 55%, transparent);
 }
-.edit-mode__show {
-  display: inline-flex;
-  flex: 0 1 auto;
-  min-width: 0;
-  padding: 2px;
-  border-radius: calc(var(--radius) + 2px);
-  background: color-mix(in oklch, var(--component) 12%, transparent);
-}
-.edit-mode__show-item {
-  overflow: hidden;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: var(--radius);
-  background: transparent;
-  color: var(--component-text);
-  font: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 120ms ease-out;
-}
-.edit-mode__show-item:hover {
-  background: color-mix(in oklch, var(--component) 14%, transparent);
-}
-.edit-mode__show-item[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--text);
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
-}
-.edit-mode__show-item:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 1px;
-}
-
 /* The page's own controls over the frame (section gaps, grid items) are the
    page's, not the template's: they stay away in the mode. */
 .native-preview-pane.is-editing-component :is(.insert-layer, .card-grid-layer) {
   display: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .edit-mode__show-item {
-    transition: none;
-  }
 }
 
 /* Done says so in the mode: it is the way out. */
@@ -82,8 +40,8 @@
    in the panel it opens, until dismissed. */
 .edit-mode__note {
   display: inline-flex;
-  /* Gives way first in a narrow bar: the Show toggle keeps its words. */
-  flex: 0 1000 auto;
+  /* The measured note stage gives way before the usage label. */
+  flex: none;
   align-items: center;
   min-width: 96px;
   max-width: 340px;
@@ -157,4 +115,74 @@
 .edit-mode__crumb:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* Measured stages, in priority order. All controls retain their natural
+   width; only the note text has a bounded full-size presentation. */
+.canvas-bar:has(.edit-mode__title) .canvas-component {
+  flex: 1 0 auto;
+}
+.edit-mode__note-text {
+  flex: 1;
+}
+.edit-mode__note-count {
+  display: none;
+}
+.canvas-bar[data-fit]:not([data-fit="full"]) :is(.edit-mode__note-kind, .edit-mode__note-label) {
+  display: none;
+}
+.canvas-bar[data-fit]:not([data-fit="full"]) .edit-mode__note {
+  min-width: 0;
+}
+.canvas-bar[data-fit]:not([data-fit="full"]) .edit-mode__note-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.canvas-bar:is([data-fit="used"], [data-fit="wrap"]) .canvas-component__used-label {
+  display: none;
+}
+.canvas-bar:is([data-fit="used"], [data-fit="wrap"]) .canvas-component__used-short {
+  display: inline;
+}
+.canvas-bar[data-fit="wrap"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 8px;
+}
+.canvas-bar[data-fit="wrap"] .canvas-component {
+  flex-wrap: wrap;
+}
+.canvas-bar[data-fit="wrap"] .canvas-tools {
+  grid-column: 1 / -1;
+}
+.canvas-bar[data-fit="wrap"] .edit-mode__dot {
+  display: none;
+}
+.canvas-bar[data-fit="wrap"] .edit-mode__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.canvas-bar[data-fit="wrap"] .edit-mode__tag {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+/* Off-screen, inert copies share the real tokens and stage selectors. No
+   viewport breakpoint guesses: long tags and notes cost their actual width. */
+.canvas-bar.edit-mode--measure {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: none;
+  visibility: hidden;
+  pointer-events: none;
+}
+.edit-mode--measure .canvas-component {
+  flex: none !important;
+}
+.edit-mode--measure .canvas-component__done-label {
+  transition: none;
 }

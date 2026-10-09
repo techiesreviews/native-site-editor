@@ -78,7 +78,6 @@ export interface EditComponentFrameMode {
   path: string;
   node: number[];
   tag: string;
-  show: "placeholders" | "page";
   nested?: { node: number[]; tag: string }[];
 }
 
