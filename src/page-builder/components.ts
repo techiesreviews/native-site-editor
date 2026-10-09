@@ -572,12 +572,15 @@ export function createComponentTools(deps: ComponentDeps) {
   function levelInstance(moded: ModeNow, k: number) {
     return k === 0 ? instanceAt(moded.path, [...moded.node]) : instanceAt(moded.chain[k - 1].templatePath, [...moded.chain[k].node]);
   }
-  /** Whether the element at `node` of level `k`'s template sits in a slot that what fills the level fills (so it is not shown). */
+  /** Whether the element at `node` of level `k`'s template sits in a slot that, with what fills the level, doesn't show its fallback: filled, or hidden (a section's unfilled slot). */
   function hiddenAt(moded: ModeNow, k: number, node: readonly number[]) {
     const slots = elementChain(deps.sources()[moded.chain[k].templatePath] ?? "", node)?.filter((el) => el.localName === "slot");
     if (!slots?.length) return false;
     const filler = levelInstance(moded, k);
-    return slots.some((slot) => filler?.states.get(slot.getAttribute("name") ?? "")?.filled);
+    return slots.some((slot) => {
+      const state = filler?.states.get(slot.getAttribute("name") ?? "");
+      return !!state && (state.filled || !state.shown);
+    });
   }
   /** Why this page's content can't show while drilled: it would hide an opened instance. */
   function pageContentRefusal(): string | undefined {

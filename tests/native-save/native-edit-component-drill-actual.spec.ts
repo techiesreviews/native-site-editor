@@ -37,23 +37,23 @@ h2 {
   margin: 0;
 }
 `;
-function homeWithWork() {
+function homeWithWork(withCards = true) {
   const home = readFileSync(`${process.env.ASE_NATIVE_SAVE_FIXTURE}/index.html`, "utf8");
   const start = home.indexOf(`<section class="flow" id="work">`);
   const end = home.indexOf("</section>", start) + "</section>".length;
   expect(start).toBeGreaterThan(0);
   const cards = home.slice(start, end).match(/<card-project>[\s\S]*?<\/card-project>/g)!;
   expect(cards).toHaveLength(3);
-  const items = cards.join("\n      ");
+  const items = withCards ? cards.join("\n      ") : "";
   return `${home.slice(0, start)}<section-work id="work">
       <h2 slot="title">Recent work</h2>
       ${items}
     </section-work>${home.slice(end)}`;
 }
 
-async function seed(page: Page, baseURL: string | undefined) {
+async function seed(page: Page, baseURL: string | undefined, withCards = true) {
   await page.goto(baseURL!);
-  for (const [path, content] of [[TEMPLATE, workTemplate], ["components/section-work/section-work.css", workCss], ["index.html", homeWithWork()]])
+  for (const [path, content] of [[TEMPLATE, workTemplate], ["components/section-work/section-work.css", workCss], ["index.html", homeWithWork(withCards)]])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Recent work", { timeout: 30_000 });
@@ -144,4 +144,19 @@ test("this page's content can't hide the fallback card opened; a deeper level ge
   expect(await frameMark(page)).toBe("slice-47");
   await bar.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+});
+
+test("this page's content can't hide an opened fallback in a section's unfilled slot either", { tag: "@actual" }, async ({ page, baseURL }) => {
+  // The page fills only the title: a section component hides its unfilled items slot, and the fallback card with it.
+  await seed(page, baseURL, false);
+  await page.getByRole("treeitem", { name: /^Section work/ }).first().locator(".page-structure__label").click();
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
+  const bar = canvasBar(page);
+  await frame(page).locator("section-work").getByText("Untitled project", { exact: true }).filter({ visible: true }).click();
+  await toolbar(page).getByRole("button", { name: "Open Card project component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", CARD);
+  await bar.getByRole("button", { name: "Show this page's content", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("would hide <card-project>");
+  await expect(bar.getByRole("button", { name: "Show placeholders", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
 });
