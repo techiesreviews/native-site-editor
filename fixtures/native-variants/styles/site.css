@@ -24,3 +24,10 @@ body {
 card-tip[data-tone="accent"] {
   background: #fde9c4;
 }
+
+.flow { display: flex; flex-direction: column; gap: 16px; }
+.btn { display: inline-block; padding: 8px 16px; }
+.btn[data-variant="secondary"] { background: #eee; }
+.btn[data-variant="ghost"] { border: 1px solid; }
+.btn[data-size="small"] { font-size: 0.875rem; }
+.btn[data-size="large"] { font-size: 1.25rem; }

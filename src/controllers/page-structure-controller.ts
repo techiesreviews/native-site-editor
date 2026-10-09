@@ -5,6 +5,7 @@ import { textSizeScale, currentTextSize, textSizeEdit } from "../native-text-siz
 import { type StartTag, type ElementRange } from "../native-source-location";
 import { nativeLinkSuggestions } from "../native-pages";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "../page-builder/native-element-fields";
+import { blockLayout, blockLayoutEdit } from "../page-builder/block-fields";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { agentElement } from "../agent-site";
 import { isSectionTemplate } from "../native-insert";
@@ -125,6 +126,18 @@ export function createPageStructureController(ports: PageStructurePorts) {
         ], node, `Heading level ${value.toUpperCase()}`),
       });
     }
+    if (range && node) {
+      const layout = blockLayout(source, range.tag);
+      if (layout) controls.push({
+        kind: "select", label: "Layout", caption: true,
+        options: [{ label: "Stack", value: "flow" }, { label: "Grid", value: "cards" }],
+        value: layout,
+        onChange: (value) => {
+          const edit = blockLayoutEdit(source, range.tag, value);
+          if (edit) change([edit], node, `Layout: ${value === "cards" ? "Grid" : "Stack"}`);
+        },
+      });
+    }
     // Text size is for elements that carry text themselves, not page containers or components.
     const containers = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
     const textual = range?.close && !selection.tag.includes("-") && !containers.has(selection.tag);
@@ -147,7 +160,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         },
       });
     }
-    // A component instance's variants (src/page-builder/components.ts).
+    // Component instance and Button block variants (src/page-builder/components.ts).
     if (ports.componentTools) controls.push(...ports.componentTools.variantControls(selection));
     // The link the selected text sits in, inside the selected text element.
     let textLink: { node: number[]; text: NativeTextSelection } | undefined;

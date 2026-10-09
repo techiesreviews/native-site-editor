@@ -8,7 +8,7 @@
 // Loaded when an instance is first selected (src/page-builder/components.ts),
 // so the variant parser stays out of the boot bundle.
 
-import { scriptsSetAttributes, siteVariants, valueLabel, variantsForComponent, type Variant } from "../../shared/variants";
+import { scriptsSetAttributes, siteVariants, valueLabel, variantsForClass, variantsForComponent, type Variant } from "../../shared/variants";
 
 export interface VariantField {
   attribute: string;
@@ -83,4 +83,9 @@ export function instanceVariantFields(tag: string, css: string, sheets: readonly
 export function variantAttribute(field: VariantField, choice: string): string | true | undefined {
   if (field.kind === "yes-no") return choice ? field.form === "true" ? "true" : true : undefined;
   return choice.startsWith("=") ? choice.slice(1) : undefined;
+}
+
+/** Button axes use only the site's explicit .btn rules, never global component axes. */
+export function buttonVariantFields(sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
+  return variantFields(variantsForClass("btn", siteVariants(sheets)), attributes);
 }

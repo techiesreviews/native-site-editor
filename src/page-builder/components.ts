@@ -21,6 +21,7 @@
 // step; typing in a field is one step until the field is left), so the
 // code pane shows it as it happens.
 
+import { isButtonBlock } from "./block-fields";
 import { nativeElementUrlProblem } from "./native-elements";
 import { startTags } from "../../shared/html-source";
 import { mountComponentPanelResize } from "./component-panel-resize";
@@ -459,15 +460,21 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- Variants (ticket 07 §5). ----
 
   /**
-   * The selected instance's variants as edit bar controls, read from its
-   * component's CSS and the stylesheets of the page it shows on: up to two
+   * Instance and Button variants as edit bar controls, read from component
+   * CSS or .btn rules in the page's stylesheets: up to two
    * in the bar, more behind one Variants button. Each pick is one undo step.
    */
   let variantReader: typeof import("./variant-fields") | undefined;
   let variantLoad: Promise<void> | undefined;
   function variantControls(selection: NativePreviewSelection): EditBarControl[] {
     const current = site();
-    if (!current || !isComponent(selection.tag) || !selection.node?.length) return [];
+    if (!current || !selection.node?.length) return [];
+    const source = deps.sources()[selection.path];
+    const range = source === undefined ? undefined : locateNativeElementRange(source, selection.node);
+    if (source === undefined || !range || range.tag.name !== selection.tag) return [];
+    const attributes = startTagAttributes(source, range.tag);
+    const button = isButtonBlock(selection.tag, attributes);
+    if (!button && !isComponent(selection.tag)) return [];
     const reader = variantReader;
     if (!reader) {
       // The bar shows again with them once the reader is here.
@@ -475,8 +482,9 @@ export function createComponentTools(deps: ComponentDeps) {
         .catch((error) => { variantLoad = undefined; void handleChunkLoadFailure(error); });
       return [];
     }
-    const at = instanceAt(selection.path, selection.node);
-    if (!at || !openingSourceSafe(at.source, at.range.tag)) return [];
+    const instance = button ? undefined : instanceAt(selection.path, selection.node);
+    if ((!button && !instance) || !openingSourceSafe(source, range.tag)) return [];
+    const at = { path: selection.path, node: selection.node, source, range, tag: selection.tag };
     const sources = deps.sources();
     // An instance inside a template takes the site styles of the page the preview shows.
     const page = Object.values(current.routes).includes(at.path) ? at.path : deps.previewPage();
@@ -484,12 +492,12 @@ export function createComponentTools(deps: ComponentDeps) {
     const sheets = expandStyleImports(linked, (path) => sources[path]).sheets;
     const revision = deps.revision();
     const pick = (field: VariantField, choice: string) => {
-      const now = instanceAt(at.path, at.node);
-      if (!now || now.source !== at.source || now.tag !== at.tag || deps.revision() !== revision) {
-        deps.announce("The instance changed. Select it again to pick a variant.");
+      const now = deps.sources()[at.path];
+      if (now !== at.source || deps.revision() !== revision) {
+        deps.announce(`The ${button ? "button" : "instance"} changed. Select it again to pick a variant.`);
         return;
       }
-      if (now.instance.attributes.filter((item) => item.name === field.attribute).length > 1) {
+      if (attributes.filter((item) => item.name === field.attribute).length > 1) {
         deps.announce(`${field.attribute} is written twice; edit it in the code.`);
         return;
       }
@@ -499,13 +507,15 @@ export function createComponentTools(deps: ComponentDeps) {
         : value === undefined ? `${field.label}: default` : `${field.label}: ${option}`;
       change(at.path, [attributeEdit(at.source, at.range.tag, field.attribute, value)], message, at.node);
     };
-    const fields = reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(at.templatePath)] ?? "", sheets, at.instance.attributes, deps.scripts()).map((field): SelectControl | CheckboxControl => {
+    const variants = button ? reader.buttonVariantFields(sheets, attributes)
+      : reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(instance!.templatePath)] ?? "", sheets, attributes, deps.scripts());
+    const fields = variants.map((field): SelectControl | CheckboxControl => {
       const note = field.note ? { note: field.note } : {};
       return field.kind === "yes-no"
         ? { kind: "checkbox", label: field.label, checked: field.value === "on", ...note, onChange: (on) => pick(field, on ? "on" : "") }
         : { kind: "select", label: field.label, caption: true, options: field.options, value: field.value, ...note, onChange: (choice) => pick(field, choice) };
     });
-    return fields.length > 2 ? [{ kind: "fields", label: "Variants", title: `${componentLabel(at.tag)} variants`, fields }] : fields;
+    return fields.length > 2 ? [{ kind: "fields", label: "Variants", title: `${button ? "Button" : componentLabel(at.tag)} variants`, fields }] : fields;
   }
 
   // ---- Edit component. ----
