@@ -25,3 +25,10 @@ The core of ticket [03](../../tickets/03-default-editables.md) in `makeComponent
 
 - `tests/component-model.test.ts` covers: the refusals; heading and paragraph wrapped whole; rich inline kept; standalone link and image slots; `picture`; `svg` fixed; role names and numbering; tie-break by class; a kept-fixed part; a renamed slot; kind from the fallback.
 - Today's Make component (slice 02) writes whole-element slots on the starter.
+
+## Done (2026-10-09)
+
+- `makeComponentPlan` wraps text elements, images, pictures and standalone links whole, names them by role (class breaks ties, else numbered), reads kind from the fallback, takes `{ fixed, slots, names }` and returns each part's `path`, `name`, `kind`, `text`, `byDefault`, `fixed`. It refuses anything inside an instance; table cells, summaries and legends are never wrapped whole.
+- Commits "Slot plan: whole-element slots named by role" and two review-fix commits on `dev`.
+- Tests in `tests/component-model.test.ts`: refusals, whole text with rich inline, link/image/picture slots, svg fixed, role names, numbering, class tie-break, fixed parts, renames, hand-made slots, kind from fallback, the starter's contact section.
+- Paths are `parseSource` element-child paths; they differ from the browser's where HTML implies elements (`tbody`), for slice 22 to map.
