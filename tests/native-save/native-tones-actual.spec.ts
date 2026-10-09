@@ -64,6 +64,8 @@ test("starter tones keep text and filled controls accessible across brands and s
     fallback = textMode === "computed fallback";
     for (const path of ["/", "/about/"]) {
       await page.goto(`${origin}${path}`);
+      // The native pass must really take the contrast-color() branch.
+      if (!fallback) expect(await page.evaluate(() => CSS.supports("color", "contrast-color(red)"))).toBe(true);
       if (path === "/") await page.locator("main").evaluate((main, html) => main.insertAdjacentHTML("beforeend", html), extraCases);
       // A definition alone is insufficient: wait for nested templates and every
       // shadow stylesheet, including the loader's dynamically inserted cases.
@@ -81,6 +83,7 @@ test("starter tones keep text and filled controls accessible across brands and s
         const result = await page.evaluate(({ brands, tones, scheme }) => {
           const samples: ContrastSample[] = [];
           const covered = new Set<string>();
+          const unsupported: string[] = [];
           const skipped = { image: 0, hidden: 0 };
           const canvas = document.createElement("canvas");
           canvas.width = canvas.height = 1;
@@ -152,8 +155,11 @@ test("starter tones keep text and filled controls accessible across brands and s
                 // rendered image/replaced element. Adjacent split images do not
                 // exempt the content column. Hidden/disabled text is not painted.
                 const overImage = (element: Element, textNodes: Node[]) => {
+                  // An opaque background colour hides any image further out.
                   for (let current: Element | null = element; current; current = parent(current)) {
-                    if (getComputedStyle(current).backgroundImage !== "none") return true;
+                    const style = getComputedStyle(current);
+                    if (style.backgroundImage !== "none") return true;
+                    if (pixel(style.backgroundColor).rgba[3] === 1) break;
                   }
                   return textNodes.some(node => {
                     const range = document.createRange();
@@ -163,14 +169,27 @@ test("starter tones keep text and filled controls accessible across brands and s
                 };
                 for (const element of elements) {
                   if (!visible(element)) { skipped.hidden++; continue; }
-                  covered.add(element.localName);
-                  for (const name of element.classList) covered.add(`.${name}`);
                   const style = getComputedStyle(element);
                   const ownNodes = children(element).filter(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim());
                   const controlText = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value :
                     element instanceof HTMLSelectElement ? element.selectedOptions[0]?.textContent ?? "" : "";
                   const text = ownNodes.map(node => node.textContent).join(" ") || controlText;
                   const add = (check: ContrastSample["check"], foreground: string, layers: ContrastSample["backgrounds"], label = text) => {
+                    // Coverage counts what was measured (and the components and
+                    // classes around it), not what was skipped.
+                    for (let current: Element | null = element; current; current = parent(current)) {
+                      covered.add(current.localName);
+                      for (const name of current.classList) covered.add(`.${name}`);
+                    }
+                    // The samples model colours only: partial opacity, filters
+                    // or blending would change the painted pixels, so refuse them.
+                    for (let current: Element | null = element; current; current = parent(current)) {
+                      const paint = getComputedStyle(current);
+                      if (paint.opacity !== "1" || paint.filter !== "none" || paint.mixBlendMode !== "normal") {
+                        unsupported.push(`${bandName} tone=${tone} brand=${brand} scheme=${scheme} ${describe(element, label)}: ${describe(current, "")} has opacity ${paint.opacity}, filter ${paint.filter}, blend ${paint.mixBlendMode}`);
+                        return;
+                      }
+                    }
                     samples.push({ band: bandName, tone, brand, scheme, element: describe(element, label), check, foreground: pixel(foreground), backgrounds: layers });
                   };
                   if (text.trim()) {
@@ -196,15 +215,17 @@ test("starter tones keep text and filled controls accessible across brands and s
               }
             }
           }
-          return { samples, covered: [...covered], skipped };
+          return { samples, covered: [...covered], skipped, unsupported };
         }, { brands, tones, scheme });
         for (const name of result.covered) coverage.add(name);
+        failures.push(...result.unsupported.map(line => `${path} text-mode=${textMode} unsupported paint: ${line}`));
         for (const sample of result.samples) {
           const { ratio, foreground, background } = sampleContrast(sample);
           counts[sample.check]++;
           worst[sample.check] = Math.min(worst[sample.check], ratio);
-          // Canvas readback rounds to 8-bit sRGB; allow only 0.02 for rounding.
-          const minimum = (sample.check === "text" ? 4.5 : 3) - 0.02;
+          // The canvas pixel is the 8-bit sRGB colour the screen shows, so the
+          // thresholds apply as they are, without a tolerance.
+          const minimum = sample.check === "text" ? 4.5 : 3;
           if (ratio < minimum) failures.push(`${path} text-mode=${textMode} band=${sample.band} tone=${sample.tone} brand=${sample.brand} scheme=${sample.scheme} ${sample.check} ${sample.element}: ${sample.foreground.colour} on [${sample.backgrounds.map(layer => layer.colour).join(" over ")}] => ${JSON.stringify(foreground)} / ${JSON.stringify(background)} = ${ratio.toFixed(3)}:1 (needs ${minimum})`);
         }
         console.log(`tones ${path} ${scheme} ${textMode}: ${result.samples.length} checks; skips ${JSON.stringify(result.skipped)}`);
