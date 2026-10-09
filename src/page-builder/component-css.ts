@@ -453,13 +453,18 @@ interface Territory {
 const at = (root: SourceElement, path: readonly number[]) =>
   path.reduce<SourceElement | undefined>((el, index) => (el ? elementsOf(el.children)[index] : undefined), root);
 
-/** The elements of `root` the plan's slots take whole, in source order (`skip`: items that became card instances). */
-function slottedOf(root: SourceElement, slots: readonly PlannedSlot[], skip: ReadonlySet<SourceElement>) {
+/**
+ * The elements of `root` the plan's slots take whole, in source order
+ * (`skip`: items that became card instances, which `names` still gets);
+ * `names` gets the slot each one fills ("" for the unnamed slot).
+ */
+function slottedOf(root: SourceElement, slots: readonly PlannedSlot[], skip: ReadonlySet<SourceElement>, names: Map<SourceElement, string>) {
   const out = new Set<SourceElement>();
   for (const slot of slots) {
     if (slot.fixed) continue;
     if (slot.items) for (const path of slot.items) {
       const item = at(root, path);
+      if (item) names.set(item, slot.name);
       if (item && !skip.has(item)) out.add(item);
     }
     // The element's own unnamed slot: its children are the fills.
@@ -467,6 +472,7 @@ function slottedOf(root: SourceElement, slots: readonly PlannedSlot[], skip: Rea
     else {
       const el = at(root, slot.path);
       if (el) out.add(el);
+      if (el) names.set(el, slot.name);
     }
   }
   return [...out].sort((a, b) => a.start - b.start);
@@ -504,10 +510,16 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
       if (item) cardOf.set(item, index);
     }
   });
-  const main: Territory = { root: element, rootTag: rootTagOf(plan.template, element), slotted: slottedOf(element, plan.slots, new Set(cardOf.keys())), slots: plan.slots, bucket: own };
+  // The slot each slotted element fills: the page writes it as its `slot` attribute.
+  const slotNames = new Map<SourceElement, string>();
+  const withSlot = (el: SourceElement, attributes: Map<string, string>) => {
+    const name = slotNames.get(el);
+    return name ? new Map([...attributes, ["slot", name]]) : attributes;
+  };
+  const main: Territory = { root: element, rootTag: rootTagOf(plan.template, element), slotted: slottedOf(element, plan.slots, new Set(cardOf.keys()), slotNames), slots: plan.slots, bucket: own };
   const items = new Map([...cardOf].map(([item, index]): [SourceElement, Territory] => {
     const card = plan.cards[index];
-    return [item, { root: item, rootTag: rootTagOf(card.template, item), slotted: slottedOf(item, card.slots, new Set()), slots: card.slots, bucket: buckets[index] }];
+    return [item, { root: item, rootTag: rootTagOf(card.template, item), slotted: slottedOf(item, card.slots, new Set(), slotNames), slots: card.slots, bucket: buckets[index] }];
   }));
   const territoryOf = new Map<SourceElement, Territory>();
   const reachOf = new Map<SourceElement, Reach>();
@@ -530,15 +542,18 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
   };
   const instance = (el: SourceElement, name: string, parent: SourceElement | undefined): SourceElement => {
     const made: SourceElement = { type: "element", name, tag: el.tag, start: el.start, end: el.end, children: [], parent };
-    after.attributes!.set(made, idOnly(el));
+    after.attributes!.set(made, withSlot(el, idOnly(el)));
     return made;
   };
   const host = instance(element, tag, element.parent);
+  // The element slotted whole (a link wrapper) carries the slot attribute, not its instance.
+  after.attributes!.set(host, idOnly(element));
   after.siblings!.set(host, siblingsOf(page, element).map((el) => (el === element ? host : el)));
   const fill = (parent: SourceElement, children: SourceElement[]) => {
     for (const child of children) {
       after.parents!.set(child, parent);
       after.siblings!.set(child, children);
+      if (!after.attributes!.has(child)) after.attributes!.set(child, withSlot(child, attributesOf(page, child)));
     }
   };
   const cardHosts = new Map([...items].map(([item]) => [item, instance(item, plan.cards[cardOf.get(item)!].tag, host)]));
@@ -553,7 +568,8 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
     const root = territory.root;
     const attributes = new Map(attributesOf(page, root));
     attributes.delete("id");
-    const bare: Match = { html: source, top, boundary: root, attributes: new Map([[root, attributes]]), names: new Map([[root, territory.rootTag]]) };
+    // The slotted elements carry their `slot` attributes, as the page writes them.
+    const bare: Match = { html: source, top, boundary: root, attributes: new Map([[root, attributes], ...territory.slotted.map((el): [SourceElement, Map<string, string>] => [el, withSlot(el, attributesOf(page, el))])]), names: new Map([[root, territory.rootTag]]) };
     const shadow: Match = { ...bare, attributes: new Map(bare.attributes), names: new Map(bare.names), siblings: new Map() };
     const gone = new Set<SourceElement>();
     for (const slot of territory.slots) {

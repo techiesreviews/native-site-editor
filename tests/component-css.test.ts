@@ -282,3 +282,9 @@ test("a slotted part's copy must reach it beside the slots its siblings became",
 test("nesting with & twice keeps every pairing of a parent list", () => {
   assert.deepEqual(flatRules(`.a, .b { & + & { color: red; } }`, "s.css")[0].selectors, [":is(.a, .b) + :is(.a, .b)"]);
 });
+
+test("a slotted part carries its slot attribute: a rule for parts not slotted stops reaching it and can't follow", () => {
+  const plan = made(intro, `h2:not([slot]) { font-size: 2rem; }\n[slot="title"] { color: red; }`);
+  assert.equal(copied(plan.css), "");
+  assert.match(plan.notes[0], /^1 rule can't follow the parts into the component: h2:not\(\[slot\]\)\./);
+});
