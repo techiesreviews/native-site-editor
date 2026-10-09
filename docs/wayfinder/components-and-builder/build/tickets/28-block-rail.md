@@ -1,7 +1,7 @@
 ---
 title: The block rail beside Structure
 type: task (AFK)
-status: open
+status: closed
 assignee: sol (runner: claude)
 blocked_by: [04-six-block-catalogue]
 builder: sol
@@ -21,3 +21,9 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §1.
 ## Done when
 
 - Nightly spec: the rail shows six blocks with their names as labels and tooltips, in light and dark.
+
+## Done (2026-10-09)
+
+- A "Blocks" rail (`src/components/block-rail.ts`) is the workspace's first column while a native page is in the visual preview: the six catalogue blocks as icons from `element-icons.ts`, the name as accessible label and as a tooltip on hover or keyboard focus, arrows among them, kept when Structure is collapsed, a row above the sidebar in the narrow layout. Click is an `onPick` seam for slice 30. Add already listed only components and sections. Boot assets +431 B gzip.
+- Commits `9384033` (built by Sol), `13c14ab` (review: focused block keeps its tooltip; spec waits for the Add panel to settle).
+- Nightly spec `tests/native-save/native-block-rail.spec.ts` (light and dark, collapsed, narrow, hidden without a native page and back); `native-resize-toggle.spec.ts` updated for the rail.
