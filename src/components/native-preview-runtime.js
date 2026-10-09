@@ -2735,7 +2735,8 @@
   }
   window.addEventListener("pointerdown", function (e) {
     press = null;
-    if (!state || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    // Edit component mode edits the template: the page's blocks stay put.
+    if (!state || editMode || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     var target = deepestElement(e);
     if (!target || target.closest("input, textarea, select")) return;
     if (editing && editing.contains(target)) return;

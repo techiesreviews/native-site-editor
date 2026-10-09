@@ -83,6 +83,8 @@ test("cards reorder sideways by dragging one", async ({ page, baseURL }) => {
   await expect(where(page)).toHaveText("Into Div (grid) › before Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
   await page.mouse.up();
+  // The page relays the release: Alt lets go once the drop is in.
+  await expect(ghost(page)).toHaveCount(0);
   await page.keyboard.up("Alt");
   await expect.poll(async () => flat(await source(page)).indexOf("Harbour Lane Pottery</h3>")).toBeLessThan(flat(await source(page)).indexOf("Fern &amp; Kettle</h3>"));
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card project");
@@ -109,7 +111,10 @@ test("a plain click still edits text, a press in typed text selects it, and the 
   // Still typing, the bar's name drags the paragraph after the services list; the press commits the text.
   const chip = bar(page).locator(".edit-bar__handle");
   await expect(chip).toHaveText("Paragraph");
-  const c = (await chip.boundingBox())!;
+  // The bar re-renders as typing goes on: its box once it holds still.
+  let c: { x: number; y: number; width: number; height: number } | null = null;
+  await expect.poll(async () => (c = await chip.boundingBox())).not.toBeNull();
+  c = c!;
   await pressAndMove(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 }, await pointIn(page, "#services ul", 0.5, 0.6));
   await expect(where(page)).toHaveText("Into Section › after List");
   await page.mouse.up();

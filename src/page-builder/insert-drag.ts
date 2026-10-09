@@ -211,7 +211,8 @@ export function trackDrag<T>(press: DragPress, label: () => string,
   function step(x: number, y: number, altKey: boolean) {
     if (ended) return;
     pointer = { x, y };
-    alt = altKey;
+    // A relayed press has the keys (the holder's focus): the page's own idea of Alt can lag.
+    if (!press.relayed) alt = altKey;
     if (!active) {
       if (Math.hypot(x - press.x, y - press.y) < THRESHOLD) return;
       crossed = dragged = true;

@@ -322,30 +322,44 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   // The name chip: a press on it moved 7 px or more drags the selected
   // block (the host runs the drag, src/page-builder/insert-drag.ts), which
   // is how a text block being typed in is moved. A plain click on a
-  // component's name edits the component. The chip lasts across renders.
-  let editNameAction: (() => void) | undefined;
-  let chipDrag: { justDragged(): boolean } | undefined;
-  const chip = button("", () => undefined, "edit-bar__button edit-bar__handle");
-  chip.addEventListener("click", () => {
-    if (!chipDrag?.justDragged()) editNameAction?.();
-  });
-  const chipName = node("span", "edit-bar__kind");
-  chip.append(chipName);
-  // Named by the block's name; the title says what a press does.
-  chip.title = "Drag to move";
-  chip.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || !event.isPrimary || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !drag) return;
-    // No text selection from the press itself.
-    event.preventDefault();
-    chip.focus();
-    chipDrag = drag(event, chip);
-  });
-  chip.addEventListener("dragstart", (event) => event.preventDefault());
+  // component's name edits the component (`onEdit`, this render's). Made at
+  // each render; while it is pressed the bar waits (a render would take the
+  // pressed chip, and the pointer with it), the newest model shown on release.
+  let held: number | undefined;
+  let pending: { model: EditBarModel; at: SelectionRect } | undefined;
+  function release(event: PointerEvent) {
+    if (event.pointerId !== held) return;
+    held = undefined;
+    window.removeEventListener("pointerup", release, true);
+    window.removeEventListener("pointercancel", release, true);
+    const waiting = pending;
+    pending = undefined;
+    if (waiting) show(waiting.model, waiting.at);
+  }
+  function handle(name: HTMLElement, onEdit?: () => void) {
+    let pressed: { justDragged(): boolean } | undefined;
+    const chip = button("", () => { if (!pressed?.justDragged()) onEdit?.(); }, "edit-bar__button edit-bar__handle");
+    chip.append(name);
+    // Named by the block's name; the title says what a press does.
+    chip.title = "Drag to move";
+    chip.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || !event.isPrimary || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !drag) return;
+      // No text selection from the press itself.
+      event.preventDefault();
+      held = event.pointerId;
+      window.addEventListener("pointerup", release, true);
+      window.addEventListener("pointercancel", release, true);
+      chip.focus();
+      pressed = drag(event, chip);
+    });
+    chip.addEventListener("dragstart", (event) => event.preventDefault());
+    return chip;
+  }
 
   bar.addEventListener("keydown", (event) => {
     const target = event.target as HTMLElement;
     // The chip is a move handle: plain Up/Down move the section too.
-    if (target === chip && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
+    if (target.classList.contains("edit-bar__handle") && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
       event.preventDefault();
       event.stopPropagation();
       onMove(event.key === "ArrowUp" ? "up" : "down");
@@ -877,12 +891,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // The label (chip and name) above the panel of controls.
     const label = node("div", "edit-bar__label");
     const panel = node("div", "edit-bar__controls");
-    let kindName: HTMLElement;
-    if (model.draggable && drag) {
-      chipName.textContent = model.kind;
-      kindName = chipName;
-      label.replaceChildren(chip);
-    } else label.replaceChildren(kindName = node("span", "edit-bar__kind", model.kind));
+    const kindName = node("span", "edit-bar__kind", model.kind);
+    const onEdit = model.component?.onEdit;
+    const chip = model.draggable && drag ? handle(kindName, onEdit) : undefined;
+    label.replaceChildren(chip ?? kindName);
     bar.replaceChildren(label, panel);
     // A long name is cut with an ellipsis; the whole of it stays in the tooltip.
     label.title = model.context ? `${model.context.label} › ${model.kind}` : model.kind;
@@ -891,20 +903,12 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       kindName.prepend(componentIcon(12));
       kindName.title = `<${model.component.tag}>`;
     } else kindName.removeAttribute("title");
-    editNameAction = undefined;
-    chip.classList.remove("edit-bar__component-name");
-    chip.querySelector(".edit-bar__component-edit")?.remove();
-    chip.removeAttribute("aria-label");
-    chip.title = "Drag to move";
-    if (model.component?.onEdit) {
-      const onEdit = model.component.onEdit;
-      const nameButton = kindName === chipName ? chip : button("", onEdit, "edit-bar__component-name");
-      if (nameButton === chip) {
-        editNameAction = onEdit;
-        chip.classList.add("edit-bar__component-name");
-      } else { kindName.replaceWith(nameButton); nameButton.append(kindName); }
+    if (onEdit) {
+      const nameButton = chip ?? button("", onEdit, "edit-bar__component-name");
+      if (chip) chip.classList.add("edit-bar__component-name");
+      else { kindName.replaceWith(nameButton); nameButton.append(kindName); }
       nameButton.setAttribute("aria-label", `Edit ${model.kind} component`);
-      nameButton.title = `Edit ${model.kind} component${nameButton === chip ? "; drag to move" : ""}`;
+      nameButton.title = `Edit ${model.kind} component${chip ? "; drag to move" : ""}`;
       const overlay = node("span", "edit-bar__component-edit");
       overlay.setAttribute("aria-hidden", "true");
       overlay.append(mark("edit", 16, "edit-bar__icon"));
@@ -1027,6 +1031,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
 
   function show(model: EditBarModel, at: SelectionRect) {
     void loadSuggestionRows();
+    if (held !== undefined) {
+      pending = { model, at };
+      return;
+    }
     const active = document.activeElement as HTMLElement | null;
     const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
     const label = focused >= 0 ? controlLabel(active!) : "";
@@ -1051,6 +1059,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     /** The selection moved (scroll, resize, reflow) without changing. */
     move(at: SelectionRect) {
       rect = at;
+      if (pending) pending.at = at;
       position();
     },
     /** The pins moved or changed: the bar and Ask agent's note keep to them. */
@@ -1058,6 +1067,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       position();
     },
     hide() {
+      pending = undefined;
       closePopover(false);
       closeNote(false);
       rect = undefined;
@@ -1066,6 +1076,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       bar.replaceChildren();
     },
     destroy() {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       closeNote(false);
