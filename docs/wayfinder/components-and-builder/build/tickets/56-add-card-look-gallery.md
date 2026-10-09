@@ -1,7 +1,7 @@
 ---
 title: "Add card ▾: choose the card's look"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [50-add-card-adds-card-component, 12-variant-parser-site-css]
 builder: claude ★
@@ -21,3 +21,9 @@ Ticket [09](../../tickets/09-prototype-add-existing-page.md) §7 and §9.
 
 - Unit tests for the looks: card components only, heading slot required, variants after components.
 - Nightly spec: ▾ lists the starter's card looks and places the chosen one.
+
+## Done (2026-10-10)
+
+- An instance's card slot shows Add card as a split "+ Add card │ ▾" (`card-grid-controls.ts`); ▾ opens "Add card as…" (`src/components/card-look-gallery.ts`, loaded then, 1.9 KB gzip): the looks from the pure `cardLooks` (`src/page-builder/card-looks.ts`: card components by name, then the slot's card's variants from its CSS and the site's, tone left out, yes/no bare or `="true"`, default value skipped), each a live thumbnail (`thumbnail.ts`) of a blank card with the site's CSS, the slot's own marked "usual". Picking places a blank card of that look (a variant as its `data-*` attribute) after the slot's last item, one undo step; Link to a page… follows. `nativeInstanceInsertEdit` now takes one `data-*` attribute on the instance.
+- Commits "Add card ▾ on a card slot: a gallery of card looks…" and follow-ups on `dev`.
+- Tests: `tests/card-looks.test.ts` (4), looks in `tests/card-slot.test.ts` (other component, variants, named slot, refusals, escaping, the insert seal); nightly case in `native-add-card.spec.ts` (tiles, arrows, rendered thumbnails with variant CSS, Esc, card-quote placed with the combobox, a variant placed and undone).
