@@ -99,6 +99,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | --- | --- | --- |
 | [41 Edit component mode: in place, no flicker](tickets/41-edit-mode-shell.md) | claude ★ | 01 |
 | [42 Edit component mode: edit the template's text in place](tickets/42-edit-mode-fixed-text.md) | claude ★ | 41 |
+| [85 The edit bar never covers the text being edited](tickets/85-edit-bar-never-covers-text.md) | sol | – |
 | [43 Edit component mode: build with the rail](tickets/43-edit-mode-blocks.md) | claude ★ | 41, 35, 40 |
 | [44 Edit component mode: the slot chip in the edit bar label](tickets/44-edit-mode-slot-chip-label.md) | sol | 41, 24 |
 | [45 Slot changes rewrite the template and every page at once](tickets/45-slot-change-rewrites-pages.md) | claude ★ | 44 |
