@@ -206,3 +206,26 @@ test("Redo of a created file refuses whole when a file is there again, with the 
   f.records.delete(image.path);
   assert.equal(receipt.redo(), true); assert.equal(f.records.get(image.path), image); assert.equal(f.models.get("index.html")!.text, "after");
 });
+
+test("a file the step edited unmounted, mounted since over its bytes, moves through its model on Undo and Redo", () => {
+  const f = fixture();
+  const about: SavedDraft = { ...scope, version: 1, path: "about.html", baseSha: "b", original: "about before", content: "about after", updatedAt: 1 };
+  f.plan.before.set(about.path, undefined); f.plan.after.set(about.path, about);
+  f.plan.beforeSources.set(about.path, "about before"); f.plan.afterSources.set(about.path, "about after");
+  // An unmounted file's source is its stored draft, else its branch text.
+  const host = { ...f.host, source: (path: string) => f.models.get(path)?.text ?? f.records.get(path)?.content ?? (path === about.path ? "about before" : undefined) };
+  const receipt = prepareNativeTextHistory(host, f.plan)!;
+  assert.equal(receipt.apply(), true); assert.equal(f.records.get(about.path), about);
+  // The page opens (Done in Edit component mode): its model, adopted over the step's bytes.
+  f.models.set(about.path, { text: "about after", version: 1 });
+  assert.equal(receipt.adoptOwnMount(about.path, host.modelState(about.path), "about after"), true);
+  assert.equal(receipt.undo(), true);
+  assert.equal(f.models.get(about.path)!.text, "about before"); assert.equal(f.records.has(about.path), false); assert.equal(f.models.get("index.html")!.text, "before");
+  assert.equal(receipt.redo(), true);
+  assert.equal(f.models.get(about.path)!.text, "about after"); assert.equal(f.records.get(about.path), about);
+  // A failed draft write puts the late model back with the others.
+  assert.equal(receipt.undo(), true);
+  f.fail();
+  assert.equal(receipt.redo(), false);
+  assert.equal(f.models.get(about.path)!.text, "about before"); assert.equal(f.models.get("index.html")!.text, "before"); assert.equal(f.records.has(about.path), false);
+});

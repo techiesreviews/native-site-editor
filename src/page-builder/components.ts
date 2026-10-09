@@ -65,6 +65,7 @@ import {
   templateRoot,
   type TemplateStructureItem,
   slotChange,
+  slotChangePages,
   slotStates,
   slotTextEdit,
   slotValue,
@@ -784,16 +785,25 @@ export function createComponentTools(deps: ComponentDeps) {
     const current = () => deps.revision() === revision && explicitTemplate === entry
       && deps.currentPath() === report.template && editMode?.active()?.templatePath === report.template;
     const change = plan.change;
+    // Every page (and other template) using the component follows in the same step (decided at handoff 6).
+    const now = site(), sources = deps.sources(), tag = tagOfFile(report.template);
+    const files = Object.fromEntries([...Object.values(now?.routes ?? {}), ...Object.values(now?.components ?? {})]
+      .filter((path) => path !== report.template && sources[path] !== undefined).map((path) => [path, sources[path]]));
+    const pages = tag ? slotChangePages(files, tag, plan.source, change) : new Map<string, string>();
     const name = change.kind === "renamed" ? undefined : change.name || "items";
-    const done = change.kind === "made-slot" ? `Made “${name}” a slot.` : change.kind === "made-fixed" ? `Made “${name}” fixed.`
-      : `Renamed slot “${change.from || "items"}” to “${change.to}”.`;
+    const pageCount = [...pages.keys()].filter((path) => Object.values(now?.routes ?? {}).includes(path)).length;
+    const counted = [[pageCount, "page"], [pages.size - pageCount, "component"]].filter(([count]) => count)
+      .map(([count, what]) => `${count} ${what}${count === 1 ? "" : "s"}`);
+    const followed = counted.length ? ` ${counted.join(" and ")} using it ${pages.size === 1 ? "follows" : "follow"}.` : "";
+    const done = (change.kind === "made-slot" ? `Made “${name}” a slot.` : change.kind === "made-fixed" ? `Made “${name}” fixed.`
+      : `Renamed slot “${change.from || "items"}” to “${change.to}”.`) + followed;
     const undone = change.kind === "made-slot" ? `Undid making “${name}” a slot.` : change.kind === "made-fixed" ? `Undid making “${name}” fixed.`
       : `Undid renaming slot “${change.from || "items"}” to “${change.to}”.`;
     // Let every listener refuse a cancelable rename before the operation starts.
     void Promise.resolve().then(async () => {
       if (event.defaultPrevented || !current()) return;
-      const error = await deps.operation!({ expectedSources: new Map([[report.template, source]]),
-        edits: new Map([[report.template, plan.source]]), done, undone, current,
+      const error = await deps.operation!({ expectedSources: new Map([[report.template, source], ...[...pages.keys()].map((path) => [path, files[path]] as const)]),
+        edits: new Map([[report.template, plan.source], ...pages]), done, undone, current,
         selection: { before: { path: report.template, node: [...report.node] }, after: { path: report.template, node: plan.select } } });
       if (!current()) return;
       if (error) { refuse(error); editMode?.resetChip(); }

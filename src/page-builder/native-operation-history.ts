@@ -22,6 +22,9 @@ export interface NativeTextHistoryPlan {
   beforeSources: Map<string, string | undefined>;
   afterSources: Map<string, string | undefined>;
 }
+// No late mounts to move (see transition).
+const NO_SOURCES: Sources = { isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true };
+
 /** A synchronous, source-checked draft transaction; UI refresh and history registration belong to the host. */
 export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: NativeTextHistoryPlan) {
   const scope = { ...host.scope };
@@ -85,21 +88,36 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       if (!proof) return false;
       proofs.set(path, proof);
     }
-    if (!sources[direction]()) return false;
-    for (const edit of modelEdits) proofs.set(edit.path, host.modelState(edit.path));
+    // A file this step edits that was mounted since, over this step's exact bytes (adoptOwnMount:
+    // the page Edit component mode was on, opened at Done), moves through its model as well.
+    const late = edited.filter(path => mounted.get(path) && !modelEdits.some(edit => edit.path === path));
+    const from = after ? plan.beforeSources : plan.afterSources, to = after ? plan.afterSources : plan.beforeSources;
+    const lateEdits = late.map(path => ({ path, expectedSource: from.get(path), text: to.get(path) }));
+    const lateSources = late.length ? lateEdits.every(edit => edit.expectedSource !== undefined && edit.text !== undefined)
+      ? host.prepareSources(lateEdits as { path: string; expectedSource: string; text: string }[]) : undefined : NO_SOURCES;
+    if (!lateSources) { lastError = `The editor for ${late[0]} changed.`; return false; }
+    if (!sources[direction]()) { lateSources.dispose?.(); return false; }
+    if (!lateSources.apply()) {
+      lastError = `The editor for ${late[0]} changed.`;
+      if (!sources[after ? "undo" : "redo"]()) state = "failed";
+      lateSources.dispose?.();
+      return false;
+    }
+    const moved = [...modelEdits.map(edit => edit.path), ...late];
+    for (const path of moved) proofs.set(path, host.modelState(path));
     const expected = new Map(after ? plan.before : plan.after), desired = after ? plan.after : plan.before;
     const written = new Map<string, SavedDraft | undefined>();
     const foreign = new Map<string, SavedDraft | undefined>();
     try {
       // Advance only exact owned persistence, including its base and flags.
       // A synchronous listener's same-text replacement is still another draft.
-      for (const edit of modelEdits) {
-        const record = host.store.get(scope, edit.path);
-        if (record !== expected.get(edit.path) && !sameFields(desired.get(edit.path), record)) {
-          foreign.set(edit.path, record);
-          throw new Error(`The draft for ${edit.path} changed during its source edit.`);
+      for (const path of moved) {
+        const record = host.store.get(scope, path);
+        if (record !== expected.get(path) && !sameFields(desired.get(path), record)) {
+          foreign.set(path, record);
+          throw new Error(`The draft for ${path} changed during its source edit.`);
         }
-        expected.set(edit.path, record);
+        expected.set(path, record);
       }
       if (!host.isLive() || !recordsCurrent(expected) || !modelsCurrent() || !sources.isCurrent()) throw new Error("The operation source changed.");
       for (const [path, record] of desired) {
@@ -111,23 +129,25 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       }
       if (!host.isLive() || !recordsCurrent(desired) || !modelsCurrent() || !sourceCurrent(after ? plan.afterSources : plan.beforeSources)) throw new Error("The operation changed during its draft write.");
       state = after ? "applied" : "undone";
+      lateSources.dispose?.();
       return true;
     } catch (error) {
       lastError = error instanceof Error ? error.message : "The draft operation failed.";
       // Never overwrite a draft or model changed by a synchronous listener.
-      for (const edit of modelEdits) {
-        const record = host.store.get(scope, edit.path);
-        if (record !== expected.get(edit.path) && record !== written.get(edit.path)) foreign.set(edit.path, record);
+      for (const path of moved) {
+        const record = host.store.get(scope, path);
+        if (record !== expected.get(path) && record !== written.get(path)) foreign.set(path, record);
       }
       const reverse = after ? "undo" : "redo";
-      const restored = sources.isCurrent() && sources[reverse]();
+      const restored = sources.isCurrent() && lateSources.isCurrent() && sources[reverse]() && lateSources.undo();
+      lateSources.dispose?.();
       const original = after ? plan.before : plan.after;
-      if (restored) for (const edit of modelEdits) {
-        proofs.set(edit.path, host.modelState(edit.path));
-        const record = host.store.get(scope, edit.path);
-        if (sameFields(original.get(edit.path), record)) written.set(edit.path, record);
+      if (restored) for (const path of moved) {
+        proofs.set(path, host.modelState(path));
+        const record = host.store.get(scope, path);
+        if (sameFields(original.get(path), record)) written.set(path, record);
       }
-      for (const [path, record] of written) if (host.store.get(scope, path) === record && (!modelEdits.some(edit => edit.path === path) || restored)) save(path, foreign.has(path) ? foreign.get(path) : original.get(path));
+      for (const [path, record] of written) if (host.store.get(scope, path) === record && (!moved.includes(path) || restored)) save(path, foreign.has(path) ? foreign.get(path) : original.get(path));
       if (!current(!after)) state = "failed";
       return false;
     }

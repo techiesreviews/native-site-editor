@@ -1347,6 +1347,74 @@ function unwrapped(inner: string, indent: string, eol: string) {
 }
 
 /**
+ * The pages' side of one slot change (ticket 14 §8–9, decided at handoff 6):
+ * each file in `files` (pages, other templates) that holds instances of `tag`,
+ * rewritten, by path; `template` is the template as the change left it.
+ *  - made a slot: an instance that holds anything gets its own copy of the
+ *    part, so it still shows it (a section component hides an unfilled slot)
+ *    and can edit it; one that already fills that name, or holds nothing
+ *    (it shows every fallback), is left as it is;
+ *  - renamed: each instance's `slot="from"` reads `slot="to"` (an unnamed
+ *    slot's elements take the attribute, its text a `<span slot>`);
+ *  - made fixed: what each instance gives that slot is removed, so the
+ *    template's part shows instead.
+ * Edits inside an element another edit removes are left out (an instance
+ * inside another's removed fill).
+ */
+export function slotChangePages(files: Record<string, string>, tag: string, template: string, change: SlotChange): Map<string, string> {
+  const out = new Map<string, string>();
+  const slots = templateSlots(template);
+  const made = change.kind === "made-slot" ? slots.find((slot) => slot.name === change.name) : undefined;
+  if (change.kind === "made-slot" && !made) return out;
+  for (const [path, source] of Object.entries(files)) {
+    if (!asciiLower(source).includes(`<${tag}`)) continue;
+    const edits: RangeEdit[] = [];
+    for (const el of descendants(parseSource(source))) {
+      if (el.name !== tag || !el.close) continue;
+      const instance = readInstance(source, el);
+      if (change.kind === "made-fixed") edits.push(...fillRemoveEdits(source, instance, change.name));
+      else if (change.kind === "renamed") edits.push(...renameFillEdits(source, instance, change.from, change.to));
+      else if (made && instance.children.length && !instance.fills.has(made.name)) {
+        const edit = fillInsertEdit(source, instance, slots, made.name, placedCopy(source, instance.children[0].start, template, made));
+        if (edit) edits.push(edit);
+      }
+    }
+    if (!edits.length) continue;
+    // Outermost first: an edit inside a range already removed is left out.
+    edits.sort((a, b) => a.start - b.start || b.end - a.end);
+    const kept: RangeEdit[] = [];
+    for (const edit of edits) if (!kept.length || edit.start >= kept.at(-1)!.end) kept.push(edit);
+    let text = source;
+    for (const edit of kept.reverse()) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+    if (text !== source) out.set(path, text);
+  }
+  return out;
+}
+
+/** The made slot's fallback as the page's copy, its later lines at the indentation of the line at `at`. */
+function placedCopy(source: string, at: number, template: string, slot: TemplateSlot) {
+  const markup = fillMarkup(template, slot);
+  const first = elements(slot.element.children)[0];
+  if (!first || !markup.includes("\n") || KEEPS_SPACES.test(markup)) return markup;
+  const from = indentOf(template, first.start);
+  const lineStart = source.lastIndexOf("\n", at - 1) + 1;
+  const to = /^[ \t]*/.exec(source.slice(lineStart))![0];
+  return markup.split(/\r?\n/).map((line, index) => (!index || !line.trim() ? line
+    : to + (line.startsWith(from) ? line.slice(from.length) : line.trimStart()))).join(lineEnding(source));
+}
+
+/** What `instance` gives the slot `from`, given to `to` instead. */
+function renameFillEdits(source: string, instance: Instance, from: string, to: string): RangeEdit[] {
+  return (instance.fills.get(from) ?? []).flatMap((node): RangeEdit[] => {
+    if (node.type === "element") return [attributeEdit(source, node.tag, "slot", to || undefined)];
+    if (!to) return [];
+    const raw = source.slice(node.start, node.end);
+    const start = node.start + raw.length - raw.trimStart().length, end = node.start + raw.trimEnd().length;
+    return [{ start, end, text: `<span slot="${escapeAttribute(to)}">${source.slice(start, end)}</span>` }];
+  });
+}
+
+/**
  * The slot chip of the template's part at `path` (element-child indexes, as
  * the preview selects them): its nearest `<slot>`, itself included; else, for
  * a part that could be a slot, fixed under its role name (`title`, `text`,
