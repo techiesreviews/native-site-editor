@@ -77,3 +77,8 @@ test("parseDropReport caps lists and strings", () => {
   assert.equal(parsed.containers[0].cls.length, 1000);
   assert.equal(parsed.containers[0].children[0].cls.length, 1000);
 });
+
+test("fixed-part probes survive parsing so they refuse instead of exposing an outer container", () => {
+  const fixed = { ...container(), kind: "fixed", tag: "section-work", children: [] };
+  assert.equal(parseDropReport(report([fixed, container()]), "index.html")?.containers[0].kind, "fixed");
+});

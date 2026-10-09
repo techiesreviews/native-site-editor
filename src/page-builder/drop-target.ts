@@ -34,6 +34,7 @@ const isBand = (block: DraggedBlock) => (block.kind === "new" ? block.block === 
 /** Why a container can't take the block, or undefined when it can. */
 export function dropRefusal(block: DraggedBlock, container: DropContainer): string | undefined {
   if (block.kind === "move" && block.path.every((step, at) => container.path[at] === step)) return "A block cannot go inside itself.";
+  if (container.kind === "fixed") return "This part is fixed in the component's template: Edit component to change it.";
   if (isBand(block)) {
     if (container.kind === "main") return undefined;
     const inside = container.kind === "section" ? "a Section" : container.kind === "div" ? "a Div" : "a component";
@@ -87,7 +88,7 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
     return { container, index, level: j, ok: !reason, ...(reason ? { reason } : {}) };
   };
   // A named slot refuses where it is, rather than passing the drop up.
-  if (level <= 0 && containers[0].kind === "slot" && !isBand(block)) return at(0);
+  if (level <= 0 && (containers[0].kind === "slot" || containers[0].kind === "fixed") && !isBand(block)) return at(0);
   let i = 0;
   while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);

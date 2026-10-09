@@ -21,6 +21,7 @@
 // step; typing in a field is one step until the field is left), so the
 // code pane shows it as it happens.
 
+import { nativeElementLabel } from "../native-structure";
 import { isButtonBlock } from "./block-fields";
 import { nativeElementUrlProblem } from "./native-elements";
 import { startTags } from "../../shared/html-source";
@@ -394,17 +395,17 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- The edit bar. ----
 
   /** The edit bar's component identity for a selection: the mark on an instance, the chip inside one. */
-  function identity(selection: NativePreviewSelection): Pick<EditBarModel, "component" | "context" | "chip"> {
-    const out: Pick<EditBarModel, "component" | "context" | "chip"> = {};
+  function identity(selection: NativePreviewSelection): Pick<EditBarModel, "component" | "context" | "chip" | "locked"> {
+    const out: Pick<EditBarModel, "component" | "context" | "chip" | "locked"> = {};
     const revision = deps.revision();
     const path = deps.currentPath();
     const source = deps.sources()[selection.path];
     const editor = deps.editor();
     const selectionKey = (value: NativePreviewSelection | undefined) => value && JSON.stringify({
-      path: value.path, tag: value.tag, node: value.node, selector: value.selector, host: value.host,
+      path: value.path, tag: value.tag, node: value.node, selector: value.selector, host: value.host, locked: value.locked,
     });
     const expectedSelection = selectionKey(selection);
-    const guardedEdit = (tag: string, within?: string, part?: { path: string; node: number[]; tag: string }) => {
+    const guardedEdit = (tag: string, within?: string, part?: { path: string; node: number[]; tag: string }, instance?: { path: string; node: readonly number[] }) => {
       const template = templateOf(tag);
       const templateSource = template && deps.sources()[template.path];
       if (!template || templateSource === undefined) return undefined;
@@ -415,10 +416,18 @@ export function createComponentTools(deps: ComponentDeps) {
           deps.announce("This component action is stale. Select the component again to edit its current template.");
           return;
         }
-        void editComponent(tag, within, part);
+        void editComponent(tag, within, part, instance);
       };
     };
     if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag) };
+    if (!editMode?.active() && selection.locked) {
+      const { part, instance } = selection.locked;
+      const onEdit = guardedEdit(instance.tag, undefined, part, instance);
+      const partSource = deps.sources()[part.path];
+      const partRange = partSource === undefined ? undefined : locateNativeElementRange(partSource, part.node);
+      const className = partRange && partSource !== undefined ? startTagAttributes(partSource, partRange.tag).find(attribute => attribute.name === "class")?.value : undefined;
+      if (onEdit) out.locked = { key: JSON.stringify(part), kind: nativeElementLabel(part.tag, isComponent(part.tag), className), tag: instance.tag, onEdit };
+    }
     // The instance around the selection: in the same file, else (for an
     // element of a template) the instance on the page it renders in.
     const at = locate(selection, true);
@@ -584,7 +593,7 @@ export function createComponentTools(deps: ComponentDeps) {
       renderBar();
       // The part is selected again in the framed instance when the selection is in another one (or none).
       const now = deps.selection();
-      const inFrame = now?.path === template.path && now.host?.path === framed.path && now.host.node?.join() === framed.node.join();
+      const inFrame = now?.path === template.path && now.host?.path === framed.path && now.host.node?.join() === framed.node.join() && now.node?.join() === nodePath?.join();
       if (nodePath && !inFrame) deps.preview()?.selectNode({ path: template.path, node: nodePath });
     });
     if (nodePath) deps.preview()?.selectNode({ path: template.path, node: nodePath });
@@ -1719,6 +1728,7 @@ export function createComponentTools(deps: ComponentDeps) {
   return {
     makeFromAgent,
     identity,
+    editingComponent: () => Boolean(editMode?.active()),
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
       if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;

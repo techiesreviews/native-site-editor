@@ -51,3 +51,35 @@ export function nativeComponentScopeSelection(
     innerPath = host.path;
   }
 }
+
+export interface LockedComponentPart {
+  part: { path: string; node: number[]; tag: string };
+  instance: { path: string; node: number[]; tag: string };
+}
+
+/** A verified template click on the page, excluding slot placeholders and edit mode. */
+export function nativeLockedComponentPart(
+  selection: NativePreviewSelection,
+  pagePath: string,
+  components: Readonly<Record<string, string>>,
+  sources: Readonly<Record<string, string>>,
+  tagAt: (source: string, node: readonly number[]) => string | undefined,
+  editing = false,
+): LockedComponentPart | undefined {
+  if (editing || selection.path === pagePath || !selection.node) return;
+  const mapped = nativeComponentScopeSelection(selection, pagePath, components, sources, tagAt);
+  if (!mapped?.node || mapped.path !== pagePath) return;
+  const chain = selection.hostChain ?? (selection.host ? [selection.host] : []);
+  const outer = chain.findIndex(host => host.path === pagePath);
+  const part = outer > 0 ? chain[outer - 1] : selection;
+  if (!part.path || !part.node) return;
+  const source = sources[part.path];
+  if (source === undefined || tagAt(source, part.node) !== part.tag) return;
+  for (let depth = 1; depth <= part.node.length; depth++) {
+    if (tagAt(source, part.node.slice(0, depth)) === "slot") return;
+  }
+  return {
+    part: { path: part.path, node: [...part.node], tag: part.tag },
+    instance: { path: mapped.path, node: [...mapped.node], tag: mapped.tag },
+  };
+}

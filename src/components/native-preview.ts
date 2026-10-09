@@ -130,6 +130,8 @@ export interface NativeNodeRequest {
 export type { NativeSelectedRule } from "../style-cascade";
 
 export interface NativePreviewSelection {
+  /** Host-side metadata for a fixed template part click, never read from frame messages. */
+  locked?: import("../page-builder/native-component-selection").LockedComponentPart;
   path: string;
   tag: string;
   text: string;

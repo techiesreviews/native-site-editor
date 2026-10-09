@@ -1290,6 +1290,7 @@ const previewSelection = createPreviewSelectionController({
   editor: () => editorModule,
   componentTag: (path) => nativeComponentTagForPath(path),
   editingScopePath: () => componentTools?.editingScope()?.path,
+  editingComponent: () => componentTools?.editingComponent() ?? false,
   instanceContent: (source, node, tag) => nativeInstanceContent(source, node, tag),
   locateTag: (source, node) => locateNativeElement(source, node),
   tagName: (source, node) => locateNativeElementRange(source, [...node])?.tag.name,

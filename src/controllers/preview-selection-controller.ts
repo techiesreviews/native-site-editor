@@ -1,5 +1,5 @@
 import type { NativePreviewHandlers, NativePreviewSelection, NativeTextSelection } from "../components/native-preview";
-import { nativeComponentScopeSelection } from "../page-builder/native-component-selection";
+import { nativeComponentScopeSelection, nativeLockedComponentPart, type LockedComponentPart } from "../page-builder/native-component-selection";
 import type { StartTag } from "../../shared/html-source";
 import { nativeSitePaths, type NativeSite } from "../../shared/native-project";
 
@@ -36,6 +36,7 @@ export interface PreviewSelectionPorts {
   editor(): PreviewSelectionEditor | undefined;
   componentTag(path: string): string | undefined;
   editingScopePath(): string | undefined;
+  editingComponent?: () => boolean;
   instanceContent(source: string, node: readonly number[], tag: string): boolean;
   /** The start tag at `node` in `source` (DOM parsing stays in the host). */
   locateTag(source: string, node: number[]): StartTag | undefined;
@@ -57,7 +58,7 @@ export interface PreviewSelectionPorts {
   clearStyles(): void;
 }
 
-type PendingInstance = { path: string; node: number[]; sources: Record<string, string>; components: string; epoch: number; scope: string };
+type PendingInstance = { locked?: LockedComponentPart; tag: string; path: string; node: number[]; sources: Record<string, string>; components: string; epoch: number; scope: string };
 
 export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
   const { store } = ports;
@@ -106,14 +107,22 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
   async function select(selection: NativePreviewSelection) {
     ports.clearMoveAction();
     const sources = ports.sources();
+    const previous = store.selection.value;
+    // Geometry/source refreshes of the same host keep its click intent. A
+    // different selection, including a direct click on that host, clears it.
+    let locked = selection.reason === "refresh" && previous?.path === selection.path && previous.tag === selection.tag
+      && previous.node?.join(".") === selection.node?.join(".") ? previous.locked : undefined;
     if (pendingInstance) {
+      locked = undefined;
       const was = pendingInstance;
       pendingInstance = undefined;
+      if (selection.path === was.path && selection.tag === was.tag && selection.node?.join(".") === was.node.join(".")) locked = was.locked;
       if (selection.path === was.path && selection.node?.join(".") === was.node.join(".") &&
           (was.epoch !== ports.generation() || was.scope !== ports.scope() || JSON.stringify(ports.site()?.components) !== was.components || Object.entries(was.sources).some(([path, source]) => sources[path] !== source))) {
         refuse(selection, "The instance changed before it could be selected. Select it again."); return;
       }
     }
+    selection = { ...selection, locked };
     const selectedSource = sources[selection.path];
     if (selection.path && selection.paintedSource !== undefined && selection.paintedSource !== selectedSource) {
       refuse(selection, "The source changed. Wait for the preview before selecting this element."); return;
@@ -127,7 +136,8 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
       if (!mapped) { refuse(selection, "Select the page instance, or choose Edit to edit its shared template."); return; }
       if (mapped.path !== selection.path || mapped.node?.join(".") !== selection.node?.join(".")) {
         if (!mapped.node || sources[mapped.path] === undefined) { refuse(selection, "The instance is no longer available. Select it again."); return; }
-        pendingInstance = { path: mapped.path, node: [...mapped.node],
+        pendingInstance = { path: mapped.path, node: [...mapped.node], tag: mapped.tag,
+          locked: pagePath ? nativeLockedComponentPart(selection, pagePath, site.components, sources, (source, node) => ports.tagName(source, node), ports.editingComponent?.()) : undefined,
           sources: Object.fromEntries([selection.path, mapped.path, ...(selection.hostChain ?? (selection.host ? [selection.host] : [])).map(host => host.path)].filter((path): path is string => !!path).map(path => [path, sources[path]])),
           components: JSON.stringify(site.components), epoch: ports.generation(), scope: ports.scope() };
         // Request the real host's own rect, matching rules and computed values.

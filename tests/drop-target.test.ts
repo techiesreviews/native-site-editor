@@ -150,3 +150,11 @@ test("a moved block dropped beside itself stays where it is", () => {
   assert.equal(dropLabel(dropTarget(chain, { x: 400, y: 260 }, moving)!, moving), "Stays where it is");
   assert.equal(dropLabel(dropTarget(chain, { x: 400, y: 370 }, moving)!, moving), "Into Div (stack) › after Paragraph");
 });
+
+test("fixed template parts refuse drops without falling through to an outer container", () => {
+  const fixed = box([1, 0, 1], "fixed", rect(40, 100, 720, 200));
+  const target = dropTarget([fixed, section, main], { x: 42, y: 102 }, paragraph)!;
+  assert.equal(target.container.kind, "fixed");
+  assert.equal(target.ok, false);
+  assert.match(target.reason!, /fixed in the component's template/);
+});
