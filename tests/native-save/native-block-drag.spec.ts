@@ -93,7 +93,9 @@ test("a card's title slot refuses with its reason; a release there adds nothing"
   await expect(page.locator(".pb-drop__refused")).toBeVisible();
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
-  await expect(page.locator("#status")).toHaveText("Paragraph was not added");
+  // The reason stays on screen by the pointer after the ghost goes, and in #status.
+  await expect(page.locator("#status")).toHaveText(/^The “title” slot is filled by editing its text/);
+  await expect(page.locator(".refusal-note")).toHaveText(/^The “title” slot is filled by editing its text/);
   expect(await source(page)).toBe(original);
 });
 

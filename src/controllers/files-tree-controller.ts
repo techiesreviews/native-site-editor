@@ -1,4 +1,3 @@
-import { refuse } from "../components/refusal-note";
 import type { Directory, TreeEntry } from "../../shared/types";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { CHANGE_WORDS, type ChangeKind } from "../file-changes";
@@ -24,6 +23,8 @@ export interface FilesTreePorts {
   error(error: unknown): void;
   status(text: string): void;
   announce(text: string): void;
+  /** A refusal: said in #status and shown on screen. */
+  refuse(reason: string): void;
   intent(path: string): void;
   openDraft(draft: SavedDraft): Promise<void>;
   openEntry(entry: TreeEntry, path: string, epoch: number): Promise<void>;
@@ -217,7 +218,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
           }
         } else {
           if (gone) {
-            ports.announce(`${path} is deleted. Restore it to open it.`); refuse(`${path} is deleted. Restore it to open it.`);
+            ports.refuse(`${path} is deleted. Restore it to open it.`);
             return;
           }
           ports.root()

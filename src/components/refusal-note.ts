@@ -35,6 +35,9 @@ export function refusalNotePlan(input: {
 }
 
 let dismiss: (() => void) | undefined;
+let said = 0;
+/** How many refusals were said so far: a caller can tell whether a step it ran said one. */
+export const refusalsSaid = () => said;
 function visibleRect(element: HTMLElement | undefined): DOMRect | undefined {
   if (!element?.isConnected || element.closest("[hidden]")) return undefined;
   const rect = element.getBoundingClientRect();
@@ -47,6 +50,7 @@ function firstVisible(selector: string) {
 
 /** Announce and show a non-interactive note; the next action replaces/dismisses it. */
 export function refuse(reason: string, near: RefusalNear = {}) {
+  said++;
   // Rules/controllers also run without a DOM in unit tests.
   if (typeof document === "undefined" || typeof window === "undefined" || !document.body?.append) return;
   dismiss?.();

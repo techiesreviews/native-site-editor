@@ -26,7 +26,7 @@ function fixture(overrides: Partial<PagesPorts> = {}) {
     tree: () => undefined, pagesHidden: () => false, openFile: () => undefined, clearPendingTitles: () => {},
     tabsMounted: () => true, paintTabs: () => {}, resetExplorer: () => {}, showImages: () => {},
     siteReadForCreate: async () => undefined, createWithCard: () => undefined, navigationTarget: () => undefined, restoreDeleted: () => {},
-    announce: (message) => announcements.push(message), error: (error) => errors.push(error.message), ...overrides,
+    announce: (message) => announcements.push(message), refuse: (message) => announcements.push(message), error: (error) => errors.push(error.message), ...overrides,
   };
   return { ports, controller: createPagesController(ports), sources, drafts, operations, errors, announcements, navigate: () => { epoch++; } };
 }

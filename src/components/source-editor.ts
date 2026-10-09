@@ -13,7 +13,7 @@
 // (`isMounted`, `replaceActiveRange`, `runVisualHistory`, the model proofs):
 // a "model" is now the file's entry in the store, and its version the
 // entry's revision.
-import { refuse } from "./refusal-note";
+import { refuse, refusalsSaid } from "./refusal-note";
 import "./source-editor.css";
 import type { VariantLookup, VariantLookupFactory } from "../page-builder/variant-intelligence";
 import type { CssWorkspace } from "../page-builder/css-intelligence";
@@ -484,6 +484,7 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
   const session = owner?.session;
   if (!owner || !session) return false;
   const run: { owner: MountedEditor; thrown?: { error: unknown } } = { owner };
+  const said = refusalsSaid();
   const earlier = historyRuns.get(session);
   if (!earlier) historyRuns.set(session, run);
   let result: Awaited<ReturnType<DraftTextStore["undo"]>>;
@@ -492,8 +493,8 @@ export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?
   if (!result.ok && run.thrown) throw run.thrown.error;
   if (!result.ok && result.error.startsWith(RECEIPT_REFUSAL))
     for (const editor of liveMounted) if (editor.session === session) editor.refused(RECEIPT_REFUSAL);
-  // Nothing to move stays quiet; a step the page refused has said why itself.
-  if (!result.ok && !/^Nothing to (undo|redo)\.$/.test(result.error) && result.error !== "The change was refused.") refuse(result.error, { history: direction });
+  // Nothing to move stays quiet; a step that refused and said why is not said over.
+  if (!result.ok && !/^Nothing to (undo|redo)\.$/.test(result.error) && (result.error !== "The change was refused." || refusalsSaid() === said)) refuse(result.error, { history: direction });
   return result.ok;
 }
 const editorFor = (path: string) => {

@@ -948,7 +948,7 @@ async function restoreVersion(view: VersionView) {
   const scope = draftScope();
   if (!appStore.repository.value || !appStore.snapshot.value || versionView !== view) return;
   if (scope && draftStore().get(scope, view.path)) {
-    status("Publish or discard this file’s draft before restoring. Other files’ drafts are kept.");
+    refuse("Publish or discard this file’s draft before restoring. Other files’ drafts are kept.");
     return;
   }
   if (!versionDialog) {
@@ -1508,6 +1508,7 @@ const pageStructureController = createPageStructureController({
   cardControls: (selection, source) => cardsController.controls(selection, source),
   get agentController() { return agentController; },
   get announce() { return announce; },
+  refuse,
   get restoreFile() { return restoreFile; },
   get updateNativePreviewSources() { return updateNativePreviewSources; },
   get nativeEditableTemplatePath() { return nativeEditableTemplatePath; },
@@ -3413,7 +3414,7 @@ const filesTreeController = createFilesTreeController({
   openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
   state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
   load: input => api<Directory>("tree", input), images: () => requestExplorerImagesRefresh(),
-  clearError, error: errorMessage, status, announce, intent: recordNativeSourceIntent,
+  clearError, error: errorMessage, status, announce, refuse, intent: recordNativeSourceIntent,
   openDraft: openNewDraft, openEntry, restore: target => restoreFileTarget(target),
   create: openCreate, actions: () => fileActions,
   visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
@@ -3611,6 +3612,7 @@ const pagesController = createPagesController({
   navigationTarget: nativeNavigationTarget,
   restoreDeleted: file => undoFileChanges({ restore: [file] }),
   announce,
+  refuse,
   error: errorMessage,
 });
 
@@ -3799,7 +3801,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     const transition = (direction: "undo" | "redo") => {
       const select = direction === "undo" ? op.selection?.before : op.selection?.after;
       if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
-      if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); refuse(receipt.error() ?? changedOperation); return false; }
+      if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); refuse(receipt.error() ?? changedOperation, { history: direction }); return false; }
       afterFileChanges();
       announce(direction === "undo" ? op.undone : done);
       return true;
@@ -3901,12 +3903,12 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     }
   };
   const transition = (direction: "undo" | "redo") => {
-    if (refreshPending) { refuse("The page is still refreshing. Try Undo or Redo when it is ready."); return false; }
+    if (refreshPending) { refuse("The page is still refreshing. Try Undo or Redo when it is ready.", { history: direction }); return false; }
     const previousStatus = element("status").textContent;
     releaseRefresh = editor.holdHistoryRefresh(appStore.openFile.value ?? anchor);
     const select = direction === "undo" ? op.selection?.before : op.selection?.after;
     if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
-    if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); releaseRefresh(); releaseRefresh = undefined; refuse(receipt.error() ?? changedOperation); return false; }
+    if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); releaseRefresh(); releaseRefresh = undefined; refuse(receipt.error() ?? changedOperation, { history: direction }); return false; }
     refreshPending = true;
     // runVisualHistory must first accept this exact initiating journal. A
     // macrotask, rather than a microtask, closes it only after that acceptance.
@@ -4159,7 +4161,7 @@ const fileOperationsController = createFileOperationsController({
   onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,
   applyNativeOperation, applyFileOperation, undoFileChanges,
   duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
-  afterFileChanges, announce, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
+  afterFileChanges, announce, refuse, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
   openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
   filesTabOpen: () => filesTreeController.visible(),
 });

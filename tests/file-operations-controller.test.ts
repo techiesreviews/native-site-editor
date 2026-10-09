@@ -55,7 +55,7 @@ function operationHarness() {
     withMovedPageUrls: () => {},
     applyFileOperation: async () => { calls.push("file transaction"); },
     applyNativeOperation: async () => { calls.push("native transaction"); },
-    announce: () => {}, errorMessage: () => {}, requestAnimationFrame: () => {},
+    announce: () => {}, refuse: () => {}, errorMessage: () => {}, requestAnimationFrame: () => {},
     parentOf: () => "",
   } as unknown as FileOperationsPorts;
   return { controller: createFileOperationsController(ports), calls,

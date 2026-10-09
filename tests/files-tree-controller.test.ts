@@ -43,7 +43,7 @@ function harness(entries = [entry("a.txt")]) {
     snapshot: () => snapshot, repo: () => repo, epoch: () => epoch, root: () => root,
     state: () => state, openFile: () => "a.txt", scope: () => undefined, draft: () => undefined,
     load: () => load(), images: () => calls.push("images"), clearError: () => calls.push("clear"),
-    error: () => calls.push("error"), status: (text: string) => calls.push(text), announce: (text: string) => calls.push(text),
+    error: () => calls.push("error"), status: (text: string) => calls.push(text), announce: (text: string) => calls.push(text), refuse: (text: string) => calls.push(text),
     intent: (path: string) => calls.push(`intent ${path}`), openEntry: async (_entry: TreeEntry, path: string) => { calls.push(`open ${path}`); },
     openDraft: async () => { calls.push("draft"); }, restore: () => calls.push("restore"), create: () => calls.push("create"),
     actions: () => undefined, visible: () => Boolean(repo),

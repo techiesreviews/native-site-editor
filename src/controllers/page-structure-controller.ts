@@ -1,4 +1,3 @@
-import { refuse as showRefusal } from "../components/refusal-note";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit, swapEdits, moveEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
@@ -50,6 +49,8 @@ export interface PageStructurePorts {
   cardControls(selection: NativePreviewSelection, source: string): EditBarControl[];
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "captureAsk">;
   readonly announce: (text: string) => void;
+  /** A refusal: said in #status and shown on screen. */
+  readonly refuse: (reason: string) => void;
   readonly restoreFile: (path: string, epoch: number, options?: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; }) => Promise<void>;
   readonly updateNativePreviewSources: () => void;
   readonly nativeEditableTemplatePath: () => string | undefined;
@@ -64,7 +65,7 @@ export interface PageStructurePorts {
 }
 
 export function createPageStructureController(ports: PageStructurePorts) {
-  const refuse = (reason: string) => { ports.announce(reason); showRefusal(reason); };
+  const refuse = (reason: string) => ports.refuse(reason);
   // What B, I and Link do for the current selection, for the keyboard shortcuts.
   let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
 
@@ -583,9 +584,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (!editor || found?.tag.name !== "a" || ports.startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
     const selected = ports.appStore.selection.value?.path === fresh.path && ports.appStore.selection.value.node?.join(".") === fresh.node.join(".");
     if (selected) ports.nativePreview?.selectTextAfterUpdate(fresh.text);
+    const said = ports.element("status").textContent;
     void editor.runVisualHistory("undo", fresh.path).then((undone) => {
       if (undone) ports.element("status").textContent = "Empty link removed";
-      else refuse("The empty link could not be removed; undo removes it.");
+      // A reason the history gave stays on screen.
+      else if (ports.element("status").textContent === said) refuse("The empty link could not be removed; undo removes it.");
     });
   }
 

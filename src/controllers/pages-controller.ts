@@ -1,4 +1,3 @@
-import { refuse } from "../components/refusal-note";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
 import { editNavigation, readNavigation } from "../page-builder/site-navigation";
@@ -87,6 +86,8 @@ export interface PagesPorts {
   navigationTarget(pagePath: string | undefined): { path: string; source: string; list: NonNullable<ReturnType<typeof readNavigation>>; shared: boolean } | undefined;
   restoreDeleted(file: string): void;
   announce(message: string): void;
+  /** A refusal: said in #status and shown on screen. */
+  refuse(reason: string): void;
   error(error: Error): void;
 }
 
@@ -434,11 +435,11 @@ export function createPagesController(ports: PagesPorts) {
     let current = moveProof(source);
     const indexed = await ports.ensureIndex();
     if (!current()) { ports.error(new Error(changedMove)); return; }
-    if (indexed) { ports.error(new Error(indexed)); ports.announce(indexed); refuse(indexed); return; }
+    if (indexed) { ports.error(new Error(indexed)); ports.refuse(indexed); return; }
     current = moveProof(source);
     const to = movedRoute(parent, source.route);
     const planned = planNativeUrlChange(source.file, to);
-    if (!planned.ok) { ports.error(new Error(planned.error)); ports.announce(planned.error); refuse(planned.error); return; }
+    if (!planned.ok) { ports.error(new Error(planned.error)); ports.refuse(planned.error); return; }
     const change = planned.value;
     const openingSources = new Map(Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
     const answer = await ports.confirmation()!.choose({

@@ -23,7 +23,7 @@ function fixture() {
     nativePreview: { selectAfterUpdate: (next: unknown) => selections.push(next) },
     nativeEditableSource: () => state.source, nativeSources: () => ({ [PAGE]: state.source }),
     locateNativeElementRange: (_source: string, node: number[]) => ranges[node[1]] as ElementRange | undefined,
-    announce: (message: string) => notices.push(message), element: () => ({ textContent: "" }),
+    announce: (message: string) => notices.push(message), refuse: (message: string) => notices.push(message), element: () => ({ textContent: "" }),
     errorMessage: (error: unknown) => notices.push(String(error)),
   } as unknown as PageStructurePorts;
   const controller = createPageStructureController(ports);
