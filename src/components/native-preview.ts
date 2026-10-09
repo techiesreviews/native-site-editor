@@ -11,6 +11,7 @@ import {
   type NativeSite,
 } from "../../shared/native-project";
 import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
+import { editBarSources } from "./edit-bar-sources";
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
 import type { createAgentPins, PinRequest } from "./agent-pins";
@@ -1371,8 +1372,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     /** Show the edit bar for the current selection. */
     showEditBar(model: EditBarModel, rect: SelectionRect, textSelection?: NativeTextSelection) {
       // Repeated selection reports must not close a menu under the pointer.
-      // Any source or serialized control/origin change still refreshes its callbacks.
-      const key = JSON.stringify({ model, sources, textSelection });
+      // Sources used by this selection and serialized control/origin changes
+      // still refresh its callbacks; indexing another page does not.
+      const relevantSources = editBarSources(sources, Object.values(site?.routes ?? {}), model.origin?.path, site?.routes[route]);
+      const key = JSON.stringify({ model, sources: relevantSources, textSelection });
       if (!editBar.element.hidden && key === editBarRenderKey) editBar.move(rect);
       else { editBarRenderKey = key; editBar.show(model, rect); }
     },
