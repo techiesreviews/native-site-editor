@@ -298,7 +298,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       entry.strip = createCardFillStrip(pane, {
         filled,
         onChange: () => openPicker(entry),
-        onClose: () => closeLinker(),
+        onClose: () => {
+          closeLinker();
+          if (!ghost.hidden) add.focus();
+        },
       });
       placeLinker();
     }).catch(() => { if (linker === entry) closeLinker(); });

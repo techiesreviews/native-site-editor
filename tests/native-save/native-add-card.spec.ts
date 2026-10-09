@@ -263,6 +263,8 @@ test("picking a page fills the new card from it and a strip lists each part's so
     "Linkaddress/work/harbour-lane-pottery/",
   ]);
   await expect(strip.getByRole("button", { name: "Change page" })).toBeFocused();
+  // Information only: Change page and close are its only controls.
+  await expect(strip.getByRole("button")).toHaveText(["", "Change page"]);
   // The card stays selected.
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(/Card project/);
   expect(await undo(page)).toBe(true);
@@ -318,5 +320,6 @@ test("Change page fills the card again from the card as it was added; Esc there 
   const twice = await source(page);
   await strip.getByRole("button", { name: "Close" }).click();
   await expect(strip).toHaveCount(0);
+  await expect(addCard(page)).toBeFocused();
   expect(await source(page)).toBe(twice);
 });

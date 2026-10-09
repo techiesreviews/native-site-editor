@@ -241,3 +241,34 @@ test("text with markup characters is escaped, and the unnamed slot's content sta
   assert.match(out, /<h3 slot="title">A &lt;b&gt; "tag"<\/h3>/);
   assert.match(out, /<p>My own words<\/p>/);
 });
+
+test("a title of a line break, or a link with more after it, becomes the page's title (and link) alone", () => {
+  const card = `<article><slot name="title"><h3>Title</h3></slot></article>`;
+  assert.equal(write('<card-plain><h3 slot="title"><br></h3></card-plain>', source, card),
+    '<card-plain><h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3></card-plain>');
+  assert.equal(write('<card-plain><h3 slot="title"><a class="more" href="#">Old</a> and more</h3></card-plain>', source, card),
+    '<card-plain><h3 slot="title"><a class="more" href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3></card-plain>');
+  const linked = `${template.replace("<h3>Untitled project</h3>", "<h3>Untitled</h3>")}`;
+  assert.match(write('<card-project><p slot="link"><a href="#">Old</a> and more</p></card-project>', source, linked),
+    /<p slot="link"><a href="\/work\/fern-and-kettle\/">Read about Fern &amp; Kettle<\/a><\/p>/);
+});
+
+test("a matched component's slot without an element gets the fallback's element, not a span", () => {
+  const card = `<article><slot name="title"><h3>Title</h3></slot><slot name="badge"><card-badge class="pill">Old badge</card-badge></slot></article>`;
+  const page = source.replace("<h1>", "<card-badge>New badge</card-badge><h1>");
+  assert.equal(write("<card-x></card-x>", page, card),
+    '<card-x><h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3><card-badge slot="badge" class="pill">New badge</card-badge></card-x>');
+});
+
+test("a picture's sources go with its old image", () => {
+  const card = `<slot name="image"><img src="/placeholder.svg" alt=""></slot>${template}`;
+  const markup = [
+    "<card-project>",
+    '  <picture slot="image">',
+    '    <source srcset="/old.webp" type="image/webp">',
+    '    <img src="/old.jpg" alt="">',
+    "  </picture>",
+    "</card-project>",
+  ].join("\n");
+  assert.match(write(markup, source, card, "https://example.test"), /<picture slot="image">\n {4}<img src="\/images\/social-card\.png" alt="">\n {2}<\/picture>/);
+});

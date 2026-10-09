@@ -163,48 +163,63 @@ function leadOf(source: string, at: number): string | undefined {
 
 /**
  * The edits that fill `element` (a slot's element in a card) from `row`:
- * an image's address (its `srcset` and `sizes` dropped, so the new one shows),
- * a link's address and text, else the text of its innermost element, as a
- * link to `link` when the title takes the card's link (decision 3).
+ * an image's address (its `srcset`, `sizes` and a picture's other sources
+ * dropped, so the new one shows), a link's address and text, else the text
+ * of its innermost element, as a link to `link` when the title takes the
+ * card's link (decision 3).
  */
 function fillElementEdits(source: string, element: SourceElement, row: CardFillRow, link?: string): RangeEdit[] {
   const inside = (name: string) => (element.name === name ? element : [...descendants(element.children)].find((child) => child.name === name));
-  const textOf = (target: SourceElement, text: string): RangeEdit[] => target.close ? [{ start: target.tag.end, end: target.close.start, text: escapeText(text) }] : [];
-  const linkOf = (anchor: SourceElement, href: string, text: string) => [attributeEdit(source, anchor.tag, "href", href), ...textOf(anchor, text)];
+  const text = escapeText(row.text ?? "");
+  // All of `holder` becomes one link to `href` with the row's text, keeping the attributes of the link it held.
+  const linkIn = (holder: SourceElement, href: string): RangeEdit[] => {
+    const anchor = inside("a");
+    if (anchor === holder) return [attributeEdit(source, anchor.tag, "href", href), ...(anchor.close ? [{ start: anchor.tag.end, end: anchor.close.start, text }] : [])];
+    if (!holder.close) return [];
+    const at = anchor?.tag.start ?? 0;
+    const open = anchor ? applyEdits(source.slice(at, anchor.tag.end), [attributeEdit(source, anchor.tag, "href", href)].map((edit) => ({ ...edit, start: edit.start - at, end: edit.end - at })))
+      : `<a href="${escapeAttribute(href)}">`;
+    return [{ start: holder.tag.end, end: holder.close.start, text: `${open}${text}</a>` }];
+  };
   if (row.role === "image") {
     const img = inside("img");
-    return img && row.src !== undefined ? [attributeEdit(source, img.tag, "src", row.src), attributeEdit(source, img.tag, "srcset", undefined), attributeEdit(source, img.tag, "sizes", undefined)] : [];
+    if (!img || row.src === undefined) return [];
+    const sources = [...descendants(element.children)].filter((child) => child.name === "source").map((child) => {
+      const lead = leadOf(source, child.start);
+      const start = lead === undefined ? child.start : Math.max(0, child.start - lead.length - (source[child.start - lead.length - 2] === "\r" ? 2 : 1));
+      return { start, end: child.end, text: "" };
+    });
+    return [attributeEdit(source, img.tag, "src", row.src), attributeEdit(source, img.tag, "srcset", undefined), attributeEdit(source, img.tag, "sizes", undefined), ...sources];
   }
-  if (row.role === "link") {
-    const anchor = inside("a");
-    if (anchor) return linkOf(anchor, row.href ?? "", row.text ?? "");
-    return element.close ? [{ start: element.tag.end, end: element.close.start, text: `<a href="${escapeAttribute(row.href ?? "")}">${escapeText(row.text ?? "")}</a>` }] : [];
-  }
-  // The text goes in the innermost element that holds the rest (`<div slot><p>…</p></div>`).
+  if (row.role === "link") return linkIn(element, row.href ?? "");
+  // The text goes in the innermost element that holds the rest (`<div slot><p>…</p></div>`), not into an image or a line break.
   let target = element;
-  for (let only = elementsOf(target); only.length === 1 && blankText(source, target) && only[0].name !== "a"; only = elementsOf(target)) target = only[0];
-  if (link === undefined) return textOf(target, row.text ?? "");
-  const anchor = inside("a");
-  if (anchor) return linkOf(anchor, link, row.text ?? "");
-  return target.close ? [{ start: target.tag.end, end: target.close.start, text: `<a href="${escapeAttribute(link)}">${escapeText(row.text ?? "")}</a>` }] : [];
+  for (let only = elementsOf(target); only.length === 1 && only[0].close && only[0].name !== "a" && blankText(source, target); only = elementsOf(target)) target = only[0];
+  if (link !== undefined) return linkIn(target, link);
+  return target.close ? [{ start: target.tag.end, end: target.close.start, text }] : [];
 }
 
-/** A new element for a slot the card has none for: its fallback's shape (as Add card copies it), else a plain one. */
+/** A new element for a slot the card has none for: its fallback's shape (as Add card copies it, else its one element), else a plain one. */
 function newSlotElement(template: string, row: CardFillRow, link?: string): string {
   const name = row.slot ?? "";
+  const filled = (markup: string) => {
+    const [first] = parseSource(markup) as SourceElement[];
+    return applyEdits(markup, fillElementEdits(markup, first, row, link));
+  };
   const copy = slotMarkup(template).find((line) => {
     const [first] = parseSource(line);
     return first?.type === "element" && attribute(line, first, "slot") === name;
   });
-  if (copy) {
-    const [first] = parseSource(copy) as SourceElement[];
-    return applyEdits(copy, fillElementEdits(copy, first, row, link));
-  }
+  if (copy) return filled(copy);
   const slot = `slot="${escapeAttribute(name)}"`;
+  const fallback = templateSlots(template).find((entry) => entry.name === name)?.fallback ?? "";
+  const nodes = parseSource(fallback);
+  const [only, ...more] = nodes.filter((node): node is SourceElement => node.type === "element");
+  if (only && !more.length && nodes.every((node) => node === only || !/[^\t\n\f\r ]/.test(fallback.slice(node.start, node.end))))
+    return filled(`${fallback.slice(only.start, only.tag.nameEnd)} ${slot}${fallback.slice(only.tag.nameEnd, only.end)}`);
   if (row.role === "image") return `<img ${slot} src="${escapeAttribute(row.src ?? "")}" alt="">`;
   if (row.role === "link") return `<a ${slot} href="${escapeAttribute(row.href ?? "")}">${escapeText(row.text ?? "")}</a>`;
-  const text = escapeText(row.text ?? "");
-  return `<span ${slot}>${link === undefined ? text : `<a href="${escapeAttribute(link)}">${text}</a>`}</span>`;
+  return filled(`<span ${slot}></span>`);
 }
 
 /**
