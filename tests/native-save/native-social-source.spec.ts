@@ -12,7 +12,11 @@ const mounted = (page: Page) => page.evaluate(async () => (await import("/src/co
 
 async function load(page: Page, baseURL: string | undefined, source?: string) {
   if (source !== undefined) {
+    // The bare URL signs in (the fake GitHub's session cookie); after an earlier
+    // load it also reopens that workspace, which may read index.html before the
+    // edit lands and still say "Up to date". The app is closed while the branch moves.
     await page.goto(baseURL!);
+    await page.goto("about:blank");
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: source } })).status()).toBe(204);
   }
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
