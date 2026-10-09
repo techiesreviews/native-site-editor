@@ -1,0 +1,22 @@
+---
+title: Variants in the code pane
+type: task (AFK)
+status: open
+assignee:
+blocked_by: [12-variant-parser-site-css]
+builder: sol
+phase: 2
+---
+
+## What
+
+Ticket [07](../../tickets/07-variant-contract.md) §3 and §5 (code pane).
+
+- HTML pane: inside `<section-hero ` suggest its variant attributes; after `data-tone="` suggest the values and say what the absent attribute gives; hovering a variant attribute lists its values; an unknown value gets a soft warning marker.
+- CSS pane: warn on the broken form `:host[data-x]` / `:host { &[data-x] }` and show the fix; warn when a component has no default look. Nothing is suggested in CSS.
+- Monaco providers are registered in `src/components/code-editor.ts` (CSS completion `:297`, hover `:313`); add the HTML ones beside them. Keep the suggestion logic a pure function of the text and offset.
+
+## Done when
+
+- Unit tests for the pure suggestion function (attribute list, values with the default note, unknown value).
+- Nightly spec: typing in the HTML pane offers the variant attributes and values.
