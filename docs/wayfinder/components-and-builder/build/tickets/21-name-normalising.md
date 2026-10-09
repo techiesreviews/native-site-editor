@@ -1,7 +1,7 @@
 ---
 title: Names made valid as typed
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -21,3 +21,8 @@ Ticket [04](../../tickets/04-prototype-making-components.md) §4 and decided at 
 ## Done when
 
 - Unit tests: case, spaces, dropped characters, collapsed and trailing hyphens, leading digits; the `section-`, `card-` and `block-` prefixes and no prefix when a hyphen is typed; a taken tag; caret position.
+
+## Done (2026-10-09)
+
+- `src/page-builder/component-names.ts`: `normaliseName` (live and final), `previewComponentTag` (prefix chosen on the trimmed form), `normaliseComponentName` (`section-`/`card-`/`block-` prefix, `tagNameProblem` for taken and reserved names), `normaliseAtCaret` and the DOM helper `normaliseField` (input or contenteditable chip). Not wired to UI yet (slices 22, 27).
+- Commit 3e1e2be; tests in `tests/component-names.test.ts` (case, spaces, dropped characters, hyphens, leading digits, prefixes, taken/reserved, preview, caret).
