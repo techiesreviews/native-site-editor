@@ -15,3 +15,5 @@ From slices 22 and 85 (see their Done notes): Edit component mode's bar ("Editin
 ## Done when
 
 - Nightly spec at 1440 (with a note), 1024, 760 and the narrowest supported width: every control visible, not overlapping, clickable; screenshots of each.
+
+**Changed (Lex, 2026-10-09):** remove the Show this page's content / Show placeholders toggle entirely; the mode always shows the template's placeholders.
