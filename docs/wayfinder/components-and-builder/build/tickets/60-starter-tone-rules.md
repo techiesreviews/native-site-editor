@@ -3,7 +3,7 @@ title: "Starter: four tones from one brand colour"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [59-tone-formula-sweep-test]
+blocked_by: [59-tone-formula-sweep-test, 69-tone-chroma-cap]
 builder: claude ★
 phase: 7
 ---
@@ -23,3 +23,5 @@ Ticket [08](../../tickets/08-accessible-tone-text.md) §1–4.
 
 - Every tone renders readably in light and dark mode, with the starter's brand and with a few others set in `tokens.css` (checked by slice 62).
 - One commit on the starter's `dev` branch; screenshots of each tone.
+
+**Amended (2026-10-09):** copy slice 69's chroma-capped surface recipe, so AA holds for wide-gamut brands too (Lex).

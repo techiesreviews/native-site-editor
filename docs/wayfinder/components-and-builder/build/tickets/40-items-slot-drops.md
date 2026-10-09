@@ -20,3 +20,5 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) "Items slots", [04](../
 
 - Unit tests: items-slot detection (unnamed, a named slot with a `card-…` fallback, a slot holding one other instance that isn't one); an insert into the unnamed and into a named items slot; a refused named slot; the seal still holds elsewhere.
 - Nightly spec: drag a Paragraph into a section component's items slot; click-insert into a selected instance.
+
+**Clarified (2026-10-09), from slices 09 and 32:** a *card component* is a `card-…` component whose template has a heading slot (ticket 09 rule 9). An items slot is the unnamed slot or a slot whose fallback is a card component. So `<slot name="note"><card-note>…</card-note></slot>` (card-note has no heading slot) is an ordinary slot. Apply this one rule in `templateSlots` (slice 08's `TemplateSlot.items`) and in the preview's drop report (slice 32: today any `card-…` directly in the slot counts; check the instance's template for a heading slot, e.g. via its shadow root), with unit tests for both shapes.
