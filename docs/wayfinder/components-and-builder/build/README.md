@@ -47,6 +47,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [19 MCP: make_component](tickets/19-make-component-mcp-tool.md) | sol | 10 |
 | [20 MCP: get_site lists variants](tickets/20-get-site-variants.md) | sol | 12 |
 | [71 Variants: leave out script-set attributes in the editor; write yes/no the way the CSS reads it](tickets/71-variant-followups.md) | sol | 13, 20 |
+| [74 Starter: base resets skip slotted parts](tickets/74-starter-resets-skip-slotted.md) | sol | – |
 | [64 Make component copies the element's page CSS into the component](tickets/64-make-component-carries-css.md) | claude ★ | 10 |
 | [65 Starter: the card link rule](tickets/65-starter-card-link-rule.md) | sol | – |
 | [67 Starter: title links look like the title, stretched only in cards](tickets/67-starter-title-link-look.md) | sol | 65 |
@@ -62,6 +63,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [24 Slot chips rename in place](tickets/24-slot-chip-rename-in-place.md) | claude ★ | 23 |
 | [25 Making mode in Structure: frame and slot badges](tickets/25-making-mode-structure.md) | sol | 24 |
 | [26 Make component from Structure and right-click](tickets/26-make-component-entry-points.md) | sol | 22 |
+| [72 Undo and redo of steps that create files are all or nothing](tickets/72-atomic-redo-with-files.md) | claude ★ | – |
 | [27 + New component in Add](tickets/27-new-component-in-add.md) | sol | 21 |
 
 ### Phase 4: Block builder
@@ -76,6 +78,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [33 Drop target model](tickets/33-drop-target-model.md) | claude ★ | 32 |
 | [34 Sections snap between page bands](tickets/34-section-snap.md) | sol | 32 |
 | [35 Drag blocks from the rail onto the canvas](tickets/35-canvas-drag-new-blocks.md) | claude ★ | 28, 33, 34 |
+| [73 Edit bar: update the controls spec for Make component; call a.btn a Button](tickets/73-edit-bar-spec-and-button-label.md) | sol | – |
 | [36 Blocks drag themselves](tickets/36-drag-existing-blocks.md) | claude ★ | 35 |
 | [37 Structure mirrors drags and takes depth from x](tickets/37-structure-mirror-and-x-depth.md) | claude ★ | 35 |
 | [38 Folded Structure rows spring open](tickets/38-spring-open-rows.md) | sol | 37 |

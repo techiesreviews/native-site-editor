@@ -25,3 +25,5 @@ Ticket [08](../../tickets/08-accessible-tone-text.md) §1–4.
 - One commit on the starter's `dev` branch; screenshots of each tone.
 
 **Amended (2026-10-09):** copy slice 69's chroma-capped surface recipe, so AA holds for wide-gamut brands too (Lex).
+
+**Amended (2026-10-09, Lex):** slice 69 landed a luminance-preserving gamut map instead of a constant-hue chroma cap (the exact cap expands to ~240 KB of CSS per use). Copy the recipe from `shared/tone.ts`'s comments. Lex accepted the slight hue shift for very vivid brands.
