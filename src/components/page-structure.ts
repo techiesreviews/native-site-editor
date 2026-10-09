@@ -1,4 +1,6 @@
 import { refuse } from "./refusal-note";
+import { createRowMenu, type MenuItem } from "./row-menu";
+import { setIcon } from "../icons";
 import { button, node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
@@ -49,6 +51,8 @@ interface TemplateRows {
 
 export interface PageStructureHandlers {
   templateRows?: (path: string, at: readonly number[]) => TemplateRows | undefined;
+  /** `opening` checks a user action; painting the affordance stays silent on stale source. */
+  menuItems?: (path: string, item: NativeStructureItem, opening?: boolean) => MenuItem[];
   /** Source-guarded instance fields; synthetic slot rows never identify DOM nodes. */
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
@@ -125,6 +129,7 @@ const key = (node: readonly number[]) => node.join(".");
 const LINE_LEFT = 10;
 
 export function createPageStructure(host: HTMLElement, handlers: PageStructureHandlers) {
+  const menu = createRowMenu(host);
   const hint = node("p", "muted sidebar-hint", HINT_NO_PAGE);
   const meta = node("div", "page-structure__meta");
   meta.setAttribute("role", "group");
@@ -564,7 +569,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     label.append(kindName);
     if (text) label.append(" ", node("span", "page-structure__text", text));
     el.append(toggle, label);
-    if (slotModel || template || modeRows) {
+    // The element's actions (Make component…), shared with a right-click in the preview.
+    const menuPath = structure!.path;
+    const entries = (opening = false) => handlers.menuItems?.(menuPath, item, opening) ?? [];
+    const hasMenu = entries().length > 0;
+    if (slotModel || template || modeRows || hasMenu) {
       // The row is named by its kind and preview only; its action buttons keep their own names.
       kindName.id = `page-structure-kind-${++rowNameSeq}`;
       const parts = [kindName.id];
@@ -607,6 +616,32 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         addRowActions(el, [open]);
       }
     }
+    const openMenu = (anchor: HTMLElement, at?: { x: number; y: number }) => {
+      const items = entries(true);
+      if (!items.length) return false;
+      menu.open(anchor, items, at, `Actions for ${kind}${text ? ` ${text}` : ""}`);
+      return true;
+    };
+    if (hasMenu) {
+      const more = button("", () => {
+        if (menu.isOpen() && menu.opener === more) { menu.close(true); return; }
+        openMenu(more);
+      }, "page-structure__action");
+      setIcon(more, "dots-three", 16);
+      more.title = "More actions";
+      more.setAttribute("aria-label", `Actions for ${kind}${text ? ` ${text}` : ""}`);
+      more.setAttribute("aria-haspopup", "menu");
+      more.setAttribute("aria-expanded", "false");
+      addRowActions(el, [more]);
+    }
+    el.addEventListener("contextmenu", event => {
+      if (inEditor(event.target)) return;
+      if (openMenu(el, { x: event.clientX, y: event.clientY })) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    });
+
     if (slotContext) {
       el.classList.add("page-structure__row--slot");
       const { slot } = slotContext;
@@ -641,6 +676,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.addEventListener("keydown", (event) => {
       // Keys typed in the row's field or on its Done button are theirs, not the tree's.
       if (event.target !== el) return;
+      if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+        if (openMenu(el)) { event.preventDefault(); event.stopPropagation(); }
+        return;
+      }
       if (event.key === "F2" && slotContext) { event.preventDefault(); requestSlotEdit(slotContext); return; }
       // Enter on a row whose text edits in place starts editing it (everything selected).
       if (event.key === "Enter" && slotContext && inPlace(slotContext.slot) && !editing) { event.preventDefault(); event.stopPropagation(); requestSlotEdit(slotContext); return; }
@@ -868,6 +907,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   });
 
   function render() {
+    menu.close(false);
     rows.clear();
     items.clear();
     movable.clear();
@@ -1097,6 +1137,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (structure?.path) renderMeta(structure.path);
     },
     destroy() {
+      menu.close(false);
+      menu.element.remove();
       // A row edit is kept (what waits is written); every other open step ends.
       editingModule?.destroy();
       hint.remove();

@@ -1,3 +1,4 @@
+import { samePreviewFiles } from "./preview-files";
 import { parseDropReport, type DropReport } from "../page-builder/drop-report";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
@@ -209,6 +210,8 @@ export interface NativeTextEdit {
 export interface PressedBlock { node: number[]; tag: string; cls: string; band: boolean; painted: string | undefined }
 
 export interface NativePreviewHandlers {
+  onContextMenu?: (point: { x: number; y: number }, anchor: HTMLIFrameElement) => void;
+  onDismissContextMenu?: () => void;
   /** The frame drew another page (the first, a followed link, a file opened): the host reads its images. */
   onRouteShown?: (route: string) => void;
   /** Caller must check current source and revision before filling the page instance. */
@@ -624,7 +627,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     sentStructureSnapshot = { context, sources: { ...sources } };
     postedRoutes.set(++messageId, alone ? "/" : route);
     frame.contentWindow?.postMessage(
-      { source: "astro-native-preview-host", type: "update", id: messageId, payload },
+      { source: "astro-native-preview-host", type: "update", id: messageId, payload: { ...payload, viewing: Boolean(viewing) } },
       "*",
     );
   }
@@ -785,6 +788,17 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
       return;
     }
+    if (data.type === "dismiss-context-menu") {
+      handlers.onDismissContextMenu?.();
+      return;
+    }
+    if (data.type === "context-menu") {
+      const raw = data as { x?: unknown; y?: unknown };
+      if (!site || viewing || typeof raw.x !== "number" || typeof raw.y !== "number" || !Number.isFinite(raw.x) || !Number.isFinite(raw.y)) return;
+      const box = frame.getBoundingClientRect();
+      handlers.onContextMenu?.({ x: box.left + frame.clientLeft + raw.x, y: box.top + frame.clientTop + raw.y }, frame);
+      return;
+    }
     if (data.type === "slot-ghosts") {
       const report = site && frameState.active && !viewing && readSlotGhostReport((data as { report?: unknown }).report,
         { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
@@ -930,6 +944,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         hostChain?: unknown;
         crumbs?: unknown;
       };
+      // Geometry refreshes of the chosen element keep its menu usable.
+      if (raw.reason !== "refresh" || raw.path === "") handlers.onDismissContextMenu?.();
       slotSelection = undefined;
       const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
       staleClick = false;
@@ -1182,6 +1198,13 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       schedule();
     },
     update(input: UpdateInput) {
+      // An element menu stays open while the same bytes are reported again (a code pane mounting).
+      const changed = Object.hasOwn(input, "component") || Boolean(input.route) ||
+        (Object.hasOwn(input, "editableTemplatePath") && input.editableTemplatePath !== editableTemplatePath) ||
+        (input.sources && !samePreviewFiles(sources, input.sources)) ||
+        (input.componentStyles && !samePreviewFiles(componentStyles, input.componentStyles)) ||
+        (input.assets && !samePreviewFiles(assets, input.assets));
+      if (changed) handlers.onDismissContextMenu?.();
       if (Object.hasOwn(input, "editableTemplatePath")) editableTemplatePath = input.editableTemplatePath;
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
@@ -1348,6 +1371,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * `undefined` goes back to the latest.
      */
     setViewing(bar: HTMLElement | undefined) {
+      handlers.onDismissContextMenu?.();
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "viewing", viewing: Boolean(bar) }, "*");
       endProbe();
       viewing?.remove();
       viewing = bar;

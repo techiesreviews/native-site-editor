@@ -1,5 +1,7 @@
 import { refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
+import { createRowMenu } from "./components/row-menu";
+import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } from "./components/element-menu";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
@@ -452,8 +454,25 @@ function mountWorkspace() {
   // A selection inside a component's template gets Select card once the runtime says which card.
   // A remount must not leave the old pane (parked or shown) behind.
   nativePreview?.destroy();
+  previewElementMenu?.close(false);
+  previewElementMenu?.element.remove();
+  previewElementMenu = createRowMenu(app);
+  let menuSelection: NativePreviewSelection | undefined;
   nativePreview = createNativePreview(element("main"), {
     ...previewSelection.handlers(),
+    onSelect: selection => {
+      menuSelection = selection;
+      previewSelection.handlers().onSelect?.(selection);
+    },
+    onDismissContextMenu: () => previewElementMenu?.close(false),
+    onContextMenu: (point, anchor) => {
+      const selection = appStore.selection.value;
+      // Shared-template clicks may still be waiting for their real instance selection.
+      if (!selection || selection.path !== menuSelection?.path || selection.tag !== menuSelection.tag || selection.node?.join(".") !== menuSelection.node?.join(".")) return;
+      const target = componentTools?.instanceSelection(selection);
+      const entries = target ? elementMenuItems(target) : [];
+      if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
+    },
     // The images of a page shown by following a link are read when it shows.
     // A page the text index has not read yet is read when it shows.
     onRouteShown: (route) => {
@@ -522,6 +541,18 @@ function mountWorkspace() {
   });
   nativePreview.attachAddButton(element<HTMLButtonElement>("add-panel-toggle"));
   pageStructure = createPageStructure(element("structure"), {
+    menuItems: (path, item, opening) => {
+      const painted = nativeStructurePaintedSources.get(item);
+      const fresh = () => painted !== undefined && nativeEffectiveSource(path) === painted && !versionView;
+      if (!fresh()) {
+        if (opening) announce("The source changed. Wait for the preview before using this action.");
+        return [];
+      }
+      return elementMenuItems({ path, node: item.node, tag: item.tag }).map(entry => ({ ...entry, run: () => {
+        if (!fresh()) { announce("The source changed. Wait for the preview before using this action."); return; }
+        entry.run();
+      } }));
+    },
     pageSource: (path) => nativeEffectiveSource(path),
     label: (item) => {
       const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
@@ -1604,6 +1635,13 @@ function nativePictureSources(source: string, node: readonly number[]) {
   if (!parent || parent.tag.name.toLowerCase() !== "picture") return false;
   return [...descendants(parseSource(source))].some(item => item.start > parent.start && item.end <= parent.end && item.name.toLowerCase() === "source"
     && Boolean(startTagAttribute(source, item.tag, "srcset")?.value.trim()));
+}
+
+let previewElementMenu: ReturnType<typeof createRowMenu> | undefined;
+window.addEventListener("blur", () => previewElementMenu?.close(false));
+function elementMenuItems(target: ElementMenuTarget) {
+  const providers = [(target: ElementMenuTarget) => componentTools?.menuItems(target) ?? []];
+  return collectElementMenuItems(target, providers);
 }
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;

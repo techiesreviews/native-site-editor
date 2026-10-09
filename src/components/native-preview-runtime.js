@@ -489,6 +489,7 @@
     var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
     applyAssetChanges(payload.assetChanges);
     state = {
+      viewing: payload.viewing === true,
       pages: payload.pages || {},
       pagePaths: payload.pagePaths || {},
       components: payload.components || {},
@@ -2873,6 +2874,27 @@
       emitSelection(target, "click");
     }
   });
+  // A right-click selects the element and asks the editor for its menu; the
+  // next press or scroll here closes that menu (the editor's own document
+  // never sees them). The browser's menu stays for text being typed in.
+  var contextMenuOpen = false;
+  function dismissContextMenu() {
+    if (!contextMenuOpen) return;
+    contextMenuOpen = false;
+    emit("dismiss-context-menu");
+  }
+  document.addEventListener("contextmenu", function (e) {
+    if (!state || state.viewing) return;
+    var target = deepestElement(e);
+    if (!target || (editing && editing.contains(target))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selected = target;
+    updateBoxes();
+    emitSelection(target, "click");
+    contextMenuOpen = true;
+    emit("context-menu", { x: e.clientX, y: e.clientY });
+  });
   document.addEventListener("mousemove", function (e) {
     if (pressDragging()) return;
     hoverPointer = { x: e.clientX, y: e.clientY };
@@ -2917,6 +2939,7 @@
     return main && pageEl.contains(main) && page && ownerPath(el) === page ? el : null;
   }
   window.addEventListener("pointerdown", function (e) {
+    dismissContextMenu();
     press = null;
     // Edit component mode edits the template: the page's blocks stay put.
     if (!state || editMode || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
@@ -3436,6 +3459,7 @@
   // ---- End of canvas ----
 
   function refreshScroll(event) {
+    dismissContextMenu();
     var root = event.target && event.target.getRootNode ? event.target.getRootNode() : null;
     if (event.currentTarget instanceof ShadowRoot) {
       // Slotted light-DOM scrolls belong to the window listener. Detached
@@ -3464,6 +3488,7 @@
     if (e.source !== parent) return;
     var msg = e.data || {};
     if (msg.source !== "astro-native-preview-host") return;
+    if (msg.type === "viewing") { if (state) state.viewing = msg.viewing === true; return; }
     if (msg.type === "drop-probe") {
       if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
       emit("drop-containers", { id: msg.id, path: String(state && state.pagePaths[state.route] || ""),

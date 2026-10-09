@@ -1,3 +1,5 @@
+import type { ElementMenuTarget } from "../components/element-menu";
+import type { MenuItem } from "../components/row-menu";
 // Components, first class (docs/page-builder/components.md): what the page
 // builder does around a component instance, alongside the edit bar and the
 // page structure.
@@ -339,7 +341,7 @@ export function createComponentTools(deps: ComponentDeps) {
    * (`within` names the slot), in the selection's own file. An element of
    * a template belongs to the component, not to an instance on the page.
    */
-  function locate(selection: NativePreviewSelection | undefined, around = false): Located | undefined {
+  function locate(selection: ElementMenuTarget | undefined, around = false): Located | undefined {
     if (!selection?.path || !selection.node?.length || !site()) return undefined;
     const source = deps.sources()[selection.path];
     if (source === undefined) return undefined;
@@ -472,20 +474,21 @@ export function createComponentTools(deps: ComponentDeps) {
   /** The edit bar's component actions for a selection. */
   function controls(selection: NativePreviewSelection): EditBarControl[] {
     const out: EditBarControl[] = [];
-    if (isComponent(selection.tag)) {
-      return out;
-    }
-    const at = selection.host ? undefined : locate(selection);
-    if (at) {
-      return out;
-    }
-    if (selection.host || !selection.node?.length || tagOfFile(selection.path)) return out;
-    const source = deps.sources()[selection.path];
-    const chain = source === undefined ? undefined : elementChain(source, selection.node);
-    if (chain && makeComponentOffered(chain.map((element) => element.localName))) {
+    if (makeComponentOfferedFor(selection)) {
       out.push({ kind: "button", label: "Make component", title: "Turn this element into a component the site can reuse, and edit it", className: "edit-bar__component-action", onPress: () => void openMakeComponent(selection) });
     }
     return out;
+  }
+
+  function makeComponentOfferedFor(target: ElementMenuTarget): boolean {
+    if (editMode?.active() || isComponent(target.tag) || target.host || !target.node?.length || tagOfFile(target.path) || locate(target)) return false;
+    const source = deps.sources()[target.path];
+    const chain = source === undefined ? undefined : elementChain(source, target.node);
+    return Boolean(chain && makeComponentOffered(chain.map(element => element.localName)));
+  }
+
+  function menuItems(target: ElementMenuTarget): MenuItem[] {
+    return makeComponentOfferedFor(target) ? [{ label: "Make component", run: () => void openMakeComponent(target) }] : [];
   }
 
   // ---- Variants (ticket 07 §5). ----
@@ -1447,7 +1450,7 @@ export function createComponentTools(deps: ComponentDeps) {
    * and the page CSS that styled it, as one undo step; then Edit component
    * mode opens on the new instance, the plan's notes in its bar.
    */
-  async function openMakeComponent(selection: NativePreviewSelection) {
+  async function openMakeComponent(selection: ElementMenuTarget) {
     const path = selection.path;
     const nodePath = selection.node;
     const source = deps.sources()[path];
@@ -1906,6 +1909,7 @@ export function createComponentTools(deps: ComponentDeps) {
 
   return {
     makeFromAgent,
+    menuItems,
     identity,
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
