@@ -104,6 +104,12 @@ test("a card dragged over the third card's title reorders in the grid, one undo 
   await pressAndMove(page, await pointIn(page, "#work card-project:nth-child(1) h3[slot=title]"), to);
   await expect(where(page)).toHaveText("Into Div (grid) › after Card project");
   await expect(page.locator(".pb-drop__line--v")).toBeVisible();
+  // The line stands at the third card's right edge, along its height.
+  const right = await pointIn(page, "#work card-project:nth-child(3)", 1, 0.5);
+  const line = (await page.locator(".pb-drop__line--v").boundingBox())!;
+  expect(Math.abs(line.x + line.width / 2 - right.x)).toBeLessThan(24);
+  expect(line.y).toBeLessThan(right.y);
+  expect(line.y + line.height).toBeGreaterThan(right.y);
   await page.mouse.up();
   await expect(titles).toHaveText(["Harbour Lane Pottery", "Untitled project", "Fern & Kettle"]);
   expect(await undo(page)).toBe(true);

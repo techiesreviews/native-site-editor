@@ -219,3 +219,22 @@ test("an items slot sharing its section instance path is not a hovered child", (
   assert.equal(target.container, items);
   assert.equal(target.ok, true);
 });
+
+test("a moved leaf item (no containers of its own) over a sibling's box takes that sibling's halves, even at the grid's edge", () => {
+  // A grid row of a tall image and a short one; the pointer is low in the tall one, below the short one.
+  const grid = box([1, 0, 1], "div", rect(40, 100, 720, 400), [
+    child(0, rect(40, 100, 300, 300), "img"),
+    child(1, rect(360, 100, 300, 100), "img"),
+    child(2, rect(40, 420, 300, 80), "img"),
+  ], { axis: "row", layout: { ...layout, display: "grid", cols: 2 } });
+  const moving: DraggedBlock = { kind: "move", path: [1, 0, 1, 2], band: false };
+  assert.equal(dropTarget([grid, section, main], { x: 300, y: 350 }, moving)!.index, 1);
+  assert.equal(dropTarget([grid, section, main], { x: 100, y: 350 }, moving)!.index, 0);
+  // Flush with the grid's left edge: still beside the sibling, not out to the Section.
+  const edge = dropTarget([grid, section, main], { x: 42, y: 200 }, moving)!;
+  assert.deepEqual([edge.container.path, edge.index], [[1, 0, 1], 0]);
+  // A new block keeps the edge escape there.
+  assert.deepEqual(dropTarget([grid, section, main], { x: 42, y: 200 }, paragraph)!.container.path, [1, 0]);
+  // Over itself nothing changes.
+  assert.equal(dropLabel(dropTarget([grid, section, main], { x: 100, y: 460 }, moving)!, moving), "Stays where it is");
+});

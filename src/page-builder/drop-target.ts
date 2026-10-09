@@ -82,28 +82,49 @@ const nearEdge = (p: { x: number; y: number }, { left, top, width, height }: Dro
  */
 export function dropTarget(containers: readonly DropContainer[], p: { x: number; y: number }, block: DraggedBlock, level = 0): DropTarget | undefined {
   if (!containers.length) return undefined;
+  const sibling = siblingUnder(containers, p, block);
   const at = (j: number): DropTarget => {
     const container = containers[j];
     // In an outer container the pointer is inside the child that holds the inner one.
-    const index = j === 0 ? pointIndex(container, p) : sideIndex(container, containers[j - 1].path[container.path.length], p);
+    const child = sibling?.j === j ? sibling.hovered : j > 0 ? containers[j - 1].path[container.path.length] : undefined;
+    const index = child === undefined ? pointIndex(container, p) : sideIndex(container, child, p);
     const reason = dropRefusal(block, container);
     return { container, index, level: j, ok: !reason, ...(reason ? { reason } : {}) };
   };
-  const sibling = block.kind === "move" ? containers.findIndex((container, j) => {
-    if (j === 0 || !(container.kind === "items" || container.layout.display.includes("grid")) ||
-      container.path.length !== block.path.length - 1 || !container.path.every((step, at) => block.path[at] === step)) return false;
-    const hovered = containers[j - 1].path[container.path.length];
-    return hovered !== undefined && hovered !== block.path[block.path.length - 1];
-  }) : -1;
   // Otherwise a named slot refuses where it is; a fixed part does too, except
   // at its edges (below), where the drop goes beside it.
   const first = containers[0];
-  if (sibling < 0 && level <= 0 && !isBand(block) && (first.kind === "slot" || first.kind === "fixed" && !nearEdge(p, first.rect))) return at(0);
-  let i = Math.max(0, sibling);
-  if (sibling < 0) while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
+  if (!sibling && level <= 0 && !isBand(block) && (first.kind === "slot" || first.kind === "fixed" && !nearEdge(p, first.rect))) return at(0);
+  let i = sibling?.j ?? 0;
+  if (!sibling) while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);
   for (let j = i; j < containers.length; j++) if (!dropRefusal(block, containers[j])) return at(j);
   return at(i);
+}
+
+const inside = (p: { x: number; y: number }, { left, top, width, height }: DropContainer["rect"]) =>
+  p.x >= left && p.x <= left + width && p.y >= top && p.y <= top + height;
+
+/**
+ * A moved item of a grid or an items slot over another item of the same
+ * container: where that container is in `containers`, and the hovered item's
+ * index. The item is the child holding the next inner container, or, for a
+ * leaf with no containers of its own (an image), the child box under the pointer.
+ */
+function siblingUnder(containers: readonly DropContainer[], p: { x: number; y: number }, block: DraggedBlock) {
+  if (block.kind !== "move") return undefined;
+  const parent = block.path.slice(0, -1), own = block.path[block.path.length - 1];
+  for (let j = 0; j < containers.length; j++) {
+    const container = containers[j];
+    if (!(container.kind === "items" || container.layout.display.includes("grid")) ||
+      container.path.length !== parent.length || !container.path.every((step, at) => parent[at] === step)) continue;
+    // An items slot shares its instance's path, so the next inner container may be the instance's own part.
+    const hovered = j > 0 ? containers[j - 1].path[container.path.length]
+      : container.children.find((child) => shown(child) && inside(p, child.rect))?.index;
+    if (hovered === undefined) continue;
+    return hovered === own ? undefined : { j, hovered };
+  }
+  return undefined;
 }
 
 /** "Paragraph", "Div (stack)", "Button", or a component's name. */
