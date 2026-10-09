@@ -1180,14 +1180,14 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   // What a would-be item is (`itemKind`: a custom element's tag, else its tag and first class); none for a
   // part that is a slot of its own (a line of text, a standalone link), except a list's items.
   const itemOf = (el: SourceElement) => (el.name === "li" || !(isText(el) || isLink(el)) ? itemKind(el.name, (attribute(html, el, "class") ?? "").trim().split(/\s+/)[0]) : undefined);
-  /** Runs of two or more consecutive siblings of one item kind, nothing but white space between them. */
+  /** Runs of two or more consecutive siblings of one item kind, nothing but white space and comments between them. */
   const runs = (children: SourceElement[]) => {
     const found: number[][] = [];
     let run: number[] = [];
     children.forEach((child, index) => {
       const kind = itemOf(child);
       const before = children[index - 1];
-      if (kind && run.length && itemOf(children[run[0]]) === kind && !html.slice(before.end, child.start).trim()) run.push(index);
+      if (kind && run.length && itemOf(children[run[0]]) === kind && !html.slice(before.end, child.start).replace(/<!--[\s\S]*?-->/g, "").trim()) run.push(index);
       else {
         if (run.length > 1) found.push(run);
         run = kind ? [index] : [];
@@ -1208,7 +1208,11 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
         // A repeated group: the items slot, its items moved to the page as they are.
         const items = group.map((member) => ({ el: children[member], path: [...path, member] }));
         parts.push({ el: child, path: at, kind: "content", byDefault: true, items });
-        if (fixed.has(key(at))) group.forEach((member) => { if (forcedInside([...path, member])) visit(children[member], [...path, member], false, true); });
+        // Kept fixed, the items stay in the template: the later ones can still be made slots by hand, whole or inside.
+        if (fixed.has(key(at))) for (const item of items) {
+          if (item.path !== at && forced.has(key(item.path))) parts.push({ el: item.el, path: item.path, kind: kindOf(item.el), byDefault: false });
+          else if (forcedInside(item.path)) visit(item.el, item.path, false, true);
+        }
         return;
       }
       if (grouped.has(index)) return;
@@ -1291,21 +1295,18 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       fills.push(inner);
       return;
     }
-    // Lines after the first move to the instance's indentation, unless white space is the content's own.
-    const moved = (part: SourceElement) => {
-      const copy = html.slice(part.start, part.end);
-      const verbatim = [...descendants([part])].some((inner) => inner.name === "pre" || inner.name === "textarea");
-      return withSlot(verbatim ? copy : reindent(copy, `${indent}  `).replace(/\n/g, newline), name);
-    };
-    if (part.items) {
-      // A repeated group: an empty slot where the items were; the items go to the page as they are.
-      const last = part.items[part.items.length - 1].el;
-      edits.push({ start: el.start, end: last.end, text: name ? `<slot name="${escapeAttribute(name)}"></slot>` : "<slot></slot>" });
-      for (const item of part.items) fills.push(moved(item.el));
-      return;
+    // A repeated group: an empty slot where the items were; the items, and what was between them, go to the page as written.
+    const items = part.items?.map((item) => item.el) ?? [el];
+    const end = items[items.length - 1].end;
+    let copy = html.slice(el.start, end);
+    for (const item of [...items].reverse()) {
+      const at = item.start - el.start;
+      copy = copy.slice(0, at) + withSlot(html.slice(item.start, item.end), name) + copy.slice(item.end - el.start);
     }
-    edits.push({ start: el.start, end: el.end, text: `<slot name="${escapeAttribute(name)}">${html.slice(el.start, el.end)}</slot>` });
-    fills.push(moved(el));
+    edits.push({ start: el.start, end, text: part.items ? `<slot${name ? ` name="${escapeAttribute(name)}"` : ""}></slot>` : `<slot name="${escapeAttribute(name)}">${html.slice(el.start, el.end)}</slot>` });
+    // Lines after the first move to the instance's indentation, unless white space is the content's own.
+    const verbatim = items.some((item) => [...descendants([item])].some((inner) => inner.name === "pre" || inner.name === "textarea"));
+    fills.push(verbatim ? copy : reindent(copy, `${indent}  `).replace(/\n/g, newline));
   });
 
   // The id goes to the instance; the template's root keeps the rest.

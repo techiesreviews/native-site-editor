@@ -591,8 +591,8 @@ test("make component: later groups are items-2, items-3; one item alone or items
     ["2.0", "items-3", 2],
     ["3.0.0", "title", undefined],
   ]);
-  // A named group's items carry its name on the page.
-  assert.match(plan.instance, /<blockquote slot="items-2"><p>One<\/p><\/blockquote>\n  <blockquote slot="items-2"><p>Two<\/p><\/blockquote>/);
+  // A named group's items carry its name on the page, with what was between them (here nothing) kept.
+  assert.match(plan.instance, /\n  <blockquote slot="items-2"><p>One<\/p><\/blockquote><blockquote slot="items-2"><p>Two<\/p><\/blockquote>\n/);
   assert.match(plan.template, /<div class="quotes"><slot name="items-2"><\/slot><\/div>/);
   // Text between items keeps them apart; the stats stay in the template.
   assert.match(plan.template, /<div class="split"><div class="stat">1<\/div> and <div class="stat">2<\/div><\/div>/);
@@ -607,6 +607,12 @@ test("make component: later groups are items-2, items-3; one item alone or items
   assert.ok(!("error" in grouped));
   assert.deepEqual(grouped.slots.map(({ name, items }) => [name, items]), [["", [[0], [1]]], ["items-2", [[2], [3]]]]);
   assert.equal(grouped.template, `<section><slot></slot><slot name="items-2"></slot></section>\n`);
+  // Comments between items keep them one group and move with them.
+  const commented = `<div>\n  <!-- first -->\n  <article class="card">A</article>\n  <!-- second -->\n  <article class="card">B</article>\n</div>`;
+  const run = makeComponentPlan(commented, rangeOf(commented, "div"), "block-x");
+  assert.ok(!("error" in run));
+  assert.equal(run.template, `<div>\n  <!-- first -->\n  <slot></slot>\n</div>\n`);
+  assert.equal(run.instance, `<block-x>\n  <article class="card">A</article>\n  <!-- second -->\n  <article class="card">B</article>\n</block-x>`);
 });
 
 test("make component: a list becomes one list slot, its items not slots of their own", () => {
@@ -647,7 +653,7 @@ test("make component: a group renamed or kept fixed; a renamed items slot keeps 
   const renamed = makeComponentPlan(source, rangeOf(source, "section"), "section-services", { names: [{ path: [1], name: "services" }] });
   assert.ok(!("error" in renamed));
   assert.equal(renamed.template, `<section><slot name="title"><h2>Services</h2></slot><slot name="services"></slot></section>\n`);
-  assert.match(renamed.instance, /<div slot="services" class="card"><h3>A<\/h3><\/div>\n  <div slot="services" class="card"><h3>B<\/h3><\/div>/);
+  assert.match(renamed.instance, /<div slot="services" class="card"><h3>A<\/h3><\/div><div slot="services" class="card"><h3>B<\/h3><\/div>/);
   // Kept fixed, the items stay in the template; a part made a slot inside one of them still is.
   const kept = makeComponentPlan(source, rangeOf(source, "section"), "section-services", { fixed: [[1]], slots: [[2, 0]] });
   assert.ok(!("error" in kept));
@@ -656,6 +662,15 @@ test("make component: a group renamed or kept fixed; a renamed items slot keeps 
     ["0", "title", false, true],
     ["1", "", true, true],
     ["2.0", "title-2", false, false],
+  ]);
+  // A later item of a group kept fixed can be made a slot whole.
+  const whole = makeComponentPlan(source, rangeOf(source, "section"), "section-services", { fixed: [[1]], slots: [[2]] });
+  assert.ok(!("error" in whole));
+  assert.equal(whole.template, `<section><slot name="title"><h2>Services</h2></slot><div class="card"><h3>A</h3></div><slot name="content"><div class="card"><h3>B</h3></div></slot></section>\n`);
+  assert.deepEqual(whole.slots.map(({ path, name, fixed, byDefault }) => [path.join("."), name, fixed, byDefault]), [
+    ["0", "title", false, true],
+    ["1", "", true, true],
+    ["2", "content", false, false],
   ]);
   // In a template: the unnamed slot is an items slot; a named one only when its fallback is a card component.
   const items = (template: string) => templateSlots(template).map(({ name, items: role }) => [name, role]);
