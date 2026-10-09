@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import type { NativePreview } from "../../src/components/native-preview";
 import type { DropReport } from "../../src/page-builder/drop-report";
 import { parseDropReport } from "../../src/page-builder/drop-report";
+import { dropLabel, dropTarget } from "../../src/page-builder/drop-target";
 
 // Default native-save group, native-cards fixture (#repo=540).
 async function probe(page: Page, selector: string, moving?: number[], point?: { x: number; y: number }) {
@@ -38,7 +39,19 @@ test("probes report nested grid containers and stop at a card's named slot", asy
   expect(title.containers.map(c => c.kind)).toEqual(["slot", "div", "section", "main"]);
   expect(title.containers[0].slot).toBe("title");
   expect(title.containers[0].tag).toBe("card-project");
-  expect(title.containers[1]).toMatchObject({ cls: "cards", axis: "row", children: [{ index: 0 }, { index: 1 }] });
+  expect(title.containers[1]).toMatchObject({ cls: "cards", axis: "row",
+    children: [{ index: 0, tag: "card-project" }, { index: 1, tag: "card-project" }] });
+  expect(title.containers[1].count).toBe(title.containers[1].children.length);
+  const paragraph = { kind: "new", block: "paragraph" } as const;
+  expect(dropLabel(dropTarget(title.containers, title, paragraph)!, paragraph)).toMatch(/^The “title” slot is filled by editing its text/);
+  // In the grid's gap, just before the second card.
+  const gap = await frame.locator("#work .cards card-project").nth(1).evaluate(el => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left - 2, y: r.top + r.height / 2 };
+  });
+  const card = await probe(page, "#work .cards", undefined, gap);
+  expect(card.containers.map(c => c.kind)).toEqual(["div", "section", "main"]);
+  expect(dropLabel(dropTarget(card.containers, card, paragraph)!, paragraph)).toBe("Into Div (grid) › after Card project");
   expect(title.containers[2]).toMatchObject({ kind: "section", axis: "column" });
   const section = await probe(page, "#work > h2");
   expect(section.containers.map(c => c.kind)).toEqual(["section", "main"]);

@@ -780,7 +780,9 @@
     function entry(el, kind, children, box, layoutEl, nodes, slot) {
       var all = dropKids(el);
       var out = { path: elementIndexPath(el), kind: kind, tag: el.localName, cls: el.getAttribute("class") || "",
-        rect: box, children: children.map(function (child) { return { index: all.indexOf(child), rect: dropRect(child) }; }),
+        rect: box, count: all.length, children: children.map(function (child) {
+          return { index: all.indexOf(child), rect: dropRect(child), tag: child.localName, cls: child.getAttribute("class") || "" };
+        }),
         layout: dropLayout(layoutEl), empty: !children.length && !nodes.some(function (n) { return n.nodeType === 3 && n.textContent.trim(); }) };
       if (slot !== undefined) out.slot = slot;
       return out;

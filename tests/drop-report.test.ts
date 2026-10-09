@@ -25,8 +25,9 @@ test("flowAxis uses layout only with fewer than two visible children", () => {
   assert.equal(flowAxis([rect(), rect(0, 50)], { ...layout, display: "grid", cols: 3 }), "column");
 });
 
-const container = () => ({ path: [1, 0, 1], kind: "div", tag: "div", cls: "cards", rect: rect(),
-  children: [{ index: 0, rect: rect() }, { index: 2, rect: rect(110) }], layout, empty: false });
+const child = (index: number, r = rect(), tag = "p", cls = "") => ({ index, rect: r, tag, cls });
+const container = () => ({ path: [1, 0, 1], kind: "div", tag: "div", cls: "cards", rect: rect(), count: 3,
+  children: [child(0), child(2, rect(110), "a", "btn")], layout, empty: false });
 const report = (containers: unknown[] = [container()]) => ({ id: 7, path: "index.html", x: 20, y: 30, containers });
 
 test("parseDropReport preserves source indices and derives axes", () => {
@@ -35,6 +36,8 @@ test("parseDropReport preserves source indices and derives axes", () => {
   assert.equal(parsed.id, 7);
   assert.equal(parsed.containers[0].axis, "row");
   assert.deepEqual(parsed.containers[0].children.map(child => child.index), [0, 2]);
+  assert.deepEqual(parsed.containers[0].children[1], child(2, rect(110), "a", "btn"));
+  assert.equal(parsed.containers[0].count, 3);
   assert.equal(parsed.containers[1].slot, "");
   assert.equal(parsed.containers[1].empty, true);
   input.containers[0].path[0] = 9;
@@ -54,17 +57,19 @@ test("parseDropReport drops bad containers and children", () => {
   const bad = [null, { ...c, kind: "article" }, { ...c, path: [1, -1] }, { ...c, path: [0.1] },
     { ...c, path: Array(101).fill(0) }, { ...c, rect: rect(0, 0, -1) }, { ...c, rect: rect(NaN) },
     { ...c, layout: { ...layout, cols: Infinity } }, { ...c, empty: "false" }, { ...c, kind: "slot" },
-    { ...c, path: Array(1) }, { ...c, tag: `x-${"y".repeat(100)}` }, { ...c, kind: "slot", slot: "s".repeat(101) }];
+    { ...c, path: Array(1) }, { ...c, tag: `x-${"y".repeat(100)}` }, { ...c, kind: "slot", slot: "s".repeat(101) },
+    { ...c, count: -1 }, { ...c, count: undefined }];
   const parsed = parseDropReport(report([...bad, { ...c, children: [null, { index: -1, rect: rect() },
-    { index: 0, rect: rect(Infinity) }, { index: 3, rect: rect() }] }]), "index.html")!;
+    child(0, rect(Infinity)), { index: 1, rect: rect() }, child(2, rect(), "x".repeat(101)), { ...child(4), cls: null }, child(3)] }]), "index.html")!;
   assert.equal(parsed.containers.length, 1);
-  assert.deepEqual(parsed.containers[0].children, [{ index: 3, rect: rect() }]);
+  assert.deepEqual(parsed.containers[0].children, [child(3)]);
 });
 
 test("parseDropReport caps lists and strings", () => {
-  const c = { ...container(), cls: "x".repeat(2000), children: Array(600).fill({ index: 0, rect: rect() }) };
+  const c = { ...container(), cls: "x".repeat(2000), children: Array(600).fill(child(0, rect(), "p", "y".repeat(2000))) };
   const parsed = parseDropReport(report(Array(110).fill(c)), "index.html")!;
   assert.equal(parsed.containers.length, 100);
   assert.equal(parsed.containers[0].children.length, 500);
   assert.equal(parsed.containers[0].cls.length, 1000);
+  assert.equal(parsed.containers[0].children[0].cls.length, 1000);
 });

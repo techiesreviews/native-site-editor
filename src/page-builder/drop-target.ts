@@ -1,0 +1,125 @@
+// Where a dragged block lands, decided from one drop probe (drop-report.ts):
+// the innermost container under the pointer that may take the block, unless
+// the pointer is within DROP_EDGE px of its edge (then its parent, and so on)
+// or the user has stepped up levels (Alt or Tab; Shift+Tab steps back). The
+// index runs along the container's axis, sideways in rows and grids. Where
+// blocks may go: ticket 10 §5 with the ticket 04 amendment. A dragged Section
+// snaps between page bands on the canvas (slice 34); here it can only take
+// <main>. Pure.
+
+import type { DropChild, DropContainer } from "./drop-report";
+import type { NativeElementKind } from "./native-elements";
+import { componentLabel } from "../native-insert";
+import { nativeKindLabel } from "../native-structure";
+
+/** A new block from the rail, or a page element being moved (`band`: a section or section component). */
+export type DraggedBlock =
+  | { kind: "new"; block: NativeElementKind }
+  | { kind: "move"; path: readonly number[]; band: boolean };
+
+export interface DropTarget {
+  container: DropContainer;
+  /** The source child index to insert at (an items slot's index among the instance's children). */
+  index: number;
+  /** Containers above the innermost one under the pointer. */
+  level: number;
+  ok: boolean;
+  reason?: string;
+}
+
+export const DROP_EDGE = 8;
+
+const isBand = (block: DraggedBlock) => (block.kind === "new" ? block.block === "section" : block.band);
+
+/** Why a container can't take the block, or undefined when it can. */
+export function dropRefusal(block: DraggedBlock, container: DropContainer): string | undefined {
+  if (block.kind === "move" && block.path.every((step, at) => container.path[at] === step)) return "A block cannot go inside itself.";
+  if (isBand(block)) {
+    if (container.kind === "main") return undefined;
+    const inside = container.kind === "section" ? "a Section" : container.kind === "div" ? "a Div" : "a component";
+    return `A Section goes only between page bands, not inside ${inside}.`;
+  }
+  if (container.kind === "main") return "Blocks go inside a Section or a Div, not straight between page bands.";
+  if (container.kind === "slot") return `The “${container.slot}” slot is filled by editing its text, not by drops. Drop into the component's items instead.`;
+  return undefined;
+}
+
+const shown = (child: DropChild) => child.rect.width > 0 && child.rect.height > 0;
+const endIndex = (container: DropContainer) => (container.children.length ? container.children[container.children.length - 1].index + 1 : container.count);
+
+/** The insertion index under the point among a container's items, along its axis. */
+function pointIndex(container: DropContainer, p: { x: number; y: number }) {
+  const row = container.axis === "row";
+  for (const child of container.children.filter(shown)) {
+    const { left, top, width, height } = child.rect;
+    if (row ? p.y < top || (p.y <= top + height && p.x < left + width / 2) : p.y < top + height / 2) return child.index;
+  }
+  return endIndex(container);
+}
+
+/** Before or after the child the pointer is in, by which half of it the point is in. */
+function sideIndex(container: DropContainer, childIndex: number | undefined, p: { x: number; y: number }) {
+  const child = container.children.find((item) => item.index === childIndex);
+  if (!child || !shown(child)) return pointIndex(container, p);
+  const { left, top, width, height } = child.rect;
+  return (container.axis === "row" ? p.x < left + width / 2 : p.y < top + height / 2) ? child.index : child.index + 1;
+}
+
+const nearEdge = (p: { x: number; y: number }, { left, top, width, height }: DropContainer["rect"]) =>
+  p.x - left < DROP_EDGE || left + width - p.x < DROP_EDGE || p.y - top < DROP_EDGE || top + height - p.y < DROP_EDGE;
+
+/**
+ * The target for `block` at the pointer, from the containers under it
+ * (innermost first). `level` steps up from where the edges leave the
+ * pointer; past the top it stays at the outermost container.
+ */
+export function dropTarget(containers: readonly DropContainer[], p: { x: number; y: number }, block: DraggedBlock, level = 0): DropTarget | undefined {
+  if (!containers.length) return undefined;
+  const at = (j: number): DropTarget => {
+    const container = containers[j];
+    // In an outer container the pointer is inside the child that holds the inner one.
+    const index = j === 0 ? pointIndex(container, p) : sideIndex(container, containers[j - 1].path[container.path.length], p);
+    const reason = dropRefusal(block, container);
+    return { container, index, level: j, ok: !reason, ...(reason ? { reason } : {}) };
+  };
+  // A named slot refuses where it is, rather than passing the drop up.
+  if (level <= 0 && containers[0].kind === "slot" && !isBand(block)) return at(0);
+  let i = 0;
+  while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
+  i = Math.min(i + Math.max(0, level), containers.length - 1);
+  for (let j = i; j < containers.length; j++) if (!dropRefusal(block, containers[j])) return at(j);
+  return at(i);
+}
+
+/** "Paragraph", "Div (stack)", "Button", or a component's name. */
+function blockName(tag: string, cls: string) {
+  const classes = ` ${cls} `;
+  if (tag === "div") return classes.includes(" cards ") ? "Div (grid)" : classes.includes(" flow ") ? "Div (stack)" : "Div";
+  if (tag === "a" && classes.includes(" btn ")) return "Button";
+  return tag.includes("-") ? componentLabel(tag) : nativeKindLabel(tag);
+}
+
+function containerName(container: DropContainer) {
+  if (container.kind !== "items" && container.kind !== "slot") return blockName(container.tag, container.cls);
+  return `${componentLabel(container.tag)} › ${container.slot ? `“${container.slot}” slot` : "items"}`;
+}
+
+/** Whether a move target is the place the block already is. */
+function stays(block: DraggedBlock, target: DropTarget) {
+  if (block.kind !== "move") return false;
+  const parent = block.path.slice(0, -1), i = block.path[block.path.length - 1];
+  return target.container.path.length === parent.length && parent.every((step, at) => target.container.path[at] === step) &&
+    (target.index === i || target.index === i + 1);
+}
+
+/** The label by the pointer: "Into Div (stack) › after Paragraph", or the refusal's reason. */
+export function dropLabel(target: DropTarget, block: DraggedBlock) {
+  if (!target.ok) return target.reason ?? "Not here";
+  if (stays(block, target)) return "Stays where it is";
+  const items = target.container.children;
+  const after = [...items].reverse().find((child) => child.index < target.index);
+  const before = items.find((child) => child.index >= target.index);
+  const place = after ? `after ${blockName(after.tag, after.cls)}` : before ? `before ${blockName(before.tag, before.cls)}` : "";
+  if (target.container.kind === "main") return `Between page bands › ${place || "the first"}`;
+  return `Into ${containerName(target.container)} › ${place || "empty"}`;
+}

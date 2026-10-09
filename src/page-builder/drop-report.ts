@@ -2,7 +2,8 @@
 export interface DropRect { left: number; top: number; width: number; height: number }
 export interface DropLayout { display: string; cols: number; dir: string; wrap: string }
 export type DropAxis = "row" | "column";
-export interface DropChild { index: number; rect: DropRect }
+/** A child element: its index among the parent's children (a source index), box, tag and class. */
+export interface DropChild { index: number; rect: DropRect; tag: string; cls: string }
 export interface DropContainer {
   path: number[];
   kind: "main" | "section" | "div" | "items" | "slot";
@@ -10,6 +11,8 @@ export interface DropContainer {
   cls: string;
   slot?: string;
   rect: DropRect;
+  /** How many children the element has, so "at the end" of an empty items slot has a source index. */
+  count: number;
   children: DropChild[];
   layout: DropLayout;
   empty: boolean;
@@ -53,17 +56,18 @@ export function parseDropReport(raw: unknown, expectedPath: string): DropReport 
   const containers = report.containers.slice(0, 100).flatMap((raw): DropContainer[] => {
     const c = object(raw), l = object(c?.layout), r = rect(c?.rect);
     if (!c || !path(c.path) || !r || typeof c.kind !== "string" || !["main", "section", "div", "items", "slot"].includes(c.kind) ||
-      !name(c.tag) || typeof c.cls !== "string" || typeof c.empty !== "boolean" || !Array.isArray(c.children) ||
+      !name(c.tag) || typeof c.cls !== "string" || !index(c.count) || typeof c.empty !== "boolean" || !Array.isArray(c.children) ||
       !l || typeof l.display !== "string" || !index(l.cols) || typeof l.dir !== "string" || typeof l.wrap !== "string" ||
       ((c.kind === "items" || c.kind === "slot") && !name(c.slot))) return [];
     const children = c.children.slice(0, 500).flatMap((raw): DropChild[] => {
       const child = object(raw), r = rect(child?.rect);
-      return child && index(child.index) && r ? [{ index: child.index, rect: r }] : [];
+      return child && index(child.index) && r && name(child.tag) && typeof child.cls === "string"
+        ? [{ index: child.index, rect: r, tag: child.tag, cls: child.cls.slice(0, 1000) }] : [];
     });
     const layout = { display: l.display.slice(0, 100), cols: l.cols, dir: l.dir.slice(0, 100), wrap: l.wrap.slice(0, 100) };
     return [{ path: [...c.path], kind: c.kind as DropContainer["kind"], tag: c.tag, cls: c.cls.slice(0, 1000),
       ...((c.kind === "items" || c.kind === "slot") ? { slot: c.slot as string } : {}),
-      rect: r, children, layout, empty: c.empty, axis: flowAxis(children.map(child => child.rect), layout) }];
+      rect: r, count: c.count, children, layout, empty: c.empty, axis: flowAxis(children.map(child => child.rect), layout) }];
   });
   return { id: report.id, path: expectedPath, x: report.x, y: report.y, containers };
 }
