@@ -2,7 +2,7 @@
 title: Prototype editing a component's template visually
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [04-prototype-making-components, 12-prototype-drag-and-drop]
 ---
 

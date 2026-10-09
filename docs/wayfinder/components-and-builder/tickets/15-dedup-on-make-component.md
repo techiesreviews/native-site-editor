@@ -2,7 +2,7 @@
 title: Decide what counts as an identical copy on Make component
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [04-prototype-making-components]
 ---
 
