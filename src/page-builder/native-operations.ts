@@ -317,6 +317,22 @@ export function nativeMarkupInsertEdit(source: string, parentPath: readonly numb
   const edit = insertion(source, parent, index, markup);
   return { ...edit, original: source.slice(edit.start, edit.end), source };
 }
+/** The level a new Heading block takes at this insert parent (ticket 10 §2). */
+export function nativeHeadingLevel(source: string, parentPath: readonly number[]): 2 | 3 | 4 | undefined {
+  const root = tree(source);
+  const parent = root && atPath(root, parentPath);
+  if (!parent) return undefined;
+  if (parent.name === "section") return 2;
+  let divs = 0, instance = false;
+  let section: SourceNode | undefined = parent;
+  for (; section && section.name !== "section"; section = section.parent) {
+    if (section.name === "div") divs++;
+    if (section.name.includes("-")) instance = true;
+  }
+  const heading = section?.children.flatMap(node => ["header", "hgroup"].includes(node.name) ? node.children : [node]).find(node => /^h[1-6]$/.test(node.name));
+  const level = (heading ? Number(heading.name[1]) : 2) + (instance ? 1 : divs);
+  return level >= 4 ? 4 : level === 3 ? 3 : 2;
+}
 function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">) {
   const root = tree(source);
   const moving = root && atPath(root, from);
