@@ -14,10 +14,11 @@
     background: var(--page);
   }
 
-  /* No margins on elements. Spacing comes from the container (.flow, or gap in
-     a component): a page rule on an element also reaches it when a page slots
-     it into a component, and the component cannot undo it there. */
-  h1, h2, h3, h4, h5, h6, p, ul, ol, dl, dd, figure, blockquote, pre, address {
+  /* No margins on elements: spacing comes from the container (.flow, or gap
+     in a component). Not on an element a page slots into a component: a page
+     rule there beats the component's ::slotted() rules, so the component sets
+     its parts' margins (a page rule that names a part still can). */
+  :is(h1, h2, h3, h4, h5, h6, p, ul, ol, dl, dd, figure, blockquote, pre, address):not([slot]) {
     margin: 0;
   }
 

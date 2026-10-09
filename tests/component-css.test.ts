@@ -283,8 +283,37 @@ test("nesting with & twice keeps every pairing of a parent list", () => {
   assert.deepEqual(flatRules(`.a, .b { & + & { color: red; } }`, "s.css")[0].selectors, [":is(.a, .b) + :is(.a, .b)"]);
 });
 
-test("a slotted part carries its slot attribute: a rule for parts not slotted stops reaching it and can't follow", () => {
+test("a base rule that excluded slots follows a newly slotted part without that guard", () => {
   const plan = made(intro, `h2:not([slot]) { font-size: 2rem; }\n[slot="title"] { color: red; }`);
+  assert.equal(copied(plan.css), "h2 {\n  font-size: 2rem;\n}\n");
+  assert.deepEqual(plan.notes, []);
+});
+
+test("a grouped base reset is copied before spacing, keeping other subject exclusions", () => {
+  const plan = made(intro, `:is(h2, p):not([slot]) { margin: 0; }
+.intro .lead:not([slot]):not(.compact) { line-height: 1.6; }
+.intro > * + * { margin-top: 1rem; }`);
+  assert.equal(copied(plan.css), `:is(h2, p) {
+  margin: 0;
+}
+.intro .lead:not(.compact) {
+  line-height: 1.6;
+}
+.intro > * + * {
+  margin-top: 1rem;
+}
+`);
+  assert.deepEqual(plan.notes, []);
+});
+
+test("an ancestor's slot exclusion is kept when the subject becomes a part", () => {
+  const plan = made(intro, `.intro:not([slot]) h2:not([slot]) { font-size: 2rem; }`);
+  assert.equal(copied(plan.css), ".intro:not([slot]) h2 {\n  font-size: 2rem;\n}\n");
+  assert.deepEqual(plan.notes, []);
+});
+
+test("a slot-name exclusion is not treated as a base reset guard", () => {
+  const plan = made(intro, `h2:not([slot="title"]) { font-size: 2rem; }`);
   assert.equal(copied(plan.css), "");
-  assert.match(plan.notes[0], /^1 rule can't follow the parts into the component: h2:not\(\[slot\]\)\./);
+  assert.match(plan.notes[0], /^1 rule can't follow the parts into the component: h2:not\(\[slot="title"\]\)\./);
 });

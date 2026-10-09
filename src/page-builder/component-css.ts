@@ -11,6 +11,8 @@
 //   - compounds that matched ancestors outside the element are dropped
 //     (`main .intro h2` → `.intro h2`); one that matched the element through
 //     its `id`, which moves to the instance, becomes `:host`;
+//   - a subject's `:not([slot])` is removed when it becomes a slotted part,
+//     so its base reset and heading size follow it into the component;
 //   - `@media`, `@supports`, `@container` and `@starting-style` wrappers and
 //     the rules' order are kept, `@layer` is dropped (component CSS is
 //     unlayered), `url()`s are rewritten for the component's folder;
@@ -602,7 +604,8 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
           const { bare, shadow } = templateOf(territory);
           if (matches(reach === "template" ? shadow : after, node, part)) continue;
           const bucket = territory.bucket;
-          const rewritten = reach === "inside" ? undefined : rewrite(page, node, part, compounds, territory);
+          const copy = reach === "inside" ? undefined : rewrite(page, node, part, compounds, territory);
+          const rewritten = copy !== undefined && reach === "slotted" ? withoutSlotGuard(copy) : copy;
           // The copy must reach it: in the template, or slotted through its `::slotted()` twin.
           const rest = rewritten?.replace(/^:host(?:\s*>\s*|\s+|$)/, "");
           if (rewritten === undefined || rest === undefined
@@ -630,6 +633,19 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
       notes: [...card.notes, ...strandedNote(buckets[index].stranded)],
     })),
   };
+}
+
+/** The subject gains a slot attribute when made a part; its old base rules still belong in the component. */
+function withoutSlotGuard(selector: string) {
+  const subject = compoundsOf(selector)?.at(-1);
+  if (!subject) return selector;
+  let text = selector.slice(subject.start, subject.end);
+  for (const simple of [...subject.simples].reverse()) {
+    if (simple.type === "pseudo" && !simple.element && simple.name === "not" && /^\[\s*slot\s*\]$/i.test(simple.argument ?? "")) {
+      text = text.slice(0, simple.start - subject.start) + text.slice(simple.end - subject.start);
+    }
+  }
+  return selector.slice(0, subject.start) + (text || "*") + selector.slice(subject.end);
 }
 
 /**

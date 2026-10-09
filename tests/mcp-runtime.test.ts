@@ -173,6 +173,8 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       // The header, footer and skip link.
       /The header and footer are components with no slots/,
       /Each page puts the skip link, `<a class="skip" href="#main">Skip to content<\/a>`, before `<site-header>` as a plain link, so it works without JavaScript/,
+      // Base resets leave slotted parts to component CSS.
+      /Base element resets skip slotted parts the same way \(`:is\(h1, h2, p, ul, ol\):not\(\[slot\]\) \{ margin: 0 \}`, not `p \{ margin: 0 \}`\): the component's CSS then sets the margins of what a page slots in/,
       // How a section component is placed through the editor.
       /write the template \(and its CSS, if it has any\), then place it with add_section/,
       // What add_section copies (src/native-insert.ts, slotMarkup).
