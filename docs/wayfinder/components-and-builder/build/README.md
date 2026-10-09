@@ -46,6 +46,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [18 Drift test for the starter's AGENTS.md](tickets/18-agents-md-drift-test.md) | sol | 17, 70 |
 | [19 MCP: make_component](tickets/19-make-component-mcp-tool.md) | sol | 10 |
 | [20 MCP: get_site lists variants](tickets/20-get-site-variants.md) | sol | 12 |
+| [71 Variants: leave out script-set attributes in the editor; write yes/no the way the CSS reads it](tickets/71-variant-followups.md) | sol | 13, 20 |
 | [64 Make component copies the element's page CSS into the component](tickets/64-make-component-carries-css.md) | claude ★ | 10 |
 | [65 Starter: the card link rule](tickets/65-starter-card-link-rule.md) | sol | – |
 | [67 Starter: title links look like the title, stretched only in cards](tickets/67-starter-title-link-look.md) | sol | 65 |
