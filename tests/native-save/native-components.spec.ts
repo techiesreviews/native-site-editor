@@ -356,6 +356,8 @@ test("a plain page section keeps the Make component fallback without writing sou
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await expect(bar(page).getByRole("button", { name: "Make component…", exact: true })).toBeVisible();
+  // Masters are gone: no Save shared or Update saved section.
+  await expect(bar(page).getByRole("button", { name: /Save shared|Save section|^Update / })).toHaveCount(0);
   const before = await editorText(page);
   expect(await editorText(page)).toBe(before);
   expect(await storedDraft(page, indexPath)).toBeUndefined();

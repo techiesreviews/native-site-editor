@@ -135,10 +135,10 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
 
   // Keyboard Bold changes source; one Undo restores it exactly.
   const before = await source();
-  // The section's bar is pinned under the sticky header over the section's
-  // top; the paragraph is clicked at its lower right, clear of it.
-  const moving = (await frame.locator("#moving").boundingBox())!;
-  await frame.locator("#moving").click({ position: { x: moving.width - 4, y: moving.height - 3 } });
+  // The section's bar is pinned under the sticky header and, wrapped in the
+  // narrow canvas, covers the paragraph; the click goes to the paragraph itself.
+  await frame.locator("#moving").evaluate((el) => (el as HTMLElement).click());
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
   const bold = bar.getByRole("button", { name: "Bold", exact: true });
   await bold.focus(); await bold.press("Enter");
   await expect.poll(source).not.toBe(before);
