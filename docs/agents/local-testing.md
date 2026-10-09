@@ -35,6 +35,9 @@ servers share these ports, and a pattern kill takes theirs down too.
   and the same with `test:browser:actual`. A tagged spec run in the default
   group shows as skipped, not as passed.
 - Smoke: `port.sh npm run test:browser:smoke -- --workers=1`.
+- CI fonts (DejaVu Sans, wider than the local Noto Sans): put
+  `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` (run from the worktree root) in front of the
+  `port.sh` command; specs must pass with both fonts.
 - Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`
   (about 15 minutes).
 - Known flaky specs: `native-shared-link-host.spec.ts:82`,
