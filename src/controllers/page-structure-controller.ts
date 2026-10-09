@@ -1,4 +1,4 @@
-import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview, type NativeStructure } from "../components/native-preview";
+import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit, swapEdits, moveEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
 import { textSizeScale, currentTextSize, textSizeEdit } from "../native-text-size";
@@ -51,7 +51,6 @@ export interface PageStructurePorts {
   readonly nativeEditableTemplatePath: () => string | undefined;
   readonly applyNativeOperation: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; done: string; undone: string }) => Promise<string | undefined>;
   readonly nativePageLabelOf: (file: string) => string;
-  readonly nativeShownStructure: NativeStructure | undefined;
   readonly pageStructure: Pick<ReturnType<typeof createPageStructure>, "update"> | undefined;
   readonly locateNativeElementRange: (html: string, path: number[]) => ElementRange | undefined;
   readonly startTagAttribute: (html: string, tag: StartTag, name: string) => import("../../shared/html-source").TagAttribute | undefined;
@@ -784,16 +783,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
   }
 
-  function repaintNativeStructure() {
-    const shown = ports.nativeShownStructure;
-    if (!shown?.path || shown.path !== ports.appStore.openFile.value || shown.paintedSource === undefined || ports.nativeEffectiveSource(shown.path) !== shown.paintedSource) return;
-    ports.pageStructure?.update(shown);
-  }
   return {
     renderEditBar: renderNativeEditBar,
     moveSection: moveNativeSection,
     moveSectionTo: moveNativeSectionTo,
-    repaint: repaintNativeStructure,
     renderNativeEditBar,
     removeEmptyNewLink,
     applyNativeChange,
@@ -805,7 +798,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     applyNativeTextEdit,
     nativeTextSourceEdit,
     prepareNativeTextEdit,
-    repaintNativeStructure,
     get nativeFormatActions() { return nativeFormatActions; },
     get nativeEditBarModel() { return nativeEditBarModel; },
     get nativeElementMoveAction() { return nativeElementMoveAction; },

@@ -439,7 +439,7 @@ function mountWorkspace() {
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
     onStructure: (structure) => {
-      if (!structure) { nativeShownStructure = undefined; pageStructure?.update(undefined); return; }
+      if (!structure) { pageStructure?.update(undefined); return; }
       codePanes.notePreviewPainted();
       noteNativePainted();
       const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
@@ -459,7 +459,6 @@ function mountWorkspace() {
       };
       const shown = structure;
       shown.items.forEach(capture);
-      nativeShownStructure = shown;
       pageStructure?.update(shown);
     },
     onMove: (direction) => pageStructureController.nativeElementMoveAction?.(direction),
@@ -1332,7 +1331,6 @@ const pageStructureController = createPageStructureController({
   get nativeEditableTemplatePath() { return nativeEditableTemplatePath; },
   get applyNativeOperation() { return applyNativeOperation; },
   get nativePageLabelOf() { return nativePageLabelOf; },
-  get nativeShownStructure() { return nativeShownStructure; },
   get pageStructure() { return pageStructure; },
   get locateNativeElementRange() { return locateNativeElementRange; },
   get startTagAttribute() { return startTagAttribute; },
@@ -1364,10 +1362,6 @@ function moveNativeSectionTo(...args: Parameters<typeof pageStructureController.
 }
 function applyNativeTextEdit(...args: Parameters<typeof pageStructureController.applyNativeTextEdit>) {
   return pageStructureController.applyNativeTextEdit(...args);
-}
-
-function repaintNativeStructure(...args: Parameters<typeof pageStructureController.repaintNativeStructure>) {
-  return pageStructureController.repaintNativeStructure(...args);
 }
 
 // Components that fit between page sections: those whose template is a
@@ -1422,8 +1416,6 @@ function nativePictureSources(source: string, node: readonly number[]) {
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
-// The last painted structure, refreshed when shared-section controls change.
-let nativeShownStructure: Parameters<NonNullable<typeof pageStructure>["update"]>[0];
 // The loaded native site: its pages by route and its components by tag,
 // read from the repository's files (shared/native-project.ts).
 let nativeSite: NativeSite | undefined;
@@ -2498,11 +2490,7 @@ function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnT
   if (deferred) afterNativePaint(request, release);
   else release();
   const indexing: Promise<boolean> = due.then(() => (live() ? indexNativeTextFiles(repo, site, scope, live) : false)).then((done) => {
-    if (done && live() && nativeTextIndexing === indexing) {
-      nativeTextIndexed = true;
-      // Structure held back its shared-section offers until every page was read.
-      repaintNativeStructure();
-    }
+    if (done && live() && nativeTextIndexing === indexing) nativeTextIndexed = true;
     return done;
   }, (error) => {
     if (live() && nativeSite === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");

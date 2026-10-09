@@ -73,16 +73,3 @@ test("section move at the first sibling records no history", () => {
   assert.equal(f.writes.length, 0); assert.equal(f.notices.length, 0);
 });
 
-test("Structure repaint reads the latest shown structure and refuses changed painted bytes", () => {
-  const shown = { path: PAGE, paintedSource: SOURCE };
-  let current = shown, source = SOURCE;
-  const updates: unknown[] = [];
-  const controller = createPageStructureController({
-    get nativeShownStructure() { return current; },
-    appStore: { openFile: { value: PAGE } }, nativeEffectiveSource: () => source,
-    pageStructure: { update: (value: unknown) => updates.push(value) },
-  } as unknown as PageStructurePorts);
-  controller.repaint(); source = "changed"; controller.repaint();
-  current = { path: PAGE, paintedSource: source }; controller.repaint();
-  assert.deepEqual(updates, [shown, current]);
-});
