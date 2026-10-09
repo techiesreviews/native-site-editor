@@ -1,7 +1,7 @@
 ---
 title: Cut the element catalogue to the six blocks
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -22,3 +22,9 @@ The hidden element catalogue becomes the block set ([10](../../tickets/10-block-
 
 - `tests/native-elements.test.ts` asserts each block's markup, the placeholder SVG, and that the deleted kinds are gone.
 - `native-elements-compat`, `native-elements-host` and `native-palette-elements` specs pass, trimmed to the six blocks.
+
+## Done (2026-10-09)
+
+- `native-elements.ts` offers only Section, Div, Heading, Paragraph, Image and Button, and exports the placeholder `images/placeholder.svg` (640×400, neutral grey frame and image mark, readable on light and dark). The Columns/Grid refusal and the unused `native-layout-plan.ts` are gone.
+- Commit `6b06c7f` (built by Sol, reviewed by Sol, no defects).
+- `tests/native-elements.test.ts` asserts each block's markup, heading levels, URL checks, the placeholder and the deleted kinds; the compat spec inserts and undoes all six blocks and parses the SVG; the host, palette, add-panel and leaf-harness specs are trimmed to the six.
