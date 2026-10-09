@@ -56,6 +56,7 @@ import {
   type TemplateSlot,
 } from "./component-model";
 import { componentIcon, mark, type ComponentMark } from "./component-icon";
+import { cb12Install, cb12EditBarControls } from "../prototype/cb12"; // PROTOTYPE cb12
 import "../components/create-dialog.css";
 
 type CodeEditor = typeof import("../components/source-editor");
@@ -428,7 +429,7 @@ export function createComponentTools(deps: ComponentDeps) {
 
   /** The edit bar's component actions for a selection. */
   function controls(selection: NativePreviewSelection): EditBarControl[] {
-    const out: EditBarControl[] = [];
+    const out: EditBarControl[] = [...cb12EditBarControls(selection)]; // PROTOTYPE cb12
     if (isComponent(selection.tag)) {
       return out;
     }
@@ -1455,6 +1456,7 @@ export function createComponentTools(deps: ComponentDeps) {
     };
   }
 
+  cb12Install({ deps }); // PROTOTYPE cb12
   return {
     identity,
     /** Only explicit template entry permits shared-template editing from a page preview. */
