@@ -83,7 +83,7 @@ function tags(text: string): Tag[] {
 }
 const conditions = (items: string[]) => items.length ? ` (only when ${items.join(" or ")})` : "";
 const defaultNote = (variant: Variant) => `Leaving the attribute off: ${variant.defaultValue === undefined ? "Default look" : variant.values.find(item => item.value === variant.defaultValue)?.label ?? valueLabel(variant.defaultValue)}. Choose the default by removing the attribute.`;
-const describe = (variant: Variant) => `${variant.label} (${variant.kind})${conditions(variant.conditions)}. ${variant.values.map(item => `${item.value}: ${item.label}${conditions(item.conditions)}`).join("; ")}${variant.kind === "yes-no" ? " Presence enables this variant." : ""} ${defaultNote(variant)}`;
+const describe = (variant: Variant) => `${variant.label} (${variant.kind})${conditions(variant.conditions)}. ${variant.values.map(item => `${item.value}: ${item.label}${conditions(item.conditions)}`).join("; ")}.${variant.kind === "yes-no" ? " Presence enables this variant." : ""} ${defaultNote(variant)}`;
 
 export function variantSuggestions(text: string, offset: number, lookup: Lookup): VariantSuggestion[] {
   const tag = tags(text).find(tag => offset > tag.nameEnd && offset <= tag.end);

@@ -373,7 +373,8 @@ export const monacoView: PaneViewFactory = (host) => {
         provideCompletionItems(target, position) {
           const lookup = current(target) && host.variants?.(createVariantLookup);
           return { suggestions: lookup ? variantSuggestions(target.getValue(), target.getOffsetAt(position), tag => lookup.forTag(tag)).map(item => ({
-            label: item.label, detail: item.detail, documentation: item.detail,
+            // Listed before the HTML service's generic attributes (aria-*, …).
+            label: item.label, detail: item.detail, documentation: item.detail, sortText: `\u0000${item.label}`,
             kind: item.kind === "attribute" ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.Value,
             insertText: item.kind === "attribute" && item.insertText.endsWith('=""') ? item.insertText.slice(0, -1) + '$0"' : item.insertText,
             insertTextRules: item.kind === "attribute" ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
