@@ -28,6 +28,8 @@ export function dropIndicator(target: DropTarget, stays = false): DropIndicator 
   if (!target.ok) return { kind: "refused", rect: container.rect };
   if (stays) return undefined;
   const items = container.children.filter(shown);
+  // An empty items slot among a card's other parts: a line where it sits, not an area over them.
+  if (!items.length && container.around) return line(container.around.prev, container.around.next, container.axis);
   if (!items.length) {
     const r = container.rect, inset = Math.min(4, r.width / 4, r.height / 4);
     const name = container.kind === "main" ? "page" : dropContainerName(container);
@@ -35,7 +37,12 @@ export function dropIndicator(target: DropTarget, stays = false): DropIndicator 
   }
   const next = items.find((child) => child.index >= index)?.rect;
   const prev = [...items].reverse().find((child) => child.index < index)?.rect;
-  if (container.axis === "column") {
+  return line(prev, next, container.axis);
+}
+
+/** The line between two boxes (or before the next, after the previous), along the axis. */
+function line(prev: DropRect | undefined, next: DropRect | undefined, axis: DropTarget["container"]["axis"]): DropIndicator {
+  if (axis === "column") {
     const y = prev && next ? (bottom(prev) + next.top) / 2 : next ? next.top - 4 : bottom(prev!) + 4;
     const left = Math.min(prev?.left ?? Infinity, next?.left ?? Infinity);
     const end = Math.max(prev ? right(prev) : -Infinity, next ? right(next) : -Infinity);

@@ -83,3 +83,12 @@ test("a probe gives the rail block its target: Sections snap between bands, an i
   const into = blockDropTarget({ ...report, containers: [items, section, main] }, { x: 450, y: 500 }, "paragraph", level).target!;
   assert.deepEqual([into.ok, into.container.kind, into.container.path], [true, "items", [1, 1, 1]]);
 });
+
+test("an empty items slot among a card's parts draws a line where it sits, not an area over them", () => {
+  const card = box([1, 1, 1, 0], "items", rect(0, 0, 300, 260), [], { tag: "card-project", slot: "",
+    around: { prev: rect(20, 80, 260, 60), next: rect(20, 180, 200, 24) } });
+  assert.deepEqual(dropIndicator(at(card, 4)), { kind: "line", vertical: false, rect: rect(20, 158.5, 260, 3) });
+  assert.deepEqual(dropIndicator(at({ ...card, around: { prev: rect(20, 80, 260, 60) } }, 4)), { kind: "line", vertical: false, rect: rect(20, 142.5, 260, 3) });
+  // Alone in its parent: the area, as before.
+  assert.equal(dropIndicator(at({ ...card, around: undefined }, 4))?.kind, "area");
+});

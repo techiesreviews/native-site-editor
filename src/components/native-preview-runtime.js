@@ -972,6 +972,26 @@
       return (inside.length === 1 && dropHeading(inside[0])) || (dropHeading(parent) && dropMeaningful(parent.childNodes).length === 1);
     });
   }
+  // What an empty slot sits between in its parent, shown: the boxes before
+  // and after it (a sibling slot by what it shows). None when it is alone.
+  function dropAround(slot) {
+    function box(n) {
+      if (n.nodeType !== 1 || injectedStyle(n) || getComputedStyle(n).display === "none") return null;
+      if (n.localName !== "slot") { var r = dropRect(n); return r.width && r.height ? r : null; }
+      var shown = n.assignedNodes();
+      return dropUnion(shown.length ? shown : Array.prototype.slice.call(n.childNodes));
+    }
+    function near(n, step) {
+      for (n = n[step]; n; n = n[step]) { var r = box(n); if (r) return r; }
+      return null;
+    }
+    var prev = near(slot, "previousSibling"), next = near(slot, "nextSibling");
+    if (!prev && !next) return null;
+    var out = {};
+    if (prev) out.prev = prev;
+    if (next) out.next = next;
+    return out;
+  }
   function dropSlots(el) {
     return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
       var name = slot.getAttribute("name") || "";
@@ -985,7 +1005,8 @@
       // An items slot covers its parent's box (an empty one still has an area); a parent without a box falls back to its items.
       var area = items ? dropRect(parentEl) : null;
       return { slot: slot, name: name, assigned: assigned, items: items, parent: parentEl,
-        rect: hidden ? null : area && area.width && area.height ? area : own };
+        rect: hidden ? null : area && area.width && area.height ? area : own,
+        around: items && !assigned.length && !hidden ? dropAround(slot) : null };
     });
   }
   function bandRect(el, depth) {
@@ -1048,6 +1069,7 @@
         if (!hit) return chain;
         chain.push(entry(el, hit.items ? "items" : "slot", hit.assigned, hit.rect, hit.parent,
           Array.prototype.slice.call(hit.slot.assignedNodes()), hit.name));
+        if (hit.around) chain[chain.length - 1].around = hit.around;
         if (!hit.items) return chain;
         var child = hit.assigned.find(under);
         return child ? walk(child, depth + 1).concat(chain) : chain;

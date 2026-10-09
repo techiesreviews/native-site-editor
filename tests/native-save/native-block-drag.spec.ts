@@ -142,3 +142,19 @@ test("a Paragraph dragged into a section component's items slot lands among its 
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
 });
+
+test("over a card's padding a Paragraph goes in its empty items slot, a line where the slot sits", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await frame(page).locator("#work card-project").first().evaluate(el => el.scrollIntoView({ block: "center" }));
+  await dragFromRail(page, "Paragraph", await pointIn(page, "#work card-project", 0.5, 1, 0, -14));
+  await expect(where(page)).toHaveText("Into Card project › items › empty");
+  // Between the card's text and its link, not an area over the card.
+  await expect(page.locator(".pb-drop__area")).toHaveCount(0);
+  const line = (await page.locator(".pb-drop__line:not(.pb-drop__line--v)").boundingBox())!;
+  const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
+  const [body, link] = await Promise.all(["p[slot=body]", "a[slot=link]"].map(s => frame(page).locator(`#work card-project ${s}`).first().evaluate(el => el.getBoundingClientRect().toJSON())));
+  expect(line.y - frameBox.y).toBeGreaterThan(body.bottom - 1);
+  expect(line.y - frameBox.y).toBeLessThan(link.top);
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/Read about Fern &amp; Kettle<\/a><p>Text<\/p><\/card-project>/);
+});

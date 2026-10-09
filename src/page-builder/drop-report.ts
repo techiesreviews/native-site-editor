@@ -17,6 +17,8 @@ export interface DropContainer {
   layout: DropLayout;
   empty: boolean;
   axis: DropAxis;
+  /** An empty items slot among other content: the shown boxes just before and after where it sits. */
+  around?: { prev?: DropRect; next?: DropRect };
 }
 export interface DropReport { id: number; path: string; x: number; y: number; containers: DropContainer[] }
 
@@ -65,9 +67,11 @@ export function parseDropReport(raw: unknown, expectedPath: string): DropReport 
         ? [{ index: child.index, rect: r, tag: child.tag, cls: child.cls.slice(0, 1000) }] : [];
     });
     const layout = { display: l.display.slice(0, 100), cols: l.cols, dir: l.dir.slice(0, 100), wrap: l.wrap.slice(0, 100) };
+    const near = object(c.around), prev = near && rect(near.prev), next = near && rect(near.next);
     return [{ path: [...c.path], kind: c.kind as DropContainer["kind"], tag: c.tag, cls: c.cls.slice(0, 1000),
       ...((c.kind === "items" || c.kind === "slot") ? { slot: c.slot as string } : {}),
-      rect: r, count: c.count, children, layout, empty: c.empty, axis: flowAxis(children.map(child => child.rect), layout) }];
+      rect: r, count: c.count, children, layout, empty: c.empty, axis: flowAxis(children.map(child => child.rect), layout),
+      ...(c.kind === "items" && (prev || next) ? { around: { ...(prev ? { prev } : {}), ...(next ? { next } : {}) } } : {}) }];
   });
   return { id: report.id, path: expectedPath, x: report.x, y: report.y, containers };
 }

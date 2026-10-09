@@ -43,6 +43,10 @@ test("parseDropReport preserves source indices and derives axes", () => {
   input.containers[0].path[0] = 9;
   assert.equal(parsed.containers[0].path[0], 1);
   assert.deepEqual(parseDropReport(report([]), "index.html")?.containers, []);
+  // An empty items slot's neighbours come through; anything else's are dropped, as are bad boxes.
+  const around = { prev: rect(0, 0, 10, 10), next: { left: "x" } };
+  const near = parseDropReport(report([{ ...container(), around }, { ...container(), kind: "items", tag: "card-project", slot: "", around }]), "index.html")!;
+  assert.deepEqual([near.containers[0].around, near.containers[1].around], [undefined, { prev: rect(0, 0, 10, 10) }]);
 });
 
 test("parseDropReport rejects malformed envelopes", () => {
