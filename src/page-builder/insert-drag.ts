@@ -32,7 +32,12 @@ export interface InsertDragContext<T> {
   scroll(dy: number): void;
   /** The drag ended: clear what `aim` drew. */
   clear(): void;
-  drop(target: T): void;
+  /**
+   * Released over `target` as last shown (none, or `refused`: no place
+   * shown there); false when nothing is added (the drag announces it), true
+   * when the context drops or settles the release itself.
+   */
+  drop(target: T | undefined, refused: boolean): boolean;
   announce(text: string): void;
 }
 
@@ -163,8 +168,7 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
       ghost?.remove();
       const at = target;
       ctx!.clear();
-      if (drop && at && !refused) ctx!.drop(at);
-      else ctx!.announce(`${label()} was not added`);
+      if (!drop || !ctx!.drop(at, refused)) ctx!.announce(`${label()} was not added`);
       // The click a release makes is not a click on the item.
       window.setTimeout(() => { dragged = false; }, 0);
     }

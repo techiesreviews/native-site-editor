@@ -28,15 +28,17 @@ export function createBlockDragSession(kind: NativeElementKind, ports: BlockDrag
   const block: DraggedBlock = { kind: "new", block: kind };
   let level: DragLevel = { alt: false, tabs: 0 };
   let want: { x: number; y: number } | undefined;
-  let probed: { x: number; y: number } | undefined;
-  let report: DropReport | undefined;
+  // The last answer: where it was asked and after how many scrolls.
+  let answered: { at: { x: number; y: number }; scrolls: number; report: DropReport } | undefined;
+  let scrolls = 0;
   let probing = false;
-  // A scroll or a Tab since the last probe or drawing.
-  let moved = false;
   let restep = false;
   let ended = false;
   let show: (aim: DragAim<DropTarget>) => void = () => {};
   let drawn = "";
+
+  // The last answer still holds for the pointer: same point, no scroll since.
+  const fresh = (at: { x: number; y: number }) => Boolean(answered && answered.scrolls === scrolls && answered.at.x === at.x && answered.at.y === at.y);
 
   function draw(target: DropTarget | undefined) {
     const indicator = target && dropIndicator(target);
@@ -47,8 +49,8 @@ export function createBlockDragSession(kind: NativeElementKind, ports: BlockDrag
   }
 
   function render() {
-    if (!want || !report || !probed) return;
-    const found = blockDropTarget(report, probed, kind, level);
+    if (!want || !answered) return;
+    const found = blockDropTarget(answered.report, answered.at, kind, level);
     level = found.level;
     draw(found.target);
     const target = found.target;
@@ -56,18 +58,16 @@ export function createBlockDragSession(kind: NativeElementKind, ports: BlockDrag
   }
 
   function run() {
-    const at = want!;
+    const at = want!, seen = scrolls;
     probing = true;
-    moved = false;
-    void ports.probe(at, kind === "section").then((next) => {
+    void ports.probe(at, kind === "section").then((report) => {
       probing = false;
       if (ended) return;
       // Not answered (the page was rendering): asked again on the next aim, a frame later.
-      if (!next) return;
-      probed = at;
-      report = next;
+      if (!report) return;
+      answered = { at, scrolls: seen, report };
       if (want) render();
-      if (want && (want.x !== at.x || want.y !== at.y || moved)) run();
+      if (want && !fresh(want)) run();
     });
   }
 
@@ -79,12 +79,14 @@ export function createBlockDragSession(kind: NativeElementKind, ports: BlockDrag
       level = { ...level, alt };
       want = at;
       if (!at) {
+        // Back on the canvas, even at the same point, the page is asked again.
+        answered = undefined;
         draw(undefined);
         show({ target: undefined, where: "Release to cancel" });
         return;
       }
       if (probing) return;
-      if (!probed || at.x !== probed.x || at.y !== probed.y || moved) run();
+      if (!fresh(at)) run();
       else if (altChanged || restep) { restep = false; render(); }
     },
     step(by) {
@@ -93,7 +95,7 @@ export function createBlockDragSession(kind: NativeElementKind, ports: BlockDrag
       return true;
     },
     scroll(dy) {
-      moved = true;
+      scrolls++;
       ports.scroll(dy);
     },
     clear() {
@@ -102,16 +104,20 @@ export function createBlockDragSession(kind: NativeElementKind, ports: BlockDrag
     },
     drop(shown) {
       const at = want;
-      if (!at || (probed && !probing && !moved && at.x === probed.x && at.y === probed.y)) {
+      // Off the canvas: cancelled.
+      if (!at) return false;
+      if (fresh(at) && !probing) {
+        if (!shown?.ok) return false;
         ports.drop(shown, dropLabel(shown, block));
-        return;
+        return true;
       }
       // Released before the page was probed where it was released: that probe decides.
-      void ports.probe(at, kind === "section").then((next) => {
-        const target = next && blockDropTarget(next, at, kind, level).target;
+      void ports.probe(at, kind === "section").then((report) => {
+        const target = report && blockDropTarget(report, at, kind, level).target;
         if (target?.ok) ports.drop(target, dropLabel(target, block));
         else ports.announce(`Nothing was added: ${target?.reason ?? "there is no place for it there."}`);
       });
+      return true;
     },
     announce: (text) => ports.announce(text),
   };

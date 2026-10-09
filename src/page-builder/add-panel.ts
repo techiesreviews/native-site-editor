@@ -299,11 +299,13 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         },
         clear: () => { shown = undefined; canvas.target(undefined, "", item.name); },
         announce: (text: string) => { live.textContent = text; },
-        drop: (point: InsertPoint) => {
+        drop: (point) => {
+          if (!point) return false;
           const at = handlers.pointFor ? handlers.pointFor(item, point, "drop") : point;
-          if (!at) { refuse(item); return; }
+          if (!at) { refuse(item); return true; }
           if (gapKey) close(false);
           handlers.insert(at, { tag: item.tag, label: item.label });
+          return true;
         },
       };
     });

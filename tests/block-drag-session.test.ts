@@ -80,7 +80,7 @@ test("a release the last probe did not see is probed again, and that answer deci
   // Onto the title slot, released before its probe answers.
   session.aim({ x: 400, y: 540 }, false, show);
   session.clear();
-  session.drop(shown);
+  assert.equal(session.drop(shown, false), true);
   await answerNext();
   await answerNext();
   assert.deepEqual(log.drops, []);
@@ -91,7 +91,7 @@ test("a release the last probe did not see is probed again, and that answer deci
   again.session.aim({ x: 400, y: 280 }, false, again.show);
   await again.answerNext();
   again.session.clear();
-  again.session.drop(again.log.shown.at(-1)!.target!);
+  assert.equal(again.session.drop(again.log.shown.at(-1)!.target!, false), true);
   assert.deepEqual(again.log.drops.map(([target, where]) => [target.container.path, target.index, where]), [[[1, 0, 1], 1, "Into Div (stack) › after Paragraph"]]);
 });
 
@@ -102,4 +102,45 @@ test("answers after the drag ended draw nothing", async () => {
   await answerNext();
   assert.deepEqual(log.shown, []);
   assert.deepEqual(log.drawn, [undefined]);
+});
+
+test("a release decides by its own point: after a refusal onto a valid place, after a scroll, back on the canvas", async () => {
+  // Shown refused over the title slot, released over the stack before its answer: the stack takes it.
+  const refused = setup();
+  refused.session.aim({ x: 400, y: 540 }, false, refused.show);
+  await refused.answerNext();
+  assert.equal(refused.log.shown.at(-1)?.refused, true);
+  refused.session.aim({ x: 400, y: 150 }, false, refused.show);
+  refused.session.clear();
+  assert.equal(refused.session.drop(refused.log.shown.at(-1)?.target, true), true);
+  await refused.answerNext();
+  await refused.answerNext();
+  assert.deepEqual(refused.log.drops.map(([target]) => [target.container.path, target.index]), [[[1, 0, 1], 0]]);
+  // A fresh refusal is not added.
+  const still = setup();
+  still.session.aim({ x: 400, y: 540 }, false, still.show);
+  await still.answerNext();
+  assert.equal(still.session.drop(still.log.shown.at(-1)?.target, true), false);
+  assert.equal(still.session.drop(undefined, false), false);
+  // A scroll whose probe went unanswered leaves the old answer stale: asked again, and the release probes.
+  let ready = true;
+  const scrolled = setup((at) => (ready ? report(at) : undefined));
+  scrolled.session.aim({ x: 400, y: 150 }, false, scrolled.show);
+  await scrolled.answerNext();
+  scrolled.session.scroll(14);
+  ready = false;
+  scrolled.session.aim({ x: 400, y: 150 }, false, scrolled.show);
+  await scrolled.answerNext();
+  scrolled.session.aim({ x: 400, y: 150 }, false, scrolled.show);
+  assert.equal(scrolled.log.probes.length, 3);
+  ready = true;
+  await scrolled.answerNext();
+  // Off the canvas and back to the same point: asked again, shown again.
+  scrolled.session.aim(undefined, false, scrolled.show);
+  assert.equal(scrolled.log.shown.at(-1)?.where, "Release to cancel");
+  assert.equal(scrolled.session.drop(undefined, false), false);
+  scrolled.session.aim({ x: 400, y: 150 }, false, scrolled.show);
+  assert.equal(scrolled.log.probes.length, 4);
+  await scrolled.answerNext();
+  assert.equal(scrolled.log.shown.at(-1)?.where, "Into Div (stack) › before Paragraph");
 });
