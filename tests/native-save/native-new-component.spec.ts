@@ -7,6 +7,7 @@ const templatePath = "components/section-services/section-services.html";
 const cssPath = "components/section-services/section-services.css";
 const panel = (page: Page) => page.getByRole("dialog", { name: "Add to the page" });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
+const canvasBar = (page: Page) => page.locator(".canvas-bar");
 
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -16,7 +17,7 @@ async function open(page: Page, baseURL: string | undefined) {
   await panel(page).getByRole("button", { name: "+ New component", exact: true }).click();
 }
 
-test("New component drafts files, places a section, opens its template and undoes as one step", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("New component drafts files, places a section, opens Edit component mode and undoes as one step", { tag: "@smoke" }, async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await open(page, baseURL);
@@ -30,6 +31,8 @@ test("New component drafts files, places a section, opens its template and undoe
   await panel(page).getByRole("button", { name: "Create", exact: true }).click();
   await expect(panel(page)).toBeHidden();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", templatePath);
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-services>");
   await expect(page.locator(".code-pane__title--component")).toBeVisible();
   await expect(page.locator(".code-pane__title--component")).toContainText(templatePath);
   for (const file of blankComponentFiles("section-services")) {
@@ -37,12 +40,12 @@ test("New component drafts files, places a section, opens its template and undoe
     await expect.poll(async () => (await storedDraft(page, file.path))?.baseSha).toBe(null);
   }
   await expect(frame(page).locator("main > section.filler + section-services")).toHaveCount(1);
-  await expect(frame(page).locator('section-services h2[slot="title"]')).toHaveText("New section");
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toContain('<section-services>\n    <h2 slot="title">New section</h2>\n  </section-services>');
   await expect(page.locator("#status")).toContainText("Made the component <section-services>");
 
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(frame(page).locator('section-services h2[slot="title"]')).toHaveText("New section");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(frame(page).locator("section-services")).toHaveCount(0);
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
@@ -88,6 +91,8 @@ test("New component uses the gap when Add opens between sections", async ({ page
   await expect(panel(page)).toBeHidden();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", templatePath);
   await expect(frame(page).locator("main > section-services:first-child + section.hero")).toHaveCount(1);
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-services>");
 });
 
 test("Redo of New component refuses whole when a file is at its path again; plain Redo still works", async ({ page, baseURL }) => {

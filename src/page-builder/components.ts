@@ -6,9 +6,9 @@
 //   an element inside an instance gets a chip that selects the instance.
 // - Properties: guarded instance slots and attributes live in Structure when
 //   the host enables that adapter; the legacy panel remains until then.
-// - Edit component: the template opens in the code pane at the matching
-//   part; the canvas bar says which component is edited, where it is used
-//   (Used on, a list of the pages) and holds the way back (Done).
+// - Edit component: the mode frames the instance in place, its template open
+//   in the code pane; the canvas bar says which component is edited, where it
+//   is used (Used on, a list of the pages) and holds the way back (Done).
 // - Variants: a dropdown per variant and a checkbox per yes/no variant in
 //   the edit bar, read from the CSS that can style the instance
 //   (shared/variants.ts); past two, behind one Variants button.
@@ -1535,7 +1535,7 @@ export function createComponentTools(deps: ComponentDeps) {
     }
   }
 
-  /** Drafts a blank section and inserts it in the page's history as one action. */
+  /** Drafts and inserts a blank section as one action, then opens Edit component mode on it. */
   async function newComponent(tag: string, point: InsertPoint): Promise<boolean> {
     const { path } = point;
     const parent = [...point.parent], index = point.index;
@@ -1572,7 +1572,7 @@ export function createComponentTools(deps: ComponentDeps) {
       return false;
     }
     // createFiles refreshes the host's component registry before it resolves.
-    await editComponent(tag);
+    await editComponent(tag, undefined, { path, node: [...parent, index] });
     if (deps.revision() === revision) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html`);
     return true;
   }
