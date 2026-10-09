@@ -220,10 +220,13 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     // At rest: the pointer leaves the field it clicked through, so no hover fill is measured.
     await page.mouse.move(0, 0);
     // The hover fill fades out (120 ms); wait until no resting field keeps one.
-    await expect.poll(() => page.locator(".edit-bar input.edit-bar__field-input").evaluateAll((fields) => fields
-      .filter((field) => field.getClientRects().length && field !== document.activeElement)
-      .map((field) => getComputedStyle(field).backgroundColor)
-      .filter((background) => background !== "rgba(0, 0, 0, 0)" && background !== "transparent"))).toEqual([]);
+    // The same fields the audit measures: the bar's and its address popover's.
+    await expect.poll(() => page.locator(".edit-bar, .edit-bar__popover").evaluateAll((roots) => {
+      const fields = [...new Set(roots.flatMap((root) => [...root.querySelectorAll("input.edit-bar__field-input")]))]
+        .filter((field) => (field as HTMLElement).getClientRects().length && field !== document.activeElement);
+      const filled = fields.filter((field) => !["rgba(0, 0, 0, 0)", "transparent"].includes(getComputedStyle(field).backgroundColor));
+      return { fields: fields.length > 0, filled: filled.length };
+    })).toEqual({ fields: true, filled: 0 });
     report.editBar = await audit(page, ".edit-bar, .edit-bar__popover");
     await page.screenshot({ path: `${shots}/fields-edit-bar-${name}.png` });
 
