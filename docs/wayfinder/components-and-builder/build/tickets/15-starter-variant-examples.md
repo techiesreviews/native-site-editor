@@ -10,7 +10,7 @@ phase: 2
 
 ## What
 
-Repository: `~/Projects/native-site-editor-starter` (see the [spec](../spec.md) flow for starter slices and open point 1).
+Repository: `~/Projects/native-site-editor-starter` (on its `dev` branch, never `main`; see the [spec](../spec.md) flow for starter slices).
 
 Show the variant contract ([07](../../tickets/07-variant-contract.md) §1, §6) on the starter's own components, with the suggested names:
 
@@ -21,4 +21,4 @@ Show the variant contract ([07](../../tickets/07-variant-contract.md) §1, §6) 
 ## Done when
 
 - Each variant renders as intended when set by hand in a page; the default look is unchanged.
-- One commit in the starter repo; screenshots of each variant.
+- One commit on the starter's `dev` branch; screenshots of each variant.

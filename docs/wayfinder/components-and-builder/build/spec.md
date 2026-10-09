@@ -45,8 +45,9 @@ starter shows them.
   comes, becomes new slices.
 - **Nothing goes to `main` or production** (`deploy:techies`) until Lex says.
   That includes the starter's `main` branch, which production's Start your
-  site downloads (see open point 1).
-- **Make component converts only the selected section** (ticket 15): no
+  site downloads: starter work goes to the starter's `dev` branch and merges
+  to its `main` only when Lex says ship, together with the editor.
+- **Make component converts only the selected element** (ticket 15): no
   "Also on N other pages" offer, no copies flag on `make_component`.
 - **No test-guide file.** Lex gets step-by-step test instructions in chat
   when he asks.
@@ -78,14 +79,17 @@ Editor slices:
 Starter slices (`~/Projects/native-site-editor-starter`, a separate project;
 `fixtures/native-starter` in the editor is frozen and never changed):
 
-1. Commit in the starter repo on a branch, not on `main` (open point 1).
+1. Commit on the starter repo's `dev` branch (create it from `main` the
+   first time) and push that branch. Never commit to or merge into `main`
+   until Lex says ship.
 2. Check by serving the root (`python3 -m http.server`) and with the editor's
-   native-save server on the starter checkout, as in step 7 above.
+   native-save server on the starter checkout (on `dev`), as in step 7 above;
+   preview screenshots and tests run against the starter's `dev`.
 3. Keep the starter's own rules: no build, no `package.json`, root links.
 4. The editor picks a starter commit up in two places: `fixtures/actual-starter`
    (test data, refreshed by re-archiving a named commit, see its README) and
-   the vendored preview copy `public/native-static-starter/v<sha>/`
-   (slice [63](tickets/63-vendor-starter-for-preview.md)).
+   the vendored preview copy `public/native-static-starter/v<sha>/`, taken
+   from the starter's `dev` (slice [63](tickets/63-vendor-starter-for-preview.md)).
 
 ## Builders
 
@@ -102,7 +106,9 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   re-keying, `static-section-defaults.ts`, about 139 unit and 71 browser tests
   and three Playwright projects, in one slice.
 - **Make component returns to the edit bar** in the place the masters' actions
-  free ([02](../tickets/02-masters-become-components.md) §2), as a second slice.
+  free ([02](../tickets/02-masters-become-components.md) §2), as a second slice,
+  on any element except `<main>`, `<body>`, the header and footer components
+  and anything inside an instance (decision 10 below).
 - **Conventions wording** for the header, footer and skip link, and the
   register step dropped ([02](../tickets/02-masters-become-components.md) §3).
 - **The element catalogue becomes the six blocks** (Section, Div, Image,
@@ -120,7 +126,10 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   as whole slots; link-wrapped cards as stretched links; kind from the
   fallback. It takes the slots to keep fixed and slot renames as input.
 - **A repeated item becomes its own card component**, the items slot's
-  fallback ([04](../tickets/04-prototype-making-components.md) §7).
+  fallback ([04](../tickets/04-prototype-making-components.md) §7), and this
+  page's items become instances of it in the same undo step (decision 4).
+- **The element's page CSS is copied into the new component**, rewritten so
+  it looks the same; page CSS is left alone (decision 2).
 - **One variant parser in `shared/`** ([06](../tickets/06-research-variant-discovery.md),
   [07](../tickets/07-variant-contract.md) §1–4): component CSS, site CSS
   naming the tag, `:host()` in site CSS, global attributes, class rules for
@@ -135,16 +144,21 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   variants; no `set_variant`.
 - **Starter:** variants on its components with the suggested names
   ([07](../tickets/07-variant-contract.md) §6); the Components chapter in
-  `AGENTS.md`.
+  `AGENTS.md`; the card link rule that stretches a title link over its card
+  (decision 3, slice 65), since component CSS can't reach a link inside
+  slotted content.
 
 ### Phase 3: Make component and New component
 
 - **Making mode in the preview** ([04](../tickets/04-prototype-making-components.md) §1–4, §6,
-  amended by 14's chip rename): purple frame, slots outlined with name chips,
-  edit bar hidden, chips toggle on click and rename on double-click with a
-  caret in the chip (never an input field), "+ slot" on hover, context menu,
-  Structure border; a slim bar with name, tag, Cancel and Create; names made
-  valid as typed. Entry points: edit bar, Structure row ⋯ menu, right-click.
+  with decision 8): purple frame, slots outlined on the canvas (no canvas
+  chips, no "+ slot" on hover); the edit bar shows only its name label, with
+  ticket 14's slot chip after the element name, the same control as the
+  Structure badge (click toggles, double-click edits the name in place, never
+  an input field); Structure border and badges; a slim bar with name, tag,
+  Cancel and Create; names made valid as typed, with a `section-`/`card-`/
+  `block-` prefix when they have no hyphen. Entry points: edit bar, Structure
+  row ⋯ menu, right-click.
 - **Create** writes the files and turns the section into an instance in one
   undo step, then opens Edit component (the code pane until phase 5 lands,
   then the visual mode; slice [49](tickets/49-create-lands-in-edit-mode.md)).
@@ -159,7 +173,8 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   with the reason ([12](../tickets/12-prototype-drag-and-drop.md) §2–4).
 - **Blocks:** heading level from position, never `h1` by default
   ([10](../tickets/10-block-set.md) §2); placeholders for Image and Button
-  ([12](../tickets/12-prototype-drag-and-drop.md) §3); Div Layout select
+  ([12](../tickets/12-prototype-drag-and-drop.md) §3), the image being the
+  site file `images/placeholder.svg`, written on first use; Div Layout select
   (Stack `flow`, Grid `cards`); Button Variant and Size from `.btn` rules
   ([10](../tickets/10-block-set.md) §4).
 - **Drag on the canvas:** a line and a label, sideways in rows and grids,
@@ -175,8 +190,9 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   ([12](../tickets/12-prototype-drag-and-drop.md) §11).
 - **Where blocks may go** ([10](../tickets/10-block-set.md) §5 and the 04
   amendment): Section only between bands; others inside a Section or Div;
-  into an instance only through its items slots, bypassing the instance seal
-  (`native-operations.ts`) only there; named slots refuse with the reason
+  into an instance only through its items slots (the unnamed slot, or a slot
+  whose fallback is a `card-…` component), bypassing the instance seal
+  (`native-operations.ts`) only there; other named slots refuse with the reason
   ([12](../tickets/12-prototype-drag-and-drop.md) §9 and "Items slots").
 
 ### Phase 5: Edit component mode, in place
@@ -191,7 +207,9 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 - **The slot chip** after the element name in the edit bar label, the same
   control as the Structure badge (§4–5): purple slot, pink items slot, grey
   struck fixed; click toggles, double-click renames in place.
-- **Slot changes reach every page** in the same undo step (§8–9).
+- **Slot changes reach every page at once**: made a slot, renamed or made
+  fixed rewrites the template and every page as one undo step; Done only
+  leaves the mode (§8–9, decision 6).
 - **Outside the mode** fixed parts are locked, with an Edit component hint;
   Page Structure lists only the instance's slots (§7).
 
@@ -203,11 +221,14 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 - **"Link to a page…" combobox:** all pages but the grid's own and 404, the
   cards' folder first, "In this grid" greyed, Create page for an unknown
   address or title, one undo step ([09](../tickets/09-prototype-add-existing-page.md) §2–3).
-- **Fill mapping**, matching slots, info strip, stretched link on non-link
-  grids ([09](../tickets/09-prototype-add-existing-page.md) §4–6).
+- **Fill mapping**, matching slots, info strip
+  ([09](../tickets/09-prototype-add-existing-page.md) §4–5). Card links follow
+  the card (decision 3): a link slot is filled; a card without one gets its
+  title wrapped in a link, stretched over the card by CSS. No `stretched` class.
 - **Card look:** split Add card ▾ gallery and a look chip on the card; card
   components then variants; content kept by slot role across looks, with
-  what doesn't fit kept aside ([09](../tickets/09-prototype-add-existing-page.md) §7–10).
+  what doesn't fit kept aside in the editor while the page is open
+  ([09](../tickets/09-prototype-add-existing-page.md) §7–10, decision 12).
 - **Starter:** a second card look for the gallery.
 
 ### Phase 7: Tone
@@ -227,7 +248,8 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 
 - **Unit tests for every pure rule**, in `tests/*.test.ts` (`npm test`):
   slot plan (whole elements, role names, repeated groups, lists, nested
-  instances, stretched links, card component), name normalising, variant
+  instances, stretched links, card component), the page CSS rewrite, name
+  normalising and prefixes, variant
   parser (component and site CSS, warnings), heading level, click-insert
   target, drop target, Section snapping, Alt+←/→ moves, items-slot detection,
   slot change rewrite plan, page groups, card fill mapping, card looks, look
@@ -246,67 +268,20 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 - Full suite (`scripts/agents/full-suite.sh 3`) before merging a slice that
   touches shared plumbing (the preview runtime, source edits, transactions).
 
-## Open points for Lex
+## Decided at handoff (Lex, 2026-10-09)
 
-Missing or contradictory decisions found while writing the plan. The slices
-they touch say so; the lead settles each with Lex before that slice starts.
-
-1. **Starter commits and production.** Production's Start your site
-   downloads the starter template's `main` (`STARTER_SOURCE` unset,
-   `worker/starter.ts`), so pushing starter commits to `main` ships them to
-   production. Preview uses the vendored copy `v6a9ca44`, which predates the
-   starter's components. Which starter branch do these commits go on, and
-   when do they reach `main`? (Slices 05, 06, 15, 17, 58, 60, 63.)
-2. **Page CSS on Make component.** Ticket 01 §6 measured that a shared rule
-   like `.intro h2` stops reaching slotted content once the section becomes a
-   component, and research 06 edge case 14 notes the same for `data-*` styled
-   by page CSS. No ticket decides whether Make component moves or copies
-   those rules into `<tag>.css`, warns, or leaves the look to change.
-   (Slices 07, 22.)
-3. **Stretched-link markup.** Ticket 03 §2 makes the heading `<a slot="link">`
-   with `a::after { inset: 0 }` in the template CSS; ticket 09 §4 fills a
-   separate link slot ("Read about <title>"); ticket 09 §6 adds
-   `<a href class="stretched">` to non-link grids, a class outside the
-   conventions' vocabulary (`flow`, `cards`, `btn`) with no decided home for
-   its CSS. One markup and one CSS home are needed. (Slices 09, 55.)
-4. **The page's own items after Make component.** Ticket 04 §7 makes the
-   repeated item a card component and the template's fallback one instance;
-   ticket 03 §5 says the items stay plain HTML (or instances) on the page.
-   Are this page's items converted to instances of the new card component
-   (each keeping its text in slots), or left as plain HTML? (Slice 10.)
-5. **What counts as an items slot.** Ticket 12 includes "a slot whose
-   fallback holds a component"; ticket 03 §6 makes every nested instance a
-   whole slot. Is a single nested instance slot (one `<card-x>`) an items
-   slot that takes drops and Add card? (Slices 40, 50.)
-6. **When page rewrites happen in Edit component mode.** Ticket 14 §6 makes
-   each change one undo step as it happens; §8 gives every page its copy of a
-   newly slotted part "on Done, in the same undo step". At the toggle, or
-   at Done? And when a slot becomes fixed or is removed, are the pages'
-   filled elements for it deleted from every page, or left in place (unshown)?
-   (Slice 45.)
-7. **Placeholder image.** Ticket 12 §3 inserts "a placeholder image (`alt=""`,
-   width and height)" with no decided `src`: a file written into the site
-   (the prototype used `images/placeholder.svg`), a `data:` URI, or
-   something else. (Slice 04.)
-8. **Chips in making mode versus Edit component mode.** Making mode keeps
-   chips on the canvas and "+ slot" on hover (04 §2–3); Edit component mode
-   dropped both for the chip in the edit bar label (14 §4), and the edit bar
-   is hidden in making mode. Should making mode move to the label chip too,
-   for one way of marking slots? The plan builds 04 as written and shares the
-   chip control. (Slices 23, 44.)
-9. **Tag from a name without a hyphen.** Names are "made valid as typed"
-   (04 §4) but a custom element name needs a hyphen: does "services" become
-   `section-services`, or is the hyphen required? (Slices 21, 27.)
-10. **Make component on non-section elements.** 04 §1 starts from "an
-    element"; the making-mode label and ticket 15 speak of the selected
-    section. Is Make component offered only on sections? (Slices 02, 22.)
-11. **Touch.** Research 11 gap 14: drag has only been tried with a mouse,
-    and the Add list uses `touch-action: pan-y`. No ticket covers touch for
-    the rail or canvas drags. (Slices 28, 35.)
-12. **Content kept aside on a look swap.** 09 §10 keeps what the new look
-    can't show and brings it back on a later swap. Nothing editor-only may go
-    into the site's code (07 §4), so it lives in the editor: for the editing
-    session only, or across reloads with the drafts? (Slice 57.)
+1. **Starter branch:** starter work goes to the starter's `dev` branch; preview tests run against it; it merges to the starter's `main` only when Lex says ship, together with the editor. Slice 63 vendors the starter's `dev` for preview.
+2. **Page CSS on Make component:** the rules that styled the selected element are copied into the new `<tag>.css`, rewritten for the component so it looks the same; page CSS is left alone (slice 64).
+3. **Card links follow the card:** a card with a link slot gets it filled ("Read about …"); a card without one gets its title wrapped in a link, stretched over the card by the card's CSS (slice 55 fixes the selectors). No `stretched` class.
+4. **This page's items after Make component** become instances of the new card component, each keeping its content in its slots, in the same undo step (supersedes ticket 03 §5's "items stay plain HTML").
+5. **Items slot:** the unnamed slot, or a slot whose fallback is a card component (a `card-…` tag). A slot holding one other nested instance is an ordinary slot.
+6. **Edit component mode:** each slot change (made a slot, renamed, made fixed) rewrites the template and every page at once, one undo step; Done only leaves the mode. A slot made fixed removes each page's element for it (undo restores); the template's text shows instead.
+7. **Placeholder image:** the site file `images/placeholder.svg`, written the first time an Image block is inserted (same undo step), then reused.
+8. **One way to mark slots:** making mode uses ticket 14's label chip (after the element name, the same control as the Structure badge); the canvas keeps only slot outlines; no canvas chips, no "+ slot" on hover.
+9. **Names without a hyphen** get a prefix from what they were made from: `section-`, `card-`, else `block-`; the slim bar's tag preview shows the result as typed.
+10. **Make component works on any element** (section, card, div), except `<main>`, `<body>`, the header and footer components and anything inside an instance.
+11. **Touch drag** is out of scope for this run; click-insert works on touch.
+12. **Content kept aside on a look swap** lives in the editor while the page is open (a swap back restores it); it is gone after a reload or page switch; nothing is written to the HTML.
 
 ## Out of scope
 
@@ -316,6 +291,7 @@ they touch say so; the lead settles each with Lex before that slice starts.
 - A style panel or free per-element CSS editing.
 - A brand-colour control.
 - A Span block.
+- Touch drag for the rail, canvas and Structure (click-insert works on touch).
 
 ## Done when
 

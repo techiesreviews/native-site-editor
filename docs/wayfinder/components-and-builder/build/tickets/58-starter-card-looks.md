@@ -10,11 +10,11 @@ phase: 6
 
 ## What
 
-Repository: `~/Projects/native-site-editor-starter` (see the [spec](../spec.md) flow for starter slices and open point 1).
+Repository: `~/Projects/native-site-editor-starter` (on its `dev` branch, never `main`; see the [spec](../spec.md) flow for starter slices).
 
 So the gallery has something to show ([09](../../tickets/09-prototype-add-existing-page.md) §9): add a second card component (for example `card-quote`: a title and text, no image), and a variant on an existing card component written `:host([data-x="v"])`. Card components start with `card-` and have a heading slot.
 
 ## Done when
 
 - Both looks render in a grid alongside `card-project`; the variant works when set by hand.
-- One commit in the starter repo; screenshots.
+- One commit on the starter's `dev` branch; screenshots.

@@ -15,10 +15,12 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §2–4.
 - A pure rule for where a clicked block goes: a selected Section or Div takes it inside, at the end; a selected leaf takes it right after, in the same container; a Section always goes after the selection's page band; with nothing selected, a Section goes after the last band and other blocks into the last Section (or a new one).
 - The new block is selected, so the next click builds on it; Esc goes up a level.
 - A label flashes at the new block ("Into Section › after Heading"); a refusal flashes the red reason and inserts nothing.
-- Writes go through `nativeMarkupInsertEdit` (`src/page-builder/native-operations.ts:312`), one undo step each. A selected instance takes the block into its items slot once slice 40 lands; until then it refuses with the reason.
+- Writes go through `nativeMarkupInsertEdit` (`src/page-builder/native-operations.ts:312`), one undo step each. Build the insert as one helper that slice 35 (drag) and slice 43 (templates) reuse.
+- The Image block's placeholder is the site file `images/placeholder.svg` (decided at handoff, 7; its SVG is defined in slice 04): the first Image insert writes it in the same undo step (one `applyNativeOperation` with the page edit); later inserts reuse it, whatever its content. A selected instance takes the block into its items slot once slice 40 lands; until then it refuses with the reason.
 - Prototype: `prototype/cb-12-drag-and-drop`, `src/prototype/cb12-rail.ts` (`clickTarget` `:85`, `flash` `:154`), `cb12-core.ts` (`whereText` `:299`).
 
 ## Done when
 
 - Unit tests for the rule: each selection case, nothing selected, Sections never nested.
+- Nightly spec: the first Image insert drafts `images/placeholder.svg` and one undo removes both; a second insert writes no file.
 - `@smoke` spec (for example `tests/native-save/native-blocks.spec.ts`): click Section, Div, Heading, Paragraph: the page holds `<section class="flow"><div class="flow"><h3>…</h3><p>…</p></div></section>`, each insert one undo step.

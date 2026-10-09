@@ -4,20 +4,18 @@ type: task (AFK)
 status: open
 assignee:
 blocked_by: [41-edit-mode-shell, 24-slot-chip-rename-in-place]
-builder: claude ★
+builder: sol
 phase: 5
 ---
 
 ## What
 
-Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §4.
+Ticket [14](../../tickets/14-prototype-edit-component-visually.md) §4, with the shared chip built in slices 23–24 (decided at handoff, 8).
 
-- The edit bar's name label reads "◇ Section work › Heading [title]": the chip comes after the element name and is the shared chip control (slices 23–24).
-- A slot is a solid purple chip, an items slot pink ("items ×1"); a fixed part a muted grey chip with its name struck through (the name it had, or the role name it would get).
-- A click toggles slot ↔ fixed (with the short wait); a double-click renames in place. No chips at the element's end on the canvas and no "+" on hover.
-- This slice changes the template; slice 45 carries the change to the pages.
-- Prototype: `prototype/cb-14-edit-component`, `src/prototype/cb14-label.ts` (`slotBadge` `:48`, `decorateLabel` `:105`).
+- In the mode, the edit bar's name label reads "◇ Section work › Heading [title]", with the shared chip after the element name: purple for a slot, pink for an items slot ("items ×1"), grey struck through for a fixed part.
+- A click toggles slot ↔ fixed and a double-click renames in place, as in making mode. No chips on the canvas and no "+" on hover.
+- Each toggle or rename goes through slice 45, which rewrites the template and every page at once.
 
 ## Done when
 
-- Nightly spec: the label shows the right chip for a slot, an items slot and a fixed part; a click toggles; a double-click renames.
+- Nightly spec: the label shows the right chip for a slot, an items slot and a fixed part in the mode; the chip's click and double-click reach slice 45's change.

@@ -12,7 +12,7 @@ phase: 7
 
 Ticket [08](../../tickets/08-accessible-tone-text.md) §3: the CSS must match the proof.
 
-- Refresh `fixtures/actual-starter` to slice 60's starter commit (provenance in `fixtures/actual-starter.README.md`).
+- Refresh `fixtures/actual-starter` to slice 60's commit on the starter's `dev` branch (provenance in `fixtures/actual-starter.README.md`).
 - A nightly spec in the `@actual` group renders each tone in Chromium with several `--brand` values (mid-tones across the hue circle included) and asserts computed text/surface contrast of at least 4.5:1 and button fill/surface of at least 3:1.
 
 ## Done when

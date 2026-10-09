@@ -14,9 +14,9 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §5.
 
 - Dragging a rail icon uses `makeInsertDraggable` (`src/page-builder/insert-drag.ts:31`: 7 px start, auto-scroll near the frame edges, Esc cancels) with slice 33's targets.
 - A thin insertion line, sideways between items in rows and grids, and a floating label naming the target. No border round the target container. Empty containers show a tinted "Drop into the empty Div" area.
-- Sections use slice 34. The drop writes through `nativeMarkupInsertEdit`, selects the new block, one undo step.
+- Sections use slice 34. The drop writes through slice 30's insert (with the placeholder image file on first use), selects the new block, one undo step.
 - The block-neutral label replaces "Drop section here" (`src/components/insert-controls.ts`, research 11 gap 3).
-- Touch is open point 11 in the [spec](../spec.md).
+- Touch drag is out of scope for this run (decided at handoff, 11).
 - Prototype: `prototype/cb-12-drag-and-drop`, `src/prototype/cb12-drag.ts`.
 
 ## Done when

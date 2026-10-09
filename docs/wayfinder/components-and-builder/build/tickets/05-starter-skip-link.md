@@ -10,7 +10,7 @@ phase: 1
 
 ## What
 
-Repository: `~/Projects/native-site-editor-starter` (a separate project; see the [spec](../spec.md) flow for starter slices and open point 1).
+Repository: `~/Projects/native-site-editor-starter` (a separate project), on its `dev` branch, never `main`; see the [spec](../spec.md) flow for starter slices.
 
 Ticket [02](../../tickets/02-masters-become-components.md) §1:
 
@@ -21,4 +21,4 @@ Ticket [02](../../tickets/02-masters-become-components.md) §1:
 ## Done when
 
 - With JavaScript off, Tab on any page shows the skip link and it jumps to `<main>`; with JavaScript on the page looks as before.
-- One commit in the starter repo; screenshots of the focused skip link on the real starter.
+- One commit on the starter's `dev` branch; screenshots of the focused skip link on the real starter.

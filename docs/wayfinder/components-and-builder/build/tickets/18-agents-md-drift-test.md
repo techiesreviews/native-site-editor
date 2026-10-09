@@ -12,7 +12,7 @@ phase: 2
 
 Ticket [05](../../tickets/05-what-agents-are-told.md) §2.
 
-- Refresh `fixtures/actual-starter` from slice 17's starter commit (`git archive <sha> | tar -x`, provenance in `fixtures/actual-starter.README.md`). `fixtures/native-starter` stays frozen.
+- Refresh `fixtures/actual-starter` from slice 17's commit on the starter's `dev` branch (`git archive <sha> | tar -x`, provenance in `fixtures/actual-starter.README.md`). `fixtures/native-starter` stays frozen.
 - A unit test fails when `fixtures/actual-starter/AGENTS.md`'s Components chapter differs from the conventions' chapter.
 - It replaces the weak pattern check in `tests/mcp-runtime.test.ts:100-108`.
 

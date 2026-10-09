@@ -10,7 +10,7 @@ phase: 1
 
 ## What
 
-Repository: `~/Projects/native-site-editor-starter` (see the [spec](../spec.md) flow for starter slices and open point 1).
+Repository: `~/Projects/native-site-editor-starter` (on its `dev` branch, never `main`; see the [spec](../spec.md) flow for starter slices).
 
 The builder writes only `flow`, `cards` and `btn` ([10](../../tickets/10-block-set.md) §3); the starter has the first two and gains `.btn`.
 
@@ -21,4 +21,4 @@ The builder writes only `flow`, `cards` and `btn` ([10](../../tickets/10-block-s
 ## Done when
 
 - `<a class="btn" href="#">Button</a>` inside a `<section class="flow">` looks like a button in light and dark.
-- One commit in the starter repo; a screenshot.
+- One commit on the starter's `dev` branch; a screenshot.

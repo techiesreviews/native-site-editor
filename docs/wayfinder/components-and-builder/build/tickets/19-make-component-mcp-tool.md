@@ -13,7 +13,7 @@ phase: 2
 Ticket [05](../../tickets/05-what-agents-are-told.md) §5, without the copies flag (ticket 15).
 
 - A new tool in `worker/mcp.ts`, queued to the editor tab like `add_section` (`:697`, `queue` `:721`), with its fields in `shared/agent.ts`, run by `src/agent-site.ts` (beside `add_section`, `:476`).
-- It takes a page, an element (addressed the way the other element tools address one), a tag and an optional list of slots to keep fixed. It runs `makeComponentPlan` (slices 07–10), writes the component files and replaces that element on that page only, as one undo step.
+- It takes a page, an element (addressed the way the other element tools address one), a tag and an optional list of slots to keep fixed. It runs `makeComponentPlan` (slices 07–10, and slice 64's CSS once it has landed), writes the component files and replaces that element on that page only (its repeated items becoming card instances, decided at handoff 4), as one undo step. It refuses `<main>`, `<body>`, the header and footer components, and anything inside an instance, with the reason.
 - Its description points to the conventions and states no rules.
 
 ## Done when

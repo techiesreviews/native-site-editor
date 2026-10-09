@@ -10,11 +10,11 @@ phase: 2
 
 ## What
 
-Repository: `~/Projects/native-site-editor-starter` (see the [spec](../spec.md) flow for starter slices and open point 1).
+Repository: `~/Projects/native-site-editor-starter` (on its `dev` branch, never `main`; see the [spec](../spec.md) flow for starter slices).
 
 Ticket [05](../../tickets/05-what-agents-are-told.md) §2–3: the starter's `AGENTS.md` carries a Components chapter that is a copy of the conventions' chapter (slice 16), byte for byte. The rest of `AGENTS.md` keeps the starter's own notes and drops anything that contradicts the chapter.
 
 ## Done when
 
 - `AGENTS.md`'s Components chapter equals the conventions' chapter.
-- One commit in the starter repo.
+- One commit on the starter's `dev` branch.

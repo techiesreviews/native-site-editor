@@ -3,7 +3,7 @@ title: Vendor the new starter for the preview editor
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [05-starter-skip-link, 06-starter-btn-class, 15-starter-variant-examples, 17-starter-agents-components-chapter, 58-starter-card-looks, 60-starter-tone-rules]
+blocked_by: [05-starter-skip-link, 06-starter-btn-class, 15-starter-variant-examples, 17-starter-agents-components-chapter, 58-starter-card-looks, 60-starter-tone-rules, 65-starter-card-link-rule]
 builder: sol
 phase: 7
 ---
@@ -12,9 +12,9 @@ phase: 7
 
 The preview editor's Start your site reads a vendored starter (`STARTER_SOURCE: native-static`, `wrangler.preview.jsonc`), still `v6a9ca44`, from before the starter had components.
 
-- Add `public/native-static-starter/v<sha>/` from the starter commit that holds every starter slice, following `docs/native-starter-source.md` (files as `.asset`, `manifest.json`), with `components/` and `AGENTS.md`; update `NATIVE_STARTER_VERSION` (`worker/starter.ts:132`) and the doc; remove the old folder.
+- Add `public/native-static-starter/v<sha>/` from the head of the starter's `dev` branch, which holds every starter slice (decided at handoff, 1), following `docs/native-starter-source.md` (files as `.asset`, `manifest.json`), with `components/` and `AGENTS.md`; update `NATIVE_STARTER_VERSION` (`worker/starter.ts:132`) and the doc; remove the old folder.
 - New sites now ship `AGENTS.md` ([05](../../tickets/05-what-agents-are-told.md) §2): drop its exclusion in `tests/native-starter.test.ts:63`. Check the file-count and size limits in `worker/starter.ts`.
-- Open point 1 in the [spec](../spec.md) decides when the template's `main` (production) follows.
+- The template's `main` (production) is not touched: it takes the starter's `dev` only when Lex says ship, together with the editor.
 
 ## Done when
 

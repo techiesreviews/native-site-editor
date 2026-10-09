@@ -10,7 +10,7 @@ phase: 7
 
 ## What
 
-Repository: `~/Projects/native-site-editor-starter` (see the [spec](../spec.md) flow for starter slices and open point 1).
+Repository: `~/Projects/native-site-editor-starter` (on its `dev` branch, never `main`; see the [spec](../spec.md) flow for starter slices).
 
 Ticket [08](../../tickets/08-accessible-tone-text.md) §1–4.
 
@@ -22,4 +22,4 @@ Ticket [08](../../tickets/08-accessible-tone-text.md) §1–4.
 ## Done when
 
 - Every tone renders readably in light and dark mode, with the starter's brand and with a few others set in `tokens.css` (checked by slice 62).
-- One commit in the starter repo; screenshots of each tone.
+- One commit on the starter's `dev` branch; screenshots of each tone.
