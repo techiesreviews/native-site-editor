@@ -1,7 +1,7 @@
 ---
 title: Blocks drag themselves
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [35-canvas-drag-new-blocks]
 builder: claude ★
@@ -20,3 +20,11 @@ Ticket [12](../../tickets/12-prototype-drag-and-drop.md) §10 and §12.
 ## Done when
 
 - Nightly specs: move a Heading into another Div; reorder cards sideways; a click still edits text; the header doesn't drag. `native-section-drag.spec.ts` passes on the new path.
+
+## Done (2026-10-09)
+
+- A press on a page block moved 7 px drags it (the selection when the press is inside it, else the pressed block; inline gives its block, an instance's part its outermost instance; only `<main>`'s own blocks, never the header or footer, nothing in Edit component mode); the runtime relays the pointer as `press-drag`. The edit bar's name chip (no grip dots, named by the block, title "Drag to move") drags any movable block, so text being typed moves from there; the bar holds its render while the chip is pressed. All canvas drags, sections included, go through `trackDrag` (`insert-drag.ts`) + the block drag session with a `DraggedBlock` and the block-insert controller's `move` (`nativeElementMovePlan`/`nativeMoveEdit`: instances move whole, moves into items slots take the slot's name, one undo step, moved block selected). The runtime's section drag, `section-drag`/`onSectionDrag`, the insert controls' drag gaps and `nativeElementMoveChoices` are gone.
+- Commits `95edaa2`, `2d8660f`, `db152e2`, `a8164fd` (the last three from two Sol reviews: route in the drag's proof, typing committed by the chip's press accepted only when the bytes changed inside the block (`nativeEditInside`), relayed-drag teardown, pointercancel, items-slot moves).
+- Tests: `tests/native-operations.test.ts`, `tests/block-insert-controller.test.ts` (move), `tests/block-drag-session.test.ts`, `tests/drop-indicator.test.ts`, `tests/native-move-choices.test.ts`; nightly `tests/native-save/native-block-move.spec.ts` (Heading into a Div, cards sideways with Alt, click still edits and the chip moves typed text, 6/7 px and the header, into a card's items); `native-section-drag.spec.ts` rewritten for the new path.
+- For slice 79 (click selects, double-click edits): the runtime arms a press drag unless the press is inside the element being typed in (`editing`); once a single click no longer starts typing, an unselected text block drags on press-and-move without more work. Card reorder over a card's named slot refuses in place (slice 33's rule); Alt/Tab steps up to the grid, and over the card's padding (no slot) the grid takes it.
+
