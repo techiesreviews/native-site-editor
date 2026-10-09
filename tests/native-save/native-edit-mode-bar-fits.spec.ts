@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 // Nightly, default native-starter fixture. Make component supplies a real
 // CSS plan note. ASE_EDIT_MODE_SHOTS=<dir> saves each bar and colour scheme.
 const bar = (page: Page) => page.locator(".canvas-bar");
-async function checkControls(page: Page) {
+async function checkControls(page: Page, withNote = true) {
   await expect(bar(page)).toHaveAttribute("data-fit", /full|note|used|wrap/);
   await expect.poll(() => bar(page).evaluate((element) => {
     const controls = [...element.querySelectorAll<HTMLElement>(".edit-mode__title, button, input")].filter((control) => control.getBoundingClientRect().width > 0);
@@ -17,7 +17,8 @@ async function checkControls(page: Page) {
         && rects.every((other, j) => i === j || r.right <= other.left || other.right <= r.left || r.bottom <= other.top || other.bottom <= r.top);
     });
   })).toBe(true);
-  for (const selector of [".edit-mode__title", ".canvas-component__used", ".edit-mode__note-text", ".edit-mode__note-dismiss", ".canvas-component__done", ".canvas-width__input"])
+  const notes = withNote ? [".edit-mode__note-text", ".edit-mode__note-dismiss"] : [];
+  for (const selector of [".edit-mode__title", ".canvas-component__used", ...notes, ".canvas-component__done", ".canvas-width__input"])
     await expect(bar(page).locator(selector)).toBeVisible();
   await expect(bar(page).locator(".canvas-device:visible")).toHaveCount(3);
   const controls = bar(page).locator("button:visible, input:visible");
@@ -25,7 +26,7 @@ async function checkControls(page: Page) {
 }
 
 for (const colorScheme of ["light", "dark"] as const) {
-  test(`Edit mode bar fits 1440, 1024, 760 and 390 with a plan note (${colorScheme})`, async ({ page, baseURL }) => {
+  test(`Edit mode bar fits 1440, 1200, 1024, 760 and 390 with a plan note (${colorScheme})`, async ({ page, baseURL }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.emulateMedia({ colorScheme });
@@ -40,9 +41,19 @@ for (const colorScheme of ["light", "dark"] as const) {
     await page.getByRole("treeitem", { name: "Section A native browser preview", exact: true }).locator(".page-structure__label").first().click();
     await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Make component", exact: true }).click();
     await expect(bar(page).locator(".edit-mode__note-text")).toHaveAccessibleName(/Note:.*1 rule can't follow.*1 note/);
-    for (const width of [1440, 1024, 760, 390, 1440]) {
+    // The fixture's bar takes each stage in order: the note's words go first, then "used on", then it wraps.
+    const stages = { 1440: "full", 1200: "note", 1024: "used", 760: "wrap", 390: "wrap" } as const;
+    for (const width of [1440, 1200, 1024, 760, 390] as const) {
       await page.setViewportSize({ width, height: 1000 });
+      await expect(bar(page)).toHaveAttribute("data-fit", stages[width]);
       await checkControls(page);
+      const full = stages[width] === "full";
+      await expect(bar(page).locator(".edit-mode__note-label")).toBeVisible({ visible: full });
+      await expect(bar(page).locator(".edit-mode__note-count")).toBeVisible({ visible: !full });
+      const short = stages[width] === "used" || stages[width] === "wrap";
+      await expect(bar(page).locator(".canvas-component__used-label")).toBeVisible({ visible: !short });
+      await expect(bar(page).locator(".canvas-component__used-short")).toHaveText("1 page");
+      await expect(bar(page).locator(".canvas-component__used-short")).toBeVisible({ visible: short });
       await expect(bar(page).locator(".canvas-component__used")).toHaveAccessibleName("used on 1 page");
       await expect(bar(page).locator(".edit-mode__note-text")).toHaveAccessibleName(/Note:.*1 rule can't follow.*1 note/);
       await expect(bar(page).locator(".edit-mode__note-count")).toHaveText("1");
@@ -58,8 +69,10 @@ for (const colorScheme of ["light", "dark"] as const) {
       }
       if (process.env.ASE_EDIT_MODE_SHOTS) await bar(page).screenshot({ path: `${process.env.ASE_EDIT_MODE_SHOTS}/bar-${width}-${colorScheme}.png` });
     }
+    // At the narrowest width: dismissing the note still fits, and Done leaves.
     await bar(page).getByRole("button", { name: "Dismiss the notes", exact: true }).click();
     await expect(bar(page).locator(".edit-mode__note")).toHaveCount(0);
+    await checkControls(page, false);
     await expect(bar(page).getByRole("button", { name: "Done editing component", exact: true })).toBeFocused();
     await bar(page).getByRole("button", { name: "Done editing component", exact: true }).click();
     await expect(bar(page).locator(".edit-mode__title")).toHaveCount(0);

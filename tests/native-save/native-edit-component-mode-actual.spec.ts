@@ -92,6 +92,13 @@ test("Edit component opens Recent work in place: placeholders, template edit, Do
   await expect(frame(page).locator("[data-native-selection-box='edit-shade']:visible")).not.toHaveCount(0);
   // The template's own slots keep their names (the component's CSS can name them).
   expect(await work.evaluate((host) => [...host.shadowRoot!.querySelectorAll("slot")].map((slot) => slot.name))).toEqual(["title", ""]);
+  // In view, below the site's sticky header.
+  await expect.poll(async () => {
+    const header = (await frame(page).locator("site-header").boundingBox())!;
+    const shown = (await work.getByText("Section title", { exact: true }).boundingBox())!;
+    const area = (await page.locator(".native-preview-frame").boundingBox())!;
+    return shown.y >= header.y + header.height && shown.y + shown.height <= area.y + area.height;
+  }).toBe(true);
   if (shots) await page.screenshot({ path: `${shots}/placeholders.png` });
 
   // An edit of the template shows in place at once, the mode and the frame's document unchanged.
