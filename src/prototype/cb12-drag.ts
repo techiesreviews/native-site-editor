@@ -18,7 +18,7 @@ import {
   itemsOf, latest, lineGeom, drawn, nodeName, lineMode, treeLed, bandTarget, measure, previewMarkup, readTarget, readout, rowOf, sameTarget, sideIndex, stays, targetFor, toFrame, variant, whereText,
   type Box, type Dragged, type Model, type Pt, type Rect, type Target,
 } from "./cb12-core";
-import { expandTo, indentStep, overTree, pickDepth, pickZones, treeEl, treeLine } from "./cb12-tree";
+import { cancelSpring, expandTo, indentStep, overTree, pickDepth, pickZones, springAt, treeEl, treeLine } from "./cb12-tree";
 
 // ---- Frame CSS (always on with the prototype; drag states by data-cb12 on the frame's root). ----
 const BLUE = "oklch(54.6% 0.215 262.9)";
@@ -144,8 +144,8 @@ function render(s: Session) {
     const r = boxRect(box);
     const empty = !itemsOf(box).length;
     if (lineMode) {
-      // Between page bands the line says it all; Main's outline would frame the whole page.
-      if (box.node.t !== "main") rectEl(t.ok ? "cb12-box cb12-box--target" : "cb12-box cb12-box--refused", r);
+      // Round 4: no box around the target; the line and the label are the cue. A refusal keeps its red outline.
+      if (!t.ok) rectEl("cb12-box cb12-box--refused", r);
       if (t.ok && !stays(s.d, t)) {
         const line = lineGeom(box, t.index);
         if (line && !empty) rectEl(`cb12-line${rowOf(box) ? " cb12-line--v" : ""}`, line);
@@ -224,13 +224,15 @@ function retarget(s: Session) {
   if (!s.model) { s.over = "none"; }
   else if (overTree(s.x, s.y)) {
     s.over = "tree";
+    if (treeLed) springAt(s.model, s.d, s.y, () => { if (current === s) retarget(s); });
     const pick = treeLed ? pickDepth(s.model, s.d, s.x, s.y) : pickZones(s.model, s.d, s.x, s.y);
     next = pick.target; s.line = pick.line; s.row = pick.row;
   } else if (f?.inside) {
+    cancelSpring();
     s.over = "canvas";
     // B picks from the page as measured without its open gap, so the gap never moves the target.
     next = pickCanvas(s, { x: f.x, y: f.y });
-  } else s.over = "none";
+  } else { cancelSpring(); s.over = "none"; }
   const changed = !sameTarget(next, s.target) || next?.level !== s.target?.level;
   s.target = next;
   render(s);
@@ -325,6 +327,7 @@ export function startDrag(d: Dragged, from: HTMLElement | null, pointerId: numbe
       if (done) return;
       done = true;
       remote = undefined;
+      cancelSpring();
       lastDragEnd = Date.now();
       source.removeEventListener("pointermove", onMove);
       source.removeEventListener("pointerup", onUp);

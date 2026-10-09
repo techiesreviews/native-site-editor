@@ -146,7 +146,6 @@
 .cb12-drop-area {
   display: grid;
   place-items: center;
-  border: 2px solid var(--primary);
   border-radius: 8px;
   background: color-mix(in oklab, var(--primary) 14%, var(--surface));
   color: var(--primary);
@@ -182,7 +181,7 @@ html[data-cb12-variant="C"] .cb12-tree-line.is-refused::after {
   color: #fff;
   font: 600 11px/1.3 system-ui, sans-serif;
 }
-.page-structure__row.cb12-row-target { background: color-mix(in oklab, var(--primary) 14%, transparent); box-shadow: inset 2px 0 0 var(--primary); }
+.page-structure__row.cb12-row-target { background: color-mix(in oklab, var(--primary) 9%, transparent); }
 .page-structure__row.cb12-row-refused { background: color-mix(in oklab, var(--danger) 10%, transparent); box-shadow: inset 2px 0 0 var(--danger); }
 
 /* ---- Edit bar additions. ---- */
@@ -295,3 +294,10 @@ html.cb12-has-rail .workspace { grid-template-columns: 48px var(--sidebar-width,
 @keyframes cb12-flash-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cb12-flash, .cb12-flash-label { animation: none; transition: none; } }
 html[data-cb12-variant="D"] .edit-bar__label { cursor: grab; touch-action: none; user-select: none; }
+
+/* Round 4: a folded row about to spring open under a dragged block. */
+.page-structure__row.cb12-spring { background: color-mix(in oklab, var(--primary) 7%, transparent); }
+.page-structure__row.cb12-spring .page-structure__toggle { color: var(--primary); }
+.page-structure__row.cb12-spring .page-structure__toggle::before { animation: cb12-spring 400ms linear forwards; }
+@keyframes cb12-spring { to { transform: rotate(90deg); } }
+@media (prefers-reduced-motion: reduce) { .page-structure__row.cb12-spring .page-structure__toggle::before { animation: none; } }

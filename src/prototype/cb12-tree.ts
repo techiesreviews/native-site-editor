@@ -6,7 +6,7 @@
 // inside, bottom quarter after) and file-tree depth (variant C: the gap under
 // the pointer, the depth from the pointer's x).
 
-import { containerKind, endIndex, isBand, itemsOf, slotForIndex, targetFor, treeLed, type Box, type Dragged, type Model, type PNode, type Target } from "./cb12-core";
+import { allowed, containerKind, endIndex, isBand, itemsOf, slotForIndex, targetFor, treeLed, type Box, type Dragged, type Model, type PNode, type Target } from "./cb12-core";
 
 export const treeEl = () => document.querySelector<HTMLElement>(".page-structure__tree");
 export const rowFor = (key: string) => treeEl()?.querySelector<HTMLElement>(`[role='treeitem'][data-node='${key}']`) ?? undefined;
@@ -48,6 +48,52 @@ export function expandTo(key: string | undefined, keep?: string) {
     const row = rowFor(k);
     if (row?.getAttribute("aria-expanded") === "false") { row.querySelector<HTMLElement>(".page-structure__toggle")?.click(); unfolded.add(k); }
   }
+}
+
+/**
+ * Round 4, spring-loaded rows: while a block (not a Section) is dragged over
+ * a folded row that can take it, the row opens after SPRING_MS, its caret
+ * turning meanwhile. Rows opened so join `unfolded`, so they fold back when
+ * the drag ends elsewhere; while the pointer is still in Structure, opened
+ * rows of a band below the pointer fold back as soon as it leaves that band
+ * (folding rows above it would move the rows under the pointer).
+ */
+const SPRING_MS = 400;
+let spring: { key: string; row: HTMLElement; timer: ReturnType<typeof setTimeout> } | undefined;
+export function cancelSpring() {
+  if (!spring) return;
+  clearTimeout(spring.timer);
+  spring.row.classList.remove("cb12-spring");
+  spring = undefined;
+}
+export function springAt(model: Model, d: Dragged, y: number, opened: () => void) {
+  if (isBand(d)) { cancelSpring(); return; }
+  const row = visibleRows().find((r) => { const b = r.getBoundingClientRect(); return y >= b.top && y < b.bottom; });
+  const key = row?.dataset.node;
+  // Leaving a band: what sprang open in a band below the pointer folds back.
+  const band = key?.split(".").slice(0, 2).join(".");
+  for (const k of [...unfolded]) {
+    const r = rowFor(k);
+    if (!r || (band && (k === band || k.startsWith(`${band}.`)))) continue;
+    if (r.getBoundingClientRect().top > y && r.getAttribute("aria-expanded") === "true") { r.querySelector<HTMLElement>(".page-structure__toggle")?.click(); unfolded.delete(k); }
+  }
+  const node = key ? model.byKey.get(key) : undefined;
+  const box = node && boxInside(node);
+  if (!row || !key || row.getAttribute("aria-expanded") !== "false" || !box || !allowed(d, box).ok) { cancelSpring(); return; }
+  if (spring?.key === key) return;
+  cancelSpring();
+  row.classList.add("cb12-spring");
+  spring = {
+    key, row,
+    timer: setTimeout(() => {
+      row.classList.remove("cb12-spring");
+      spring = undefined;
+      if (row.getAttribute("aria-expanded") !== "false") return;
+      row.querySelector<HTMLElement>(".page-structure__toggle")?.click();
+      unfolded.add(key);
+      opened();
+    }, SPRING_MS),
+  };
 }
 
 /** A box for a drop among a container node's children. */
