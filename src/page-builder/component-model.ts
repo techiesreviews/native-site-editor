@@ -1092,6 +1092,8 @@ export interface SlotChoices {
 
 // Parts that stay in the template unless made slots by hand: icons, scripts, media and form controls.
 const FIXED_PARTS = new Set(["svg", "script", "style", "template", "noscript", "iframe", "video", "audio", "canvas", "input", "select", "textarea", "br", "hr"]);
+// Parts that only work as their parent's own child (a table's cells, a details' summary), so never a whole slot.
+const IN_PLACE = new Set(["td", "th", "tr", "thead", "tbody", "tfoot", "caption", "colgroup", "col", "summary", "legend", "option", "optgroup"]);
 
 /** The role a slot of `kind` is named after: a heading is the "title". */
 const roleName = (el: SourceElement, kind: SlotKind) => (kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : kind);
@@ -1151,24 +1153,21 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   const visit = (el: SourceElement, path: number[], inText: boolean) => {
     elements(el.children).forEach((child, index) => {
       const at = [...path, index];
-      if (forced.has(key(at))) { parts.push({ el: child, path: at, kind: kindOf(child), byDefault: false }); return; }
-      if (child.name.includes("-") || FIXED_PARTS.has(child.name)) return;
-      const whole = child.name === "img" || child.name === "picture"
-        || (!inText && child.name === "a" && child.close && textOnly(child.children))
-        || isText(child);
-      if (whole) {
-        parts.push({ el: child, path: at, kind: kindOf(child), byDefault: true });
+      const byDefault = Boolean(!child.name.includes("-") && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)
+        && (child.name === "img" || child.name === "picture" || (!inText && child.name === "a" && child.close && textOnly(child.children)) || isText(child)));
+      if (byDefault || (forced.has(key(at)) && !IN_PLACE.has(child.name))) {
+        parts.push({ el: child, path: at, kind: kindOf(child), byDefault });
         // A part kept fixed is walked into only for a part made a slot inside it.
-        if (!fixed.has(key(at)) || !forcedInside(at)) return;
-      }
+        if (!fixed.has(key(at)) || !forcedInside(at) || child.name === "picture") return;
+      } else if (child.name.includes("-") || FIXED_PARTS.has(child.name)) return;
       visit(child, at, inText || TEXT_BLOCKS.has(child.name));
     });
   };
-  if (isText(root)) {
-    // A single line of text: it fills the unnamed slot, inside the element.
+  if (isText(root) || (root.name === "a" && textOnly(root.children) && plainText(html.slice(root.tag.end, root.close.start)))) {
+    // A single line of text (or a link's): it fills the unnamed slot, inside the element.
     parts.push({ el: root, path: [], kind: "text", byDefault: true });
     if (fixed.has("") && forcedInside([])) visit(root, [], true);
-  } else visit(root, [], false);
+  } else if (root.name !== "picture") visit(root, [], false);
 
   // Names: by role; a tie between parts of one role is broken by each part's own class, else numbered.
   const names = new Map<Part, string>();
@@ -1189,15 +1188,13 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
     });
   }
   for (const part of parts) if (!names.has(part)) names.set(part, roleName(part.el, part.kind));
-  const renames = new Map((choices.names ?? []).map(({ path, name }) => [key(path), name.trim()]));
-  for (const part of parts) {
-    const renamed = renames.get(key(part.path));
-    if (renamed) names.set(part, renamed);
-  }
-  // Each name once: renamed slots keep theirs, the others step aside.
-  const used = new Set(parts.filter((part) => renames.get(key(part.path))).map((part) => names.get(part)!));
-  for (const part of parts) {
-    if (renames.get(key(part.path))) continue;
+  // Renames, for named slots only: the element's own unnamed slot stays unnamed.
+  const renames = new Map((choices.names ?? []).filter(({ path }) => path.length).map(({ path, name }) => [key(path), name.trim()]));
+  const renamed = (part: Part) => Boolean(renames.get(key(part.path)));
+  for (const part of parts) if (renamed(part)) names.set(part, renames.get(key(part.path))!);
+  // Each name once, in source order: renamed slots first, the others step aside.
+  const used = new Set<string>();
+  for (const part of [...parts.filter(renamed), ...parts.filter((part) => !renamed(part))]) {
     const name = names.get(part)!;
     let free = name;
     for (let n = 2; free && used.has(free); n++) free = `${name}-${n}`;

@@ -484,6 +484,33 @@ test("make component: a part's lines move to the instance's indentation; a text 
   assert.deepEqual(kept.slots.map(({ path, name, fixed }) => [path.join("."), name, fixed]), [["", "", true], ["0", "text", false]]);
 });
 
+test("review: cells, summaries and picture sources stay in place; a link's text fills its unnamed slot", () => {
+  const plan = (source: string, name: string, choices = {}) => {
+    const made = makeComponentPlan(source, rangeOf(source, name), "block-x", choices);
+    assert.ok(!("error" in made));
+    return made;
+  };
+  // A slot round a cell or a summary would take it out of its table or details.
+  const table = plan(`<section><table><tr><td>Cell</td><td><p>Note</p></td></tr></table><details><summary>More</summary><p>Body</p></details></section>`, "section", { slots: [[0, 0, 0]] });
+  assert.equal(table.template, `<section><table><tr><td>Cell</td><td><slot name="text"><p>Note</p></slot></td></tr></table><details><summary>More</summary><slot name="text-2"><p>Body</p></slot></details></section>\n`);
+  // A picture made into a component keeps its sources with its image.
+  assert.deepEqual(plan(`<picture><source srcset="/a.webp"><img src="/a.jpg" alt=""></picture>`, "picture").slots, []);
+  const link = plan(`<a class="btn" href="/about/">About <em>us</em></a>`, "a", { names: [{ path: [], name: "label" }] });
+  assert.equal(link.template, `<a class="btn" href="/about/"><slot>About <em>us</em></slot></a>\n`);
+  assert.equal(link.instance, `<block-x>About <em>us</em></block-x>`);
+  assert.deepEqual(link.slots.map(({ name, kind }) => [name, kind]), [["", "text"]]);
+});
+
+test("review: renames never collide, and a part the rule picks stays a default slot when chosen by hand", () => {
+  const source = `<section><h2>A</h2><p>B</p><p>C</p></section>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-x", {
+    names: [{ path: [0], name: "same" }, { path: [1], name: "same" }],
+    slots: [[2]],
+  });
+  assert.ok(!("error" in plan));
+  assert.deepEqual(plan.slots.map(({ name, byDefault }) => [name, byDefault]), [["same", true], ["same-2", true], ["text-2", true]]);
+});
+
 test("new component names: a dash, lowercase, free", () => {
   assert.equal(tagNameProblem("section-intro", []), undefined);
   assert.ok(tagNameProblem("hero", []));
