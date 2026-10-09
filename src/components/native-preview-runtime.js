@@ -2768,6 +2768,8 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       editing.innerHTML = editingHtml;
+      // The restored text can wrap differently from what was typed.
+      scheduleRect();
       editing.blur();
     }
   }

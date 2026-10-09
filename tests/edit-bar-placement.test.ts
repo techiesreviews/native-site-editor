@@ -44,3 +44,9 @@ test("off-screen selections retain focused controls clamped into the frame", () 
   assert.deepEqual(place({ selectionTop: -200, selectionBottom: -160, inset: 100, visible: false }), { top: 104, side: "pinned" });
   assert.deepEqual(place({ selectionTop: 800, selectionBottom: 840, visible: false }), { top: 532, side: "pinned" });
 });
+
+test("with no room clear of a sticky header on either side, the bar stands over the header, not the selection", () => {
+  assert.deepEqual(place({ selectionTop: 104, selectionBottom: 560, inset: 100 }), { top: 32, side: "above" });
+  // Without room above even over the header, it is clamped to the edge covering less.
+  assert.deepEqual(place({ selectionTop: 60, selectionBottom: 560, inset: 50 }), { top: 532, side: "pinned" });
+});

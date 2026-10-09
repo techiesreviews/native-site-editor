@@ -40,8 +40,11 @@ async function edit(page: Page, heading: Locator, width: number) {
   await expect(heading).toHaveAttribute("contenteditable", /^(plaintext-only|true)$/);
   await expect(heading).toBeFocused();
   await page.keyboard.press("ControlOrMeta+End");
-  let expected = await heading.textContent();
-  for (const text of [" x", "y", "z"]) {
+  const original = await heading.textContent();
+  const startHeight = (await heading.boundingBox())!.height;
+  let expected = original;
+  // In the narrow frame the typed words wrap the heading onto more lines.
+  for (const text of width === 760 ? [" x", "y", "z", " more words"] : [" x", "y", "z"]) {
     await page.keyboard.type(text);
     expected += text;
     await expect(heading).toHaveText(expected);
@@ -54,7 +57,12 @@ async function edit(page: Page, heading: Locator, width: number) {
       const controls = [...el.querySelectorAll("button, select")].map(item => item.getBoundingClientRect());
       return Math.max(...controls.map(box => box.top)) >= Math.min(...controls.map(box => box.bottom));
     })).toBe(true);
+    expect((await heading.boundingBox())!.height).toBeGreaterThan(startHeight);
   }
+  // Escape restores the text (shorter again): the bar follows and stays clear.
+  await page.keyboard.press("Escape");
+  await expect(heading).toHaveText(original!);
+  await clear(page, heading);
 }
 
 for (const width of [1440, 760]) {
