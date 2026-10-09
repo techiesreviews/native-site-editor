@@ -322,14 +322,15 @@ function mountWorkspace() {
       void loadBlockInsert().then(blocks => current() ? blocks.click(kind, at) : undefined).catch(errorMessage);
     },
     onUp: () => nativePreview?.selectParent(),
-    drag: kind => nativePreview?.blockDrag(kind, {
+    // The drag's targets and drawing load with the first press on a block.
+    drag: kind => loadBlockDrag().then(create => nativePreview?.blockDrag(kind, {
       drop: (target, where, painted) => {
         const current = blockInsertPorts.proof(), at = blockInsertPorts.target();
         const place = { parent: target.container.path, index: target.index, where };
         void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at) : undefined).catch(errorMessage);
       },
       announce,
-    }),
+    }, create)),
   });
   sidebarResize = mountSidebarResize(
     app.querySelector<HTMLElement>(".workspace")!,
@@ -748,6 +749,7 @@ const blockInsertPorts: BlockInsertPorts = {
     announce(reason);
   },
 };
+const loadBlockDrag = lazyModule(async () => (await import("./page-builder/block-drag")).createBlockDrag);
 const loadBlockInsert = lazyModule(async () => (await import("./controllers/block-insert-controller")).createBlockInsertController(blockInsertPorts));
 
 const historyController = createHistoryController({

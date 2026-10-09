@@ -24,6 +24,7 @@ import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
 import type { DropTarget } from "../page-builder/drop-target";
+import type { createBlockDrag } from "../page-builder/block-drag";
 import type { NativeElementKind } from "../page-builder/native-elements";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
@@ -1104,7 +1105,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * show to drop into). A drop gives the page source its target was
      * measured on, so a page that changed since refuses it.
      */
-    blockDrag(kind: NativeElementKind, ports: { drop(target: DropTarget, where: string, painted: string | undefined): void; announce(text: string): void }) {
+    blockDrag(kind: NativeElementKind, ports: { drop(target: DropTarget, where: string, painted: string | undefined): void; announce(text: string): void },
+      create: typeof createBlockDrag) {
       if (!site || !frameState.active || alone) return undefined;
       let painted: string | undefined;
       return pageBuilder.blockDrag(kind, {
@@ -1115,7 +1117,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         },
         drop: (target, where) => ports.drop(target, where, painted),
         announce: (text) => ports.announce(text),
-      });
+      }, create);
     },
     /** Send an already scheduled source change immediately after a direct user action. */
     flushPendingUpdate() {

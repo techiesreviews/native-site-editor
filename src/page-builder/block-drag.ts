@@ -28,7 +28,6 @@ export function createBlockDrag(kind: NativeElementKind, ports: BlockDragPorts):
   const block: DraggedBlock = { kind: "new", block: kind };
   const marks = node("div", "pb-drop");
   marks.setAttribute("aria-hidden", "true");
-  ports.layer.append(marks);
   let level: DragLevel = { alt: false, tabs: 0 };
   let want: { x: number; y: number } | undefined;
   let probed: { x: number; y: number } | undefined;
@@ -48,6 +47,8 @@ export function createBlockDrag(kind: NativeElementKind, ports: BlockDragPorts):
     drawn = key;
     marks.replaceChildren();
     if (!indicator) return;
+    // In the layer from the first mark: a press that never becomes a drag leaves nothing behind.
+    if (!marks.isConnected) ports.layer.append(marks);
     const mark = node("div", indicator.kind === "line" ? `pb-drop__line${indicator.vertical ? " pb-drop__line--v" : ""}` :
       indicator.kind === "area" ? "pb-drop__area" : "pb-drop__refused", indicator.kind === "area" ? indicator.text : "");
     const { left, top, width, height } = indicator.rect;

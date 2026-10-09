@@ -16,7 +16,7 @@ import { createAddPanel, insertPointKey } from "./add-panel";
 import { createCanvasLayer, createEmptyCanvas, createInsertFlash } from "./canvas-overlays";
 import { defaultInsertPoint } from "./insert-target";
 import { thumbnailDocument, type ThumbnailInputs } from "./thumbnail-doc";
-import { createBlockDrag, type BlockDragPorts } from "./block-drag";
+import type { BlockDragPorts, createBlockDrag } from "./block-drag";
 import type { NativeElementKind } from "./native-elements";
 
 export interface PageBuilderDeps {
@@ -214,10 +214,14 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       if (addButton) addButton.hidden = !active;
       if (!active) panel.close(false);
     },
-    /** A rail block dragged onto the canvas: its line, label and target (none while History shows an earlier version). */
-    blockDrag(kind: NativeElementKind, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce">) {
+    /**
+     * A rail block dragged onto the canvas: its line, label and target
+     * (none while History shows an earlier version). `create` is
+     * block-drag.ts's, loaded with the first drag.
+     */
+    blockDrag(kind: NativeElementKind, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce">, create: typeof createBlockDrag) {
       if (viewing) return undefined;
-      return createBlockDrag(kind, { ...ports, frame, layer: canvas.layer, scroll: (dy) => deps.scroll(dy) });
+      return create(kind, { ...ports, frame, layer: canvas.layer, scroll: (dy) => deps.scroll(dy) });
     },
     insertPointKey,
     destroy() {

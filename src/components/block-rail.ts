@@ -9,7 +9,7 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
   /** Escape on a block: the selection's container is selected, as Escape in the page does. */
   onUp?: () => void;
   /** Dragging a block onto the canvas (none: no page to drop into); 7 px of movement starts it. */
-  drag?: (kind: NativeElementKind) => InsertDragContext<unknown> | undefined;
+  drag?: (kind: NativeElementKind) => Promise<InsertDragContext<unknown> | undefined>;
 } = {}) {
   const rail = document.createElement("nav");
   rail.className = "block-rail";

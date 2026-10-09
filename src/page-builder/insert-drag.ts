@@ -40,16 +40,21 @@ const THRESHOLD = 7;
 const SCROLL_STEP = 14;
 
 /**
- * Lets `source` be dragged onto the canvas as `label`. Returns whether a
- * drag just ended, so the click that follows a release is not taken as a
- * click.
+ * Lets `source` be dragged onto the canvas as `label`; a context still
+ * loading starts the drag once it arrives. Returns whether a drag just
+ * ended, so the click that follows a release is not taken as a click.
  */
-export function makeInsertDraggable<T>(source: HTMLElement, label: () => string, context: () => InsertDragContext<T> | undefined) {
+export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
+  context: () => InsertDragContext<T> | Promise<InsertDragContext<T> | undefined> | undefined) {
   let dragged = false;
   source.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !event.isPrimary) return;
-    const ctx = context();
-    if (!ctx) return;
+    const made = context();
+    if (!made) return;
+    let ctx = made instanceof Promise ? undefined : made;
+    // Moved past the threshold, perhaps before the context arrived.
+    let crossed = false;
+    let ended = false;
     const startX = event.clientX;
     const startY = event.clientY;
     const id = event.pointerId;
@@ -103,14 +108,19 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
       frameId = requestAnimationFrame(tick);
     }
 
-    function begin() {
-      active = true;
-      dragged = true;
+    // From the threshold on, the pointer stays with the editor even over the frame.
+    function capture() {
       try {
         source.setPointerCapture(id);
       } catch {
         // The pointer is gone already; the drag ends on the next event.
       }
+    }
+
+    function begin() {
+      active = true;
+      dragged = true;
+      capture();
       source.classList.add("is-dragging");
       document.documentElement.classList.add("pb-is-dragging");
       ghost = node("div", "pb-drag-ghost");
@@ -134,12 +144,16 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
     }
 
     function finish(drop: boolean) {
+      ended = true;
       window.removeEventListener("pointermove", onMove, true);
       window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("pointercancel", onCancel, true);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keyup", onKey, true);
-      if (!active) return;
+      if (!active) {
+        if (crossed) window.setTimeout(() => { dragged = false; }, 0);
+        return;
+      }
       active = false;
       cancelAnimationFrame(frameId);
       if (source.hasPointerCapture?.(id)) source.releasePointerCapture(id);
@@ -160,6 +174,8 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
       alt = move.altKey;
       if (!active) {
         if (Math.hypot(pointer.x - startX, pointer.y - startY) < THRESHOLD) return;
+        crossed = dragged = true;
+        if (!ctx) { capture(); return; }
         begin();
       }
       move.preventDefault();
@@ -191,6 +207,17 @@ export function makeInsertDraggable<T>(source: HTMLElement, label: () => string,
         key.stopPropagation();
         retarget();
       }
+    }
+    if (made instanceof Promise) {
+      made.then((loaded) => {
+        if (ended) return;
+        if (!loaded) { finish(false); return; }
+        ctx = loaded;
+        if (!crossed) return;
+        begin();
+        place();
+        retarget();
+      }, () => finish(false));
     }
     window.addEventListener("pointermove", onMove, true);
     window.addEventListener("pointerup", onUp, true);
