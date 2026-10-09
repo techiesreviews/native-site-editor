@@ -189,7 +189,8 @@ export function createInsertFlash(layer: HTMLElement) {
   return {
     /** The next selection of this element (the one an insert asked for) is highlighted, with `where` when given. */
     arm(path: string, nodePath: number[], where?: string) {
-      armed = { path, node: nodePath.join("."), until: Date.now() + 5000, where };
+      // A first Image waits for its file reads; a refusal or another arm replaces it.
+      armed = { path, node: nodePath.join("."), until: Date.now() + (where ? 30_000 : 5000), where };
     },
     /** The runtime selected an element: highlighted when it is the armed one. */
     selected(path: string, nodePath: number[] | undefined, rect: SelectionRect | undefined) {

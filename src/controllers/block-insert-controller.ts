@@ -20,8 +20,8 @@ export interface BlockInsertPorts {
   readonly exists: (path: string) => boolean;
   /** Proof of the repository, branch and session now; false once any changed. */
   readonly proof: () => () => boolean;
-  /** Opens the page in the editor, whose history takes the step; false when it could not. */
-  readonly open: (path: string) => Promise<boolean>;
+  /** Opens the page in the editor, whose history takes the step: a proof it stays open there, or nothing when it could not. */
+  readonly open: (path: string) => Promise<(() => boolean) | undefined>;
   /** One operation over drafts and one undo step (src/main.ts `applyNativeOperation`); resolves to an error. */
   readonly apply: (op: {
     expectedSources: Map<string, string | undefined>; creates?: { path: string; content: string }[]; edits: Map<string, string>;
@@ -53,10 +53,13 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
    */
   async function insert(request: BlockInsert): Promise<string | undefined> {
     const { path, parent, index, kind, wrap } = request, name = blockNames[kind];
-    const current = ports.proof();
+    const proof = ports.proof();
     const source = ports.source(path);
     if (source === undefined) return `${name} was not added: ${path} is not there any more.`;
-    if (!await ports.open(path) || !current() || ports.source(path) !== source) return "The page changed meanwhile. Try again.";
+    const opened = await ports.open(path);
+    if (!opened || !proof() || ports.source(path) !== source) return "The page changed meanwhile. Try again.";
+    // The step's undo belongs to this page's history: another file opened meanwhile stops it.
+    const current = () => proof() && opened();
     const edit = nativeMarkupInsertEdit(source, parent, index, blockMarkup(source, kind, parent, wrap));
     const next = edit && applyGuardedSourceEdit(source, edit);
     if (!next) return `${name} was not added: the HTML around that spot could not be read exactly.`;

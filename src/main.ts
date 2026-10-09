@@ -724,12 +724,11 @@ const blockInsertPorts: BlockInsertPorts = {
     return () => epoch === generation && scope === setupScope() && !versionView;
   },
   open: async path => {
-    if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) {
-      const epoch = generation;
-      await restoreFile(path, epoch, { linkDefaultStyle: false });
-      if (epoch !== generation) return false;
-    }
-    return appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
+    const epoch = generation;
+    if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, epoch, { linkDefaultStyle: false });
+    const editor = editorModule;
+    const open = () => epoch === generation && appStore.openFile.value === path && editorModule === editor && Boolean(editor?.isMounted(path));
+    return open() ? open : undefined;
   },
   apply: op => applyNativeOperation(op),
   select: (request, where) => {

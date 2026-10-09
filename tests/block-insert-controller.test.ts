@@ -13,7 +13,7 @@ function setup(overrides: Partial<BlockInsertPorts> = {}, files: Record<string, 
     source: (path: string) => files[path],
     exists: (path: string) => Object.hasOwn(files, path),
     proof: () => () => true,
-    open: async () => true,
+    open: async () => () => true,
     apply: async (op: Op) => {
       log.ops.push(op);
       for (const file of op.creates ?? []) files[file.path] = file.content;
@@ -65,13 +65,18 @@ test("a refusal inserts nothing and flashes the reason", async () => {
 
 test("a page changed while it opened, or a stale proof, writes nothing", async () => {
   const files = { "index.html": page };
-  const changed = setup({ open: async () => { files["index.html"] = page.replace("Work", "Play"); return true; } }, files);
+  const changed = setup({ open: async () => { files["index.html"] = page.replace("Work", "Play"); return () => true; } }, files);
   await changed.controller.click("paragraph");
   assert.equal(changed.log.ops.length, 0);
   assert.deepEqual(changed.log.refusals, ["The page changed meanwhile. Try again."]);
   const stale = setup({ proof: () => () => false });
   await stale.controller.click("paragraph");
   assert.equal(stale.log.ops.length, 0);
+  assert.equal((await setup({ open: async () => undefined }).controller.insert({ path: "index.html", parent: [0, 0], index: 1, kind: "paragraph" })), "The page changed meanwhile. Try again.");
+  // Another file opened during the operation's reads: the operation's own proof fails.
+  let open = true;
+  const moved = setup({ open: async () => () => open, apply: async op => { open = false; return op.current() ? undefined : "stale"; } });
+  assert.equal(await moved.controller.insert({ path: "index.html", parent: [0, 0], index: 1, kind: "paragraph" }), "stale");
 });
 
 test("a failed operation cancels the selection it asked for and flashes the error", async () => {
