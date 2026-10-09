@@ -81,4 +81,7 @@ test("parseDropReport caps lists and strings", () => {
 test("fixed-part probes survive parsing so they refuse instead of exposing an outer container", () => {
   const fixed = { ...container(), kind: "fixed", tag: "section-work", children: [] };
   assert.equal(parseDropReport(report([fixed, container()]), "index.html")?.containers[0].kind, "fixed");
+  // A template's nested component (Edit component mode) refuses the same way.
+  const nested = { ...container(), kind: "component", tag: "card-project", children: [] };
+  assert.equal(parseDropReport(report([nested, container()]), "index.html")?.containers[0].kind, "component");
 });

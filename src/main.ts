@@ -334,18 +334,22 @@ function mountWorkspace() {
     onUp: () => nativePreview?.selectParent(),
     // The drag's targets and drawing load with the first press on a block;
     // the press's repository, branch and session hold through both loads.
+    // In Edit component mode, into the template edited (its items slots are its own <slot> elements).
     drag: kind => {
       const current = blockInsertPorts.proof();
-      const block = { kind: "new", block: kind } as const;
+      const template = componentTools?.editModeTemplate();
+      const block = { kind: "new", block: kind, ...(template ? { template: true } : {}) } as const;
+      // Page Structure drops stay the page's: in Edit component mode only the canvas takes the drag.
       return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag(block, {
-        tree: structureDrop(drag, block),
+        tree: template ? undefined : structureDrop(drag, block),
         drop: (target, where, painted, pointer) => {
           const at = blockInsertPorts.target();
-          const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };
+          if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
+          const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
           if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at, pointer) : undefined).catch(errorMessage);
         },
         announce,
-      }, drag.createBlockDrag) : undefined);
+      }, drag.createBlockDrag, template?.path) : undefined);
     },
   });
   sidebarResize = mountSidebarResize(
@@ -795,6 +799,12 @@ const blockInsertPorts: BlockInsertPorts = {
     const route = nativePreview?.route();
     const path = route !== undefined && nativeSite && !versionView ? nativeSite.routes[route] : undefined;
     if (!path) return undefined;
+    // Edit component mode builds in the template edited, a part of it selected.
+    const template = componentTools?.editModeTemplate();
+    if (template && template.page === path) {
+      const selection = appStore.selection.value;
+      return selection?.path === template.path ? { path: template.path, node: selection.node, painted: selection.paintedSource, template: template.tag } : { path: template.path, template: template.tag };
+    }
     // A part of a component's template stands for its instance on the page.
     const selection = appStore.selection.value;
     const host = selection && [selection.host, ...selection.hostChain ?? []].find(item => item?.path === path && item.node);

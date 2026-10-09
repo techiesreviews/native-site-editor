@@ -1919,6 +1919,15 @@ export function createComponentTools(deps: ComponentDeps) {
     makeFromAgent,
     menuItems,
     identity,
+    /**
+     * Edit component mode's template while it is the file open (the rail
+     * builds in it): its tag and path, and the page it is framed on.
+     */
+    editModeTemplate() {
+      const mode = editMode?.active();
+      return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath && explicitTemplate.revision === deps.revision()
+        ? { tag: mode.tag, path: mode.templatePath, page: mode.path } : undefined;
+    },
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
       if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;

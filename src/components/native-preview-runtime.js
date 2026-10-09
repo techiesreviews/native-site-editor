@@ -1083,6 +1083,9 @@
       if (slot !== undefined) out.slot = slot;
       return out;
     }
+    // Edit component mode: the edited template's own parts, by template paths.
+    var edited = editHost();
+    if (edited) return templateDropContainers(edited);
     // Section probes need every page band even over the header or footer.
     // Keep the moved band too: insertion indices still refer to the source.
     if (bands === true) {
@@ -1135,6 +1138,71 @@
       return child ? walk(child, depth + 1).concat(chain) : chain;
     }
     return walk(pageEl, 0);
+
+    // In the edited template, blocks go into its block parts (as Sections and
+    // Divs on a page) and into its items slots' placeholder content (a slot
+    // reports the template's tag, its fallback elements as its children). A
+    // named slot refuses where it shows; a nested component refuses inside
+    // (open it to build there), its edges passing the drop up.
+    function templateDropContainers(host) {
+      var tag = host.localName;
+      function slotInfo(slot) {
+        var name = (slot.getAttribute("name") || "").trim();
+        var fallback = dropMeaningful(slot.childNodes);
+        return { name: name, items: !name || (fallback.length > 0 && fallback.every(dropCard)) };
+      }
+      var isItems = function (el) { return el.localName === "slot" && slotInfo(el).items; };
+      // A slot shows its fallback; an empty items slot covers its parent's box.
+      function slotRect(slot) {
+        if (getComputedStyle(slot).display === "none") return null;
+        var own = dropUnion(Array.prototype.slice.call(slot.childNodes));
+        return own || (isItems(slot) && slot.parentElement ? dropRect(slot.parentElement) : null);
+      }
+      function hit(el) {
+        if (el.localName === "slot") return dropHit(slotRect(el), x, y);
+        if (getComputedStyle(el).display === "none") return false;
+        var r = dropSealed(el) ? bandRect(el, 0) : dropRect(el);
+        if (dropHit(r, x, y)) return true;
+        if (r.width || r.height || dropSealed(el)) return false;
+        return dropKids(el).some(hit);
+      }
+      // A slot among a part's children: the box of what it shows, named by
+      // its slot name in `cls` ("" the unnamed one) for the label.
+      function part(report, el) {
+        var kids = dropKids(el);
+        report.children.forEach(function (child) {
+          var kid = kids[child.index];
+          if (!kid || kid.localName !== "slot") return;
+          child.cls = (kid.getAttribute("name") || "").trim();
+          child.rect = slotRect(kid) || { left: 0, top: 0, width: 0, height: 0 };
+        });
+        return report;
+      }
+      function walk(el, depth) {
+        if (depth > 100) return [];
+        var chain = [];
+        if (el.localName === "slot") {
+          var info = slotInfo(el);
+          var shown = dropKids(el);
+          var report = part(entry(el, info.items ? "items" : "slot", shown, slotRect(el), el.parentElement || el, Array.prototype.slice.call(el.childNodes), info.name), el);
+          report.tag = tag;
+          if (info.items && !shown.length) { var near = dropAround(el); if (near) report.around = near; }
+          chain.push(report);
+          if (!info.items) return chain;
+        } else if (dropSealed(el)) {
+          return [entry(el, "component", [], bandRect(el, 0), el, [])];
+        } else if (["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0) {
+          chain.push(part(entry(el, el.localName === "section" ? "section" : "div", dropKids(el), dropRect(el), el, Array.prototype.slice.call(el.childNodes)), el));
+        }
+        // Parts and named slots win over an items slot's larger area.
+        var kids = dropKids(el);
+        var child = kids.find(function (kid) { return !isItems(kid) && hit(kid); }) || kids.find(function (kid) { return isItems(kid) && hit(kid); });
+        return child ? walk(child, depth + 1).concat(chain) : chain;
+      }
+      var tops = dropKids(host.shadowRoot);
+      var top = tops.find(function (kid) { return !isItems(kid) && hit(kid); }) || tops.find(function (kid) { return isItems(kid) && hit(kid); });
+      return top ? walk(top, 0) : [];
+    }
   }
 
   function insertPoints() {
@@ -3500,7 +3568,9 @@
     if (msg.type === "viewing") { if (state) state.viewing = msg.viewing === true; return; }
     if (msg.type === "drop-probe") {
       if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
-      emit("drop-containers", { id: msg.id, path: String(state && state.pagePaths[state.route] || ""),
+      // In Edit component mode, the edited template's parts.
+      var probed = editHost();
+      emit("drop-containers", { id: msg.id, path: String(state && (probed ? state.componentPaths[probed.localName] : state.pagePaths[state.route]) || ""),
         x: msg.x, y: msg.y, containers: dropContainers(msg.x, msg.y, msg.moving, msg.bands) });
       return;
     }

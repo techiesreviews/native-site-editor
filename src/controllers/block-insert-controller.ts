@@ -4,14 +4,18 @@
 // (`click`) picks the place from the selection
 // (src/page-builder/block-insert.ts); a drag (`drop`, `move`) brings the
 // place it was dropped on; templates pass their own place to `insert`.
+// In Edit component mode the target is the template edited (`template`):
+// its path, a selected part of it, the place by the template's rule
+// (`templateClickTarget`); each insert is one step on the template file.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
-import { blockMarkup, blockNames, clickTarget, itemsSlotRule } from "../page-builder/block-insert";
+import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget } from "../page-builder/block-insert";
 import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit } from "../page-builder/native-operations";
 import { nativeElementMovePlan } from "../page-builder/native-move-choices";
 
 type NodeRequest = { path: string; node: number[] };
-export type RailTarget = { path: string; node?: number[]; painted?: string };
+/** `template`: `path` is the template of this component, edited in Edit component mode. */
+export type RailTarget = { path: string; node?: number[]; painted?: string; template?: string };
 export interface BlockInsertPorts {
   /**
    * The page the preview shows, with the selection on it (a body path; a
@@ -98,7 +102,8 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
     // A selection painted from other bytes names another element now.
     if (at.node && at.painted !== undefined && at.painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
-    const target = clickTarget(source, kind, at.node, (tag) => ports.template(tag)?.source);
+    const templateOf = (tag: string) => ports.template(tag)?.source;
+    const target = at.template === undefined ? clickTarget(source, kind, at.node, templateOf) : templateClickTarget(source, at.template, kind, at.node, templateOf);
     if (!target.ok) { ports.refuse(target.reason); return; }
     const error = await insert({
       path: at.path, parent: target.parent, index: target.index, kind, wrap: target.wrap, slot: target.slot, where: target.where,

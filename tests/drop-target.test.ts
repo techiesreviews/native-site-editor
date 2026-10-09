@@ -256,3 +256,23 @@ test("beside itself an item stays only in the items slot it fills; another slot 
     assert.equal(dropStays(card, { ok: true, container: more, index }), false);
   }
 });
+
+test("in a template (Edit component mode): a Section is refused everywhere, a nested component refuses inside, items take blocks", () => {
+  // section-work's template: <section> [0] › <div class="cards"> [0,1] › items <slot> [0,1,0] › <card-project> [0,1,0,0].
+  const root = box([0], "section", rect(0, 0, 800, 600), [child(0, rect(40, 40, 720, 40), "slot"), child(1, rect(40, 100, 720, 400), "div", "cards")]);
+  const cards = box([0, 1], "div", rect(40, 100, 720, 400), [child(0, rect(40, 100, 720, 400), "slot")], { cls: "cards" });
+  const items = box([0, 1, 0], "items", rect(40, 100, 720, 400), [child(0, rect(40, 100, 720, 180), "card-project")], { slot: "" });
+  const card = box([0, 1, 0, 0], "component", rect(40, 100, 720, 180), [], { tag: "card-project" });
+  const section: DraggedBlock = { kind: "new", block: "section", template: true };
+  const refused = dropTarget([items, cards, root], { x: 400, y: 400 }, section)!;
+  assert.equal(refused.ok, false);
+  assert.match(refused.reason!, /not inside a component's template/);
+  assert.equal(dropRefusal(section, root), dropRefusal(section, items));
+  // Inside a nested card: refused with the way in; at its edge the drop goes beside it, into the items.
+  const inCard = dropTarget([card, items, cards, root], { x: 400, y: 150 }, { kind: "new", block: "paragraph", template: true })!;
+  assert.equal(inCard.ok, false);
+  assert.equal(inCard.reason, "Card project is its own component: open it to build inside its template.");
+  const below = dropTarget([card, items, cards, root], { x: 400, y: 277 }, { kind: "new", block: "paragraph", template: true })!;
+  assert.deepEqual([below.ok, below.container.path, below.index], [true, [0, 1, 0], 1]);
+  assert.equal(dropLabel(below, paragraph), "Into Section work › items › after Card project");
+});

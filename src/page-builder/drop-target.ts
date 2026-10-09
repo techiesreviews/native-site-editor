@@ -10,13 +10,16 @@
 // <main>. Pure.
 
 import type { DropChild, DropContainer } from "./drop-report";
-import type { NativeElementKind } from "./native-elements";
+import { templateSectionRefusal, type NativeElementKind } from "./native-elements";
 import { componentLabel } from "../native-insert";
 import { nativeKindLabel } from "../native-structure";
 
-/** A new block from the rail, or a page element being moved (`band`: a section or section component). */
+/**
+ * A new block from the rail (`template`: into the template edited in Edit
+ * component mode), or a page element being moved (`band`: a section or section component).
+ */
 export type DraggedBlock =
-  | { kind: "new"; block: NativeElementKind }
+  | { kind: "new"; block: NativeElementKind; template?: boolean }
   | { kind: "move"; path: readonly number[]; band: boolean };
 
 export interface DropTarget {
@@ -31,12 +34,15 @@ export interface DropTarget {
 
 export const DROP_EDGE = 8;
 
-export const isBand = (block: DraggedBlock) => (block.kind === "new" ? block.block === "section" : block.band);
+/** A page band, which snaps between page bands; in a template, a Section is refused like any misplaced block. */
+export const isBand = (block: DraggedBlock) => (block.kind === "new" ? block.block === "section" && !block.template : block.band);
 
 /** Why a container can't take the block, or undefined when it can. */
 export function dropRefusal(block: DraggedBlock, container: DropContainer): string | undefined {
   if (block.kind === "move" && block.path.every((step, at) => container.path[at] === step)) return "A block cannot go inside itself.";
+  if (block.kind === "new" && block.template && block.block === "section") return templateSectionRefusal;
   if (container.kind === "fixed") return "This part is fixed in the component's template: Edit component to change it.";
+  if (container.kind === "component") return `${componentLabel(container.tag)} is its own component: open it to build inside its template.`;
   if (isBand(block)) {
     if (container.kind === "main") return undefined;
     const inside = container.kind === "section" ? "a Section" : container.kind === "div" ? "a Div" : "a component";
@@ -94,7 +100,7 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
   // Otherwise a named slot refuses where it is; a fixed part does too, except
   // at its edges (below), where the drop goes beside it.
   const first = containers[0];
-  if (!sibling && level <= 0 && !isBand(block) && (first.kind === "slot" || first.kind === "fixed" && !nearEdge(p, first.rect))) return at(0);
+  if (!sibling && level <= 0 && !isBand(block) && (first.kind === "slot" || (first.kind === "fixed" || first.kind === "component") && !nearEdge(p, first.rect))) return at(0);
   let i = sibling?.j ?? 0;
   if (!sibling) while (i < containers.length - 1 && nearEdge(p, containers[i].rect)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);
@@ -129,8 +135,9 @@ function siblingUnder(containers: readonly DropContainer[], p: { x: number; y: n
   return undefined;
 }
 
-/** "Paragraph", "Div (stack)", "Button", or a component's name. */
+/** "Paragraph", "Div (stack)", "Button", a component's name, or a template's slot (its name in `cls`). */
 export function dropBlockName(tag: string, cls: string) {
+  if (tag === "slot") return cls ? `“${cls}” slot` : "items";
   const classes = cls.split(/\s+/);
   if (tag === "div") return classes.includes("cards") ? "Div (grid)" : classes.includes("flow") ? "Div (stack)" : "Div";
   if (tag === "a" && classes.includes("btn")) return "Button";

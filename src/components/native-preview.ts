@@ -499,21 +499,22 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let editableTemplatePath: string | undefined;
   let context = "";
   let probeId = 0;
-  let probe: { id: number; context: string; path: string; done: (report?: DropReport) => void } | undefined;
+  // `path`: the file the report measures (the page, or in Edit component mode the template edited); `page`: the page shown.
+  let probe: { id: number; context: string; path: string; page: string; done: (report?: DropReport) => void } | undefined;
   function endProbe(report?: DropReport) {
     const pending = probe;
     probe = undefined;
     pending?.done(report);
   }
   /** Measure nested containers at a frame-viewport point, or all page bands in <main>. */
-  function probeDrop(at: { x: number; y: number }, moving?: number[], bands?: boolean): Promise<DropReport | undefined> {
+  function probeDrop(at: { x: number; y: number }, moving?: number[], bands?: boolean, template?: string): Promise<DropReport | undefined> {
     endProbe();
-    const path = site?.routes[route];
-    if (!path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
+    const page = site?.routes[route], path = template ?? page;
+    if (!page || !path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
       !Number.isFinite(at.x) || !Number.isFinite(at.y)) return Promise.resolve(undefined);
     return new Promise(resolve => {
       const timer = setTimeout(() => endProbe(), 1000);
-      probe = { id: ++probeId, context, path, done: report => { clearTimeout(timer); resolve(report); } };
+      probe = { id: ++probeId, context, path, page, done: report => { clearTimeout(timer); resolve(report); } };
       frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id: probe.id,
         x: at.x, y: at.y, moving, bands }, "*");
     });
@@ -781,7 +782,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data.type === "drop-containers") {
       const raw = data as unknown as { id?: unknown; context?: unknown };
       if (!probe || raw.id !== probe.id) return;
-      const valid = raw.context === probe.context && context === probe.context && site?.routes[route] === probe.path &&
+      const valid = raw.context === probe.context && context === probe.context && site?.routes[route] === probe.page &&
         frameState.active && !viewing && !alone;
       endProbe(valid ? parseDropReport(data, probe.path) : undefined);
       return;
@@ -1149,14 +1150,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * target was measured on, so a page that changed since refuses it.
      */
     blockDrag(block: DraggedBlock, ports: { drop(target: DropTarget, where: string, painted: string | undefined, pointer?: { x: number; y: number }): void; announce(text: string): void; tree?: StructureDrop },
-      create: typeof createBlockDrag) {
+      create: typeof createBlockDrag, template?: string) {
       if (!site || !frameState.active || alone) return undefined;
       let painted: string | undefined;
       return pageBuilder.blockDrag(block, {
+        // `template`: Edit component mode's template, whose parts the frame reports by template paths.
         probe: (at, moving, bands) => {
           // With no update waiting (or the probe is refused), the frame shows the last sources sent.
-          const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site!.routes[route]] : undefined;
-          return probeDrop(at, moving ? [...moving] : undefined, bands).then((report) => { if (report) painted = shown; return report; });
+          const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[template ?? site!.routes[route]] : undefined;
+          return probeDrop(at, moving ? [...moving] : undefined, bands, template).then((report) => { if (report) painted = shown; return report; });
         },
         // A target picked in Page Structure was measured on the bytes its rows were painted from.
         drop: (target, where, pointer, tree) => ports.drop(target, where, tree ? tree.painted : painted, pointer),

@@ -176,10 +176,15 @@ function scopedDescendants(node: SourceNode): SourceNode[] {
   if (node.name === "template" || (node.namespace ?? "html") !== "html") return [node];
   return [node, ...node.children.flatMap(scopedDescendants)];
 }
-const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template"].includes(node.name);
+const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template", "slot"].includes(node.name);
 /** Whether `children` may go in `parent`; `instance`: an instance's items slot, the one opening in its seal. */
 function canContain(parent: SourceNode, children: SourceNode[], instance = false) {
-  if (instance ? !isInstance(parent) : parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
+  // A template's <slot> is transparent: it holds what the element around it may (at the template's top, flow content).
+  if (!instance && parent.name === "slot" && (parent.namespace ?? "html") === "html") {
+    let around = parent.parent;
+    while (around?.name === "slot") around = around.parent;
+    if (around?.name) return canContain(around, children);
+  } else if (instance ? !isInstance(parent) : parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
   const names = children.map((child) => child.name);
   const movingDescendants = (node: SourceNode): SourceNode[] => [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(movingDescendants))];
   const descendants = children.flatMap(movingDescendants);
@@ -406,7 +411,9 @@ export function nativeHeadingLevel(source: string, parentPath: readonly number[]
   return level >= 4 ? 4 : level === 3 ? 3 : 2;
 }
 /** An element of the page as the strict source tree holds it (body paths); components are `opaque`; `slot` is its `slot` attribute. */
-export interface NativeOutline { name: string; className: string; slot: string; opaque: boolean; heading: string; children: NativeOutline[]; parent?: NativeOutline }
+export interface NativeOutline { name: string; className: string; slot: string; opaque: boolean; heading: string; children: NativeOutline[]; parent?: NativeOutline;
+  /** A template's `<slot>`: its `name` ("" the unnamed slot). */
+  slotName?: string }
 /** The page's element tree for rules that read structure, not geometry; undefined when the source is not exact. */
 export function nativeOutline(source: string): NativeOutline | undefined {
   const root = tree(source);
@@ -417,6 +424,7 @@ export function nativeOutline(source: string): NativeOutline | undefined {
     const className = tag ? decodeHtmlEntities(startTagAttribute(open, tag, "class")?.value ?? "", true) : "";
     const heading = node.name === "section" ? node.children.find(child => /^h[1-6]$/.test(child.name)) : undefined;
     const out: NativeOutline = { name: node.name, className, slot: node === root ? "" : slotOf(source, node), opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent };
+    if (node.name === "slot" && (node.namespace ?? "html") === "html" && tag) out.slotName = decodeHtmlEntities(startTagAttribute(open, tag, "name")?.value ?? "", true).trim();
     out.children = node.children.map(child => map(child, out));
     return out;
   };

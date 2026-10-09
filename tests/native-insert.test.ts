@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { componentLabel, insertBesideEdit, insertIntoEmptyEdit, instanceMarkup, isSectionTemplate, slotMarkup } from "../src/native-insert.ts";
+import { componentLabel, insertBesideEdit, insertIntoEmptyEdit, instanceMarkup, isSectionTemplate, itemsMarkup, slotMarkup } from "../src/native-insert.ts";
 import { elementEnd, startTags } from "../src/native-source-location.ts";
 
 test("a component fits between sections only when its template is one section", () => {
@@ -132,4 +132,31 @@ test("a <main> without sections gets a section at its end: after its last child,
   // Text alone stays before the new line; element children mean it is not empty.
   assert.equal(apply("<main>Hi </main>", insertIntoEmptyEdit("<main>Hi </main>", main("<main>Hi </main>"), "<x-a></x-a>")), "<main>Hi\n  <x-a></x-a>\n</main>");
   assert.equal(insertIntoEmptyEdit(heading, main(heading), "<x-a></x-a>"), undefined);
+});
+
+test("a new instance starts with its unnamed slot's placeholder elements (built in Edit component mode); text placeholders stay the template's", () => {
+  const work = `<section class="flow">
+  <slot name="title"><h2>Section title</h2></slot>
+  <div class="cards">
+    <slot>
+      <card-project></card-project>
+      <div class="flow">
+        <p data-key="x">Text</p>
+      </div>
+    </slot>
+  </div>
+</section>
+`;
+  assert.deepEqual(itemsMarkup(work), ["<card-project></card-project>", '<div class="flow">', "  <p>Text</p>", "</div>"]);
+  assert.equal(instanceMarkup("", "section-work", work), `<section-work>
+  <h2 slot="title">Section title</h2>
+  <card-project></card-project>
+  <div class="flow">
+    <p>Text</p>
+  </div>
+</section-work>`);
+  // Empty, or text: nothing of the template's is copied.
+  assert.deepEqual(itemsMarkup(`<article><slot></slot></article>`), []);
+  assert.deepEqual(itemsMarkup(`<a class="site-button" href="/"><slot>Learn more</slot></a>`), []);
+  assert.deepEqual(itemsMarkup(`<section><slot>Intro <p>A</p></slot></section>`), []);
 });

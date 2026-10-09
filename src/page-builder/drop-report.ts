@@ -6,7 +6,8 @@ export type DropAxis = "row" | "column";
 export interface DropChild { index: number; rect: DropRect; tag: string; cls: string }
 export interface DropContainer {
   path: number[];
-  kind: "main" | "section" | "div" | "items" | "slot" | "fixed";
+  /** `component`: a nested instance in a template edited in Edit component mode. */
+  kind: "main" | "section" | "div" | "items" | "slot" | "fixed" | "component";
   tag: string;
   cls: string;
   slot?: string;
@@ -57,7 +58,7 @@ export function parseDropReport(raw: unknown, expectedPath: string): DropReport 
   if (!report || report.path !== expectedPath || !index(report.id) || !finite(report.x) || !finite(report.y) || !Array.isArray(report.containers)) return;
   const containers = report.containers.slice(0, 100).flatMap((raw): DropContainer[] => {
     const c = object(raw), l = object(c?.layout), r = rect(c?.rect);
-    if (!c || !path(c.path) || !r || typeof c.kind !== "string" || !["main", "section", "div", "items", "slot", "fixed"].includes(c.kind) ||
+    if (!c || !path(c.path) || !r || typeof c.kind !== "string" || !["main", "section", "div", "items", "slot", "fixed", "component"].includes(c.kind) ||
       !name(c.tag) || typeof c.cls !== "string" || !index(c.count) || typeof c.empty !== "boolean" || !Array.isArray(c.children) ||
       !l || typeof l.display !== "string" || !index(l.cols) || typeof l.dir !== "string" || typeof l.wrap !== "string" ||
       ((c.kind === "items" || c.kind === "slot") && !name(c.slot))) return [];

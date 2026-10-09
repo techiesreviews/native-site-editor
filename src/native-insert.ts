@@ -11,6 +11,7 @@
 // changes this page alone and the shared template stays as it is.
 
 import { VOID_ELEMENTS, isSectionTemplate, locateNativeElementRange, startTags, type ElementRange, type StartTag } from "./native-source-location";
+import { templateSlots } from "./page-builder/component-model";
 
 export { isSectionTemplate };
 
@@ -57,6 +58,26 @@ export function slotMarkup(template: string) {
   return out;
 }
 
+/**
+ * A new instance's starting items: the template's unnamed slot's
+ * placeholder when it is elements only (blocks and cards built into it in
+ * Edit component mode), as written, one line per source line, its
+ * indentation relative to the first. A section component hides a slot the
+ * page leaves unfilled, so they are the page's own from the start. A text
+ * placeholder (a button's label) stays the template's.
+ */
+export function itemsMarkup(template: string): string[] {
+  const slot = templateSlots(template).find((entry) => entry.name === "");
+  const kids = slot?.element.children ?? [];
+  const elements = kids.filter((kid) => kid.type === "element");
+  const text = (kid: (typeof kids)[number]) => template.slice(kid.start, kid.end).replace(COMMENTS, "");
+  if (!elements.length || kids.some((kid) => kid.type === "text" && /\S/.test(text(kid)))) return [];
+  const start = elements[0].start, end = elements[elements.length - 1].end;
+  const lead = template.slice(template.lastIndexOf("\n", start - 1) + 1, start);
+  const indent = /^[ \t]*$/.test(lead) ? lead : "";
+  return withoutDataKeys(template.slice(start, end)).split(/\r?\n/).map((line, at) => (at && line.startsWith(indent) ? line.slice(indent.length) : line));
+}
+
 /** `html` without the `data-key` attributes an older template may still carry. */
 function withoutDataKeys(html: string) {
   return html.replace(/<[a-zA-Z][^>]*>/g, (tag) => tag.replace(/\sdata-key(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?(?=[\s/>])/gi, ""));
@@ -96,11 +117,11 @@ export function insertBesideEdit(source: string, anchor: { start: number; end: n
     : { start: anchor.end, end: anchor.end, text: `${newline}${indent}${text}` };
 }
 
-/** The markup for a new `<tag>` in `source`, with its own copy of the template's text slots. */
+/** The markup for a new `<tag>` in `source`, with its own copy of the template's text slots and starting items. */
 export function instanceMarkup(source: string, tag: string, template: string) {
   const open = `<${tag}>`;
-  const slots = slotMarkup(template);
-  return slots.length ? [open, ...slots.map((line) => `  ${line}`), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
+  const slots = [...slotMarkup(template), ...itemsMarkup(template)];
+  return slots.length ? [open, ...slots.map((line) => (line ? `  ${line}` : line)), `</${tag}>`].join(lineEnding(source)) : `${open}</${tag}>`;
 }
 
 /**
