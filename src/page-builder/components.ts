@@ -802,8 +802,8 @@ export function createComponentTools(deps: ComponentDeps) {
     // Let every listener refuse a cancelable rename before the operation starts.
     void Promise.resolve().then(async () => {
       if (event.defaultPrevented || !current()) return;
-      // Every file the plan read for instances is proven, the unchanged ones too (one that gained a fill meanwhile refuses).
-      const read = Object.entries(files).filter(([, text]) => tag && text.toLowerCase().includes(`<${tag}`));
+      // Every file the plan read is proven, the unchanged ones too (one that gained an instance or a fill meanwhile refuses).
+      const read = Object.entries(files).filter(([, text]) => text);
       const error = await deps.operation!({ expectedSources: new Map([[report.template, source], ...read]),
         edits: new Map([[report.template, plan.source], ...pages]), done, undone, current,
         selection: { before: { path: report.template, node: [...report.node] }, after: { path: report.template, node: plan.select } } });

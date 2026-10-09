@@ -3859,6 +3859,9 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     nativePaneMountAdopters.add(adoptPane);
     const dispose = () => { nativePaneMountAdopters.delete(adoptPane); receipt.dispose(); };
     const transition = (direction: "undo" | "redo") => {
+      // A file mounted since over this step's bytes is adopted now too: of several steps over a
+      // page opened later (slot changes, then Done), only the latest matched it as it mounted.
+      for (const path of edits.keys()) if (editor.isMounted(path)) adoptPane(path);
       const select = direction === "undo" ? op.selection?.before : op.selection?.after;
       if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
       if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); refuse(receipt.error() ?? changedOperation, { history: direction }); return false; }

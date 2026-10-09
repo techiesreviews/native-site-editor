@@ -116,35 +116,40 @@ test("slot changes rewrite the template and both pages as one undo step", { tag:
   await work.getByText(LEDE, { exact: true }).click();
   await chip(page).click();
   const copy = `<p slot="text" class="lede">${LEDE}</p>`;
-  await expect.poll(files).toEqual([workTemplate.replace(`<p class="lede">${LEDE}</p>`, `<slot name="text"><p class="lede">${LEDE}</p></slot>`),
+  const slotted = [workTemplate.replace(`<p class="lede">${LEDE}</p>`, `<slot name="text"><p class="lede">${LEDE}</p></slot>`),
     home.replace(`<h2 slot="title">Recent work</h2>\n`, `<h2 slot="title">Recent work</h2>\n      ${copy}\n`),
-    about.replace(`<h2 slot="title">How we work</h2>\n`, `<h2 slot="title">How we work</h2>\n      ${copy}\n`)]);
-  await undo();
-  await expect.poll(files).toEqual([workTemplate, home, about]);
+    about.replace(`<h2 slot="title">How we work</h2>\n`, `<h2 slot="title">How we work</h2>\n      ${copy}\n`)];
+  await expect.poll(files).toEqual(slotted);
 
-  // Made fixed again, then Done: Home shows the template's heading; one Undo on the page brings both pages back.
+  // Then the title made fixed: two steps over both pages, then Done. Home shows the template's heading.
   await work.getByText("Section title", { exact: true }).click();
   await chip(page).click();
-  await expect.poll(files).toEqual(fixedFiles);
+  const both = [slotted[0].replace('<slot name="title"><h2>Section title</h2></slot>', "<h2>Section title</h2>"),
+    slotted[1].replace(`      <h2 slot="title">Recent work</h2>\n`, ""), slotted[2].replace(`      <h2 slot="title">How we work</h2>\n`, "")];
+  await expect.poll(files).toEqual(both);
   await page.getByRole("button", { name: "Done editing component" }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Section title");
   if (shots) await page.screenshot({ path: `${shots}/3-home-after-done.png` });
-  // A page edit after Done, then two Undos and two Redos: each step finds the page as it left it.
+  // A page edit after Done, then three Undos and three Redos on the page: each step finds the pages as it left them.
   const redo = () => page.getByRole("button", { name: "Redo", exact: true }).click();
   await frame(page).locator("card-project h3", { hasText: "Fern & Kettle" }).click();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Fern and Kettle");
   await page.keyboard.press("Enter");
-  const edited = [fixedFiles[0], fixedFiles[1].replace("Fern &amp; Kettle</h3>", "Fern and Kettle</h3>"), fixedFiles[2]];
+  const edited = [both[0], both[1].replace("Fern &amp; Kettle</h3>", "Fern and Kettle</h3>"), both[2]];
   await expect.poll(files).toEqual(edited);
   await undo();
-  await expect.poll(files).toEqual(fixedFiles);
+  await expect.poll(files).toEqual(both);
+  await undo();
+  await expect.poll(files).toEqual(slotted);
+  await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Recent work");
   await undo();
   await expect.poll(files).toEqual([workTemplate, home, about]);
-  await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Recent work");
   await redo();
-  await expect.poll(files).toEqual(fixedFiles);
+  await expect.poll(files).toEqual(slotted);
+  await redo();
+  await expect.poll(files).toEqual(both);
   await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Section title");
   await redo();
   await expect.poll(files).toEqual(edited);
@@ -152,6 +157,7 @@ test("slot changes rewrite the template and both pages as one undo step", { tag:
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${ABOUT}`);
   await expect(frame(page).locator("section-work h2:visible")).toHaveText("Section title", { timeout: 30_000 });
   await expect(frame(page).getByText("One project at a time.")).toBeVisible();
+  await expect(frame(page).locator(`section-work > [slot="text"]`)).toHaveText(LEDE);
   if (shots) {
     await frame(page).locator("section-work").scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${shots}/4-about-after.png` });
