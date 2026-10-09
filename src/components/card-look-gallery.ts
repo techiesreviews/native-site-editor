@@ -31,9 +31,9 @@ export interface CardLookGalleryOptions {
 }
 
 // A thumbnail's height over its width.
-const ASPECT = 0.78;
+const ASPECT = 0.6;
 // Room around the card in a thumbnail, in canvas pixels (the page's own padding is inside it).
-const MARGIN = 72;
+const MARGIN = 48;
 
 /** The site's stylesheets the page on show links, imports expanded. */
 function pageSheets(inputs: ThumbnailInputs) {
