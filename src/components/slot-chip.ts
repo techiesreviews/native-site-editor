@@ -57,15 +57,18 @@ export function slotChip(chip: SlotChipState, actions: SlotChipActions) {
   if (chip.state === "items") out.append(Object.assign(document.createElement("span"), { className: "slot-chip__count", textContent: ` ×${chip.count}` }));
   const on = chip.state !== "fixed";
   out.setAttribute("aria-pressed", String(on));
-  const label = chip.state === "items"
-    ? `Items slot${chip.name ? ` “${chip.name}”` : ""}, ${plural(chip.count, "item")}`
-    : `Slot “${chip.name}”`;
-  out.setAttribute("aria-label", label);
   const renames = Boolean(actions.onRename) && on;
-  const rename = renames ? " Double-click or F2 to rename it." : "";
-  out.title = chip.state === "fixed"
-    ? `Fixed: the same on every page. Click to make it the slot “${chip.name}” each page can change.`
-    : `${chip.state === "items" ? "Items slot: each page puts its own items here" : `Slot “${chip.name}”: each page can change it`}. Click to keep it fixed.${rename}`;
+  // What the chip says of itself, again once it is renamed.
+  const describe = (slotName: string) => {
+    out.setAttribute("aria-label", chip.state === "items"
+      ? `Items slot${slotName ? ` “${slotName}”` : ""}, ${plural(chip.count, "item")}`
+      : `Slot “${slotName}”`);
+    const rename = renames ? " Double-click or F2 to rename it." : "";
+    out.title = chip.state === "fixed"
+      ? `Fixed: the same on every page. Click to make it the slot “${slotName}” each page can change.`
+      : `${chip.state === "items" ? "Items slot: each page puts its own items here" : `Slot “${slotName}”: each page can change it`}. Click to keep it fixed.${rename}`;
+  };
+  describe(chip.name);
   if (actions.group && renames) out.dataset.slotChipGroup = actions.group;
 
   // ---- Renaming in place. ----
@@ -75,8 +78,9 @@ export function slotChip(chip: SlotChipState, actions: SlotChipActions) {
     if (!renames || renaming) return;
     renaming = { before: name.textContent ?? "", mirrors: groupNames(out) };
     out.classList.add("slot-chip--renaming");
-    name.contentEditable = "plaintext-only";
-    // A browser without plain-text editing takes rich text; each input is made plain again.
+    // A browser without plain-text editing (it refuses the value) takes rich
+    // text; each input is made plain again.
+    try { name.contentEditable = "plaintext-only"; } catch { /* below */ }
     if (name.contentEditable !== "plaintext-only") name.contentEditable = "true";
     name.spellcheck = false;
     name.setAttribute("role", "textbox");
@@ -103,18 +107,21 @@ export function slotChip(chip: SlotChipState, actions: SlotChipActions) {
     const next = commit ? committedSlotName(was.before, name.textContent ?? "") : undefined;
     const text = next !== undefined && actions.onRename?.(next) !== false ? next : was.before;
     name.textContent = text;
+    if (text !== was.before) describe(text);
     was.mirrors.forEach((other) => { if (other.isConnected) other.textContent = text; });
     if (focused) out.focus();
   }
-  name.addEventListener("input", (event) => {
-    if (!renaming || (event as InputEvent).isComposing) return;
+  const typed = () => {
+    // Rich text pasted (without plain-text editing) becomes its text.
+    if (name.childElementCount) name.textContent = name.textContent;
     normaliseField(name);
     mirror(name.textContent ?? "");
+  };
+  name.addEventListener("input", (event) => {
+    if (renaming && !(event as InputEvent).isComposing) typed();
   });
   name.addEventListener("compositionend", () => {
-    if (!renaming) return;
-    normaliseField(name);
-    mirror(name.textContent ?? "");
+    if (renaming) typed();
   });
   name.addEventListener("beforeinput", (event) => {
     if (renaming && (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak")) event.preventDefault();
@@ -143,6 +150,8 @@ export function slotChip(chip: SlotChipState, actions: SlotChipActions) {
     if (renaming) {
       // The name's own keys: nothing reaches the edit bar or the editor's shortcuts.
       event.stopPropagation();
+      // Enter or Esc that confirms or drops an input method's text is its own.
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === "Enter" || event.key === "Escape") {
         event.preventDefault();
         endRename(event.key === "Enter");

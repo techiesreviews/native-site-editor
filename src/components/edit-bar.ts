@@ -943,9 +943,14 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const active = document.activeElement;
     const selection = document.getSelection();
     if (!(active instanceof HTMLElement) || !active.isContentEditable || !element.contains(active) || !selection?.rangeCount) return undefined;
-    const range = selection.getRangeAt(0).cloneRange();
+    // The ends as nodes and offsets: a live range would follow its nodes out of the old label.
+    const { startContainer, startOffset, endContainer, endOffset } = selection.getRangeAt(0);
     return () => {
       active.focus();
+      if (!active.contains(startContainer) || !active.contains(endContainer)) return;
+      const range = document.createRange();
+      range.setStart(startContainer, startOffset);
+      range.setEnd(endContainer, endOffset);
       selection.removeAllRanges();
       selection.addRange(range);
     };

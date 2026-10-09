@@ -206,6 +206,7 @@ test("a double-click renames a slot in its chip: valid as typed, Enter or leavin
   expect((await reports())[0]).toMatchObject({ action: "rename", template: TEMPLATE, node: [0, 0, 0], name: "lead-text", chip: { state: "slot", name: "title" } });
   await expect(chip(page)).toHaveText("lead-text");
   await expect(badge).toHaveText("lead-text");
+  await expect(chip(page)).toHaveAttribute("aria-label", "Slot “lead-text”");
   await expect(name()).not.toHaveAttribute("contenteditable");
   if (shots) await page.screenshot({ path: `${shots}/rename-committed.png` });
   await settle();
@@ -219,6 +220,12 @@ test("a double-click renames a slot in its chip: valid as typed, Enter or leavin
   await expect(chip(page)).toHaveText("lead-text");
   await expect(badge).toHaveText("lead-text");
   await badge.evaluate((el) => el.remove());
+  // From the keyboard: F2 renames the focused chip.
+  await expect(chip(page)).toBeFocused();
+  await page.keyboard.press("F2");
+  await expect(name()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(chip(page)).toBeFocused();
 
   // Leaving commits: the items slot renamed, then a click on the page.
   await work.locator("h3:visible", { hasText: "Untitled project" }).click();
