@@ -1,7 +1,7 @@
 ---
 title: "Make native-site-settings.spec.ts:216 deterministic"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -26,4 +26,7 @@ From the suite fix (branch build/cb-fix-suite-1): `tests/native-save/native-site
 
 - `native-site-settings.spec.ts:216`: product. Background indexing filled `about/index.html` after first paint; the edit bar's render key held every source, so `editBar.show` rebuilt the controls and restored focus onto a new Heading level combobox. The key now covers only the selected file, the shown page, templates and styles (`src/components/edit-bar-sources.ts`, 5 unit tests). 20/20.
 - `native-card-paths-starter.spec.ts:143`: test. The same late indexing rebuilds Page Structure and moves the focused Title field into a new row; `evaluateAll` had captured the old, emptied row. The audit now queries and measures in one `page.evaluate`, polled until the expected field is focused; two fixed sleeps became observable waits. 80/80 (20 per variant).
-- Commits: "Keep the edit bar when another page's source is indexed" and "Make the starter fields audit wait for the rebuilt Structure row". native-cards, component-structure-host, shadow-scroll and component-edit-overlay still to do.
+- `native-component-edit-overlay.spec.ts:16`: product. Lazy variant-field loading refreshed the edit bar from the selection's stored rect, taken before the smooth reveal, so the bar jumped back under the pointer and hover dropped. Accepted selection-rect reports now update the stored selection (3 unit tests); the spec reads both bounds in one evaluate. 20/20.
+- `native-cards.spec.ts:73` and `:215` (the popover failures): product. A pointer-leave grid report queued before the frame tracked the new opening closed the focused Add card form. Each opening sends a tracking id; only a report carrying it can close the form. New regression spec; 60/60. The Undo-wait failure did not recur in 40 full-file runs under load and is left alone.
+- `native-component-structure-host.spec.ts:101` and `native-shadow-scroll.spec.ts:45`: product. The deferred component-mode entry reselected the root after the user selected a part of the same instance, ending text editing. Any part selected in the framed instance is kept (4 unit tests, a held-module regression spec). 40/40 and 80/80.
+- Commits: Keep the edit bar when another page's source is indexed; Make the starter fields audit wait for the rebuilt Structure row; Keep the stored selection rect current after a reveal scroll; Close the card popover only on its own grid tracking reply; Keep a part selected while component edit mode loads. `native-structure-compact.spec.ts:303` was dropped from this slice (fixed on build/cb-fix-nightly-ci-a).
