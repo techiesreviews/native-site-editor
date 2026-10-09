@@ -14,7 +14,7 @@
 import { refuse as showRefusal } from "../components/refusal-note";
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
-import type { CardLinkPages, CardPageRequest, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
+import type { CardFilled, CardLinkPages, CardPageRequest, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
 import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, type NativeSite } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
@@ -22,7 +22,8 @@ import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { pageTitle } from "./card-fill";
+import { cardFill, cardFillMarkup, pageTitle } from "./card-fill";
+import { locateNativeElementRange } from "../native-source-location";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
 import { nativeLinkTarget } from "../../shared/native-routes";
@@ -323,6 +324,35 @@ export function createCards(deps: CardsDeps) {
     };
   }
 
+  /** The card's markup now; undefined once it is gone (undone, removed). */
+  function cardText(card: NewCard): string | undefined {
+    const source = deps.source(card.path);
+    const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+    return range && source!.slice(range.start, range.end);
+  }
+
+  // Fills the card from the page at `route` (card-fill.ts), one undo step,
+  // keeping it selected: from `base`, the card as it was before an earlier
+  // fill (Change page), else from the card as it is (ticket 09 §4–5).
+  function fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined {
+    const site = deps.site();
+    const source = deps.source(card.path);
+    const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+    const file = site?.routes[route];
+    const page = file === undefined ? undefined : deps.source(file);
+    const tag = range && source!.slice(range.start + 1).match(/^[^\s/>]+/)?.[0].toLowerCase();
+    const text = tag ? template(tag) : undefined;
+    if (!range || page === undefined || text === undefined) { refuse("That card or page is not there any more."); return undefined; }
+    const before = source!.slice(range.start, range.end);
+    const from = base ?? before;
+    const { rows } = cardFill({ template: text, page: { route, source: page }, siteUrl: deps.siteUrl() });
+    const filled = cardFillMarkup(from, text, rows);
+    const title = pageTitle(page, route).title;
+    const edit = { start: range.start, end: range.end, text: filled };
+    if (filled !== before && !deps.change(card.path, source!, [edit], card.node, `${capital(itemNoun(tag!))} filled from ${title}`)) return undefined;
+    return { rows, title, route, base: from, filled };
+  }
+
   // Creates a page under the grid's URL and its card after the last one, as
   // one undo step of the page with the grid: the card is an edit in its
   // editor, and the new page's draft goes and comes back with it.
@@ -482,6 +512,8 @@ export function createCards(deps: CardsDeps) {
     addCard: (report: ItemGridReport) => addCard(report.path, report.parent, report.slot),
     addPage: (report: ItemGridReport, request: CardPageRequest) => addPage(report.path, report.parent, request),
     linkPages,
+    fillCard,
+    cardText,
     move,
     controls,
 

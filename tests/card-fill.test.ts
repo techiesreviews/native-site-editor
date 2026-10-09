@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFill } from "../src/page-builder/card-fill.ts";
+import { cardFill, cardFillMarkup } from "../src/page-builder/card-fill.ts";
 
 const template = `<article>
   <card-note><slot name="note" slot="text"><p>Project</p></slot></card-note>
@@ -166,4 +166,78 @@ test("an empty component match falls through to the class match, then the fallba
   const bare = fill(`<main><card-note><p slot="text"> </p></card-note></main>`, card).find(row => row.slot === "note");
   assert.equal(bare?.from, "kept");
   assert.equal(bare?.text, "Fallback");
+});
+
+// Writing the fill (slice 53): the card's markup as Add card left it, filled from the rows.
+const fresh = [
+  "<card-project>",
+  '        <p slot="note">Project</p>',
+  '        <h3 slot="title">Untitled project</h3>',
+  '        <p slot="body" class="body">No description yet.</p>',
+  "      </card-project>",
+].join("\n");
+const write = (card: string, html = source, tpl = template, siteUrl?: string) => cardFillMarkup(card, tpl, fill(html, tpl, siteUrl));
+
+test("a fresh starter card takes the page's note, title and description, and gets its link in template order", () => {
+  assert.equal(write(fresh), [
+    "<card-project>",
+    '        <p slot="note">Cafe · Identity and site · 2025</p>',
+    '        <h3 slot="title">Fern &amp; Kettle</h3>',
+    `        <p slot="body" class="body">${description}</p>`,
+    '        <a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>',
+    "      </card-project>",
+  ].join("\n"));
+  // Kept slots stay as written: no description keeps the card's own body.
+  assert.match(write(fresh, source.replace(/<meta name="description"[^>]+>/, "")), /<p slot="body" class="body">No description yet\.<\/p>/);
+});
+
+test("an existing link, image and nested text element are filled in place; srcset goes with the old image", () => {
+  const card = `<slot name="image"><img src="/placeholder.svg" alt=""></slot>${template}`;
+  const markup = [
+    "<card-project>",
+    '  <img slot="image" src="/old.png" srcset="/old-2x.png 2x" sizes="50vw" alt="A photo">',
+    '  <div slot="title"><h3>Old</h3></div>',
+    '  <p slot="link"><a class="btn" href="/old/">Old link</a></p>',
+    "</card-project>",
+  ].join("\n");
+  // The note goes before the next slot's element in template order (the title), the body before the link.
+  assert.equal(write(markup, source, card, "https://example.test"), [
+    "<card-project>",
+    '  <img slot="image" src="/images/social-card.png" alt="A photo">',
+    '  <p slot="note">Cafe · Identity and site · 2025</p>',
+    '  <div slot="title"><h3>Fern &amp; Kettle</h3></div>',
+    `  <p slot="body" class="body">${description}</p>`,
+    '  <p slot="link"><a class="btn" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a></p>',
+    "</card-project>",
+  ].join("\n"));
+});
+
+test("a card without a link slot gets its title wrapped in a link to the page, no class", () => {
+  const card = `<article><slot name="title"><h3>Title</h3></slot><slot name="body"><p>Body</p></slot></article>`;
+  const markup = '<card-plain>\n  <h3 slot="title">Title</h3>\n  <p slot="body">Body</p>\n</card-plain>';
+  assert.equal(write(markup, source, card), `<card-plain>\n  <h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>\n  <p slot="body">${description}</p>\n</card-plain>`);
+  // A title that already holds a link has that link pointed at the page.
+  const linked = '<card-plain><h3 slot="title"><a href="#">Title</a></h3></card-plain>';
+  assert.equal(write(linked, source, card), `<card-plain><h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3><p slot="body">${description}</p></card-plain>`);
+});
+
+test("an empty card gets its slots' elements before its end tag, from the fallbacks' shapes", () => {
+  assert.equal(write("<card-project>\n</card-project>"), [
+    "<card-project>",
+    '  <p slot="note">Cafe · Identity and site · 2025</p>',
+    '  <h3 slot="title">Fern &amp; Kettle</h3>',
+    `  <p slot="body" class="body">${description}</p>`,
+    '  <a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a>',
+    "</card-project>",
+  ].join("\n"));
+  assert.equal(write("<card-project></card-project>", source.replace(/<card-note>.*<\/card-note>/, "")),
+    `<card-project><h3 slot="title">Fern &amp; Kettle</h3><p slot="body" class="body">${description}</p><a slot="link" href="/work/fern-and-kettle/">Read about Fern &amp; Kettle</a></card-project>`);
+});
+
+test("text with markup characters is escaped, and the unnamed slot's content stays", () => {
+  const page = source.replace("<h1>Fern &amp; Kettle</h1>", "<h1>A &lt;b&gt; &quot;tag&quot;</h1>");
+  const card = fresh.replace("      </card-project>", "        <p>My own words</p>\n      </card-project>");
+  const out = write(card, page);
+  assert.match(out, /<h3 slot="title">A &lt;b&gt; "tag"<\/h3>/);
+  assert.match(out, /<p>My own words<\/p>/);
 });

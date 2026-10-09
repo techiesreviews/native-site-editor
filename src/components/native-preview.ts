@@ -1245,6 +1245,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       }
       schedule();
       pageBuilder.sourcesChanged();
+      cardGrids?.sourcesChanged();
     },
     /** Select an element of the rendered page now, as a click would, and bring it into the middle of the frame. */
     selectNode(request: NativeNodeRequest) {

@@ -4,7 +4,9 @@ import type { Checked } from "../native-create";
 import { cardPrefixRequest } from "../page-builder/cards";
 import { aOr } from "../page-builder/card-grid";
 import type { SitePage } from "../page-builder/page-choices";
+import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardLinkPicker } from "./card-link-picker";
+import type { CardFillStrip } from "./card-fill-strip";
 import "./card-grid-controls.css";
 
 // "Add card" over the native preview: a dashed ghost where one more item of
@@ -16,7 +18,9 @@ import "./card-grid-controls.css";
 // and card" (Enter) and "Card only"; for any other grid it adds the card at
 // once. The preview runtime reports the grids (`item-grids`); the editor
 // says what each is and does the adding. A fresh card of an instance's card
-// slot gets "Link to a page…" at its foot (card-link-picker.ts, loaded then).
+// slot gets "Link to a page…" at its foot (card-link-picker.ts, loaded then);
+// picking a page fills the card and swaps the combobox for an information
+// strip of where each slot's content came from (card-fill-strip.ts).
 
 export interface FrameBox {
   top: number;
@@ -89,6 +93,16 @@ export interface CardLinkPages {
   inGrid: string[];
 }
 
+/** A card filled from a page: the rows of where its slots' content came from, the card before and after the fill. */
+export interface CardFilled {
+  rows: CardFillRow[];
+  title: string;
+  route: string;
+  /** The card as it was before the first fill, which Change page fills again. */
+  base: string;
+  filled: string;
+}
+
 export interface CardGridHandlers {
   describe(grid: ItemGridReport): GridDescription | undefined;
   /** The URL the new page gets, or why it cannot be made. */
@@ -96,6 +110,10 @@ export interface CardGridHandlers {
   /** Adds a card after the last one; resolves to it when a page can be linked to it (a card slot's fresh card). */
   addCard(grid: ItemGridReport): Promise<NewCard | undefined>;
   linkPages(card: NewCard): CardLinkPages | undefined;
+  /** Fills the card from the page at `route`, from `base` when given (one undo step); undefined when it could not. */
+  fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined;
+  /** The card's markup now; undefined once it is gone. */
+  cardText(card: NewCard): string | undefined;
   /** Creates the page and its card; resolves to an error to show, or nothing. */
   addPage(grid: ItemGridReport, request: CardPageRequest): Promise<string | undefined>;
 }
@@ -223,31 +241,67 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     openPopover(grid, about);
   }
 
-  // "Link to a page…" on the card just added, while it stays selected.
-  let linker: { card: NewCard; picker?: CardLinkPicker; seen: boolean; scrolled?: boolean } | undefined;
+  // "Link to a page…" on the card just added, while it stays selected; after
+  // a page is picked, the strip of where its content came from instead.
+  let linker: { card: NewCard; picker?: CardLinkPicker; strip?: CardFillStrip; filled?: CardFilled; filling?: boolean; seen: boolean; scrolled?: boolean } | undefined;
 
   function addCard(grid: ItemGridReport) {
     closeLinker();
     void handlers.addCard(grid).then((card) => {
-      const pages = card && handlers.linkPages(card);
-      if (!card || !pages) return;
+      if (!card || !handlers.linkPages(card)) return;
       closeLinker();
       const entry: NonNullable<typeof linker> = { card, seen: false };
       linker = entry;
-      import("./card-link-picker").then(({ createCardLinkPicker }) => {
-        if (linker !== entry) return;
-        entry.picker = createCardLinkPicker(pane, {
-          pages,
-          // Filling the card from the page comes with slice 53.
-          onPick: () => closeLinker(),
-          onEscape: () => {
-            closeLinker();
-            if (!ghost.hidden) add.focus();
-          },
-        });
-        placeLinker();
-      }).catch(() => { if (linker === entry) linker = undefined; });
+      openPicker(entry);
     });
+  }
+
+  function openPicker(entry: NonNullable<typeof linker>) {
+    const pages = handlers.linkPages(entry.card);
+    if (!pages) { closeLinker(); return; }
+    import("./card-link-picker").then(({ createCardLinkPicker }) => {
+      if (linker !== entry) return;
+      entry.strip?.destroy();
+      entry.strip = undefined;
+      entry.picker = createCardLinkPicker(pane, {
+        pages,
+        onPick: (page) => fill(entry, page.route),
+        onEscape: () => {
+          // From Change page, Esc goes back to the strip; on a blank card it closes.
+          if (entry.filled) { showStrip(entry, entry.filled); return; }
+          closeLinker();
+          if (!ghost.hidden) add.focus();
+        },
+      });
+      placeLinker();
+    }).catch(() => { if (linker === entry) linker = undefined; });
+  }
+
+  function fill(entry: NonNullable<typeof linker>, route: string) {
+    // Its own edit is not a change to the card that drops the strip (sourcesChanged).
+    entry.filling = true;
+    const filled = handlers.fillCard(entry.card, route, entry.filled?.base);
+    entry.filling = false;
+    if (!filled || linker !== entry) return;
+    entry.filled = filled;
+    // The page shows the filled card after its next report: until then the selection may not name it.
+    entry.seen = false;
+    showStrip(entry, filled);
+  }
+
+  function showStrip(entry: NonNullable<typeof linker>, filled: CardFilled) {
+    import("./card-fill-strip").then(({ createCardFillStrip }) => {
+      if (linker !== entry || entry.filled !== filled) return;
+      entry.picker?.destroy();
+      entry.picker = undefined;
+      entry.strip?.destroy();
+      entry.strip = createCardFillStrip(pane, {
+        filled,
+        onChange: () => openPicker(entry),
+        onClose: () => closeLinker(),
+      });
+      placeLinker();
+    }).catch(() => { if (linker === entry) closeLinker(); });
   }
 
   // Hung from the card while the selection is the card (the runtime reports
@@ -263,6 +317,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     linker.seen ||= Boolean(mine);
     const { frameRect, left, top } = geometry();
     const view = { left, top, width: frameRect.width, height: frameRect.height };
+    if (linker.strip) {
+      linker.strip.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view);
+      return;
+    }
     const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, !linker.scrolled) ?? 0;
     // Once, when it does not fit below the card: the page scrolls up to make room (its report places it again).
     if (dy > 0 && frame instanceof HTMLIFrameElement) {
@@ -276,6 +334,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function closeLinker() {
     linker?.picker?.destroy();
+    linker?.strip?.destroy();
     linker = undefined;
   }
 
@@ -578,6 +637,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
         scheduleLeave();
       }
       layout();
+    },
+    /** The page's text changed: a filled card that is not as it was filled (undone, edited) drops its strip. */
+    sourcesChanged() {
+      if (linker?.filled && !linker.filling && handlers.cardText(linker.card) !== linker.filled.filled) closeLinker();
     },
     /** The grid around the selection, as last reported. */
     selected() {

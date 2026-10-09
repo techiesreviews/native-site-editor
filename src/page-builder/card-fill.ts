@@ -1,6 +1,7 @@
 // A card's fill plan, read from source without a DOM. Writing it is a
 // separate operation: these rows also supply the fill strip's provenance.
-import { descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
+import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
+import { slotMarkup } from "../native-insert";
 
 export type CardFillRole = "title" | "body" | "image" | "link" | "other";
 export type CardFillFrom = "h1" | "<title>" | "address" | "meta description" | "og:image" | "matched" | "kept" | "not used";
@@ -132,4 +133,121 @@ export function cardFill(input: { template: string; page: { route: string; sourc
   if (description && !bodySlot) rows.push({ label: "Body", role: "body", from: "not used", status: "not-used", text: description });
   if (image && !imageSlot) rows.push({ label: "Image", role: "image", from: "not used", status: "not-used", src: image });
   return { rows };
+}
+
+interface RangeEdit {
+  start: number;
+  end: number;
+  text: string;
+}
+
+const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+const elementsOf = (element: SourceElement) => element.children.filter((node): node is SourceElement => node.type === "element");
+const blankText = (source: string, element: SourceElement) =>
+  element.children.every((node) => node.type === "element" || !/[^\t\n\f\r ]/.test(source.slice(node.start, node.end)));
+
+/** Non-overlapping edits; insertions at one place land in the order given. */
+function applyEdits(source: string, edits: RangeEdit[]) {
+  let text = source;
+  const order = edits.map((edit, at) => ({ edit, at })).sort((a, b) => b.edit.start - a.edit.start || b.at - a.at);
+  for (const { edit } of order) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
+  return text;
+}
+
+/** The white space before `at` on its line, when nothing else is. */
+function leadOf(source: string, at: number): string | undefined {
+  const lead = source.slice(source.lastIndexOf("\n", at - 1) + 1, at);
+  return /^[\t ]*$/.test(lead) ? lead : undefined;
+}
+
+/**
+ * The edits that fill `element` (a slot's element in a card) from `row`:
+ * an image's address (its `srcset` and `sizes` dropped, so the new one shows),
+ * a link's address and text, else the text of its innermost element, as a
+ * link to `link` when the title takes the card's link (decision 3).
+ */
+function fillElementEdits(source: string, element: SourceElement, row: CardFillRow, link?: string): RangeEdit[] {
+  const inside = (name: string) => (element.name === name ? element : [...descendants(element.children)].find((child) => child.name === name));
+  const textOf = (target: SourceElement, text: string): RangeEdit[] => target.close ? [{ start: target.tag.end, end: target.close.start, text: escapeText(text) }] : [];
+  const linkOf = (anchor: SourceElement, href: string, text: string) => [attributeEdit(source, anchor.tag, "href", href), ...textOf(anchor, text)];
+  if (row.role === "image") {
+    const img = inside("img");
+    return img && row.src !== undefined ? [attributeEdit(source, img.tag, "src", row.src), attributeEdit(source, img.tag, "srcset", undefined), attributeEdit(source, img.tag, "sizes", undefined)] : [];
+  }
+  if (row.role === "link") {
+    const anchor = inside("a");
+    if (anchor) return linkOf(anchor, row.href ?? "", row.text ?? "");
+    return element.close ? [{ start: element.tag.end, end: element.close.start, text: `<a href="${escapeAttribute(row.href ?? "")}">${escapeText(row.text ?? "")}</a>` }] : [];
+  }
+  // The text goes in the innermost element that holds the rest (`<div slot><p>…</p></div>`).
+  let target = element;
+  for (let only = elementsOf(target); only.length === 1 && blankText(source, target) && only[0].name !== "a"; only = elementsOf(target)) target = only[0];
+  if (link === undefined) return textOf(target, row.text ?? "");
+  const anchor = inside("a");
+  if (anchor) return linkOf(anchor, link, row.text ?? "");
+  return target.close ? [{ start: target.tag.end, end: target.close.start, text: `<a href="${escapeAttribute(link)}">${escapeText(row.text ?? "")}</a>` }] : [];
+}
+
+/** A new element for a slot the card has none for: its fallback's shape (as Add card copies it), else a plain one. */
+function newSlotElement(template: string, row: CardFillRow, link?: string): string {
+  const name = row.slot ?? "";
+  const copy = slotMarkup(template).find((line) => {
+    const [first] = parseSource(line);
+    return first?.type === "element" && attribute(line, first, "slot") === name;
+  });
+  if (copy) {
+    const [first] = parseSource(copy) as SourceElement[];
+    return applyEdits(copy, fillElementEdits(copy, first, row, link));
+  }
+  const slot = `slot="${escapeAttribute(name)}"`;
+  if (row.role === "image") return `<img ${slot} src="${escapeAttribute(row.src ?? "")}" alt="">`;
+  if (row.role === "link") return `<a ${slot} href="${escapeAttribute(row.href ?? "")}">${escapeText(row.text ?? "")}</a>`;
+  const text = escapeText(row.text ?? "");
+  return `<span ${slot}>${link === undefined ? text : `<a href="${escapeAttribute(link)}">${text}</a>`}</span>`;
+}
+
+/**
+ * The card `card` (an instance's markup, start tag to end tag) filled by
+ * `rows` (cardFill's, for the card's `template`): each filled slot's element
+ * takes the page's text, address or image; a filled slot the card has no
+ * element for gets one, in template order, indented as its neighbours. With
+ * an "added" link the title's text becomes a link to the page (spec decision
+ * 3: no class; the card's CSS stretches it). Kept slots, the unnamed slot's
+ * content and anything else stay as they are.
+ */
+export function cardFillMarkup(card: string, template: string, rows: CardFillRow[]): string {
+  const root = parseSource(card).find((node): node is SourceElement => node.type === "element");
+  if (!root?.close) return card;
+  const kids = elementsOf(root);
+  const slotted = (name: string) => kids.find((kid) => (attribute(card, kid, "slot") ?? "") === name);
+  const added = rows.find((row) => row.status === "added")?.href;
+  const order = templateSlots(template).map((slot) => slot.name);
+  const newline = card.includes("\r\n") ? "\r\n" : "\n";
+  const edits: RangeEdit[] = [];
+  for (const row of rows) {
+    if (row.status !== "filled" || !row.slot) continue;
+    const link = row.role === "title" ? added : undefined;
+    const own = slotted(row.slot);
+    if (own) { edits.push(...fillElementEdits(card, own, row, link)); continue; }
+    const markup = newSlotElement(template, row, link);
+    // Before the next slot's element in template order, else after the one before, else at the end.
+    const at = order.indexOf(row.slot);
+    const next = order.slice(at + 1).map((name) => name && slotted(name)).find(Boolean);
+    const before = order.slice(0, Math.max(at, 0)).reverse().map((name) => name && slotted(name)).find(Boolean);
+    if (next) {
+      const lead = leadOf(card, next.start);
+      edits.push({ start: next.start, end: next.start, text: lead === undefined ? markup : `${markup}${newline}${lead}` });
+    } else if (before) {
+      const lead = leadOf(card, before.start);
+      edits.push({ start: before.end, end: before.end, text: lead === undefined ? markup : `${newline}${lead}${markup}` });
+    } else {
+      const lead = leadOf(card, root.close.start);
+      const kid = kids[0] && leadOf(card, kids[0].start);
+      edits.push(lead === undefined
+        ? { start: root.close.start, end: root.close.start, text: markup }
+        : { start: root.close.start - lead.length, end: root.close.start - lead.length, text: `${kid ?? `${lead}  `}${markup}${newline}` });
+    }
+  }
+  return applyEdits(card, edits);
 }
