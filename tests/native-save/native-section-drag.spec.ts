@@ -207,7 +207,7 @@ test("the grip in the edit bar drags a selected section onto the target gap, one
   await page.mouse.move(hero.x + hero.width / 2, hero.y + 8, { steps: 4 });
   const target = page.locator(".insert-point.is-target");
   await expect(target).toHaveCount(1);
-  await expect(target.locator(".insert-point__drop")).toHaveText("Drop section here");
+  await expect(target.locator(".insert-point__drop")).toHaveText("Drop here");
   expect((await target.locator(".insert-point__drop").boundingBox())!.height).toBe(44);
   expect(Math.abs((await target.boundingBox())!.y - hero.y)).toBeLessThan(3);
   await page.mouse.up();

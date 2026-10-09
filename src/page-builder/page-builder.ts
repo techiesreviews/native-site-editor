@@ -1,6 +1,7 @@
 // The page builder's part of the preview (src/components/native-preview.ts):
-// the Add panel, dragging from it onto the canvas, the empty page's "Start
-// with a section", and the highlight on a section just added. The preview
+// the Add panel, dragging from it or the block rail onto the canvas, the
+// empty page's "Start with a section", and the highlight on a section just
+// added. The preview
 // passes on what the runtime reports (insert points, selections) and the
 // sources it renders; every insert is the preview's own `onInsert`, the
 // same source edit as a plus between sections.
@@ -15,6 +16,8 @@ import { createAddPanel, insertPointKey } from "./add-panel";
 import { createCanvasLayer, createEmptyCanvas, createInsertFlash } from "./canvas-overlays";
 import { defaultInsertPoint } from "./insert-target";
 import { thumbnailDocument, type ThumbnailInputs } from "./thumbnail-doc";
+import { createBlockDrag, type BlockDragPorts } from "./block-drag";
+import type { NativeElementKind } from "./native-elements";
 
 export interface PageBuilderDeps {
   pane: HTMLElement;
@@ -31,6 +34,8 @@ export interface PageBuilderDeps {
   prepare(tags: string[]): void;
   // Scroll the canvas by `dy` (the runtime's `scroll-by`), smoothly unless motion is reduced.
   scroll(dy: number, smooth?: boolean): void;
+  // The containers under a frame-viewport point (the preview's `probeDrop`).
+  probe: BlockDragPorts["probe"];
   // Where the Add panel docks; the preview pane's left edge when not given.
   dock?: () => { left: number; top: number; bottom: number; width: number } | undefined;
 }
@@ -210,6 +215,11 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     setActive(active: boolean) {
       if (addButton) addButton.hidden = !active;
       if (!active) panel.close(false);
+    },
+    /** A rail block dragged onto the canvas: its line, label and target (none while History shows an earlier version). */
+    blockDrag(kind: NativeElementKind, ports: Pick<BlockDragPorts, "drop" | "announce">) {
+      if (viewing) return undefined;
+      return createBlockDrag(kind, { ...ports, frame, layer: canvas.layer, probe: deps.probe, scroll: (dy) => deps.scroll(dy) });
     },
     insertPointKey,
     destroy() {

@@ -1,34 +1,50 @@
-// Dragging a section from the Add panel onto the canvas. The editor keeps
-// the pointer (captured on the item, so nothing in the page is pressed or
-// selected) and works out the gap under it from the insert points the
-// runtime reports; near the frame's top and bottom edges the frame scrolls
-// on its own; Escape or a release off the canvas cancels; a release on a
-// gap inserts there, the same edit as a click on that gap's plus.
+// Dragging something new onto the canvas: a section from the Add panel, a
+// block from the rail. The editor keeps the pointer (captured on the item,
+// so nothing in the page is pressed or selected); the context works out the
+// target under it and draws it; near the frame's top and bottom edges the
+// frame scrolls on its own; Escape or a release off the canvas cancels; a
+// release on a target drops there. Alt and Tab, while dragging, are the
+// context's to read (the rail's blocks step up a level with them).
 
-import type { InsertPoint } from "../components/insert-controls";
 import { icon } from "../icons";
 import { node } from "../ui/dom";
-import { pointAt } from "./insert-target";
 
-export interface InsertDragContext {
+/** What the label by the pointer says about the target under it. */
+export interface DragAim<T> {
+  target: T | undefined;
+  /** The ghost's text below the name; empty keeps just the name. */
+  where?: string;
+  /** Red: the place under the pointer refuses (a release adds nothing). */
+  refused?: boolean;
+}
+
+export interface InsertDragContext<T> {
   frame: HTMLElement;
-  points(): InsertPoint[];
-  // The gap the section `name` would go into (none: off the canvas), and what its drop line says.
-  target(point: InsertPoint | undefined, label: string, name: string): void;
+  /**
+   * The pointer is at `at` (frame-viewport; none: off the canvas), with Alt
+   * held or not; or the frame scrolled. The context draws the target and
+   * calls `show` with it, at once or after a probe of the page (the last
+   * call wins, so a late probe's answer must not follow a newer one).
+   */
+  aim(at: { x: number; y: number } | undefined, alt: boolean, show: (aim: DragAim<T>) => void): void;
+  /** Tab (1) or Shift+Tab (-1) while dragging; false lets the key do what it does. */
+  step?(by: 1 | -1): boolean;
   scroll(dy: number): void;
-  drop(point: InsertPoint): void;
+  /** The drag ended: clear what `aim` drew. */
+  clear(): void;
+  drop(target: T): void;
   announce(text: string): void;
 }
 
-const THRESHOLD = 5;
+const THRESHOLD = 7;
 const SCROLL_STEP = 14;
 
 /**
- * Lets `source` be dragged onto the canvas as the section `label`. Returns
- * whether a drag just ended, so the click that follows a release is not
- * taken as a click.
+ * Lets `source` be dragged onto the canvas as `label`. Returns whether a
+ * drag just ended, so the click that follows a release is not taken as a
+ * click.
  */
-export function makeInsertDraggable(source: HTMLElement, label: () => string, context: () => InsertDragContext | undefined) {
+export function makeInsertDraggable<T>(source: HTMLElement, label: () => string, context: () => InsertDragContext<T> | undefined) {
   let dragged = false;
   source.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !event.isPrimary) return;
@@ -39,8 +55,11 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
     const id = event.pointerId;
     let active = false;
     let ghost: HTMLElement | undefined;
+    let where: HTMLElement | undefined;
     let pointer = { x: startX, y: startY };
-    let target: InsertPoint | undefined;
+    let alt = event.altKey;
+    let target: T | undefined;
+    let refused = false;
     let frameId = 0;
     dragged = false;
 
@@ -52,14 +71,22 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
       return { rect, x, y, inside };
     }
 
+    // The context shows the target it found (in order; one probed late is its to drop).
+    function show(aim: DragAim<T>) {
+      if (!active) return;
+      target = aim.target;
+      refused = Boolean(aim.refused);
+      ghost?.classList.toggle("is-over", Boolean(aim.target) && !refused);
+      ghost?.classList.toggle("is-refused", refused);
+      if (where) {
+        where.textContent = aim.where ?? "";
+        where.hidden = !aim.where;
+      }
+      place();
+    }
     function retarget() {
       const { x, y, inside } = overFrame();
-      const next = inside ? pointAt(ctx!.points(), x, y) : undefined;
-      const same = next && target && next.parent.join(".") === target.parent.join(".") && next.index === target.index;
-      if (same || (!next && !target)) return;
-      target = next;
-      ghost?.classList.toggle("is-over", Boolean(next));
-      ctx!.target(next, `Add “${label()}” here`, label());
+      ctx!.aim(inside ? { x, y } : undefined, alt, show);
     }
 
     function tick() {
@@ -71,7 +98,7 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
         else if (y > rect.height - band) speed = Math.min(SCROLL_STEP, Math.ceil(SCROLL_STEP * (y - rect.height + band) / band));
       }
       if (speed) ctx!.scroll(speed);
-      // The runtime reports the gaps again after a scroll or a render.
+      // The page under the pointer moves with a scroll or a render.
       retarget();
       frameId = requestAnimationFrame(tick);
     }
@@ -87,14 +114,23 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
       source.classList.add("is-dragging");
       document.documentElement.classList.add("pb-is-dragging");
       ghost = node("div", "pb-drag-ghost");
-      ghost.append(icon("plus"), node("span", "", label()));
+      const text = node("span", "pb-drag-ghost__text");
+      where = node("span", "pb-drag-ghost__where");
+      where.hidden = true;
+      text.append(node("span", "pb-drag-ghost__name", label()), where);
+      ghost.append(icon("plus"), text);
       document.body.append(ghost);
       ctx!.announce(`Dragging ${label()}. Release over the page to add it, Escape to cancel.`);
       frameId = requestAnimationFrame(tick);
     }
 
+    // Beside the pointer, kept inside the window.
     function place() {
-      if (ghost) ghost.style.transform = `translate(${pointer.x + 14}px, ${pointer.y + 10}px)`;
+      if (!ghost) return;
+      const width = ghost.offsetWidth, height = ghost.offsetHeight;
+      const x = Math.max(8, Math.min(pointer.x + 14, innerWidth - width - 8));
+      const y = pointer.y + 10 + height > innerHeight - 8 ? pointer.y - height - 10 : pointer.y + 10;
+      ghost.style.transform = `translate(${x}px, ${y}px)`;
     }
 
     function finish(drop: boolean) {
@@ -102,15 +138,17 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
       window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("pointercancel", onCancel, true);
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKey, true);
       if (!active) return;
+      active = false;
       cancelAnimationFrame(frameId);
       if (source.hasPointerCapture?.(id)) source.releasePointerCapture(id);
       source.classList.remove("is-dragging");
       document.documentElement.classList.remove("pb-is-dragging");
       ghost?.remove();
       const at = target;
-      ctx!.target(undefined, "", label());
-      if (drop && at) ctx!.drop(at);
+      ctx!.clear();
+      if (drop && at && !refused) ctx!.drop(at);
       else ctx!.announce(`${label()} was not added`);
       // The click a release makes is not a click on the item.
       window.setTimeout(() => { dragged = false; }, 0);
@@ -119,6 +157,7 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
     function onMove(move: PointerEvent) {
       if (move.pointerId !== id) return;
       pointer = { x: move.clientX, y: move.clientY };
+      alt = move.altKey;
       if (!active) {
         if (Math.hypot(pointer.x - startX, pointer.y - startY) < THRESHOLD) return;
         begin();
@@ -137,16 +176,27 @@ export function makeInsertDraggable(source: HTMLElement, label: () => string, co
       if (cancel.pointerId === id) finish(false);
     }
     function onKey(key: KeyboardEvent) {
-      if (key.key !== "Escape" || !active) return;
-      key.preventDefault();
-      key.stopPropagation();
-      target = undefined;
-      finish(false);
+      if (!active) return;
+      if (key.key === "Escape" && key.type === "keydown") {
+        key.preventDefault();
+        key.stopPropagation();
+        target = undefined;
+        finish(false);
+      } else if (key.key === "Alt") {
+        key.preventDefault();
+        alt = key.type === "keydown";
+        retarget();
+      } else if (key.key === "Tab" && key.type === "keydown" && ctx!.step?.(key.shiftKey ? -1 : 1)) {
+        key.preventDefault();
+        key.stopPropagation();
+        retarget();
+      }
     }
     window.addEventListener("pointermove", onMove, true);
     window.addEventListener("pointerup", onUp, true);
     window.addEventListener("pointercancel", onCancel, true);
     window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKey, true);
   });
   // A drag starts no text selection or native image drag.
   source.addEventListener("dragstart", (event) => event.preventDefault());

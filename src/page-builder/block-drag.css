@@ -1,0 +1,57 @@
+/* A block dragged over the canvas: the line where it goes, an empty
+   container's area, a refusing container's outline (block-drag.ts). */
+.pb-drop > * {
+  position: absolute;
+  box-sizing: border-box;
+}
+.pb-drop__line {
+  border-radius: 2px;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--surface) 80%, transparent);
+}
+.pb-drop__line::before,
+.pb-drop__line::after {
+  content: "";
+  position: absolute;
+  top: -2.5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.pb-drop__line::before {
+  left: -4px;
+}
+.pb-drop__line::after {
+  right: -4px;
+}
+.pb-drop__line--v::before,
+.pb-drop__line--v::after {
+  left: -2.5px;
+  right: auto;
+}
+.pb-drop__line--v::before {
+  top: -4px;
+}
+.pb-drop__line--v::after {
+  top: auto;
+  bottom: -4px;
+}
+.pb-drop__area {
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--primary) 14%, transparent);
+  color: var(--primary);
+  font-size: var(--type-base);
+  font-weight: 600;
+  text-align: center;
+  overflow: hidden;
+}
+.pb-drop__refused {
+  border-radius: 6px;
+  outline: 2px dashed var(--danger);
+  outline-offset: -2px;
+  background: color-mix(in oklch, var(--danger) 7%, transparent);
+}

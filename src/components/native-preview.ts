@@ -22,7 +22,8 @@ import { withSlottedRules } from "../../shared/slotted-css";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
-import { createPageBuilder } from "../page-builder/page-builder";
+import { createPageBuilder, type PageBuilder } from "../page-builder/page-builder";
+import type { NativeElementKind } from "../page-builder/native-elements";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
 import { linkCodeToCanvas } from "../page-builder/code-link";
@@ -406,6 +407,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (wanted.length) handlers.onComponentStyles?.(wanted);
     },
     scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
+    probe: (at, bands) => probeDrop(at, undefined, bands),
     dock: handlers.addPanelDock,
   });
   let slotSelection: { path: string; node: number[]; tag?: string; exact: boolean } | undefined;
@@ -478,6 +480,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const pending = probe;
     probe = undefined;
     pending?.done(report);
+  }
+  /** Measure nested containers at a frame-viewport point, or all page bands in <main>. */
+  function probeDrop(at: { x: number; y: number }, moving?: number[], bands?: boolean): Promise<DropReport | undefined> {
+    endProbe();
+    const path = site?.routes[route];
+    if (!path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
+      !Number.isFinite(at.x) || !Number.isFinite(at.y)) return Promise.resolve(undefined);
+    return new Promise(resolve => {
+      const timer = setTimeout(() => endProbe(), 1000);
+      probe = { id: ++probeId, context, path, done: report => { clearTimeout(timer); resolve(report); } };
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id: probe.id,
+        x: at.x, y: at.y, moving, bands }, "*");
+    });
   }
   let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>> } | undefined;
   let renderVersion = 0;
@@ -1083,18 +1098,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
 
   return {
-    /** Measure nested containers at a frame-viewport point, or all page bands in <main>. */
-    probeDrop(at: { x: number; y: number }, moving?: number[], bands?: boolean): Promise<DropReport | undefined> {
-      endProbe();
-      const path = site?.routes[route];
-      if (!path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
-        !Number.isFinite(at.x) || !Number.isFinite(at.y)) return Promise.resolve(undefined);
-      return new Promise(resolve => {
-        const timer = setTimeout(() => endProbe(), 1000);
-        probe = { id: ++probeId, context, path, done: report => { clearTimeout(timer); resolve(report); } };
-        frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id: probe.id,
-          x: at.x, y: at.y, moving, bands }, "*");
-      });
+    probeDrop,
+    /** A block from the rail dragged over the page (none without a page on show to drop into). */
+    blockDrag(kind: NativeElementKind, ports: Parameters<PageBuilder["blockDrag"]>[1]) {
+      return site && frameState.active && !alone ? pageBuilder.blockDrag(kind, ports) : undefined;
     },
     /** Send an already scheduled source change immediately after a direct user action. */
     flushPendingUpdate() {

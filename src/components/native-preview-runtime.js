@@ -37,8 +37,11 @@
   var runtimeSheet = new CSSStyleSheet();
   // A <main> with nothing in it yet keeps some height, so the editor's
   // "Start with a section" (src/page-builder/canvas-overlays.ts) has room
-  // over it; preview only, like the selection boxes.
-  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}");
+  // over it; preview only, like the selection boxes. So does an empty
+  // Section or Div (a block just added), dashed, so a block can be dropped
+  // into it (src/page-builder/block-drag.ts).
+  runtimeSheet.replaceSync("[data-native-empty]{display:none !important}[contenteditable]:focus{outline:none !important}#page main:not(:has(*)){min-height:min(480px,72vh)}" +
+    "#page main :is(section,div):empty{min-height:72px;outline:1.5px dashed rgba(127,127,127,.55);outline-offset:-2px}");
   // Subtle scrollbars for the frame's own viewport, only while the site
   // declares no scrollbar styling of its own (see siteStylesScrollbars). The
   // sheet is adopted first by the document alone, so its layer comes before

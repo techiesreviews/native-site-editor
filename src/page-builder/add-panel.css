@@ -258,6 +258,32 @@
   box-shadow: var(--shadow);
   pointer-events: none;
 }
+.pb-drag-ghost__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Where a block would go ("Into Div (stack) › after Paragraph"), or why not. */
+.pb-drag-ghost__where {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--type-small);
+  font-weight: 500;
+}
+.pb-drag-ghost__where[hidden] {
+  display: none;
+}
+.pb-drag-ghost:has(.pb-drag-ghost__where:not([hidden])) {
+  border-radius: 10px;
+}
+.pb-drag-ghost.is-refused {
+  background: var(--danger);
+  color: #fff;
+}
+.pb-drag-ghost.is-refused .pb-drag-ghost__where {
+  white-space: normal;
+}
 
 /* Over the canvas. */
 .pb-canvas-layer {

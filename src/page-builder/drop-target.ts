@@ -103,7 +103,8 @@ function blockName(tag: string, cls: string) {
   return tag.includes("-") ? componentLabel(tag) : nativeKindLabel(tag);
 }
 
-function containerName(container: DropContainer) {
+/** "Div (stack)", "Section", "Card project › items": what labels call a container. */
+export function dropContainerName(container: DropContainer) {
   if (container.kind !== "items" && container.kind !== "slot") return blockName(container.tag, container.cls);
   return `${componentLabel(container.tag)} › ${container.slot ? `“${container.slot}” slot` : "items"}`;
 }
@@ -125,5 +126,5 @@ export function dropLabel(target: DropTarget, block: DraggedBlock) {
   const before = items.find((child) => child.index >= target.index);
   const place = after ? `after ${blockName(after.tag, after.cls)}` : before ? `before ${blockName(before.tag, before.cls)}` : "";
   if (target.container.kind === "main") return `Between page bands › ${place || "the first"}`;
-  return `Into ${containerName(target.container)} › ${place || "empty"}`;
+  return `Into ${dropContainerName(target.container)} › ${place || "empty"}`;
 }

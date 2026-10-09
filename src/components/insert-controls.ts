@@ -9,7 +9,7 @@ import "./insert-controls.css";
 // open). A plus opens the Add panel (src/page-builder/add-panel.ts) for its
 // gap. While a section is dragged in the preview, or one is dragged from
 // the Add panel, every gap of the target's parent shows instead, the one
-// under the pointer expanded and labelled "Drop section here".
+// under the pointer expanded and labelled "Drop here".
 
 export interface InsertPoint {
   // Page file the point belongs to.
@@ -60,7 +60,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
   // A section being dragged in the preview, or one from the Add panel: its
   // parent's gaps are the targets.
   let drag: { parent: string; index: number | undefined } | undefined;
-  let dropLabel = "Drop section here";
+  let dropLabel = "Drop here";
   let collisionFrame = 0;
 
   // Card controls report layout changes; measure only actual painted controls,
@@ -135,7 +135,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
         });
         plus.setAttribute("aria-haspopup", "dialog");
         plus.setAttribute("aria-expanded", "false");
-        row.append(plus, node("span", "insert-point__drop", "Drop section here"));
+        row.append(plus, node("span", "insert-point__drop", "Drop here"));
         plusByKey.set(key, row);
         layer.append(row);
       }
@@ -234,14 +234,14 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     dragEnd() {
       if (!drag) return;
       drag = undefined;
-      dropLabel = "Drop section here";
+      dropLabel = "Drop here";
       layout();
     },
     /**
      * A section dragged from the Add panel is over `gap` (none: off the
      * canvas): its parent's gaps show, that one labelled `label`.
      */
-    showDrop(gap: { parent: number[]; index: number } | undefined, label = "Drop section here") {
+    showDrop(gap: { parent: number[]; index: number } | undefined, label = "Drop here") {
       clearTimeout(leaveTimer);
       near = undefined;
       dropLabel = label;

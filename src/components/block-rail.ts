@@ -1,5 +1,6 @@
 import "./block-rail.css";
 import { nativeElementChoices, type NativeElementKind } from "../page-builder/native-elements";
+import { makeInsertDraggable, type InsertDragContext } from "../page-builder/insert-drag";
 import { elementIcon } from "./element-icons";
 
 /** Boot controls; the Add toggle owns whether a native visual preview is open. */
@@ -7,6 +8,8 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
   onPick?: (kind: NativeElementKind) => void;
   /** Escape on a block: the selection's container is selected, as Escape in the page does. */
   onUp?: () => void;
+  /** Dragging a block onto the canvas (none: no page to drop into); 7 px of movement starts it. */
+  drag?: (kind: NativeElementKind) => InsertDragContext<unknown> | undefined;
 } = {}) {
   const rail = document.createElement("nav");
   rail.className = "block-rail";
@@ -43,7 +46,11 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
     button.addEventListener("focus", () => { if (button.matches(":focus-visible")) showTip(button); });
     button.addEventListener("blur", hideTip);
     button.addEventListener("pointerdown", hideTip);
-    button.addEventListener("click", () => { hideTip(); options.onPick?.(kind); });
+    const drag = makeInsertDraggable(button, () => choice.label, () => options.drag?.(kind));
+    button.addEventListener("click", () => {
+      hideTip();
+      if (!drag.justDragged()) options.onPick?.(kind);
+    });
     // Like the edit bar, controls stay in tab order; arrows also move focus.
     button.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && !event.altKey && !event.ctrlKey && !event.metaKey && options.onUp) {

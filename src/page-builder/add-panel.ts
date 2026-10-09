@@ -11,7 +11,7 @@ import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { addCatalog, matchesQuery, type AddItem } from "./add-catalog";
 import { normaliseComponentName, normaliseField, previewComponentTag } from "./component-names";
-import { positionText } from "./insert-target";
+import { pointAt, positionText } from "./insert-target";
 import { makeInsertDraggable, type InsertDragContext } from "./insert-drag";
 import { createThumbnail, type Thumbnail } from "./thumbnail";
 import "./add-panel.css";
@@ -37,8 +37,11 @@ export interface AddPanelHandlers {
   // Component styles to read so the thumbnails look right.
   prepare(tags: string[]): void;
   insert(point: InsertPoint, choice: InsertChoice): void;
-  // The canvas to drag onto.
-  drag(): Omit<InsertDragContext, "drop" | "announce"> | undefined;
+  // The canvas to drag onto: its gaps, and the one a section `name` would go into (none: off the canvas) with its drop line's words.
+  drag(): (Pick<InsertDragContext<InsertPoint>, "frame" | "scroll"> & {
+    points(): InsertPoint[];
+    target(point: InsertPoint | undefined, label: string, name: string): void;
+  }) | undefined;
   // The area the panel docks in (viewport coordinates).
   dock(): { left: number; top: number; bottom: number; width: number } | undefined;
   // Opened or closed; `gap` is the key of the plus it is (or was) open for.
@@ -280,10 +283,21 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     label.append(node("span", "pb-add-item__name", item.name), node("code", "pb-add-item__tag", item.kind === "native" ? "HTML" : `<${item.tag}>`));
     option.append(thumb.root, label);
     root.append(option);
-    const drag = makeInsertDraggable(option, () => item.name, () => {
+    const drag = makeInsertDraggable<InsertPoint>(option, () => item.name, () => {
       const canvas = handlers.points().length ? handlers.drag() : undefined;
+      let shown: InsertPoint | undefined;
       return canvas && {
-        ...canvas,
+        frame: canvas.frame,
+        scroll: canvas.scroll,
+        // The nearest gap; the canvas redraws only when it changes.
+        aim: (at, _alt, show) => {
+          const next = at ? pointAt(canvas.points(), at.x, at.y) : undefined;
+          const same = next && shown && next.parent.join(".") === shown.parent.join(".") && next.index === shown.index;
+          if (!same && (next || shown)) canvas.target(next, `Add “${item.name}” here`, item.name);
+          shown = next;
+          show({ target: next });
+        },
+        clear: () => { shown = undefined; canvas.target(undefined, "", item.name); },
         announce: (text: string) => { live.textContent = text; },
         drop: (point: InsertPoint) => {
           const at = handlers.pointFor ? handlers.pointFor(item, point, "drop") : point;
