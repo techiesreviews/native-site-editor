@@ -661,13 +661,13 @@ export function createComponentTools(deps: ComponentDeps) {
   function applyChip(event: Event) {
     const report = (event as CustomEvent<SlotChipReport>).detail;
     const mode = editMode?.active();
-    const refuse = (reason: string) => { event.preventDefault(); deps.announce(reason); };
+    const refuseChip = (reason: string) => { event.preventDefault(); refuse(reason); };
     if (!mode || report.template !== mode.templatePath || deps.currentPath() !== mode.templatePath
-      || explicitTemplate?.revision !== deps.revision()) { refuse("Select a part in Edit component mode before changing its slot."); return; }
+      || explicitTemplate?.revision !== deps.revision()) { refuseChip("Select a part in Edit component mode before changing its slot."); return; }
     const source = deps.sources()[report.template];
-    if (source === undefined || !deps.operation) { refuse("The template is not available for editing."); return; }
+    if (source === undefined || !deps.operation) { refuseChip("The template is not available for editing."); return; }
     const plan = slotChange(source, report, tag => templateOf(tag)?.source);
-    if ("error" in plan) { refuse(plan.error); return; }
+    if ("error" in plan) { refuseChip(plan.error); return; }
     const revision = deps.revision(), entry = explicitTemplate, selected = deps.selection();
     const current = () => deps.revision() === revision && explicitTemplate === entry
       && deps.currentPath() === report.template && editMode?.active()?.templatePath === report.template;
@@ -684,7 +684,7 @@ export function createComponentTools(deps: ComponentDeps) {
         edits: new Map([[report.template, plan.source]]), done, undone, current,
         selection: { before: { path: report.template, node: [...report.node] }, after: { path: report.template, node: plan.select } } });
       if (!current()) return;
-      if (error) { deps.announce(error); editMode?.resetChip(); }
+      if (error) { refuse(error); editMode?.resetChip(); }
       else if (report.action === "toggle") {
         if (change.kind === "made-fixed" && change.name) keptNames.set(keptKey(report.template, plan.source, plan.select), change.name);
         const now = deps.selection();
@@ -698,7 +698,7 @@ export function createComponentTools(deps: ComponentDeps) {
       deps.refreshBar();
     }).catch((error: unknown) => {
       if (!current()) return;
-      deps.announce(error instanceof Error ? error.message : "The slot could not be changed.");
+      refuse(error instanceof Error ? error.message : "The slot could not be changed.");
       editMode?.resetChip();
       deps.refreshBar();
     });
