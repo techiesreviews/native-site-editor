@@ -2,7 +2,7 @@
 title: Prototype Add card with an existing page
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [03-default-editables]
 ---
 
