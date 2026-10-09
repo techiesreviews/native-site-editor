@@ -89,23 +89,38 @@ test("template roots have no move, duplicate or remove actions; children keep th
     expect(await page.evaluate(async () => (await import("/src/page-builder/commands.ts")).availableCommands()
       .filter(command => command.group === "Selection" && ["Move up", "Move down", "Duplicate", "Remove"].includes(command.title))
       .map(command => command.title))).toEqual([]);
+    // No move handle, so plain Up/Down on the bar's name have nothing to run.
     await expect(toolbar(page).locator(".edit-bar__handle")).toHaveCount(0);
+    // Alt+Up/Down from the bar and from the preview.
     await toolbar(page).locator(".edit-bar__label").evaluate(label => { label.tabIndex = -1; label.focus(); });
-    await page.keyboard.press("ArrowUp");
-    await page.keyboard.press("ArrowDown");
+    for (const key of ["Alt+ArrowUp", "Alt+ArrowDown"]) await page.keyboard.press(key);
+    await frame(page).locator("body").evaluate(body => { body.tabIndex = -1; body.focus(); });
+    for (const key of ["Alt+ArrowUp", "Alt+ArrowDown"]) await page.keyboard.press(key);
     // Page focus routes these keys through the same bar controls as the palette.
     await page.locator("body").evaluate(body => { body.tabIndex = -1; body.focus(); });
-    for (const key of ["Delete", "Backspace", "ControlOrMeta+d", "Alt+ArrowUp", "Alt+ArrowDown"])
-      await page.keyboard.press(key);
+    for (const key of ["Delete", "Backspace", "ControlOrMeta+d"]) await page.keyboard.press(key);
+    await page.waitForTimeout(300);
     expect(await source(path)).toBe(before);
   };
   await noRootActions(root, TEMPLATE);
 
-  // A real nested section still has all four section actions.
+  // A real nested section still has all four section actions, and they run.
   const child = page.getByRole("treeitem", { name: /^Section Nested section/ }).first();
   await child.locator(".page-structure__label").click();
   for (const name of ["Move up", "Move down", "Duplicate", "Remove"])
     await expect(toolbar(page).getByRole("button", { name, exact: true })).toBeVisible();
+  const nested = async () => (await source(TEMPLATE))!.split("Nested section").length - 1;
+  const start = await source(TEMPLATE);
+  await toolbar(page).locator(".edit-bar__label").evaluate(label => { label.tabIndex = -1; label.focus(); });
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(() => source(TEMPLATE)).not.toBe(start);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => source(TEMPLATE)).toBe(start);
+  await child.locator(".page-structure__label").click();
+  await toolbar(page).getByRole("button", { name: "Duplicate", exact: true }).click();
+  await expect.poll(nested).toBe(2);
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(nested).toBe(1);
 
   // Opening the nested card protects its article root too.
   const card = page.getByRole("treeitem", { name: /^Card project/ }).first();
