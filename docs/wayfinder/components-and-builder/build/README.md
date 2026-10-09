@@ -47,6 +47,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [20 MCP: get_site lists variants](tickets/20-get-site-variants.md) | sol | 12 |
 | [64 Make component copies the element's page CSS into the component](tickets/64-make-component-carries-css.md) | claude ★ | 10 |
 | [65 Starter: the card link rule](tickets/65-starter-card-link-rule.md) | sol | – |
+| [67 Starter: title links look like the title, stretched only in cards](tickets/67-starter-title-link-look.md) | sol | 65 |
 
 ### Phase 3: Make component and New component
 
