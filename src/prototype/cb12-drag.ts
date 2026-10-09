@@ -15,7 +15,7 @@
 
 import {
   allowed, announce, boxName, boxPath, boxRect, commit, containerKind, containersAt, el, endIndex, frameBox, frameOp, framePost, fresh, indexAt, isBand,
-  itemsOf, latest, lineGeom, drawn, nodeName, measure, previewMarkup, readTarget, readout, rowOf, sameTarget, sideIndex, stays, targetFor, toFrame, variant, whereText,
+  itemsOf, latest, lineGeom, drawn, nodeName, lineMode, treeLed, measure, previewMarkup, readTarget, readout, rowOf, sameTarget, sideIndex, stays, targetFor, toFrame, variant, whereText,
   type Box, type Dragged, type Model, type Pt, type Rect, type Target,
 } from "./cb12-core";
 import { expandTo, indentStep, overTree, pickDepth, pickZones, treeEl, treeLine } from "./cb12-tree";
@@ -25,6 +25,7 @@ const BLUE = "oklch(54.6% 0.215 262.9)";
 export const FRAME_CSS = `
 #page .btn { display: inline-block; padding: var(--space-xs, .5rem) var(--space-m, 1rem); border: 2px solid var(--accent); border-radius: var(--radius-full, 999px); background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
 #page .btn:hover { filter: brightness(0.92); }
+#page .btn { justify-self: start; align-self: start; }
 #page section:not(:has(> :not(.cb12-ph))), #page div.flow:not(:has(> :not(.cb12-ph))), #page div.cards:not(:has(> :not(.cb12-ph))) { min-height: 96px; display: grid; place-items: center; border-radius: var(--radius-m, 8px); outline: 1.5px dashed color-mix(in oklab, var(--accent) 45%, transparent); outline-offset: -2px; }
 #page section:not(:has(*))::after { content: "Empty Section · drop blocks here"; }
 #page div.flow:not(:has(*))::after { content: "Empty Div (stack) · drop blocks here"; }
@@ -105,11 +106,11 @@ function pickCanvas(s: Session, p: Pt): Target | undefined {
   if (!chain.length) return undefined;
   const innerKey = `${chain[0].node.key}/${chain[0].slot?.name ?? ""}`;
   if (innerKey !== s.inner) { s.inner = innerKey; s.tabs = 0; }
-  const level = variant === "A" ? (s.alt ? 1 : 0) + s.tabs : 0;
+  const level = lineMode ? (s.alt ? 1 : 0) + s.tabs : 0;
   // A named slot that is not an items slot refuses, visibly, instead of passing the drop up.
   if (level === 0 && chain[0].slot && !isBand(s.d) && !allowed(s.d, chain[0]).ok) return targetFor(s.d, chain[0], indexAt(chain[0], p));
   let i = 0;
-  if (variant === "A") while (i < chain.length - 1 && nearEdge(p, boxRect(chain[i]), 8)) i++;
+  if (lineMode) while (i < chain.length - 1 && nearEdge(p, boxRect(chain[i]), 8)) i++;
   i = Math.min(i + level, chain.length - 1);
   for (let j = i; j < chain.length; j++) {
     const box = chain[j];
@@ -137,7 +138,7 @@ function render(s: Session) {
   if (t && box) {
     const r = boxRect(box);
     const empty = !itemsOf(box).length;
-    if (variant === "A") {
+    if (lineMode) {
       rectEl(t.ok ? "cb12-box cb12-box--target" : "cb12-box cb12-box--refused", r);
       if (t.ok && !stays(s.d, t)) {
         const line = lineGeom(box, t.index);
@@ -159,17 +160,17 @@ function render(s: Session) {
   if (!t) label.textContent = s.over === "none" ? "Release to cancel" : "No place here";
   else if (!t.ok) label.textContent = `✕ ${t.reason ?? "Not here"}`;
   else if (stays(s.d, t)) label.textContent = "Stays where it is";
-  else label.textContent = variant === "A" ? `${whereText(t)}${t.level ? `  ·  ↑${t.level}` : ""}` : variant === "B" ? whereText(t) : `Into ${boxPath(t.box)}`;
+  else label.textContent = lineMode ? `${whereText(t)}${t.level ? `  ·  ↑${t.level}` : ""}` : variant === "B" ? whereText(t) : `Into ${boxPath(t.box)}`;
   placeGhost(s);
   s.ghost.classList.toggle("is-refused", Boolean(t && !t.ok));
   s.ghost.classList.toggle("is-ok", Boolean(t?.ok));
   // The tree: its line, wherever the target came from (C unfolds rows to show it).
-  if (t && (s.over === "tree" || variant === "C")) {
-    if (variant === "C" && s.over === "canvas") expandTo(t.box.node.key);
+  if (t && (s.over === "tree" || treeLed)) {
+    if (treeLed && s.over === "canvas") expandTo(t.box.node.key);
     const line = s.over === "tree" && s.line ? s.line : treeLine(t);
     showTreeLine(line, t.ok, s.row ?? (line ? treeLine(t)?.row : undefined), t.reason);
   } else showTreeLine(undefined, true);
-  readTarget(s.d, t, variant === "A" ? "Alt or Tab: up a level · Shift+Tab: back · Esc: cancel" : "Esc: cancel");
+  readTarget(s.d, t, lineMode ? "Alt or Tab: up a level · Shift+Tab: back · Esc: cancel" : "Esc: cancel");
 }
 
 /** Variant B: every valid container dashed, empty ones say Drop here. */
@@ -217,7 +218,7 @@ function retarget(s: Session) {
   if (!s.model) { s.over = "none"; }
   else if (overTree(s.x, s.y)) {
     s.over = "tree";
-    const pick = variant === "C" ? pickDepth(s.model, s.d, s.x, s.y) : pickZones(s.model, s.d, s.x, s.y);
+    const pick = treeLed ? pickDepth(s.model, s.d, s.x, s.y) : pickZones(s.model, s.d, s.x, s.y);
     next = pick.target; s.line = pick.line; s.row = pick.row;
   } else if (f?.inside) {
     s.over = "canvas";
@@ -264,7 +265,7 @@ export function startDrag(d: Dragged, from: HTMLElement, pointerId: number, x: n
   document.documentElement.classList.add("cb12-is-dragging");
   // C: the Add panel steps aside so the tree (the precise target) shows.
   const panel = document.querySelector<HTMLElement>(".pb-add-panel:not([hidden])");
-  if (variant === "C" && d.kind === "new") panel?.classList.add("cb12-tucked");
+  if (treeLed && d.kind === "new") panel?.classList.add("cb12-tucked");
   setFrameState(`drag-${variant.toLowerCase()}`);
   if (d.kind === "move") framePost("mark", { node: d.path, mode: variant === "B" ? "hide" : "fade" });
   void measure().then((m) => {
@@ -304,7 +305,7 @@ export function startDrag(d: Dragged, from: HTMLElement, pointerId: number, x: n
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); return; }
       if (e.key === "Alt") { e.preventDefault(); s.alt = e.type === "keydown"; retarget(s); return; }
-      if (e.key === "Tab" && e.type === "keydown" && variant === "A") {
+      if (e.key === "Tab" && e.type === "keydown" && lineMode) {
         e.preventDefault(); e.stopPropagation();
         s.tabs = Math.max(0, s.tabs + (e.shiftKey ? -1 : 1));
         retarget(s);
@@ -330,7 +331,7 @@ export function startDrag(d: Dragged, from: HTMLElement, pointerId: number, x: n
       clearLayer();
       showTreeLine(undefined, true);
       panel?.classList.remove("cb12-tucked");
-      if (variant === "C") expandTo(undefined, drop && t?.ok ? t.box.node.key : undefined);
+      if (treeLed) expandTo(undefined, drop && t?.ok ? t.box.node.key : undefined);
       document.documentElement.style.userSelect = userSelect;
       document.documentElement.classList.remove("cb12-is-dragging");
       framePost("placeholder", {});

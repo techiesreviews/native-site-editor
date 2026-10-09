@@ -11,10 +11,14 @@ import { BLOCKS, btn, deps, draggedFor, el, frameEvents, isTyping, measure, page
 import { dragging, pressToDrag, recentlyDragged, setFrameState } from "./cb12-drag";
 import { focusRowSoon, inInsertMode, insertAtSelection, insertKey, moveBy, openMoveTo as openMoveToPath, startInsertMode } from "./cb12-keys";
 import { rowFor, treeEl } from "./cb12-tree";
+import { mountRail } from "./cb12-rail";
+import { locateNativeElement, startTagAttribute } from "../native-source-location";
+import { setAttributeEdit } from "../native-structure";
 import "./cb12.css";
 
-const NAMES: Record<Cb12Variant, string> = { A: "A · Line and label", B: "B · Boxes and gaps", C: "C · Structure-led" };
-const ORDER: Cb12Variant[] = ["A", "B", "C"];
+const NAMES: Record<Cb12Variant, string> = { A: "A · Line and label", B: "B · Boxes and gaps", C: "C · Structure-led", D: "D · Icon rail (A + C)" };
+// B stays reachable with ?variant=B but is out of the cycle (round 2).
+const ORDER: Cb12Variant[] = variant === "B" ? ["D", "A", "C", "B"] : ["D", "A", "C"];
 let mounted = false;
 
 export function install(host: Cb12Host) {
@@ -23,7 +27,10 @@ export function install(host: Cb12Host) {
   mounted = true;
   document.documentElement.dataset.cb12Variant = variant;
   mountSwitcher();
-  readout(NAMES[variant], [
+  readout(NAMES[variant], variant === "D" ? [
+    "Click a rail icon to insert at the selection, or drag it onto the page or into Structure.",
+    "Keys: Alt+↑/↓ siblings, Alt+←/→ out/in (canvas or a Structure row), edit bar Move to…",
+  ] : [
     "Drag a block from Add, a selected block by its grip in the edit bar, or a row in Structure.",
     variant === "A" ? "Keys: select a block, Alt+↑/↓ siblings, Alt+←/→ out/in, edit bar Move to…" :
       variant === "B" ? "Keys: Enter on a tile or Move… on a block: insert mode (arrows, Enter, Esc)" :
@@ -35,7 +42,8 @@ export function install(host: Cb12Host) {
     const data = e.data as { source?: string; type?: string } | undefined;
     if (data?.source === "astro-native-preview" && data.type === "ready") setTimeout(() => setFrameState(""), 50);
   });
-  watchAddPanel();
+  if (variant === "D") mountRail();
+  else watchAddPanel();
   watchGrips();
   watchTree();
   watchKeys();
@@ -172,10 +180,25 @@ export async function gripPressed(selection: NativePreviewSelection) {
   const model = await measure();
   const node = model?.get(selection.node);
   if (!node) return;
-  if (variant === "A") return openMoveToPath(selection.node);
+  if (variant === "A" || variant === "D") return openMoveToPath(selection.node);
   if (variant === "B") return startInsertMode(draggedFor(node));
   const row = rowFor(node.key);
   if (row) { row.tabIndex = 0; row.focus(); readout("Structure", [`${draggedFor(node).name}: Alt+↑/↓ move · Alt+←/→ outdent/indent`]); }
+}
+/** D: the Div's Layout select on its edit bar: flow ↔ cards in its class, one undo step. */
+export function setDivLayout(selection: NativePreviewSelection, layout: "flow" | "cards") {
+  const path = selection.path;
+  const source = deps().sources()[path];
+  const editor = deps().editor();
+  const tag = source !== undefined && selection.node ? locateNativeElement(source, selection.node) : undefined;
+  if (source === undefined || !editor || !tag || tag.name !== "div" || !selection.node) return;
+  const tokens = (startTagAttribute(source, tag, "class")?.value ?? "").split(/\s+/).filter(Boolean);
+  const at = tokens.findIndex((t) => t === "flow" || t === "cards");
+  if (at >= 0) tokens[at] = layout; else tokens.unshift(layout);
+  const edit = setAttributeEdit(source, tag, "class", tokens.join(" "));
+  deps().preview()?.selectAfterUpdate({ path, node: selection.node });
+  editor.replaceActiveRange({ path, start: edit.start, end: edit.end, expected: source.slice(edit.start, edit.end), text: edit.text });
+  readout("Div layout", [`${layout === "cards" ? "Grid (cards)" : "Stack (flow)"} · class="${tokens.join(" ")}" · 1 undo step`], "done");
 }
 export function openMoveTo(selection: NativePreviewSelection) {
   if (selection.node) void openMoveToPath(selection.node);

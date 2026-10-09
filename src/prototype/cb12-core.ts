@@ -18,6 +18,9 @@ import { mediaImageMarkup } from "../page-builder/media-markup";
 export const state: { host?: Cb12Host } = {};
 export const deps = () => state.host!.deps;
 export const variant: Cb12Variant = cb12Variant();
+/** A's line and label on the canvas (A, D); C's Structure as the precise target (C, D). */
+export const lineMode = variant === "A" || variant === "D";
+export const treeLed = variant === "C" || variant === "D";
 
 // ---- DOM helpers. ----
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = "") {
@@ -411,9 +414,9 @@ export function askButton(): Promise<{ label: string; href: string } | undefined
   return new Promise((resolve) => {
     const { dialog, form } = dialogShell("New button");
     const label = el("input", "cb12-dialog__input");
-    label.value = "Get in touch";
+    label.value = "Button";
     const href = el("input", "cb12-dialog__input");
-    href.value = "/about/#contact";
+    href.value = "#";
     href.setAttribute("list", "cb12-links");
     const options = el("datalist");
     options.id = "cb12-links";
@@ -523,7 +526,7 @@ function apply(path: string, edit: Edit, select: number[]): boolean {
 const describe = (edit: Edit) => `source ${edit.start}–${edit.end}: −${edit.original.length} +${edit.text.length} chars, 1 undo step`;
 
 /** Writes a drop: a new block or a move, through the code pane's range edit. */
-export async function commit(d: Dragged, t: Target): Promise<Done> {
+export async function commit(d: Dragged, t: Target, opts: { wrap?: boolean } = {}): Promise<Done> {
   const path = pagePath();
   if (!t.ok) return { ok: false, text: `Refused: ${t.reason ?? "not here"}` };
   if (!path) return { ok: false, text: "No page open." };
@@ -537,7 +540,9 @@ export async function commit(d: Dragged, t: Target): Promise<Done> {
     const markup0 = await blockMarkup(d, t.box);
     if (!markup0) return { ok: false, text: `${d.name}: cancelled, nothing inserted.` };
     const source = deps().sources()[path] ?? "";
-    const markup = slotName ? withSlot(markup0, slotName) : markup0;
+    // D's click with nothing selected and no Section on the page: a new Section around the block.
+    const wrapped = opts.wrap ? `<section class="flow">\n  ${markup0.replace(/\n/g, "\n  ")}\n</section>` : markup0;
+    const markup = slotName ? withSlot(wrapped, slotName) : wrapped;
     let edit: Edit | undefined;
     if (insideInstance) edit = rawInsertion(source, parent, t.index, markup);
     else {
@@ -545,7 +550,7 @@ export async function commit(d: Dragged, t: Target): Promise<Done> {
       edit = guarded && { start: guarded.start, end: guarded.end, text: guarded.text, original: guarded.original };
     }
     if (!edit) return { ok: false, text: "HTML content rules refuse this block here (nativeMarkupInsertEdit)." };
-    const select = [...parent, t.index];
+    const select = opts.wrap ? [...parent, t.index, 0] : [...parent, t.index];
     if (!apply(path, edit, select)) return { ok: false, text: "The page changed meanwhile; nothing written." };
     return { ok: true, select, text: `Inserted ${markup.match(/^<[a-z0-9]+/i)?.[0]}> ${whereText(t).replace(/^Into/, "into")} (index ${t.index}${insideInstance ? ", seal bypassed: the page's items" : ""}) · ${describe(edit)}` };
   }

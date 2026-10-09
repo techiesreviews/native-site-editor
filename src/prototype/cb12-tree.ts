@@ -6,7 +6,7 @@
 // inside, bottom quarter after) and file-tree depth (variant C: the gap under
 // the pointer, the depth from the pointer's x).
 
-import { containerKind, endIndex, itemsOf, slotForIndex, targetFor, variant, type Box, type Dragged, type Model, type PNode, type Target } from "./cb12-core";
+import { containerKind, endIndex, itemsOf, slotForIndex, targetFor, treeLed, type Box, type Dragged, type Model, type PNode, type Target } from "./cb12-core";
 
 export const treeEl = () => document.querySelector<HTMLElement>(".page-structure__tree");
 export const rowFor = (key: string) => treeEl()?.querySelector<HTMLElement>(`[role='treeitem'][data-node='${key}']`) ?? undefined;
@@ -16,7 +16,7 @@ export function visibleRows() {
   const tree = treeEl();
   return tree ? [...tree.querySelectorAll<HTMLElement>("[role='treeitem'][data-node]")].filter(shown) : [];
 }
-export const indentStep = () => (variant === "C" ? 14 : 4);
+export const indentStep = () => (treeLed ? 14 : 4);
 export function overTree(x: number, y: number) {
   const tree = treeEl();
   if (!tree || tree.closest("[hidden]")) return false;

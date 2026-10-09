@@ -182,7 +182,7 @@
     else if (msg.op === "mark") mark(msg);
     else if (msg.op === "keys") keyMode = msg.mode || "alt";
     else if (msg.op === "scroll") window.scrollBy(0, Number(msg.dy) || 0);
-    else if (msg.op === "reveal") { var el = at(msg.node || []); if (el) el.scrollIntoView({ block: "center" }); }
+    else if (msg.op === "reveal") { var el = at(msg.node || []); if (el) { var rr = el.getBoundingClientRect(); var band = innerHeight * 0.15; if (rr.top < band || rr.bottom > innerHeight - band * 2) el.scrollIntoView({ block: rr.height > innerHeight * 0.6 ? "start" : "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); } }
     if (msg.id !== undefined) requestAnimationFrame(function () { reply(msg.id, { dump: dump() }); });
   });
 
