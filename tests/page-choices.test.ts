@@ -22,6 +22,8 @@ test("the cards' folder is the most common parent of the pages they link to", ()
   assert.equal(cardFolder(["/notes/b/", "/work/a/"]), "/notes/");
   assert.equal(cardFolder(["/about/", "/", undefined]), undefined);
   assert.equal(cardFolder([]), undefined);
+  // File pages count by their folder too.
+  assert.equal(cardFolder(["/work/a.html", "/about.html"]), "/work/");
   // Deeper pages: their own parent.
   assert.equal(cardFolder(["/work/2025/a/", "/work/2025/b/"]), "/work/2025/");
 });

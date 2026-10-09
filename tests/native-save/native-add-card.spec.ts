@@ -142,8 +142,12 @@ test("a fresh card shows Link to a page… at its foot: the cards' folder first,
   const input = page.getByRole("combobox", { name: "Link to a page" });
   await expect(input).toBeFocused();
   // Hung from the new card's foot, or over its top when the pane has no room below it.
-  const [card, box] = await Promise.all([frame(page).locator("section-work > card-project").nth(1).boundingBox(), picker.boundingBox()]);
-  expect(Math.min(Math.abs(box!.y - (card!.y + card!.height - 6)), Math.abs(box!.y + box!.height - (card!.y + 6)))).toBeLessThan(3);
+  const boxes = () => Promise.all([frame(page).locator("section-work > card-project").nth(1).boundingBox(), picker.boundingBox()]);
+  await expect.poll(async () => {
+    const [card, box] = await boxes();
+    return Math.min(Math.abs(box!.y - (card!.y + card!.height - 6)), Math.abs(box!.y + box!.height - (card!.y + 6)));
+  }).toBeLessThan(3);
+  const [card, box] = await boxes();
   expect(box!.x).toBeLessThan(card!.x + card!.width);
   expect(box!.x + box!.width).toBeGreaterThan(card!.x);
 

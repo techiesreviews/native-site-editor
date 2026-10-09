@@ -28,9 +28,9 @@ export interface PageChoiceGroup {
 export function cardFolder(routes: readonly (string | undefined)[]): string | undefined {
   const counts = new Map<string, number>();
   for (const route of routes) {
-    if (!route?.endsWith("/")) continue;
-    const parent = route.replace(/[^/]+\/$/, "");
-    if (parent !== "/" && parent !== route) counts.set(parent, (counts.get(parent) ?? 0) + 1);
+    // A folder page (`/work/a/`) or a file page (`/work/a.html`) alike.
+    const parent = route?.replace(/[^/]+\/?$/, "");
+    if (parent && parent !== "/" && parent !== route) counts.set(parent, (counts.get(parent) ?? 0) + 1);
   }
   let best: string | undefined;
   for (const [parent, count] of counts) if (!best || count > counts.get(best)!) best = parent;
