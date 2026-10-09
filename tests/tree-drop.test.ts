@@ -102,6 +102,9 @@ test("a Section or Div in a component's named slot is the component's, not a con
   // Through an items slot it is a page block, and takes drops.
   const open = treeDrop(list, list[4].bottom + 1, 5, paragraph, (tag) => (tag === "card-x" ? ["body"] : [])).target!;
   assert.deepEqual(open.container.path, [0, 0, 0, 0]);
+  // Slot names match exactly, as the browser assigns them.
+  const spaced = rowsOf(items([["main", [["section", [["card-x", [["div", [["p"]], { slot: " body ", open: true }]], { open: true }]], { open: true }]], { open: true }]]));
+  assert.deepEqual(treeDrop(spaced, spaced[4].bottom + 1, 5, paragraph, (tag) => (tag === "card-x" ? ["body"] : [])).target!.container.path, [0, 0]);
 });
 
 test("over a folded <main> a Section goes first from above its row, last from below", () => {

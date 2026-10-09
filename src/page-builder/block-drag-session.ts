@@ -124,7 +124,9 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
     clear(dropping) {
       ended = true;
       ports.draw(undefined);
-      ports.tree?.end(dropping && latest?.ok ? latest : undefined);
+      // A release the last probe did not see is decided later: no branch is kept open for it.
+      const settled = overTree || Boolean(want && fresh(want) && !probing);
+      ports.tree?.end(dropping && settled && latest?.ok ? latest : undefined);
     },
     drop(shown) {
       const at = want;

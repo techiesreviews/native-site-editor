@@ -43,9 +43,10 @@ export function structureContainer(item: NativeStructureItem, itemsSlots: ItemsS
     return { ...base, kind: item.tag, children: children(item.children), empty: !item.children.length };
   }
   const slots = item.tag.includes("-") ? itemsSlots(item.tag) : [];
-  const slot = near ? near.slot.trim() : slots[0];
+  // Slot names match exactly, as the browser assigns them.
+  const slot = near ? near.slot : slots[0];
   if (slot === undefined || !slots.includes(slot)) return undefined;
-  const assigned = item.children.filter((child) => child.slot.trim() === slot);
+  const assigned = item.children.filter((child) => child.slot === slot);
   return { ...base, kind: "items", slot, children: children(assigned), empty: !assigned.length };
 }
 
@@ -84,7 +85,7 @@ export function treeDrop(rows: readonly TreeRow[], y: number, level: number, blo
   // Div in any other slot (or a template part) is the component's, not a container.
   const open = (row: TreeRow) => {
     for (let child = row, up = parentOf(row); up; child = up, up = parentOf(up)) {
-      if (up.item.tag.includes("-") && !itemsSlots(up.item.tag).includes(child.item.slot.trim())) return false;
+      if (up.item.tag.includes("-") && !itemsSlots(up.item.tag).includes(child.item.slot)) return false;
     }
     return true;
   };

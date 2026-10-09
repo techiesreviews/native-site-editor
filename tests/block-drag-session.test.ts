@@ -200,6 +200,11 @@ test("over Page Structure the tree picks the target; over the canvas the tree mi
   assert.deepEqual(drops, [["1.0.1/2", "Into Div (stack) › after Paragraph", { painted: "<p>tree</p>" }]]);
   session.clear(true);
   assert.deepEqual(tree.ended, ["1.0.1/2"]);
+  // Released on the canvas before the page answered there: no branch is kept for it.
+  tree.over = false;
+  session.aim({ x: 400, y: 280 }, false, show, { x: 900, y: 280 });
+  session.clear(true);
+  assert.deepEqual(tree.ended.at(-1), undefined);
   // Off both: nothing to drop, the tree's line cleared.
   tree.over = false;
   session.aim(undefined, false, show, { x: 100, y: 150 });
