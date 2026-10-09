@@ -6,7 +6,7 @@
 // inside, bottom quarter after) and file-tree depth (variant C: the gap under
 // the pointer, the depth from the pointer's x).
 
-import { containerKind, endIndex, itemsOf, slotForIndex, targetFor, treeLed, type Box, type Dragged, type Model, type PNode, type Target } from "./cb12-core";
+import { containerKind, endIndex, isBand, itemsOf, slotForIndex, targetFor, treeLed, type Box, type Dragged, type Model, type PNode, type Target } from "./cb12-core";
 
 export const treeEl = () => document.querySelector<HTMLElement>(".page-structure__tree");
 export const rowFor = (key: string) => treeEl()?.querySelector<HTMLElement>(`[role='treeitem'][data-node='${key}']`) ?? undefined;
@@ -91,9 +91,30 @@ export function treeLine(t: Target): { y: number; level: number; row?: HTMLEleme
 
 export interface TreePick { target?: Target; line?: { y: number; level: number } ; row?: HTMLElement }
 
+/**
+ * A Section in Structure snaps to the nearest gap between page bands: by the
+ * midpoint of each band's rows (its open group counts), so a nested row picks
+ * before or after its own band; rows above the bands (the header, Main) give
+ * the first gap, rows below them (the footer) the last.
+ */
+export function pickBandTree(model: Model, d: Dragged, y: number): TreePick {
+  const main = model.main();
+  if (!main) return {};
+  const bands = main.kids.flatMap((n) => { const row = rowFor(n.key); return row && shown(row) ? [{ n, row }] : []; });
+  if (!bands.length) return {};
+  let index = bands[bands.length - 1].n.p.at(-1)! + 1;
+  for (const { n, row } of bands) {
+    if (y < (row.getBoundingClientRect().top + subtreeBottom(row)) / 2) { index = n.p.at(-1)!; break; }
+  }
+  const target = targetFor(d, { node: main }, index);
+  const line = treeLine(target);
+  return { target, line: line && { y: line.y, level: line.level }, row: rowFor(main.key) };
+}
+
 /** Variants A and B: the row under the pointer and which part of it. */
 export function pickZones(model: Model, d: Dragged, x: number, y: number): TreePick {
   void x;
+  if (isBand(d)) return pickBandTree(model, d, y);
   const rows = visibleRows();
   const row = rows.find((r) => { const b = r.getBoundingClientRect(); return y >= b.top && y < b.bottom; })
     ?? (rows.length && y >= rows[rows.length - 1].getBoundingClientRect().bottom ? rows[rows.length - 1] : undefined);
@@ -119,6 +140,7 @@ export function pickZones(model: Model, d: Dragged, x: number, y: number): TreeP
 
 /** Variant C: the gap under the pointer, at the depth the pointer's x says (as in file trees). */
 export function pickDepth(model: Model, d: Dragged, x: number, y: number): TreePick {
+  if (isBand(d)) return pickBandTree(model, d, y);
   const tree = treeEl();
   const rows = visibleRows();
   if (!tree || !rows.length) return {};

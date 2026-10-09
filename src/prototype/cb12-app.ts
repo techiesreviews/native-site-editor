@@ -7,8 +7,8 @@
 
 import type { Cb12Host, Cb12Variant } from "./cb12";
 import type { NativePreviewSelection } from "../components/native-preview";
-import { BLOCKS, btn, deps, draggedFor, el, frameEvents, isTyping, measure, pagePath, readout, state, variant, type BlockKind, type Dragged } from "./cb12-core";
-import { dragging, pressToDrag, recentlyDragged, setFrameState } from "./cb12-drag";
+import { BLOCKS, btn, deps, draggedFor, el, frameBox, frameEvents, framePost, isTyping, latest, measure, pagePath, readout, state, variant, type BlockKind, type Dragged } from "./cb12-core";
+import { dragging, pressToDrag, recentlyDragged, remotePointer, setFrameState, startDrag } from "./cb12-drag";
 import { focusRowSoon, inInsertMode, insertAtSelection, insertKey, moveBy, openMoveTo as openMoveToPath, startInsertMode } from "./cb12-keys";
 import { rowFor, treeEl } from "./cb12-tree";
 import { mountRail } from "./cb12-rail";
@@ -29,7 +29,7 @@ export function install(host: Cb12Host) {
   mountSwitcher();
   readout(NAMES[variant], variant === "D" ? [
     "Click a rail icon to insert at the selection, or drag it onto the page or into Structure.",
-    "Keys: Alt+↑/↓ siblings, Alt+←/→ out/in (canvas or a Structure row), edit bar Move to…",
+    "Move a block by dragging it (or its name in the edit bar) or a Structure row; Alt+arrows move it by keyboard.",
   ] : [
     "Drag a block from Add, a selected block by its grip in the edit bar, or a row in Structure.",
     variant === "A" ? "Keys: select a block, Alt+↑/↓ siblings, Alt+←/→ out/in, edit bar Move to…" :
@@ -40,8 +40,9 @@ export function install(host: Cb12Host) {
   setFrameState("");
   window.addEventListener("message", (e) => {
     const data = e.data as { source?: string; type?: string } | undefined;
-    if (data?.source === "astro-native-preview" && data.type === "ready") setTimeout(() => setFrameState(""), 50);
+    if (data?.source === "astro-native-preview" && data.type === "ready") setTimeout(() => { setFrameState(""); if (variant === "D") framePost("press", { on: true }); }, 50);
   });
+  if (variant === "D") { framePost("press", { on: true }); watchFramePress(); }
   if (variant === "D") mountRail();
   else watchAddPanel();
   watchGrips();
@@ -149,9 +150,33 @@ function selectedPath() {
   const s = deps().selection();
   return s && !s.host && s.node?.length && s.path === pagePath() ? s.node : undefined;
 }
+/** D: a block pressed and moved in the page drags itself (the frame relays the pointer). */
+function watchFramePress() {
+  frameEvents.press = (press) => {
+    const box = frameBox();
+    if (!box) return;
+    const x = box.left + press.x, y = box.top + press.y;
+    if (press.phase !== "start") {
+      remotePointer(press.phase === "move" ? "pointermove" : press.phase === "end" ? "pointerup" : "pointercancel", x, y, Boolean(press.alt));
+      return;
+    }
+    if (dragging() || !press.block?.length || !press.target) return;
+    const s = deps().selection();
+    const sel = s && !["main", "body"].includes(s.tag) ? selectedPath() : undefined;
+    const target = press.target;
+    const inside = sel && sel.length <= target.length && sel.every((v, i) => target[i] === v);
+    const path = inside ? sel! : press.block;
+    const main = latest.model?.main();
+    // The header and footer are not the page's to move here; nor is <main>.
+    if (main && (path[0] !== main.p[0] || path.length < 2)) { remotePointer("pointercancel", x, y); return; }
+    const tag = inside ? s!.tag : press.tag ?? "div";
+    void startDrag({ kind: "move", path: [...path], key: path.join("."), tag, name: tag, band: path.length === 2 }, null, 9999, x, y);
+  };
+}
 function watchGrips() {
   document.addEventListener("pointerdown", (event) => {
-    const grip = (event.target as Element | null)?.closest?.<HTMLElement>(".cb12-grip, .edit-bar__grip");
+    // D: the edit bar's name chip is the handle (round 3); A, B, C: the grip.
+    const grip = (event.target as Element | null)?.closest?.<HTMLElement>(variant === "D" ? ".edit-bar__label, .edit-bar__grip" : ".cb12-grip, .edit-bar__grip");
     if (!grip || event.button !== 0) return;
     const path = selectedPath();
     if (!path) return;
@@ -163,7 +188,7 @@ function watchGrips() {
     }, 7);
   }, true);
   document.addEventListener("click", (event) => {
-    if ((event.target as Element | null)?.closest?.(".cb12-grip, .edit-bar__grip") && recentlyDragged()) { event.stopPropagation(); event.preventDefault(); }
+    if ((event.target as Element | null)?.closest?.(".cb12-grip, .edit-bar__grip, .edit-bar__label") && recentlyDragged()) { event.stopPropagation(); event.preventDefault(); }
   }, true);
 }
 /** A move of the element at `path`, named from the source (the measurement follows at drag start). */

@@ -64,11 +64,13 @@ export function toFrame(x: number, y: number) {
 
 let ids = 0;
 const waiting = new Map<number, (dump: Dump | undefined) => void>();
-export const frameEvents: { key?: (key: string, alt: boolean, shift: boolean) => void } = {};
+export interface FramePress { phase: "start" | "move" | "end" | "cancel"; x: number; y: number; alt?: boolean; target?: number[]; block?: number[]; tag?: string }
+export const frameEvents: { key?: (key: string, alt: boolean, shift: boolean) => void; press?: (press: FramePress) => void } = {};
 window.addEventListener("message", (event) => {
   const data = event.data as { source?: string; id?: number; type?: string; dump?: Dump; key?: string; alt?: boolean; shift?: boolean } | undefined;
   if (data?.source !== "cb12-proto") return;
   if (data.type === "key") { frameEvents.key?.(data.key ?? "", Boolean(data.alt), Boolean(data.shift)); return; }
+  if (data.type === "press") { frameEvents.press?.(data as unknown as FramePress); return; }
   if (data.id === undefined) return;
   waiting.get(data.id)?.(data.dump);
   waiting.delete(data.id);
@@ -279,11 +281,26 @@ export function targetFor(d: Dragged, box: Box, index: number, level = 0): Targe
   const a = allowed(d, box);
   return { box, index, ok: a.ok, reason: a.reason, level };
 }
-/** Words for a target: "Into Div (stack) › after Heading". */
+/**
+ * A Section never refuses (round 3): wherever it is dropped it snaps to the
+ * nearest gap between the page bands, by the bands' vertical midpoints (over
+ * a band, its half under the pointer; above them, the first gap; below, the last).
+ */
+export function bandTarget(model: Model, d: Dragged, y: number): Target | undefined {
+  const main = model.main();
+  if (!main) return undefined;
+  const bands = main.kids.filter((n) => n.r[3] > 0 && !n.hid);
+  const after = bands.filter((n) => n.r[1] + n.r[3] / 2 < y);
+  const index = after.length ? after[after.length - 1].p.at(-1)! + 1 : (bands[0]?.p.at(-1) ?? 0);
+  return { box: { node: main }, index, ok: true };
+}
+const bandName = (n: PNode) => (n.txt ? `“${short(n.txt)}”` : nodeName(n));
+/** Words for a target: "Into Div (stack) › after Heading", or "Between page bands › after “A deep tree”". */
 export function whereText(t: Target) {
   const items = itemsOf(t.box);
   const after = [...items].reverse().find((n) => n.p.at(-1)! < t.index);
   const before = items.find((n) => n.p.at(-1)! >= t.index);
+  if (t.box.node.t === "main") return `Between page bands › ${after ? `after ${bandName(after)}` : before ? `before ${bandName(before)}` : "the first"}`;
   const place = !items.length ? "empty" : after ? `after ${nodeName(after)}` : before ? `before ${nodeName(before)}` : "at the end";
   return `Into ${boxName(t.box)} › ${place}`;
 }
@@ -353,91 +370,21 @@ export async function blockMarkup(d: Extract<Dragged, { kind: "new" }>, box: Box
     case "div": return `<div class="${d.layout}"></div>`;
     case "heading": { const l = headingLevel(box); return `<h${l}>New heading</h${l}>`; }
     case "paragraph": return `<p>New paragraph. Select it to write.</p>`;
-    case "button": {
-      const answer = await askButton();
-      return answer ? `<a class="btn" href="${escape(answer.href)}">${escape(answer.label)}</a>` : undefined;
-    }
-    case "image": {
-      const answer = await askImage();
-      return answer ? mediaImageMarkup({ path: answer.path, alt: answer.alt, width: answer.width, height: answer.height }) : undefined;
-    }
+    // Round 3: placeholders at once, no dialogs; the edit bar changes them afterwards.
+    case "button": return `<a class="btn" href="#">Button</a>`;
+    case "image": return mediaImageMarkup({ path: PLACEHOLDER, alt: "", width: 640, height: 400 });
   }
 }
 
-// ---- Small dialogs (stubs for the media picker and the address field). ----
-function dialogShell(title: string) {
-  const dialog = el("dialog", "cb12-dialog");
-  const form = el("form", "cb12-dialog__form");
-  form.method = "dialog";
-  form.append(el("h2", "cb12-dialog__title", title));
-  dialog.append(form);
-  document.body.append(dialog);
-  return { dialog, form };
-}
-const KNOWN_SIZES: Record<string, [number, number]> = { "images/studio-desk.svg": [800, 600], "images/social-card.png": [1200, 630] };
-export function askImage(): Promise<{ path: string; alt: string; width?: number; height?: number } | undefined> {
-  return new Promise((resolve) => {
-    const { dialog, form } = dialogShell("Choose an image");
-    form.append(el("p", "cb12-dialog__note", "Prototype stand-in for the media picker: the site's images."));
-    const list = el("div", "cb12-dialog__choices");
-    const images = deps().images();
-    let chosen = images.find((p) => p.includes("studio")) ?? images[0];
-    for (const path of images) {
-      const option = el("label", "cb12-dialog__choice");
-      const radio = el("input");
-      radio.type = "radio"; radio.name = "cb12-image"; radio.value = path; radio.checked = path === chosen;
-      radio.addEventListener("change", () => { chosen = path; });
-      option.append(radio, el("span", "", path));
-      list.append(option);
-    }
-    const alt = el("input", "cb12-dialog__input");
-    alt.placeholder = "Alt text (describe the image)";
-    alt.value = "A studio desk with printed page layouts";
-    const altLabel = el("label", "cb12-dialog__field");
-    altLabel.append(el("span", "", "Alt text"), alt);
-    const actions = el("div", "cb12-dialog__actions");
-    const cancel = btn("Cancel", () => dialog.close("cancel"), "cb12-btn");
-    const ok = el("button", "cb12-btn cb12-btn--primary", "Insert image");
-    ok.value = "ok";
-    actions.append(cancel, ok);
-    form.append(list, altLabel, actions);
-    dialog.addEventListener("close", () => {
-      const value = dialog.returnValue === "ok" && chosen ? { path: chosen, alt: alt.value.trim(), width: KNOWN_SIZES[chosen]?.[0], height: KNOWN_SIZES[chosen]?.[1] } : undefined;
-      dialog.remove();
-      resolve(value);
-    });
-    dialog.showModal();
-    ok.focus();
-  });
-}
-export function askButton(): Promise<{ label: string; href: string } | undefined> {
-  return new Promise((resolve) => {
-    const { dialog, form } = dialogShell("New button");
-    const label = el("input", "cb12-dialog__input");
-    label.value = "Button";
-    const href = el("input", "cb12-dialog__input");
-    href.value = "#";
-    href.setAttribute("list", "cb12-links");
-    const options = el("datalist");
-    options.id = "cb12-links";
-    for (const link of deps().links()) { const o = el("option"); o.value = link.value; o.label = link.label; options.append(o); }
-    const f1 = el("label", "cb12-dialog__field"); f1.append(el("span", "", "Label"), label);
-    const f2 = el("label", "cb12-dialog__field"); f2.append(el("span", "", "Address"), href, options);
-    const actions = el("div", "cb12-dialog__actions");
-    const ok = el("button", "cb12-btn cb12-btn--primary", "Insert button");
-    ok.value = "ok";
-    actions.append(btn("Cancel", () => dialog.close("cancel"), "cb12-btn"), ok);
-    form.append(f1, f2, actions);
-    dialog.addEventListener("close", () => {
-      const value = dialog.returnValue === "ok" && label.value.trim() && href.value.trim() ? { label: label.value.trim(), href: href.value.trim() } : undefined;
-      dialog.remove();
-      resolve(value);
-    });
-    dialog.showModal();
-    href.focus();
-    href.select();
-  });
-}
+// ---- The placeholder image: a labelled draft file, written with the first Image inserted. ----
+export const PLACEHOLDER = "images/placeholder.svg";
+const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400">
+  <!-- PROTOTYPE cb12 draft: a placeholder image, replaced with Choose image… -->
+  <rect width="640" height="400" fill="#e3e6e0"/>
+  <circle cx="232" cy="150" r="34" fill="#c5cbc1"/>
+  <path d="M120 310 L260 190 L350 270 L420 215 L540 310 Z" fill="#c5cbc1"/>
+</svg>
+`;
 
 // ---- Writes. ----
 interface Edit { start: number; end: number; text: string; original: string }
@@ -515,13 +462,20 @@ function pathAfterMove(from: readonly number[], parent: readonly number[], index
 
 export const pagePath = () => deps().previewPage() ?? deps().currentPath();
 export interface Done { ok: boolean; text: string; select?: number[] }
-function apply(path: string, edit: Edit, select: number[]): boolean {
+function apply(path: string, edit: Edit, select: number[], companion?: { undo: () => void; redo: () => void }): boolean {
   const editor = deps().editor();
   const source = deps().sources()[path];
   if (!editor || source === undefined || source.slice(edit.start, edit.end) !== edit.original) return false;
   deps().preview()?.selectAfterUpdate({ path, node: select });
-  editor.replaceActiveRange({ path, start: edit.start, end: edit.end, expected: edit.original, text: edit.text });
+  editor.replaceActiveRange({ path, start: edit.start, end: edit.end, expected: edit.original, text: edit.text }, false, companion);
   return true;
+}
+/** The first Image writes the placeholder file too, in the same undo step. */
+async function placeholderFile(): Promise<{ undo: () => void; redo: () => void } | undefined | false> {
+  if (deps().images().includes(PLACEHOLDER) || deps().sources()[PLACEHOLDER] !== undefined) return undefined;
+  const result = await deps().createFiles([{ path: PLACEHOLDER, content: PLACEHOLDER_SVG }]);
+  if ("error" in result) return false;
+  return { undo: () => result.receipt.undo(), redo: () => void result.receipt.redo() };
 }
 const describe = (edit: Edit) => `source ${edit.start}–${edit.end}: −${edit.original.length} +${edit.text.length} chars, 1 undo step`;
 
@@ -551,8 +505,11 @@ export async function commit(d: Dragged, t: Target, opts: { wrap?: boolean } = {
     }
     if (!edit) return { ok: false, text: "HTML content rules refuse this block here (nativeMarkupInsertEdit)." };
     const select = opts.wrap ? [...parent, t.index, 0] : [...parent, t.index];
-    if (!apply(path, edit, select)) return { ok: false, text: "The page changed meanwhile; nothing written." };
-    return { ok: true, select, text: `Inserted ${markup.match(/^<[a-z0-9]+/i)?.[0]}> ${whereText(t).replace(/^Into/, "into")} (index ${t.index}${insideInstance ? ", seal bypassed: the page's items" : ""}) · ${describe(edit)}` };
+    const file = d.block === "image" ? await placeholderFile() : undefined;
+    if (file === false) return { ok: false, text: "Could not write the placeholder image." };
+    if ((deps().sources()[path] ?? "") !== source) { if (file) file.undo(); return { ok: false, text: "The page changed meanwhile; nothing written." }; }
+    if (!apply(path, edit, select, file)) { if (file) file.undo(); return { ok: false, text: "The page changed meanwhile; nothing written." }; }
+    return { ok: true, select, text: `Inserted ${markup.match(/^<[a-z0-9]+/i)?.[0]}> ${whereText(t).replace(/^(Into|Between)/, (m) => m.toLowerCase())} (index ${t.index}${insideInstance ? ", seal bypassed: the page's items" : ""}) · ${describe(edit)}` };
   }
   if (stays(d, t)) return { ok: false, text: `${d.name} stayed in place.` };
   const source = deps().sources()[path] ?? "";
@@ -575,7 +532,7 @@ export async function commit(d: Dragged, t: Target, opts: { wrap?: boolean } = {
   }
   if (!edit) return { ok: false, text: "This move could not be written." };
   if (!apply(path, edit, select)) return { ok: false, text: "The page changed meanwhile; nothing written." };
-  return { ok: true, select, text: `Moved ${d.name} ${whereText(t).replace(/^Into/, "into")} (index ${t.index}${sealed ? ", raw edit: instance involved" : ""}) · ${describe(edit)}` };
+  return { ok: true, select, text: `Moved ${d.name} ${whereText(t).replace(/^(Into|Between)/, (m) => m.toLowerCase())} (index ${t.index}${sealed ? ", raw edit: instance involved" : ""}) · ${describe(edit)}` };
 }
 
 // ---- The readout (bottom-left) and a toast. ----

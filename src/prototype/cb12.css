@@ -294,3 +294,4 @@ html.cb12-has-rail .workspace { grid-template-columns: 48px var(--sidebar-width,
 .cb12-flash.is-leaving, .cb12-flash-label.is-leaving { opacity: 0; }
 @keyframes cb12-flash-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cb12-flash, .cb12-flash-label { animation: none; transition: none; } }
+html[data-cb12-variant="D"] .edit-bar__label { cursor: grab; touch-action: none; user-select: none; }

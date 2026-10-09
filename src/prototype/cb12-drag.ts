@@ -15,7 +15,7 @@
 
 import {
   allowed, announce, boxName, boxPath, boxRect, commit, containerKind, containersAt, el, endIndex, frameBox, frameOp, framePost, fresh, indexAt, isBand,
-  itemsOf, latest, lineGeom, drawn, nodeName, lineMode, treeLed, measure, previewMarkup, readTarget, readout, rowOf, sameTarget, sideIndex, stays, targetFor, toFrame, variant, whereText,
+  itemsOf, latest, lineGeom, drawn, nodeName, lineMode, treeLed, bandTarget, measure, previewMarkup, readTarget, readout, rowOf, sameTarget, sideIndex, stays, targetFor, toFrame, variant, whereText,
   type Box, type Dragged, type Model, type Pt, type Rect, type Target,
 } from "./cb12-core";
 import { expandTo, indentStep, overTree, pickDepth, pickZones, treeEl, treeLine } from "./cb12-tree";
@@ -26,6 +26,7 @@ export const FRAME_CSS = `
 #page .btn { display: inline-block; padding: var(--space-xs, .5rem) var(--space-m, 1rem); border: 2px solid var(--accent); border-radius: var(--radius-full, 999px); background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
 #page .btn:hover { filter: brightness(0.92); }
 #page .btn { justify-self: start; align-self: start; }
+#page img[src$="placeholder.svg"] { content: linear-gradient(transparent, transparent); display: block; max-width: 100%; height: auto; aspect-ratio: 8 / 5; background: radial-gradient(circle at 36% 38%, #c5cbc1 0 5.5%, transparent 6%), linear-gradient(160deg, transparent 62%, #c5cbc1 62.5%), #e3e6e0; border-radius: 4px; }
 #page section:not(:has(> :not(.cb12-ph))), #page div.flow:not(:has(> :not(.cb12-ph))), #page div.cards:not(:has(> :not(.cb12-ph))) { min-height: 96px; display: grid; place-items: center; border-radius: var(--radius-m, 8px); outline: 1.5px dashed color-mix(in oklab, var(--accent) 45%, transparent); outline-offset: -2px; }
 #page section:not(:has(*))::after { content: "Empty Section · drop blocks here"; }
 #page div.flow:not(:has(*))::after { content: "Empty Div (stack) · drop blocks here"; }
@@ -92,6 +93,9 @@ export interface Session {
   phKey?: string;
 }
 let current: Session | undefined;
+let remote: ((type: "pointermove" | "pointerup" | "pointercancel", x: number, y: number, alt: boolean) => void) | undefined;
+/** A drag that began in the page: the frame's pointer, in editor coordinates. */
+export function remotePointer(type: "pointermove" | "pointerup" | "pointercancel", x: number, y: number, alt = false) { remote?.(type, x, y, alt); }
 let lastDragEnd = 0;
 export const dragging = () => Boolean(current);
 /** A drag is on, or ended just now (the click that follows a release is not a click). */
@@ -102,6 +106,7 @@ const nearEdge = (p: Pt, r: Rect, d: number) => p.x - r[0] < d || r[0] + r[2] - 
 /** The innermost valid container under the point; A also escapes at edges and steps up. */
 function pickCanvas(s: Session, p: Pt): Target | undefined {
   const model = s.model!;
+  if (isBand(s.d)) return bandTarget(model, s.d, p.y);
   const chain = containersAt(model, p, movingKey(s));
   if (!chain.length) return undefined;
   const innerKey = `${chain[0].node.key}/${chain[0].slot?.name ?? ""}`;
@@ -139,7 +144,8 @@ function render(s: Session) {
     const r = boxRect(box);
     const empty = !itemsOf(box).length;
     if (lineMode) {
-      rectEl(t.ok ? "cb12-box cb12-box--target" : "cb12-box cb12-box--refused", r);
+      // Between page bands the line says it all; Main's outline would frame the whole page.
+      if (box.node.t !== "main") rectEl(t.ok ? "cb12-box cb12-box--target" : "cb12-box cb12-box--refused", r);
       if (t.ok && !stays(s.d, t)) {
         const line = lineGeom(box, t.index);
         if (line && !empty) rectEl(`cb12-line${rowOf(box) ? " cb12-line--v" : ""}`, line);
@@ -241,14 +247,17 @@ function remeasure(s: Session) {
  * Starts a drag of `d`; `source` already holds the pointer capture. Resolves
  * when the drag ends (dropped, refused or cancelled).
  */
-export function startDrag(d: Dragged, from: HTMLElement, pointerId: number, x: number, y: number): Promise<void> {
+export function startDrag(d: Dragged, from: HTMLElement | null, pointerId: number, x: number, y: number): Promise<void> {
   if (current) return Promise.resolve();
   // The pointer moves to an element of our own, so a re-render of the edit
-  // bar or the tree (or B hiding the selection) never loses it.
-  let source = from;
+  // bar or the tree (or B hiding the selection) never loses it. A drag that
+  // began in the page (`from` null) keeps its pointer there: the frame
+  // relays it (remotePointer) as events on the same element.
   const catcher = el("div", "cb12-catcher");
   document.body.append(catcher);
-  try { catcher.setPointerCapture(pointerId); source = catcher; } catch { /* keep the original holder */ }
+  let source: HTMLElement = catcher;
+  if (from) { try { catcher.setPointerCapture(pointerId); } catch { source = from; } }
+  else remote = (type, cx, cy, alt) => catcher.dispatchEvent(new PointerEvent(type, { pointerId, clientX: cx, clientY: cy, altKey: alt, bubbles: true }));
   // Keys (Escape, Alt, Tab) come to the editor even when the page had focus.
   const before = document.activeElement as HTMLElement | null;
   catcher.tabIndex = -1;
@@ -315,6 +324,7 @@ export function startDrag(d: Dragged, from: HTMLElement, pointerId: number, x: n
     const finish = async (drop: boolean) => {
       if (done) return;
       done = true;
+      remote = undefined;
       lastDragEnd = Date.now();
       source.removeEventListener("pointermove", onMove);
       source.removeEventListener("pointerup", onUp);
@@ -347,7 +357,7 @@ export function startDrag(d: Dragged, from: HTMLElement, pointerId: number, x: n
       } else if (stays(d, t)) {
         readout(`${d.name}: stayed`, ["Dropped where it already is; nothing written."]);
       } else {
-        readout(`${d.name}: dropped`, [whereText(t), d.kind === "new" && (d.block === "image" || d.block === "button") ? "Waiting for the dialog…" : "Writing…"], "ok");
+        readout(`${d.name}: dropped`, [whereText(t), "Writing…"], "ok");
         const result = await commit(d, t);
         readout(result.ok ? "drop written" : `${d.name}: not written`, [result.text], result.ok ? "done" : "refused");
         announce(result.ok ? `${d.name} ${d.kind === "new" ? "added" : "moved"}` : result.text);

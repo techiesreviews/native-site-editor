@@ -40,11 +40,11 @@ export function cb12FrameTag() {
 export function cb12EditBarControls(selection: NativePreviewSelection): EditBarControl[] {
   if (!cb12Active() || selection.host || !selection.node?.length || selection.tag === "main" || selection.tag === "body") return [];
   const variant = cb12Variant();
-  const out: EditBarControl[] = [{
+  const out: EditBarControl[] = variant === "D" ? [] : [{
     kind: "button",
     label: "Drag to move",
     icon: "grip",
-    title: variant === "A" || variant === "D" ? "Drag to move (Enter: Move to…)" : variant === "B" ? "Drag to move (Enter: insert mode)" : "Drag to move (Enter: move in Structure with Alt+arrows)",
+    title: variant === "A" ? "Drag to move (Enter: Move to…)" : variant === "B" ? "Drag to move (Enter: insert mode)" : "Drag to move (Enter: move in Structure with Alt+arrows)",
     className: "cb12-grip",
     onPress: () => void app().then((m) => m.gripPressed(selection)),
   }];
@@ -59,7 +59,8 @@ export function cb12EditBarControls(selection: NativePreviewSelection): EditBarC
       onChange: (value) => void app().then((m) => m.setDivLayout(selection, value === "cards" ? "cards" : "flow")),
     });
   }
-  if (variant === "A" || variant === "D") out.push({ kind: "button", label: "Move to…", title: "PROTOTYPE cb12: pick where this block goes", className: "cb12-moveto", onPress: () => void app().then((m) => m.openMoveTo(selection)) });
+  // D (round 3): no grip and no Move to…; the block itself and its name chip drag.
+  if (variant === "A") out.push({ kind: "button", label: "Move to…", title: "PROTOTYPE cb12: pick where this block goes", className: "cb12-moveto", onPress: () => void app().then((m) => m.openMoveTo(selection)) });
   if (variant === "B") out.push({ kind: "button", label: "Move…", title: "PROTOTYPE cb12: insert mode (arrows walk the gap, Enter drops)", className: "cb12-moveto", onPress: () => void app().then((m) => m.gripPressed(selection)) });
   return out;
 }

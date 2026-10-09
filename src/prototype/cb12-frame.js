@@ -181,10 +181,90 @@
     } else if (msg.op === "placeholder") setPlaceholder(msg);
     else if (msg.op === "mark") mark(msg);
     else if (msg.op === "keys") keyMode = msg.mode || "alt";
+    else if (msg.op === "press") pressOn = Boolean(msg.on);
     else if (msg.op === "scroll") window.scrollBy(0, Number(msg.dy) || 0);
     else if (msg.op === "reveal") { var el = at(msg.node || []); if (el) { var rr = el.getBoundingClientRect(); var band = innerHeight * 0.15; if (rr.top < band || rr.bottom > innerHeight - band * 2) el.scrollIntoView({ block: rr.height > innerHeight * 0.6 ? "start" : "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); } }
     if (msg.id !== undefined) requestAnimationFrame(function () { reply(msg.id, { dump: dump() }); });
   });
+
+  // ---- D (round 3): a press on a page element that moves 7 px drags it. ----
+  // The editor decides which block moves (the selection when the press is
+  // inside it, else this nearest non-inline element) and runs the drag; the
+  // pointer stays with this document, so it is relayed as `press` messages.
+  // Text being typed in keeps its own press-and-drag (selecting text).
+  var pressOn = false;
+  var press = null;
+  var swallowClick = false;
+  function pathOf(el) {
+    var out = [];
+    var root = page();
+    var at = el;
+    for (; at && at !== root; at = at.parentElement) {
+      if (!at.parentElement) return null;
+      out.unshift(kids(at.parentElement).indexOf(at));
+    }
+    return at === root ? out : null;
+  }
+  function lightTarget(e) {
+    var path = typeof e.composedPath === "function" ? e.composedPath() : [e.target];
+    var root = page();
+    for (var i = 0; i < path.length; i++) {
+      var n = path[i];
+      if (n instanceof Element && n !== root && n.getRootNode() === document && root && root.contains(n) && !n.hasAttribute("data-cb12-ph") && !n.hasAttribute("data-native-selection-box")) return n;
+    }
+    return null;
+  }
+  function relay(phase, e, extra) {
+    var out = { source: "cb12-proto", type: "press", phase: phase, x: e.clientX, y: e.clientY, alt: e.altKey };
+    for (var k in extra) out[k] = extra[k];
+    parent.postMessage(out, "*");
+  }
+  window.addEventListener("pointerdown", function (e) {
+    press = null;
+    if (!pressOn || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    var t = lightTarget(e);
+    if (!t || t.closest("input, textarea, select")) return;
+    var active = document.activeElement;
+    if (active && active.isContentEditable && active.contains(t)) return;
+    var block = t;
+    while (block.parentElement && block.parentElement !== page() && getComputedStyle(block).display === "inline") block = block.parentElement;
+    press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: t, block: block, dragging: false };
+  }, true);
+  window.addEventListener("pointermove", function (e) {
+    if (!press || e.pointerId !== press.id) return;
+    if (!press.dragging) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 7) return;
+      press.dragging = true;
+      try { document.documentElement.setPointerCapture(e.pointerId); } catch (_) { /* gone */ }
+      var a = document.activeElement;
+      if (a && a.isContentEditable) a.blur();
+      document.documentElement.style.userSelect = "none";
+      relay("start", e, { target: pathOf(press.t), block: pathOf(press.block), tag: press.block.localName });
+    } else relay("move", e, {});
+    e.preventDefault();
+    var sel = document.getSelection();
+    if (sel) sel.removeAllRanges();
+  }, true);
+  function endPress(e, phase) {
+    if (!press || e.pointerId !== press.id) return;
+    var was = press.dragging;
+    press = null;
+    if (!was) return;
+    document.documentElement.style.userSelect = "";
+    swallowClick = true;
+    setTimeout(function () { swallowClick = false; }, 400);
+    relay(phase, e, {});
+  }
+  window.addEventListener("pointerup", function (e) { endPress(e, "end"); }, true);
+  window.addEventListener("pointercancel", function (e) { endPress(e, "cancel"); }, true);
+  window.addEventListener("click", function (e) {
+    if (!swallowClick) return;
+    swallowClick = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+  // Images and links would start the browser's own drag and drop.
+  window.addEventListener("dragstart", function (e) { if (pressOn && lightTarget(e)) e.preventDefault(); }, true);
 
   // Alt+arrows (and, in variant B's insert mode, every arrow, Enter and
   // Escape) go to the editor; they come first, before the runtime's keys.
