@@ -50,7 +50,7 @@ function walkStyleRules(css: string, visit: (rule: StyleRule) => void) {
     const text = selectorText(prelude).trim();
     if (text.startsWith("@")) {
       // A comment separates tokens here (`@media/**/print`).
-      const rule = withoutComments(prelude).replace(/\s+/g, " ").trim();
+      const rule = selectorText(prelude, true).replace(/\s+/g, " ").trim();
       const name = /^@([\w-]+)/.exec(rule)?.[1].toLowerCase() ?? "";
       if (!GROUPING.has(name)) { pos = blockEnd(css, stop); continue; }
       stack.push(context);
@@ -270,11 +270,13 @@ export function componentVariants(css: string, options: { scriptAttributes?: Ite
         // The host is featureless: only a pseudo-element may follow `:host` or
         // `:host(…)`; `:host[data-x]`, `:host.foo` and `:host:hover` never match.
         const argument = functional ? compound.slice(6, close) : "";
-        for (const attribute of readCompoundAttributes(rest).attributes) {
+        const pseudo = rest.indexOf("::");
+        const fix = pseudo < 0 ? `:host(${argument}${rest}) { … }` : `:host(${argument}${rest.slice(0, pseudo)})${rest.slice(pseudo)} { … }`;
+        for (const attribute of readCompoundAttributes(pseudo < 0 ? rest : rest.slice(0, pseudo)).attributes) {
           const key = `${offset}:${authored}:${attribute.name}`;
           if (warned.has(key)) continue;
           warned.add(key);
-          warnings.push({ kind: "host-without-parentheses", selector: authored, attribute: attribute.name, fix: `:host(${argument}${rest}) { … }`, offset });
+          warnings.push({ kind: "host-without-parentheses", selector: authored, attribute: attribute.name, fix, offset });
         }
         continue;
       }

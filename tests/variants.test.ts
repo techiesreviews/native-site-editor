@@ -181,6 +181,7 @@ test("only a pseudo-element may follow the host; other trailing parts never matc
   for (const broken of [":host.foo {}", ":host:hover {}", ":host([data-x=a]):hover {}"])
     assert.deepEqual(componentVariants(`${broken} :host([data-tone=dark]) {}`).warnings, [{ kind: "no-default-look" }]);
   assert.deepEqual(values(":host([data-x=a]):hover {} :host([data-y=b])::before {}"), [["data-y", ["b"]]]);
+  assert.deepEqual(componentVariants(":host[data-tone=dark]::before {}").warnings.map(({ fix }: { fix?: string }) => fix), [":host([data-tone=dark])::before { … }"]);
 });
 
 test("a negated value never names the default", () => {
@@ -189,5 +190,6 @@ test("a negated value never names the default", () => {
 
 test("comments separate at-rule tokens; escaped and non-ASCII custom properties hold blocks", () => {
   assert.deepEqual(parse("@media/**/print { :host([data-tone=dark]) {} }")[0].conditions, ["@media print"]);
+  assert.deepEqual(parse(`@container style(--mode: "/* a */") { :host([data-tone=dark]) {} }`)[0].conditions, [`@container style(--mode: "/* a */")`]);
   assert.deepEqual(values(":host { --é: { :host([data-fake=x]) & {} }; --\\61 b: { :host([data-fake=y]) & {} }; } :host([data-tone=dark]) {}"), [["data-tone", ["dark"]]]);
 });
