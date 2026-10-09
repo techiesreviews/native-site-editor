@@ -219,7 +219,11 @@ for (const scheme of ["light", "dark"] as const) for (const narrow of [false, tr
     await page.waitForTimeout(300);
     // At rest: the pointer leaves the field it clicked through, so no hover fill is measured.
     await page.mouse.move(0, 0);
-    await page.waitForTimeout(200);
+    // The hover fill fades out (120 ms); wait until no resting field keeps one.
+    await expect.poll(() => page.locator(".edit-bar input.edit-bar__field-input").evaluateAll((fields) => fields
+      .filter((field) => field.getClientRects().length && field !== document.activeElement)
+      .map((field) => getComputedStyle(field).backgroundColor)
+      .filter((background) => background !== "rgba(0, 0, 0, 0)" && background !== "transparent"))).toEqual([]);
     report.editBar = await audit(page, ".edit-bar, .edit-bar__popover");
     await page.screenshot({ path: `${shots}/fields-edit-bar-${name}.png` });
 

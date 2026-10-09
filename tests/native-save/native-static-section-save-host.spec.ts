@@ -248,7 +248,8 @@ async function typeInPane(page: Page, text: string) {
 // Undo, one step at a time, until the stylesheet is back to `css`: each step must
 // take back some of the typing and nothing else (`whole` checks the rest).
 async function undoTypingSteps(page: Page, css: string | undefined, step: () => Promise<unknown>, whole: () => Promise<void>) {
-  for (let steps = 0; (await mounted(page, "styles/elements.css")) !== css; steps++) {
+  let steps = 0;
+  for (; (await mounted(page, "styles/elements.css")) !== css; steps++) {
     expect(steps, "the typing undoes in a few steps").toBeLessThan(6);
     const text = await mounted(page, "styles/elements.css");
     await step();
@@ -256,6 +257,7 @@ async function undoTypingSteps(page: Page, css: string | undefined, step: () => 
     expect(css && (await mounted(page, "styles/elements.css"))!.startsWith(css)).toBe(true);
     await whole();
   }
+  expect(steps, "at least one Undo ran").toBeGreaterThan(0);
 }
 const refusal = (page: Page) => page.locator("#content .code-editor__notice, .code-editor__notice").filter({ hasText: "touched several files together" });
 async function addWithPane(page: Page, baseURL: string | undefined) {
@@ -342,10 +344,13 @@ test("Monaco Redo in the page editor never redoes only the page after the styles
   const typed = await mounted(page, "styles/elements.css");
   for (const key of ["ControlOrMeta+Shift+z", "Control+y"]) {
     // Known gap: no feedback, tech debt 11. Redo does nothing and says nothing;
-    // neither the page nor its JSON comes back, and the typing stays.
+    // neither the page nor its JSON comes back, and the typing stays. The typing
+    // replaced the redo step, so Redo is disabled: the key has nothing to run, and
+    // the state is checked right after it.
+    await expect(page.locator(".code-editor__redo").first()).toBeDisabled();
     await focusPrimary(page);
     await page.keyboard.press(key);
-    await page.waitForTimeout(500);
+    await expect(page.locator(".code-editor__redo").first()).toBeDisabled();
     expect(await mounted(page)).toBe(before);
     expect(await storedDrafts(page)).toEqual(drafts);
     expect(await mounted(page, "styles/elements.css")).toBe(typed);
