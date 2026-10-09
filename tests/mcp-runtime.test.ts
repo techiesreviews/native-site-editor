@@ -100,6 +100,9 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const conventions = JSON.stringify(await client.readResource({ uri: "native-site://conventions" }));
     assert.match(conventions, /components\/<tag>\/<tag>\.html/);
     assert.match(conventions, /A new component is just its files/);
+    assert.ok(conventions.includes(JSON.stringify("The header and footer are components with no slots: their nav links live in the template, so changing the nav is one edit. Each page puts the skip link, `<a class=\"skip\" href=\"#main\">Skip to content</a>`, before `<site-header>` as a plain link, so it works without JavaScript; its style lives in the shared CSS, not the header's.").slice(1, -1)));
+    assert.match(conventions, /Write both files, then place it with add_section/);
+    assert.doesNotMatch(conventions, /add the tag to the loader/);
     assert.doesNotMatch(conventions, /TAGS/);
     assert.match(conventions, /:not\(:defined\)/);
     assert.match(conventions, /slot name=\\"title\\"><h2/);

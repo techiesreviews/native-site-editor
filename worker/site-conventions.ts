@@ -49,7 +49,7 @@ _redirects                         optional: /old/ /new/ 301
     <a slot="primary" href="/about/#contact">Get in touch</a>
   </section-hero>
   \`\`\`
-- The header and footer are components without slots. Editing a component's template or CSS changes every page that uses it.
+- The header and footer are components with no slots: their nav links live in the template, so changing the nav is one edit. Each page puts the skip link, \`<a class="skip" href="#main">Skip to content</a>\`, before \`<site-header>\` as a plain link, so it works without JavaScript; its style lives in the shared CSS, not the header's. Editing a component's template or CSS changes every page that uses it.
 - Components can use other components.
 
 ### The loader
@@ -66,7 +66,7 @@ Follow this pattern, so the page source shows real elements and a part the user 
 - In the CSS, write rules for the template's own elements (\`h2 { … }\`, \`.lead { … }\`, \`.actions a { … }\`) without \`::slotted()\`: the loader and the preview add each selector's \`::slotted()\` twin (\`.actions a\` also reads \`.actions ::slotted(a)\`), so one rule styles both the fallback and the element a page slots in. The twin reaches the slotted element itself, not elements inside it, and none is added for a selector whose last part has a pseudo-element (\`a::after\`), \`:host\` or \`:has()\`; write \`::slotted(a)::after\` by hand if needed.
 - Shared styles are in cascade layers and component CSS is not, so a component rule beats any shared rule. Shared rules that size elements use \`:not([slot])\` (\`h1:not([slot])\`) so what a page slots into a component is sized by the component.
 - Use the site's design tokens (\`var(--space-l)\`, \`var(--text-2xl)\`, \`var(--accent)\`) from \`styles/tokens.css\`; read it and an existing component's CSS first.
-- Write both files, add the tag to the loader and \`site.css\` (above), then place it with add_section (never by hand-writing the instance) and fill its copied parts with edit_file.
+- Write both files, then place it with add_section (never by hand-writing the instance) and fill its copied parts with edit_file.
 
 \`\`\`html
 <section>
