@@ -1,6 +1,5 @@
-// A component's variants are the data-* attributes its own CSS styles on
-// :host(). Read source rules, including nesting, without a DOM or CSSOM so
-// the editor and Worker share the same choices, conditions and warnings.
+// Read component and site variant rules without a DOM or CSSOM so the editor
+// and Worker share the same choices, conditions and warnings.
 // Leaving an attribute off gives the default look; comments carry no metadata.
 
 import { splitSelectorList } from "./cascade";
@@ -250,41 +249,28 @@ function recordCondition(occurrences: Occurrences, chain: string[]) {
 const newOccurrences = (): Occurrences => ({ unconditional: false, conditions: [] });
 const conditionsOf = (occurrences: Occurrences) => occurrences.unconditional ? [] : occurrences.conditions;
 
-export function componentVariants(css: string, options: { scriptAttributes?: Iterable<string> } = {}): { variants: Variant[]; warnings: VariantWarning[] } {
-  const excluded = new Set(Array.from(options.scriptAttributes ?? [], (name) => name.toLowerCase()));
-  const allowed = (name: string) => name !== "data-empty" && name !== "data-unloaded" && !name.startsWith("data-native-") && !excluded.has(name);
-  const axes = new Map<string, { values: Map<string, Occurrences>; rules: Occurrences; choices: Occurrences; defaultValue?: string }>();
-  const warnings: VariantWarning[] = [];
-  const warned = new Set<string>();
-  let defaultLook = false;
+interface Axis {
+  values: Map<string, Occurrences>;
+  rules: Occurrences;
+  choices: Occurrences;
+  defaultValue?: string;
+}
+type Axes = Map<string, Axis>;
+interface Subject { key: string; attributes: Attribute[]; bare: boolean }
+interface SubjectAxes { key: string; axes: Axes }
+type SubjectReader = (selector: string, authored: string, offset: number) => Subject[];
+const allowedAttribute = (name: string) => name !== "data-empty" && name !== "data-unloaded" && !name.startsWith("data-native-");
+
+function readVariantAxes(css: string, read: SubjectReader, excluded = new Set<string>(), onRule?: (subjects: SubjectAxes[]) => void) {
+  const sources = new Map<string, Axes[]>();
   walkStyleRules(css, ({ selectors, conditions, offset }) => {
-    const hosts: { attributes: Attribute[]; bare: boolean }[] = [];
-    for (const { authored, resolved } of selectors) {
-      const compound = resolved.slice(0, compoundEnd(resolved));
-      const host = /^:host(?:\(|(?=[^\w-]|$))/i.exec(compound);
-      if (!host) { defaultLook = true; continue; }
-      const functional = compound[5] === "(";
-      const close = functional ? closing(compound, 5) : 4;
-      const rest = compound.slice(close + 1);
-      if (rest && !rest.startsWith("::")) {
-        // The host is featureless: only a pseudo-element may follow `:host` or
-        // `:host(…)`; `:host[data-x]`, `:host.foo` and `:host:hover` never match.
-        const argument = functional ? compound.slice(6, close) : "";
-        const pseudo = rest.indexOf("::");
-        const fix = pseudo < 0 ? `:host(${argument}${rest}) { … }` : `:host(${argument}${rest.slice(0, pseudo)})${rest.slice(pseudo)} { … }`;
-        for (const attribute of readCompoundAttributes(pseudo < 0 ? rest : rest.slice(0, pseudo)).attributes) {
-          const key = `${offset}:${authored}:${attribute.name}`;
-          if (warned.has(key)) continue;
-          warned.add(key);
-          warnings.push({ kind: "host-without-parentheses", selector: authored, attribute: attribute.name, fix, offset });
-        }
-        continue;
-      }
-      const read = readCompoundAttributes(functional ? compound.slice(6, close) : "");
-      if (read.canBeTrue) defaultLook = true;
-      hosts.push({ attributes: read.attributes, bare: !functional });
-      for (const attribute of read.attributes) {
-        if (!allowed(attribute.name) || attribute.absent || (attribute.operator && attribute.operator !== "=")) continue;
+    const ruleSubjects: SubjectAxes[] = [];
+    const matches = selectors.flatMap(({ authored, resolved }) => read(resolved, authored, offset));
+    for (const subject of matches) {
+      const axes: Axes = new Map();
+      ruleSubjects.push({ key: subject.key, axes });
+      for (const attribute of subject.attributes) {
+        if (!allowedAttribute(attribute.name) || excluded.has(attribute.name) || attribute.absent || (attribute.operator && attribute.operator !== "=")) continue;
         let axis = axes.get(attribute.name);
         if (!axis) { axis = { values: new Map(), rules: newOccurrences(), choices: newOccurrences() }; axes.set(attribute.name, axis); }
         recordCondition(axis.rules, conditions);
@@ -297,22 +283,196 @@ export function componentVariants(css: string, options: { scriptAttributes?: Ite
         }
       }
     }
-    for (const host of hosts) for (const attribute of host.attributes) {
+    for (const [index, subject] of matches.entries()) for (const attribute of subject.attributes) {
       if (attribute.operator !== "=" || !attribute.value || attribute.negated) continue;
-      const axis = axes.get(attribute.name);
-      if (axis && axis.defaultValue === undefined && hosts.some((other) => other !== host && (other.bare || other.attributes.some((absent) => absent.name === attribute.name && absent.absent))))
+      const axis = ruleSubjects[index].axes.get(attribute.name);
+      if (axis && axis.defaultValue === undefined && matches.some((other) => other !== subject && other.key === subject.key && (other.bare || other.attributes.some((absent) => absent.name === attribute.name && absent.absent))))
         axis.defaultValue = attribute.value;
     }
+    onRule?.(ruleSubjects);
+    for (const { key, axes } of ruleSubjects) {
+      const group = sources.get(key);
+      if (group) group.push(axes);
+      else sources.set(key, [axes]);
+    }
   });
-  const variants: Variant[] = [];
-  for (const [attribute, axis] of axes) {
+  return new Map([...sources].map(([key, axes]) => [key, mergeAxes(axes)]));
+}
+
+function variantsOf(axes: Axes): Variant[] {
+  return [...axes].map(([attribute, axis]) => {
     const choice = [...axis.values.keys()].some((value) => value !== "true" && value !== "false");
-    const values = choice ? [...axis.values].map(([value, occurrences]) => ({ value, label: valueLabel(value), conditions: conditionsOf(occurrences) })) : [];
-    const conditions = conditionsOf(choice ? axis.choices : axis.rules);
-    variants.push({ attribute, label: variantLabel(attribute), kind: choice ? "choice" : "yes-no", values, conditions, ...(axis.defaultValue === undefined ? {} : { defaultValue: axis.defaultValue }) });
+    const values = choice ? [...axis.values].map(([value, occurrences]) => ({ value, label: valueLabel(value), conditions: [...conditionsOf(occurrences)] })) : [];
+    const conditions = [...conditionsOf(choice ? axis.choices : axis.rules)];
+    return { attribute, label: variantLabel(attribute), kind: choice ? "choice" : "yes-no", values, conditions, ...(axis.defaultValue === undefined ? {} : { defaultValue: axis.defaultValue }) };
+  });
+}
+
+function readHost(compound: string, warn: (attribute: Attribute, fix: string) => void): CompoundAttributes | undefined {
+  if (!/^:host(?:\(|(?=[^\w-]|$))/i.test(compound)) return undefined;
+  const functional = compound[5] === "(";
+  const close = functional ? closing(compound, 5) : 4;
+  const rest = compound.slice(close + 1);
+  if (rest && !rest.startsWith("::")) {
+    // The host is featureless; trailing classes, attributes and pseudo-classes
+    // never match. Only a pseudo-element can follow it.
+    const argument = functional ? compound.slice(6, close) : "";
+    const pseudo = rest.indexOf("::");
+    const fix = pseudo < 0 ? `:host(${argument}${rest}) { … }` : `:host(${argument}${rest.slice(0, pseudo)})${rest.slice(pseudo)} { … }`;
+    for (const attribute of readCompoundAttributes(pseudo < 0 ? rest : rest.slice(0, pseudo)).attributes) warn(attribute, fix);
+    return undefined;
   }
-  if (variants.length && !defaultLook) warnings.push({ kind: "no-default-look" });
-  return { variants, warnings };
+  return readCompoundAttributes(functional ? compound.slice(6, close) : "");
+}
+
+function readComponent(css: string, scriptAttributes?: Iterable<string>) {
+  const excluded = new Set(Array.from(scriptAttributes ?? [], (name) => name.toLowerCase()));
+  const warnings: VariantWarning[] = [];
+  const warned = new Set<string>();
+  let defaultLook = false;
+  const subjects = readVariantAxes(css, (resolved, authored, offset) => {
+    const compound = resolved.slice(0, compoundEnd(resolved));
+    if (!/^:host(?:\(|(?=[^\w-]|$))/i.test(compound)) { defaultLook = true; return []; }
+    const read = readHost(compound, (attribute, fix) => {
+      const key = `${offset}:${authored}:${attribute.name}`;
+      if (warned.has(key)) return;
+      warned.add(key);
+      warnings.push({ kind: "host-without-parentheses", selector: authored, attribute: attribute.name, fix, offset });
+    });
+    if (!read) return [];
+    if (read.canBeTrue) defaultLook = true;
+    return [{ key: "component", attributes: read.attributes, bare: compound[5] !== "(" }];
+  }, excluded);
+  const axes = subjects.get("component") ?? new Map<string, Axis>();
+  if (axes.size && !defaultLook) warnings.push({ kind: "no-default-look" });
+  return { axes, warnings };
+}
+
+export function componentVariants(css: string, options: { scriptAttributes?: Iterable<string> } = {}): { variants: Variant[]; warnings: VariantWarning[] } {
+  const { axes, warnings } = readComponent(css, options.scriptAttributes);
+  return { variants: variantsOf(axes), warnings };
+}
+
+// One parsed site sheet: per rule, the variant axes of each subject that has
+// any (`tag:x`, `class:x`, `every` for site `:host()`, `global`), kept in
+// source order so merged values follow the cascade order of the site.
+export interface SiteVariantSheet { path: string; rules: readonly SubjectAxes[] }
+export interface SiteVariants { sheets: readonly SiteVariantSheet[] }
+
+// Compound boundaries ignore combinators inside strings and functional pseudos.
+function selectorCompounds(selector: string) {
+  const compounds: string[] = [];
+  for (let pos = 0; pos < selector.length;) {
+    if (/[\s>+~|]/.test(selector[pos])) { pos++; continue; }
+    const end = pos + compoundEnd(selector.slice(pos));
+    compounds.push(selector.slice(pos, end));
+    pos = end;
+  }
+  return compounds;
+}
+
+function readSiteSubjects(selector: string): Subject[] {
+  const subjects: Subject[] = [];
+  for (const [index, compound] of selectorCompounds(selector).entries()) {
+    if (/^:host(?:\(|(?=[^\w-]|$))/i.test(compound)) {
+      const read = index === 0 ? readHost(compound, () => {}) : undefined;
+      if (read) subjects.push({ key: "every", attributes: read.attributes, bare: compound[5] !== "(" });
+      continue;
+    }
+    const keys: string[] = [];
+    let global = true;
+    for (let pos = 0; pos < compound.length;) {
+      const char = compound[pos];
+      if (char === "[") { pos = closing(compound, pos) + 1; continue; }
+      if (char === ":") {
+        const end = identifierEnd(compound, pos + 1);
+        const name = compound.slice(pos + 1, end).toLowerCase();
+        if (name === "root" || name === "host" || name === "host-context" || compound[pos + 1] === ":") global = false;
+        pos = compound[end] === "(" ? closing(compound, end) + 1 : Math.max(pos + 1, end);
+        continue;
+      }
+      if (char === "." || char === "#") {
+        const end = identifierEnd(compound, pos + 1);
+        if (char === "." && end > pos + 1) keys.push(`class:${unescapeCss(compound.slice(pos + 1, end))}`);
+        global = false;
+        pos = Math.max(pos + 1, end);
+        continue;
+      }
+      const end = identifierEnd(compound, pos);
+      if (end > pos) {
+        keys.push(`tag:${unescapeCss(compound.slice(pos, end)).toLowerCase()}`);
+        global = false;
+        pos = end;
+      } else pos = atomEnd(compound, pos);
+    }
+    const read = readCompoundAttributes(compound);
+    if (global) keys.push("global");
+    for (const key of new Set(keys)) subjects.push({ key, attributes: read.attributes, bare: !read.attributes.length });
+  }
+  return subjects;
+}
+
+const SITE_CACHE_LIMIT = 128;
+const siteCache = new Map<string, { source: string; sheet: SiteVariantSheet }>();
+function sourceHash(source: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index++) hash = Math.imul(hash ^ source.charCodeAt(index), 16777619);
+  return hash >>> 0;
+}
+
+function readSiteSheet({ path, source }: { path: string; source: string }): SiteVariantSheet {
+  const key = JSON.stringify([path, sourceHash(source)]);
+  const cached = siteCache.get(key);
+  // Compare source too so a hash collision never returns stale variants.
+  if (cached?.source === source) return cached.sheet;
+  const rules: SubjectAxes[] = [];
+  readVariantAxes(source, readSiteSubjects, new Set(), (subjects) => rules.push(...subjects.filter(({ axes }) => axes.size)));
+  const sheet = { path, rules };
+  siteCache.delete(key);
+  siteCache.set(key, { source, sheet });
+  if (siteCache.size > SITE_CACHE_LIMIT) siteCache.delete(siteCache.keys().next().value!);
+  return sheet;
+}
+
+export function siteVariants(sheets: readonly { path: string; source: string }[]): SiteVariants {
+  return { sheets: sheets.map(readSiteSheet) };
+}
+
+function mergeOccurrences(target: Occurrences, source: Occurrences) {
+  target.unconditional ||= source.unconditional;
+  for (const condition of source.conditions) if (!target.conditions.includes(condition)) target.conditions.push(condition);
+}
+
+function mergeAxes(sources: readonly Axes[]) {
+  const merged: Axes = new Map();
+  for (const axes of sources) for (const [attribute, source] of axes) {
+    let target = merged.get(attribute);
+    if (!target) { target = { values: new Map(), rules: newOccurrences(), choices: newOccurrences() }; merged.set(attribute, target); }
+    mergeOccurrences(target.rules, source.rules);
+    mergeOccurrences(target.choices, source.choices);
+    target.defaultValue ??= source.defaultValue;
+    for (const [value, occurrences] of source.values) {
+      let values = target.values.get(value);
+      if (!values) { values = newOccurrences(); target.values.set(value, values); }
+      mergeOccurrences(values, occurrences);
+    }
+  }
+  return merged;
+}
+
+export function variantsForComponent(tag: string, options: { css: string; site: SiteVariants; scriptAttributes?: Iterable<string> }): { variants: Variant[]; warnings: VariantWarning[] } {
+  const { axes, warnings } = readComponent(options.css, options.scriptAttributes);
+  const sources = [axes];
+  const keys = new Set([`tag:${tag.toLowerCase()}`, "every", "global"]);
+  for (const sheet of options.site.sheets) for (const { key, axes } of sheet.rules) {
+    if (keys.has(key)) sources.push(axes);
+  }
+  return { variants: variantsOf(mergeAxes(sources)), warnings };
+}
+
+export function variantsForClass(className: string, site: SiteVariants): Variant[] {
+  const key = `class:${className}`;
+  return variantsOf(mergeAxes(site.sheets.flatMap((sheet) => sheet.rules.filter((rule) => rule.key === key).map(({ axes }) => axes))));
 }
 
 export function valueLabel(value: string) {
