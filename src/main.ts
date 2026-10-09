@@ -1,6 +1,7 @@
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
+import type { VariantLookup, VariantLookupFactory } from "./page-builder/variant-intelligence";
 import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController } from "./controllers/media-controller";
@@ -1016,7 +1017,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     codePanes.applyWidth();
     disposeSecondary = editorModule.mountSourceEditor(
       element("content-secondary"),
-      { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
+      { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, variants: nativeVariants, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
         onContextChange: (value) => {
           if (value) {
             syncLinkedStyles(value.path, value.content);
@@ -1235,6 +1236,33 @@ const previewSelection = createPreviewSelectionController({
     void openDefaultLinkedStyle();
   },
 });
+
+// Variant discovery uses effective sources, cached independently of HTML typing.
+let variantCache: { key: string; lookup: VariantLookup } | undefined;
+let variantReadKey = "";
+function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined {
+  const site = nativeSite, scope = draftScope();
+  if (!site || !scope || versionView) return;
+  const paths = nativeFiles(scope).filter(path => /\.(?:css|js)$/i.test(path));
+  const sources: Record<string, string> = {};
+  for (const path of paths) {
+    const source = nativeEffectiveSource(path, scope);
+    if (source !== undefined) sources[path] = source;
+  }
+  // Read the remaining discovery inputs only when a code pane needs them.
+  const missing = paths.filter(path => sources[path] === undefined);
+  const readKey = JSON.stringify([generation, setupScope(), missing]);
+  if (missing.length && readKey !== variantReadKey && appStore.repository.value) {
+    variantReadKey = readKey;
+    const epoch = generation, scopeKey = setupScope();
+    void readNativePredicted(appStore.repository.value.full_name, missing, () => epoch === generation && scopeKey === setupScope());
+  }
+  const key = JSON.stringify([generation, setupScope(), site.components, sources]);
+  if (variantCache?.key === key) return variantCache.lookup;
+  const lookup = build(sources, Object.fromEntries(Object.entries(site.components).map(([tag, file]) => [tag, nativeComponentCssPath(file)])));
+  variantCache = { key, lookup };
+  return lookup;
+}
 
 /** A fresh source appStore.snapshot.value for CSS code intelligence. */
 function nativeCssWorkspace(): CssWorkspace | undefined {
@@ -4434,7 +4462,7 @@ async function mountSource(
     onDiscardChange: discardFileChange,
     deletedUpstream: savePublish.isDeleted,
     onSettleDeleted: savePublish.settleDeleted,
-    cssWorkspace: nativeCssWorkspace,
+    cssWorkspace: nativeCssWorkspace, variants: nativeVariants,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
       if (opened) renderLinkedStyle();

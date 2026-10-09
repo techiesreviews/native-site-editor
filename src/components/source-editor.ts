@@ -14,6 +14,7 @@
 // a "model" is now the file's entry in the store, and its version the
 // entry's revision.
 import "./source-editor.css";
+import type { VariantLookup, VariantLookupFactory } from "../page-builder/variant-intelligence";
 import type { CssWorkspace } from "../page-builder/css-intelligence";
 import { draftStore, draftKey, type DraftScope, type SavedDraft } from "../drafts";
 import { createDraftStore, RECEIPT_REFUSAL, type DraftEvent, type DraftTextStore, type HistoryCompanion } from "../draft-store";
@@ -30,6 +31,8 @@ export interface SourceFile {
   key: string;
   /** Current, scope-bound CSS sources. The host opens a real editor for definitions. */
   cssWorkspace?: () => CssWorkspace | undefined;
+  /** The lazy view supplies the parser; the host supplies current, cached sources. */
+  variants?: (build: VariantLookupFactory) => VariantLookup | undefined;
   path: string;
   source: string;
   readOnly?: boolean;
@@ -106,6 +109,8 @@ export interface PaneHost {
   /** The pane is still mounted. */
   isCurrent(): boolean;
   cssWorkspace?: () => CssWorkspace | undefined;
+  /** The lazy view supplies the parser; the host supplies current, cached sources. */
+  variants?: (build: VariantLookupFactory) => VariantLookup | undefined;
   runHistory(direction: "undo" | "redo"): Promise<boolean>;
   reportContext(): void;
 }
@@ -923,6 +928,7 @@ export function mountSourceEditor(
     text: () => docText(current),
     isCurrent: () => !disposed && mounted.get(file.path) === registration,
     cssWorkspace: file.cssWorkspace,
+    variants: file.variants,
     runHistory: (direction) => runVisualHistory(direction, file.path),
     reportContext: () => reportContext(),
   };

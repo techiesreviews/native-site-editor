@@ -1,8 +1,8 @@
 ---
 title: Variants in the code pane
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: sol
 blocked_by: [12-variant-parser-site-css]
 builder: sol
 phase: 2

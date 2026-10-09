@@ -1,3 +1,4 @@
+import { createVariantLookup, variantSuggestions, variantHover, variantValueMarkers, variantCssMarkers } from "../page-builder/variant-intelligence";
 import { cssVariableCompletion, cssVariableDeclarations, cssVariableReference, isCssPath } from "../page-builder/css-intelligence";
 import { monaco } from "./monaco";
 import type { DraftScope } from "../drafts";
@@ -283,7 +284,7 @@ export const monacoView: PaneViewFactory = (host) => {
   let destroyView = () => {};
   let marks: string[] = [];
   let elementMarks: string[] = [];
-  const cssProviders: monaco.IDisposable[] = [];
+  const providers: monaco.IDisposable[] = [];
   if (isCssPath(host.path) && host.cssWorkspace) {
     const workspaceFor = (target: monaco.editor.ITextModel) => {
       if (disposed || target.isDisposed() || target !== model || !host.isCurrent()) return;
@@ -294,7 +295,7 @@ export const monacoView: PaneViewFactory = (host) => {
     const range = (target: monaco.editor.ITextModel, start: number, end: number) =>
       monaco.Range.fromPositions(target.getPositionAt(start), target.getPositionAt(end));
     const language = model.getLanguageId();
-    cssProviders.push(monaco.languages.registerCompletionItemProvider(language, {
+    providers.push(monaco.languages.registerCompletionItemProvider(language, {
       triggerCharacters: ["-"],
       provideCompletionItems(target, position) {
         const workspace = workspaceFor(target);
@@ -310,7 +311,7 @@ export const monacoView: PaneViewFactory = (host) => {
         })) };
       },
     }));
-    cssProviders.push(monaco.languages.registerHoverProvider(language, {
+    providers.push(monaco.languages.registerHoverProvider(language, {
       provideHover(target, position) {
         const workspace = workspaceFor(target);
         const token = workspace && cssVariableReference(target.getValue(), target.getOffsetAt(position), host.path);
@@ -322,7 +323,7 @@ export const monacoView: PaneViewFactory = (host) => {
         })).flatMap((heading, index) => [heading, { value: "```css\n" + declarations[index].name + ": " + declarations[index].value.replace(/`/g, "\\`") + "\n```" }]) };
       },
     }));
-    cssProviders.push(monaco.languages.registerDefinitionProvider(language, {
+    providers.push(monaco.languages.registerDefinitionProvider(language, {
       async provideDefinition(target, position, cancellation) {
         const workspace = workspaceFor(target);
         const token = workspace && cssVariableReference(target.getValue(), target.getOffsetAt(position), host.path);
@@ -362,6 +363,53 @@ export const monacoView: PaneViewFactory = (host) => {
         return locations;
       },
     }));
+  }
+  if (host.variants) {
+    const current = (target: monaco.editor.ITextModel) => !disposed && !target.isDisposed() && target === model && host.isCurrent();
+    const range = (start: number, end: number) => monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
+    if (model.getLanguageId() === "html") {
+      providers.push(monaco.languages.registerCompletionItemProvider("html", {
+        triggerCharacters: [" ", '"', "'", "=", "-"],
+        provideCompletionItems(target, position) {
+          const lookup = current(target) && host.variants?.(createVariantLookup);
+          return { suggestions: lookup ? variantSuggestions(target.getValue(), target.getOffsetAt(position), tag => lookup.forTag(tag)).map(item => ({
+            label: item.label, detail: item.detail, documentation: item.detail,
+            kind: item.kind === "attribute" ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.Value,
+            insertText: item.kind === "attribute" && item.insertText.endsWith('=""') ? item.insertText.slice(0, -1) + '$0"' : item.insertText,
+            insertTextRules: item.kind === "attribute" ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+            range: range(item.start, item.end),
+          })) : [] };
+        },
+      }));
+      providers.push(monaco.languages.registerHoverProvider("html", {
+        provideHover(target, position) {
+          const lookup = current(target) && host.variants?.(createVariantLookup);
+          const hover = lookup && variantHover(target.getValue(), target.getOffsetAt(position), tag => lookup.forTag(tag));
+          if (hover) return { range: range(hover.start, hover.end), contents: [{ value: hover.text.replace(/[\\`*_{}[\]()<>]/g, "\\$&") }] };
+        },
+      }));
+    }
+    const owner = `native-variants:${host.key}`;
+    let previousMarkers = "";
+    const refresh = () => {
+      if (!current(model)) return;
+      const lookup = host.variants?.(createVariantLookup);
+      const text = model.getValue();
+      const css = isCssPath(host.path);
+      const markers = !lookup ? [] : css ? variantCssMarkers(text, lookup.isComponentCss(host.path)) :
+        model.getLanguageId() === "html" ? variantValueMarkers(text, tag => lookup.forTag(tag)) : [];
+      // CSS rules that never match warn; a Custom value in HTML is only a note.
+      const severity = css ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info;
+      const mapped = markers.map(marker => ({ ...range(marker.start, marker.end), message: marker.message, severity }));
+      const signature = JSON.stringify(mapped);
+      if (signature === previousMarkers) return;
+      previousMarkers = signature;
+      monaco.editor.setModelMarkers(model, owner, mapped);
+    };
+    refresh();
+    // Store events also refresh an HTML pane when another pane changes CSS.
+    const unsubscribe = store.subscribe(() => refresh());
+    providers.push(model.onDidChangeContent(refresh), { dispose() { unsubscribe(); if (!model.isDisposed()) monaco.editor.setModelMarkers(model, owner, []); } });
   }
   // Undo and Redo keys in the pane run the shared journal: typing first
   // closes as one step (its Monaco stops kept), so the two never interleave.
@@ -551,7 +599,7 @@ export const monacoView: PaneViewFactory = (host) => {
       destroyView();
       if (!model.isDisposed() && (marks.length || elementMarks.length)) model.deltaDecorations([...marks, ...elementMarks], []);
       markers.dispose();
-      for (const provider of cssProviders) provider.dispose();
+      for (const provider of providers) provider.dispose();
       shared.views--;
       // Kept while the history can still step through its typing stop by stop.
       if (!shared.views && (!shared.stored || !store.get(shared.scope, shared.path) || !store.hasTyping(shared.scope, shared.path))) shared.dispose();

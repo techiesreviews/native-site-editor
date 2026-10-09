@@ -540,3 +540,35 @@ export function valueLabel(value: string) {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 export function variantLabel(attribute: string) { return valueLabel(attribute.replace(/^data-/i, "")); }
+
+const SCRIPT_ATTRIBUTE = /(?:setAttribute|toggleAttribute)\s*\(\s*(["'])(data-[\w-]+)\1|dataset\s*(?:\.\s*(\w+)|\[\s*(["'])([\w-]+)\4\s*\])/y;
+/** Discover literal script-owned data attributes without evaluating site code. */
+export function scriptAttributes(text: string): string[] {
+  const names = new Set<string>();
+  let pos = 0;
+  while (pos < text.length) {
+    if (text.startsWith("//", pos) || text.startsWith("/*", pos)) {
+      const line = text[pos + 1] === "/";
+      const end = text.indexOf(line ? "\n" : "*/", pos + 2);
+      pos = end < 0 ? text.length : end + (line ? 1 : 2);
+      continue;
+    }
+    SCRIPT_ATTRIBUTE.lastIndex = pos;
+    const match = SCRIPT_ATTRIBUTE.exec(text);
+    if (match && !/[\w$]/.test(text[pos - 1] ?? "")) {
+      if (match[2]) names.add(match[2].toLowerCase());
+      const key = match[3] ?? match[5];
+      if (key) names.add(`data-${key.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`);
+      pos += match[0].length;
+      continue;
+    }
+    if (text[pos] === '"' || text[pos] === "'" || text[pos] === "`") {
+      const quote = text[pos++];
+      while (pos < text.length) {
+        if (text[pos] === "\\") pos += 2;
+        else if (text[pos++] === quote) break;
+      }
+    } else pos++;
+  }
+  return [...names];
+}
