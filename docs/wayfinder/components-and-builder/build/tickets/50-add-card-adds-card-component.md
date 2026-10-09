@@ -1,7 +1,7 @@
 ---
 title: Add card adds the slot's card component
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [40-items-slot-drops]
 builder: claude ★
@@ -20,3 +20,9 @@ Ticket [04](../../tickets/04-prototype-making-components.md) §8, [09](../../tic
 
 - Unit test: the card markup comes from the fallback for 0, 1 and many items.
 - Nightly spec: Add card on an empty items slot adds a card; undo removes it.
+
+## Done (2026-10-09)
+
+- An instance's card slot (an items slot whose fallback is card components only, `cardSlotOf` in `src/page-builder/card-slot.ts`) gets a fresh instance of that card on Add card: its template's text and image fallbacks copied in (`slotMarkup`), no variant, after the slot's last item, one undo step (`nativeInstanceInsertEdit`). The preview reports a card slot as a grid with 0, 1 or many items (`slot` on the report; empty: where its first card goes; of several, the one nearest the pointer); it places the card at once, no page popover. Plain grids keep `itemCopy`.
+- Commits "Add card on a card slot adds the slot's card component" and a review-fix commit on `dev`.
+- Tests: `tests/card-slot.test.ts` (0, 1, many items, the kind from the fallback, named slots, refusals, srcset); nightly `native-add-card.spec.ts` (empty slot add and undo, one card beside, two named card slots).
