@@ -1,3 +1,4 @@
+import { refuse } from "./refusal-note";
 import { button, node } from "../ui/dom";
 import type { NativeStructure, NativeStructureItem } from "./native-preview";
 import { createUrlChange, type UrlPlan } from "./url-change";
@@ -223,7 +224,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (!matches) {
       openSlot = undefined;
       focusSlotField = undefined;
-      handlers.announce?.(`The ${slot.name} slot is shown, but its element could not be found in Structure; select it on the page to edit it.`);
+      refuse(`The ${slot.name} slot is shown, but its element could not be found in Structure; select it on the page to edit it.`);
       return;
     }
     openSlot.anchor = slot.assignedNodes.length ? key([...slot.assignedNodes[0]]) : slotRowKey(model, slot.name);

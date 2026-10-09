@@ -1,3 +1,4 @@
+import { refuse } from "./refusal-note";
 import { button, node } from "../ui/dom";
 import { setIcon, type IconName } from "../icons";
 import { nativeSubpageCount, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
@@ -357,7 +358,7 @@ export function createPagesTree(options: {
     const file = page?.file;
     if (!item || !file || !options.retitle || !page) return;
     const blocked = options.retitleBlocked?.();
-    if (blocked) { options.announce(blocked); return; }
+    if (blocked) { refuse(blocked); return; }
     cancelRename(false);
     cancelUrl(false);
     const label = item.querySelector<HTMLElement>(":scope > .pages-row > .pages-label");
@@ -381,7 +382,7 @@ export function createPagesTree(options: {
       label.hidden = false;
       if (commit && value !== before) {
         void Promise.resolve(options.retitle!(file, value)).then((error) => {
-          if (error) options.announce(error);
+          if (error) refuse(error);
           else options.announce(value ? `Renamed ${before} to ${value}` : `Removed the title of ${before}`);
           focusRow(key);
           options.onInteractionEnd?.();
@@ -516,7 +517,7 @@ export function createPagesTree(options: {
       dragging = undefined;
       mark(undefined);
       const problem = options.dropProblem?.(source, at.parent);
-      if (problem) options.announce(problem);
+      if (problem) refuse(problem, { pointer: { x: event.clientX, y: event.clientY } });
       else options.drop?.(source, at.parent);
     });
     void item;
@@ -539,7 +540,7 @@ export function createPagesTree(options: {
       dragging = undefined;
       mark(undefined);
       const problem = options.dropProblem?.(source, "/");
-      if (problem) options.announce(problem);
+      if (problem) refuse(problem, { pointer: { x: event.clientX, y: event.clientY } });
       else options.drop?.(source, "/");
     });
   }
@@ -738,7 +739,7 @@ export function createPagesTree(options: {
         if (event.key === "F10" && !event.shiftKey) return;
         event.preventDefault();
         if (page && items(page).length) menu.open(row, items(page), undefined, `Actions for ${page.label}`);
-        else options.announce("No actions here");
+        else refuse("No actions here");
         return;
       case "F2":
         event.preventDefault();
@@ -747,7 +748,7 @@ export function createPagesTree(options: {
       case "Delete":
         event.preventDefault();
         if (!options.remove || !page?.file) return;
-        if (page.special === "home") options.announce("The home page cannot be deleted.");
+        if (page.special === "home") refuse("The home page cannot be deleted.");
         else options.remove(targetOf(page));
         return;
     }

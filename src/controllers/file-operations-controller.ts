@@ -1,3 +1,4 @@
+import { refuse } from "../components/refusal-note";
 import type { FileRowTarget } from "../components/file-row-actions";
 import type { createConfirmDialog } from "../components/confirm-dialog";
 import type { DraftScope, SavedDraft, draftStore } from "../drafts";
@@ -400,7 +401,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   async function deleteFileTarget(target: FileRowTarget, wording?: { title: string; pages?: boolean }): Promise<string | undefined> {
     if (target.gone) return `${target.path} is deleted already.`;
     const guarded = protectedProblem(target, "delete");
-    if (guarded) { ports.errorMessage(new Error(guarded)); ports.announce(guarded); return guarded; }
+    if (guarded) { ports.errorMessage(new Error(guarded)); ports.announce(guarded); refuse(guarded); return guarded; }
     const epoch = ports.generation(), scope = ports.setupScope(), indexScope = ports.nativeTextIndexScopeKey();
     const files = ports.treeSignature(ports.treeState()), source = ports.nativeEffectiveSource(target.path);
     const targetDrafts = ports.deleteTargetDraftStamp(target.path, target.folder ? `${target.path}/` : undefined);
@@ -430,7 +431,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
         catch (error) { inUse = error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted."; }
         pins = { expectedSources: snap.expectedSources, current: snap.current };
       }
-      if (inUse) { ports.errorMessage(new Error(inUse)); ports.announce(inUse); return inUse; }
+      if (inUse) { ports.errorMessage(new Error(inUse)); ports.announce(inUse); refuse(inUse); return inUse; }
     }
     const count = found.length;
     const onGitHub = found.some((file) => file.sha);

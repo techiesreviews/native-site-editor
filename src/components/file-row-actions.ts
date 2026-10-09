@@ -1,3 +1,4 @@
+import { refuse } from "./refusal-note";
 import { node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { renameSelection } from "../native-files";
@@ -55,7 +56,7 @@ export function createFileRowActions(options: {
 
   function openMenu(row: HTMLElement, target: FileRowTarget, anchor: HTMLElement, at?: { x: number; y: number }) {
     const entries = options.items(target);
-    if (!entries.length) { options.announce("No actions here"); return; }
+    if (!entries.length) { refuse("No actions here"); return; }
     menu.open(anchor, entries, at, `Actions for ${target.path}`);
     // Focus returns to the row, not to a ⋯ that hides again.
     if (anchor !== row) menu.opener = anchor;
@@ -235,7 +236,7 @@ export function createFileRowActions(options: {
       const error = await options.rename(target, input.value.trim());
       pending = false;
       if (error) {
-        if (!form.isConnected) { options.announce(error); return; }
+        if (!form.isConnected) { refuse(error); return; }
         message.textContent = error;
         input.setAttribute("aria-invalid", "true");
         input.focus();

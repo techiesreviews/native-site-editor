@@ -22,6 +22,7 @@
 // code pane shows it as it happens.
 
 import { nativeElementLabel } from "../native-structure";
+import { refuse as showRefusal } from "../components/refusal-note";
 import { isButtonBlock } from "./block-fields";
 import { nativeElementUrlProblem } from "./native-elements";
 import { startTags } from "../../shared/html-source";
@@ -229,6 +230,7 @@ export interface ComponentStructureModel {
 }
 
 export function createComponentTools(deps: ComponentDeps) {
+  const refuse = (reason: string) => { deps.announce(reason); showRefusal(reason); };
   const panel = node("section", "component-panel");
   panel.setAttribute("aria-label", "Component properties");
   panel.hidden = true;
@@ -354,7 +356,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const editor = deps.editor();
     const preview = deps.preview();
     if (!editor || !editable(path)) {
-      deps.announce("Open the page with this instance to change it.");
+      refuse("Open the page with this instance to change it.");
       return false;
     }
     const source = deps.sources()[path] ?? "";
@@ -418,7 +420,7 @@ export function createComponentTools(deps: ComponentDeps) {
         if (selectionKey(deps.selection()) !== expectedSelection || deps.revision() !== revision || deps.currentPath() !== path
           || deps.editor() !== editor || deps.sources()[selection.path] !== source
           || !template || templateOf(tag)?.path !== template.path || deps.sources()[template.path] !== templateSource) {
-          deps.announce("This component action is stale. Select the component again to edit its current template.");
+          refuse("This component action is stale. Select the component again to edit its current template.");
           return;
         }
         void editComponent(tag, within, part, instance);
@@ -529,11 +531,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const pick = (field: VariantField, choice: string) => {
       const now = deps.sources()[at.path];
       if (now !== at.source || deps.revision() !== revision) {
-        deps.announce(`The ${button ? "button" : instance ? "instance" : "band"} changed. Select it again to pick a variant.`);
+        refuse(`The ${button ? "button" : instance ? "instance" : "band"} changed. Select it again to pick a variant.`);
         return;
       }
       if (attributes.filter((item) => item.name === field.attribute).length > 1) {
-        deps.announce(`${field.attribute} is written twice; edit it in the code.`);
+        refuse(`${field.attribute} is written twice; edit it in the code.`);
         return;
       }
       const value = reader.variantAttribute(field, choice);
@@ -1054,7 +1056,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const value = text.replace(/\s+/g, " ").trim();
     if (part === "text") {
       const edit = slotTextEdit(at.source, at.template, at.instance, slot, value);
-      if ("error" in edit) { deps.announce(edit.error); return; }
+      if ("error" in edit) { refuse(edit.error); return; }
       live(at.path, edit, `${slotLabel(slotName)} changed`, keepSelection(at, !at.states.get(slotName)?.filled));
       return;
     }
@@ -1082,10 +1084,10 @@ export function createComponentTools(deps: ComponentDeps) {
     const fill = at.instance.fills.get(slot.name);
     const element = fill?.length === 1 && fill[0].type === "element" ? fill[0] : undefined;
     if (element) {
-      if (!openingSourceSafe(at.source, element.tag)) { deps.announce("The slot attribute markup is ambiguous; edit its source directly."); return; }
+      if (!openingSourceSafe(at.source, element.tag)) { refuse("The slot attribute markup is ambiguous; edit its source directly."); return; }
       return attributeEdit(at.source, element.tag, name, value);
     }
-    if (fill?.length) { deps.announce("Select it in the preview to change it."); return undefined; }
+    if (fill?.length) { refuse("Select it in the preview to change it."); return undefined; }
     let markup = fillMarkup(at.template, slot);
     const tag = startTags(markup)[0];
     if (!tag || tag.start !== 0 || !openingSourceSafe(markup, tag)) return undefined;
@@ -1098,7 +1100,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const at = instanceAt(target.path, target.node);
     const slot = at?.slots.find((entry) => entry.name === slotName);
     if (!at || !slot || at.tag !== target.tag || at.source !== target.source) {
-      deps.announce("The instance changed while the image uploaded; it was not replaced.");
+      refuse("The instance changed while the image uploaded; it was not replaced.");
       return;
     }
     const edit = slotAttributeEdit(at, slot, "src", path);
@@ -1113,7 +1115,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const label = slotLabel(slotName);
     if (on) {
       const edit = fillInsertEdit(at.source, at.instance, at.slots, slotName, fillMarkup(at.template, slot));
-      if (!edit) { deps.announce("The instance's end tag could not be found in the source."); return false; }
+      if (!edit) { refuse("The instance's end tag could not be found in the source."); return false; }
       const kind = slotValue(at.source, at.template, at.instance, slot).kind;
       const accepted = change(at.path, [edit], `${label} shown`, at.node);
       if (accepted) focusNext = `${kind === "image" ? "src" : kind === "link" ? "href" : "text"}:${slotName}`;
@@ -1257,7 +1259,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (result.dropped.length) notes.push(node("p", "create-dialog__result is-error", `The template has no single top-level element, so the instance's ${result.dropped.join(", ")} cannot be kept.`));
     if (!(await ask(`Detach this ${label}?`, notes, "Detach"))) return;
     const now = instanceAt(at.path, at.node);
-    if (!now) { deps.announce("The instance changed meanwhile; nothing was detached."); return; }
+    if (!now) { refuse("The instance changed meanwhile; nothing was detached."); return; }
     const markup = detachMarkup(now.source, now.template, now.instance).markup;
     change(now.path, [{ start: now.range.start, end: now.range.end, text: markup }], `${label} detached`, now.node);
   }
@@ -1282,19 +1284,19 @@ export function createComponentTools(deps: ComponentDeps) {
       [carry, names] = await Promise.all([import("./component-css"), import("./component-names")]);
     } catch (error) {
       void handleChunkLoadFailure(error);
-      deps.announce("Make component could not load. Try again.");
+      refuse("Make component could not load. Try again.");
       return;
     }
-    if (deps.revision() !== revision || deps.sources()[path] !== source) { deps.announce("The page or repository changed meanwhile; select the element again."); return; }
+    if (deps.revision() !== revision || deps.sources()[path] !== source) { refuse("The page or repository changed meanwhile; select the element again."); return; }
     const current = site();
     if (!nodePath || source === undefined || !current) return;
     const range = locateNativeElementRange(source, nodePath);
-    if (range && range.tag.name.toLowerCase() !== selection.tag.toLowerCase()) { deps.announce("The page changed meanwhile; select the element again."); return; }
-    if (!range?.close) { deps.announce("The element's end tag could not be found in the source."); return; }
+    if (range && range.tag.name.toLowerCase() !== selection.tag.toLowerCase()) { refuse("The page changed meanwhile; select the element again."); return; }
+    if (!range?.close) { refuse("The element's end tag could not be found in the source."); return; }
     const taken = Object.keys(current.components);
     const tag = names.automaticComponentName(source.slice(range.start, range.end), taken);
     const bare = makeComponentPlan(source, range, tag, {}, taken);
-    if ("error" in bare) { deps.announce(bare.error); return; }
+    if ("error" in bare) { refuse(bare.error); return; }
     const { sheets, unchanged } = pageStyles(path, source, revision);
     const made = carry.withPageCss(bare, source, range, tag, sheets);
     const loader = Object.values(current.routes).some((file) => /components\/components\.js/.test(deps.sources()[file] ?? ""));
@@ -1390,7 +1392,7 @@ export function createComponentTools(deps: ComponentDeps) {
    */
   async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; unchanged: () => boolean }) {
     const { path, nodePath, tag, source, range, made, unchanged } = request;
-    const stop = (message: string) => { deps.announce(message); return message; };
+    const stop = (message: string) => { refuse(message); return message; };
     const changed = "The page, its styles or the repository changed meanwhile; no component was made.";
     if (!unchanged()) return stop(changed);
     const result = await deps.createFiles(madeFiles(tag, made));
@@ -1434,16 +1436,16 @@ export function createComponentTools(deps: ComponentDeps) {
     const current = () => unchanged() && editable(path) && Boolean(proof?.isCurrent());
     if (!current()) return false;
     const problem = tagNameProblem(tag, Object.keys(site()?.components ?? {}));
-    if (problem) { deps.announce(problem); return false; }
+    if (problem) { refuse(problem); return false; }
     const files = blankComponentFiles(tag);
     const edit = nativeInsertEdit(source, parent, index, tag, files[0].content);
-    if (!edit) { deps.announce("The insertion point changed; choose the destination again."); return false; }
+    if (!edit) { refuse("The insertion point changed; choose the destination again."); return false; }
     const result = await deps.createFiles(files);
     if ("error" in result) { deps.error(new Error(result.error)); return false; }
     const { receipt } = result;
     if (!current() || !receipt.isCurrent()) {
       receipt.undo();
-      deps.announce("The page or repository changed meanwhile; no component was made.");
+      refuse("The page or repository changed meanwhile; no component was made.");
       return false;
     }
     deps.preview()?.selectAfterUpdate({ path, node: [...parent, index] });
@@ -1473,7 +1475,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const at = instanceAt(path, [...initial.node]);
       if (!at || !hostProof.isCurrent() || proof && !proof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor || !editable(path)
         || at.tag !== initial.tag || at.templatePath !== initial.templatePath || at.template !== initial.template || at.source !== expectedSource) {
-        deps.announce(staleMessage);
+        refuse(staleMessage);
         return;
       }
       return at;
@@ -1530,7 +1532,7 @@ export function createComponentTools(deps: ComponentDeps) {
           if (!at) return reject();
           const edit = plan(at, value, part);
           if (!edit) return reject();
-          if ("error" in edit) { deps.announce(edit.error); return false; }
+          if ("error" in edit) { refuse(edit.error); return false; }
           const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
           if (next === at.source) return true;
           // A session's first write starts an undo step of its own, never one left open before it.
@@ -1587,7 +1589,7 @@ export function createComponentTools(deps: ComponentDeps) {
       attributes: initial.instance.attributes.map(({ name, value }) => ({ name, value: attributeValue(initial, name) ?? value })),
       openAttribute(name) {
         const problem = /^on/i.test(name) ? attributeNameProblem(name) : undefined;
-        if (problem) { deps.announce(problem); return; }
+        if (problem) { refuse(problem); return; }
         return openSession((at, value) => {
           if (!attributeSourceSafe(at)) return { error: "The attribute markup is ambiguous; edit its source directly." };
           if (at.instance.attributes.filter(item => item.name === name).length !== 1) return { error: "This attribute is missing or duplicated; edit its source directly." };
@@ -1636,7 +1638,7 @@ export function createComponentTools(deps: ComponentDeps) {
               const current = read(initial.source, proof, "The instance changed while the image uploaded; it was not replaced.");
               if (!current) return false;
               const problem = nativeElementUrlProblem(uploaded, ["http", "https"], false);
-              if (problem) { deps.announce(problem); return false; }
+              if (problem) { refuse(problem); return false; }
               const edit = slotAttributeEdit(current, slot, "src", uploaded);
               return !!edit && change(path, [edit], "Image replaced", current.node);
             } catch (error) { deps.error(error); return false; }
@@ -1698,7 +1700,7 @@ export function createComponentTools(deps: ComponentDeps) {
             const done = session.cancel();
             if (patching) patcher()?.endPatch(path, done ? { text: first.text } : undefined);
             patching = false;
-            if (!done) deps.announce("The edit couldn't be undone; use Undo.");
+            if (!done) refuse("The edit couldn't be undone; use Undo.");
             return done;
           },
         };

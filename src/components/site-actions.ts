@@ -5,6 +5,7 @@
 // in the project menu, "View live site" (from `.editor/config.json`'s
 // `site.url`) and "Download site" (the repository's files as edited, drafts
 // included, as a .zip).
+import { refuse } from "./refusal-note";
 import "./site-actions.css";
 import { button, link, node } from "../ui/dom";
 import { setDeployStatus } from "../deploy-status";
@@ -101,7 +102,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
       saveBytes(zip, name);
       options.announce(`Downloaded ${name}, ${count} files.`);
     } catch (error) {
-      options.announce(`The site could not be downloaded: ${error instanceof Error ? error.message : String(error)}`);
+      refuse(`The site could not be downloaded: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       downloading = false;
       download.disabled = false;

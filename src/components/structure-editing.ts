@@ -1,3 +1,4 @@
+import { refuse as showRefusal } from "./refusal-note";
 import { button, node } from "../ui/dom";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import type { NativeStructure } from "./native-preview";
@@ -53,6 +54,7 @@ function fitHeight(area: HTMLTextAreaElement) {
 const shape = (value: NativeStructure) => JSON.stringify(value.items, (name, item) => name === "text" || name === "heading" ? undefined : item);
 
 export function createStructureEditing(host: StructureEditingHost) {
+  const refuse = (reason: string) => { host.announce(reason); showRefusal(reason); };
   const { tree } = host;
   const fieldInputs = new Map<string, FieldControl>();
   const fieldClosers = new Map<FieldControl, () => void>();
@@ -146,7 +148,7 @@ export function createStructureEditing(host: StructureEditingHost) {
     typingHeld = false;
     if (how === "cancel") current.session?.cancel();
     else current.session?.close();
-    if (how === "stale") host.announce(`Editing ${current.label} ended: the page changed meanwhile.`);
+    if (how === "stale") refuse(`Editing ${current.label} ended: the page changed meanwhile.`);
     if (!quiet) host.ended(current.owner, focus);
   }
 
@@ -249,7 +251,7 @@ export function createStructureEditing(host: StructureEditingHost) {
       suggest(image.field as HTMLInputElement, model.images.map(value => ({ value })), "Images of this site");
       const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true;
       let pending: ReturnType<ComponentStructureModel["openImageUpload"]>;
-      uploadClosers.set(file, () => { if (pending) host.announce("The image picker changed; reopen Upload image… before choosing a file."); pending?.close(); pending = undefined; });
+      uploadClosers.set(file, () => { if (pending) refuse("The image picker changed; reopen Upload image… before choosing a file."); pending?.close(); pending = undefined; });
       const upload = button("Upload image…", () => {
         // The upload is a step of its own: what was typed so far is kept first.
         flush(current); current.session?.close(); current.session = undefined;

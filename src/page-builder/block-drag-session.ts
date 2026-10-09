@@ -21,8 +21,8 @@ export interface BlockDragSessionPorts {
   /** The containers under a frame-viewport point (none inside `moving`); with `bands`, <main> with all its bands. */
   probe(at: { x: number; y: number }, moving: readonly number[] | undefined, bands: boolean): Promise<DropReport | undefined>;
   scroll(dy: number): void;
-  drop(target: DropTarget, where: string): void;
-  announce(text: string): void;
+  drop(target: DropTarget, where: string, pointer?: { x: number; y: number }): void;
+  announce(text: string, pointer?: { x: number; y: number }): void;
 }
 
 export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSessionPorts): InsertDragContext<DropTarget> {
@@ -111,14 +111,14 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
       if (!at) return false;
       if (fresh(at) && !probing) {
         if (!shown?.ok) return false;
-        ports.drop(shown, dropLabel(shown, block));
+        ports.drop(shown, dropLabel(shown, block), at);
         return true;
       }
       // Released before the page was probed where it was released: that probe decides.
       void probe(at).then((report) => {
         const target = report && blockDropTarget(report, at, block, level).target;
-        if (target?.ok) ports.drop(target, dropLabel(target, block));
-        else ports.announce(`Nothing was ${block.kind === "move" ? "moved" : "added"}: ${target?.reason ?? "there is no place for it there."}`);
+        if (target?.ok) ports.drop(target, dropLabel(target, block), at);
+        else ports.announce(`Nothing was ${block.kind === "move" ? "moved" : "added"}: ${target?.reason ?? "there is no place for it there."}`, at);
       });
       return true;
     },

@@ -1,3 +1,4 @@
+import { refuse } from "../components/refusal-note";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
 import { editNavigation, readNavigation } from "../page-builder/site-navigation";
@@ -433,11 +434,11 @@ export function createPagesController(ports: PagesPorts) {
     let current = moveProof(source);
     const indexed = await ports.ensureIndex();
     if (!current()) { ports.error(new Error(changedMove)); return; }
-    if (indexed) { ports.announce(indexed); ports.error(new Error(indexed)); return; }
+    if (indexed) { ports.error(new Error(indexed)); ports.announce(indexed); refuse(indexed); return; }
     current = moveProof(source);
     const to = movedRoute(parent, source.route);
     const planned = planNativeUrlChange(source.file, to);
-    if (!planned.ok) { ports.announce(planned.error); ports.error(new Error(planned.error)); return; }
+    if (!planned.ok) { ports.error(new Error(planned.error)); ports.announce(planned.error); refuse(planned.error); return; }
     const change = planned.value;
     const openingSources = new Map(Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
     const answer = await ports.confirmation()!.choose({

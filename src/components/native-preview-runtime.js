@@ -67,6 +67,9 @@
     parent.postMessage(Object.assign(base, extra || {}), "*");
   }
 
+  // A sandboxed frame's presses cannot bubble to the host's refusal note (typing here is left to its timeout).
+  document.addEventListener("pointerdown", function () { emit("refusal-note-action"); }, true);
+
   function reportError(message) {
     hadError = true;
     emit("error", { message: String(message) });

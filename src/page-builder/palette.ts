@@ -1,3 +1,4 @@
+import { refuse } from "../components/refusal-note";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 // The keyboard layer of the editor: the command palette (⌘K, and ⌘P to go
 // to a page or file), the keyboard shortcuts sheet (?), and the editor's
@@ -162,6 +163,11 @@ function modelOriginCurrent(deps: EditorPaletteDeps, model: EditBarModel): boole
     JSON.stringify(selection.node) === JSON.stringify(origin.node));
 }
 
+function announceRefusal(deps: EditorPaletteDeps, reason: string) {
+  deps.announce(reason);
+  refuse(reason);
+}
+
 function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const model = deps.editBar();
   const selection = deps.selection();
@@ -171,7 +177,7 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const identity = JSON.stringify(selection);
   const guard = (run: () => void | Promise<void>) => guardCommand(run,
     () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && JSON.stringify(deps.selection()) === identity,
-    () => deps.announce("The selection changed. Reopen the command palette and try again."));
+    () => announceRefusal(deps, "The selection changed. Reopen the command palette and try again."));
   const kind = model.kind;
   const out: Command[] = [];
   // Fields (Address, Label, Alt text) and Ask agent come after what acts at once.
@@ -342,12 +348,12 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
         keywords: ["insert", "section", "component", component.tag],
         run: async () => {
           if (deps.revision?.() !== revision || deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || JSON.stringify(deps.selection()) !== listedSelection) {
-            deps.announce("The page changed. Reopen the command palette and try again.");
+            announceRefusal(deps, "The page changed. Reopen the command palette and try again.");
             return;
           }
           const source = deps.source(pagePath) ?? "";
           const point = sectionInsertPoint(source, selection?.path === pagePath ? selection : undefined, deps.isSectionTag);
-          if (!point) { deps.announce(`Select a section to add ${component.label} after it.`); return; }
+          if (!point) { announceRefusal(deps, `Select a section to add ${component.label} after it.`); return; }
           await deps.insert({ path: pagePath, ...point }, { tag: component.tag, label: component.label });
         },
       });
@@ -417,18 +423,18 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
     hint: "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
     run: async () => {
       if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
-        deps.announce("The page changed. Reopen the command palette and try again."); return;
+        announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
       const point: { path?: string; parent: number[]; index: number } | undefined = deps.nativeInsertPoint ? deps.nativeInsertPoint(source, path, selection, choice) : nativePaletteInsertPoint(source, path, selection, choice);
       const markup = nativeChoiceMarkup(choice.tag)!;
       if (!point || !nativeMarkupInsertEdit(source, point.parent, point.index, markup)) {
-        deps.announce(`Select a valid HTML container to add ${choice.label}.`); return;
+        announceRefusal(deps, `Select a valid HTML container to add ${choice.label}.`); return;
       }
       // Host callbacks cannot silently replace the captured source or selection.
       if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || JSON.stringify(deps.selection()) !== identity) {
-        deps.announce("The page changed. Reopen the command palette and try again."); return;
+        announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
-      if (point.path !== undefined && point.path !== path) { deps.announce("The insertion page changed. Reopen the command palette."); return; }
+      if (point.path !== undefined && point.path !== path) { announceRefusal(deps, "The insertion page changed. Reopen the command palette."); return; }
       await deps.insert(point.path === path ? point as { path: string; parent: number[]; index: number } : { path, parent: [...point.parent], index: point.index }, { tag: choice.tag, label: choice.label });
     },
   }));
@@ -522,7 +528,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
             const problem = await prompt.onSend(text);
             if (problem) deps.onError(new Error(problem));
           }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && JSON.stringify(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
-          () => deps.announce("The selection changed. Reopen the command palette and try again.")),
+          () => announceRefusal(deps, "The selection changed. Reopen the command palette and try again.")),
         }];
       },
       showShortcuts,

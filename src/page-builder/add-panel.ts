@@ -6,6 +6,7 @@
 // a click inserts at that gap and the panel closes, like the picker it
 // replaces). An item can also be dragged onto the canvas.
 
+import { refuse as showRefusal } from "../components/refusal-note";
 import type { InsertChoice, InsertPoint } from "../components/insert-controls";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
@@ -219,6 +220,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     entries.get(item.tag)?.option.setAttribute("aria-disabled", "true");
     const text = `This destination cannot accept ${item.name}.`;
     position.textContent = text; position.hidden = false; live.textContent = text;
+    showRefusal(text, { visible: position });
     panel.classList.add("has-no-place");
   }
 

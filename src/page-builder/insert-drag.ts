@@ -8,6 +8,7 @@
 // target drops there. Alt and Tab, while dragging, are the context's to read
 // (blocks step up a level with them).
 
+import { refuse } from "../components/refusal-note";
 import { icon } from "../icons";
 import { node } from "../ui/dom";
 
@@ -203,7 +204,9 @@ export function trackDrag<T>(press: DragPress, label: () => string,
     ghost?.remove();
     const at = target;
     ctx!.clear();
-    if (!drop || !ctx!.drop(at, refused)) ctx!.announce(`${label()} was not ${done}`);
+    if (!drop) ctx!.announce(`${label()} was not ${done}`);
+    // A refused release keeps its reason on screen by the pointer once the label goes.
+    else if (!ctx!.drop(at, refused)) refuse((refused && where?.textContent) || `${label()} was not ${done}`, { pointer });
     // The click a release makes is not a click on the item.
     window.setTimeout(() => { dragged = false; }, 0);
   }

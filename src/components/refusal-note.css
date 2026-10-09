@@ -1,0 +1,18 @@
+.refusal-note {
+  position: fixed;
+  z-index: 10000;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 16%);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  pointer-events: none;
+}

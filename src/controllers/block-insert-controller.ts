@@ -34,7 +34,7 @@ export interface BlockInsertPorts {
   /** Selects this element once the page renders `source`, flashing `where` at it; undefined cancels. */
   readonly select: (request: (NodeRequest & { source: string }) | undefined, where?: string) => void;
   /** Flashes the red reason at the selection; nothing is inserted. */
-  readonly refuse: (reason: string) => void;
+  readonly refuse: (reason: string, pointer?: { x: number; y: number }) => void;
 }
 export interface BlockInsert {
   path: string;
@@ -112,12 +112,12 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
    * measured on the page's `painted` bytes; `slot` for an instance's items
    * slot): inserted there, or the reason flashes when the page has changed since.
    */
-  async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string; slot?: string }, painted: string | undefined, at = ports.target()) {
+  async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string; slot?: string }, painted: string | undefined, at = ports.target(), pointer?: { x: number; y: number }) {
     const source = at && ports.source(at.path);
-    if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
-    if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
+    if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it.", pointer); return; }
+    if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
     const error = await insert({ path: at.path, ...place, kind, before: at.node ? { path: at.path, node: at.node } : undefined });
-    if (error) ports.refuse(error);
+    if (error) ports.refuse(error, pointer);
   }
 
   /**

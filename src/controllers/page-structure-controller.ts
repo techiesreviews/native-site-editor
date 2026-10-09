@@ -1,3 +1,4 @@
+import { refuse as showRefusal } from "../components/refusal-note";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit, swapEdits, moveEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
@@ -63,6 +64,7 @@ export interface PageStructurePorts {
 }
 
 export function createPageStructureController(ports: PageStructurePorts) {
+  const refuse = (reason: string) => { ports.announce(reason); showRefusal(reason); };
   // What B, I and Link do for the current selection, for the keyboard shortcuts.
   let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
 
@@ -196,7 +198,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
           action = () => {
             if (enclosing) {
               const wrapper = ports.wrapperAround(inner, text.start, format.also);
-              if (!wrapper?.close) { announce(`${format.name} could not be removed here.`); return; }
+              if (!wrapper?.close) { refuse(`${format.name} could not be removed here.`); return; }
               changeInner([
                 { start: wrapper.tag.start, end: wrapper.tag.end, text: "" },
                 { start: wrapper.close.start, end: wrapper.close.end, text: "" },
@@ -204,7 +206,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
               return;
             }
             const span = ports.textRangeInSource(inner, text.start, text.end, text.text);
-            if (!span) { announce(`Select text within one element to make it ${format.name.toLowerCase()}.`); return; }
+            if (!span) { refuse(`Select text within one element to make it ${format.name.toLowerCase()}.`); return; }
             changeInner([
               { start: span.start, end: span.start, text: `<${format.tag}>` },
               { start: span.end, end: span.end, text: `</${format.tag}>` },
@@ -252,12 +254,12 @@ export function createPageStructureController(ports: PageStructurePorts) {
           const wrap = linkWrapEdit(inner, text.start, text.end, text.text);
           const linkIt = () => {
             if (!("edit" in wrap)) {
-              announce(wrap.refused === "nested" ? "The selection already holds a link." : "Select text within one element to link it.");
+              refuse(wrap.refused === "nested" ? "The selection already holds a link." : "Select text within one element to link it.");
               return;
             }
             const next = inner.slice(0, wrap.edit.start) + wrap.edit.text + inner.slice(wrap.edit.end);
             const within = ports.elementPathAt(next, wrap.link);
-            if (!within) { announce("Select text within one element to link it."); return; }
+            if (!within) { refuse("Select text within one element to link it."); return; }
             const start = range.tag.end + wrap.edit.start;
             const end = range.tag.end + wrap.edit.end;
             // One undo group from the wrap through the address typed for it.
@@ -280,7 +282,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
           // holding a link); Ctrl/⌘+K there says why.
           if ("edit" in wrap) controls.push({ kind: "button", icon: "link", label: "Link", title: "Link (Ctrl+K)", onPress: linkIt });
         } else {
-          nativeFormatActions.link = () => announce("Select the text to link first.");
+          nativeFormatActions.link = () => refuse("Select the text to link first.");
         }
       }
     }
@@ -299,7 +301,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       if (!node) return;
       const latest = ports.nativeEditableSource(path) ?? "";
       const tag = ports.locateNativeElementRange(latest, target)?.tag;
-      if (!tag || tag.name !== tagName) { announce("The element could not be found in the source."); return; }
+      if (!tag || tag.name !== tagName) { refuse("The element could not be found in the source."); return; }
       preview.selectAfterUpdate({ path, node });
       try {
         // Later edits first, so earlier offsets stay valid.
@@ -383,14 +385,14 @@ export function createPageStructureController(ports: PageStructurePorts) {
         const state = grouped ? nativeAttributeFieldSession : model && { key, path, source: expectedSource, model, epoch, scope: scopeKey };
         if (!scope || !state || state.key !== key || !state.model.isCurrent() || ports.generation !== state.epoch || ports.setupScope() !== state.scope || ports.versionView ||
             ports.appStore.selection.value?.path !== path || ports.appStore.selection.value.node?.join(".") !== node.join(".") || ports.nativeEffectiveSource(path) !== state.source) {
-          announce("The source or selection changed. Select the element again before editing its fields."); return;
+          refuse("The source or selection changed. Select the element again before editing its fields."); return;
         }
         const tag = ports.locateNativeElementRange(state.source, node)?.tag;
-        if (!tag || tag.name !== range.tag.name) { announce("The selected element changed."); return; }
+        if (!tag || tag.name !== range.tag.name) { refuse("The selected element changed."); return; }
         const located = locateNativeFieldElement(state.source, tag);
-        if ("error" in located) { announce(located.error); return; }
+        if ("error" in located) { refuse(located.error); return; }
         const result = nativeElementAttributeEdits(state.source, located, { [property]: value });
-        if ("error" in result) { announce(result.error); return; }
+        if ("error" in result) { refuse(result.error); return; }
         if (!result.edits.length) return;
         const edit = result.edits[0];
         const next = state.source.slice(0, edit.start) + edit.text + state.source.slice(edit.end);
@@ -499,7 +501,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       const after = ports.locateNativeElementRange(source, [...parent, index + 1]);
       // Only the source this selection was painted from moves; a newer one, or another selection, refuses.
       const proof = selection.paintedSource === source ? sectionMoveProof(source, node, true) : undefined;
-      const move = (direction: "up" | "down") => proof ? moveNativeSection(selection, direction, proof) : (announce(SECTION_MOVE_STALE), "stayed" as const);
+      const move = (direction: "up" | "down") => proof ? moveNativeSection(selection, direction, proof) : (refuse(SECTION_MOVE_STALE), "stayed" as const);
       onMove = move;
       controls.push({
         kind: "button",
@@ -582,7 +584,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const selected = ports.appStore.selection.value?.path === fresh.path && ports.appStore.selection.value.node?.join(".") === fresh.node.join(".");
     if (selected) ports.nativePreview?.selectTextAfterUpdate(fresh.text);
     void editor.runVisualHistory("undo", fresh.path).then((undone) => {
-      ports.element("status").textContent = undone ? "Empty link removed" : "The empty link could not be removed; undo removes it.";
+      if (undone) ports.element("status").textContent = "Empty link removed";
+      else refuse("The empty link could not be removed; undo removes it.");
     });
   }
 
@@ -593,7 +596,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (!preview || !editor) return false;
 
     if (ports.nativeEditableSource(path) !== source) {
-      ports.announce("The source changed. Select the element again and try again.");
+      refuse("The source changed. Select the element again and try again.");
       return false;
     }
     preview.selectAfterUpdate(next ? { path, node: next } : undefined);
@@ -637,7 +640,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (proof.epoch !== ports.generation || proof.scope !== ports.setupScope() || ports.versionView || ports.nativeSources()[path] !== proof.source
       || proof.node.join(".") !== node.join(".") || (proof.model && !proof.model.isCurrent())
       || (proof.selected && (selected?.path !== path || selected.node?.join(".") !== node.join(".")))) {
-      ports.announce(SECTION_MOVE_STALE); return "stayed";
+      refuse(SECTION_MOVE_STALE); return "stayed";
     }
     const source = proof.source;
     const range = ports.locateNativeElementRange(source, node);
@@ -663,9 +666,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
       if (epoch !== ports.generation || scope !== ports.setupScope()) return;
       if (draft && ports.nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !ports.editorModule?.isMounted(target.path)) ports.editorModule?.forgetDraftModel(draft, target.path);
       ports.updateNativePreviewSources();
-      ports.announce("The source changed while its editor opened. Select the section again before moving it."); return;
+      refuse("The source changed while its editor opened. Select the section again before moving it."); return;
     }
-    if (!moveNativeSection(target, direction, sectionMoveProof(paintedSource, target.node, false))) ports.element("status").textContent = "The section could not be moved";
+    if (!moveNativeSection(target, direction, sectionMoveProof(paintedSource, target.node, false))) refuse("The section could not be moved");
   }
 
   // Moves a whole section to another gap among its siblings (`index` counted
@@ -743,7 +746,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const openingEpoch = ports.generation, openingScope = ports.setupScope();
     const allowed = () => openingEpoch === ports.generation && openingScope === ports.setupScope() && (path === ports.nativeSite?.routes[ports.nativePreview?.route() ?? ""] || path === ports.nativeEditableTemplatePath());
     if (!allowed()) {
-      ports.announce("Edit the page instance in Structure, or choose Edit for its shared template.");
+      refuse("Edit the page instance in Structure, or choose Edit for its shared template.");
       ports.updateNativePreviewSources();
       return undefined;
     }

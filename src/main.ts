@@ -1,3 +1,5 @@
+import { refuse } from "./components/refusal-note";
+import "./components/refusal-note.css";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
@@ -331,10 +333,10 @@ function mountWorkspace() {
     drag: kind => {
       const current = blockInsertPorts.proof();
       return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag({ kind: "new", block: kind }, {
-        drop: (target, where, painted) => {
+        drop: (target, where, painted, pointer) => {
           const at = blockInsertPorts.target();
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };
-          if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at) : undefined).catch(errorMessage);
+          if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at, pointer) : undefined).catch(errorMessage);
         },
         announce,
       }, drag.createBlockDrag) : undefined);
@@ -414,7 +416,7 @@ function mountWorkspace() {
       return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
     },
     create: createNativeNew,
-    announce: (text) => { element("status").textContent = text; },
+    announce,
     onInteractionEnd: flushPendingNativePageTitles,
     retitle: retitleNativePage,
     changed: (file) => Boolean(treeState().changes.get(file)),
@@ -478,11 +480,11 @@ function mountWorkspace() {
         nativeStructurePaintedSources.set(item, source);
         nativeStructureMoveActions.set(item, direction => {
           if (source === undefined || !proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || appStore.openFile.value !== path || !editorModule?.isMounted(path) || nativeEffectiveSource(path) !== source) {
-            announce("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
+            refuse("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
           }
           const depth = direction === "out" || direction === "in";
           const result = depth ? nativeElementDepthMove(source, item.node, direction) : nativeElementSiblingMove(source, item.node, direction);
-          if (result.status === "refused") { announce(result.error); return "stayed"; }
+          if (result.status === "refused") { refuse(result.error); return "stayed"; }
           if (result.status === "stayed") return "stayed";
           return applyNativeChange(path, source, [result.edit], result.selection, depth ? direction === "out" ? "Moved out of the container" : "Moved into the container" : "Element moved") ? result.selection : "stayed";
         });
@@ -497,10 +499,10 @@ function mountWorkspace() {
       const selection = appStore.selection.value;
       const source = selection && nativeEffectiveSource(selection.path);
       if (!selection?.node || source === undefined || selection.paintedSource !== source || versionView || appStore.openFile.value !== selection.path || !editorModule?.isMounted(selection.path)) {
-        announce("The source changed or its editor is not open. Select the element again before moving it."); return;
+        refuse("The source changed or its editor is not open. Select the element again before moving it."); return;
       }
       const result = nativeElementDepthMove(source, selection.node, direction);
-      if (result.status === "refused") announce(result.error);
+      if (result.status === "refused") refuse(result.error);
       if (result.status === "moved") applyNativeChange(selection.path, source, [result.edit], result.selection, direction === "out" ? "Moved out of the container" : "Moved into the container");
     },
     onBlockPress: dragPageBlock,
@@ -540,7 +542,7 @@ function mountWorkspace() {
     onMove: (path, item, direction) => {
       const paintedSource = nativeStructurePaintedSources.get(item);
       if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
-        announce("The source changed. Wait for the preview before moving this element."); return "stayed";
+        refuse("The source changed. Wait for the preview before moving this element."); return "stayed";
       }
       if (direction === "out" || direction === "in" || !isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
@@ -552,7 +554,7 @@ function mountWorkspace() {
     onMoveTo: (path, item, index) => {
       return moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index);
     },
-    announce: (text) => { element("status").textContent = text; },
+    announce,
   });
   componentTools?.destroy();
   componentTools = mountComponentTools();
@@ -789,9 +791,10 @@ const blockInsertPorts: BlockInsertPorts = {
     nativePreview?.selectAfterUpdate(request);
     if (request && where) nativePreview?.flashInsert(request, where);
   },
-  refuse: reason => {
+  refuse: (reason, pointer) => {
+    if (pointer) { refuse(reason, { pointer }); return; }
     nativePreview?.flashRefusal(reason);
-    announce(reason);
+    refuse(reason, { visible: document.querySelector<HTMLElement>(".pb-flash-label.is-refused") ?? undefined });
   },
 };
 const loadBlockDrag = lazyModule(() => import("./page-builder/block-drag"));
@@ -1354,7 +1357,7 @@ const previewSelection = createPreviewSelectionController({
   structureSelect: (target) => pageStructure?.select(target),
   hideComponentTools: () => componentTools?.show(undefined),
   agentContext: () => updateAgentContext(),
-  announce: (message) => announce(message),
+  announce: (message) => refuse(message),
   beginReveal: () => {
     const request = ++linkedStyleRequest;
     fileGeneration++;
@@ -1826,7 +1829,7 @@ async function openNativePageSettings(path: string) {
 
 async function openNativeSiteSettings() {
   const epoch = generation, scope = setupScope();
-  if (!nativeSite) { announce("Open a native site first."); return; }
+  if (!nativeSite) { refuse("Open a native site first."); return; }
   const problem = await ensureNativeTextIndex();
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
@@ -1860,7 +1863,7 @@ async function openNativeNavigation(pagePath: string) {
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem) { errorMessage(new Error(problem)); return; }
   const target = nativeNavigationTarget(pagePath);
-  if (!target) { announce("No editable navigation found in this page's header. Navigation supports simple links, or a list of single-link items."); return; }
+  if (!target) { refuse("No editable navigation found in this page's header. Navigation supports simple links, or a list of single-link items."); return; }
   nativeSettingsController().navigation({ path: target.path, source: target.source, links: target.list.links, pages: nativeSitePageChoices(), shared: target.shared });
 }
 
@@ -3148,11 +3151,11 @@ const setupController = createSetupChecklistController({
   start: () => {
     const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
     if (choice) choice.focus();
-    else announce("This repository has a home page already.");
+    else refuse("This repository has a home page already.");
   },
   save: () => {
     const trigger = document.querySelector<HTMLButtonElement>(".publish-menu > button");
-    if (!trigger || trigger.disabled) { announce("There is nothing to save yet."); return; }
+    if (!trigger || trigger.disabled) { refuse("There is nothing to save yet."); return; }
     trigger.focus();
     trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
   },
@@ -3796,7 +3799,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     const transition = (direction: "undo" | "redo") => {
       const select = direction === "undo" ? op.selection?.before : op.selection?.after;
       if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
-      if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); announce(receipt.error() ?? changedOperation); return false; }
+      if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); refuse(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
       announce(direction === "undo" ? op.undone : done);
       return true;
@@ -3865,7 +3868,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     // An unchanged stylesheet pane is not declared here: it stays an unrelated proof, or is proved at its remount.
     const changing = [...new Set([anchor, appStore.openFile.value, next, path, ...changingTextPaths].filter((value): value is string => !!value))];
     const complete = receipt.beginOwnUITransition(changing);
-    if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
+    if (!complete || !live()) { refreshPending = false; releaseRefresh?.(); releaseRefresh = undefined; refuse(receipt.error() ?? changedOperation); return false; }
     const owned = new Map(changing.map(path => [path, editor.captureFileModelState(scope, path, true)]));
     const capture = (path: string, pane = false) => {
       if (!live()) return;
@@ -3886,7 +3889,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       afterFileChanges();
       if (!live() || !receipt.isCurrent()) return false;
       await openAfter(path, !initial || !op.open, true);
-      if (!live() || !complete(owned)) { announce(receipt.error() ?? changedOperation); return false; }
+      if (!live() || !complete(owned)) { refuse(receipt.error() ?? changedOperation); return false; }
       afterFileChanges();
       if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree(initial && op.focus ? op.focus : path ? { file: path } : undefined);
       if (message && live() && receipt.isCurrent() && element("status").textContent === previousStatus) announce(message);
@@ -3898,12 +3901,12 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     }
   };
   const transition = (direction: "undo" | "redo") => {
-    if (refreshPending) { announce("The page is still refreshing. Try Undo or Redo when it is ready."); return false; }
+    if (refreshPending) { refuse("The page is still refreshing. Try Undo or Redo when it is ready."); return false; }
     const previousStatus = element("status").textContent;
     releaseRefresh = editor.holdHistoryRefresh(appStore.openFile.value ?? anchor);
     const select = direction === "undo" ? op.selection?.before : op.selection?.after;
     if (select) nativePreview?.selectAfterUpdate(select, direction === "redo" ? { reveal: "center" } : undefined);
-    if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); releaseRefresh(); releaseRefresh = undefined; announce(receipt.error() ?? changedOperation); return false; }
+    if (!receipt[direction]()) { if (select) nativePreview?.selectAfterUpdate(undefined); releaseRefresh(); releaseRefresh = undefined; refuse(receipt.error() ?? changedOperation); return false; }
     refreshPending = true;
     // runVisualHistory must first accept this exact initiating journal. A
     // macrotask, rather than a microtask, closes it only after that acceptance.
@@ -4124,7 +4127,7 @@ async function copyFilePath(path: string) {
     await navigator.clipboard.writeText(path);
     announce(`Copied ${path}`);
   } catch {
-    announce(`The path could not be copied: ${path}`);
+    refuse(`The path could not be copied: ${path}`);
   }
 }
 
@@ -4448,7 +4451,7 @@ async function renameFileTarget(target: FileRowTarget, name: string): Promise<st
 
 async function dropFileTarget(source: FileRowTarget, folder: string) {
   const problem = dropProblem(source, folder);
-  if (problem) { announce(problem); return; }
+  if (problem) { refuse(problem); return; }
   const error = await moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
   if (error) errorMessage(new Error(error));
 }

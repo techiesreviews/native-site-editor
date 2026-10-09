@@ -1122,7 +1122,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * without a page on show to drop into). A drop gives the page source its
      * target was measured on, so a page that changed since refuses it.
      */
-    blockDrag(block: DraggedBlock, ports: { drop(target: DropTarget, where: string, painted: string | undefined): void; announce(text: string): void },
+    blockDrag(block: DraggedBlock, ports: { drop(target: DropTarget, where: string, painted: string | undefined, pointer?: { x: number; y: number }): void; announce(text: string): void },
       create: typeof createBlockDrag) {
       if (!site || !frameState.active || alone) return undefined;
       let painted: string | undefined;
@@ -1132,7 +1132,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site!.routes[route]] : undefined;
           return probeDrop(at, moving ? [...moving] : undefined, bands).then((report) => { if (report) painted = shown; return report; });
         },
-        drop: (target, where) => ports.drop(target, where, painted),
+        drop: (target, where, pointer) => ports.drop(target, where, painted, pointer),
         announce: (text) => ports.announce(text),
       }, create);
     },

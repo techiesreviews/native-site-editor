@@ -11,6 +11,7 @@
 // written. Every change is one range edit to the page in its editor, or
 // one operation over drafts (src/main.ts `applyNativeOperation`).
 
+import { refuse as showRefusal } from "../components/refusal-note";
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
 import type { CardPageRequest, GridDescription, ItemGridReport } from "../components/card-grid-controls";
@@ -143,6 +144,7 @@ export function planCardPage(input: { routes: Record<string, string>; exists(pat
 }
 
 export function createCards(deps: CardsDeps) {
+  const refuse = (reason: string) => { deps.announce(reason); showRefusal(reason); };
   const routeOf = (path: string) => {
     const site = deps.site();
     return site ? Object.entries(site.routes).find(([, file]) => file === path)?.[0] : undefined;
@@ -295,7 +297,7 @@ export function createCards(deps: CardsDeps) {
       deps.change(path, fresh.edit.source, [fresh.edit], [...parent, fresh.index], `${capital(fresh.noun)} added to ${fresh.label}`);
       return;
     }
-    if (!found || !route || !last) { deps.announce("That grid is not on the page any more."); return; }
+    if (!found || !route || !last) { refuse("That grid is not on the page any more."); return; }
     const { source, grid } = found;
     const copy = cardMarkup(source, route, grid, last);
     const edit = insertAfterEdit(source, last.range, copy.text);
@@ -334,7 +336,7 @@ export function createCards(deps: CardsDeps) {
       undo: () => deps.dropNewDraft(file),
       redo: () => {
         const problem = deps.exists(file) ? `${file} already exists.` : deps.saveNewDraft(file, content);
-        if (problem) deps.announce(problem);
+        if (problem) refuse(problem);
         return problem;
       },
     };

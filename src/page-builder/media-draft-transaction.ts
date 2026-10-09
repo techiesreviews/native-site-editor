@@ -1,3 +1,4 @@
+import { refuse as showRefusal } from "../components/refusal-note";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { deleteFile, moveFile, type DraftAccess, type MovableFile } from "../file-changes";
 import { gitBlobSha, holdUploadKey, uploadKey, uploadKeyHeld, type UploadBytes } from "../uploads";
@@ -37,6 +38,7 @@ interface State {
 
 /** Owns only the captured draft records, source steps, and newly staged bytes. */
 export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransaction<State> {
+  const refuse = (reason: string) => { host.announce(reason); showRefusal(reason); };
   const scope = { ...host.scope };
   const pathsOf = (batch: MediaWorkspaceBatch) => [...new Set([
     ...batch.edits.keys(), ...batch.moves.flatMap(move => [move.from, move.to]), ...batch.deletes, ...batch.uploads.map(upload => upload.path),
@@ -138,7 +140,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           if (restored) state.after.set(path, host.store.get(scope, path));
           else desired.delete(path);
         }
-        if (!restored) host.announce("The editor changed during rollback; its newer source was kept.");
+        if (!restored) refuse("The editor changed during rollback; its newer source was kept.");
         restoreOwn(state.after, desired);
         throw error;
       }
@@ -162,7 +164,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
               if (restored) writes.set(path, host.store.get(scope, path));
               else desired.delete(path);
             }
-            if (!restored) host.announce("The editor changed during rollback; its newer source was kept.");
+            if (!restored) refuse("The editor changed during rollback; its newer source was kept.");
             restoreOwn(writes, desired);
             throw error;
           }
@@ -171,7 +173,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           evictOwnedCaches(batch, state);
           host.refresh();
           return true;
-        } catch (error) { host.announce(error instanceof Error ? error.message : "The image history action could not be applied."); return false; }
+        } catch (error) { refuse(error instanceof Error ? error.message : "The image history action could not be applied."); return false; }
       };
       evictOwnedCaches(batch, state);
       const registered = host.history(() => moveHistory(true), async () => {
@@ -193,7 +195,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           return restored;
         } catch (error) {
           await cleanup(restaged);
-          host.announce(error instanceof Error ? error.message : "The image history action could not be restored.");
+          refuse(error instanceof Error ? error.message : "The image history action could not be restored.");
           return false;
         } finally { release(restaged); }
       });

@@ -112,6 +112,29 @@ test("Redo of New component refuses whole when a file is at its path again; plai
   await store("save");
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect(page.locator("#status")).toContainText(`${templatePath} already exists.`);
+  await expect(page.locator(".refusal-note")).toBeVisible();
+  await expect(page.locator(".refusal-note")).toHaveText(`${templatePath} already exists.`);
+  await expect(page.locator(".refusal-note")).not.toBeFocused();
+  await expect(page.locator(".refusal-note")).toHaveCSS("pointer-events", "none");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".refusal-note")).toHaveCount(0);
+  // History also reports visibly when the builder has collapsed the code pane.
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).press("Enter");
+  await expect(page.locator("#code-split .code-pane").first()).toBeHidden();
+  // This layout mounts history in the top bar; also exercise a hidden control.
+  await page.locator(".code-editor__redo").evaluate(button => { button.style.visibility = "hidden"; });
+  await expect(page.locator(".code-editor__redo")).toBeHidden();
+  expect(await page.evaluate(async () => (await import("/src/components/source-editor.ts")).runVisualHistory("redo", "index.html"))).toBe(false);
+  await expect(page.locator(".refusal-note")).toBeVisible();
+  await expect(page.locator(".refusal-note")).toHaveText(`${templatePath} already exists.`);
+  await expect(page.locator("#status")).toContainText(`${templatePath} already exists.`);
+  await expect(page.locator(".refusal-note")).toHaveCount(0, { timeout: 6000 });
+  expect(await page.evaluate(async () => (await import("/src/components/source-editor.ts")).runVisualHistory("redo", "index.html"))).toBe(false);
+  await expect(page.locator(".refusal-note")).toBeVisible();
+  await frame(page).locator(".hero h1").click();
+  await expect(page.locator(".refusal-note")).toHaveCount(0);
+  await page.getByRole("separator", { name: "Resize code pane", exact: true }).press("Enter");
+  await page.locator(".code-editor__redo").evaluate(button => { button.style.visibility = ""; });
   // Nothing half-applied: no instance, the page as it was, their file kept, no CSS drafted.
   await expect(frame(page).locator("section-services")).toHaveCount(0);
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);

@@ -1,3 +1,4 @@
+import { refuse } from "../components/refusal-note";
 import type { Directory, TreeEntry } from "../../shared/types";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { CHANGE_WORDS, type ChangeKind } from "../file-changes";
@@ -216,7 +217,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
           }
         } else {
           if (gone) {
-            ports.announce(`${path} is deleted. Restore it to open it.`);
+            ports.announce(`${path} is deleted. Restore it to open it.`); refuse(`${path} is deleted. Restore it to open it.`);
             return;
           }
           ports.root()
