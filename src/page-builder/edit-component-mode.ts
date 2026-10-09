@@ -9,13 +9,28 @@
 // an edit of the template as it is made, so Done only leaves the mode. The
 // preview is never reloaded for any of it: the frame gets the mode as a
 // message and renders the instance again in place.
+//
+// Selecting a part of the template shows its slot chip after the element's
+// name in the edit bar label (slot-chip.ts). The chip reports a click to the
+// mode's owner as a window event, SLOT_CHIP_EVENT.
 
 import { button, node } from "../ui/dom";
 import { componentIcon } from "./component-icon";
+import { slotChip } from "../components/slot-chip";
 import type { EditComponentFrameMode } from "../components/native-preview";
+import type { SlotChipState } from "./component-model";
 import "./edit-component-mode.css";
 
 export type EditComponentShow = EditComponentFrameMode["show"];
+
+/** A slot chip's click, on `window`: toggle the part at `node` of `template` between slot and fixed. */
+export const SLOT_CHIP_EVENT = "native-slot-chip";
+export interface SlotChipReport {
+  action: "toggle";
+  template: string;
+  node: number[];
+  chip: SlotChipState;
+}
 
 /** The instance edited: where it is on the page shown, and its template. */
 export interface EditComponentTarget {
@@ -35,6 +50,8 @@ export interface EditComponentModePorts {
 
 export function createEditComponentMode(ports: EditComponentModePorts) {
   let now: (EditComponentTarget & { show: EditComponentShow }) | undefined;
+  // The chip shown, kept while it says the same of the same part.
+  let shownChip: { key: string; element: HTMLElement } | undefined;
 
   const title = node("span", "edit-mode__title");
   const show = node("span", "edit-mode__show");
@@ -84,6 +101,7 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       const was = now;
       if (!was) return undefined;
       now = undefined;
+      shownChip = undefined;
       send();
       return { path: was.path, node: [...was.node], tag: was.tag, templatePath: was.templatePath };
     },
@@ -92,6 +110,17 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       return now && { ...now, node: [...now.node] };
     },
     setShow,
+    /** The slot chip of the template's part at `node`, for the edit bar label. */
+    chip(at: readonly number[], state: SlotChipState) {
+      if (!now) return undefined;
+      const template = now.templatePath;
+      const key = JSON.stringify([template, at, state]);
+      if (shownChip?.key !== key) {
+        const report = (): SlotChipReport => ({ action: "toggle", template, node: [...at], chip: state });
+        shownChip = { key, element: slotChip(state, { onToggle: () => window.dispatchEvent(new CustomEvent(SLOT_CHIP_EVENT, { detail: report() })) }) };
+      }
+      return shownChip.element;
+    },
     /** The slim bar around the host's Used on and Done controls. */
     parts(usedOn: Element, done: Element) {
       return { lead: [title, dots[0], usedOn, dots[1], show], end: [done] };

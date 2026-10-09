@@ -56,6 +56,7 @@ import {
   makeComponentContainers,
   readInstance,
   slotLabel,
+  slotChipState,
   slotStates,
   slotTextEdit,
   slotValue,
@@ -393,8 +394,8 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- The edit bar. ----
 
   /** The edit bar's component identity for a selection: the mark on an instance, the chip inside one. */
-  function identity(selection: NativePreviewSelection): Pick<EditBarModel, "component" | "context"> {
-    const out: Pick<EditBarModel, "component" | "context"> = {};
+  function identity(selection: NativePreviewSelection): Pick<EditBarModel, "component" | "context" | "chip"> {
+    const out: Pick<EditBarModel, "component" | "context" | "chip"> = {};
     const revision = deps.revision();
     const path = deps.currentPath();
     const source = deps.sources()[selection.path];
@@ -438,6 +439,14 @@ export function createComponentTools(deps: ComponentDeps) {
 
       };
     }
+    // In Edit component mode, a part of the template edited: its slot chip after its name.
+    const moded = editMode?.active();
+    const template = moded && selection.path === moded.templatePath && selection.node?.length ? deps.sources()[moded.templatePath] : undefined;
+    let chip = template === undefined ? undefined : slotChipState(template, selection.node!, (tag) => templateOf(tag)?.source);
+    // Showing this page's content, an items slot counts the page's items.
+    const page = chip?.state === "items" && moded!.show === "page" ? instanceAt(moded!.path, [...moded!.node]) : undefined;
+    if (page && chip?.state === "items") chip = { ...chip, count: (page.instance.fills.get(chip.name) ?? []).filter((item) => item.type === "element").length };
+    if (chip) out.chip = editMode!.chip(selection.node!, chip);
     return out;
   }
 
@@ -607,7 +616,8 @@ export function createComponentTools(deps: ComponentDeps) {
   let editModeLoad: Promise<EditComponentMode> | undefined;
   const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode }) => editMode = createEditComponentMode({
     frame: (mode) => deps.preview()?.editComponent?.(mode),
-    changed: () => { barKey = ""; renderBar(); },
+    // The slot chip of an items slot counts what the slots now show.
+    changed: () => { barKey = ""; renderBar(); deps.refreshBar(); },
     announce: (text) => deps.announce(text),
   })).catch((error: unknown) => { editModeLoad = undefined; throw error; });
 

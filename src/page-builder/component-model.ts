@@ -1192,6 +1192,55 @@ const roleName = (el: SourceElement, kind: SlotKind) =>
     : el.name === "a" ? "link"
       : kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : LISTS.has(el.name) ? "list" : kind);
 
+/**
+ * What the slot chip says of a part of a template (ticket 14 §4): the slot it
+ * is or sits in, `items` with how many items its fallback holds for an items
+ * slot; else `fixed` with the name the part would get as a slot.
+ */
+export type SlotChipState =
+  | { state: "slot"; name: string; slot: number[] }
+  | { state: "items"; name: string; slot: number[]; count: number }
+  | { state: "fixed"; name: string; part: number[] };
+
+/**
+ * The slot chip of the template's part at `path` (element-child indexes, as
+ * the preview selects them): its nearest `<slot>`, itself included; else, for
+ * a part that could be a slot, fixed under its role name (`title`, `text`,
+ * `image`, a nested instance's tag without its kind…), numbered past the
+ * template's own slot names. None for the root, a part holding slots, a part
+ * of a nested instance, or one that only works in place (a table cell, a
+ * summary).
+ */
+export function slotChipState(template: string, path: readonly number[], templateOf: TemplateOf = () => undefined): SlotChipState | undefined {
+  const chain: SourceElement[] = [];
+  let nodes = parseSource(template);
+  for (const index of path) {
+    const next = elements(nodes)[index];
+    if (!next) return undefined;
+    chain.push(next);
+    nodes = next.children;
+  }
+  const part = chain.at(-1);
+  if (!part) return undefined;
+  let at = chain.length - 1;
+  while (at >= 0 && chain[at].name !== "slot") at--;
+  if (at >= 0) {
+    const slot = chain[at];
+    const name = (attribute(template, slot, "name") ?? "").trim();
+    const where = path.slice(0, at + 1);
+    return !name || cardsOnly(template, slot.children, templateOf)
+      ? { state: "items", name, slot: where, count: elements(slot.children).length }
+      : { state: "slot", name, slot: where };
+  }
+  if (chain.length < 2 || IN_PLACE.has(part.name) || chain.slice(0, -1).some((el) => el.name.includes("-"))
+    || [...descendants(part.children)].some((el) => el.name === "slot")) return undefined;
+  const taken = new Set(templateSlots(template).map((slot) => slot.name));
+  const role = roleName(part, contentKind(template, [part]) ?? "content");
+  let name = role;
+  for (let count = 2; taken.has(name); count++) name = `${role}-${count}`;
+  return { state: "fixed", name, part: [...path] };
+}
+
 // The attributes that make an `<a>` a link: on a link-wrapped card they move to its title.
 const LINK_ATTRIBUTES = new Set(["href", "target", "rel", "download", "hreflang", "type", "ping", "referrerpolicy"]);
 

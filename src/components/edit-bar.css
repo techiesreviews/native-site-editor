@@ -62,7 +62,7 @@
   padding: 0 6px;
   color: inherit;
 }
-.edit-bar__label > :is(button, .edit-bar__component-name) {
+.edit-bar__label > :is(button:not(.slot-chip), .edit-bar__component-name) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -73,7 +73,7 @@
   background: transparent;
   color: inherit;
 }
-.edit-bar__label > :is(button, .edit-bar__component-name):hover {
+.edit-bar__label > :is(button:not(.slot-chip), .edit-bar__component-name):hover {
   background: color-mix(in oklch, currentColor 10%, transparent);
 }
 /* Names stay text boxes (not flex) so a long one ends in a drawn ellipsis;

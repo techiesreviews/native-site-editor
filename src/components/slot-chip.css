@@ -1,0 +1,53 @@
+/* The slot chip (slot-chip.ts): solid violet for a slot, pink for an items
+   slot, muted grey and struck through for a fixed part. */
+.slot-chip {
+  --slot-chip-slot: oklch(from var(--color-component) 47% 0.21 h);
+  --slot-chip-items: oklch(50% 0.19 355);
+  flex: none;
+  box-sizing: border-box;
+  height: 17px;
+  margin: 0 2px 0 3px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--slot-chip-slot);
+  color: #fff;
+  font: 600 10.5px / 17px var(--font-mono);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 120ms ease-out;
+}
+.slot-chip--items {
+  background: var(--slot-chip-items);
+}
+.slot-chip--fixed {
+  background: color-mix(in oklch, var(--muted) 16%, transparent);
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.slot-chip:hover {
+  filter: brightness(1.12);
+}
+.slot-chip--fixed:hover {
+  filter: none;
+  background: color-mix(in oklch, var(--muted) 26%, transparent);
+}
+.slot-chip:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* In the edit bar's label, after the element's name: the name gives way first. */
+.edit-bar__label:has(> .slot-chip) {
+  max-width: min(440px, 100%);
+}
+.edit-bar__label > .slot-chip {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-chip {
+    transition: none;
+  }
+}
