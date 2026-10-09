@@ -745,7 +745,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const raw = data as unknown as { id?: unknown; context?: unknown };
       if (!probe || raw.id !== probe.id) return;
       const valid = raw.context === probe.context && context === probe.context && site?.routes[route] === probe.path &&
-        frameState.active && !viewing && !master && !alone;
+        frameState.active && !viewing && !alone;
       endProbe(valid ? parseDropReport(data, probe.path) : undefined);
       return;
     }
@@ -1083,7 +1083,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     probeDrop(at: { x: number; y: number }, moving?: number[]): Promise<DropReport | undefined> {
       endProbe();
       const path = site?.routes[route];
-      if (!path || !frameState.active || !frameState.ready || viewing || master || alone || rafHandle ||
+      if (!path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
         !Number.isFinite(at.x) || !Number.isFinite(at.y)) return Promise.resolve(undefined);
       return new Promise(resolve => {
         const timer = setTimeout(() => endProbe(), 1000);

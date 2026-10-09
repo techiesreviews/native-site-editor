@@ -775,7 +775,7 @@
     });
   }
   function dropContainers(x, y, moving) {
-    if (!pageEl || !state || state.master) return [];
+    if (!pageEl || !state) return [];
     var moved = Array.isArray(moving) ? walkNodePath(pageEl, moving) : null;
     function entry(el, kind, children, box, layoutEl, nodes, slot) {
       var all = dropKids(el);
