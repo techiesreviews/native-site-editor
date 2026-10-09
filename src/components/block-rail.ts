@@ -12,9 +12,22 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
   const tip = document.createElement("div");
   tip.className = "block-rail__tip";
   tip.setAttribute("aria-hidden", "true");
+  const buttons: HTMLButtonElement[] = [];
   const hideTip = () => { tip.hidden = true; };
   hideTip();
-  const buttons: HTMLButtonElement[] = [];
+  const showTip = (button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect();
+    tip.textContent = button.getAttribute("aria-label");
+    tip.style.left = `${rect.right + 8}px`;
+    tip.style.top = `${rect.top + rect.height / 2}px`;
+    tip.hidden = false;
+  };
+  // Leaving a button falls back to the keyboard-focused one's name, if any.
+  const focusedTip = () => {
+    const focused = buttons.find((button) => button === document.activeElement && button.matches(":focus-visible"));
+    if (focused) showTip(focused);
+    else hideTip();
+  };
   const tags: Partial<Record<NativeElementKind, string>> = { heading: "h2", paragraph: "p", image: "img" };
   for (const choice of nativeElementChoices) {
     const kind = choice.tag.slice(7) as NativeElementKind;
@@ -23,16 +36,9 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
     button.dataset.block = kind;
     button.setAttribute("aria-label", choice.label);
     button.append(elementIcon(tags[kind] ?? kind, 20));
-    const showTip = () => {
-      const rect = button.getBoundingClientRect();
-      tip.textContent = choice.label;
-      tip.style.left = `${rect.right + 8}px`;
-      tip.style.top = `${rect.top + rect.height / 2}px`;
-      tip.hidden = false;
-    };
-    button.addEventListener("pointerenter", showTip);
-    button.addEventListener("pointerleave", hideTip);
-    button.addEventListener("focus", () => { if (button.matches(":focus-visible")) showTip(); });
+    button.addEventListener("pointerenter", () => showTip(button));
+    button.addEventListener("pointerleave", focusedTip);
+    button.addEventListener("focus", () => { if (button.matches(":focus-visible")) showTip(button); });
     button.addEventListener("blur", hideTip);
     button.addEventListener("pointerdown", hideTip);
     button.addEventListener("click", () => { hideTip(); options.onPick?.(kind); });

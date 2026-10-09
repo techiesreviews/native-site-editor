@@ -41,6 +41,12 @@ for (const colorScheme of ["light", "dark"] as const) {
     await buttons.first().focus();
     await page.keyboard.press("ArrowUp");
     await expect(buttons.last()).toBeFocused();
+    // Hovering another block and leaving it brings back the focused block's name.
+    await buttons.first().hover();
+    await expect(tip(page)).toHaveText(names[0]);
+    await page.mouse.move(1, 1);
+    await expect(tip(page)).toBeVisible();
+    await expect(tip(page)).toHaveText(names.at(-1)!);
     await page.keyboard.press("Tab");
     await expect(tip(page)).toBeHidden();
     const colors = await buttons.first().evaluate((button) => {
@@ -59,7 +65,8 @@ for (const colorScheme of ["light", "dark"] as const) {
     await expect(panel).toBeVisible();
     await expect(panel.locator('[data-tag^="native:"]')).toHaveCount(0);
     await expect(panel.getByRole("option", { name: /^(Section|Div|Heading|Paragraph|Image|Button) HTML$/ })).toHaveCount(0);
-    expect((await panel.boundingBox())!.x).toBe(sidebarBox.x);
+    // The panel slides in; its settled left edge is the sidebar's.
+    await expect.poll(async () => (await panel.boundingBox())!.x).toBe(sidebarBox.x);
     await page.keyboard.press("Escape");
 
     await buttons.first().hover();
@@ -105,4 +112,9 @@ test("a repository without a native page hides the rail and releases its column"
   await expect(page.locator(".workspace")).not.toHaveClass(/workspace--blocks/);
   const workspace = (await page.locator(".workspace").boundingBox())!;
   expect((await page.locator("#structure-sidebar").boundingBox())!.x).toBe(workspace.x);
+  // Back on a native page, the rail and its column return.
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(rail(page)).toBeVisible({ timeout: 30_000 });
+  await expect(rail(page).getByRole("button")).toHaveCount(6);
+  await expect(page.locator(".workspace")).toHaveClass(/workspace--blocks/);
 });
