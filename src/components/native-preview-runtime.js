@@ -2733,8 +2733,9 @@
     el.setAttribute("spellcheck", "false");
     el.addEventListener("blur", commitEditing);
     el.addEventListener("keydown", onEditingKey);
-    // Typing can wrap the selection before the text edit is committed.
-    el.addEventListener("input", scheduleRect);
+    // Typing can wrap the selection before the text edit is committed: its
+    // box and the rectangle the edit bar keeps clear of follow.
+    el.addEventListener("input", onEditingInput);
   }
   function stopEditing(commit) {
     if (!editing) return;
@@ -2742,7 +2743,7 @@
     if (commit) commitEditing();
     el.removeEventListener("blur", commitEditing);
     el.removeEventListener("keydown", onEditingKey);
-    el.removeEventListener("input", scheduleRect);
+    el.removeEventListener("input", onEditingInput);
     el.removeAttribute("contenteditable");
     el.removeAttribute("spellcheck");
     editing = null;
@@ -2759,6 +2760,9 @@
     var edit = { path: path, node: elementIndexPath(editing), before: before, after: after };
     emit("text-edit", edit);
   }
+  function onEditingInput() {
+    updateBoxes();
+  }
   function onEditingKey(e) {
     if (e.key === "Enter") {
       // One line of text: Enter finishes, as it does in a form field.
@@ -2769,7 +2773,7 @@
       e.preventDefault();
       editing.innerHTML = editingHtml;
       // The restored text can wrap differently from what was typed.
-      scheduleRect();
+      onEditingInput();
       editing.blur();
     }
   }

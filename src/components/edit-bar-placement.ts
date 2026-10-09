@@ -9,9 +9,9 @@ export interface EditBarPlacementOptions {
 }
 
 /**
- * Prefer clear space above, then below (also under a sticky header), then
- * above over the sticky header; otherwise the canvas edge that covers the
- * least of the visible selection.
+ * Prefer clear space above, then below (also under a sticky header);
+ * otherwise the canvas edge that covers the least of the visible selection.
+ * The sticky header is never covered (unless it leaves no room at all).
  */
 export function editBarPlacement({ selectionTop, selectionBottom, frameHeight, barHeight, inset = 0, visible }: EditBarPlacementOptions): { top: number; side: "above" | "below" | "pinned" } {
   const covered = Math.min(inset, Math.max(0, frameHeight - barHeight - 8));
@@ -25,10 +25,6 @@ export function editBarPlacement({ selectionTop, selectionBottom, frameHeight, b
     if (below <= floor) {
       top = below;
       side = "below";
-    } else if (covered > 0 && above >= 4) {
-      // No room clear of the sticky header on either side: over the header
-      // rather than over the selection's own text.
-      side = "above";
     } else {
       const visibleTop = Math.max(0, selectionTop);
       const visibleBottom = Math.min(frameHeight, selectionBottom);
