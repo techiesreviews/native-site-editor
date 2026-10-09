@@ -19,6 +19,7 @@ the slice tickets `p5-16` to `p5-22`, the review results in the root
 | 08 | Controller API tidy-ups from the reviews | ready-for-agent |
 | 09 | Three flaky browser specs | ready-for-agent |
 | 10 | Known limits of the preview preload and the Page Structure editor | needs-triage |
+| 11 | Undo and Redo give no feedback when the history cannot move | needs-triage |
 
 Process notes (not code debt):
 
