@@ -1,7 +1,7 @@
 ---
 title: "Conventions: one Components chapter for agents"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [03-conventions-header-footer-wording]
 builder: claude ★
@@ -22,3 +22,9 @@ Ticket [05](../../tickets/05-what-agents-are-told.md) §1 and §4: the conventio
 
 - The chapter covers every point of 05 §4; tool descriptions only point to it.
 - `tests/mcp-runtime.test.ts` checks the chapter's key rules and that the tool descriptions hold no slot rules.
+
+## Done (2026-10-09)
+
+- `worker/site-conventions.ts`' Components chapter (from `## Components` to `## Styles and scripts`, cut out by the new `componentsChapter()` for slice 18) covers file layout, whole-element slots and the default editables rule, nested instances, card components in items slots, card links, variants, tones on bands, header/footer/skip link and what `add_section` really copies (`slotMarkup`). `write_file`, `add_section`, `get_site` and `siteInstructions` only point to it.
+- Commits "Conventions: one Components chapter for agents (slice 16)" and "Components chapter review: …"; `tests/mcp-runtime.test.ts` asserts the chapter's bounds and key rules and that no tool description or the instructions state slot, fallback, variant or card rules.
+- Left open: the starter's card link rule (`.cards > * …`, slice 67) does not reach card instances in a section component's items slot, whose `.cards` is in shadow DOM, so the chapter's own example only links the title.
