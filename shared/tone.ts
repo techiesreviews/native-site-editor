@@ -40,11 +40,44 @@ export function brandSurface(
   const side = lightSide(brand.l, split);
   const dark = Math.min(brand.l, band.darkMaxL);
   const light = Math.max(brand.l, band.lightMinL);
-  // CSS (default constants):
-  // oklch(from var(--brand) calc(
-  //   min(l, 0.50) * clamp(0, 1 / (0.61 - l), 1) +
-  //   max(l, 0.72) * (1 - clamp(0, 1 / (0.61 - l), 1))) c h / 1)
-  return { l: dark * (1 - side) + light * side, c: brand.c, h: brand.h };
+  const raw = { l: dark * (1 - side) + light * side, c: brand.c, h: brand.h };
+  const { r, g, b } = oklchToLinearSrgb(raw);
+  const y = clamp(0.2126 * r + 0.7152 * g + 0.0722 * b, 0, 1);
+  const t = Math.min(1,
+    (1 - y) / Math.max(1e-6, Math.max(r, g, b) - y),
+    y / Math.max(1e-6, y - Math.min(r, g, b)),
+  );
+  return linearSrgbToOklch({ r: y + t * (r - y), g: y + t * (g - y), b: y + t * (b - y) });
+}
+
+// A luminance-keeping gamut map gives compact CSS; luminance, hence contrast, is kept exactly.
+// In-gamut surfaces are untouched; mapping toward equal-luminance grey can change OKLCH hue.
+// CSS recipe (default constants):
+// --tone-raw: oklch(from var(--brand) calc(
+//   min(l, 0.50) * clamp(0, 1 / (0.61 - l), 1) +
+//   max(l, 0.72) * (1 - clamp(0, 1 / (0.61 - l), 1))) c h / 1);
+// --tone-y: clamp(0, 0.2126 * r + 0.7152 * g + 0.0722 * b, 1);
+// --tone-t: min(1, (1 - var(--tone-y)) / max(1e-6, max(r, g, b) - var(--tone-y)),
+//   var(--tone-y) / max(1e-6, var(--tone-y) - min(r, g, b)));
+// /* surface */
+// color(from var(--tone-raw) srgb-linear
+//   calc(var(--tone-y) + var(--tone-t) * (r - var(--tone-y)))
+//   calc(var(--tone-y) + var(--tone-t) * (g - var(--tone-y)))
+//   calc(var(--tone-y) + var(--tone-t) * (b - var(--tone-y))) / 1)
+// --tone-y and --tone-t contain channel keywords r/g/b: substitute them only
+// inside that relative color(from ... srgb-linear ...), never resolve them alone.
+// Unregistered properties expand textually: 1,338 UTF-8 bytes with var(--brand),
+// or 1,345 bytes with oklch(0.5 0.37 184), including the whitespace shown above.
+// TypeScript mirrors the unclipped linear channels, clamped Y and t step for step.
+function linearSrgbToOklch({ r, g, b }: Rgb): Oklch {
+  // Björn Ottosson's forward matrices (paired with the inverse below).
+  const x = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const y = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const z = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const l = 0.2104542553 * x + 0.7936177850 * y - 0.0040720468 * z;
+  const a = 1.9779984951 * x - 2.4285922050 * y + 0.4505937099 * z;
+  const labB = 0.0259040371 * x + 0.7827717662 * y - 0.8086757660 * z;
+  return { l, c: Math.hypot(a, labB), h: (Math.atan2(labB, a) * 180 / Math.PI + 360) % 360 };
 }
 
 export function accentSurface(brand: Oklch): Oklch {
@@ -74,11 +107,9 @@ export function invertedButton(surface: Oklch, text: Oklch): { fill: Oklch; labe
   return { fill: text, label: surface };
 }
 
-// The guarantee covers brand colours inside sRGB: anything written as hex,
-// rgb() or hsl(). A brand outside it (for example oklch(0.5 0.37 184)) is
-// clipped by the browser before the band is drawn and can fall below AA.
-export function inSrgbGamut(colour: Oklch): boolean {
-  const epsilon = 1e-6;
+// The default tolerates rounded conversion matrices; epsilon 0 distinguishes
+// actual gamut membership from tolerated boundary points in the gamut-map diagnostic.
+export function inSrgbGamut(colour: Oklch, epsilon = 1e-6): boolean {
   return Object.values(oklchToLinearSrgb(colour)).every((channel) => channel >= -epsilon && channel <= 1 + epsilon);
 }
 
