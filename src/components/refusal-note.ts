@@ -34,6 +34,11 @@ export function refusalNotePlan(input: {
   };
 }
 
+/** Whether two boxes overlap: a reason shown under the edit bar is not readable there. */
+export function overlaps(a: Rect, b: Rect) {
+  return a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height;
+}
+
 let dismiss: (() => void) | undefined;
 let said = 0;
 /** How many refusals were said so far: a caller can tell whether a step it ran said one. */
@@ -57,7 +62,11 @@ export function refuse(reason: string, near: RefusalNear = {}) {
   const status = document.getElementById("status");
   if (status) status.textContent = reason;
   const existing = near.visible;
-  const note = existing && visibleRect(existing) ? undefined : document.createElement("div");
+  const bar = visibleRect(firstVisible('.edit-bar[role="toolbar"]'));
+  const shown = visibleRect(existing);
+  // A reason already on screen, unless the edit bar covers it.
+  const readable = Boolean(shown && !(bar && overlaps(shown, bar)));
+  const note = readable ? undefined : document.createElement("div");
   if (note) {
     note.className = "refusal-note";
     note.textContent = reason;
@@ -68,10 +77,10 @@ export function refuse(reason: string, near: RefusalNear = {}) {
       viewport: { width: innerWidth, height: innerHeight },
       size: { width: note.offsetWidth, height: note.offsetHeight },
       anchor: visibleRect(near.anchor ?? (near.history ? firstVisible(`.code-editor__${near.history}`) : undefined)),
-      editBar: visibleRect(firstVisible('.edit-bar[role="toolbar"]')),
+      editBar: bar,
       canvas: visibleRect(firstVisible(".native-preview-pane, #main")),
       pointer: near.pointer,
-      visible: Boolean(visibleRect(existing)),
+      visible: readable,
     });
     if (!plan.show) note.remove();
     Object.assign(note.style, { left: `${plan.left}px`, top: `${plan.top}px` });

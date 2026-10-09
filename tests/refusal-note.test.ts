@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { refusalNotePlan } from "../src/components/refusal-note";
+import { overlaps, refusalNotePlan } from "../src/components/refusal-note";
 
 const base = { viewport: { width: 800, height: 600 }, size: { width: 240, height: 60 } };
 const editBar = { left: 120, top: 100, width: 300, height: 32 };
@@ -30,4 +30,10 @@ test("an existing reason suppresses duplicate note; next action or four seconds 
   assert.equal(refusalNotePlan({ ...base, age: 1000 }).duration, 3000);
   assert.equal(refusalNotePlan({ ...base, age: 5000 }).duration, 0);
   assert.equal(refusalNotePlan(base).show, true);
+});
+
+test("a reason under the edit bar is covered; one beside or below it is not", () => {
+  assert.equal(overlaps({ left: 340, top: 120, width: 300, height: 24 }, editBar), true);
+  assert.equal(overlaps({ left: 120, top: 140, width: 300, height: 24 }, editBar), false);
+  assert.equal(overlaps({ left: 430, top: 100, width: 100, height: 32 }, editBar), false);
 });
