@@ -58,7 +58,7 @@ test("make_component opens the guarded page, forwards its request and reports fl
     isMounted: () => true,
     text: async () => source,
     makeComponent: async (request: unknown) => {
-      assert.deepEqual(request, { path: "index.html", node: [0, 0], tag: "section-intro", fixed: ["title"] });
+      assert.deepEqual(request, { path: "index.html", source, node: [0, 0], tag: "section-intro", fixed: ["title"] });
       source = "<body><main><section-intro></section-intro></main></body>";
       return { tag: "section-intro", files: ["components/section-intro/section-intro.html", "components/section-intro/section-intro.css"],
         slots: ["", "text"], cards: ["card-intro"], notes: ["A plan note."] };

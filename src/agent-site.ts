@@ -336,8 +336,8 @@ export interface AgentSiteActions {
   open(path: string): Promise<boolean>;
   /** The Pages tab's New page; an error message, or the page made. */
   createPage(request: { parent: string; title: string; slug: string }): Promise<string | { file: string; route: string }>;
-  /** Make component on the open page: a refusal message, or the files and slots made. */
-  makeComponent(request: { path: string; node: number[]; tag: string; fixed?: string[] }): Promise<string | {
+  /** Make component on the open page, whose text must still be `source`: a refusal message, or the files and slots made. */
+  makeComponent(request: { path: string; source: string; node: number[]; tag: string; fixed?: string[] }): Promise<string | {
     tag: string; files: string[]; slots: string[]; cards: string[]; notes: string[];
   }>;
   setPageDetail(path: string, field: "title" | "description", value: string): Promise<string | undefined>;
@@ -478,10 +478,10 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       return { message: `Page details of ${path} updated, unsaved.`, result: { path, hash: await hashOf(actions, path) } };
     }
     case "make_component": {
-      await openPage(actions, path, command.expectedHash);
+      const source = await openPage(actions, path, command.expectedHash);
       const node = parseOutlineId(args.element ?? "");
       if (!node) throw new Conflict("That element is not on the page any more. Read the page again.");
-      const made = await actions.makeComponent({ path, node, tag: args.tag ?? "", ...(args.fixed !== undefined ? { fixed: args.fixed } : {}) });
+      const made = await actions.makeComponent({ path, source, node, tag: args.tag ?? "", ...(args.fixed !== undefined ? { fixed: args.fixed } : {}) });
       if (typeof made === "string") throw new Conflict(made);
       return {
         message: `Made <${made.tag}> from element ${args.element} on ${path}; the page has the instance, unsaved.`,

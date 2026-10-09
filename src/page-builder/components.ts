@@ -1223,10 +1223,12 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   /** Make component without a dialog, using the same plan and undo transaction. */
-  async function makeFromAgent(request: { path: string; node: number[]; tag: string; fixed?: string[] }) {
-    const { path, node: nodePath, tag, fixed = [] } = request;
-    const source = deps.sources()[path], current = site(), revision = deps.revision();
-    if (source === undefined || !current) return "Open the page first.";
+  async function makeFromAgent(request: { path: string; source: string; node: number[]; tag: string; fixed?: string[] }) {
+    const { path, source, node: nodePath, tag, fixed = [] } = request;
+    const current = site(), revision = deps.revision();
+    if (!current || !editable(path)) return "Open the page first.";
+    // The element id was read against the source whose hash the agent gave.
+    if (deps.sources()[path] !== source) return "The page changed in the editor since it was read. Read it again.";
     const range = locateNativeElementRange(source, nodePath);
     if (!range) return "That element is not on the page any more. Read the page again.";
     const taken = Object.keys(current.components);

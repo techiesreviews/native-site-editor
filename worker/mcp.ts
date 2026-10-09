@@ -713,7 +713,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "make_component",
     {
       description:
-        "Turn one element of one page into a new component: writes components/<tag>/<tag>.html and .css, and its card component's files when its repeated items become cards, then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses <main>, <body>, the header and footer components, and anything inside a component instance. Needs the page hash from get_page; how slots are chosen: the Components chapter of the native-site://conventions resource.",
+        "Turn one element of one page into a new component: writes components/<tag>/<tag>.html and .css (and a card component's files, when it makes one), then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses <main>, <body>, the header and footer components, and anything inside a component instance. Needs the page hash from get_page; how slots are chosen: the Components chapter of the native-site://conventions resource.",
       inputSchema: z.object({
         page: pageRef,
         element: z.string().max(300).describe("An element id from get_page or get_selection."),
