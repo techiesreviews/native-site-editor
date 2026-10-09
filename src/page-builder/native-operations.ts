@@ -143,7 +143,7 @@ function tree(source: string): SourceNode | undefined {
 /**
  * Whether a component's slot (by the component's tag; "" the unnamed slot) is
  * an items slot, whose page children are page blocks (component-model.ts
- * `templateSlots`). Inserts open an instance's seal there and nowhere else.
+ * `templateSlots`). Inserts and moves open an instance's seal there and nowhere else.
  */
 export type ItemsSlotRule = (tag: string, slot: string) => boolean;
 /** The slot a component's child fills: its `slot` attribute, or "" for the unnamed slot. */
@@ -424,18 +424,17 @@ export function nativeOutline(source: string): NativeOutline | undefined {
 }
 /**
  * Where a move may go. With `items`, the destination may be an instance's
- * items slot (`slot`, "" the unnamed one), as for inserts; the moved block
- * must fill no slot yet.
+ * items slot (`slot`, "" the unnamed one), as for inserts and source paths.
  */
 function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = "") {
   const root = tree(source);
-  const moving = root && atPath(root, from);
+  const moving = root && atPath(root, from, itemsOpener(source, items));
   const parent = root && atPath(root, destination.parent, itemsOpener(source, items));
   // A component instance moves whole (its bytes kept as they are); other opaque islands stay put.
   if (!moving || (moving.opaque && !isInstance(moving)) || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
   for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return undefined;
   const instance = isInstance(parent);
-  if (instance && (!items?.(parent.name, slot) || slotOf(source, moving))) return undefined;
+  if (instance && !items?.(parent.name, slot)) return undefined;
   if (!canContain(parent, [moving], instance)) return undefined;
   return { moving, parent, instance };
 }
@@ -465,11 +464,12 @@ export function nativeEditInside(before: string, after: string, path: readonly n
 /**
  * Whether the element at `path` is a block a drag may move: inside <main>
  * (never <main> itself, the header or the footer), reached without passing
- * through a component instance, and either no island or an instance itself.
+ * through a component instance except via its items slots with `items`,
+ * and either no island or an instance itself.
  */
-export function nativeMovableBlock(source: string, path: readonly number[]): boolean {
+export function nativeMovableBlock(source: string, path: readonly number[], items?: ItemsSlotRule): boolean {
   const root = tree(source);
-  const node = root && atPath(root, path);
+  const node = root && atPath(root, path, itemsOpener(source, items));
   if (!node || !path.length || (node.opaque && !isInstance(node))) return false;
   for (let at = node.parent; at; at = at.parent) if (at.name === "main") return true;
   return false;
@@ -477,8 +477,8 @@ export function nativeMovableBlock(source: string, path: readonly number[]): boo
 
 /**
  * One replacement, guarded against stale source; removal never takes
- * neighbours. Into a named items slot (`items`, `slot`) the block gets its
- * `slot` attribute.
+ * neighbours. Across containers the block takes the destination slot
+ * (`items`, `slot`), or loses its slot attribute in a plain container.
  */
 export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
   const valid = moveDestination(source, from, destination, items, slot);
@@ -490,7 +490,16 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
   const lead = source.slice(lineStart, moving.start);
   const indent = /^[ \t]*$/.test(lead) ? lead : "";
   const element = source.slice(moving.start, moving.end);
-  const markup = structuralIndent(valid.instance && slot ? withSlot(element, { ...moving, start: 0 }, slot) : element, source.includes("\r\n") ? "\r\n" : "\n", "", indent);
+  const sameSlot = moving.parent === parent && (!valid.instance || slotOf(source, moving) === slot);
+  let assigned = element;
+  // Leaving an instance or entering another slot: the old assignment goes before the destination's is written, never doubled.
+  if (!sameSlot && (valid.instance || (moving.parent && isInstance(moving.parent)))) {
+    const tag = startTags(assigned)[0];
+    const attribute = tag && startTagAttribute(assigned, tag, "slot");
+    if (attribute) assigned = assigned.slice(0, attribute.start) + assigned.slice(attribute.end);
+    if (valid.instance && slot) assigned = withSlot(assigned, { ...moving, start: 0 }, slot);
+  }
+  const markup = structuralIndent(assigned, source.includes("\r\n") ? "\r\n" : "\n", "", indent);
   const insert = insertion(source, parent, destination.index, markup);
   const start = Math.min(moving.start, insert.start);
   const end = Math.max(moving.end, insert.end);

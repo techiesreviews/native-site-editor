@@ -1031,13 +1031,20 @@
     if (next) out.next = next;
     return out;
   }
+  function dropItemsSlot(slot) {
+    var fallback = dropMeaningful(slot.childNodes);
+    return !slot.name || (fallback.length > 0 && fallback.every(dropCard));
+  }
+  function dropItem(el) {
+    var parent = el.parentElement;
+    return !!(parent && parent.localName.indexOf("-") >= 0 && parent.shadowRoot && el.assignedSlot && dropItemsSlot(el.assignedSlot));
+  }
   function dropSlots(el) {
     return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
       var name = slot.getAttribute("name") || "";
       var assigned = slot.assignedElements().filter(function (child) { return child.parentElement === el && !injectedStyle(child); });
       // An items slot: the unnamed one, or one whose fallback is card components only.
-      var fallback = dropMeaningful(slot.childNodes);
-      var items = !name || (fallback.length > 0 && fallback.every(dropCard));
+      var items = dropItemsSlot(slot);
       var parentEl = slot.parentElement || el;
       var hidden = getComputedStyle(slot).display === "none" || parentEl.closest("[data-native-empty]");
       var own = dropUnion(assigned.length ? assigned : Array.prototype.slice.call(slot.childNodes));
@@ -2933,7 +2940,8 @@
     if (!el || !pageEl || el === pageEl || !pageEl.contains(el)) return null;
     if (selected && selected.isConnected && selected !== pageEl && selected.getRootNode() === document && selected.contains(el)) el = selected;
     while (el.parentElement && el.parentElement !== pageEl && getComputedStyle(el).display === "inline") el = el.parentElement;
-    for (var at = el.parentElement; at && at !== pageEl; at = at.parentElement) if (dropSealed(at)) el = at;
+    // A sealed ancestor takes the press, unless the way down from it goes through one of its items slots.
+    for (var child = el, at = el.parentElement; at && at !== pageEl; child = at, at = at.parentElement) if (dropSealed(at) && !dropItem(child)) el = at;
     if (dropSealed(el) && el.localName.indexOf("-") < 0) return null;
     var main = el.parentElement && el.parentElement.closest("main");
     var page = state && state.pagePaths && state.pagePaths[state.route];

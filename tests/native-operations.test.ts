@@ -275,7 +275,7 @@ test("an edit inside one element's content keeps its path; anything else does no
   assert.equal(nativeEditInside(before, before.replace("Lead", "x"), [9]), false);
 });
 
-test("a move into an instance's items slot carries the slot's name; other slots and slotted blocks refuse", () => {
+test("a move into an instance's items slot carries the slot's name; other slots refuse", () => {
   const items = (tag: string, slot: string) => tag === "x-work" && ["", "more"].includes(slot);
   const source = '<main><p>Note</p><p slot="more">Odd</p><x-work><h2 slot="title">T</h2></x-work></main>';
   const named = nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 1 }, items, "more")!;
@@ -284,6 +284,57 @@ test("a move into an instance's items slot carries the slot's name; other slots 
   assert.match(applyGuardedSourceEdit(source, unnamed)!, /<x-work><p>Note<\/p>\s*<h2 slot="title">/);
   assert.equal(nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 1 }, items, "title"), undefined);
   assert.equal(nativeMoveEdit(source, [0, 0], { parent: [0, 2], index: 1 }), undefined);
-  // A block that already names a slot does not take another.
-  assert.equal(nativeMoveEdit(source, [0, 1], { parent: [0, 2], index: 1 }, items, "more"), undefined);
+  const assigned = nativeMoveEdit(source, [0, 1], { parent: [0, 2], index: 1 }, items, "more")!;
+  assert.match(applyGuardedSourceEdit(source, assigned)!, /<p slot="more">Odd<\/p>/);
+});
+
+const workItems = (tag: string, slot: string) => tag === "section-work" && ["", "items", "more"].includes(slot);
+const compactMove = (source: string, from: number[], parent: number[], index: number, slot = "") => {
+  const edit = nativeMoveEdit(source, from, { parent, index }, workItems, slot);
+  assert.ok(edit);
+  return applyGuardedSourceEdit(source, edit)!.replace(/>\s+</g, "><");
+};
+
+test("items reorder inside unnamed and named slots, preserving their assignment bytes and no-ops", () => {
+  for (const slot of ["", "items"]) {
+    const assignment = slot ? " SLOT = 'items'" : "";
+    const first = `<card-project${assignment}><h3 slot="title">A</h3></card-project>`;
+    const second = `<card-project${assignment}><h3 slot="title">B</h3></card-project>`;
+    const source = `<main><section-work>${first}${second}</section-work></main>`;
+    assert.equal(compactMove(source, [0, 0, 0], [0, 0], 2, slot), `<main><section-work>${second}${first}</section-work></main>`);
+    assert.equal(nativeMoveDestinationValid(source, [0, 0, 0], { parent: [0, 0], index: 0 }, workItems, slot), true);
+    for (const index of [0, 1]) assert.equal(nativeMoveEdit(source, [0, 0, 0], { parent: [0, 0], index }, workItems, slot), undefined);
+  }
+});
+
+test("moves between instances rewrite or remove the old slot and preserve card parts", () => {
+  const source = '<main><section-work><card-project slot="items" data-id="a"><h3 slot="title">A</h3></card-project></section-work><section-work></section-work><div></div></main>';
+  for (const slot of ["", "items", "more"]) {
+    const output = compactMove(source, [0, 0, 0], [0, 1], 0, slot);
+    const assignment = slot ? ` slot="${slot}"` : "";
+    assert.equal(output, `<main><section-work></section-work><section-work><card-project${assignment} data-id="a"><h3 slot="title">A</h3></card-project></section-work><div></div></main>`);
+    assert.equal((output.match(/slot=/g) ?? []).length, slot ? 2 : 1);
+  }
+  assert.equal(compactMove(source, [0, 0, 0], [0, 2], 0), '<main><section-work></section-work><section-work></section-work><div><card-project data-id="a"><h3 slot="title">A</h3></card-project></div></main>');
+  const page = '<main><div><p slot="old">Page block</p></div><section-work></section-work></main>';
+  assert.equal(compactMove(page, [0, 0, 0], [0, 1], 0, "items"), '<main><div></div><section-work><p slot="items">Page block</p></section-work></main>');
+  assert.equal(compactMove(page, [0, 0, 0], [0, 1], 0), '<main><div></div><section-work><p>Page block</p></section-work></main>');
+  // Between plain containers the page's own bytes stay as written.
+  assert.equal(compactMove('<main><div><p slot="old">Kept</p></div><div></div></main>', [0, 0, 0], [0, 1], 0), '<main><div></div><div><p slot="old">Kept</p></div></main>');
+});
+
+test("items paths open at every items boundary while non-items, card parts and template content stay sealed", () => {
+  const source = '<main><section-work><h2 slot="title">Title</h2><section-work slot="items"><card-project><h3 slot="title">A</h3></card-project></section-work><template><p>Fixed</p></template></section-work><div></div></main>';
+  assert.equal(compactMove(source, [0, 0, 1, 0], [0, 1], 0), '<main><section-work><h2 slot="title">Title</h2><section-work slot="items"></section-work><template><p>Fixed</p></template></section-work><div><card-project><h3 slot="title">A</h3></card-project></div></main>');
+  for (const path of [[0, 0, 1], [0, 0, 1, 0]]) {
+    assert.equal(nativeMovableBlock(source, path, workItems), true);
+    assert.equal(nativeMovableBlock(source, path), false);
+    assert.equal(nativeMoveEdit(source, path, { parent: [0, 1], index: 0 }), undefined);
+  }
+  for (const path of [[0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 2], [0, 0, 2, 0]]) {
+    assert.equal(nativeMovableBlock(source, path, workItems), false);
+    assert.equal(nativeMoveEdit(source, path, { parent: [0, 1], index: 0 }, workItems), undefined);
+  }
+  const outside = '<header><section-work><p>Outside</p></section-work></header><main></main>';
+  assert.equal(nativeMovableBlock(outside, [0, 0, 0], workItems), false);
 });

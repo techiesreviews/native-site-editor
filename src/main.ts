@@ -81,6 +81,7 @@ import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagA
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
+import { itemsSlotRule } from "./page-builder/block-insert";
 import { nativeElementDepthMove, nativeElementSiblingMove } from "./page-builder/native-move-choices";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
@@ -498,7 +499,7 @@ function mountWorkspace() {
             refuse("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
           }
           const depth = direction === "out" || direction === "in";
-          const result = depth ? nativeElementDepthMove(source, item.node, direction) : nativeElementSiblingMove(source, item.node, direction);
+          const result = depth ? nativeElementDepthMove(source, item.node, direction, nativeMoveItems()) : nativeElementSiblingMove(source, item.node, direction, nativeMoveItems());
           if (result.status === "refused") { refuse(result.error); return "stayed"; }
           if (result.status === "stayed") return "stayed";
           return applyNativeChange(path, source, [result.edit], result.selection, depth ? direction === "out" ? "Moved out of the container" : "Moved into the container" : "Element moved") ? result.selection : "stayed";
@@ -516,7 +517,7 @@ function mountWorkspace() {
       if (!selection?.node || source === undefined || selection.paintedSource !== source || versionView || appStore.openFile.value !== selection.path || !editorModule?.isMounted(selection.path)) {
         refuse("The source changed or its editor is not open. Select the element again before moving it."); return;
       }
-      const result = nativeElementDepthMove(source, selection.node, direction);
+      const result = nativeElementDepthMove(source, selection.node, direction, nativeMoveItems());
       if (result.status === "refused") refuse(result.error);
       if (result.status === "moved") applyNativeChange(selection.path, source, [result.edit], result.selection, direction === "out" ? "Moved out of the container" : "Moved into the container");
     },
@@ -1944,6 +1945,11 @@ function nativeSources(site = nativeSite): Record<string, string> {
     if (content !== undefined) out[path] = content;
   }
   return out;
+}
+
+/** Alt+arrow moves open an instance's seal at its items slots, as drags do. */
+function nativeMoveItems() {
+  return itemsSlotRule(tag => blockInsertPorts.template(tag)?.source);
 }
 
 function nativeEffectiveSource(path: string, scope = draftScope()) {

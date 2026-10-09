@@ -198,3 +198,36 @@ test("a block moves into a card's items slot", async ({ page, baseURL }) => {
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
 });
+
+test("a card pressed in a section component's items slot swaps with the second card, one undo step", async ({ page, baseURL }) => {
+  // Default fixture group: native-cards, with Recent work made a component.
+  await open(page, baseURL);
+  const edit = async (path: string, content: string) => {
+    const response = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+    expect(response.ok()).toBe(true);
+  };
+  await edit("components/section-work/section-work.html", '<section class="flow">\n  <slot name="title"><h2>Recent work</h2></slot>\n  <div class="cards"><slot><card-project></card-project></slot></div>\n</section>\n');
+  await edit("components/section-work/section-work.css", ":host { display: block; }\n.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }\n");
+  const home = (await source(page))!;
+  const made = home.replace('<section class="flow" id="work">', '<section-work id="work">').replace('<h2>Recent work</h2>\n      <div class="cards">', '<h2 slot="title">Recent work</h2>')
+    .replace(/<\/card-project>\n      <\/div>\n    <\/section>/, "</card-project>\n    </section-work>");
+  expect(made).toContain('</card-project>\n    </section-work>');
+  await edit("index.html", made);
+  await page.reload();
+  const cards = frame(page).locator("section-work > card-project");
+  const titles = cards.locator('h3[slot="title"]');
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await editorMounted(page);
+  await expect.poll(() => cards.nth(1).evaluate(el => el.getBoundingClientRect().top - el.previousElementSibling!.getBoundingClientRect().top)).toBe(0);
+  const original = await source(page);
+  await pressAndMove(page, await pointIn(page, "section-work card-project:nth-of-type(1) h3[slot=title]"), await pointIn(page, "section-work card-project:nth-of-type(2) h3[slot=title]", 0.8));
+  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Card project");
+  await expect(where(page)).toHaveText("Into Section work › items › after Card project");
+  await expect(page.locator(".pb-drop__line--v")).toBeVisible();
+  await page.mouse.up();
+  await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  await expect.poll(async () => flat(await source(page))).toMatch(/Harbour Lane Pottery<\/h3>.*Fern &amp; Kettle<\/h3>/);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+});

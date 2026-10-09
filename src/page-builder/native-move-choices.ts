@@ -1,8 +1,5 @@
-import { startTags, startTagAttribute, VOID_ELEMENTS, type StartTag } from "../../shared/html-source";
-import { nativePageBody } from "../../shared/native-project";
 import { blockLabel } from "./block-insert";
-import { decodeHtmlEntities } from "./html-entities";
-import { nativeOutline, nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
+import { nativeOutline, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
 /** `slot`: the parent is an instance, and this its items slot ("" the unnamed one). */
 export interface NativeElementMoveDestination { parent: number[]; index: number; slot?: string }
@@ -11,56 +8,6 @@ export type NativeElementMoveResult =
   | { status: "stayed"; reason: "already-position" | "edge" }
   | { status: "refused"; error: string };
 
-interface IndexedElement { tag: StartTag; path: number[]; children: IndexedElement[] }
-const raw = new Set(["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes", "plaintext", "noscript"]);
-
-// Index explicit source tags only. nativeMoveEdit remains the authority for
-// balanced HTML, browser content rules, opaque boundaries and valid destinations.
-function indexedElements(source: string): IndexedElement[] {
-  const bounds = nativePageBody(source);
-  const tags = new Map(startTags(source).map(tag => [tag.start, tag]));
-  const root: IndexedElement = { tag: { name: "", start: bounds.start, end: bounds.start, nameEnd: bounds.start }, path: [], children: [] };
-  const stack = [root];
-  let at = bounds.start;
-  while (at < bounds.end) {
-    const lt = source.indexOf("<", at);
-    if (lt < 0 || lt >= bounds.end) break;
-    if (source.startsWith("<!--", lt)) {
-      const end = source.indexOf("-->", lt + 4); if (end < 0) return [];
-      at = end + 3; continue;
-    }
-    const closing = /^<\/([a-z][\w:-]*)[\t\n\f\r ]*>/i.exec(source.slice(lt));
-    if (closing) {
-      if (stack.length === 1 || stack.at(-1)!.tag.name !== closing[1].toLowerCase()) return [];
-      stack.pop(); at = lt + closing[0].length; continue;
-    }
-    const tag = tags.get(lt);
-    if (!tag) { const end = source.indexOf(">", lt + 1); if (end < 0) return []; at = end + 1; continue; }
-    const parent = stack.at(-1)!;
-    const refresh = tag.name === "meta" && decodeHtmlEntities(startTagAttribute(source, tag, "http-equiv")?.value ?? "", true).toLowerCase() === "refresh";
-    const element: IndexedElement = { tag, path: [...parent.path, parent.children.length], children: [] };
-    if (tag.name !== "script" && !refresh) parent.children.push(element);
-    at = tag.end;
-    if (raw.has(tag.name)) {
-      const close = new RegExp(`</${tag.name}[\\t\\n\\f\\r ]*>`, "ig"); close.lastIndex = at;
-      const match = close.exec(source); if (!match) return [];
-      at = match.index + match[0].length; continue;
-    }
-    const opening = source.slice(tag.start, tag.end);
-    // A slash at the end of an unquoted value is data, not self-closing syntax.
-    const selfClosing = /\/\s*>$/.test(opening) && !/=\s*[^\t\n\f\r "'=<>`]+\/\s*>$/.test(opening);
-    if (!VOID_ELEMENTS.has(tag.name) && !selfClosing) stack.push(element);
-  }
-  if (stack.length !== 1) return [];
-  const all: IndexedElement[] = [];
-  function visit(element: IndexedElement) {
-    all.push(element);
-    if (element.tag.name === "template" || element.tag.name.includes("-") || ["svg", "math"].includes(element.tag.name)) return;
-    element.children.forEach(visit);
-  }
-  root.children.forEach(visit);
-  return all;
-}
 const same = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((step, index) => step === b[index]);
 
 /** A fresh guarded edit and the moved element's path after removal/insertion; `items` opens instances' items slots. */
@@ -82,30 +29,33 @@ export function nativeElementMovePlan(source: string, from: readonly number[], d
 }
 
 /** Up/down moves use pre-removal gap indexes, including the down-side skip. */
-export function nativeElementSiblingMove(source: string, from: readonly number[], direction: "up" | "down"): NativeElementMoveResult {
+export function nativeElementSiblingMove(source: string, from: readonly number[], direction: "up" | "down", items?: ItemsSlotRule): NativeElementMoveResult {
   if (!from.length) return { status: "refused", error: "Select an element to move." };
+  let node = nativeOutline(source);
+  for (const step of from) node = node?.children[step];
+  const parent = node?.parent;
+  const slot = parent?.opaque && parent.name.includes("-") ? node?.slot : undefined;
   const index = from.at(-1)!;
-  const current = nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index });
+  const current = nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index, slot }, items);
   if (current.status !== "stayed") return current.status === "refused" ? current : { status: "refused", error: "The selected element cannot be moved." };
-  const before = nativeDestinations(source, "", from).find(value => value.placement === "before")!;
-  const elements = indexedElements(source);
-  const parent = elements.find(value => same(value.path, before.point.parent));
-  // A full document's body is the path root, not an indexed child element.
-  const children = before.point.parent.length ? parent?.children.length : elements.filter(value => value.path.length === 1).length;
-  if (direction === "up" && index === 0 || direction === "down" && children !== undefined && index === children - 1) return { status: "stayed", reason: "edge" };
-  return nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index: direction === "up" ? index - 1 : index + 2 });
+  // Other slots of the same instance do not count as neighbours.
+  const neighbours = parent!.children.map((child, index) => ({ child, index })).filter(value => slot === undefined || value.child.slot === slot);
+  const at = neighbours.findIndex(value => value.index === index);
+  const next = neighbours[at + (direction === "up" ? -1 : 1)];
+  if (!next) return { status: "stayed", reason: "edge" };
+  return nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index: direction === "up" ? next.index : next.index + 1, slot }, items);
 }
 
 /** Alt+Left/Right moves whole blocks across Section/Div boundaries. */
-export function nativeElementDepthMove(source: string, from: readonly number[], direction: "out" | "in"): NativeElementMoveResult {
+export function nativeElementDepthMove(source: string, from: readonly number[], direction: "out" | "in", items?: ItemsSlotRule): NativeElementMoveResult {
   const refuse = (error: string): NativeElementMoveResult => ({ status: "refused", error });
   if (!from.length) return refuse("Select an element to move.");
   const body = nativeOutline(source);
   if (!body) return refuse("The page's HTML could not be read exactly. Fix it in the code first.");
   let node: NativeOutline = body;
   for (const step of from) {
-    if (node.opaque) return refuse("This element is inside a component or another opaque container; its parts cannot be moved here.");
     const child: NativeOutline | undefined = Number.isInteger(step) && step >= 0 ? node.children[step] : undefined;
+    if (node.opaque && !(child && node.name.includes("-") && items?.(node.name, child.slot))) return refuse("This element is inside a component or another opaque container; its parts cannot be moved here.");
     if (!child) return refuse("The selected element could not be found. Select it again before moving it.");
     node = child;
   }
@@ -115,10 +65,14 @@ export function nativeElementDepthMove(source: string, from: readonly number[], 
     const outer = parent?.parent;
     if (outer?.name === "main") return refuse("Blocks go inside a Section or a Div, not straight between page bands.");
     if (!outer || !["section", "div"].includes(outer.name)) return refuse("Its outer container is not a Section or a Div.");
-    return nativeElementMovePlan(source, from, { parent: from.slice(0, -2), index: from.at(-2)! + 1 });
+    return nativeElementMovePlan(source, from, { parent: from.slice(0, -2), index: from.at(-2)! + 1 }, items);
   }
-  const previous = parent?.children[from.at(-1)! - 1];
+  let previousIndex = from.at(-1)! - 1;
+  if (parent?.opaque && parent.name.includes("-")) {
+    while (previousIndex >= 0 && parent.children[previousIndex].slot !== node.slot) previousIndex--;
+  }
+  const previous = parent?.children[previousIndex];
   if (previous?.opaque && previous.name.includes("-")) return refuse(`${blockLabel(previous)} is a component: its parts are filled by editing them.`);
   if (!previous || !["section", "div"].includes(previous.name)) return refuse("Alt+→ moves a block into the Section or Div just above it; there is none.");
-  return nativeElementMovePlan(source, from, { parent: [...from.slice(0, -1), from.at(-1)! - 1], index: previous.children.length });
+  return nativeElementMovePlan(source, from, { parent: [...from.slice(0, -1), previousIndex], index: previous.children.length }, items);
 }

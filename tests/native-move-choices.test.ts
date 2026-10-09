@@ -146,3 +146,57 @@ test("a component instance moves among its siblings whole", () => {
   assert.equal(down.status, "moved");
   if (down.status === "moved") assert.deepEqual(down.selection, [0, 1]);
 });
+
+const workItems = (tag: string, slot: string) => tag === "section-work" && ["", "items", "more"].includes(slot);
+
+test("Alt up/down reorders only the slot's own items and stays at its edges", () => {
+  for (const slot of ["", "items"]) {
+    const assignment = slot ? ' slot="items"' : "";
+    const a = `<card-project${assignment}>A</card-project>`;
+    const b = `<card-project${assignment}>B</card-project>`;
+    const title = '<h2 slot="title">Title</h2>', other = '<p slot="more">Other items</p>';
+    const source = `<main><section-work>${title}${a}${other}${b}${title}</section-work></main>`;
+    for (const [path, direction, selection] of [[[0, 0, 1], "down", [0, 0, 3]], [[0, 0, 3], "up", [0, 0, 1]]] as const) {
+      const result = nativeElementSiblingMove(source, path, direction, workItems);
+      assert.equal(result.status, "moved");
+      if (result.status === "moved") {
+        assert.deepEqual(result.selection, selection);
+        const output = applyGuardedSourceEdit(source, result.edit)!;
+        assert.ok(output.indexOf(b) < output.indexOf(a));
+        assert.ok(output.includes(other));
+      }
+    }
+    assert.deepEqual(nativeElementSiblingMove(source, [0, 0, 1], "up", workItems), { status: "stayed", reason: "edge" });
+    assert.deepEqual(nativeElementSiblingMove(source, [0, 0, 3], "down", workItems), { status: "stayed", reason: "edge" });
+    assert.deepEqual(nativeElementMovePlan(source, [0, 0, 1], { parent: [0, 0], index: 1, slot }, workItems), { status: "stayed", reason: "already-position" });
+    assert.equal(nativeElementSiblingMove(source, [0, 0, 1], "down").status, "refused");
+    assert.equal(nativeElementSiblingMove(source, [0, 0, 0], "down", workItems).status, "refused");
+  }
+});
+
+test("Alt left/right moves an items child out after its instance or into the previous Div in its slot", () => {
+  const source = '<main><div><section-work><div slot="items"><p>Before</p></div><h2 slot="title">Title</h2><card-project slot="items"><h3 slot="title">A</h3></card-project></section-work></div></main>';
+  const path = [0, 0, 0, 2];
+  const out = nativeElementDepthMove(source, path, "out", workItems);
+  assert.equal(out.status, "moved");
+  if (out.status === "moved") {
+    assert.deepEqual(out.selection, [0, 0, 1]);
+    assert.match(applyGuardedSourceEdit(source, out.edit)!, /<\/section-work>\s*<card-project><h3 slot="title">A<\/h3>/);
+  }
+  const into = nativeElementDepthMove(source, path, "in", workItems);
+  assert.equal(into.status, "moved");
+  if (into.status === "moved") {
+    assert.deepEqual(into.selection, [0, 0, 0, 0, 1]);
+    assert.match(applyGuardedSourceEdit(source, into.edit)!, /<p>Before<\/p>\s*<card-project><h3 slot="title">A<\/h3>/);
+  }
+  const nested = '<main><div><section-work><section-work slot="items"><p>A</p><div></div><p>B</p></section-work></section-work></div></main>';
+  assert.equal(nativeElementDepthMove(nested, [0, 0, 0, 0, 2], "in", workItems).status, "moved");
+  for (const direction of ["out", "in"] as const) {
+    assert.equal(nativeElementDepthMove(source, path, direction).status, "refused");
+    for (const sealed of [[0, 0, 0, 1], [...path, 0]]) assert.equal(nativeElementDepthMove(source, sealed, direction, workItems).status, "refused");
+  }
+  const band = '<main><section-work><card-project></card-project></section-work></main>';
+  assert.equal(nativeElementDepthMove(band, [0, 0, 0], "out", workItems).status, "refused");
+  const otherSlot = '<main><div><section-work><div slot="more"></div><p slot="items">A</p></section-work></div></main>';
+  assert.equal(nativeElementDepthMove(otherSlot, [0, 0, 0, 1], "in", workItems).status, "refused");
+});
