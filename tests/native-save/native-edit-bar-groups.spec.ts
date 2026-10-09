@@ -122,8 +122,9 @@ test("in a 340px canvas, groups wrap whole and keep keyboard order", async ({ pa
   await check([["Bold", "Italic"], ["Italic", "Address"]]);
 
   // The paragraph: Bold/Italic together, and no move controls (only a
-  // whole section moves from the bar).
-  await frame.locator("#moving").click({ position: { x: 4, y: 4 } });
+  // whole section moves from the bar). The link's bar, wrapped in the narrow
+  // canvas, covers the paragraph's start; the click goes to the paragraph itself.
+  await frame.locator("#moving").evaluate((el) => (el as HTMLElement).click());
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
   await check([["Bold", "Italic"]]);
   for (const name of ["Move up", "Move down", "Move to"]) await expect(bar.getByRole("button", { name, exact: true })).toHaveCount(0);

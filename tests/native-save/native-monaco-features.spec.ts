@@ -389,7 +389,9 @@ test("the version compare is a read-only diff with both sides", async ({ page, b
   await expect(diff.locator(".line-insert, .char-insert").first()).toBeAttached();
   // readOnlyMessage: typing says the view is read only and changes nothing.
   const changed = diff.locator(".editor.modified .view-line", { hasText: "Edited on GitHub" });
-  await changed.locator("span span").last().click();
+  // Click the changed words, not the line's end: beside the block rail the
+  // diff is narrow and the end of the line sits under its scrollbar.
+  await changed.locator("span span", { hasText: "Edited on GitHub" }).click();
   await page.keyboard.type("x");
   await expect(page.locator(`${HOST} .monaco-editor-overlaymessage`)).toContainText(/read-only/i);
   await expect(changed).toContainText("Edited on GitHub</h1>");

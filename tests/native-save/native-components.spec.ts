@@ -645,6 +645,8 @@ test("child selections omit template entry while root entry rejects stale or mis
 });
 
 test("Make component turns a section into a component with slots, as one undo step with its files", async ({ page }) => {
+  const headingLook = (selector: string) => frame(page).locator(selector).evaluate((el) => { const style = getComputedStyle(el); return [style.fontSize, style.marginBottom]; });
+  const lookBefore = await headingLook("section.hero h1");
   await select(page, "section.hero");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await bar(page).getByRole("button", { name: "Make component…" }).click();
@@ -672,9 +674,13 @@ test("Make component turns a section into a component with slots, as one undo st
   // The page shows what it showed, now through the component.
   await expect(frame(page).locator("section-hero h1[slot=title]")).toHaveText("A native browser preview");
   await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.shadowRoot?.querySelector<HTMLSlotElement>("slot[name=title]")?.assignedElements()[0]?.textContent?.trim())).toBe("A native browser preview");
+  await expect.poll(() => headingLook("section-hero h1[slot=title]")).toEqual(lookBefore);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section hero");
   expect((await storedDraft(page, "components/section-hero/section-hero.html"))?.content).toContain(`<slot name="title"><h1 data-key="hero-title">A native browser preview</h1></slot>`);
-  expect((await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(":host {\n  display: block;\n}\n");
+  // The page rule that styled the heading stops reaching it once it is slotted,
+  // so Make component copies it, rewritten to start at the section (slice 64).
+  const heroCss = ":host {\n  display: block;\n}\n\n/* The rules that styled this element in styles/site.css, rewritten to start at it. The site's stylesheets are unchanged. */\n.hero h1 {\n  font-size: clamp(28px, 4vw, 44px);\n  margin: 0 0 12px;\n}\n";
+  expect((await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(heroCss);
   // Undo takes the instance and the new files back; Redo makes them again.
   await page.locator("#editor-toolbar-host").getByRole("button", { name: "Undo" }).click();
   await expect(frame(page).locator("section.hero h1")).toHaveText("A native browser preview");
@@ -682,7 +688,7 @@ test("Make component turns a section into a component with slots, as one undo st
   await expect.poll(() => storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
   await page.locator("#editor-toolbar-host").getByRole("button", { name: "Redo" }).click();
   await expect.poll(() => frame(page).locator("section-hero").evaluate((el) => el.shadowRoot?.querySelector<HTMLSlotElement>("slot[name=title]")?.assignedElements()[0]?.textContent?.trim())).toBe("A native browser preview");
-  await expect.poll(async () => (await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(":host {\n  display: block;\n}\n");
+  await expect.poll(async () => (await storedDraft(page, "components/section-hero/section-hero.css"))?.content).toBe(heroCss);
 });
 
 test("Make component refuses a page replacement made while its preview dialog is open", async ({ page, baseURL }) => {
@@ -717,7 +723,7 @@ test("Make component refuses a page replacement made while its preview dialog is
     await expect(frame(page).locator("section.hero h1")).toHaveText("Unreviewed replacement");
     await dialog.getByRole("button", { name: "Make component", exact: true }).click();
     await expect(dialog).toBeHidden();
-    await expect(status(page)).toHaveText("The page or repository changed meanwhile; no component was made.");
+    await expect(status(page)).toHaveText("The page, its styles or the repository changed meanwhile; no component was made.");
     expect((await storedDraft(page, indexPath))?.content).toContain(replacement);
     expect(await storedDraft(page, "components/section-hero/section-hero.html")).toBeUndefined();
     expect(await storedDraft(page, "components/section-hero/section-hero.css")).toBeUndefined();
