@@ -40,7 +40,7 @@ export function install(host: Cb14Host) {
   mountRail();
   idleReadout();
   frameEvents.dump = (model) => redraw(model);
-  frameEvents.hover = (p) => setHover(p);
+  frameEvents.hover = (p, slot) => setHover(p, slot);
   frameEvents.key = (key) => { if (key === "Escape" && mode.now && !dragging()) upALevel(); };
   layerHooks.drill = (n) => void drill(n);
   layerHooks.changed = () => void measure();
@@ -180,6 +180,7 @@ async function openTemplate(tag: string, first = false) {
         if (leaf) { await frameSelect(leaf.p); await wait(120); }
         await frameSelect([0]);
         framePost("reveal", { p: null, block: "center" });
+        setTimeout(() => framePost("reveal", { p: null, block: "center" }), 700);
         // The code pane folds a template's top element on opening: the caret inside unfolds it.
         await wait(250);
         const src = deps().sources()[templatePath()!] ?? "";

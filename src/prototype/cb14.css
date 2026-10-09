@@ -66,7 +66,7 @@ html.cb14-mode .cb14-rail { box-shadow: inset -2px 0 0 var(--cb14-purple); }
 
 /* ---- The mode: the editor's own canvas bar steps aside for the slim bar. ---- */
 html.cb14-mode .canvas-crumbs, html.cb14-mode .canvas-component, html.cb14-mode .canvas-component-end { visibility: hidden; }
-html.cb14-mode .page-structure, html.cb14-mode .sidebar-heading { display: none; }
+html.cb14-mode .page-structure:not(.cb14-structure), html.cb14-mode .sidebar-heading:not(.cb14-tree__head) { display: none; }
 html.cb14-mode .insert-layer, html.cb14-mode .card-grid-layer { visibility: hidden; }
 .cb14-bar {
   position: fixed;
@@ -223,3 +223,59 @@ html.cb14-mode[data-cb14-variant="C"] .native-preview-frame { flex: 0 0 50% !imp
 .cb14-btn { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 12.5px; }
 .cb14-btn--primary { border-color: var(--cb14-purple); background: var(--cb14-purple); color: var(--cb14-on-purple); }
 .cb14-edit-button { color: var(--cb14-purple) !important; font-weight: 600; }
+
+/* ==== Round 2: ticket 04's making-mode chips (variant E2, cb04.css), shown on hover. ==== */
+.cb14-mode__slot { border: 2px solid #8b5cf6; border-radius: 4px; background: rgb(124 58 237 / .04); pointer-events: none; }
+.cb14-mode__slot--items { border-color: #db2777; background: rgb(219 39 119 / .05); }
+.cb14-mode__slot.is-fixed { border: 2px dashed #94a3b8; background: rgb(148 163 184 / .28); }
+.cb14-mode__chip { position: absolute; top: -2px; right: -2px; transform: translateY(-100%); padding: 2px 8px; border: 0; border-radius: 6px 6px 0 6px; background: #6d28d9; color: #fff; font: 600 11px/1.5 ui-monospace, monospace; white-space: nowrap; cursor: pointer; pointer-events: auto; user-select: none; }
+.cb14-mode__slot--items > .cb14-mode__chip { background: #be185d; }
+.cb14-mode__slot.is-fixed > .cb14-mode__chip { background: #475569; }
+.cb14-mode__slot:not(.is-fixed) > .cb14-mode__chip:hover { filter: brightness(1.15); }
+.cb14-mode__slot.is-items-group > .cb14-mode__chip, .cb14-mode__slot.is-low > .cb14-mode__chip { top: 6px; right: 6px; transform: none; border-radius: 6px; box-shadow: 0 2px 8px rgb(0 0 0 / .25); }
+.cb14-mode__slot.is-renaming > .cb14-mode__chip { visibility: hidden; }
+.cb14-mode__chip-note { margin-left: 8px; padding-left: 8px; border-left: 1px solid rgb(255 255 255 / .45); font: 500 10.5px/1.5 system-ui, sans-serif; display: inline-block; }
+.cb14-mode__plus { z-index: 2; pointer-events: auto; transform: translate(-100%, 0); padding: 1px 8px; border: 1px dashed #7c3aed; border-radius: 6px; background: rgb(255 255 255 / .92); color: #7c3aed; font: 600 11px/1.5 ui-monospace, monospace; opacity: .8; cursor: pointer; }
+.cb14-mode__plus:hover { opacity: 1; background: #7c3aed; color: #fff; border-style: solid; }
+.cb14-rename.cb14-mode__field { position: absolute; z-index: 3; width: 120px; height: 22px; box-sizing: border-box; padding: 0 6px; border: 2px solid #7c3aed; border-radius: 6px; background: #fff; color: #4c1d95; font: 600 11px/1 ui-monospace, monospace; outline: none; pointer-events: auto; box-shadow: none; }
+.cb14-rename.cb14-mode__field--tree { position: static; flex: none; width: 104px; margin-left: auto; }
+.cb14-rename.cb14-mode__field--tree.is-mirror:not(:focus) { background: #ddd6fe; box-shadow: 0 0 0 3px rgb(124 58 237 / .25); }
+/* The "+" at a slot's end: add into its fallback. */
+.cb14-slot-add { z-index: 2; width: 22px; height: 22px; padding: 0; border: 2px solid #8b5cf6; border-radius: 50%; background: #fff; color: #6d28d9; font: 700 15px/16px system-ui, sans-serif; pointer-events: auto; cursor: pointer; box-shadow: 0 1px 4px rgb(0 0 0 / .2); }
+.cb14-slot-add:hover, .cb14-slot-add:focus-visible { background: #6d28d9; color: #fff; outline: none; }
+.cb14-picker { position: fixed; z-index: 96; display: flex; flex-direction: column; gap: 1px; min-width: 210px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); font-size: 13px; }
+.cb14-picker__title { padding: 3px 8px 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.cb14-picker__item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
+.cb14-picker__item:hover, .cb14-picker__item:focus-visible { background: var(--selected); outline: none; }
+.cb14-picker__item:disabled { color: var(--muted); opacity: .55; cursor: not-allowed; }
+.cb14-picker__icon { display: grid; place-items: center; width: 18px; color: var(--cb14-purple); }
+.cb14-picker__icon svg { width: 16px; height: 16px; fill: currentColor; }
+.cb14-picker__note { margin-left: auto; color: var(--muted); font-size: 11px; }
+.cb14-picker__sep { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }
+
+/* ==== Round 2: Structure shows the end result, in Page Structure's own rows, slots marked as in ticket 04. ==== */
+.cb14-tree { padding: 0; }
+.cb14-tree__head { padding: 10px 20px 8px; }
+.cb14-tree__crumbs[hidden] { display: none; }
+.cb14-tree__crumbs { margin: 0 10px 8px; }
+.cb14-structure { flex: 1; min-height: 0; margin: 0; padding: 0 10px; overflow: auto; }
+.cb14-structure .page-structure__row.cb14-srow:not([aria-selected="true"]) { background: color-mix(in oklab, #8b5cf6 7%, transparent); }
+.cb14-structure .page-structure__label { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.cb14-structure .page-structure__row--component .page-structure__kind { white-space: nowrap; }
+.cb14-structure .cb14-row__open { flex: none; padding: 0 6px; font-size: 11px; line-height: 18px; }
+.cb14-structure .cb14-sbadge { max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
+.cb14-structure .page-structure__row.cb14-row-hover:not([aria-selected="true"]) { background: var(--hover); }
+.cb14-structure .page-structure__row.cb14-srow--root { border: 2px solid #8b5cf6; border-bottom: 0; border-radius: 8px 8px 0 0; }
+.cb14-structure .page-structure__group.cb14-sgroup { display: flex; flex-direction: column; gap: 2px; border: 2px solid #8b5cf6; border-top: 0; border-radius: 0 0 8px 8px; padding-bottom: 4px; }
+.cb14-sbadge { flex: none; margin-left: auto; padding: 0 6px; border: 0; border-radius: 999px; background: color-mix(in oklab, #8b5cf6 16%, transparent); color: var(--cb14-purple); font: 600 10.5px/17px ui-monospace, monospace; cursor: text; }
+.cb14-sbadge.is-items { background: color-mix(in oklab, #db2777 15%, transparent); color: #be185d; }
+.cb14-sbadge.is-fixed { background: color-mix(in oklab, #64748b 18%, transparent); color: var(--muted); cursor: default; }
+.cb14-structure .cb14-row__open { margin-left: 6px; }
+.cb14-structure .page-structure__row.is-target { background: color-mix(in oklab, var(--cb14-purple) 10%, transparent); }
+@media (prefers-color-scheme: dark) {
+  .cb14-sbadge.is-items { color: #f472b6; }
+  .cb14-mode__plus { background: rgb(30 27 46 / .92); color: #c4b5fd; border-color: #a78bfa; }
+  .cb14-slot-add { background: #1e1b2e; color: #c4b5fd; }
+}
+/* Like the editor's row actions: "Open ›" shows on the hovered or selected row. */
+.cb14-structure .page-structure__row:not(:hover):not([aria-selected="true"]):not(.cb14-row-hover) .cb14-row__open { display: none; }

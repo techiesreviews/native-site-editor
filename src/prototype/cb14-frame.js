@@ -68,9 +68,15 @@
   }
   function text(el) {
     var t = (el.textContent || "").replace(/\s+/g, " ").trim();
-    return t.slice(0, 40);
+    return t.slice(0, 60);
   }
   function isInstance(el) { return el.localName.indexOf("-") > 0 && !!el.shadowRoot; }
+  // The first heading an element shows (an instance's from its page content, else its template), as Structure names it.
+  function heading(el) {
+    var h = el.matches("h1,h2,h3,h4,h5,h6") ? el : el.querySelector("h1,h2,h3,h4,h5,h6");
+    if (!h && el.shadowRoot) h = el.shadowRoot.querySelector("h1,h2,h3,h4,h5,h6");
+    return h ? (h.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60) : "";
+  }
 
   // ---- The stage (B, C): one fresh instance outside #page, which the runtime never reconciles. ----
   function ensureStage() {
@@ -205,7 +211,7 @@
       kids(parentEl).forEach(function (el, i) {
         var p = prefix.concat(i);
         var cs = getComputedStyle(el);
-        var node = { p: p, t: el.localName, c: el.getAttribute("class") || "", r: box(el), row: layoutRow(el), txt: text(el), inst: isInstance(el), hid: cs.display === "none", inSlot: insideSlot };
+        var node = { p: p, t: el.localName, c: el.getAttribute("class") || "", r: box(el), row: layoutRow(el), txt: text(el), hd: heading(el), inst: isInstance(el), hid: cs.display === "none", inSlot: insideSlot };
         if (el.localName === "slot") {
           var orig = el.getAttribute("data-cb14-orig");
           var name = orig !== null ? orig : (el.getAttribute("name") || "");
@@ -214,7 +220,7 @@
           node.hid = cs.display === "none" || el.hasAttribute("data-native-empty");
           node.r = el.getAttribute("data-cb14-drop") === "1" ? box(el) : union(assigned.length ? assigned : kids(el)) || [0, 0, 0, 0];
           node.row = layoutRow(el.parentElement || focus);
-          if (assigned.length) node.pageItems = assigned.map(function (a) { return { t: a.localName, r: box(a), txt: text(a) }; });
+          if (assigned.length) node.pageItems = assigned.map(function (a) { return { t: a.localName, r: box(a), txt: text(a), hd: heading(a), n: a.children.length }; });
         }
         nodes.push(node);
         if (el.localName === "slot" || !isInstance(el)) visit(el, p, insideSlot || el.localName === "slot");
@@ -225,6 +231,7 @@
       ok: true,
       tag: focus.localName,
       host: box(focus),
+      hd: heading(focus),
       chain: hosts.map(function (h) { return { tag: h.localName, r: box(h) }; }),
       nodes: nodes,
       vw: innerWidth,
@@ -264,24 +271,42 @@
     document.documentElement.classList.toggle("cb14-on", !!state.on);
   }
 
-  // ---- Hover over the template's parts ("+ slot"). ----
+  // ---- Hover over the template's parts: the part under the pointer and the slot around it. ----
+  // The slot is found by its box (what it shows: the page's content or its fallback), since the
+  // page's own content in A takes no pointer events.
+  function slotAt(focus, x, y) {
+    var hit = null, best = Infinity;
+    focus.shadowRoot.querySelectorAll("slot").forEach(function (s) {
+      var r;
+      if (s.getAttribute("data-cb14-drop") === "1") { var b = s.getBoundingClientRect(); r = [b.left, b.top, b.width, b.height]; }
+      else { var a = s.hasAttribute("data-cb14-orig") ? [] : s.assignedElements(); r = union(a.length ? a : kids(s)); }
+      if (!r || !(r[2] || r[3])) return;
+      if (x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3] && r[2] * r[3] < best) { best = r[2] * r[3]; hit = pathIn(focus.shadowRoot, s); }
+    });
+    return hit;
+  }
+  function reportHover(p, slot) {
+    var key = JSON.stringify([p, slot]);
+    if (key === lastHover) return;
+    lastHover = key;
+    post({ type: "hover", p: p, slot: slot });
+  }
   document.addEventListener("mousemove", function (e) {
     if (!state.on) return;
     var hosts = chain();
     var focus = hosts && hosts[hosts.length - 1];
-    var hit = null;
+    var hit = null, slot = null;
     if (focus) {
       var path = e.composedPath();
       for (var i = 0; i < path.length; i++) {
         var n = path[i];
         if (n instanceof Element && n.getRootNode() === focus.shadowRoot && n.localName !== "slot") { hit = pathIn(focus.shadowRoot, n); break; }
       }
+      slot = slotAt(focus, e.clientX, e.clientY);
     }
-    var key = JSON.stringify(hit);
-    if (key === lastHover) return;
-    lastHover = key;
-    post({ type: "hover", p: hit });
+    reportHover(hit, slot);
   }, true);
+  document.documentElement.addEventListener("mouseleave", function () { if (state.on) reportHover(null, null); });
   // A click on the template's root element (or the instance's own box) selects the root in the
   // template; the runtime alone would select the instance on the page and the template would close.
   window.addEventListener("click", function (e) {

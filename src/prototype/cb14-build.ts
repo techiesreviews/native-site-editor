@@ -20,7 +20,7 @@ import {
   readout, slotOf, templateNodeOfSelection, templatePath, toFrame, visibleNode, wait, whereText, writeTemplate, boxName, frameEvents, moveEdit, pathAfterMove,
   type BlockKind, type Box, type Model, type Rect, type TNode, type Target,
 } from "./cb14-core";
-import { layerEl } from "./cb14-layer";
+import { layerEl, hooks as layerHooks } from "./cb14-layer";
 import { treeLine } from "./cb14-tree";
 
 const ICONS: Record<BlockKind, string> = { section: sectionIcon, div: divIcon, image: imageIcon, heading: headingIcon, paragraph: paragraphIcon, button: buttonIcon };
@@ -57,7 +57,9 @@ export function mountRail() {
   document.documentElement.classList.add("cb14-has-rail");
 }
 
-const nameOf = (kind: BlockKind) => session?.move?.name ?? BLOCKS.find((b) => b.kind === kind)!.name;
+const nameOfBlock = (kind: BlockKind) => BLOCKS.find((b) => b.kind === kind)!.name;
+const nameOf = (kind: BlockKind) => session?.move?.name ?? nameOfBlock(kind);
+const cardName = (tag: string) => tag.replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
 const refuseOutside = (kind: BlockKind) => readout(`${nameOf(kind)}: not here`, ["This prototype builds inside a component's template: select an instance and choose Edit component first."], "refused");
 
 // ---- Click to insert, following the selection. ----
@@ -114,11 +116,12 @@ async function placeholderFile(): Promise<{ undo: () => void; redo: () => void }
   if ("error" in result) return false;
   return { undo: () => result.receipt.undo(), redo: () => void result.receipt.redo() };
 }
-async function commit(kind: BlockKind, t: Target, how: "click" | "drag") {
+async function commit(kind: BlockKind, t: Target, how: "click" | "drag" | "+", card?: string) {
   const path = templatePath();
   const source = path ? deps().sources()[path] : undefined;
   if (!path || source === undefined || !t.box.node) return;
-  const markup = blockMarkup(kind, t.box);
+  const markup = card ? `<${card}></${card}>` : blockMarkup(kind, t.box);
+  const nameOf = (k: BlockKind) => (card ? cardName(card) : nameOfBlock(k));
   const edit = insertion(source, t.box.node.p, t.index, markup);
   if (!edit) { readout(`${nameOf(kind)}: not added`, ["The template's markup has no place there."], "refused"); return; }
   const select = [...t.box.node.p, t.index];
@@ -142,7 +145,7 @@ async function commit(kind: BlockKind, t: Target, how: "click" | "drag") {
     }
   }
 }
-function frameReveal(p: number[]) { document.querySelector<HTMLIFrameElement>(".native-preview-frame")?.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "cb14", op: "reveal", p, block: "center" }, "*"); }
+function frameReveal(p: number[]) { document.querySelector<HTMLIFrameElement>(".native-preview-frame")?.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "cb14", op: "reveal", p, block: "nearest" }, "*"); }
 
 let flashed: HTMLElement[] = [];
 let flashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -262,9 +265,6 @@ function canvasTarget(model: Model, kind: BlockKind, x: number, y: number): Targ
   if (!deepest) return undefined;
   const chain: TNode[] = [];
   for (let n: TNode | undefined = deepest; n; n = n.parent) chain.push(n);
-  // A named slot under the pointer refuses, visibly.
-  const first = chain[0];
-  if (first.slot && !isItemsSlot(first)) { const a = allowed(kind, { node: first }); return { box: { node: first }, index: 0, ok: a.ok, reason: a.reason }; }
   let i = 0;
   while (i < chain.length - 1 && (!allowed(kind, { node: chain[i] }).ok || nearEdge(chain[i].r, x, y, 8) && allowed(kind, { node: chain[i + 1] }).ok && !chain[i].slot)) i++;
   const box: Box = { node: chain[i] };
@@ -379,3 +379,54 @@ frameEvents.press = (press) => {
   else end();
 };
 addEventListener("keydown", (e) => { if (e.key === "Escape" && session?.move) { e.preventDefault(); readout(`${session.move.name}: move cancelled`, ["Esc: nothing moved."]); end(); } }, true);
+
+// ---- Round 2: the "+" on a hovered slot, a small picker that adds into its fallback. ----
+let picker: HTMLElement | undefined;
+function closePicker() { picker?.remove(); picker = undefined; }
+layerHooks.addInto = (slot, at) => openPicker(slot, at);
+function openPicker(slot: TNode, at: DOMRect) {
+  closePicker();
+  const items = isItemsSlot(slot);
+  // The items slot's card component: its fallback's instance, else the one the page fills it with.
+  const card = items ? slot.kids.find((k) => k.inst)?.t ?? slot.pageItems?.find((i) => i.t.includes("-"))?.t : undefined;
+  const menu = el("div", "cb14-picker");
+  menu.setAttribute("role", "menu");
+  menu.append(el("div", "cb14-picker__title", `Add to “${slot.slot!.name || "unnamed"}”`));
+  const t = (): Target => {
+    const now = latest.model?.byKey.get(slot.key) ?? slot;
+    return { box: { node: now }, index: now.kids.length ? now.kids.at(-1)!.p.at(-1)! + 1 : 0, ok: true };
+  };
+  const option = (icon: string, text: string, run: () => void, note = "", disabled = "") => {
+    const b = el("button", "cb14-picker__item");
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    const ic = el("span", "cb14-picker__icon");
+    ic.innerHTML = icon;
+    b.append(ic, el("span", "cb14-picker__name", text));
+    if (note) b.append(el("span", "cb14-picker__note", note));
+    if (disabled) { b.disabled = true; b.title = disabled; }
+    b.addEventListener("click", () => { closePicker(); run(); });
+    menu.append(b);
+    return b;
+  };
+  if (card) {
+    option("◇", cardName(card), () => void commit("div", t(), "+", card), "the slot's card");
+    menu.append(el("hr", "cb14-picker__sep"));
+  }
+  for (const block of BLOCKS) {
+    const why = block.kind === "section" ? allowedFor("section", { node: slot }).reason ?? "" : "";
+    option(ICONS[block.kind], block.name, () => void commit(block.kind, t(), "+"), "", why);
+  }
+  document.body.append(menu);
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  Object.assign(menu.style, { left: `${Math.min(at.left, innerWidth - w - 8)}px`, top: `${at.bottom + 6 + h > innerHeight - 8 ? at.top - h - 6 : at.bottom + 6}px` });
+  picker = menu;
+  menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  menu.addEventListener("keydown", (e) => {
+    const list = [...menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    const i = list.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closePicker(); }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); e.stopPropagation(); list[(i + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length]?.focus(); }
+  });
+  setTimeout(() => document.addEventListener("pointerdown", (e) => { if (picker === menu && !menu.contains(e.target as Node)) closePicker(); }, { once: true }), 0);
+}

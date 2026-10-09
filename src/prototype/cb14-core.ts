@@ -68,8 +68,9 @@ export const label = (tag: string) => `<${tag}>`;
 // ---- The frame. ----
 export type Rect = [number, number, number, number];
 export interface RawSlot { name: string; assigned: number; fb: number; drop: boolean; showsPage: boolean }
-export interface RawNode { p: number[]; t: string; c: string; r: Rect; row: boolean; txt: string; inst: boolean; hid: boolean; inSlot: boolean; slot?: RawSlot; pageItems?: { t: string; r: Rect; txt: string }[] }
-export interface Dump { ok: boolean; tag?: string; host?: Rect; chain?: { tag: string; r: Rect }[]; nodes?: RawNode[]; vw: number; vh: number; sy?: number }
+export interface PageItem { t: string; r: Rect; txt: string; hd: string; n: number }
+export interface RawNode { p: number[]; t: string; c: string; r: Rect; row: boolean; txt: string; hd: string; inst: boolean; hid: boolean; inSlot: boolean; slot?: RawSlot; pageItems?: PageItem[] }
+export interface Dump { ok: boolean; tag?: string; host?: Rect; hd?: string; chain?: { tag: string; r: Rect }[]; nodes?: RawNode[]; vw: number; vh: number; sy?: number }
 export interface TNode extends RawNode { key: string; parent?: TNode; kids: TNode[] }
 
 export const frame = () => document.querySelector<HTMLIFrameElement>(".native-preview-frame");
@@ -89,16 +90,16 @@ export function toFrame(x: number, y: number) {
 let ids = 0;
 const waiting = new Map<number, (data: unknown) => void>();
 export interface FramePress { phase: "start" | "move" | "end" | "cancel"; x: number; y: number; p?: number[]; t?: string }
-export const frameEvents: { dump?: (model: Model) => void; hover?: (p: number[] | null) => void; key?: (key: string) => void; press?: (press: FramePress) => void } = {};
+export const frameEvents: { dump?: (model: Model) => void; hover?: (p: number[] | null, slot: number[] | null) => void; key?: (key: string) => void; press?: (press: FramePress) => void } = {};
 /** The template's root element: selected by path (a click on it would select the instance on the page). */
 function selectRoot(p: number[] | null | undefined) {
   const path = templatePath();
   if (path && p) deps().preview()?.selectNode({ path, node: p });
 }
 window.addEventListener("message", (event) => {
-  const data = event.data as { source?: string; id?: number; type?: string; dump?: Dump; p?: number[] | null; key?: string } | undefined;
+  const data = event.data as { source?: string; id?: number; type?: string; dump?: Dump; p?: number[] | null; slot?: number[] | null; key?: string } | undefined;
   if (data?.source !== "cb14-proto") return;
-  if (data.type === "hover") { frameEvents.hover?.(data.p ?? null); return; }
+  if (data.type === "hover") { frameEvents.hover?.(data.p ?? null, data.slot ?? null); return; }
   if (data.type === "key") { frameEvents.key?.(data.key ?? ""); return; }
   if (data.type === "root") selectRoot(data.p);
   if (data.type === "press") { frameEvents.press?.(data as unknown as FramePress); return; }
@@ -132,11 +133,13 @@ export class Model {
   byKey = new Map<string, TNode>();
   roots: TNode[] = [];
   host?: Rect;
+  hd: string;
   chain: { tag: string; r: Rect }[];
   tag?: string;
   constructor(dump: Dump) {
     this.ok = dump.ok;
     this.host = dump.host;
+    this.hd = dump.hd ?? "";
     this.chain = dump.chain ?? [];
     this.tag = dump.tag;
     for (const raw of dump.nodes ?? []) {
@@ -206,14 +209,10 @@ export function allowed(kind: BlockKind, box: Box): { ok: boolean; reason?: stri
   const n = box.node;
   if (kind === "section") return { ok: false, reason: "A Section is a page band; inside a component, build with a Div." };
   if (!n) return { ok: false, reason: "Blocks go inside the template's own element, not beside it." };
-  if (n.slot) {
-    if (isItemsSlot(n)) return { ok: true };
-    return { ok: false, reason: `The “${n.slot.name}” slot holds one element each page replaces: edit its fallback, or drop beside it.` };
-  }
+  // Round 2 (Lex): blocks may go into any slot's fallback, named slots too.
+  if (n.slot) return { ok: true };
   if (n.inst) return { ok: false, reason: `<${n.t}> is its own component: open it (◇ ›) to build inside its template.` };
   if (CONTAINERS.has(n.t)) {
-    const slot = slotOf(n);
-    if (slot && !isItemsSlot(slot)) return { ok: false, reason: `Inside the “${slot.slot!.name}” slot's fallback: drop beside the slot instead.` };
     return { ok: true };
   }
   return { ok: false, reason: "Not a container." };
