@@ -333,12 +333,21 @@ test("overlapping card and section Add controls remain clickable; popup tracks s
   await page.setViewportSize({ width: 1100, height: 900 });
   await expect.poll(hitAdd).toBe(true);
   await expect(popover(page).getByRole("textbox", { name: "Page title" })).toBeFocused();
+  // With the block rail the canvas is too narrow for the popover beside the
+  // button, so it opens above it, over the grid, and moves with the button.
   const before = (await page.locator(".card-ghost").boundingBox())!;
   const beforePopup = (await popover(page).boundingBox())!;
-  await frame(page).locator("html").evaluate(() => window.scrollBy(0, 80));
-  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - 80, 0);
+  expect(beforePopup.y + beforePopup.height).toBeLessThanOrEqual((await addCard(page).boundingBox())!.y);
+  await frame(page).locator("html").evaluate(() => window.scrollBy(0, 40));
+  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - 40, 0);
   expect(await hitAdd()).toBe(true);
-  await expect.poll(async () => (await popover(page).boundingBox())!.y).toBeLessThan(beforePopup.y);
+  await expect.poll(async () => (await popover(page).boundingBox())!.y).toBeCloseTo(beforePopup.y - 40, 0);
+  // Scrolled on until no room is left above the button, it goes below it, never over it.
+  await frame(page).locator("html").evaluate(() => window.scrollBy(0, 80));
+  await expect.poll(async () => (await page.locator(".card-ghost").boundingBox())!.y).toBeCloseTo(before.y - 120, 0);
+  expect(await hitAdd()).toBe(true);
+  const scrolledAdd = (await addCard(page).boundingBox())!;
+  await expect.poll(async () => (await popover(page).boundingBox())!.y).toBeGreaterThanOrEqual(scrolledAdd.y + scrolledAdd.height);
   await expect(popover(page).getByRole("textbox", { name: "Page title" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(popover(page)).toBeHidden();
