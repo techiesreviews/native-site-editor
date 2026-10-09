@@ -491,7 +491,10 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!makeComponentOfferedFor(target)) return [];
     // From Structure the page may not be the open file (a stylesheet is); it opens first, as a selection would.
     return [{ label: "Make component", run: () => void (async () => {
+      const source = deps.sources()[target.path];
       if (deps.currentPath() !== target.path && !(await deps.openFile(target.path))) return;
+      // The node path was read against these bytes.
+      if (deps.sources()[target.path] !== source) { deps.announce("The page changed meanwhile; select the element again."); return; }
       await openMakeComponent(target);
     })() }];
   }
