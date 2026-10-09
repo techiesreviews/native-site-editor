@@ -108,6 +108,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [46 Edit component mode in Structure](tickets/46-edit-mode-structure-badges.md) | sol | 44 |
 | [47 Edit component mode: open a nested card component](tickets/47-edit-mode-nested-card-drill.md) | sol | 41 |
 | [48 Fixed parts are locked on the page](tickets/48-locked-fixed-parts-on-page.md) | sol | 41 |
+| [90 No locked-part hint in the edit bar label](tickets/90-no-locked-hint.md) | sol | 48 |
 | [49 Make component and + New component open Edit component mode](tickets/49-create-lands-in-edit-mode.md) | sol | 41, 22, 27 |
 | [66 Right-click slot items in Edit component mode](tickets/66-slot-context-menu.md) | sol | 24, 26, 44 |
 | [76 Rename the component from Edit component mode's bar](tickets/76-rename-component-in-edit-mode.md) | claude ★ | 41, 45, 72 |
