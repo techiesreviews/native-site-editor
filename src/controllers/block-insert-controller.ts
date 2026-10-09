@@ -9,7 +9,7 @@
 // (`templateClickTarget`); each insert is one step on the template file.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
-import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget } from "../page-builder/block-insert";
+import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal } from "../page-builder/block-insert";
 import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit } from "../page-builder/native-operations";
 import { nativeElementMovePlan } from "../page-builder/native-move-choices";
 
@@ -103,7 +103,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     // A selection painted from other bytes names another element now.
     if (at.node && at.painted !== undefined && at.painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
     const templateOf = (tag: string) => ports.template(tag)?.source;
-    const target = at.template === undefined ? clickTarget(source, kind, at.node, templateOf) : templateClickTarget(source, at.template, kind, at.node, templateOf);
+    const target = at.template === undefined ? clickTarget(source, kind, at.node, templateOf) : templateClickTarget(source, at.template, kind, at.node);
     if (!target.ok) { ports.refuse(target.reason); return; }
     const error = await insert({
       path: at.path, parent: target.parent, index: target.index, kind, wrap: target.wrap, slot: target.slot, where: target.where,
@@ -121,6 +121,9 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it.", pointer); return; }
     if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
+    // The frame measured the place; the template's own rule says whether it takes blocks.
+    const refused = at.template === undefined ? undefined : templateDropRefusal(source, place.parent);
+    if (refused) { ports.refuse(refused, pointer); return; }
     const error = await insert({ path: at.path, ...place, kind, before: at.node ? { path: at.path, node: at.node } : undefined });
     if (error) ports.refuse(error, pointer);
   }

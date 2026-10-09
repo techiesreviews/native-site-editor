@@ -13,7 +13,7 @@
 
 import { templateSlots, type TemplateOf } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
-import { nativeElementMarkup, templateSectionRefusal, type NativeElementKind } from "./native-elements";
+import { nativeElementMarkup, templateSectionRefusal, templateSlotRefusal, type NativeElementKind } from "./native-elements";
 import { nativeHeadingLevel, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
 export const blockNames: Record<NativeElementKind, string> = { section: "Section", div: "Div", heading: "Heading", paragraph: "Paragraph", image: "Image", button: "Button" };
@@ -146,6 +146,46 @@ export function clickTarget(source: string, kind: NativeElementKind, selection?:
 
 /** The template's own elements that take blocks, as a Section or a Div does on a page. */
 const templateBlocks = new Set(["section", "div", "article", "aside", "header", "footer", "nav", "figure"]);
+const isNamedSlot = (node: NativeOutline) => Boolean(node.slotName);
+const inNamedSlot = (node: NativeOutline) => {
+  for (let at = node.parent; at; at = at.parent) if (isNamedSlot(at)) return true;
+  return false;
+};
+/**
+ * Whether a template's element takes blocks: a block part, or the unnamed
+ * (items) slot where the element around it is one or the template's top,
+ * outside any named slot's placeholder (each page fills that slot).
+ * A named slot never does, a cards slot included: a block would make it an
+ * ordinary slot.
+ */
+function templateTakes(node: NativeOutline) {
+  if (node.opaque || inNamedSlot(node)) return false;
+  if (node.slotName === "") {
+    let around = node.parent;
+    while (around?.slotName === "") around = around.parent;
+    return !around?.parent || templateBlocks.has(around.name);
+  }
+  return node.slotName === undefined && templateBlocks.has(node.name);
+}
+
+/**
+ * Why a block can't go into the template's element at `parent` (a template
+ * path), or nothing when it can: the same rule as a click's, for a place
+ * the preview measured (Edit component mode's drops).
+ */
+export function templateDropRefusal(template: string, parent: readonly number[]): string | undefined {
+  let node = nativeOutline(template);
+  if (!node) return "The template's HTML could not be read exactly. Fix it in the code first.";
+  for (const step of parent) {
+    node = node.children[step];
+    if (!node) return "The template changed meanwhile. Try again.";
+    if (node.opaque) return node.name.includes("-") ? `${blockLabel(node)} is its own component: open it to build inside its template.` : "Blocks go inside a Section, a Div or the component's items.";
+  }
+  if (templateTakes(node)) return undefined;
+  if (isNamedSlot(node)) return templateSlotRefusal(node.slotName!);
+  for (let at = node.parent; at; at = at.parent) if (isNamedSlot(at)) return templateSlotRefusal(at.slotName!);
+  return "Blocks go inside a Section, a Div or the component's items.";
+}
 
 /**
  * Where `kind` goes in the template of the component `tag` (Edit component
@@ -154,30 +194,25 @@ const templateBlocks = new Set(["section", "div", "article", "aside", "header", 
  *   a block part selected       inside it, at the end (Section, Div, article,
  *                               aside, header, footer, nav, figure)
  *   anything else selected      right after it (or the ancestor that sits in
- *                               a block part or an items slot), there
- *   a part of a named slot      after that slot: a page fills the slot
+ *                               a block part or the items slot), there
+ *   a part of a named slot      after that slot: each page fills the slot
  *   a nested component          after it (open it to build inside it)
- *   an items slot               its placeholder content takes blocks; it is
- *                               what new instances start with
+ *   the items (unnamed) slot    its placeholder content takes blocks: what
+ *                               new instances start with
  *   nothing selected            the template's root element, at the end
  *   a Section                   refused: components sit in page bands
- * `templateOf` tells the items slots (cards-only fallbacks).
  */
-export function templateClickTarget(template: string, tag: string, kind: NativeElementKind, selection?: readonly number[], templateOf: TemplateOf = () => undefined): BlockTarget {
+export function templateClickTarget(template: string, tag: string, kind: NativeElementKind, selection?: readonly number[]): BlockTarget {
   if (kind === "section") return { ok: false, reason: templateSectionRefusal };
   const root = nativeOutline(template);
   if (!root) return { ok: false, reason: "The template's HTML could not be read exactly. Fix it in the code first." };
-  const items = new Set(templateSlots(template, templateOf).filter((entry) => entry.items).map((entry) => decodeHtmlEntities(entry.name, true)));
-  const isItems = (node: NativeOutline) => node.slotName !== undefined && items.has(node.slotName);
-  const isNamedSlot = (node: NativeOutline) => node.slotName !== undefined && !items.has(node.slotName);
-  const takes = (node: NativeOutline) => (templateBlocks.has(node.name) && !node.opaque) || isItems(node);
-  const label = (node: NativeOutline) => node.slotName === undefined ? blockLabel(node) : isItems(node) ? "items" : `“${node.slotName}” slot`;
+  const label = (node: NativeOutline) => node.slotName === undefined ? blockLabel(node) : node.slotName ? `“${node.slotName}” slot` : "items";
   const into = (parent: NativeOutline, index: number): BlockTarget => {
     const parentPath = pathOf(parent);
     const after = parent.children[index - 1], before = parent.children[index];
     const place = after ? `after ${label(after)}` : before ? `before ${label(before)}` : "empty";
     return { ok: true, parent: parentPath, index, wrap: false, select: [...parentPath, index],
-      where: `Into ${isItems(parent) ? itemsName(tag, parent.slotName!) : blockLabel(parent)} › ${place}` };
+      where: `Into ${parent.slotName === "" ? itemsName(tag, "") : blockLabel(parent)} › ${place}` };
   };
   // The selection, down to a nested component (its parts are its own template's).
   let selected: NativeOutline | undefined;
@@ -187,20 +222,16 @@ export function templateClickTarget(template: string, tag: string, kind: NativeE
     selected = child;
     if (child.opaque) break;
   }
-  const inNamedSlot = (node: NativeOutline) => {
-    for (let at = node.parent; at; at = at.parent) if (isNamedSlot(at)) return true;
-    return false;
-  };
   if (!selected) {
     const top = root.children.find((node) => node.slotName === undefined) ?? root.children[0];
-    if (top && takes(top)) return into(top, top.children.length);
+    if (top && templateTakes(top)) return into(top, top.children.length);
     return { ok: false, reason: "This template's root element doesn't take blocks. Select a Div in it, or add one in the code." };
   }
-  if (takes(selected) && !inNamedSlot(selected)) return into(selected, selected.children.length);
-  // After the element (or the named slot it is in) that sits in a block part or an items slot.
+  if (templateTakes(selected)) return into(selected, selected.children.length);
+  // After the element (or the named slot it is in) that sits in a block part or the items slot.
   let item = selected;
   for (let parent = item.parent; parent && parent !== root; item = parent, parent = item.parent) {
-    if (takes(parent) && !inNamedSlot(parent)) return into(parent, parent.children.indexOf(item) + 1);
+    if (templateTakes(parent)) return into(parent, parent.children.indexOf(item) + 1);
   }
   return { ok: false, reason: "Blocks go inside the template's element, not beside it. Select a part inside it." };
 }

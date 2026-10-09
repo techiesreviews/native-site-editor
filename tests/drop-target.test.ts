@@ -275,4 +275,6 @@ test("in a template (Edit component mode): a Section is refused everywhere, a ne
   const below = dropTarget([card, items, cards, root], { x: 400, y: 277 }, { kind: "new", block: "paragraph", template: true })!;
   assert.deepEqual([below.ok, below.container.path, below.index], [true, [0, 1, 0], 1]);
   assert.equal(dropLabel(below, paragraph), "Into Section work › items › after Card project");
+  // A named slot is filled on each page.
+  assert.match(dropRefusal({ kind: "new", block: "paragraph", template: true }, box([0, 0], "slot", rect(40, 40, 720, 40), [], { slot: "title" }))!, /“title” slot is filled on each page/);
 });

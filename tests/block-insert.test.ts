@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { blockMarkup, clickTarget, itemsSlotRule, templateClickTarget, type BlockTarget } from "../src/page-builder/block-insert.ts";
+import { blockMarkup, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, type BlockTarget } from "../src/page-builder/block-insert.ts";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit, nativeMoveEdit, nativeOutline } from "../src/page-builder/native-operations.ts";
 import type { NativeElementKind } from "../src/page-builder/native-elements.ts";
 
@@ -209,8 +209,7 @@ const cardTemplate = `<article>
   <slot></slot>
 </article>
 `;
-const cardTemplates = (tag: string) => (tag === "card-project" ? cardTemplate : undefined);
-const inWork = (kind: NativeElementKind, selection?: number[]) => templateClickTarget(workTemplate, "section-work", kind, selection, cardTemplates);
+const inWork = (kind: NativeElementKind, selection?: number[]) => templateClickTarget(workTemplate, "section-work", kind, selection);
 
 test("in a template, a selected block part takes the block inside; nothing selected, the root does", () => {
   assert.deepEqual(at(inWork("paragraph", [0])), { parent: [0], index: 2, wrap: false });
@@ -219,7 +218,7 @@ test("in a template, a selected block part takes the block inside; nothing selec
   assert.deepEqual([target.parent, target.index, target.select], [[0, 1], 1, [0, 1, 1]]);
   assert.equal(target.where, "Into Div › after items");
   // An article (a card's root) takes blocks too.
-  assert.deepEqual(at(templateClickTarget(cardTemplate, "card-project", "paragraph", [0], cardTemplates)), { parent: [0], index: 2, wrap: false });
+  assert.deepEqual(at(templateClickTarget(cardTemplate, "card-project", "paragraph", [0])), { parent: [0], index: 2, wrap: false });
 });
 
 test("in a template, an items slot's placeholder takes blocks; a named slot's part puts them after the slot", () => {
@@ -235,9 +234,10 @@ test("in a template, an items slot's placeholder takes blocks; a named slot's pa
   const fallback = '<section><slot name="media"><div><p>A</p></div></slot></section>';
   assert.deepEqual(at(templateClickTarget(fallback, "section-x", "paragraph", [0, 0, 0])), { parent: [0], index: 1, wrap: false });
   assert.deepEqual(at(templateClickTarget(fallback, "section-x", "paragraph", [0, 0, 0, 0])), { parent: [0], index: 1, wrap: false });
-  // A named slot whose fallback is card components only is an items slot.
+  // A named cards slot takes no blocks either: one would make it an ordinary slot. They go after it.
   const cards = '<section><slot name="cards"><card-project></card-project></slot></section>';
-  assert.equal(ok(templateClickTarget(cards, "section-x", "heading", [0, 0, 0], cardTemplates)).where, "Into Section x › “cards” slot › after Card project");
+  const after = ok(templateClickTarget(cards, "section-x", "heading", [0, 0, 0]));
+  assert.deepEqual([after.parent, after.index, after.where], [[0], 1, "Into Section › after “cards” slot"]);
 });
 
 test("in a template, a Section is refused with its reason", () => {
@@ -258,4 +258,17 @@ test("an insert into a template's items slot lands in its placeholder content", 
   assert.ok(nativeMarkupInsertEdit('<div><slot name="t">A</slot></div>', [0, 0], 0, "<p>B</p>"));
   assert.equal(nativeMarkupInsertEdit('<p><slot name="t">A</slot></p>', [0, 0], 0, "<div></div>"), undefined);
   assert.ok(nativeOutline('<p class="actions"><slot name="link"></slot></p>'), "a slot is phrasing content");
+});
+
+test("a place measured in a template's preview is checked against the template's rule", () => {
+  assert.equal(templateDropRefusal(workTemplate, [0]), undefined);
+  assert.equal(templateDropRefusal(workTemplate, [0, 1]), undefined);
+  assert.equal(templateDropRefusal(workTemplate, [0, 1, 0]), undefined);
+  assert.match(templateDropRefusal(workTemplate, [0, 0])!, /“title” slot is filled on each page/);
+  assert.match(templateDropRefusal(workTemplate, [0, 0, 0])!, /“title” slot/);
+  assert.equal(templateDropRefusal(workTemplate, [0, 1, 0, 0]), "Card project is its own component: open it to build inside its template.");
+  assert.match(templateDropRefusal('<section><slot name="cards"><card-project></card-project></slot></section>', [0, 0])!, /“cards” slot/);
+  // The items slot in a paragraph (card-note) takes no blocks; nor does a path the template no longer has.
+  assert.ok(templateDropRefusal('<p class="card-note"><slot>Shared note</slot></p>', [0, 0]));
+  assert.ok(templateDropRefusal(workTemplate, [0, 5]));
 });

@@ -79,7 +79,8 @@ async function enterMode(page: Page) {
 async function pointIn(page: Page, selector: string, fx = 0.5, fy = 0.5, dx = 0, dy = 0) {
   const target = frame(page).locator("section-work").first().locator(selector).filter({ visible: true }).first();
   const box = (await page.locator(".native-preview-frame").boundingBox())!;
-  const r = await target.evaluate(el => { const b = el.getBoundingClientRect(); return { left: b.left, top: b.top, width: b.width, height: b.height }; });
+  // Centred, away from the frame's edges, where a drag scrolls the page.
+  const r = await target.evaluate(el => { el.scrollIntoView({ block: "center" }); const b = el.getBoundingClientRect(); return { left: b.left, top: b.top, width: b.width, height: b.height }; });
   return { x: box.x + r.left + r.width * fx + dx, y: box.y + r.top + r.height * fy + dy };
 }
 /** Presses a rail block and drags it past the 7 px threshold to `to`. */
@@ -119,16 +120,19 @@ test("the rail builds in the template: a Paragraph clicked into the items slot, 
   await page.mouse.up();
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain(`</slot><h2>Heading</h2><div class="cards">`);
   await expect(work.locator("section > h2").filter({ visible: true })).toHaveText("Heading");
-  // Dragged into the items slot, after the new paragraph: the slot's label.
+  // An Image dragged into the items slot, after the new paragraph; one undo takes it out again.
   await dragFromRail(page, "Image", await pointIn(page, ".cards > slot > p", 0.8, 0.9));
   await expect(where(page)).toHaveText("Into Section work › items › after Paragraph");
-  await page.keyboard.press("Escape");
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
+  await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain(`<p>Text</p><img src="/images/placeholder.svg"`);
+  await undo(page);
+  await expect.poll(async () => flat(await mounted(page, TEMPLATE))).not.toContain("<img");
+  expect(flat(await mounted(page, TEMPLATE))).toContain("<h2>Heading</h2>");
 
   // A named slot refuses a drop with its reason.
   await dragFromRail(page, "Paragraph", await pointIn(page, "h2"));
-  await expect(where(page)).toHaveText(/The “title” slot is filled by editing its text/);
+  await expect(where(page)).toHaveText(/The “title” slot is filled on each page/);
   await expect(page.locator(".pb-drop__refused")).toBeVisible();
   await page.mouse.up();
 

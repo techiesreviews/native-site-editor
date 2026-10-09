@@ -10,7 +10,7 @@
 // <main>. Pure.
 
 import type { DropChild, DropContainer } from "./drop-report";
-import { templateSectionRefusal, type NativeElementKind } from "./native-elements";
+import { templateSectionRefusal, templateSlotRefusal, type NativeElementKind } from "./native-elements";
 import { componentLabel } from "../native-insert";
 import { nativeKindLabel } from "../native-structure";
 
@@ -49,6 +49,7 @@ export function dropRefusal(block: DraggedBlock, container: DropContainer): stri
     return `A Section goes only between page bands, not inside ${inside}.`;
   }
   if (container.kind === "main") return "Blocks go inside a Section or a Div, not straight between page bands.";
+  if (container.kind === "slot" && block.kind === "new" && block.template) return templateSlotRefusal(container.slot ?? "");
   if (container.kind === "slot") return `The “${container.slot}” slot is filled by editing its text, not by drops. Drop into the component's items instead.`;
   return undefined;
 }

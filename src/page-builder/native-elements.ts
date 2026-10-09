@@ -13,6 +13,8 @@ export interface NativeElementOptions {
 export const PLACEHOLDER_IMAGE_PATH = "images/placeholder.svg";
 /** Why a Section can't go into a component's template (Edit component mode): components sit in page bands. */
 export const templateSectionRefusal = "A Section goes only between page bands, not inside a component's template. Build with a Div here.";
+/** Why a named slot of a component's template refuses a block: each page fills it. */
+export const templateSlotRefusal = (name: string) => `The “${name}” slot is filled on each page: drop beside it, or into the component's items.`;
 export const PLACEHOLDER_IMAGE_WIDTH = 640;
 export const PLACEHOLDER_IMAGE_HEIGHT = 400;
 /** Site asset written on first image insertion; neutral colours work in any page tone. */

@@ -1140,22 +1140,23 @@
     return walk(pageEl, 0);
 
     // In the edited template, blocks go into its block parts (as Sections and
-    // Divs on a page) and into its items slots' placeholder content (a slot
-    // reports the template's tag, its fallback elements as its children). A
-    // named slot refuses where it shows; a nested component refuses inside
-    // (open it to build there), its edges passing the drop up.
+    // Divs on a page) and into its items (unnamed) slot's placeholder content
+    // (a slot reports the template's tag, its fallback elements as its
+    // children). A named slot refuses where it shows, a cards slot too; a
+    // nested component refuses inside (open it to build there), its edges
+    // passing the drop up.
     function templateDropContainers(host) {
       var tag = host.localName;
       function slotInfo(slot) {
         var name = (slot.getAttribute("name") || "").trim();
-        var fallback = dropMeaningful(slot.childNodes);
-        return { name: name, items: !name || (fallback.length > 0 && fallback.every(dropCard)) };
+        return { name: name, items: !name };
       }
       var isItems = function (el) { return el.localName === "slot" && slotInfo(el).items; };
-      // A slot shows its fallback; an empty items slot covers its parent's box.
+      // A slot shows what the page gives it, else its fallback; an empty items slot covers its parent's box.
       function slotRect(slot) {
         if (getComputedStyle(slot).display === "none") return null;
-        var own = dropUnion(Array.prototype.slice.call(slot.childNodes));
+        var assigned = slot.assignedNodes();
+        var own = dropUnion(Array.prototype.slice.call(assigned.length ? assigned : slot.childNodes));
         return own || (isItems(slot) && slot.parentElement ? dropRect(slot.parentElement) : null);
       }
       function hit(el) {
