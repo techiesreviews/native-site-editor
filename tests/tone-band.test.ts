@@ -1,9 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { componentVariants } from "../shared/variants.ts";
 import { startTags } from "../shared/html-source.ts";
 import { attributeEdit } from "../src/page-builder/component-model.ts";
-import { bandVariantFields, buttonVariantFields, instanceVariantFields, isToneBand, toneDefault, variantAttribute, variantFields } from "../src/page-builder/variant-fields.ts";
+import { bandVariantFields, buttonVariantFields, instanceVariantFields, isToneBand, variantAttribute } from "../src/page-builder/variant-fields.ts";
 
 const templates: Record<string, string> = {
   "section-split": "<section><slot></slot></section>",
@@ -45,26 +44,35 @@ test("only outer page sections and page headers/footers are bands", () => {
 
 const sheets = [{ path: "tones.css", source: '[data-tone=light] {} [data-tone=brand] {} [data-tone=dark] {} [data-color-scheme=dark] {}' }];
 
-test("Light (default) removes the attribute; explicit light still shows as Light", () => {
+test("without a CSS default, No tone removes the attribute and Light writes light", () => {
   const [absent] = bandVariantFields(sheets, []);
-  assert.deepEqual(absent.options.map(({ label }) => label), ["Light (default)", "Brand", "Dark"]);
+  assert.deepEqual(absent.options.map(({ label }) => label), ["No tone (follows the page)", "Light", "Brand", "Dark"]);
+  assert.deepEqual(absent.options[0], { label: "No tone (follows the page)", value: "" });
   assert.equal(absent.value, "");
+  assert.equal(variantAttribute(absent, "=light"), "light");
   assert.equal(variantAttribute(absent, ""), undefined);
   const source = '<section data-tone="brand"><h2>Band</h2></section>';
   const edit = attributeEdit(source, startTags(source)[0], absent.attribute, variantAttribute(absent, ""));
   assert.equal(source.slice(0, edit.start) + edit.text + source.slice(edit.end), '<section><h2>Band</h2></section>');
+  const lightEdit = attributeEdit(source, startTags(source)[0], absent.attribute, variantAttribute(absent, "=light"));
+  assert.equal(source.slice(0, lightEdit.start) + lightEdit.text + source.slice(lightEdit.end), '<section data-tone="light"><h2>Band</h2></section>');
   const [written] = bandVariantFields(sheets, [{ name: "data-tone", value: "light" }]);
   assert.equal(written.value, "=light");
   assert.deepEqual(written.options.find(({ value }) => value === "=light"), { label: "Light", value: "=light" });
 });
 
-test("the named light default preserves parsed defaults and other attributes", () => {
-  const [tone] = componentVariants(':host, :host([data-tone=dark]) {} :host([data-tone=light]) {}').variants;
-  assert.equal(toneDefault(tone).defaultValue, "dark");
-  const [size] = componentVariants(':host([data-size=light]) {}').variants;
-  assert.equal(toneDefault(size), size);
-  const [unknown] = variantFields([toneDefault(tone)], [{ name: "data-tone", value: "sepia" }]);
-  assert.equal(unknown.options.at(-1)?.label, "Custom");
+test("CSS-declared tone defaults keep their label and remove the attribute", () => {
+  for (const value of ["light", "dark"]) {
+    const defaults = [{ path: "tones.css", source: `:not([data-tone]), [data-tone=${value}] {} [data-tone=brand] {}` }];
+    const [tone] = bandVariantFields(defaults, []);
+    assert.deepEqual(tone.options, [{ label: `${value === "light" ? "Light" : "Dark"} (default)`, value: "" }, { label: "Brand", value: "=brand" }]);
+    assert.equal(variantAttribute(tone, ""), undefined);
+    const [written] = bandVariantFields(defaults, [{ name: "data-tone", value }]);
+    assert.equal(written.value, `=${value}`);
+    assert.equal(written.options.some(option => option.value === `=${value}`), true);
+    const [unknown] = bandVariantFields(defaults, [{ name: "data-tone", value: "sepia" }]);
+    assert.equal(unknown.options.at(-1)?.label, "Custom");
+  }
 });
 
 test("non-band instances drop Tone from every CSS source but keep global Color scheme", () => {
@@ -73,7 +81,7 @@ test("non-band instances drop Tone from every CSS source but keep global Color s
   const card = instanceVariantFields("card-tip", css, sources, []);
   assert.deepEqual(card.map(({ attribute }) => attribute), ["data-size", "data-color-scheme"]);
   const band = instanceVariantFields("section-split", css, sources, [], [], true);
-  assert.deepEqual(band.find(({ attribute }) => attribute === "data-tone")?.options.map(({ label }) => label), ["Light (default)", "Own", "Brand", "Dark", "Host"]);
+  assert.deepEqual(band.find(({ attribute }) => attribute === "data-tone")?.options.map(({ label }) => label), ["No tone (follows the page)", "Own", "Light", "Brand", "Dark", "Host"]);
   assert.equal(band.some(({ attribute }) => attribute === "data-color-scheme"), true);
 });
 

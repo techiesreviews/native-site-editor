@@ -1,8 +1,10 @@
 # fixtures/actual-starter provenance
 
-Byte-identical snapshot of `native-site-editor-starter` at commit `b66fc67`
-on the starter's `dev` branch: slice 74's base resets that skip slotted parts
-(and the chapter line saying so), on top of slice 60's tones (`e3459d1`) and
+Byte-identical snapshot of `native-site-editor-starter` at commit `6a20035`
+on the starter's `dev` branch: slice 77's chapter line (a band with no tone
+follows the page), on top of slice 75's visitor colour scheme (`bbc0742`),
+slice 74's base resets that skip slotted parts (`b66fc67`, and the chapter
+line saying so), slice 60's tones (`e3459d1`) and
 slice 71's `5f00f1f`, which descend from slice 70's `675eeac` (the corrected
 Components chapter) and slice 17's `11574fc`, which first copied that chapter
 into `AGENTS.md`.
@@ -13,7 +15,7 @@ archive from a starter checkout (`<starter>`):
 
 ```sh
 find fixtures/actual-starter -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-git -C <starter> archive b66fc67 | tar -x -C fixtures/actual-starter
+git -C <starter> archive 6a20035 | tar -x -C fixtures/actual-starter
 ```
 
 When updating the snapshot, replace the commit in this provenance and command.

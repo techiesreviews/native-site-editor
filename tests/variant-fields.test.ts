@@ -40,7 +40,7 @@ test("a conditional variant says where it shows; a conditional value says it in 
   assert.deepEqual(layout.options.map(({ label }) => label), ["Default", "Content left (wide screens only)", "Centered"]);
   const [only] = fields(`:host {} @media (min-width: 40rem) { :host([data-tone=dark]) {} :host([data-tone=light]) {} }`);
   assert.equal(only.note, "wide screens only");
-  assert.deepEqual(only.options.map(({ label }) => label), ["Default", "Dark", "Light"]);
+  assert.deepEqual(only.options.map(({ label }) => label), ["No tone (follows the page)", "Dark", "Light"]);
 });
 
 test("conditions read plainly", () => {

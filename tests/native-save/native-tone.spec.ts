@@ -21,22 +21,30 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(page.locator("#content [role=textbox]").first()).toBeAttached();
 });
 
-test("Brand writes Tone, Light removes it, each pick undoes once; cards inside bands have no Tone", { tag: "@smoke" }, async ({ page }) => {
+test("Brand and Light write Tone, No tone removes it, each pick undoes once; cards inside bands have no Tone", { tag: "@smoke" }, async ({ page }) => {
   await selectParent(page, "Plain band", "Section");
   const tone = bar(page).getByRole("combobox", { name: "Tone", exact: true });
-  await expect(tone.locator("option")).toHaveText(["Light (default)", "Dark", "Brand", "Accent"]);
+  await expect(tone.locator("option")).toHaveText(["No tone (follows the page)", "Light", "Dark", "Brand", "Accent"]);
   const before = await source(page);
   const brand = before.replace('<section id="plain-band">', '<section id="plain-band" data-tone="brand">');
   await tone.selectOption({ label: "Brand" });
   await expect.poll(() => source(page)).toBe(brand);
   await expect(frame(page).locator("#plain-band")).toHaveAttribute("data-tone", "brand");
-  await tone.selectOption({ label: "Light (default)" });
+  await tone.selectOption({ label: "No tone (follows the page)" });
   await expect.poll(() => source(page)).toBe(before);
   await expect(frame(page).locator("#plain-band")).not.toHaveAttribute("data-tone", /.*/);
   await undo(page);
   await expect.poll(() => source(page)).toBe(brand);
   await undo(page);
   await expect.poll(() => source(page)).toBe(before);
+
+  const light = before.replace('<section id="plain-band">', '<section id="plain-band" data-tone="light">');
+  await tone.selectOption({ label: "Light" });
+  await expect.poll(() => source(page)).toBe(light);
+  await expect(frame(page).locator("#plain-band")).toHaveAttribute("data-tone", "light");
+  await undo(page);
+  await expect.poll(() => source(page)).toBe(before);
+  await expect(frame(page).locator("#plain-band")).not.toHaveAttribute("data-tone", /.*/);
 
   for (const heading of ["Plain band card", "Component band card"]) {
     await selectParent(page, heading, "Card tip");

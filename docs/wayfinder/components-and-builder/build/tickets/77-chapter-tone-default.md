@@ -1,7 +1,7 @@
 ---
 title: "Conventions: a band with no tone follows the page"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [75-starter-follows-visitor-scheme]
 builder: sol
@@ -15,3 +15,9 @@ From slice 75 (see its Done note): the Components chapter in `worker/site-conven
 ## Done when
 
 - Drift test passes; `@actual` group passes on the refreshed fixture (colour comparisons may need the tolerance noted on slice 62); the edit bar's Tone default label reads correctly on the starter.
+
+## Done (2026-10-09)
+
+- The Components chapter says no `data-tone` means the band follows the page (which may follow the visitor), `light` and `dark` force a scheme; copied to the starter's `AGENTS.md` (`dev` 6a20035) and `fixtures/actual-starter` refreshed to it (brings slice 75's `tones.css`). The edit bar no longer assumes `light` is the absent tone: with no CSS-declared default the empty option reads "No tone (follows the page)" and Light writes `data-tone="light"`; a default the CSS declares still reads "<Value> (default)" (ticket 07). `toneDefault` is gone.
+- Commit "Conventions and edit bar: a band with no tone follows the page (slice 77)". Built by Sol, checked by Claude.
+- Tests: `tests/tone-band.test.ts` (no-default and declared-default cases), `tests/variant-fields.test.ts`, `tests/mcp-runtime.test.ts` (chapter line), `tests/native-save/native-tone.spec.ts` (@smoke: Light writes, No tone removes). Drift test and `@actual` pass except `native-edit-bar-label-actual.spec.ts` at 760 px (move buttons wrap, right gap), which fails the same way on `origin/dev` before this slice.

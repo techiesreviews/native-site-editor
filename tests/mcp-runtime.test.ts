@@ -167,7 +167,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /Tones work this way where the site's CSS defines them/,
       /Tone rules should keep text readable \(WCAG AA\)/,
       /`data-tone` colours a page band: a section component, a plain `<section>`, the header or the footer/,
-      /`light` \(the default: no attribute\), `dark`, `brand` and `accent`/,
+      /Its values are `light`, `dark`, `brand` and `accent`\. With no `data-tone`, the band follows the page, which may follow the visitor's light or dark setting; `light` and `dark` force a scheme/,
       /plain `\[data-tone="…"\]` rules \(never in a component's CSS\)/,
       /`contrast-color\(\)` of the surface under `@supports`/,
       // The header, footer and skip link.

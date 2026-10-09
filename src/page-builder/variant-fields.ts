@@ -1,6 +1,7 @@
 // An instance's, Button's or page band's variants as edit bar fields (ticket 07 §5): a dropdown per
 // choice, a checkbox per yes/no variant. Leaving the attribute off is the
-// default look, so the default option removes it; a value no rule knows
+// default look, so the default option removes it; for a Tone whose CSS names
+// no default look it reads "No tone (follows the page)". A value no rule knows
 // shows as "Custom" and stays until something else is picked. A variant (or
 // a value) styled only inside a media or container query says where it
 // shows ("wide screens only").
@@ -25,12 +26,6 @@ export function isToneBand(chain: readonly string[], page: boolean, template: (t
   };
   const ancestors = chain.slice(0, -1);
   return band(chain.at(-1)!, ancestors) && !ancestors.some((tag, index) => template(tag) !== undefined || band(tag, ancestors.slice(0, index)));
-}
-
-/** Light is the absent tone unless CSS explicitly declares another default alias. */
-export function toneDefault(variant: Variant): Variant {
-  return variant.attribute === "data-tone" && variant.defaultValue === undefined && variant.values.some(({ value }) => value === "light")
-    ? { ...variant, defaultValue: "light" } : variant;
 }
 
 export interface VariantField {
@@ -80,7 +75,8 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
     if (variant.kind === "yes-no") {
       return { attribute: variant.attribute, label: variant.label, kind: "yes-no", form: variant.form, options: [], value: (variant.form === "true" ? set?.value === "true" : Boolean(set)) ? "on" : "", ...(note ? { note } : {}) };
     }
-    const options = [{ label: variant.defaultValue === undefined ? "Default" : `${valueLabel(variant.defaultValue)} (default)`, value: "" }];
+    const defaultLabel = variant.attribute === "data-tone" ? "No tone (follows the page)" : "Default";
+    const options = [{ label: variant.defaultValue === undefined ? defaultLabel : `${valueLabel(variant.defaultValue)} (default)`, value: "" }];
     for (const { value, label, conditions } of variant.values) {
       // The value the default look already is shows only when the page writes it.
       if (value === variant.defaultValue && set?.value !== value) continue;
@@ -96,12 +92,12 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
 /** Instance fields from component/page CSS, excluding script-set names only from the component CSS. */
 export function instanceVariantFields(tag: string, css: string, sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[], scripts: readonly { path: string; source: string }[] = [], band = false) {
   const variants = variantsForComponent(tag, { css, site: siteVariants(sheets), scriptAttributes: scriptsSetAttributes(scripts) }).variants;
-  return variantFields(variants.filter((variant) => band || variant.attribute !== "data-tone").map(toneDefault), attributes);
+  return variantFields(variants.filter((variant) => band || variant.attribute !== "data-tone"), attributes);
 }
 
 /** Plain page bands offer only Tone, from global attribute rules. */
 export function bandVariantFields(sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
-  return variantFields(globalVariants(siteVariants(sheets)).filter((variant) => variant.attribute === "data-tone").map(toneDefault), attributes);
+  return variantFields(globalVariants(siteVariants(sheets)).filter((variant) => variant.attribute === "data-tone"), attributes);
 }
 
 /**

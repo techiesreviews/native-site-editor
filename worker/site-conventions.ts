@@ -119,7 +119,7 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
 ### Tones
 Tones work this way where the site's CSS defines them (look for \`[data-tone="…"]\` rules in the shared CSS first); a site without them has none, so add them before using \`data-tone\`.
 - \`data-tone\` colours a page band: a section component, a plain \`<section>\`, the header or the footer. Cards, buttons and everything else inside a band follow their band; there is no tone inside a toned band.
-- Its values are \`light\` (the default: no attribute), \`dark\`, \`brand\` and \`accent\`.
+- Its values are \`light\`, \`dark\`, \`brand\` and \`accent\`. With no \`data-tone\`, the band follows the page, which may follow the visitor's light or dark setting; \`light\` and \`dark\` force a scheme.
 - The tone rules live once, in the site's shared CSS, as plain \`[data-tone="…"]\` rules (never in a component's CSS), so a tone means the same on every band; written by hand, they work on any element.
 - Tone rules should keep text readable (WCAG AA) whatever the brand colour:
   - \`light\` and \`dark\` set \`color-scheme\`, so the site's colour roles flip.
