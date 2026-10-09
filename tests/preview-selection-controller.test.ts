@@ -12,7 +12,7 @@ function deferred<T>() {
 const flush = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 const PAGE = "index.html", CARD = "components/x-card.html";
-const pageSource = "<!doctype html><html><body><x-card></x-card><p>Hi</p><x-card></x-card></body></html>";
+const pageSource = "<!doctype html><html><body><x-card></x-card><p>Hi</p></body></html>";
 const cardSource = "<h2>Card</h2>";
 
 const pick = (over: Partial<NativePreviewSelection> = {}): NativePreviewSelection =>
@@ -82,7 +82,7 @@ function fixture() {
 // Element names by source and node, standing in for the host's DOM parse.
 function tagAt(source: string, node: readonly number[]) {
   const key = node.join(".");
-  if (source === pageSource) return ({ "0": "x-card", "1": "p", "2": "x-card" } as Record<string, string>)[key];
+  if (source === pageSource) return ({ "0": "x-card", "1": "p" } as Record<string, string>)[key];
   return key === "0" ? "h2" : undefined;
 }
 const announced = (log: string[]) => log.filter(line => line.startsWith("announce "));
@@ -251,68 +251,4 @@ test("text and grid reports re-render the bar only when they change", () => {
   handlers.onItemGrids(grid);
   handlers.onItemGrids(grid);
   assert.deepEqual(f.log, [`editBar ${PAGE}`, `editBar ${PAGE}`]);
-});
-
-test("a fixed part is handed only to its exact host selection, then cleared", async () => {
-  const f = fixture();
-  f.store.openFile.value = PAGE;
-  f.state.mounted.add(PAGE);
-  await f.controller.select(instanceClick());
-  await f.controller.select(pick({ node: [0], tag: "x-card" }));
-  assert.deepEqual(f.store.selection.value?.locked, {
-    part: { path: CARD, node: [0], tag: "h2" },
-    instance: { path: PAGE, node: [0], tag: "x-card" },
-    source: cardSource,
-  });
-  await f.controller.select(pick({ node: [0], tag: "x-card", reason: "refresh" }));
-  assert.equal(f.store.selection.value?.locked?.part.tag, "h2");
-  await f.controller.select(pick());
-  assert.equal(f.store.selection.value?.locked, undefined);
-  await f.controller.select(instanceClick());
-  await f.controller.select(pick());
-  await f.controller.select(pick({ node: [0], tag: "x-card" }));
-  assert.equal(f.store.selection.value?.locked, undefined);
-});
-
-
-test("an unrelated host refresh consumes a pending part without keeping the previous lock", async () => {
-  const f = fixture();
-  f.store.openFile.value = PAGE;
-  f.state.mounted.add(PAGE);
-  await f.controller.select(instanceClick());
-  await f.controller.select(pick({ node: [0], tag: "x-card" }));
-  assert.equal(f.store.selection.value?.locked?.part.tag, "h2");
-  await f.controller.select(instanceClick({ host: { tag: "x-card", selector: "x-card:last-child", path: PAGE, node: [2] } }));
-  await f.controller.select(pick({ node: [0], tag: "x-card", reason: "refresh" }));
-  assert.equal(f.store.selection.value?.locked, undefined);
-  await f.controller.select(pick({ node: [2], tag: "x-card" }));
-  assert.equal(f.store.selection.value?.locked, undefined);
-});
-
-test("a refresh after the part's template changed drops the lock", async () => {
-  const f = fixture();
-  f.store.openFile.value = PAGE;
-  f.state.mounted.add(PAGE);
-  await f.controller.select(instanceClick());
-  await f.controller.select(pick({ node: [0], tag: "x-card" }));
-  assert.equal(f.store.selection.value?.locked?.part.tag, "h2");
-  f.state.sources[CARD] = "<h2>Card</h2><p>New</p>";
-  await f.controller.select(pick({ node: [0], tag: "x-card", reason: "refresh" }));
-  assert.equal(f.store.selection.value?.path, PAGE);
-  assert.equal(f.store.selection.value?.locked, undefined);
-});
-
-test("a host click replayed once its page mounts keeps its lock", async () => {
-  const f = fixture();
-  f.store.openFile.value = "other.html";
-  await f.controller.select(instanceClick());
-  void f.controller.select(pick({ node: [0], tag: "x-card" }));
-  await flush();
-  assert.equal(f.opens[0]?.path, PAGE);
-  f.store.openFile.value = PAGE;
-  f.state.mounted.add(PAGE);
-  f.controller.replayPending(PAGE);
-  await flush();
-  assert.equal(f.store.selection.value?.locked?.part.tag, "h2");
-  assert.equal(f.store.selection.value?.locked?.instance.tag, "x-card");
 });

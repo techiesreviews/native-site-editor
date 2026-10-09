@@ -1,7 +1,7 @@
 ---
 title: "No locked-part hint in the edit bar label"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [48-locked-fixed-parts-on-page]
 builder: sol

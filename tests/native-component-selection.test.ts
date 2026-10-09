@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { nativeComponentScopeSelection, nativeLockedComponentPart } from "../src/page-builder/native-component-selection";
+import { nativeComponentScopeSelection } from "../src/page-builder/native-component-selection";
 import type { NativePreviewSelection } from "../src/components/native-preview";
 
 const sources = {
@@ -78,32 +78,4 @@ test("content and card targets remain selected; a container inside a link resolv
   assert.equal(nativeComponentScopeSelection(card, "index.html", components, ownSources, tagAt, (_source, node) => node.join(".") === "0.3"), card);
   const direct = { ...wrapper, path: "outer.html" };
   assert.equal(nativeComponentScopeSelection(direct, "outer.html", components, sources, tagAt), direct);
-});
-
-test("locked parts name the nested instance in the outer template", () => {
-  assert.deepEqual(nativeLockedComponentPart(selection, "index.html", components, sources, hostTag), {
-    part: { path: "outer.html", node: [0], tag: "inner-card" },
-    instance: { path: "index.html", node: [0, 1], tag: "outer-card" },
-    source: sources["outer.html"],
-  });
-  assert.equal(nativeLockedComponentPart(selection, "index.html", components, sources, hostTag, true), undefined);
-  assert.equal(nativeLockedComponentPart(selection, "index.html", { ...components, "inner-card": "wrong.html" }, sources, hostTag), undefined);
-});
-
-test("direct fixed clicks retain the part; slot fallback descendants do not", () => {
-  const direct = { ...selection, hostChain: [selection.hostChain![1]], path: "outer.html", node: [0], tag: "p" };
-  const tagAt = (source: string, node: readonly number[]) => source === sources["index.html"] ? hostTag(source, node) : node.length === 1 ? "p" : undefined;
-  assert.deepEqual(nativeLockedComponentPart(direct, "index.html", components, sources, tagAt)?.part, { path: "outer.html", node: [0], tag: "p" });
-  const placeholder = { ...direct, node: [0, 0, 0] };
-  const fallbackTag = (source: string, node: readonly number[]) => source === sources["index.html"] ? hostTag(source, node) : ["div", "slot", "p"][node.length - 1];
-  assert.equal(nativeLockedComponentPart(placeholder, "index.html", components, sources, fallbackTag), undefined);
-  assert.equal(nativeLockedComponentPart({ ...direct, path: "index.html" }, "index.html", components, sources, tagAt), undefined);
-  assert.equal(nativeLockedComponentPart({ ...direct, node: [99] }, "index.html", components, sources, hostTag), undefined);
-});
-
-test("a nested instance in an outer slot fallback is a placeholder, not a fixed part", () => {
-  const nested = { ...selection, hostChain: [{ ...selection.hostChain![0], node: [0, 0] }, selection.hostChain![1]] };
-  const tagAt = (source: string, node: readonly number[]) => source === sources["outer.html"]
-    ? node.length === 1 ? "slot" : "inner-card" : hostTag(source, node);
-  assert.equal(nativeLockedComponentPart(nested, "index.html", components, sources, tagAt), undefined);
 });

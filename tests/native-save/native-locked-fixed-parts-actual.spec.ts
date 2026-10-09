@@ -3,9 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Fixed parts are locked on the page (build slice 48, ticket 14 §7): the
 // starter's Recent work made a section component with a fixed paragraph.
-// Outside Edit component mode a click on the paragraph selects the instance,
-// the label says it is fixed, and Edit component opens the mode with that
-// paragraph selected. It takes no text editing or drops; Structure lists only
+// Slice 90 removes the hint: outside Edit component mode a paragraph click
+// selects the instance and shows its normal edit bar with its usual component
+// action. Fixed parts take no text editing or drops; Structure lists only
 // the instance's slots. ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
 test.skip(!process.env.ASE_NATIVE_SAVE_FIXTURE?.endsWith("actual-starter"), "Set ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.");
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -63,15 +63,24 @@ async function seed(page: Page, baseURL: string | undefined, template = workTemp
 }
 const mountedPage = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
 
-test("Fixed parts select the page instance, explain the lock and open that part in Edit component", { tag: "@actual" }, async ({ page, baseURL }) => {
+async function expectInstanceBar(page: Page) {
+  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Section work");
+  await expect(toolbar(page).locator(".edit-bar__locked")).toHaveCount(0);
+  await expect(toolbar(page)).not.toContainText("fixed in");
+  const edit = toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true });
+  await expect(edit).toHaveCount(1);
+  await expect(edit).toBeVisible();
+  await expect(toolbar(page).getByRole("button", { name: "Edit component", exact: true })).toHaveCount(0);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+}
+
+test("Fixed parts select the page instance with its normal edit bar and stay locked", { tag: "@actual" }, async ({ page, baseURL }) => {
   await seed(page, baseURL);
   const work = frame(page).locator("section-work");
   const paragraph = work.locator("p.lede");
   await paragraph.click();
-  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Section work");
-  await expect(toolbar(page).locator(".edit-bar__locked-text")).toHaveText("○ Paragraph fixed in <section-work>");
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
-  if (shots) await page.screenshot({ path: `${shots}/48-locked-hint.png` });
+  await expectInstanceBar(page);
+  if (shots) await page.screenshot({ path: `${shots}/90-instance-bar.png` });
 
   // Fixed source never becomes an editable text surface, even on double-click and typing.
   await paragraph.dblclick();
@@ -89,21 +98,13 @@ test("Fixed parts select the page instance, explain the lock and open that part 
   await expect(slots.getByRole("treeitem", { name: /Selected projects/ })).toHaveCount(0);
   if (shots) await page.screenshot({ path: `${shots}/48-structure-slots.png` });
 
-  // Expanding Structure selects the host directly and clears the hint; a click on the paragraph brings it back.
+  // The instance's usual action still opens its shared component template.
   await paragraph.click();
-  await expect(toolbar(page).locator(".edit-bar__locked-text")).toHaveText("○ Paragraph fixed in <section-work>");
-  await toolbar(page).getByRole("button", { name: "Edit component", exact: true }).click();
+  await expectInstanceBar(page);
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
   await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
-  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect(toolbar(page).locator(".edit-bar__locked")).toHaveCount(0);
-  // The selected box belongs to this paragraph inside this framed instance.
-  await expect.poll(async () => {
-    const selected = await frame(page).locator("[data-native-selection-box='selected']").boundingBox();
-    const part = await paragraph.boundingBox();
-    return selected && part ? Math.abs(selected.y - part.y) : Infinity;
-  }).toBeLessThan(2);
-  if (shots) await page.screenshot({ path: `${shots}/48-edit-component-part.png` });
 });
 
 test("Fixed template parts refuse block drops; click-insert targets only the instance's items slot", { tag: "@actual" }, async ({ page, baseURL }) => {
@@ -131,20 +132,18 @@ test("Fixed template parts refuse block drops; click-insert targets only the ins
   await expect.poll(() => mountedPage(page)).toContain("<p>Text</p>");
 });
 
-test("Clicking another fixed Paragraph refreshes Edit component's part even though the label is unchanged", { tag: "@actual" }, async ({ page, baseURL }) => {
+test("Clicking another fixed Paragraph keeps the normal instance bar and refuses text editing", { tag: "@actual" }, async ({ page, baseURL }) => {
   await seed(page, baseURL, workTemplate.replace('<p class="lede">Selected projects.</p>', '<p class="lede">Selected projects.</p><p class="note">More projects soon.</p>'));
   const work = frame(page).locator("section-work");
   await work.locator("p.lede").click();
-  await expect(toolbar(page).locator(".edit-bar__locked-text")).toHaveText("○ Paragraph fixed in <section-work>");
-  await work.locator("p.note").click();
-  await expect(toolbar(page).locator(".edit-bar__locked-text")).toHaveText("○ Paragraph fixed in <section-work>");
-  await toolbar(page).getByRole("button", { name: "Edit component", exact: true }).click();
-  await expect(canvasBar(page).locator(".edit-mode__title")).toHaveText("Editing<section-work>");
-  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
-  await expect.poll(async () => {
-    const selected = await frame(page).locator("[data-native-selection-box='selected']").boundingBox();
-    const part = await work.locator("p.note").boundingBox();
-    return selected && part ? Math.abs(selected.y - part.y) : Infinity;
-  }).toBeLessThan(2);
+  await expectInstanceBar(page);
+  const note = work.locator("p.note");
+  await note.click();
+  await expectInstanceBar(page);
+  await note.dblclick();
+  await page.keyboard.type("Cannot change");
+  await expect(note).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(note).toHaveText("More projects soon.");
+  expect(await mountedPage(page)).not.toContain("Cannot change");
+  await expectInstanceBar(page);
 });

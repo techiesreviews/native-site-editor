@@ -228,8 +228,9 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   instances (the loader needs nothing, there is no registry), as one undo
   step.
 - **Make component and + New component land here** (slices 22, 27, 49).
-- **Outside the mode** fixed parts are locked, with an Edit component hint;
-  Page Structure lists only the instance's slots (§7).
+- **Outside the mode** fixed parts are locked: a click selects the instance
+  with its normal edit bar (no hint, Lex 2026-10-09, slice 90); Page
+  Structure lists only the instance's slots (§7).
 
 ### Phase 6: Add card
 
