@@ -1,7 +1,9 @@
 // PROTOTYPE (wayfinder ticket 14, components-and-builder). Throwaway; not kept for the real build.
 //
-// The layer over the preview frame while a template is edited. Round 2 (Lex
-// picked A): ticket 04's making-mode chips (variant E), shown on hover:
+// The layer over the preview frame while a template is edited. Round 3: no
+// chips on the canvas any more (the slot state and its toggle are in the edit
+// bar's name label, cb14-label.ts); a hovered or selected slot shows its
+// outline, a hovered nested component its "◇ tag ›". Round 2's chips were:
 //   - hovering a slot (or having a part of it selected) shows its outline and
 //     its chip, "✓ title"; a click unchecks it (the slot goes, its fallback
 //     stays as fixed markup) and the chip then reads "○ title" until checked
@@ -25,6 +27,8 @@ export const hooks: {
   renameMirror?: (p: number[] | undefined, value: string) => void;
   /** The "+" on a slot: the picker that adds into its fallback. */
   addInto?: (slot: TNode, at: DOMRect) => void;
+  /** A rename starts: the edit bar's label puts its field in (round 3). */
+  renameStart?: () => void;
   /** Canvas hover, for Structure to mirror. */
   hovered?: (keys: string[]) => void;
 } = {};
@@ -103,7 +107,7 @@ export function toggleSlot(n: TNode) {
     ]);
   }
 }
-function unfix(g: (typeof formerSlots)[number]) {
+export function unfix(g: (typeof formerSlots)[number]) {
   const source = deps().sources()[templatePath()!] ?? "";
   const edit = wrapEdit(source, g.path, g.name);
   if (edit && writeTemplate(edit, `<${g.tag}> → slot “${g.name}” again`, [...g.path, 0])) {
@@ -132,6 +136,7 @@ export function startRename(n: TNode) {
   renaming.p = [...n.p];
   renaming.original = n.slot!.name;
   if (latest.model) drawLayer(latest.model);
+  hooks.renameStart?.();
   hooks.renameMirror?.(n.p, n.slot!.name);
   const first = renaming.chip ?? renaming.inputs[0];
   first?.focus();
@@ -176,7 +181,7 @@ export function endRename(commit: boolean) {
 // ---- What shows a chip now: the hovered part and slot, the selection, and what lingers. ----
 type Subject = { kind: "slot"; n: TNode } | { kind: "ghost"; n: TNode; g: (typeof formerSlots)[number] } | { kind: "plus"; n: TNode } | { kind: "drill"; n: TNode };
 const keyOf = (s: Subject) => `${s.kind}:${s.n.key}`;
-function eligiblePlus(model: Model, n: TNode) {
+export function eligiblePlus(model: Model, n: TNode) {
   return !n.slot && !n.inSlot && n.p.length > 1 && !n.hid && !model.all().some((d) => d.slot && d.key.startsWith(`${n.key}.`));
 }
 function subjectsFor(model: Model, p: number[] | null, slotPath: number[] | null): Subject[] {
@@ -272,69 +277,10 @@ export function drawLayer(model: Model) {
     const r = n.r;
     if (r[2] + r[3] === 0) continue;
     if (s.kind === "slot") {
-      const items = isItemsSlot(n);
-      const boxEl = part(`slot:${n.key}`, () => {
-        const b = el("div", "cb14-mode__slot");
-        b.dataset.k = n.key;
-        const chip = chipButton(() => { const now = byKey(b.dataset.k); if (now?.slot) toggleSlot(now); }, () => { const now = byKey(b.dataset.k); if (now?.slot) startRename(now); });
-        b.append(chip);
-        return b;
-      });
-      boxEl.dataset.k = n.key;
-      boxEl.classList.toggle("cb14-mode__slot--items", items);
-      boxEl.classList.toggle("is-items-group", items);
-      boxEl.classList.toggle("is-renaming", renaming.p?.join(".") === n.key);
-      boxEl.classList.toggle("is-low", r[1] < 26);
+      // Round 3: no chip on the canvas; the slot's extent shows, its state is in the edit bar's label.
+      const boxEl = part(`slot:${n.key}`, () => el("div", "cb14-mode__slot"));
+      boxEl.classList.toggle("cb14-mode__slot--items", isItemsSlot(n));
       place(boxEl, r, 2);
-      const count = n.slot!.showsPage ? n.slot!.assigned : n.kids.length;
-      const chip = boxEl.firstElementChild as HTMLElement;
-      chip.textContent = items ? `✓ ${n.slot!.name || "items"} ×${count}` : `✓ ${n.slot!.name}`;
-      if (n.slot!.showsPage) chip.append(el("span", "cb14-mode__chip-note", "this page"));
-      chip.title = `${items ? "Items slot" : "Slot"} “${n.slot!.name || "unnamed"}”: click to uncheck (keep it fixed) · double-click to rename`;
-      if (renaming.p?.join(".") === n.key) {
-        if (!renaming.chip) { renaming.chip = renameInput(renaming.original ?? "", "cb14-mode__field cb14-mode__field--chip"); layerEl().append(renaming.chip); }
-        Object.assign(renaming.chip.style, { left: `${r[0] + r[2] - 118}px`, top: `${items || r[1] < 26 ? r[1] + 4 : r[1] - 24}px` });
-      }
-      // "+" at the slot's end: add into its fallback.
-      const add = part(`add:${n.key}`, () => {
-        const b = el("button", "cb14-slot-add", "+");
-        b.type = "button";
-        b.addEventListener("pointerenter", chipEnter);
-        b.addEventListener("pointerleave", chipLeave);
-        b.addEventListener("click", () => { const now = byKey(b.dataset.k); if (now?.slot) hooks.addInto?.(now, b.getBoundingClientRect()); });
-        return b;
-      });
-      add.dataset.k = n.key;
-      add.title = items ? `Add to “${n.slot!.name || "unnamed"}”: its card or a block` : `Add a block into the “${n.slot!.name}” slot's fallback`;
-      const row = n.row;
-      Object.assign(add.style, row
-        ? { left: `${r[0] + r[2] + 4}px`, top: `${r[1] + r[3] / 2 - 11}px` }
-        : { left: `${r[0] + r[2] / 2 - 11}px`, top: `${r[1] + r[3] - 9}px` });
-    } else if (s.kind === "ghost") {
-      const boxEl = part(`ghost:${n.key}`, () => {
-        const b = el("div", "cb14-mode__slot is-fixed");
-        b.dataset.k = n.key;
-        b.append(chipButton(() => { const g = formerSlots.find((f) => f.path.join(".") === b.dataset.k); if (g) unfix(g); }));
-        return b;
-      });
-      boxEl.dataset.k = n.key;
-      boxEl.classList.toggle("is-low", r[1] < 26);
-      place(boxEl, r, 2);
-      const chip = boxEl.firstElementChild as HTMLElement;
-      chip.textContent = `○ ${s.g.name}`;
-      chip.title = `Fixed: click to check it, making <${n.t}> the slot “${s.g.name}” again`;
-    } else if (s.kind === "plus") {
-      const b = part(`plus:${n.key}`, () => {
-        const x = el("button", "cb14-mode__plus", "+ slot");
-        x.type = "button";
-        x.dataset.k = n.key;
-        x.title = "Make this part a slot: each page can put its own element here";
-        x.addEventListener("pointerenter", chipEnter);
-        x.addEventListener("pointerleave", chipLeave);
-        x.addEventListener("click", () => { const now = byKey(x.dataset.k); if (now) makeSlot(now); });
-        return x;
-      });
-      Object.assign(b.style, { left: `${r[0] + r[2] - 4}px`, top: `${r[1] + 2}px` });
     } else if (s.kind === "drill") {
       const b = part(`drill:${n.key}`, () => {
         const x = el("button", "cb14-drill");
@@ -353,7 +299,7 @@ export function drawLayer(model: Model) {
   for (const [key, node] of parts) if (!node.dataset.seen) { node.remove(); parts.delete(key); }
 }
 
-function makeSlot(n: TNode) {
+export function makeSlot(n: TNode) {
   const name = roleName(n, slotNames());
   const source = deps().sources()[templatePath()!] ?? "";
   const edit = wrapEdit(source, n.p, name);

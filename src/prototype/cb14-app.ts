@@ -23,6 +23,7 @@ import { clearLayer, drawLayer, hooks as layerHooks, setFrameState, setHover, en
 import { drawTree, removeTree, treeHooks, treePanel } from "./cb14-tree";
 import { buildHooks, dragging, mountRail } from "./cb14-build";
 import { miniView, refreshViews, type MiniView } from "./cb14-mini";
+import { decorateLabel, watchLabel } from "./cb14-label";
 import { elementPathAt } from "../native-source-location";
 import { descendants, parseSource } from "../page-builder/component-model";
 import { nativePageBody } from "../../shared/native-project";
@@ -38,6 +39,7 @@ export function install(host: Cb14Host) {
   document.documentElement.dataset.cb14Variant = variant;
   mountSwitcher();
   mountRail();
+  watchLabel();
   idleReadout();
   frameEvents.dump = (model) => redraw(model);
   frameEvents.hover = (p, slot) => setHover(p, slot);
@@ -98,6 +100,7 @@ function redraw(model: Model) {
   if (!mode.now) return;
   drawLayer(model);
   drawTree(model);
+  decorateLabel();
   renderBar();
   if (!dragging()) modeReadout(model);
 }

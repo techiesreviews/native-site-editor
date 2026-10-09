@@ -209,10 +209,15 @@ export function allowed(kind: BlockKind, box: Box): { ok: boolean; reason?: stri
   const n = box.node;
   if (kind === "section") return { ok: false, reason: "A Section is a page band; inside a component, build with a Div." };
   if (!n) return { ok: false, reason: "Blocks go inside the template's own element, not beside it." };
-  // Round 2 (Lex): blocks may go into any slot's fallback, named slots too.
-  if (n.slot) return { ok: true };
+  // Ticket 10 (round 3 restores it): only items slots take blocks; a named slot is filled by editing.
+  if (n.slot) {
+    if (isItemsSlot(n)) return { ok: true };
+    return { ok: false, reason: `The “${n.slot.name}” slot is filled by editing its text, not by drops. Drop beside it, or into an items slot.` };
+  }
   if (n.inst) return { ok: false, reason: `<${n.t}> is its own component: open it (◇ ›) to build inside its template.` };
   if (CONTAINERS.has(n.t)) {
+    const slot = slotOf(n);
+    if (slot && !isItemsSlot(slot)) return { ok: false, reason: `Inside the “${slot.slot!.name}” slot's fallback: drop beside the slot instead.` };
     return { ok: true };
   }
   return { ok: false, reason: "Not a container." };
