@@ -106,6 +106,9 @@ test("other slots prefer the component match, respect forwarding and match class
   const unmatched = fill("<main></main><card-note>Outside main</card-note>", card);
   assert.equal(unmatched.find(row => row.slot === "note")?.from, "kept");
   assert.equal(unmatched.find(row => row.slot === "note")?.text, "Fallback");
+  const second = fill(`<main><p class="extra">Second class</p></main>`, card);
+  assert.equal(second.find(row => row.slot === "tag_line")?.matched, ".extra");
+  assert.equal(second.find(row => row.slot === "tag_line")?.text, "Second class");
   const noMain = fill("<body><p class='tag'>Body match</p></body>", card);
   assert.equal(noMain.find(row => row.slot === "tag_line")?.text, "Body match");
 });

@@ -40,7 +40,7 @@ function siteImage(image: string, siteUrl?: string): string {
   }
 }
 
-/** Other slots match their component first, then their fallback's first class; an empty match keeps the fallback. */
+/** Other slots match their component first, then their fallback's classes; an empty match keeps the fallback. */
 function matchSlot(slot: TemplateSlot, template: string, source: string, page: SourceElement[]) {
   const fallback = firstElement(slot);
   const parent = slot.element.parent;
@@ -55,8 +55,8 @@ function matchSlot(slot: TemplateSlot, template: string, source: string, page: S
       if (text) return { text, matched: `<${component.name}>` };
     }
   }
-  const className = fallback && attribute(template, fallback, "class")?.trim().split(/\s+/)[0];
-  if (className) {
+  // Each of the fallback's classes in turn, its first class first.
+  for (const className of (fallback && attribute(template, fallback, "class")?.split(/\s+/).filter(Boolean)) ?? []) {
     const found = page.find(element => attribute(source, element, "class")?.split(/\s+/).includes(className));
     const text = found && elementText(source, found);
     if (text) return { text, matched: `.${className}` };

@@ -1,7 +1,7 @@
 ---
 title: Card fill mapping
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
