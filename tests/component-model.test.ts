@@ -684,6 +684,122 @@ test("make component: a group renamed or kept fixed; a renamed items slot keeps 
     [["note", false], ["pair", false], ["", true]]);
 });
 
+test("make component: a nested instance becomes one ordinary whole slot, named from its tag", () => {
+  const source = `<main>
+  <section class="project">
+    <h2>Fern</h2>
+    <card-note><p slot="text">Cafe · 2025</p></card-note>
+  </section>
+</main>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "section"), "section-project");
+  assert.ok(!("error" in plan));
+  assert.equal(plan.template, `<section class="project">
+  <slot name="title"><h2>Fern</h2></slot>
+  <slot name="note"><card-note><p slot="text">Cafe · 2025</p></card-note></slot>
+</section>
+`);
+  // Each page owns the instance and its own slots.
+  assert.equal(plan.instance, `<section-project>
+    <h2 slot="title">Fern</h2>
+    <card-note slot="note"><p slot="text">Cafe · 2025</p></card-note>
+  </section-project>`);
+  // An ordinary slot: no items.
+  assert.deepEqual(plan.slots.map(({ path, name, kind, byDefault, items }) => ({ path, name, kind, byDefault, items })), [
+    { path: [0], name: "title", kind: "text", byDefault: true, items: undefined },
+    { path: [1], name: "note", kind: "content", byDefault: true, items: undefined },
+  ]);
+  assert.deepEqual(plan.notes, []);
+  // Kept fixed, it stays in the template, and nothing inside it can be made a slot: its content is that instance's.
+  const kept = makeComponentPlan(source, rangeOf(source, "section"), "section-project", { fixed: [[1]], slots: [[1, 0]] });
+  assert.ok(!("error" in kept));
+  assert.match(kept.template, /\n  <card-note><p slot="text">Cafe · 2025<\/p><\/card-note>\n/);
+  assert.deepEqual(kept.slots.map(({ path, name, fixed }) => [path.join("."), name, fixed]), [["0", "title", false], ["1", "note", true]]);
+  // Two different instances side by side are two slots; a section-… or block-… tag loses its prefix too.
+  const pair = `<div><block-quote></block-quote><section-cta><h2 slot="title">Hi</h2></section-cta></div>`;
+  const both = makeComponentPlan(pair, rangeOf(pair, "div"), "block-pair");
+  assert.ok(!("error" in both));
+  assert.deepEqual(both.slots.map(({ name, items }) => [name, items]), [["quote", undefined], ["cta", undefined]]);
+  assert.equal(both.template, `<div><slot name="quote"><block-quote></block-quote></slot><slot name="cta"><section-cta><h2 slot="title">Hi</h2></section-cta></slot></div>\n`);
+});
+
+test("make component: a link-wrapped card loses its wrapping link; the title slot holds the link and the card stays clickable", () => {
+  const source = `<div class="cards">
+  <a class="card" href="/work/fern/" id="fern" target="_blank" rel="noopener">
+    <img src="/images/fern.jpg" alt="Fern">
+    <div class="card__body">
+      <h3>Fern <em>&amp;</em> Kettle</h3>
+      <p>A cafe.</p>
+    </div>
+  </a>
+</div>`;
+  const range = rangeOf(source, "a");
+  const plan = makeComponentPlan(source, range, "card-fern");
+  assert.ok(!("error" in plan));
+  assert.equal(plan.template, `<article class="card">
+  <slot name="image"><img src="/images/fern.jpg" alt="Fern"></slot>
+  <div class="card__body">
+    <slot name="title"><h3><a href="/work/fern/" target="_blank" rel="noopener">Fern <em>&amp;</em> Kettle</a></h3></slot>
+    <slot name="text"><p>A cafe.</p></slot>
+  </div>
+</article>
+`);
+  // Each page owns the address, inside its title.
+  assert.equal(plan.instance, `<card-fern id="fern">
+    <img slot="image" src="/images/fern.jpg" alt="Fern">
+    <h3 slot="title"><a href="/work/fern/" target="_blank" rel="noopener">Fern <em>&amp;</em> Kettle</a></h3>
+    <p slot="text">A cafe.</p>
+  </card-fern>`);
+  // The host bounds the title link the site's card link rule stretches.
+  assert.equal(plan.css, ":host {\n  display: block;\n  position: relative;\n}\n");
+  assert.deepEqual(plan.notes, ["The whole card stays clickable through its title link."]);
+  assert.deepEqual(plan.slots.map(({ path, name, kind, text }) => [path.join("."), name, kind, text]), [
+    ["0", "image", "image", "Fern"],
+    ["1.0", "title", "text", "Fern & Kettle"],
+    ["1.1", "text", "text", "A cafe."],
+  ]);
+  const replaced = source.slice(0, range.start) + plan.instance + source.slice(range.end);
+  const states = slotStates(plan.template, readInstance(replaced, rangeOf(replaced, "card-fern")));
+  for (const slot of templateSlots(plan.template)) assert.equal(states.get(slot.name)?.shown, true);
+
+  // No heading: the first text element carries the link, as the title.
+  const plain = `<a class="tile" href="/about/"><p>About us</p><p>Who we are.</p></a>`;
+  const tile = makeComponentPlan(plain, rangeOf(plain, "a"), "card-tile");
+  assert.ok(!("error" in tile));
+  assert.equal(tile.template, `<article class="tile"><slot name="title"><p><a href="/about/">About us</a></p></slot><slot name="text"><p>Who we are.</p></slot></article>\n`);
+
+  // The title kept fixed: the link stays in the template, so nothing stretches and nothing is said.
+  const kept = makeComponentPlan(source, range, "card-fern", { fixed: [[1, 0]] });
+  assert.ok(!("error" in kept));
+  assert.match(kept.template, /<h3><a href="\/work\/fern\/" target="_blank" rel="noopener">Fern/);
+  assert.equal(kept.css, ":host {\n  display: block;\n}\n");
+  assert.deepEqual(kept.notes, []);
+});
+
+test("make component: a link wrapper with no text is one whole slot, at the root or inside", () => {
+  const source = `<header class="brand"><a class="logo" href="/" id="home"><img src="/logo.svg" alt="Home"></a><p>Since 1999</p></header>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "a"), "block-logo");
+  assert.ok(!("error" in plan));
+  assert.equal(plan.template, `<slot name="link"><a class="logo" href="/"><img src="/logo.svg" alt="Home"></a></slot>\n`);
+  assert.equal(plan.instance, `<block-logo id="home">\n  <a slot="link" class="logo" href="/"><img src="/logo.svg" alt="Home"></a>\n</block-logo>`);
+  assert.deepEqual(plan.slots.map(({ path, name, kind, byDefault }) => ({ path, name, kind, byDefault })), [{ path: [], name: "link", kind: "content", byDefault: true }]);
+  assert.deepEqual(plan.notes, []);
+  assert.equal(plan.css, ":host {\n  display: block;\n}\n");
+
+  // Inside: the link is the slot, its image not one of its own; it shares the link role with a text link beside it.
+  const brand = `<div><a href="/"><img src="/logo.svg" alt="Home"></a><p>Since 1999</p><a href="/shop/">Shop</a></div>`;
+  const inside = makeComponentPlan(brand, rangeOf(brand, "div"), "block-brand");
+  assert.ok(!("error" in inside));
+  assert.equal(inside.template, `<div><slot name="link"><a href="/"><img src="/logo.svg" alt="Home"></a></slot><slot name="text"><p>Since 1999</p></slot><slot name="link-2"><a href="/shop/">Shop</a></slot></div>\n`);
+  assert.deepEqual(inside.slots.map(({ path, name, kind }) => [path.join("."), name, kind]), [["0", "link", "content"], ["1", "text", "text"], ["2", "link-2", "link"]]);
+
+  // A link-wrapped card inside a bigger element is one whole slot too: its link stretches only over a card that is the component.
+  const section = `<section><h2>Featured</h2><a class="card" href="/work/fern/"><h3>Fern</h3><p>A cafe.</p></a></section>`;
+  const featured = makeComponentPlan(section, rangeOf(section, "section"), "section-featured");
+  assert.ok(!("error" in featured));
+  assert.equal(featured.template, `<section><slot name="title"><h2>Featured</h2></slot><slot name="link"><a class="card" href="/work/fern/"><h3>Fern</h3><p>A cafe.</p></a></slot></section>\n`);
+  assert.deepEqual(featured.notes, []);
+});
+
 test("new component names: a dash, lowercase, free", () => {
   assert.equal(tagNameProblem("section-intro", []), undefined);
   assert.ok(tagNameProblem("hero", []));

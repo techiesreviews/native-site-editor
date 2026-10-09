@@ -1097,6 +1097,8 @@ export interface MakeComponentPlan {
   /** What replaces the element in the page. */
   instance: string;
   slots: PlannedSlot[];
+  /** What the making mode tells about the plan (a link-wrapped card that stays clickable through its title). */
+  notes: string[];
 }
 
 /** The making mode's choices, each part named by its path inside the element (as in `PlannedSlot`). */
@@ -1114,10 +1116,52 @@ const FIXED_PARTS = new Set(["svg", "script", "style", "template", "noscript", "
 // Parts that only work as their parent's own child (a table's cells, a details' summary), so never a whole slot.
 const IN_PLACE = new Set(["td", "th", "tr", "thead", "tbody", "tfoot", "caption", "colgroup", "col", "summary", "legend", "option", "optgroup"]);
 
-/** The role a slot of `kind` is named after: a heading is the "title", a list the "list". */
+/**
+ * The role a slot of `kind` is named after: a heading is the "title", a list the "list", any link
+ * the "link", a nested instance its tag without the kind of component it is (`card-note` → "note").
+ */
 const LISTS = new Set(["ul", "ol"]);
 const roleName = (el: SourceElement, kind: SlotKind) =>
-  (kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : LISTS.has(el.name) ? "list" : kind);
+  (el.name.includes("-") ? el.name.replace(/^(?:section|card|block|site)-(?=.)/, "")
+    : el.name === "a" ? "link"
+      : kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : LISTS.has(el.name) ? "list" : kind);
+
+/** Whether `el` is one line of text: a text element holding text and inline formatting only. */
+const isTextElement = (html: string, el: SourceElement) =>
+  Boolean(TEXT_BLOCKS.has(el.name) && el.close && textOnly(el.children) && plainText(html.slice(el.tag.end, el.close.start)));
+
+// The attributes that make an `<a>` a link: on a link-wrapped card they move to its title.
+const LINK_ATTRIBUTES = new Set(["href", "target", "rel", "download", "hreflang", "type", "ping", "referrerpolicy"]);
+
+/**
+ * A link-wrapped card (`<a class="card" href>…</a>`) with its wrapping link
+ * gone: the card is an `<article>` with the link's other attributes, and its
+ * title (the first heading, else the first line of text) holds the link
+ * around its text, so a page's title slot carries the address. Undefined
+ * when `root` is no such card or has no title to carry the link.
+ */
+function unwrapLinkCard(html: string, root: SourceElement): { html: string; title: number[] } | undefined {
+  if (root.name !== "a" || !root.close || textOnly(root.children)) return undefined;
+  // The lines of text that could be slots, outside instances, lists, fixed parts and table rows.
+  const lines: { el: SourceElement; path: number[] }[] = [];
+  const walk = (el: SourceElement, path: number[]) => elements(el.children).forEach((child, index) => {
+    const at = [...path, index];
+    if (isTextElement(html, child)) lines.push({ el: child, path: at });
+    else if (!child.name.includes("-") && !LISTS.has(child.name) && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)) walk(child, at);
+  });
+  walk(root, []);
+  const title = lines.find(({ el }) => /^h[1-6]$/.test(el.name)) ?? lines[0];
+  const close = title?.el.close;
+  if (!close) return undefined;
+  const attributes = startTagAttributes(html, root.tag);
+  const written = (link: boolean) => attributes.filter(({ name }) => LINK_ATTRIBUTES.has(name) === link).map(({ start, end }) => html.slice(start, end)).join("");
+  const opened = title.el.tag.end;
+  return {
+    html: `<article${written(false)}${html.slice(attributes.at(-1)?.end ?? root.tag.nameEnd, root.tag.end)}${html.slice(root.tag.end, opened)}`
+      + `<a${written(true)}>${html.slice(opened, close.start)}</a>${html.slice(close.start, root.close.start)}</article>${html.slice(root.close.end)}`,
+    title: title.path,
+  };
+}
 
 /** A part's own class as a slot name (`lead`, `card__title` → `title`), to tell parts of one role apart. */
 function className(html: string, el: SourceElement) {
@@ -1158,24 +1202,33 @@ function ancestry(source: string, start: number): SourceElement[] {
  */
 export function makeComponentPlan(source: string, range: InstanceRange, tag: string, choices: SlotChoices = {}): MakeComponentPlan | { error: string } {
   if (!range.close) return { error: "The element's end tag could not be found in the source." };
-  const html = source.slice(range.start, range.end);
-  const tree = parseSource(html);
-  const root = elements(tree)[0];
-  if (!root?.close) return { error: "The element's end tag could not be found in the source." };
-  if (root.name.includes("-")) return { error: "This is a component already." };
-  if (["main", "body", "html", "head"].includes(root.name)) return { error: `A <${root.name}> cannot be a component.` };
+  const written = source.slice(range.start, range.end);
+  const element = elements(parseSource(written))[0];
+  if (!element?.close) return { error: "The element's end tag could not be found in the source." };
+  if (element.name.includes("-")) return { error: "This is a component already." };
+  if (["main", "body", "html", "head"].includes(element.name)) return { error: `A <${element.name}> cannot be a component.` };
   const host = ancestry(source, range.start).slice(0, -1).find((el) => el.name.includes("-"));
   if (host) return { error: `This is inside the component instance <${host.name}>; edit the component instead.` };
-  if ([...descendants([root])].some((el) => el.name === "slot")) return { error: "This element holds slots of a component; make the component from the page instead." };
+  if ([...descendants([element])].some((el) => el.name === "slot")) return { error: "This element holds slots of a component; make the component from the page instead." };
+
+  // The id goes to the instance, where links to it still find it; the template and any copy of the element keep the rest.
+  const id = startTagAttribute(written, element.tag, "id");
+  const unkeyed = id ? written.slice(0, id.start) + written.slice(id.end) : written;
+  // A link-wrapped card: its title carries the link (paths stay the element's, but for parts inside the title).
+  const card = unwrapLinkCard(unkeyed, elements(parseSource(unkeyed))[0]);
+  const html = card?.html ?? unkeyed;
+  const root = elements(parseSource(html))[0];
+  if (!root?.close) return { error: "The element's end tag could not be found in the source." };
 
   const key = (path: readonly number[]) => path.join(".");
   const fixed = new Set((choices.fixed ?? []).map(key));
   const forced = new Set((choices.slots ?? []).map(key));
   const forcedInside = (path: number[]) => [...forced].some((other) => !path.length ? other !== "" : other.startsWith(`${key(path)}.`));
-  interface Part { el: SourceElement; path: number[]; kind: SlotKind; byDefault: boolean; items?: { el: SourceElement; path: number[] }[] }
+  // `whole`: the element itself made a named slot, whole (a link wrapper with no title).
+  interface Part { el: SourceElement; path: number[]; kind: SlotKind; byDefault: boolean; whole?: boolean; items?: { el: SourceElement; path: number[] }[] }
   const parts: Part[] = [];
   const kindOf = (el: SourceElement) => contentKind(html, [el]) ?? "content";
-  const isText = (el: SourceElement) => Boolean(TEXT_BLOCKS.has(el.name) && el.close && textOnly(el.children) && plainText(html.slice(el.tag.end, el.close.start)));
+  const isText = (el: SourceElement) => isTextElement(html, el);
   const isLink = (el: SourceElement) => Boolean(el.name === "a" && el.close && textOnly(el.children));
   // What a would-be item is (`itemKind`: a custom element's tag, else its tag and first class); none for a
   // part that is a slot of its own (a line of text, a standalone link), except a list's items.
@@ -1216,19 +1269,27 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
         return;
       }
       if (grouped.has(index)) return;
-      const byDefault = Boolean(!onlyForced && !child.name.includes("-") && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)
-        && (child.name === "img" || child.name === "picture" || LISTS.has(child.name) || (!inText && isLink(child)) || isText(child)));
+      // Whole slots: a nested instance, so each page owns it and its own slots; a link wrapping more than text
+      // (an image, a card), so each page owns the address.
+      const whole = child.name.includes("-") || (child.name === "a" && !textOnly(child.children));
+      const byDefault = Boolean(!onlyForced && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)
+        && (whole || child.name === "img" || child.name === "picture" || LISTS.has(child.name) || (!inText && isLink(child)) || isText(child)));
       if (byDefault || (forced.has(key(at)) && !IN_PLACE.has(child.name))) {
         parts.push({ el: child, path: at, kind: kindOf(child), byDefault });
-        // A part kept fixed is walked into only for a part made a slot inside it.
-        if (!fixed.has(key(at)) || !forcedInside(at) || child.name === "picture") return;
+        // A part kept fixed is walked into only for a part made a slot inside it; an instance's content is its own.
+        if (!fixed.has(key(at)) || !forcedInside(at) || child.name === "picture" || child.name.includes("-")) return;
         visit(child, at, inText || TEXT_BLOCKS.has(child.name), true);
         return;
       } else if (child.name.includes("-") || FIXED_PARTS.has(child.name)) return;
       visit(child, at, inText || TEXT_BLOCKS.has(child.name), onlyForced);
     });
   };
-  if (isText(root) || (isLink(root) && plainText(html.slice(root.tag.end, root.close.start)))) {
+  if (card) visit(root, [], false);
+  else if (root.name === "a" && !textOnly(root.children)) {
+    // A link wrapper with no line of text to carry the link: one whole slot.
+    parts.push({ el: root, path: [], kind: kindOf(root), byDefault: true, whole: true });
+    if (fixed.has("") && forcedInside([])) visit(root, [], false, true);
+  } else if (isText(root) || (isLink(root) && plainText(html.slice(root.tag.end, root.close.start)))) {
     // A single line of text (or a link's): it fills the unnamed slot, inside the element.
     parts.push({ el: root, path: [], kind: "text", byDefault: true });
     if (fixed.has("") && forcedInside([])) visit(root, [], true, true);
@@ -1236,13 +1297,15 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
 
   // Names: by role; a tie between parts of one role is broken by each part's own class, else numbered.
   const names = new Map<Part, string>();
-  for (const part of parts) if (!part.path.length) names.set(part, "");
+  for (const part of parts) if (!part.path.length && !part.whole) names.set(part, "");
   // Repeated groups: the first is the unnamed slot, later ones `items-2`, `items-3`.
   parts.filter((part) => part.items).forEach((part, index) => names.set(part, index ? `items-${index + 1}` : ""));
+  // A link-wrapped card's title is the "title", even a paragraph: the card link rule stretches that slot's link.
+  const roleOf = (part: Part) => (card && key(part.path) === key(card.title) ? "title" : roleName(part.el, part.kind));
   const roles = new Map<string, Part[]>();
   for (const part of parts) {
     if (!part.byDefault || names.has(part)) continue;
-    const role = roleName(part.el, part.kind);
+    const role = roleOf(part);
     roles.set(role, [...(roles.get(role) ?? []), part]);
   }
   for (const [role, group] of roles) {
@@ -1254,7 +1317,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       else names.set(part, ++count === 1 ? role : `${role}-${count}`);
     });
   }
-  for (const part of parts) if (!names.has(part)) names.set(part, roleName(part.el, part.kind));
+  for (const part of parts) if (!names.has(part)) names.set(part, roleOf(part));
   // Renames, for named slots only: the element's own unnamed slot stays unnamed.
   const renames = new Map((choices.names ?? []).filter(({ path }) => path.length).map(({ path, name }) => [key(path), name.trim()]));
   const renamed = (part: Part) => Boolean(renames.get(key(part.path)));
@@ -1288,7 +1351,7 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
     const { name, fixed: kept } = slots[index];
     if (kept) return;
     const el = part.el;
-    if (!part.path.length) {
+    if (!part.path.length && !part.whole) {
       // The element itself: its text fills the unnamed slot.
       const inner = html.slice(el.tag.end, el.close!.start);
       edits.push({ start: el.tag.end, end: el.close!.start, text: `<slot>${inner}</slot>` });
@@ -1309,9 +1372,6 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
     fills.push(verbatim ? copy : reindent(copy, `${indent}  `).replace(/\n/g, newline));
   });
 
-  // The id goes to the instance; the template's root keeps the rest.
-  const id = startTagAttribute(html, root.tag, "id");
-  if (id) edits.push({ start: id.start, end: id.end, text: "" });
   let template = html;
   for (const edit of edits.sort((a, b) => b.start - a.start)) template = template.slice(0, edit.start) + edit.text + template.slice(edit.end);
   // The page's indentation off the template's lines.
@@ -1320,8 +1380,18 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   const open = `<${tag}${id ? ` id="${escapeAttribute(id.value)}"` : ""}>`;
   const instance = !fills.length
     ? `${open}</${tag}>`
-    : !parts[0].path.length && !slots[0].fixed
+    : !parts[0].path.length && !parts[0].whole && !slots[0].fixed
       ? `${open}${fills[0]}</${tag}>`
       : [open, ...fills.map((fill) => `${indent}  ${fill}`), `${indent}</${tag}>`].join(newline);
-  return { template, css: ":host {\n  display: block;\n}\n", instance, slots };
+  // A card's title link stretches over the card by the site's card link rule (`[slot="title"] > a:only-child::after`),
+  // bounded by the host: component CSS can't reach a link inside a slotted heading.
+  const title = card && slots.find((slot) => key(slot.path) === key(card.title));
+  const stretched = Boolean(title && !title.fixed);
+  return {
+    template,
+    css: `:host {\n  display: block;\n${stretched ? "  position: relative;\n" : ""}}\n`,
+    instance,
+    slots,
+    notes: stretched ? ["The whole card stays clickable through its title link."] : [],
+  };
 }
