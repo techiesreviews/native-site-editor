@@ -29,7 +29,7 @@ const takesBlocks = (node: NativeOutline) => node.name === "section" || node.nam
 const isInstance = (node: NativeOutline) => node.opaque && node.name.includes("-");
 
 /** A component's items slots by name as the browser reads them (decoded), in template order. */
-const itemsSlots = (tag: string, templateOf: TemplateOf) => {
+export const itemsSlots = (tag: string, templateOf: TemplateOf) => {
   const template = templateOf(tag);
   return template === undefined ? [] : templateSlots(template, templateOf).filter((entry) => entry.items).map((entry) => decodeHtmlEntities(entry.name, true));
 };

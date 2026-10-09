@@ -1,7 +1,8 @@
 /* The page structure tree in the sidebar: one row per page element,
    indented by depth, the preview's selection marked. */
 .page-structure {
-  --structure-indent: 4px;
+  /* One level per step, wide enough for a drag's depth to follow the pointer's x. */
+  --structure-indent: 14px;
   flex: 1;
   min-height: 0;
   margin: 0 -10px;
@@ -75,15 +76,23 @@
   gap: 2px;
   padding: 0 4px 16px;
 }
-/* A row being dragged, and the line where it will land. */
+/* A block being dragged: its row faded, the line where it will land (indented
+   to its depth, a dot at its start) and a faint tint on the row that takes it. */
 .page-structure__tree.is-dragging {
   cursor: grabbing;
 }
 .page-structure__row.is-drag-source {
   opacity: 0.55;
 }
+.page-structure__row.is-drop-target {
+  background: color-mix(in oklab, var(--primary) 9%, transparent);
+}
+.page-structure__row.is-drop-refused {
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+}
 .page-structure__drop {
   position: absolute;
+  z-index: 1;
   left: calc(10px + var(--depth, 0) * var(--structure-indent, 4px));
   right: 12px;
   height: 2px;
@@ -91,6 +100,23 @@
   border-radius: 1px;
   background: var(--primary);
   pointer-events: none;
+}
+.page-structure__drop::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: -3px;
+  width: 4px;
+  height: 4px;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  background: var(--surface);
+}
+.page-structure__drop.is-refused {
+  background: var(--danger);
+}
+.page-structure__drop.is-refused::before {
+  border-color: var(--danger);
 }
 .page-structure__drop[hidden] {
   display: none;

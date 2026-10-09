@@ -46,6 +46,7 @@ import { mountSidebarResize, type SidebarResize } from "./components/sidebar-res
 import { mountBlockRail } from "./components/block-rail";
 import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
 import { trackDrag, type DragPress } from "./page-builder/insert-drag";
+import type { DraggedBlock } from "./page-builder/drop-target";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
@@ -332,7 +333,9 @@ function mountWorkspace() {
     // the press's repository, branch and session hold through both loads.
     drag: kind => {
       const current = blockInsertPorts.proof();
-      return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag({ kind: "new", block: kind }, {
+      const block = { kind: "new", block: kind } as const;
+      return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag(block, {
+        tree: structureDrop(drag, block),
         drop: (target, where, painted, pointer) => {
           const at = blockInsertPorts.target();
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };
@@ -550,10 +553,10 @@ function mountWorkspace() {
       void moveNativeSectionAfterOpening(target, direction, paintedSource);
       return "pending";
     },
-    canDrag: (item) => isNativeSectionTag(item.tag),
-    onMoveTo: (path, item, index) => {
-      return moveNativeSectionTo({ path, node: item.node, tag: item.tag }, item.node.slice(0, -1), index);
-    },
+    // A row drags as its block does on the page: the same targets, in the tree as well.
+    onRowDrag: (press, item) => dragPageBlock(press, {
+      node: item.node, tag: item.tag, cls: item.className ?? "", band: isNativeSectionTag(item.tag), painted: nativeStructurePaintedSources.get(item),
+    }),
     announce,
   });
   componentTools?.destroy();
@@ -799,6 +802,9 @@ const blockInsertPorts: BlockInsertPorts = {
   },
 };
 const loadBlockDrag = lazyModule(() => import("./page-builder/block-drag"));
+// Page Structure's side of a block's drag: its line, and its own targets.
+const structureDrop = (drag: Awaited<ReturnType<typeof loadBlockDrag>>, block: DraggedBlock) =>
+  pageStructure && drag.structureDrop(pageStructure.dropView(), block, tag => blockInsertPorts.template(tag)?.source);
 
 // A page block dragged by its name in the edit bar (`pressed` none: the
 // selection) or pressed in the page: moved where it is dropped, one undo
@@ -818,6 +824,7 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
     if (!current()) return undefined;
     if (pressed) name = drag.dropBlockName(from.tag, from.cls);
     return nativePreview?.blockDrag(block, {
+      tree: structureDrop(drag, block),
       drop: (target, where, painted) => {
         if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
         const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" ? { slot: target.container.slot } : {}) };

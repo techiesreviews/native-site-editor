@@ -26,6 +26,7 @@ import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
 import type { DraggedBlock, DropTarget } from "../page-builder/drop-target";
 import type { createBlockDrag } from "../page-builder/block-drag";
+import type { StructureDrop } from "../page-builder/tree-drop";
 import type { DragFeed, DragPress } from "../page-builder/insert-drag";
 import { createCanvasBar } from "./canvas-bar";
 import { readCrumbs } from "../page-builder/canvas-model";
@@ -1127,7 +1128,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * without a page on show to drop into). A drop gives the page source its
      * target was measured on, so a page that changed since refuses it.
      */
-    blockDrag(block: DraggedBlock, ports: { drop(target: DropTarget, where: string, painted: string | undefined, pointer?: { x: number; y: number }): void; announce(text: string): void },
+    blockDrag(block: DraggedBlock, ports: { drop(target: DropTarget, where: string, painted: string | undefined, pointer?: { x: number; y: number }): void; announce(text: string): void; tree?: StructureDrop },
       create: typeof createBlockDrag) {
       if (!site || !frameState.active || alone) return undefined;
       let painted: string | undefined;
@@ -1137,8 +1138,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site!.routes[route]] : undefined;
           return probeDrop(at, moving ? [...moving] : undefined, bands).then((report) => { if (report) painted = shown; return report; });
         },
-        drop: (target, where, pointer) => ports.drop(target, where, painted, pointer),
+        // A target picked in Page Structure was measured on the bytes its rows were painted from.
+        drop: (target, where, pointer, tree) => ports.drop(target, where, tree ? tree.painted : painted, pointer),
         announce: (text) => ports.announce(text),
+        tree: ports.tree,
       }, create);
     },
     /** Send an already scheduled source change immediately after a direct user action. */

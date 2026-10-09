@@ -7,10 +7,22 @@ import type { DropIndicator } from "./drop-indicator";
 import type { DraggedBlock, DropTarget } from "./drop-target";
 import type { InsertDragContext } from "./insert-drag";
 import { createBlockDragSession, type BlockDragSessionPorts } from "./block-drag-session";
+import { createStructureDrop, type StructureDrop, type StructureDropView } from "./tree-drop";
+import { itemsSlots } from "./block-insert";
+import type { TemplateOf } from "./component-model";
 import { node } from "../ui/dom";
 import "./block-drag.css";
 
 export { dropBlockName, dropStays } from "./drop-target";
+
+/** Page Structure's side of a drag of `block`; a component's items slots come from its template. */
+export function structureDrop(view: StructureDropView, block: DraggedBlock, templateOf: TemplateOf): StructureDrop {
+  const known = new Map<string, readonly string[]>();
+  return createStructureDrop(view, block, (tag) => {
+    if (!known.has(tag)) known.set(tag, itemsSlots(tag, templateOf));
+    return known.get(tag)!;
+  });
+}
 
 export interface BlockDragPorts extends Omit<BlockDragSessionPorts, "draw"> {
   /** Covers the frame exactly, in frame-viewport coordinates. */
@@ -37,7 +49,7 @@ export function createBlockDrag(block: DraggedBlock, ports: BlockDragPorts): Ins
   };
   return createBlockDragSession(block, {
     ...ports, draw,
-    drop: (target, where, pointer) => ports.drop(target, where, pointer && pointerOnScreen(pointer)),
+    drop: (target, where, pointer, tree) => ports.drop(target, where, pointer && pointerOnScreen(pointer), tree),
     announce: (text, pointer) => {
       if (pointer) refuse(text, { pointer: pointerOnScreen(pointer) });
       else ports.announce(text);

@@ -2,11 +2,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
-// Drag to reorder sections: a page structure row dragged onto another gap
-// among its siblings, and a section dragged in the canvas by its name in the
-// edit bar or pressed in the page (the one drag of blocks, between page
-// bands for a Section). Both are one undo step, keep the section selected,
-// and cancel cleanly.
+// Drag to reorder sections: a page structure row, or a section dragged in
+// the canvas by its name in the edit bar or pressed in the page (the one
+// drag of blocks, between page bands for a Section). Both are one undo step,
+// keep the section selected, and cancel cleanly.
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -48,7 +47,7 @@ const centre = async (selector: ReturnType<Page["locator"]>) => {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2, top: box.y, bottom: box.y + box.height };
 };
 
-test("a sidebar row dragged onto a sibling gap reorders the page as one undo step", async ({ page }) => {
+test("a sidebar row dragged onto a gap between bands reorders the page as one undo step", async ({ page }) => {
   await expect(page.locator(".page-structure__hint")).toHaveCount(0);
   const cards = row(page, "Section");
   const from = await centre(cards);
@@ -63,9 +62,10 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
   const drop = page.locator(".page-structure__drop");
   await expect(drop).toBeVisible();
   expect(Math.abs((await drop.boundingBox())!.y - hero.top)).toBeLessThan(3);
+  await expect(page.locator(".pb-drag-ghost__where")).toHaveText("Between page bands › before Section");
   await page.mouse.up();
   await expect.poll(() => sectionOrder(page)).toEqual(["cards", "hero", "filler"]);
-  await expect(status(page)).toHaveText("Section moved");
+  await expect(status(page)).toHaveText("Section moved. Between page bands › before Section");
   await expect(sections(page)).toHaveText(["Section", "Section A native browser preview", "Section Scroll to verify"]);
   await expect(sections(page).first()).toHaveAttribute("aria-selected", "true");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
@@ -76,7 +76,7 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // Dropping below the last sibling's subtree (its last child row) puts it at the end.
+  // Over the lower half of the last band's rows (its last child row): at the end.
   await row(page, "Section Scroll to verify").locator(".page-structure__toggle").click();
   const last = await centre(tree(page).getByRole("treeitem", { name: /^Paragraph Paragraph five/ }));
   const from2 = await centre(row(page, "Section"));
@@ -87,12 +87,12 @@ test("a sidebar row dragged onto a sibling gap reorders the page as one undo ste
   expect(Math.abs((await drop.boundingBox())!.y - last.bottom)).toBeLessThan(3);
   await page.mouse.up();
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "filler", "cards"]);
-  await expect(status(page)).toHaveText("Section moved");
+  await expect(status(page)).toHaveText("Section moved. Between page bands › after Section");
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
-test("6 px is a click, 7 px is a drag; Escape, a same-position release and a drop outside the siblings change nothing", async ({ page }) => {
+test("6 px is a click, 7 px is a drag; Escape, a same-position release and a release off the tree change nothing", async ({ page }) => {
   await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
   const cards = row(page, "Section");
   const from = await centre(cards);
@@ -114,7 +114,7 @@ test("6 px is a click, 7 px is a drag; Escape, a same-position release and a dro
   await page.keyboard.press("Escape");
   await expect(page.locator(".page-structure__tree")).not.toHaveClass(/is-dragging/);
   await expect(cards).not.toHaveClass(/is-drag-source/);
-  await expect(status(page)).toHaveText("Section drag cancelled");
+  await expect(status(page)).toHaveText("Section was not moved");
   await page.mouse.up();
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
 
@@ -128,23 +128,24 @@ test("6 px is a click, 7 px is a drag; Escape, a same-position release and a dro
   await expect(status(page)).toHaveText("Section stayed in place");
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
 
-  // A heading row is not a section: it does not drag.
-  const heading = await centre(row(page, "Heading A native browser preview"));
-  await page.mouse.move(heading.x, heading.y);
+  // The header is not a block of the page's <main>: its row does not drag.
+  const header = await centre(row(page, "Site header"));
+  await page.mouse.move(header.x, header.y);
   await page.mouse.down();
-  await page.mouse.move(heading.x, heading.y + 60, { steps: 4 });
+  await page.mouse.move(header.x, header.y + 60, { steps: 4 });
   await expect(page.locator(".page-structure__tree")).not.toHaveClass(/is-dragging/);
   await page.mouse.up();
 
-  // Dropped on another parent's row (the footer, outside main's group): nothing.
+  // Released off the tree and the canvas (over the top bar): nothing.
   await clearStatus(page);
-  const footer = await centre(row(page, "Site footer"));
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  await page.mouse.move(footer.x, footer.y, { steps: 6 });
+  await page.mouse.move(from.x, from.y + 20, { steps: 3 });
+  await page.mouse.move(from.x, 4, { steps: 6 });
+  await expect(page.locator(".pb-drag-ghost__where")).toHaveText("Release to cancel");
   await expect(page.locator(".page-structure__drop")).toBeHidden();
   await page.mouse.up();
-  await expect(status(page)).toHaveText("Section drag cancelled");
+  await expect(status(page)).toHaveText("Section was not moved");
   await expect(sectionOrder(page)).resolves.toEqual(["hero", "cards", "filler"]);
   await expect(tree(page).locator("[role='treeitem'][aria-level='1']")).toHaveText(["Site header", "Main", "Site footer"]);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);

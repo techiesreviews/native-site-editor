@@ -7,12 +7,15 @@
 // (drop-indicator.ts; block-drag.ts draws). One probe at a time: while one is
 // out, the latest pointer waits for its answer; a page still rendering is
 // asked again on the next aim. A release the last probe did not see is
-// probed once more, and that answer decides the drop. No DOM.
+// probed once more, and that answer decides the drop. Over Page Structure
+// the tree picks the target itself (tree-drop.ts), at once; over the canvas
+// the tree mirrors the canvas's target. No DOM.
 
 import type { DropReport } from "./drop-report";
 import { dropLabel, dropStays, isBand, type DraggedBlock, type DropTarget } from "./drop-target";
 import { blockDropTarget, dropIndicator, stepLevel, type DragLevel, type DropIndicator } from "./drop-indicator";
 import type { InsertDragContext, DragAim } from "./insert-drag";
+import type { StructureDrop } from "./tree-drop";
 
 export interface BlockDragSessionPorts {
   frame: HTMLElement;
@@ -21,8 +24,11 @@ export interface BlockDragSessionPorts {
   /** The containers under a frame-viewport point (none inside `moving`); with `bands`, <main> with all its bands. */
   probe(at: { x: number; y: number }, moving: readonly number[] | undefined, bands: boolean): Promise<DropReport | undefined>;
   scroll(dy: number): void;
-  drop(target: DropTarget, where: string, pointer?: { x: number; y: number }): void;
+  /** A drop at `pointer` (frame-viewport); `tree`: picked in Page Structure, from rows painted from those bytes. */
+  drop(target: DropTarget, where: string, pointer?: { x: number; y: number }, tree?: { painted: string | undefined }): void;
   announce(text: string, pointer?: { x: number; y: number }): void;
+  /** Page Structure's side of the drag: none without a tree on show. */
+  tree?: StructureDrop;
 }
 
 export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSessionPorts): InsertDragContext<DropTarget> {
@@ -39,6 +45,9 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
   let ended = false;
   let show: (aim: DragAim<DropTarget>) => void = () => {};
   let drawn = "";
+  // The pointer is over Page Structure: its target is the tree's.
+  let overTree = false;
+  let latest: DropTarget | undefined;
 
   // The last answer still holds for the pointer: same point, no scroll since.
   const fresh = (at: { x: number; y: number }) => Boolean(answered && answered.scrolls === scrolls && answered.at.x === at.x && answered.at.y === at.y);
@@ -57,6 +66,8 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
     level = found.level;
     draw(found.target);
     const target = found.target;
+    latest = target;
+    ports.tree?.mirror(target);
     show(target ? { target, where: dropLabel(target, block), refused: !target.ok } : { target: undefined, where: "No place here" });
   }
 
@@ -76,7 +87,7 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
 
   return {
     frame: ports.frame,
-    aim(at, alt, next) {
+    aim(at, alt, next, client) {
       show = next;
       const altChanged = level.alt !== alt;
       level = { ...level, alt };
@@ -85,9 +96,16 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
         // Back on the canvas, even at the same point, the page is asked again.
         answered = undefined;
         draw(undefined);
-        show({ target: undefined, where: "Release to cancel" });
+        const picked = client && ports.tree?.aim(client.x, client.y);
+        overTree = Boolean(picked);
+        latest = picked?.target;
+        if (!picked) ports.tree?.mirror(undefined);
+        const target = picked?.target;
+        show(target ? { target, where: dropLabel(target, block), refused: !target.ok }
+          : { target: undefined, where: picked ? "No place here" : "Release to cancel" });
         return;
       }
+      overTree = false;
       if (probing) return;
       if (!fresh(at)) run();
       else if (altChanged || restep) { restep = false; render(); }
@@ -101,13 +119,19 @@ export function createBlockDragSession(block: DraggedBlock, ports: BlockDragSess
       scrolls++;
       ports.scroll(dy);
     },
-    clear() {
+    clear(dropping) {
       ended = true;
       ports.draw(undefined);
+      ports.tree?.end(dropping && latest?.ok ? latest : undefined);
     },
     drop(shown) {
       const at = want;
-      // Off the canvas: cancelled.
+      if (!at && overTree) {
+        if (!shown?.ok) return false;
+        ports.drop(shown, dropLabel(shown, block), undefined, { painted: ports.tree?.painted() });
+        return true;
+      }
+      // Off the canvas and the tree: cancelled.
       if (!at) return false;
       if (fresh(at) && !probing) {
         if (!shown?.ok) return false;

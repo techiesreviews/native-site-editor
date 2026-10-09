@@ -167,3 +167,43 @@ test("a moved block probes without itself, draws nothing where it already is, an
   await answerNext();
   assert.match(log.announced[0], /^Nothing was moved: /);
 });
+
+test("over Page Structure the tree picks the target; over the canvas the tree mirrors the canvas's", async () => {
+  const tree = { mirrored: [] as (string | undefined)[], ended: [] as (string | undefined)[], over: true };
+  const name = (target: DropTarget | undefined) => target && `${target.container.path.join(".")}/${target.index}`;
+  const drops: [string | undefined, string, unknown][] = [];
+  const pending: (() => void)[] = [];
+  const session = createBlockDragSession({ kind: "new", block: "paragraph" }, {
+    frame: {} as HTMLElement,
+    draw: () => {},
+    probe: (at) => new Promise((resolve) => pending.push(() => resolve(report(at)))),
+    scroll: () => {},
+    drop: (target, where, _pointer, tree) => { drops.push([name(target), where, tree]); },
+    announce: () => {},
+    tree: {
+      aim: () => (tree.over ? { target: { container: stack, index: 2, level: 0, ok: true } } : undefined),
+      mirror: (target) => { tree.mirrored.push(name(target)); },
+      end: (kept) => { tree.ended.push(name(kept)); },
+      painted: () => "<p>tree</p>",
+    },
+  });
+  const shown: DragAim<DropTarget>[] = [];
+  const show = (aim: DragAim<DropTarget>) => { shown.push(aim); };
+  session.aim({ x: 400, y: 150 }, false, show, { x: 900, y: 150 });
+  pending.shift()!();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(tree.mirrored, ["1.0.1/0"]);
+  // Off the canvas, over the tree: its target, named the same way.
+  session.aim(undefined, false, show, { x: 100, y: 150 });
+  assert.equal(shown.at(-1)?.where, "Into Div (stack) › after Paragraph");
+  assert.equal(session.drop(shown.at(-1)!.target, false), true);
+  assert.deepEqual(drops, [["1.0.1/2", "Into Div (stack) › after Paragraph", { painted: "<p>tree</p>" }]]);
+  session.clear(true);
+  assert.deepEqual(tree.ended, ["1.0.1/2"]);
+  // Off both: nothing to drop, the tree's line cleared.
+  tree.over = false;
+  session.aim(undefined, false, show, { x: 100, y: 150 });
+  assert.equal(shown.at(-1)?.where, "Release to cancel");
+  assert.equal(tree.mirrored.at(-1), undefined);
+  assert.equal(session.drop(undefined, false), false);
+});

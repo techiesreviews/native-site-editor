@@ -28,13 +28,14 @@ export interface InsertDragContext<T> {
    * held or not; or the frame scrolled. The context draws the target and
    * calls `show` with it, at once or after a probe of the page (the last
    * call wins, so a late probe's answer must not follow a newer one).
+   * `client` is the pointer in the editor's viewport (for targets off the canvas).
    */
-  aim(at: { x: number; y: number } | undefined, alt: boolean, show: (aim: DragAim<T>) => void): void;
+  aim(at: { x: number; y: number } | undefined, alt: boolean, show: (aim: DragAim<T>) => void, client: { x: number; y: number }): void;
   /** Tab (1) or Shift+Tab (-1) while dragging; false lets the key do what it does. */
   step?(by: 1 | -1): boolean;
   scroll(dy: number): void;
-  /** The drag ended: clear what `aim` drew. */
-  clear(): void;
+  /** The drag ended (`dropping`: released, not cancelled; `drop` follows): clear what `aim` drew. */
+  clear(dropping: boolean): void;
   /**
    * Released over `target` as last shown (none, or `refused`: no place
    * shown there); false when nothing is added (the drag announces it), true
@@ -120,7 +121,7 @@ export function trackDrag<T>(press: DragPress, label: () => string,
   }
   function retarget() {
     const { x, y, inside } = overFrame();
-    ctx!.aim(inside ? { x, y } : undefined, alt, show);
+    ctx!.aim(inside ? { x, y } : undefined, alt, show, pointer);
   }
 
   function tick() {
@@ -203,7 +204,7 @@ export function trackDrag<T>(press: DragPress, label: () => string,
     document.documentElement.classList.remove("pb-is-dragging");
     ghost?.remove();
     const at = target;
-    ctx!.clear();
+    ctx!.clear(drop);
     if (!drop) ctx!.announce(`${label()} was not ${done}`);
     // A refused release keeps its reason on screen by the pointer once the label goes.
     else if (!ctx!.drop(at, refused)) refuse((refused && where?.textContent) || `${label()} was not ${done}`, { pointer });

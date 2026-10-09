@@ -219,7 +219,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
      * line, label and target (none while History shows an earlier
      * version). `create` is block-drag.ts's, loaded with the first drag.
      */
-    blockDrag(block: DraggedBlock, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce">, create: typeof createBlockDrag) {
+    blockDrag(block: DraggedBlock, ports: Pick<BlockDragPorts, "probe" | "drop" | "announce" | "tree">, create: typeof createBlockDrag) {
       if (viewing) return undefined;
       return create(block, { ...ports, frame, layer: canvas.layer, scroll: (dy) => deps.scroll(dy) });
     },

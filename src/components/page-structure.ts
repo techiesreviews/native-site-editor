@@ -11,6 +11,8 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import type { FocusRequest, StructureEditing } from "./structure-editing";
 import "./page-structure.css";
 import type { ComponentStructureModel } from "../page-builder/components";
+import type { DragPress } from "../page-builder/insert-drag";
+import type { StructureDropView, TreeRow } from "../page-builder/tree-drop";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
 // fed by the runtime's index paths after each render. A row selects its
@@ -20,10 +22,11 @@ import type { ComponentStructureModel } from "../page-builder/components";
 // as its list of sections. The folded state is kept per element while the
 // same page stays on show. Above the
 // tree, a Page block holds the page's title and description from its
-// `<head>`; they apply as typed. A section row can be dragged with the
-// pointer onto another gap among its siblings (7 px of movement starts the
-// drag, so a plain press still selects); only the rows sharing its parent
-// take the drop.
+// `<head>`; they apply as typed. A row of a block in `<main>` (not a part
+// inside a component instance) drags as the page's blocks do (7 px of
+// movement starts it, so a plain press still selects); while a block is
+// dragged, the tree shows where it lands as an indented line (dropView,
+// tree-drop.ts).
 
 export type PageMetaField = "title" | "description";
 
@@ -78,14 +81,11 @@ export interface PageStructureHandlers {
    * depth change. A handled refusal keeps row focus.
    */
   onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down" | "out" | "in") => "moved" | "stayed" | "pending" | number[] | undefined;
-  /** Whether this element's row can be dragged to another position (a whole section). */
-  canDrag?: (item: NativeStructureItem) => boolean;
   /**
-   * A row was dropped on the gap `index` among its siblings (before the
-   * sibling at that index; the sibling count for the end): "moved", "stayed"
-   * for the gap it already fills, nothing when the move could not be made.
+   * A press on the row of a block in `<main>` that may become a drag (the
+   * page's block drag, insert-drag.ts `trackDrag`); none when it cannot.
    */
-  onMoveTo?: (path: string, item: NativeStructureItem, index: number) => "moved" | "stayed" | undefined;
+  onRowDrag?: (press: DragPress, item: NativeStructureItem) => { justDragged(): boolean } | undefined;
   /** Status text for the screen reader. */
   announce?: (text: string) => void;
   /**
@@ -98,10 +98,13 @@ export interface PageStructureHandlers {
 
 const HINT_NO_PAGE = "Open a page of a native project to see its sections and content here.";
 const HINT_COMPONENT = "The preview shows a component by itself. Open a page to see its structure.";
-// Pointer travel before a press on a row becomes a drag.
-const DRAG_THRESHOLD = 7;
+// Pointer distance from the tree's top or bottom edge that scrolls it while dragging, and the step per frame.
+const EDGE = 28;
+const EDGE_STEP = 10;
 
-const key = (node: number[]) => node.join(".");
+const key = (node: readonly number[]) => node.join(".");
+// Where level 1's drop line starts, from the tree's left edge (page-structure.css `.page-structure__drop`).
+const LINE_LEFT = 10;
 
 export function createPageStructure(host: HTMLElement, handlers: PageStructureHandlers) {
   const hint = node("p", "muted sidebar-hint", HINT_NO_PAGE);
@@ -155,7 +158,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-label", "Page structure");
   tree.hidden = true;
-  // The line between rows that shows where a dragged row will go.
+  // The line between rows that shows where a dragged block will go.
   const drop = node("div", "page-structure__drop");
   drop.hidden = true;
   host.append(hint, tree);
@@ -194,6 +197,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const inMain = new Set<string>();
   const isFolded = (id: string) => foldState.get(id) ?? inMain.has(id);
   const rows = new Map<string, HTMLElement>();
+  const items = new Map<string, NativeStructureItem>();
+  // Rows of blocks in <main> that drag (not parts inside an instance).
+  const movable = new Set<string>();
   type SlotRowContext = { model: ComponentStructureModel; slot: ComponentStructureModel["slots"][number]; anchor: readonly number[] };
   let openSlot: { host: string; name: string; anchor: string } | undefined;
   let openAttributes: string | undefined;
@@ -282,121 +288,14 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // The row to focus once the next render shows a section that just moved.
   let focusAfterRender: string | undefined;
 
-  // A press on a draggable row, and the drag it becomes after 7 px: the
-  // sibling rows (with their subtrees) whose gaps take the drop, the group
-  // element that holds them, and the gap under the pointer.
-  interface RowDrag {
-    pointerId: number;
-    item: NativeStructureItem;
-    el: HTMLElement;
-    startX: number;
-    startY: number;
-    dragging: boolean;
-    siblings: HTMLElement[];
-    group: HTMLElement;
-    target: number | undefined;
-  }
-  let drag: RowDrag | undefined;
-  // The click that follows a drag's release must not select the row again.
-  let suppressClick = false;
-
-  // A row's subtree on show: from its top to the bottom of its open group.
-  function subtreeBounds(el: HTMLElement) {
-    const rect = el.getBoundingClientRect();
-    const group = el.nextElementSibling;
-    const bottom = group instanceof HTMLElement && group.getAttribute("role") === "group" && !group.hidden
-      ? group.getBoundingClientRect().bottom
-      : rect.bottom;
-    return { top: rect.top, bottom };
-  }
-
-  function dragTarget(current: RowDrag, clientY: number) {
-    const box = current.group.getBoundingClientRect();
-    if (clientY < box.top || clientY > box.bottom) return undefined;
-    for (let index = 0; index < current.siblings.length; index++) {
-      const { top, bottom } = subtreeBounds(current.siblings[index]);
-      if (clientY < (top + bottom) / 2) return index;
-    }
-    return current.siblings.length;
-  }
-
-  function showDrop(current: RowDrag) {
-    const { siblings, target } = current;
-    if (target === undefined || !siblings.length) {
-      drop.hidden = true;
-      return;
-    }
-    const y = target < siblings.length ? subtreeBounds(siblings[target]).top : subtreeBounds(siblings[siblings.length - 1]).bottom;
-    drop.style.top = `${y - tree.getBoundingClientRect().top}px`;
-    drop.style.setProperty("--depth", siblings[0].style.getPropertyValue("--depth"));
-    drop.hidden = false;
-  }
-
-  function onDragKey(event: KeyboardEvent) {
-    if (event.key !== "Escape" || !drag) return;
-    event.preventDefault();
-    event.stopPropagation();
-    finishDrag(false);
-  }
-
-  function endDrag() {
-    const current = drag;
-    drag = undefined;
-    if (!current) return;
-    window.removeEventListener("keydown", onDragKey, true);
-    if (current.el.hasPointerCapture(current.pointerId)) current.el.releasePointerCapture(current.pointerId);
-    current.el.classList.remove("is-drag-source");
-    tree.classList.remove("is-dragging");
-    drop.hidden = true;
-  }
-
-  function finishDrag(commit: boolean) {
-    const current = drag;
-    endDrag();
-    if (!current?.dragging) return;
-    suppressClick = true;
-    if (!commit || current.target === undefined || !structure?.path) {
-      handlers.announce?.("Section drag cancelled");
-      return;
-    }
-    const targetRow = current.siblings[current.target] ?? current.siblings[current.siblings.length - 1];
-    const targetNode = targetRow?.dataset.node?.split(".").map(Number);
-    if (!targetNode?.length) { handlers.announce?.("Section drag cancelled"); return; }
-    const sourceIndex = targetNode[targetNode.length - 1] + (current.target === current.siblings.length ? 1 : 0);
-    const outcome = handlers.onMoveTo?.(structure.path, current.item, sourceIndex);
-    if (outcome === "moved") {
-      const from = current.item.node[current.item.node.length - 1];
-      focusAfterRender = key([...current.item.node.slice(0, -1), sourceIndex > from ? sourceIndex - 1 : sourceIndex]);
-    } else if (!outcome) handlers.announce?.("Section drag cancelled");
-  }
+  // The drag a press on a row began (insert-drag.ts): its release is not a click.
+  let rowDrag: { justDragged(): boolean } | undefined;
 
   function pressRow(event: PointerEvent, item: NativeStructureItem, el: HTMLElement) {
-    suppressClick = false;
-    if (event.button !== 0 || drag || !structure?.path || !handlers.canDrag?.(item)) return;
+    rowDrag = undefined;
+    if (event.button !== 0 || !event.isPrimary || !structure?.path || !movable.has(key(item.node))) return;
     if ((event.target as HTMLElement).classList.contains("page-structure__toggle")) return;
-    const parentKey = key(item.node.slice(0, -1));
-    const group = el.parentElement;
-    if (!(group instanceof HTMLElement) || group !== tree && group.getAttribute("role") !== "group") return;
-    const siblings = [...group.children].filter((child): child is HTMLElement => child instanceof HTMLElement
-      && child.getAttribute("role") === "treeitem" && child.dataset.node?.split(".").slice(0, -1).join(".") === parentKey);
-    if (siblings.length < 2 || !siblings.includes(el)) return;
-    drag = { pointerId: event.pointerId, item, el, startX: event.clientX, startY: event.clientY, dragging: false, siblings, group, target: undefined };
-    el.setPointerCapture(event.pointerId);
-    window.addEventListener("keydown", onDragKey, true);
-  }
-
-  function moveRow(event: PointerEvent) {
-    const current = drag;
-    if (!current || event.pointerId !== current.pointerId) return;
-    if (!current.dragging) {
-      if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < DRAG_THRESHOLD) return;
-      current.dragging = true;
-      current.el.classList.add("is-drag-source");
-      tree.classList.add("is-dragging");
-    }
-    event.preventDefault();
-    current.target = dragTarget(current, event.clientY);
-    showDrop(current);
+    rowDrag = handlers.onRowDrag?.({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, alt: event.altKey, source: el }, item);
   }
 
   let renderingFields = false;
@@ -570,9 +469,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
 
   let rowNameSeq = 0;
-  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext): HTMLElement[] {
+  // `sealed`: inside a component instance, whose parts move with it.
+  function row(item: NativeStructureItem, level: number, insideMain = false, slotContext?: SlotRowContext, sealed = false): HTMLElement[] {
     const id = key(item.node);
     if (insideMain) inMain.add(id);
+    if (insideMain && !sealed) movable.add(id);
+    items.set(id, item);
     const el = node("div", "page-structure__row");
     el.setAttribute("role", "treeitem");
     el.setAttribute("aria-level", String(level));
@@ -652,15 +554,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;
     el.addEventListener("pointerdown", (event) => { if (inEditor(event.target)) return; notePress(event, el); pressRow(event, item, el); });
-    el.addEventListener("pointermove", moveRow);
-    el.addEventListener("pointerup", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(true); });
-    el.addEventListener("pointercancel", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(false); });
-    el.addEventListener("lostpointercapture", (event) => { if (drag && event.pointerId === drag.pointerId) finishDrag(false); });
     el.addEventListener("click", (event) => {
-      if (suppressClick) {
-        suppressClick = false;
-        return;
-      }
+      if (rowDrag?.justDragged()) return;
       if (inEditor(event.target)) return;
       if (event.target === toggle && hasChildren) {
         fold(item, el, !isFolded(id));
@@ -714,7 +609,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
       const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
       const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
-      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined));
+      group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, sealed || Boolean(component)));
     }
     for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1));
     return [el, group];
@@ -876,9 +771,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   });
 
   function render() {
-    // The rows are about to be replaced: a drag in progress has nothing to land on.
-    finishDrag(false);
     rows.clear();
+    items.clear();
+    movable.clear();
     slotRows.clear();
     inMain.clear();
     const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
@@ -953,6 +848,71 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
   }
 
+  // ---- A block dragged over the page or the tree (tree-drop.ts decides). ----
+  // Rows a drag unfolded: folded back once it moves on or ends.
+  const dragOpened = new Set<string>();
+  let marked: { sig?: string; row?: HTMLElement; moving?: HTMLElement } = {};
+  const subtreeEnd = (el: HTMLElement) => {
+    const group = el.nextElementSibling;
+    return (group instanceof HTMLElement && group.getAttribute("role") === "group" && !group.hidden ? group : el).getBoundingClientRect().bottom;
+  };
+  const onWay = (id: string, path: readonly number[] | undefined) => path !== undefined && (key(path) === id || key(path).startsWith(`${id}.`));
+  const dropView: StructureDropView = {
+    over(x, y) {
+      if (tree.hidden) return false;
+      const hit = document.elementFromPoint(x, y);
+      return Boolean(hit && host.contains(hit));
+    },
+    rows: () => visibleRows().flatMap((el): TreeRow[] => {
+      const item = el.dataset.node !== undefined ? items.get(el.dataset.node) : undefined;
+      if (!item) return [];
+      const { top, bottom } = el.getBoundingClientRect();
+      return [{ item, level: Number(el.getAttribute("aria-level")) || 1, top, bottom, end: subtreeEnd(el) }];
+    }),
+    indent: () => ({
+      left: tree.getBoundingClientRect().left + LINE_LEFT,
+      step: parseFloat(getComputedStyle(tree).getPropertyValue("--structure-indent")) || 14,
+    }),
+    unfold(target, keep) {
+      for (const id of [...dragOpened].sort((a, b) => b.length - a.length)) {
+        if (onWay(id, target) || onWay(id, keep)) continue;
+        dragOpened.delete(id);
+        const el = rows.get(id), item = items.get(id);
+        if (el && item && !isFolded(id)) fold(item, el, true);
+      }
+      if (!target) { dragOpened.clear(); return; }
+      for (let depth = 1; depth <= target.length; depth++) {
+        const id = key(target.slice(0, depth)), el = rows.get(id), item = items.get(id);
+        if (el && item && el.hasAttribute("aria-expanded") && isFolded(id)) { fold(item, el, false); dragOpened.add(id); }
+      }
+    },
+    mark(shown, reveal, moving) {
+      const sig = JSON.stringify([shown, moving]);
+      // Asked every frame: a redrawn tree (rows replaced) is marked again.
+      if (sig === marked.sig && (!marked.row || marked.row.isConnected) && (!marked.moving || marked.moving.isConnected)) return;
+      marked.row?.classList.remove("is-drop-target", "is-drop-refused");
+      marked.moving?.classList.remove("is-drag-source");
+      marked = { sig };
+      tree.classList.toggle("is-dragging", Boolean(shown || moving));
+      const source = moving && rows.get(key(moving));
+      if (source) { source.classList.add("is-drag-source"); marked.moving = source; }
+      drop.hidden = !shown;
+      if (!shown) return;
+      drop.style.top = `${shown.line.y - tree.getBoundingClientRect().top}px`;
+      drop.style.setProperty("--depth", String(shown.line.level - 1));
+      drop.classList.toggle("is-refused", !shown.ok);
+      const container = shown.row && rows.get(key(shown.row));
+      if (container) { container.classList.add(shown.ok ? "is-drop-target" : "is-drop-refused"); marked.row = container; }
+      if (reveal) drop.scrollIntoView({ block: "nearest" });
+    },
+    edgeScroll(y) {
+      const box = host.getBoundingClientRect();
+      if (y < box.top + EDGE) host.scrollTop -= EDGE_STEP;
+      else if (y > box.bottom - EDGE) host.scrollTop += EDGE_STEP;
+    },
+    painted: () => structure?.paintedSource,
+  };
+
   function focusRowOnly(el: HTMLElement) {
     for (const other of rows.values()) other.tabIndex = -1;
     el.tabIndex = 0;
@@ -1017,6 +977,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (current) reveal(current);
       current?.scrollIntoView({ block: "nearest" });
     },
+    /** What a block's drag draws in the tree and measures there (tree-drop.ts). */
+    dropView: () => dropView,
     /** The page changed under the fields: show its title and description again. */
     refreshMeta() {
       if (structure?.path) renderMeta(structure.path);
@@ -1024,7 +986,6 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     destroy() {
       // A row edit is kept (what waits is written); every other open step ends.
       editingModule?.destroy();
-      endDrag();
       hint.remove();
       meta.remove();
       tree.remove();

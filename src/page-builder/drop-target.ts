@@ -49,7 +49,7 @@ export function dropRefusal(block: DraggedBlock, container: DropContainer): stri
 
 const shown = (child: DropChild) => child.rect.width > 0 && child.rect.height > 0;
 // A slot's end is after its last assigned child; anything else ends after all its children (the report may list fewer).
-const endIndex = (container: DropContainer) => {
+export const dropEndIndex = (container: DropContainer) => {
   const last = container.children[container.children.length - 1];
   return (container.kind === "items" || container.kind === "slot") && last ? last.index + 1 : container.count;
 };
@@ -61,7 +61,7 @@ function pointIndex(container: DropContainer, p: { x: number; y: number }) {
     const { left, top, width, height } = child.rect;
     if (row ? p.y < top || (p.y <= top + height && p.x < left + width / 2) : p.y < top + height / 2) return child.index;
   }
-  return endIndex(container);
+  return dropEndIndex(container);
 }
 
 /** Before or after the child the pointer is in, by which half of it the point is in. */
