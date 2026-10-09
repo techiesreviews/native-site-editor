@@ -533,6 +533,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
   // Editing the template renders in place.
+  await featureTitle.dblclick();
   await page.keyboard.press("End");
   await page.keyboard.type("!");
   await page.keyboard.press("Enter");

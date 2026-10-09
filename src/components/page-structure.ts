@@ -95,8 +95,8 @@ export interface PageStructureHandlers {
    * and the rows inside it the accent's rail).
    */
   label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean };
-  /** A row was chosen: select this element in the preview. */
-  onSelect: (path: string, node: number[]) => void;
+  /** A row was chosen: select this element in the preview; `edit` (a double-click): type into its text there. */
+  onSelect: (path: string, node: number[], edit?: boolean) => void;
   /**
    * Alt+Up/Down on a row: move that element one sibling position. "moved",
    * "stayed" (an edge or refused move) or "pending" (the page file is
@@ -677,6 +677,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         return;
       }
       choose(item);
+    });
+    // A double-click on a row's name edits its text on the page (the runtime
+    // starts typing only in text), unless the row's text edits in place here.
+    el.addEventListener("dblclick", (event) => {
+      if (!structure?.path || inEditor(event.target) || !(event.target instanceof Node && label.contains(event.target))) return;
+      if (slotContext && inPlace(slotContext.slot)) return;
+      handlers.onSelect(structure.path, item.node, true);
     });
     el.addEventListener("keydown", (event) => {
       // Keys typed in the row's field or on its Done button are theirs, not the tree's.

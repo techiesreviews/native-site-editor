@@ -112,7 +112,7 @@ test("explicit Edit permits native typing in an outer template fallback and Undo
   const before = await source(page, path);
   const body = frame(page).locator("project-card").first().locator(".project-card__body");
   await expect(body).toHaveText("No description yet.");
-  await body.click({ position: { x: 5, y: 5 } });
+  await body.dblclick({ position: { x: 5, y: 5 } });
   await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
   await body.fill("Explicit shared inline edit"); await body.press("Enter");
   await expect.poll(() => source(page, path)).toBe(before!.replace("No description yet.", "Explicit shared inline edit"));

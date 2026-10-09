@@ -452,8 +452,8 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
 function listShortcuts() {
   const entries: Parameters<typeof registerShortcut>[0][] = [
     { area: "Everywhere", label: "Close a menu, popover or dialog", keys: [["Escape"]] },
-    { area: "Canvas", label: "Finish typing", keys: [["Enter"]], note: "In a text element" },
-    { area: "Canvas", label: "Cancel typing", keys: [["Escape"]], note: "Puts the text back" },
+    { area: "Canvas", label: "Type in the selected text", keys: [["Enter"]], note: "Or double-click it; a click selects" },
+    { area: "Canvas", label: "Finish typing", keys: [["Enter"], ["Escape"]], note: "The text stays selected" },
     { area: "Canvas", label: "Bold", keys: [["Mod", "B"]], note: "Selected text, or the whole element" },
     { area: "Canvas", label: "Italic", keys: [["Mod", "I"]] },
     { area: "Canvas", label: "Link the selected text", keys: [["Mod", "K"]], note: "With text selected; otherwise ⌘K opens the palette" },

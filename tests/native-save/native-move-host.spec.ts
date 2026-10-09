@@ -133,6 +133,9 @@ test("Page structure Alt+Down uses the painted element's source proof and one Un
 
 test("Alt+Down while typing remains native and does not move the element", async ({ page }) => {
   const before = await source(page);
+  // beforeEach clicked the paragraph: selected, not typed in, until Enter.
+  await expect(frame(page).locator("#moving")).not.toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.press("Enter");
   await expect(frame(page).locator("#moving")).toHaveAttribute("contenteditable", "plaintext-only");
   await frame(page).locator("#moving").evaluate(() => {
     document.addEventListener("keydown", event => {

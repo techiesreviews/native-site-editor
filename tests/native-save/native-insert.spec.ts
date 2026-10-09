@@ -93,7 +93,7 @@ test("a section plus inserts a component from its section-only group into the pa
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Feature block");
   // Typing in its title changes this page, not the shared template.
   const title = frame.locator("feature-block [slot='title']");
-  await title.click();
+  await title.dblclick();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Only here");
   await page.keyboard.press("Enter");

@@ -57,7 +57,7 @@ async function holdEditor(page: Page) {
 }
 async function typeHeading(page: Page, text: string, replace = true) {
   const heading = page.frameLocator('.native-preview-frame').locator('.hero h1');
-  await heading.click();
+  await heading.dblclick();
   await expect(heading).toHaveAttribute('contenteditable', /plaintext-only|true/);
   await page.keyboard.press(replace ? 'ControlOrMeta+A' : 'End');
   await page.keyboard.type(text);

@@ -3,7 +3,7 @@ import { editorMounted } from "./drafts";
 
 // Blocks drag themselves (ticket 12 §10, §12): a press on a page block moved
 // 7 px moves it across containers, one undo step; cards reorder sideways; a
-// plain click still selects and edits text; the header does not drag.
+// click selects (a double-click or Enter types); the header does not drag.
 // Default fixture group: native-cards (#repo=540), a Section › Div (grid) › two cards.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const ghost = (page: Page) => page.locator(".pb-drag-ghost");
@@ -124,10 +124,59 @@ test("a card dragged over the third card's title reorders in the grid, one undo 
   await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "Untitled project"]);
 });
 
-test("a plain click still edits text, a press in typed text selects it, and the name chip moves it", async ({ page, baseURL }) => {
+test("a click selects a paragraph, a double-click types into it, Escape keeps it selected, and a just-clicked paragraph drags", { tag: "@smoke" }, async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const original = await source(page);
+  const lead = frame(page).locator(".hero .lead");
+  const text = (await lead.textContent())!;
+  expect(text).toMatch(/^One or two sentences/);
+  // A click selects: the edit bar, no caret, and keys type nothing.
+  await lead.click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(lead).not.toBeFocused();
+  await page.keyboard.type("x");
+  await expect(lead).toHaveText(text);
+  // A double-click puts the caret where it was double-clicked: after "One".
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  const after = await lead.evaluate(el => {
+    const range = document.createRange();
+    range.setStart(el.firstChild!, 0);
+    range.setEnd(el.firstChild!, 3);
+    const r = range.getBoundingClientRect();
+    return { x: r.right - 1, y: r.top + r.height / 2 };
+  });
+  await page.mouse.dblclick(box.x + after.x, box.y + after.y);
+  await expect(lead).toHaveAttribute("contenteditable", /.+/);
+  await expect(lead).toBeFocused();
+  await page.keyboard.type(" (or three)");
+  await expect(lead).toHaveText(text.replace(/^One/, "One (or three)"));
+  // Escape leaves typing, keeping the text and the selection.
+  await page.keyboard.press("Escape");
+  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect.poll(async () => flat(await source(page))).toContain('<p class="lead">One (or three) or two sentences');
+  // Pressed and moved at once, the clicked paragraph drags after the services list.
+  await lead.click();
+  await pressAndMove(page, await pointIn(page, ".hero .lead", 0.3), await pointIn(page, "#services ul", 0.5, 0.6));
+  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Paragraph");
+  await expect(where(page)).toHaveText("Into Section › after List");
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/<\/ul><p class="lead">One \(or three\) or two sentences/);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(frame(page).locator("#services > p.lead")).not.toHaveAttribute("contenteditable", /.+/);
+  // Two undo steps: the move, then the typing.
+  expect(await undo(page)).toBe(true);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});
+
+test("a press in typed text selects it, and the name chip moves it", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const lead = frame(page).locator(".hero .lead");
   await lead.click();
+  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.press("Enter");
   await expect(lead).toHaveAttribute("contenteditable", /.+/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   // Press and move inside the text being typed: a text selection, no drag.

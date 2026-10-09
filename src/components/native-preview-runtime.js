@@ -487,6 +487,8 @@
     hadError = false;
     renderDepth = 0;
     var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
+    // Where the text being typed in sits, so only its replacement keeps typing.
+    var editingAt = editing && editing.isConnected ? JSON.stringify([ownerPath(editing), elementIndexPath(editing)]) : "";
     applyAssetChanges(payload.assetChanges);
     state = {
       viewing: payload.viewing === true,
@@ -532,7 +534,8 @@
         else if (requested.scrollIntoView) requested.scrollIntoView({ block: payload.selectNode.reveal === "center" ? revealBlock(requested) : "nearest" });
       }
     }
-    if (wasEditing && !editing && selected) startEditing(selected);
+    // A block selected in its place (an insert, a drop) is not typed into.
+    if (wasEditing && !editing && selected && JSON.stringify([ownerPath(selected), elementIndexPath(selected)]) === editingAt) startEditing(selected);
     else if (editing && editing !== selected) stopEditing(false);
     else if (editing && !typing) { editingText = editing.textContent; editingHtml = editing.innerHTML; }
     lastInsertPoints = "";
@@ -2820,11 +2823,32 @@
     emit("format", { format: key === "b" ? "strong" : key === "i" ? "em" : "link" });
   });
 
-  // Typing into the selected text element: a text element whose content is
-  // only text and inline formatting becomes editable on the pointer press
-  // that selects it, so the caret lands where it was clicked. The editor gets
-  // the element's text before and after on Enter, on blur and before a format
-  // shortcut, and writes the difference into the source.
+  // ---- Click and edit rules (pure: tests/canvas-gesture.test.ts reads this block) ----
+  // One rule for the whole page (ticket 79): a click selects any element and
+  // never puts a caret in text; a double-click edits (the caret at the point
+  // in text, the image chooser for an image); Enter on selected text edits it;
+  // while typing, Enter or Escape leaves typing (what was typed kept) with the
+  // element still selected, and otherwise Escape selects the parent. Presses and clicks inside the text being typed in
+  // stay the browser's own: they move the caret. `at` says whether `inside`
+  // the text being typed in, whether anything is being typed in (`editing`),
+  // whether anything is `selected`, and whether the target (for keys, the
+  // selection) is editable `text` or an editable `image`.
+  function canvasGesture(gesture, at) {
+    if (gesture === "escape") return at.editing ? "leave" : at.selected ? "parent" : "none";
+    if (gesture === "enter") return at.editing ? "leave" : at.selected && at.text ? "edit" : "none";
+    if (at.inside) return "caret";
+    if (gesture === "press") return at.editing ? "stop" : "none";
+    if (gesture === "click") return "select";
+    if (gesture === "double") return at.text ? "edit" : at.image ? "image" : "none";
+    return "none";
+  }
+  // ---- End of click and edit rules ----
+
+  // Typing into a text element: a text element whose content is only text
+  // and inline formatting becomes editable on a double-click (the caret where
+  // it was double-clicked) or Enter. The editor gets the element's text
+  // before and after on Enter, on blur and before a format shortcut, and
+  // writes the difference into the source.
   var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
   var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
   function editableText(el) {
@@ -2861,7 +2885,6 @@
     if (el.contentEditable !== "plaintext-only") el.setAttribute("contenteditable", "true");
     el.setAttribute("spellcheck", "false");
     el.addEventListener("blur", commitEditing);
-    el.addEventListener("keydown", onEditingKey);
     // Typing can wrap the selection before the text edit is committed: its
     // box and the rectangle the edit bar keeps clear of follow.
     el.addEventListener("input", onEditingInput);
@@ -2871,7 +2894,6 @@
     var el = editing;
     if (commit) commitEditing();
     el.removeEventListener("blur", commitEditing);
-    el.removeEventListener("keydown", onEditingKey);
     el.removeEventListener("input", onEditingInput);
     el.removeAttribute("contenteditable");
     el.removeAttribute("spellcheck");
@@ -2892,26 +2914,66 @@
   function onEditingInput() {
     updateBoxes();
   }
-  function onEditingKey(e) {
-    if (e.key === "Enter") {
-      // One line of text: Enter finishes, as it does in a form field.
-      e.preventDefault();
-      commitEditing();
-      editing.blur();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      editing.innerHTML = editingHtml;
-      // The restored text can wrap differently from what was typed.
-      onEditingInput();
-      editing.blur();
+  // Typing starts with the caret at a point (a double-click's), else at the end.
+  function beginEditing(el, point) {
+    startEditing(el);
+    if (editing !== el) return;
+    el.focus({ preventScroll: true });
+    var sel = document.getSelection();
+    if (!sel) return;
+    var at = point && caretAtPoint(point.x, point.y);
+    if (at && el.contains(at.node)) sel.collapse(at.node, at.offset);
+    else {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
     }
+  }
+  // Text in a component's template is found through its shadow root.
+  function caretAtPoint(x, y) {
+    if (typeof document.caretPositionFromPoint === "function") {
+      var position = document.caretPositionFromPoint(x, y, { shadowRoots: Array.from(shadowRoots) });
+      return position && { node: position.offsetNode, offset: position.offset };
+    }
+    var range = typeof document.caretRangeFromPoint === "function" ? document.caretRangeFromPoint(x, y) : null;
+    return range && { node: range.startContainer, offset: range.startOffset };
+  }
+  // Enter or Escape: what was typed is written, and the text stays selected, no longer typed in.
+  function leaveEditing() {
+    var el = editing;
+    if (!el) return;
+    stopEditing(true);
+    var sel = document.getSelection();
+    if (sel) sel.removeAllRanges();
+    el.blur();
+    updateBoxes();
   }
   document.addEventListener("mousedown", function (e) {
     if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
     var target = deepestElement(e);
-    if (editing && editing.contains(target)) return;
-    if (target && editableText(target)) startEditing(target);
-    else stopEditing(true);
+    var inside = !!(editing && editing.contains(target));
+    if (canvasGesture("press", { inside: inside, editing: !!editing }) === "stop") stopEditing(true);
+    // The second press of a double-click would select a word: the double-click puts the caret there instead.
+    if (!inside && e.detail > 1 && target && !target.closest("input, textarea, select")) e.preventDefault();
+  }, true);
+  // An image the page (or the template open in Edit component mode) holds.
+  function editableImage(el) {
+    if (!el || el.localName !== "img" || !state) return false;
+    var owner = ownerPath(el);
+    return !!owner && (owner === state.pagePaths[state.route] || owner === state.editableTemplatePath);
+  }
+  document.addEventListener("dblclick", function (e) {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || pressDragging()) return;
+    var target = deepestElement(e);
+    if (!target) return;
+    var action = canvasGesture("double", { inside: !!(editing && editing.contains(target)), editing: !!editing, text: editableText(target), image: editableImage(target) });
+    if (action === "none" || action === "caret") return;
+    e.preventDefault();
+    if (selected !== target) canvasSelect(target, "click");
+    if (action === "edit") beginEditing(target, { x: e.clientX, y: e.clientY });
+    else emit("image-edit", { path: ownerPath(target), node: elementIndexPath(target), width: target.getBoundingClientRect().width });
   }, true);
 
   function clearSelectionState() {
@@ -2939,7 +3001,7 @@
     }
     var target = deepestElement(e);
     // Clicks while typing move the caret; the text element stays selected.
-    if (editing && editing.contains(target)) {
+    if (canvasGesture("click", { inside: !!(editing && editing.contains(target)) }) === "caret") {
       e.preventDefault();
       e.stopPropagation();
       if (selected !== editing) { selected = editing; updateBoxes(); emitSelection(editing, "click"); }
@@ -2998,7 +3060,7 @@
   // stays with this document (captured), so each step is relayed to the
   // editor as `press-drag` (start, move, end, cancel); the editor runs the
   // drag and writes the move. Text being typed in keeps press-and-drag for
-  // selecting text, and a plain click still selects or starts typing.
+  // selecting text, and a plain click still selects.
   var press = null;
   var swallowClick = false;
   function pressDragging() {
@@ -3471,12 +3533,24 @@
   document.addEventListener("keydown", function (e) {
     var up = (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === "ArrowUp";
     var esc = e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey;
-    if ((!up && !esc) || !selected || !selected.isConnected || pressDragging()) return;
+    // Enter while typing finishes (one line of text, as in a form field); a plain one on selected text starts typing.
+    var enter = e.key === "Enter" && !e.isComposing && (editing ? editing.isConnected : !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey);
+    if (!up && !esc && !enter) return;
+    if (pressDragging() || (!editing && !(selected && selected.isConnected))) return;
     // A form field on the page (in a component too) keeps its own keys.
     var target = typeof e.composedPath === "function" ? e.composedPath()[0] : e.target;
     if (target instanceof Element && /^(input|textarea|select)$/.test(target.localName)) return;
-    // Escape first drops what was typed (onEditingKey); the next one climbs.
-    if (esc && editing && editing.innerHTML !== editingHtml) return;
+    if (!up) {
+      var action = canvasGesture(esc ? "escape" : "enter", { editing: !!editing, selected: !!selected, text: !!selected && editableText(selected) });
+      if (action === "none") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (action === "leave") leaveEditing();
+      else if (action === "edit") beginEditing(selected, null);
+      else canvasSelectParent();
+      return;
+    }
+    if (!selected || !selected.isConnected) return;
     e.preventDefault();
     e.stopPropagation();
     canvasSelectParent();
@@ -3644,7 +3718,8 @@
       return;
     }
     // The editor's page structure asks for an element by index path: it is
-    // selected like a click and brought to the middle of the frame.
+    // selected like a click and brought to the middle of the frame; with
+    // `edit` (a double-click on its row), text is typed into, the caret at its end.
     if (msg.type === "select-node") {
       var wanted = resolveNodePath(msg.request);
       if (!wanted) return;
@@ -3656,6 +3731,7 @@
       if (editedHost && editContains(editedHost, wanted)) revealEdited(wanted, true);
       else if (wanted.scrollIntoView) wanted.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
       emitSelection(wanted, "click");
+      if (msg.edit === true && editableText(wanted)) beginEditing(wanted, null);
       return;
     }
     // Escape on the editor's block rail: up a level, as Escape in the page.

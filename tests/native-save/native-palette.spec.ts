@@ -164,8 +164,9 @@ test("actions and the selected section's controls run from the palette, keys wor
 
   // On the canvas: a heading being typed in; Enter finishes, Shift+Enter selects its section.
   const kind = page.locator(".edit-bar .edit-bar__kind");
-  await frame.locator("section.filler h2").click();
+  await frame.locator("section.filler h2").dblclick();
   await expect(kind).toHaveText("Heading");
+  await expect(frame.locator("section.filler h2")).toHaveAttribute("contenteditable", /.+/);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Enter");
   await expect(kind).toHaveText("Section");
@@ -191,7 +192,7 @@ test("actions and the selected section's controls run from the palette, keys wor
 
   // Keys on the canvas: Ctrl+D duplicates the selected section, Ctrl+Z undoes,
   // Delete removes, Ctrl+Shift+Z redoes.
-  await frame.locator("section.filler h2").click();
+  await frame.locator("section.filler h2").dblclick();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Enter");
   await expect(kind).toHaveText("Section");
@@ -203,7 +204,7 @@ test("actions and the selected section's controls run from the palette, keys wor
   await expect(frame.locator("section.filler")).toHaveCount(2);
   await page.keyboard.press("ControlOrMeta+Z");
   await expect(frame.locator("section.filler")).toHaveCount(1);
-  await frame.locator("section.filler h2").click();
+  await frame.locator("section.filler h2").dblclick();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Enter");
   await expect(kind).toHaveText("Section");
@@ -252,7 +253,7 @@ test("? shows every keyboard shortcut; typing ? in a field does not", async ({ p
   await expect(sheet).toBeHidden();
   await expect(page.locator("#explorer-toggle")).toBeFocused();
   // In the preview, when not typing, ? opens it too.
-  await page.frameLocator(".native-preview-frame").locator("section.filler h2").click();
+  await page.frameLocator(".native-preview-frame").locator("section.filler h2").dblclick();
   await page.keyboard.press("Enter");
   await page.keyboard.press("?");
   await expect(sheet).toBeVisible();
@@ -315,7 +316,7 @@ test("IME navigation keys leave the palette highlight and native key handling al
 
 test("a source edit while the palette is open rejects a stale Duplicate", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
-  await frame.locator("section.filler h2").click();
+  await frame.locator("section.filler h2").dblclick();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Enter");
   await expect(page.locator(".edit-bar .edit-bar__kind")).toHaveText("Section");
@@ -386,7 +387,7 @@ test("session expiry disposes palette listeners before editor remount", async ({
 
 test("searching again after a source edit cannot bless old edit bar closures", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
-  await frame.locator("section.filler h2").click();
+  await frame.locator("section.filler h2").dblclick();
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Enter");
   await expect(page.locator(".edit-bar .edit-bar__kind")).toHaveText("Section");
@@ -430,7 +431,7 @@ test("typing in a nested component keeps question mark, undo and Shift+Enter ins
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.insertText('<p class="card-note" data-key="card-note">Nested editable note</p>');
   await expect(text).toHaveText("Nested editable note");
-  await text.click();
+  await text.dblclick();
   await expect(text).toHaveAttribute("contenteditable", /true|plaintext-only/);
   await expect(page.locator(".canvas-crumb[aria-current=true]")).toHaveText("p.card-note");
   const before = await text.textContent();

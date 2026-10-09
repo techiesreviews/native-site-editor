@@ -49,7 +49,7 @@ test("Edit component mode edits a fixed heading in place: every page shows it, o
 
   // Placeholder text edits the slot's fallback.
   const fallback = promo.getByText("Say what it is.", { exact: true });
-  await fallback.click();
+  await fallback.dblclick();
   await expect(fallback).toHaveAttribute("contenteditable", /^(plaintext-only|true)$/);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("A short line on it.");
@@ -57,9 +57,12 @@ test("Edit component mode edits a fixed heading in place: every page shows it, o
   const withFallback = template.replace("Say what it is.", "A short line on it.");
   await expect.poll(() => mounted(page)).toBe(withFallback);
 
-  // The fixed heading is typed into where it sits; Enter ends the edit.
+  // The fixed heading is typed into where it sits: a click selects it, Enter
+  // starts typing, and Enter ends the edit.
   await heading.click();
   await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+  await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.press("Enter");
   await expect(heading).toHaveAttribute("contenteditable", /^(plaintext-only|true)$/);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Made with care");

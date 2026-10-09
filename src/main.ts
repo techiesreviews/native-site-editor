@@ -484,6 +484,7 @@ function mountWorkspace() {
     onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
     onFormat: (format) => pageStructureController.nativeFormatActions[format]?.(),
     onImageDrop: (target, files) => void chooseMediaForImage(target, files),
+    onImageEdit: (target) => void chooseMediaForImage(target),
     onTextEdit: (edit) => void applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
     insertPointFor: nativeElementAddPoint,
@@ -556,7 +557,7 @@ function mountWorkspace() {
       const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
       return { ...structureLabel(item, component), component };
     },
-    onSelect: (path, node) => nativePreview?.selectNode({ path, node }),
+    onSelect: (path, node, edit) => nativePreview?.selectNode({ path, node }, edit),
     componentSlots: (path, node) => componentTools?.structure(path, node),
     templateRows: (path, node) => componentTools?.templateRows(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,

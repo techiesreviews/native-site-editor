@@ -231,6 +231,8 @@ export interface NativePreviewHandlers {
   onMove?: (direction: "up" | "down" | "out" | "in") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
+  // A double-click on an image of the page (or of the template open for editing): choose its image.
+  onImageEdit?: (target: { path: string; node: number[]; width?: number }) => void;
   // A page block pressed and moved 7 px: its name in the edit bar (`moving`
   // none: the selection) or the block in the page (`moving`: the block the
   // runtime picked, on the bytes it shows). The drag it starts, or none.
@@ -702,6 +704,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!Array.isArray(raw.node) || !raw.node.length || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
       if (!Array.isArray(raw.files) || !raw.files.every((file) => file instanceof File)) return;
       handlers.onImageDrop?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined }, raw.files);
+      return;
+    }
+    if (data.type === "image-edit" && site && !viewing) {
+      const raw = data as unknown as { path?: unknown; node?: unknown; width?: unknown };
+      if (data.context !== context || typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path) || !indexes(raw.node) || !raw.node.length) return;
+      handlers.onImageEdit?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined });
       return;
     }
     // A text patch the page could not take: its full update goes now.
@@ -1256,10 +1264,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pageBuilder.sourcesChanged();
       cardGrids?.sourcesChanged();
     },
-    /** Select an element of the rendered page now, as a click would, and bring it into the middle of the frame. */
-    selectNode(request: NativeNodeRequest) {
+    /**
+     * Select an element of the rendered page now, as a click would, and bring
+     * it into the middle of the frame; with `edit`, as a double-click would:
+     * text is typed into, the caret at its end.
+     */
+    selectNode(request: NativeNodeRequest, edit?: boolean) {
       if (!frameState.active) return;
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request }, "*");
+      // The caret needs the frame's focus.
+      if (edit) frame.focus();
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request, ...(edit ? { edit } : {}) }, "*");
     },
     /**
      * Sets an element's text in the page at once, ahead of the render its
