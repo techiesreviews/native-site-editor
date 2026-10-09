@@ -18,6 +18,7 @@
 // page's own markup inside the instance tag, or the instance's attributes.
 
 import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
+import { itemKind } from "./card-grid";
 
 export interface RangeEdit {
   start: number;
@@ -398,6 +399,18 @@ export interface TemplateSlot {
   kind: SlotKind;
   /** The slot's own `slot` attribute: a slot passed on into a component the template uses. */
   forward?: string;
+  /**
+   * An items slot, which takes cards and other blocks (Add card, drops): the
+   * unnamed slot, or a slot whose fallback is a card component (`card-…`),
+   * whatever it is named. A slot holding another instance is an ordinary slot.
+   */
+  items: boolean;
+}
+
+/** Whether `nodes` are card component instances only, at least one. */
+function cardsOnly(html: string, nodes: SourceNode[]) {
+  const parts = meaningful(html, nodes);
+  return parts.length > 0 && parts.every((node) => node.type === "element" && node.name.startsWith("card-"));
 }
 
 /** What a run of content is: a text line, an image, a link, or anything else. */
@@ -445,6 +458,7 @@ export function templateSlots(template: string): TemplateSlot[] {
       fallback,
       kind: contentKind(template, el.children) ?? slotKindFromName(name),
       ...(forward ? { forward } : {}),
+      items: !name || cardsOnly(template, el.children),
     });
   }
   return out;
@@ -1068,6 +1082,11 @@ export interface PlannedSlot {
   byDefault: boolean;
   /** Kept fixed in the template: not a slot, though it keeps the name it would have. */
   fixed: boolean;
+  /**
+   * A repeated group, the items slot: each item's path, the first being
+   * `path`. The items move to the page as they are; `text` is the first's.
+   */
+  items?: number[][];
 }
 
 export interface MakeComponentPlan {
@@ -1095,8 +1114,10 @@ const FIXED_PARTS = new Set(["svg", "script", "style", "template", "noscript", "
 // Parts that only work as their parent's own child (a table's cells, a details' summary), so never a whole slot.
 const IN_PLACE = new Set(["td", "th", "tr", "thead", "tbody", "tfoot", "caption", "colgroup", "col", "summary", "legend", "option", "optgroup"]);
 
-/** The role a slot of `kind` is named after: a heading is the "title". */
-const roleName = (el: SourceElement, kind: SlotKind) => (kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : kind);
+/** The role a slot of `kind` is named after: a heading is the "title", a list the "list". */
+const LISTS = new Set(["ul", "ol"]);
+const roleName = (el: SourceElement, kind: SlotKind) =>
+  (kind === "text" && /^h[1-6]$/.test(el.name) ? "title" : LISTS.has(el.name) ? "list" : kind);
 
 /** A part's own class as a slot name (`lead`, `card__title` → `title`), to tell parts of one role apart. */
 function className(html: string, el: SourceElement) {
@@ -1124,9 +1145,14 @@ function ancestry(source: string, start: number): SourceElement[] {
  * element (`<slot name="title"><h2>…</h2></slot>`), filled on the page by its
  * copy (`<h2 slot="title">…</h2>`), so the page shows what it showed and its
  * addresses and alt texts stay the page's. Icons (`svg`), scripts and media
- * stay fixed. A single line of text fills the unnamed slot. Slots are named
- * by role (`title`, `text`, `image`, `link`), numbered on repeats; a part's
- * class tells parts of one role apart. `choices` keeps parts fixed, makes
+ * stay fixed. A single line of text fills the unnamed slot. A `<ul>`/`<ol>`
+ * is one slot, `list`. Two or more consecutive siblings of one item kind (a
+ * custom element's tag, else the same tag and first class: cards) are a
+ * repeated group, the items slot: an empty slot where they were, the items
+ * moved to the page as they are; the first group is the unnamed slot, later
+ * ones `items-2`, `items-3`. Slots are named by role (`title`, `text`,
+ * `image`, `link`, `list`), numbered on repeats; a part's class tells parts
+ * of one role apart. `choices` keeps parts fixed, makes
  * other parts slots and renames slots. An `id` moves to the instance tag,
  * where links to it still find it.
  */
@@ -1146,32 +1172,69 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
   const fixed = new Set((choices.fixed ?? []).map(key));
   const forced = new Set((choices.slots ?? []).map(key));
   const forcedInside = (path: number[]) => [...forced].some((other) => !path.length ? other !== "" : other.startsWith(`${key(path)}.`));
-  interface Part { el: SourceElement; path: number[]; kind: SlotKind; byDefault: boolean }
+  interface Part { el: SourceElement; path: number[]; kind: SlotKind; byDefault: boolean; items?: { el: SourceElement; path: number[] }[] }
   const parts: Part[] = [];
   const kindOf = (el: SourceElement) => contentKind(html, [el]) ?? "content";
   const isText = (el: SourceElement) => Boolean(TEXT_BLOCKS.has(el.name) && el.close && textOnly(el.children) && plainText(html.slice(el.tag.end, el.close.start)));
-  const visit = (el: SourceElement, path: number[], inText: boolean) => {
-    elements(el.children).forEach((child, index) => {
+  const isLink = (el: SourceElement) => Boolean(el.name === "a" && el.close && textOnly(el.children));
+  // What a would-be item is (`itemKind`: a custom element's tag, else its tag and first class); none for a
+  // part that is a slot of its own (a line of text, a standalone link), except a list's items.
+  const itemOf = (el: SourceElement) => (el.name === "li" || !(isText(el) || isLink(el)) ? itemKind(el.name, (attribute(html, el, "class") ?? "").trim().split(/\s+/)[0]) : undefined);
+  /** Runs of two or more consecutive siblings of one item kind, nothing but white space between them. */
+  const runs = (children: SourceElement[]) => {
+    const found: number[][] = [];
+    let run: number[] = [];
+    children.forEach((child, index) => {
+      const kind = itemOf(child);
+      const before = children[index - 1];
+      if (kind && run.length && itemOf(children[run[0]]) === kind && !html.slice(before.end, child.start).trim()) run.push(index);
+      else {
+        if (run.length > 1) found.push(run);
+        run = kind ? [index] : [];
+      }
+    });
+    if (run.length > 1) found.push(run);
+    return found;
+  };
+  // `onlyForced`: inside a part kept fixed, where only the parts made slots by hand count.
+  const visit = (el: SourceElement, path: number[], inText: boolean, onlyForced = false) => {
+    const children = elements(el.children);
+    const groups = onlyForced ? [] : runs(children);
+    const grouped = new Set(groups.flat());
+    children.forEach((child, index) => {
       const at = [...path, index];
-      const byDefault = Boolean(!child.name.includes("-") && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)
-        && (child.name === "img" || child.name === "picture" || (!inText && child.name === "a" && child.close && textOnly(child.children)) || isText(child)));
+      const group = groups.find((run) => run[0] === index);
+      if (group) {
+        // A repeated group: the items slot, its items moved to the page as they are.
+        const items = group.map((member) => ({ el: children[member], path: [...path, member] }));
+        parts.push({ el: child, path: at, kind: "content", byDefault: true, items });
+        if (fixed.has(key(at))) group.forEach((member) => { if (forcedInside([...path, member])) visit(children[member], [...path, member], false, true); });
+        return;
+      }
+      if (grouped.has(index)) return;
+      const byDefault = Boolean(!onlyForced && !child.name.includes("-") && !FIXED_PARTS.has(child.name) && !IN_PLACE.has(child.name)
+        && (child.name === "img" || child.name === "picture" || LISTS.has(child.name) || (!inText && isLink(child)) || isText(child)));
       if (byDefault || (forced.has(key(at)) && !IN_PLACE.has(child.name))) {
         parts.push({ el: child, path: at, kind: kindOf(child), byDefault });
         // A part kept fixed is walked into only for a part made a slot inside it.
         if (!fixed.has(key(at)) || !forcedInside(at) || child.name === "picture") return;
+        visit(child, at, inText || TEXT_BLOCKS.has(child.name), true);
+        return;
       } else if (child.name.includes("-") || FIXED_PARTS.has(child.name)) return;
-      visit(child, at, inText || TEXT_BLOCKS.has(child.name));
+      visit(child, at, inText || TEXT_BLOCKS.has(child.name), onlyForced);
     });
   };
-  if (isText(root) || (root.name === "a" && textOnly(root.children) && plainText(html.slice(root.tag.end, root.close.start)))) {
+  if (isText(root) || (isLink(root) && plainText(html.slice(root.tag.end, root.close.start)))) {
     // A single line of text (or a link's): it fills the unnamed slot, inside the element.
     parts.push({ el: root, path: [], kind: "text", byDefault: true });
-    if (fixed.has("") && forcedInside([])) visit(root, [], true);
+    if (fixed.has("") && forcedInside([])) visit(root, [], true, true);
   } else if (root.name !== "picture") visit(root, [], false);
 
   // Names: by role; a tie between parts of one role is broken by each part's own class, else numbered.
   const names = new Map<Part, string>();
   for (const part of parts) if (!part.path.length) names.set(part, "");
+  // Repeated groups: the first is the unnamed slot, later ones `items-2`, `items-3`.
+  parts.filter((part) => part.items).forEach((part, index) => names.set(part, index ? `items-${index + 1}` : ""));
   const roles = new Map<string, Part[]>();
   for (const part of parts) {
     if (!part.byDefault || names.has(part)) continue;
@@ -1207,7 +1270,10 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
     const text = part.kind === "image"
       ? (() => { const img = el.name === "img" ? el : [...descendants([el])].find((inner) => inner.name === "img"); return img ? attribute(html, img, "alt") || attribute(html, img, "src") || "" : ""; })()
       : el.close ? plainText(html.slice(el.tag.end, el.close.start)) : "";
-    return { path: part.path, name: names.get(part)!, kind: part.kind, text, byDefault: part.byDefault, fixed: fixed.has(key(part.path)) };
+    return {
+      path: part.path, name: names.get(part)!, kind: part.kind, text, byDefault: part.byDefault, fixed: fixed.has(key(part.path)),
+      ...(part.items ? { items: part.items.map((item) => item.path) } : {}),
+    };
   });
   const fills: string[] = [];
   // Edits to the element's own markup that make the template, back to front.
@@ -1225,11 +1291,21 @@ export function makeComponentPlan(source: string, range: InstanceRange, tag: str
       fills.push(inner);
       return;
     }
-    const copy = html.slice(el.start, el.end);
-    edits.push({ start: el.start, end: el.end, text: `<slot name="${escapeAttribute(name)}">${copy}</slot>` });
     // Lines after the first move to the instance's indentation, unless white space is the content's own.
-    const verbatim = [...descendants([el])].some((inner) => inner.name === "pre" || inner.name === "textarea");
-    fills.push(withSlot(verbatim ? copy : reindent(copy, `${indent}  `).replace(/\n/g, newline), name));
+    const moved = (part: SourceElement) => {
+      const copy = html.slice(part.start, part.end);
+      const verbatim = [...descendants([part])].some((inner) => inner.name === "pre" || inner.name === "textarea");
+      return withSlot(verbatim ? copy : reindent(copy, `${indent}  `).replace(/\n/g, newline), name);
+    };
+    if (part.items) {
+      // A repeated group: an empty slot where the items were; the items go to the page as they are.
+      const last = part.items[part.items.length - 1].el;
+      edits.push({ start: el.start, end: last.end, text: name ? `<slot name="${escapeAttribute(name)}"></slot>` : "<slot></slot>" });
+      for (const item of part.items) fills.push(moved(item.el));
+      return;
+    }
+    edits.push({ start: el.start, end: el.end, text: `<slot name="${escapeAttribute(name)}">${html.slice(el.start, el.end)}</slot>` });
+    fills.push(moved(el));
   });
 
   // The id goes to the instance; the template's root keeps the rest.
