@@ -20,3 +20,9 @@ Ticket [07](../../tickets/07-variant-contract.md) §3 and §5 (code pane).
 
 - Unit tests for the pure suggestion function (attribute list, values with the default note, unknown value).
 - Nightly spec: typing in the HTML pane offers the variant attributes and values.
+
+## Done (2026-10-09)
+
+- `src/page-builder/variant-intelligence.ts`: pure HTML suggestions (variant attributes inside a component tag, values after `data-x="` with what the absent attribute gives), hover, Custom value notes (Info) and CSS warnings (broken `:host[data-x]` with the fix, no default look; Warning). Wired in `code-editor.ts` beside the CSS providers through a `variants` host input; `main.ts` `nativeVariants` builds the lookup from the site's CSS and JS (late reads refresh the panes). `shared/variants.ts` gains `scriptAttributes(js)`.
+- Built by Sol, checked by Claude (marker severities, sticky scanner); review fixes for late/failed reads, completing a name over an existing value, `textarea`/`title` text, and setter-only script scanning.
+- Tests: `tests/variant-intelligence.test.ts` (8 tests), nightly `tests/native-save/native-code-variants.spec.ts` (typing offers the attributes, then the values; provider lifecycle).
