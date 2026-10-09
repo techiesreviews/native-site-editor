@@ -107,14 +107,15 @@ test("the rail builds in the template: a Paragraph clicked into the items slot, 
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain("<slot><card-project></card-project><p>Text</p></slot>");
   await expect(work.locator(".cards > slot > p").filter({ visible: true })).toHaveText("Text");
   await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await expect(page.locator(".pb-flash-label")).toContainText("Into Section work › items › after Card project");
+  await expect(page.locator(".pb-flash")).toBeVisible();
+  await expect(page.locator("#status")).toContainText("Paragraph added. Into Section work › items › after Card project");
   // The page itself is untouched: its own cards are its content, not the template's.
   expect(flat(await mounted(page, TEMPLATE))).not.toContain("slot=");
   if (shots) await page.screenshot({ path: `${shots}/click-paragraph.png` });
 
   // A Heading dragged just above the cards: the line and its label, into the template's section after the title.
   await dragFromRail(page, "Heading", await pointIn(page, ".cards", 0.5, 0, 0, -4));
-  await expect(where(page)).toHaveText("Into Section › after “title” slot");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after “title” slot");
   await expect(page.locator(".pb-drop__line")).toBeVisible();
   if (shots) await page.screenshot({ path: `${shots}/drag-heading.png` });
   await page.mouse.up();
@@ -122,7 +123,7 @@ test("the rail builds in the template: a Paragraph clicked into the items slot, 
   await expect(work.locator("section > h2").filter({ visible: true })).toHaveText("Heading");
   // An Image dragged into the items slot, after the new paragraph; one undo takes it out again.
   await dragFromRail(page, "Image", await pointIn(page, ".cards > slot > p", 0.8, 0.9));
-  await expect(where(page)).toHaveText("Into Section work › items › after Paragraph");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Paragraph");
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain(`<p>Text</p><img src="/images/placeholder.svg"`);
