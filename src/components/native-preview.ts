@@ -1079,8 +1079,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
 
   return {
-    /** Measure nested containers at a point in the frame's viewport. */
-    probeDrop(at: { x: number; y: number }, moving?: number[]): Promise<DropReport | undefined> {
+    /** Measure nested containers at a frame-viewport point, or all page bands in <main>. */
+    probeDrop(at: { x: number; y: number }, moving?: number[], bands?: boolean): Promise<DropReport | undefined> {
       endProbe();
       const path = site?.routes[route];
       if (!path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
@@ -1089,7 +1089,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         const timer = setTimeout(() => endProbe(), 1000);
         probe = { id: ++probeId, context, path, done: report => { clearTimeout(timer); resolve(report); } };
         frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id: probe.id,
-          x: at.x, y: at.y, moving }, "*");
+          x: at.x, y: at.y, moving, bands }, "*");
       });
     },
     /** Send an already scheduled source change immediately after a direct user action. */

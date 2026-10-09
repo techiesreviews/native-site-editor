@@ -774,7 +774,7 @@
         rect: hidden ? null : area && area.width && area.height ? area : own };
     });
   }
-  function dropContainers(x, y, moving) {
+  function dropContainers(x, y, moving, bands) {
     if (!pageEl || !state) return [];
     var moved = Array.isArray(moving) ? walkNodePath(pageEl, moving) : null;
     function entry(el, kind, children, box, layoutEl, nodes, slot) {
@@ -786,6 +786,12 @@
         layout: dropLayout(layoutEl), empty: !children.length && !nodes.some(function (n) { return n.nodeType === 3 && n.textContent.trim(); }) };
       if (slot !== undefined) out.slot = slot;
       return out;
+    }
+    // Section probes need every page band even over the header or footer.
+    // Keep the moved band too: insertion indices still refer to the source.
+    if (bands === true) {
+      var main = pageEl.querySelector("main");
+      return main ? [entry(main, "main", dropKids(main), dropRect(main), main, Array.prototype.slice.call(main.childNodes))] : [];
     }
     // Only zero-size wrappers need a search below their own box.
     function under(el) {
@@ -3021,7 +3027,7 @@
     if (msg.type === "drop-probe") {
       if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
       emit("drop-containers", { id: msg.id, path: String(state && state.pagePaths[state.route] || ""),
-        x: msg.x, y: msg.y, containers: dropContainers(msg.x, msg.y, msg.moving) });
+        x: msg.x, y: msg.y, containers: dropContainers(msg.x, msg.y, msg.moving, msg.bands) });
       return;
     }
     if (msg.type === "drag-start" || msg.type === "drag-move" || msg.type === "drag-end" || msg.type === "drag-cancel") {

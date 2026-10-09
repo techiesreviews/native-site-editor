@@ -3,16 +3,17 @@ import type { NativePreview } from "../../src/components/native-preview";
 import type { DropReport } from "../../src/page-builder/drop-report";
 import { parseDropReport } from "../../src/page-builder/drop-report";
 import { dropLabel, dropTarget } from "../../src/page-builder/drop-target";
+import { sectionSnap } from "../../src/page-builder/section-snap";
 
 // Default native-save group, native-cards fixture (#repo=540).
-async function probe(page: Page, selector: string, moving?: number[], point?: { x: number; y: number }) {
+async function probe(page: Page, selector: string, moving?: number[], point?: { x: number; y: number }, bands?: boolean) {
   const frame = page.frameLocator(".native-preview-frame");
   await frame.locator(selector).first().scrollIntoViewIfNeeded();
   const at = point ?? await frame.locator(selector).first().evaluate(el => {
     const r = el.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   });
-  const raw = await page.evaluate(({ at, moving }) => new Promise<unknown>(resolve => {
+  const raw = await page.evaluate(({ at, moving, bands }) => new Promise<unknown>(resolve => {
     const frame = document.querySelector<HTMLIFrameElement>(".native-preview-frame")!;
     const id = Date.now();
     const listener = (event: MessageEvent) => {
@@ -21,8 +22,8 @@ async function probe(page: Page, selector: string, moving?: number[], point?: { 
       resolve(event.data);
     };
     window.addEventListener("message", listener);
-    frame.contentWindow!.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id, ...at, moving }, "*");
-  }), { at, moving });
+    frame.contentWindow!.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id, ...at, moving, bands }, "*");
+  }), { at, moving, bands });
   return parseDropReport(raw, "index.html")!;
 }
 
@@ -57,6 +58,15 @@ test("probes report nested grid containers and stop at a card's named slot", asy
   expect(section.containers.map(c => c.kind)).toEqual(["section", "main"]);
   const moving = await probe(page, "#work card-project h3[slot=title]", title.containers[1].path);
   expect(moving.containers.map(c => c.kind)).toEqual(["section", "main"]);
+  // Section probes keep all bands even over the page's header/footer and while moving one.
+  for (const selector of ["site-header", "site-footer"]) {
+    const report = await probe(page, selector, [...section.containers[1].path, 0], undefined, true);
+    expect(report.containers.map(c => c.kind)).toEqual(["main"]);
+    const main = report.containers[0];
+    expect(main.path).toEqual(section.containers[1].path);
+    expect(main.children.map(c => c.index)).toEqual([0, 1, 2]);
+    expect(sectionSnap(main, report.y).index).toBe(selector === "site-header" ? 0 : main.count);
+  }
 });
 
 type Harness = {
