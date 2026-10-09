@@ -25,6 +25,7 @@ export interface PageBuilderDeps {
   choices(): InsertChoice[];
   pointFor?: AddPanelHandlers["pointFor"];
   destinationText?: AddPanelHandlers["destinationText"];
+  newComponent?: AddPanelHandlers["newComponent"];
   insert(point: InsertPoint, choice: InsertChoice): void;
   // Component styles to read (the preview's `onComponentStyles`).
   prepare(tags: string[]): void;
@@ -82,6 +83,8 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     choices: () => deps.choices(),
     pointFor: deps.pointFor,
     destinationText: deps.destinationText,
+    newComponent: deps.newComponent,
+    takenTags: () => Object.keys(deps.inputs()?.site.components ?? {}),
     preview,
     canvasWidth,
     points: () => points,

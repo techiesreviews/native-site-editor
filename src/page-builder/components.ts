@@ -35,7 +35,9 @@ import type { CheckboxControl, EditBarControl, EditBarModel, SelectControl } fro
 import type { VariantField } from "./variant-fields";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange } from "../native-source-location";
-import { componentLabel } from "../native-insert";
+import type { InsertPoint } from "../components/insert-controls";
+import { blankComponentFiles } from "./blank-component";
+import { componentLabel, nativeInsertEdit } from "../native-insert";
 import {
   attributeEdit,
   startTagAttributes,
@@ -1267,6 +1269,51 @@ export function createComponentTools(deps: ComponentDeps) {
     }
   }
 
+  /** Drafts a blank section and inserts it in the page's history as one action. */
+  async function newComponent(tag: string, point: InsertPoint): Promise<boolean> {
+    const { path } = point;
+    const parent = [...point.parent], index = point.index;
+    const revision = deps.revision(), source = deps.sources()[path];
+    const editor = deps.editor();
+    const unchanged = () => deps.revision() === revision && deps.sources()[path] === source && deps.editor() === editor;
+    if (!editor || source === undefined || !Object.values(site()?.routes ?? {}).includes(path)) return false;
+    if (!editable(path)) {
+      if (!(await deps.openFile(path)) || !unchanged()) return false;
+    }
+    const proof = editor.captureHistoryHost(path);
+    const current = () => unchanged() && editable(path) && Boolean(proof?.isCurrent());
+    if (!current()) return false;
+    const problem = tagNameProblem(tag, Object.keys(site()?.components ?? {}));
+    if (problem) { deps.announce(problem); return false; }
+    const files = blankComponentFiles(tag);
+    const edit = nativeInsertEdit(source, parent, index, tag, files[0].content);
+    if (!edit) { deps.announce("The insertion point changed; choose the destination again."); return false; }
+    const result = await deps.createFiles(files);
+    if ("error" in result) { deps.error(new Error(result.error)); return false; }
+    const { receipt } = result;
+    if (!current() || !receipt.isCurrent()) {
+      receipt.undo();
+      deps.announce("The page or repository changed meanwhile; no component was made.");
+      return false;
+    }
+    deps.preview()?.selectAfterUpdate({ path, node: [...parent, index] });
+    try {
+      editor.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, false, {
+        undo: () => receipt.undo(),
+        redo: () => void receipt.redo(),
+      });
+    } catch (error) {
+      receipt.undo();
+      deps.preview()?.selectAfterUpdate(undefined);
+      deps.error(error);
+      return false;
+    }
+    // createFiles refreshes the host's component registry before it resolves.
+    await editComponent(tag);
+    if (deps.revision() === revision) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html`);
+    return true;
+  }
+
   /** A true instance target, independent of the current canvas selection. */
   function structure(path: string, nodePath: readonly number[]): ComponentStructureModel | undefined {
     const initial = instanceAt(path, [...nodePath]);
@@ -1560,6 +1607,7 @@ export function createComponentTools(deps: ComponentDeps) {
       renderBar();
     },
     editComponent,
+    newComponent,
     fillInstanceSlot,
     destroy() {
       destroyResize?.();

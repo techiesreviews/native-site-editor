@@ -217,6 +217,7 @@ export interface NativePreviewHandlers {
   insertPointFor?: AddPanelHandlers["pointFor"];
   insertDestinationText?: AddPanelHandlers["destinationText"];
   onInsert?: (point: InsertPoint, choice: InsertChoice) => void;
+  onNewComponent?: AddPanelHandlers["newComponent"];
   // Where the Add panel docks (src/page-builder/add-panel.ts).
   addPanelDock?: () => { left: number; top: number; bottom: number; width: number } | undefined;
   // A request to agents dismissed from its pin, and the user's answer to an agent's question.
@@ -396,6 +397,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     choices: () => handlers.insertChoices?.() ?? [],
     pointFor: handlers.insertPointFor,
     destinationText: handlers.insertDestinationText,
+    newComponent: handlers.onNewComponent && ((tag, point) => viewing ? Promise.resolve(false) : handlers.onNewComponent!(tag, point)),
     // An earlier version on show (History) is not edited: its places are not the source's.
     insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
     prepare: (tags) => {

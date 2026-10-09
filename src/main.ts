@@ -442,6 +442,7 @@ function mountWorkspace() {
     insertPointFor: nativeElementAddPoint,
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
     onInsert: (point, choice) => void insertNativeComponent(point, choice),
+    onNewComponent: (tag, point) => componentTools?.newComponent(tag, point) ?? Promise.resolve(false),
     onStructure: (structure) => {
       if (!structure) { pageStructure?.update(undefined); return; }
       codePanes.notePreviewPainted();

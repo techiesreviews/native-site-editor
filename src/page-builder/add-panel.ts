@@ -10,6 +10,7 @@ import type { InsertChoice, InsertPoint } from "../components/insert-controls";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { addCatalog, matchesQuery, type AddItem } from "./add-catalog";
+import { normaliseComponentName, normaliseField, previewComponentTag } from "./component-names";
 import { positionText } from "./insert-target";
 import { makeInsertDraggable, type InsertDragContext } from "./insert-drag";
 import { createThumbnail, type Thumbnail } from "./thumbnail";
@@ -21,6 +22,8 @@ const isElement = (item: AddItem) => item.kind === "native" && item.tag.startsWi
 
 export interface AddPanelHandlers {
   choices(): InsertChoice[];
+  newComponent?(tag: string, point: InsertPoint): Promise<boolean>;
+  takenTags?(): string[];
   // Native/container targets can differ from section-component targets.
   pointFor?(choice: InsertChoice, fallback: InsertPoint | undefined, mode?: "click" | "drop" | "gap"): InsertPoint | undefined;
   destinationText?(point: InsertPoint | undefined): string;
@@ -76,7 +79,11 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   const message = node("div", "pb-add-panel__message");
   message.hidden = true;
   const body = node("div", "pb-add-panel__body");
-  body.append(list, message);
+  const newEntry = node("div", "pb-add-new");
+  const newButton = button("+ New component", openNewForm, "pb-add-new__open");
+  newEntry.append(newButton);
+  newEntry.hidden = !handlers.newComponent;
+  body.append(newEntry, list, message);
   const live = node("span", "sr-only");
   live.setAttribute("role", "status");
   panel.append(head, position, search, body, live);
@@ -99,6 +106,79 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   }
   const entries = new Map<string, Entry>();
   const groups: { root: HTMLElement; tags: string[] }[] = [];
+
+  function resetNewForm(focus = false) {
+    newEntry.replaceChildren(newButton);
+    if (focus) newButton.focus();
+  }
+
+  function openNewForm() {
+    const form = document.createElement("form");
+    form.className = "pb-add-new__form";
+    form.tabIndex = -1;
+    const name = document.createElement("input");
+    name.type = "text";
+    name.className = "pb-add-new__name";
+    name.setAttribute("aria-label", "Component name");
+    name.autocomplete = "off";
+    name.spellcheck = false;
+    name.value = "new";
+    const tag = node("code", "pb-add-new__tag");
+    const problem = node("p", "pb-add-new__problem");
+    problem.id = `${id}-name-problem`;
+    problem.setAttribute("role", "alert");
+    name.setAttribute("aria-describedby", problem.id);
+    const render = () => {
+      tag.textContent = `<${previewComponentTag(name.value, "section")}>`;
+      problem.textContent = "";
+      problem.hidden = true;
+      name.removeAttribute("aria-invalid");
+    };
+    name.addEventListener("input", () => { normaliseField(name); render(); });
+    const cancel = button("Cancel", () => resetNewForm(true), "pb-add-panel__clear");
+    const create = node("button", "pb-add-new__create", "Create");
+    create.type = "submit";
+    const actions = node("div", "pb-add-new__actions");
+    actions.append(cancel, create);
+    form.append(name, tag, problem, actions);
+    let pending = false;
+    form.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!pending) resetNewForm(true);
+    });
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (pending) return;
+      const result = normaliseComponentName(name.value, "section", handlers.takenTags?.() ?? handlers.choices().map(choice => choice.tag));
+      if (result.problem) {
+        problem.textContent = result.problem;
+        problem.hidden = false;
+        name.setAttribute("aria-invalid", "true");
+        name.focus();
+        return;
+      }
+      const point = target();
+      if (!point || !handlers.newComponent) return;
+      pending = true;
+      // Keep focus inside a gap picker while its controls wait for the write.
+      form.focus();
+      name.disabled = cancel.disabled = create.disabled = true;
+      try {
+        if (await handlers.newComponent(result.tag, point)) {
+          if (newEntry.contains(form)) close(false);
+        }
+      } finally {
+        pending = false;
+        name.disabled = cancel.disabled = create.disabled = false;
+      }
+    });
+    render();
+    newEntry.replaceChildren(form);
+    name.focus();
+    name.select();
+  }
 
   function target() {
     if (gapKey) return handlers.points().find((point) => keyOf(point) === gapKey);
@@ -362,6 +442,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
   window.addEventListener("resize", onResize);
 
   function show(gap: InsertPoint | undefined) {
+    resetNewForm();
     resetActive();
     gapKey = gap ? keyOf(gap) : undefined;
     panel.classList.toggle("is-gap", Boolean(gap));
@@ -388,6 +469,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     const gap = gapKey;
     gapKey = undefined;
     panel.hidden = true;
+    resetNewForm();
     handlers.onState({ open: false, gap, restoreFocus });
   }
 

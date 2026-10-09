@@ -2,7 +2,7 @@
 title: + New component in Add
 type: task (AFK)
 status: open
-assignee:
+assignee: sol (runner: claude)
 blocked_by: [21-name-normalising]
 builder: sol
 phase: 3
