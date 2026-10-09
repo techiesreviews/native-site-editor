@@ -392,7 +392,8 @@ function moveDestination(source: string, from: readonly number[], destination: P
   const root = tree(source);
   const moving = root && atPath(root, from);
   const parent = root && atPath(root, destination.parent);
-  if (!moving || moving.opaque || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
+  // A component instance moves whole (its bytes kept as they are); other opaque islands stay put.
+  if (!moving || (moving.opaque && !isInstance(moving)) || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
   for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return undefined;
   if (!canContain(parent, [moving])) return undefined;
   return { moving, parent };

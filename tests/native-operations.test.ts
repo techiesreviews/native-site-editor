@@ -71,7 +71,9 @@ test("shared move destination gate distinguishes safe no-ops from metadata and i
   for(const index of [-1,4,0.5]) assert.equal(nativeMoveDestinationValid(source,[0,1],{parent:[0],index}),false);
   assert.equal(nativeMoveDestinationValid(source,[0,2],{parent:[0,2],index:0}),false);
   assert.equal(nativeMoveDestinationValid(source,[],{parent:[0],index:0}),false);
-  assert.equal(nativeMoveDestinationValid('<main><x-card></x-card></main>',[0,0],{parent:[0],index:0}),false);
+  assert.equal(nativeMoveDestinationValid('<main><template><p>t</p></template></main>',[0,0],{parent:[0],index:0}),false);
+  // A component instance moves whole.
+  assert.equal(nativeMoveDestinationValid('<main><x-card></x-card></main>',[0,0],{parent:[0],index:0}),true);
   assert.equal(nativeMoveDestinationValid('<main><dl><dt></dt></dl><div><dt>Term</dt></div></main>',[0,1],{parent:[0,0,0],index:0}),false);
 });
 

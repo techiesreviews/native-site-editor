@@ -216,7 +216,8 @@ test('unrelated opaque islands retain bytes and count as one preview element eac
     assert.deepEqual(nativeDestinations(source,'index.html',[0,index]).map(d=>d.placement), ['before','after']);
     assert.equal(apply(source,[0,index],0,'<hr>'),undefined);
     assert.equal(apply(source,[0,index,0],0,'<hr>'),undefined);
-    assert.equal(nativeMoveEdit(source,[0,index],{parent:[0,islands.length],index:0}),undefined);
+    // A component instance (x-card) moves whole; the other islands stay.
+    if (index !== 3) assert.equal(nativeMoveEdit(source,[0,index],{parent:[0,islands.length],index:0}),undefined);
   }
 });
 test('outside moves and moves of ordinary wrappers preserve entire opaque byte ranges', () => {

@@ -216,7 +216,7 @@ export interface NativePreviewHandlers {
   // Ctrl/⌘+B, +I or +K pressed inside the preview.
   onFormat?: (format: NativeFormat) => void;
   // Alt+Up or Alt+Down pressed inside the preview on a selected section.
-  onMove?: (direction: "up" | "down") => void;
+  onMove?: (direction: "up" | "down" | "out" | "in") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
   // A section dragged in the preview was released on a gap among its
@@ -729,7 +729,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     if (data.type === "move") {
       const direction = (data as { direction?: unknown }).direction;
-      if (direction === "up" || direction === "down") handlers.onMove?.(direction);
+      if (direction === "up" || direction === "down" || direction === "out" || direction === "in") handlers.onMove?.(direction);
       return;
     }
     if (data.type === "section-drag" && site) {

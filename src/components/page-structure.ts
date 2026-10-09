@@ -73,9 +73,10 @@ export interface PageStructureHandlers {
   /**
    * Alt+Up/Down on a row: move that element one sibling position. "moved",
    * "stayed" (an edge or refused move) or "pending" (the page file is
-   * opening first; the move follows). A handled refusal keeps row focus.
+   * opening first; the move follows). A moved path restores focus after a
+   * depth change. A handled refusal keeps row focus.
    */
-  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down") => "moved" | "stayed" | "pending" | undefined;
+  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down" | "out" | "in") => "moved" | "stayed" | "pending" | number[] | undefined;
   /** Whether this element's row can be dragged to another position (a whole section). */
   canDrag?: (item: NativeStructureItem) => boolean;
   /**
@@ -753,6 +754,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       target.tabIndex = 0;
       target.focus();
     };
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowLeft" || event.key === "ArrowRight") && structure?.path) {
+      const outcome = handlers.onMove?.(structure.path, item, event.key === "ArrowLeft" ? "out" : "in");
+      if (Array.isArray(outcome)) focusAfterRender = key(outcome);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     // Alt+Up/Down requests a source move; its row keeps focus on refusal.
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && structure?.path) {
       const direction = event.key === "ArrowUp" ? "up" : "down";
@@ -760,7 +768,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const target = [...item.node.slice(0, last), item.node[last] + (direction === "up" ? -1 : 1)];
       const outcome = handlers.onMove?.(structure.path, item, direction);
       if (outcome) {
-        if (outcome !== "stayed") focusAfterRender = key(target);
+        if (outcome !== "stayed") focusAfterRender = key(Array.isArray(outcome) ? outcome : target);
         event.preventDefault();
         event.stopPropagation();
         return;

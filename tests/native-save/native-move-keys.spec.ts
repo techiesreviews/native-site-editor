@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { editorMounted } from "./drafts";
 import { expect, test, type Page } from "@playwright/test";
 
 // Alt+Up and Alt+Down move the selected section one sibling position from
@@ -175,4 +176,72 @@ test("Alt+Down on a page structure row while a component file is open opens the 
   await undo(page);
   await expect.poll(() => sectionOrder(page)).toEqual(["hero", "cards", "filler"]);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+});
+
+// Default fixture group: native-cards, Section > Div > card-project instances.
+const cardsSource = async (page: Page) => {
+  await editorMounted(page);
+  return page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+};
+async function openCards(page: Page, baseURL: string | undefined) {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards > card-project")).toHaveCount(2);
+  await editorMounted(page);
+}
+async function cardsUndo(page: Page) {
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
+}
+const movedCard = (page: Page) => tree(page).getByRole("treeitem", { name: /^Card project Harbour Lane Pottery$/ });
+
+test("Alt+Left/Right in Structure moves a card across its Div, retains focus, and refuses headings and Sections", async ({ page, baseURL }) => {
+  await openCards(page, baseURL);
+  const original = await cardsSource(page);
+  await tree(page).getByRole("treeitem", { name: /^Section Recent work$/ }).locator(".page-structure__toggle").click();
+  await tree(page).getByRole("treeitem", { name: /^Block/ }).locator(".page-structure__toggle").click();
+  await movedCard(page).click();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(frame(page).locator("#work > div + card-project")).toHaveCount(1);
+  await expect(status(page)).toHaveText("Moved out of the container");
+  await expect(movedCard(page)).toBeFocused();
+  await expect(movedCard(page)).toHaveAttribute("aria-level", "3");
+  const outside = await cardsSource(page);
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(frame(page).locator("#work .cards > card-project")).toHaveCount(2);
+  await expect(status(page)).toHaveText("Moved into the container");
+  await expect(movedCard(page)).toBeFocused();
+  await expect(movedCard(page)).toHaveAttribute("aria-level", "4");
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(outside);
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(original);
+
+  await row(page, "Heading Recent work").click();
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(status(page)).toHaveText("Alt+→ moves a block into the Section or Div just above it; there is none.");
+  await expect(row(page, "Heading Recent work")).toBeFocused();
+  expect(await cardsSource(page)).toBe(original);
+  await tree(page).getByRole("treeitem", { name: /^Section Recent work$/ }).click();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(status(page)).toHaveText("A Section goes only between page bands.");
+  expect(await cardsSource(page)).toBe(original);
+});
+
+test("Alt+Left/Right on the canvas moves a whole card out and back, one undo step each", async ({ page, baseURL }) => {
+  await openCards(page, baseURL);
+  const original = await cardsSource(page);
+  await select(page, "#work .cards > card-project:nth-child(2)");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card project");
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(frame(page).locator("#work > div + card-project")).toHaveCount(1);
+  await expect(status(page)).toHaveText("Moved out of the container");
+  const outside = await cardsSource(page);
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(frame(page).locator("#work .cards > card-project")).toHaveCount(2);
+  await expect(status(page)).toHaveText("Moved into the container");
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(outside);
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(original);
 });

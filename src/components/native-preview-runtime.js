@@ -2539,6 +2539,12 @@
   // ---- End of editor shortcuts ----
 
   document.addEventListener("keydown", function (e) {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      if (!selected || !selected.isConnected || typingHere(e)) return;
+      e.preventDefault();
+      emit("move", { direction: e.key === "ArrowLeft" ? "out" : "in" });
+      return;
+    }
     // Alt+Up/Down asks the editor to move the selected source element. Its
     // guarded native planner decides whether that element can move.
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {

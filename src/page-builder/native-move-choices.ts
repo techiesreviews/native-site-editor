@@ -1,7 +1,8 @@
 import { startTags, startTagAttribute, VOID_ELEMENTS, type StartTag } from "../../shared/html-source";
 import { nativePageBody } from "../../shared/native-project";
+import { blockLabel } from "./block-insert";
 import { decodeHtmlEntities } from "./html-entities";
-import { nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit } from "./native-operations";
+import { nativeOutline, nativeDestinations, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type NativeOutline } from "./native-operations";
 
 export interface NativeElementMoveDestination { parent: number[]; index: number }
 export interface NativeElementMoveChoice { label: string; destination: NativeElementMoveDestination }
@@ -111,4 +112,31 @@ export function nativeElementMoveChoices(source: string, from: readonly number[]
     choices.push({ label: `Inside ${identity}, at the end (${element.path.map(index => index + 1).join(".")})`, destination });
   }
   return choices;
+}
+
+/** Alt+Left/Right moves whole blocks across Section/Div boundaries. */
+export function nativeElementDepthMove(source: string, from: readonly number[], direction: "out" | "in"): NativeElementMoveResult {
+  const refuse = (error: string): NativeElementMoveResult => ({ status: "refused", error });
+  if (!from.length) return refuse("Select an element to move.");
+  const body = nativeOutline(source);
+  if (!body) return refuse("The page's HTML could not be read exactly. Fix it in the code first.");
+  let node: NativeOutline = body;
+  for (const step of from) {
+    if (node.opaque) return refuse("This element is inside a component or another opaque container; its parts cannot be moved here.");
+    const child: NativeOutline | undefined = Number.isInteger(step) && step >= 0 ? node.children[step] : undefined;
+    if (!child) return refuse("The selected element could not be found. Select it again before moving it.");
+    node = child;
+  }
+  const parent = node.parent;
+  if (node.name === "section" || parent?.name === "main") return refuse("A Section goes only between page bands.");
+  if (direction === "out") {
+    const outer = parent?.parent;
+    if (outer?.name === "main") return refuse("Blocks go inside a Section or a Div, not straight between page bands.");
+    if (!outer || !["section", "div"].includes(outer.name)) return refuse("Its outer container is not a Section or a Div.");
+    return nativeElementMovePlan(source, from, { parent: from.slice(0, -2), index: from.at(-2)! + 1 });
+  }
+  const previous = parent?.children[from.at(-1)! - 1];
+  if (previous?.opaque && previous.name.includes("-")) return refuse(`${blockLabel(previous)} is a component: its parts are filled by editing them.`);
+  if (!previous || !["section", "div"].includes(previous.name)) return refuse("Alt+→ moves a block into the Section or Div just above it; there is none.");
+  return nativeElementMovePlan(source, from, { parent: [...from.slice(0, -1), from.at(-1)! - 1], index: previous.children.length });
 }

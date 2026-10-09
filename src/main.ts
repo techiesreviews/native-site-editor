@@ -75,7 +75,7 @@ import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagA
 import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
-import { nativeElementSiblingMove } from "./page-builder/native-move-choices";
+import { nativeElementDepthMove, nativeElementSiblingMove } from "./page-builder/native-move-choices";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
@@ -476,10 +476,11 @@ function mountWorkspace() {
           if (source === undefined || !proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || appStore.openFile.value !== path || !editorModule?.isMounted(path) || nativeEffectiveSource(path) !== source) {
             announce("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
           }
-          const result = nativeElementSiblingMove(source, item.node, direction);
+          const depth = direction === "out" || direction === "in";
+          const result = depth ? nativeElementDepthMove(source, item.node, direction) : nativeElementSiblingMove(source, item.node, direction);
           if (result.status === "refused") { announce(result.error); return "stayed"; }
           if (result.status === "stayed") return "stayed";
-          return applyNativeChange(path, source, [result.edit], result.selection, "Element moved") ? "moved" : "stayed";
+          return applyNativeChange(path, source, [result.edit], result.selection, depth ? direction === "out" ? "Moved out of the container" : "Moved into the container" : "Element moved") ? result.selection : "stayed";
         });
         item.children.forEach(capture);
       };
@@ -487,7 +488,17 @@ function mountWorkspace() {
       shown.items.forEach(capture);
       pageStructure?.update(shown);
     },
-    onMove: (direction) => pageStructureController.nativeElementMoveAction?.(direction),
+    onMove: (direction) => {
+      if (direction !== "out" && direction !== "in") { pageStructureController.nativeElementMoveAction?.(direction); return; }
+      const selection = appStore.selection.value;
+      const source = selection && nativeEffectiveSource(selection.path);
+      if (!selection?.node || source === undefined || selection.paintedSource !== source || versionView || appStore.openFile.value !== selection.path || !editorModule?.isMounted(selection.path)) {
+        announce("The source changed or its editor is not open. Select the element again before moving it."); return;
+      }
+      const result = nativeElementDepthMove(source, selection.node, direction);
+      if (result.status === "refused") announce(result.error);
+      if (result.status === "moved") applyNativeChange(selection.path, source, [result.edit], result.selection, direction === "out" ? "Moved out of the container" : "Moved into the container");
+    },
     onSectionDrag: (gap) => {
       const outcome = gap && appStore.selection.value ? moveNativeSectionTo(appStore.selection.value, gap.parent, gap.index) : undefined;
       if (!outcome) element("status").textContent = "Section drag cancelled";
@@ -530,7 +541,7 @@ function mountWorkspace() {
       if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
         announce("The source changed. Wait for the preview before moving this element."); return "stayed";
       }
-      if (!isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
+      if (direction === "out" || direction === "in" || !isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
       if (appStore.openFile.value === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction, sectionMoveProof(paintedSource, item.node, false)) ?? "stayed";
       void moveNativeSectionAfterOpening(target, direction, paintedSource);
@@ -1407,7 +1418,7 @@ function wholeWrapper(inner: string, tags: string[]) {
 // Elements a link inside can be removed from, keeping its text.
 const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
 const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | undefined>();
-const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down") => "moved" | "stayed" | undefined>();
+const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down" | "out" | "in") => number[] | "stayed" | undefined>();
 
 const pageStructureController = createPageStructureController({
   get nativePreview() { return nativePreview; },
