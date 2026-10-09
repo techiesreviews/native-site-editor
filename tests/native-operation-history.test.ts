@@ -213,7 +213,9 @@ test("a file the step edited unmounted, mounted since over its bytes, moves thro
   f.plan.before.set(about.path, undefined); f.plan.after.set(about.path, about);
   f.plan.beforeSources.set(about.path, "about before"); f.plan.afterSources.set(about.path, "about after");
   // An unmounted file's source is its stored draft, else its branch text.
-  const host = { ...f.host, source: (path: string) => f.models.get(path)?.text ?? f.records.get(path)?.content ?? (path === about.path ? "about before" : undefined) };
+  const prepared: string[][] = [];
+  const host = { ...f.host, source: (path: string) => f.models.get(path)?.text ?? f.records.get(path)?.content ?? (path === about.path ? "about before" : undefined),
+    prepareSources(edits: { path: string; expectedSource: string; text: string }[]) { prepared.push(edits.map(edit => edit.path)); return f.host.prepareSources(edits); } };
   const receipt = prepareNativeTextHistory(host, f.plan)!;
   assert.equal(receipt.apply(), true); assert.equal(f.records.get(about.path), about);
   // The page opens (Done in Edit component mode): its model, adopted over the step's bytes.
@@ -223,6 +225,8 @@ test("a file the step edited unmounted, mounted since over its bytes, moves thro
   assert.equal(f.models.get(about.path)!.text, "about before"); assert.equal(f.records.has(about.path), false); assert.equal(f.models.get("index.html")!.text, "before");
   assert.equal(receipt.redo(), true);
   assert.equal(f.models.get(about.path)!.text, "about after"); assert.equal(f.records.get(about.path), about);
+  // One receipt for the late model, kept through every transition: its revisions stay its own history's.
+  assert.deepEqual(prepared, [["index.html"], ["about.html"]]);
   // A failed draft write puts the late model back with the others.
   assert.equal(receipt.undo(), true);
   f.fail();

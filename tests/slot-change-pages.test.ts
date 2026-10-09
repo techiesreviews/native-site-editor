@@ -122,3 +122,29 @@ test("an instance inside another's removed fill is removed with it, not edited t
   const nested = `<section-work><div><section-work><h2 slot="title">Inner</h2><p>x</p></section-work></div></section-work>`;
   assert.deepEqual(pages({ "a.html": nested }, [0, 2, 0]), new Map([["a.html", `<section-work></section-work>`]]));
 });
+
+test("renamed to the unnamed slot: the page's elements lose their slot attribute", () => {
+  const named = `<section><slot name="title"><h2>T</h2></slot></section>`;
+  const page = `<section-work><h2 slot="title">Ours</h2></section-work>`;
+  assert.deepEqual(slotChangePages({ "a.html": page }, "section-work", named.replace(` name="title"`, ""), { kind: "renamed", from: "title", to: "" }),
+    new Map([["a.html", `<section-work><h2>Ours</h2></section-work>`]]));
+});
+
+test("made fixed unnamed slot: the page's bare text goes too", () => {
+  const texty = `<section-work><h2 slot="title">T</h2> Loose text </section-work>`;
+  assert.deepEqual(pages({ "a.html": texty }, [0, 2, 0]), new Map([["a.html", `<section-work><h2 slot="title">T</h2>  </section-work>`]]));
+});
+
+test("instances in another component's template follow", () => {
+  const host = `<section>
+  <slot name="work">
+    <section-work>
+      <h2 slot="title">Inside</h2>
+    </section-work>
+  </slot>
+</section>
+`;
+  assert.deepEqual(pages({ "components/section-host/section-host.html": host }, [0, 0, 0], "rename", "heading"), new Map([
+    ["components/section-host/section-host.html", host.replace(`slot="title"`, `slot="heading"`)],
+  ]));
+});

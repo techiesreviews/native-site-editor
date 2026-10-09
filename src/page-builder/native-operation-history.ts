@@ -22,9 +22,6 @@ export interface NativeTextHistoryPlan {
   beforeSources: Map<string, string | undefined>;
   afterSources: Map<string, string | undefined>;
 }
-// No late mounts to move (see transition).
-const NO_SOURCES: Sources = { isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true };
-
 /** A synchronous, source-checked draft transaction; UI refresh and history registration belong to the host. */
 export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: NativeTextHistoryPlan) {
   const scope = { ...host.scope };
@@ -43,6 +40,8 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
   if (host.persistentModels) for (const path of paths) { const lease = host.retainModel?.(path); if (lease) leases.set(path, lease); }
   let lastError: string | undefined;
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
+  // Files mounted since the step, moved through their own receipt (see transition).
+  let lateStep: { paths: string[]; sources: Sources; origin: "applied" | "undone"; applied: boolean } | undefined;
   const recordsCurrent = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
   const modelsCurrent = () => [...proofs].every(([path, proof]) => proof.isCurrent() && (host.persistentModels || host.mounted(path) === mounted.get(path)));
   const sourceCurrent = (expected: Map<string, string | undefined>) => [...expected].every(([path, text]) => host.source(path) === text);
@@ -81,29 +80,47 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       return false;
     }
     lastError = undefined;
+    // A file this step edits that was mounted since, over this step's exact bytes (adoptOwnMount:
+    // the page Edit component mode was on, opened at Done), moves through its model as well, by
+    // one receipt kept from its first transition, so the model returns to the exact revisions
+    // its own history steps expect (and goes on doing so once it is unmounted again).
+    const owned = new Set(modelEdits.map(edit => edit.path));
+    const late = edited.filter(path => !owned.has(path) && mounted.get(path) && (host.mounted(path) || lateStep?.paths.includes(path)));
     // An unmounted cache is evicted only with its exact proof. Unrelated models
     // retain their original proof through every own source transition.
-    for (const path of edited) if (!mounted.get(path)) {
+    for (const path of edited) if (!owned.has(path) && !late.includes(path)) {
       const proof = host.evictModel(path, proofs.get(path)!);
       if (!proof) return false;
       proofs.set(path, proof);
     }
-    // A file this step edits that was mounted since, over this step's exact bytes (adoptOwnMount:
-    // the page Edit component mode was on, opened at Done), moves through its model as well.
-    const late = edited.filter(path => mounted.get(path) && !modelEdits.some(edit => edit.path === path));
-    const from = after ? plan.beforeSources : plan.afterSources, to = after ? plan.afterSources : plan.beforeSources;
-    const lateEdits = late.map(path => ({ path, expectedSource: from.get(path), text: to.get(path) }));
-    const lateSources = late.length ? lateEdits.every(edit => edit.expectedSource !== undefined && edit.text !== undefined)
-      ? host.prepareSources(lateEdits as { path: string; expectedSource: string; text: string }[]) : undefined : NO_SOURCES;
-    if (!lateSources) { lastError = `The editor for ${late[0]} changed.`; return false; }
-    if (!sources[direction]()) { lateSources.dispose?.(); return false; }
-    if (!lateSources.apply()) {
+    let lateMove = () => true, lateBack = () => true, lateCurrent = () => true;
+    if (late.length) {
+      // The phase this transition leaves (an Undo leaves the applied step).
+      const leaving = after ? "undone" : "applied";
+      let step = lateStep;
+      if (!step || step.paths.join("\n") !== late.join("\n") || !step.sources.isCurrent()) {
+        step?.sources.dispose?.();
+        step = lateStep = undefined;
+        const from = after ? plan.beforeSources : plan.afterSources, to = after ? plan.afterSources : plan.beforeSources;
+        const edits = late.map(path => ({ path, expectedSource: from.get(path), text: to.get(path) }));
+        const prepared = edits.every(edit => edit.expectedSource !== undefined && edit.text !== undefined)
+          ? host.prepareSources(edits as { path: string; expectedSource: string; text: string }[]) : undefined;
+        if (!prepared) { lastError = `The editor for ${late[0]} changed.`; return false; }
+        step = lateStep = { paths: late, sources: prepared, origin: leaving, applied: false };
+      }
+      const kept = step;
+      const away = leaving === kept.origin;
+      lateMove = away ? () => (kept.applied ? kept.sources.redo() : (kept.applied = kept.sources.apply())) : () => kept.sources.undo();
+      lateBack = away ? () => kept.sources.undo() : () => kept.sources.redo();
+      lateCurrent = () => kept.sources.isCurrent();
+    }
+    if (!sources[direction]()) return false;
+    if (!lateMove()) {
       lastError = `The editor for ${late[0]} changed.`;
       if (!sources[after ? "undo" : "redo"]()) state = "failed";
-      lateSources.dispose?.();
       return false;
     }
-    const moved = [...modelEdits.map(edit => edit.path), ...late];
+    const moved = [...owned, ...late];
     for (const path of moved) proofs.set(path, host.modelState(path));
     const expected = new Map(after ? plan.before : plan.after), desired = after ? plan.after : plan.before;
     const written = new Map<string, SavedDraft | undefined>();
@@ -129,7 +146,6 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
       }
       if (!host.isLive() || !recordsCurrent(desired) || !modelsCurrent() || !sourceCurrent(after ? plan.afterSources : plan.beforeSources)) throw new Error("The operation changed during its draft write.");
       state = after ? "applied" : "undone";
-      lateSources.dispose?.();
       return true;
     } catch (error) {
       lastError = error instanceof Error ? error.message : "The draft operation failed.";
@@ -139,8 +155,7 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
         if (record !== expected.get(path) && record !== written.get(path)) foreign.set(path, record);
       }
       const reverse = after ? "undo" : "redo";
-      const restored = sources.isCurrent() && lateSources.isCurrent() && sources[reverse]() && lateSources.undo();
-      lateSources.dispose?.();
+      const restored = sources.isCurrent() && lateCurrent() && sources[reverse]() && lateBack();
       const original = after ? plan.before : plan.after;
       if (restored) for (const path of moved) {
         proofs.set(path, host.modelState(path));
@@ -208,5 +223,5 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     if (lease) { const earlier = leases.get(path); leases.set(path, lease); earlier?.(); }
     return true;
   }
-  return { beginOwnUITransition, adoptOwnMount, dispose: () => { state = "failed"; sources.dispose?.(); for (const dispose of leases.values()) dispose(); leases.clear(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
+  return { beginOwnUITransition, adoptOwnMount, dispose: () => { state = "failed"; sources.dispose?.(); lateStep?.sources.dispose?.(); for (const dispose of leases.values()) dispose(); leases.clear(); }, error: () => lastError, apply: () => transition("apply"), undo: () => transition("undo"), redo: () => transition("redo"), isCurrent: () => state !== "failed" && current(state === "applied") };
 }

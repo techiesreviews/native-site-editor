@@ -1009,8 +1009,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     return opening;
   }
 
-  // A slot chip had the focus when the bar last rendered or hid (see show).
-  let chipFocused = false;
+  // A slot chip had the focus when the bar last rendered or hid, and no chip has taken it
+  // since; `standIn` is the control that holds it meanwhile (see show).
+  let chipFocus: { standIn?: HTMLElement } | undefined;
   function show(model: EditBarModel, at: SelectionRect) {
     void loadSuggestionRows();
     if (held !== undefined) {
@@ -1020,7 +1021,11 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const active = document.activeElement as HTMLElement | null;
     const focused = active && bar.contains(active) ? focusable().indexOf(active) : -1;
     const label = focused >= 0 ? controlLabel(active!) : "";
-    if (focused >= 0 && active!.classList.contains("slot-chip")) chipFocused = true;
+    // A slot chip with the focus (or the stand-in it left it with, or nothing at all
+    // once the bar hid) passes it on to the next chip: a toggle selects its part again.
+    const toChip = focused >= 0 ? active!.classList.contains("slot-chip") || active === chipFocus?.standIn
+      : Boolean(chipFocus) && (!active || active === document.body);
+    chipFocus = undefined;
     const opening = render(model);
     rect = at;
     position();
@@ -1029,21 +1034,18 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       openAddressField(opening.item, opening.control);
       return;
     }
-    // A slot chip that had the focus, gone with its toggle (renders without a chip in
-    // between), hands it to the chip that follows, unless it has moved on outside the bar.
-    if (chipFocused) {
-      const now = document.activeElement, next = bar.querySelector<HTMLElement>(":scope > .edit-bar__label > .slot-chip");
-      if (focused < 0 && now && now !== document.body) chipFocused = false;
-      else if (next) {
-        chipFocused = false;
-        next.focus();
-        return;
-      }
+    const chip = toChip ? bar.querySelector<HTMLElement>(":scope > .edit-bar__label > .slot-chip") : null;
+    if (chip) {
+      chip.focus();
+      return;
     }
+    // No chip in this render (the part between selections): wait for the next one.
+    if (toChip) chipFocus = {};
     if (focused < 0) return;
     // The same control again when it is still there and enabled, else its neighbour.
     const items = focusable();
     (items.find((item) => controlLabel(item) === label) ?? items[Math.min(focused, items.length - 1)])?.focus();
+    if (chipFocus) chipFocus.standIn = document.activeElement as HTMLElement;
   }
 
   return {
@@ -1061,7 +1063,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       position();
     },
     hide() {
-      if (document.activeElement?.classList.contains("slot-chip") && bar.contains(document.activeElement)) chipFocused = true;
+      const active = document.activeElement;
+      chipFocus = active && bar.contains(active) && (active.classList.contains("slot-chip") || active === chipFocus?.standIn) ? {} : undefined;
       pending = undefined;
       closePopover(false);
       closeNote(false);
