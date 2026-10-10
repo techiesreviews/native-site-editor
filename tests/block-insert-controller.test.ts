@@ -249,8 +249,10 @@ test("in Edit component mode a template's part moves in the template; named slot
   const target = () => ({ path: "components/card-x/card-x.html", template: "card-x" });
   const { controller, log } = setup({ target }, files());
   // The title slot moves with its heading, after the body paragraph.
-  await controller.move(move([0, 0], "Heading", { parent: [0], index: 2, where: "Into Article › after Paragraph" }, template));
+  await controller.move({ ...move([0, 0], "Heading", { parent: [0], index: 2, where: "Into Article › after Paragraph" }, template), inside: [0] });
   assert.deepEqual(log.refusals, []);
+  // Selected, and selected again by Undo, is the heading pressed, inside its slot.
+  assert.deepEqual(log.ops[0].selection, { before: { path: "components/card-x/card-x.html", node: [0, 0, 0] }, after: { path: "components/card-x/card-x.html", node: [0, 1, 0] } });
   assert.match(log.ops[0].edits.get("components/card-x/card-x.html")!, /<p class="body">Body<\/p>\s*<slot name="title"><h3>Title<\/h3><\/slot>\s*<slot><\/slot>/);
   const into = setup({ target }, files());
   await into.controller.move(move([0, 1], "Paragraph", { parent: [0, 0], index: 0, where: "" }, template));

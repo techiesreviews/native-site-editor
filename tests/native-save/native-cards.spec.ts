@@ -271,7 +271,7 @@ const nestedHome = `<!doctype html>
 </html>
 `;
 
-test("review: a card holding a grid of its own is its grid's card; Alt+arrows leave it in place; relative links count in the Pages tab", async ({ page, baseURL }) => {
+test("review: a card holding a grid of its own is its grid's card; Alt+Up moves it among its siblings; relative links count in the Pages tab", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await pasteInto(page, nestedHome);
   const cards = frame(page).locator("article.card");
@@ -283,10 +283,10 @@ test("review: a card holding a grid of its own is its grid's card; Alt+arrows le
   await bar(page).getByRole("button", { name: "Add card" }).click();
   await expect(picker(page)).toBeFocused();
   await page.keyboard.press("Escape");
-  // Alt+Up pressed in the canvas does not move a card: only sections move.
+  // Alt+Up pressed in the canvas moves the selected card among its siblings (slice 78), one undo step.
   await frame(page).locator("html").dispatchEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true });
-  await page.waitForTimeout(300);
-  await expect(status(page)).not.toHaveText("Card moved left");
+  await expect(cards.locator("h3")).toHaveText(["Fern & Kettle", "New card", "Harbour Lane Pottery"]);
+  await page.locator(".code-editor__undo").click();
   await expect(cards.locator("h3")).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "New card"]);
   await page.locator(".code-editor__undo").click();
   await expect.poll(() => homeDraft(page)).toBe(nestedHome);

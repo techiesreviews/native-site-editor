@@ -108,4 +108,14 @@ test("on the page a component's parts stay closed; in Edit component mode its pa
   await expect(page.locator("#status")).toHaveText(/The “eyebrow” slot is filled on each page/);
   await undo(page);
   await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
+  // Alt+← takes a button's slot out of the actions Div, after it; Alt+→ puts it back at the Div's end.
+  await frame(page).locator("section-hero").first().getByText("Get in touch").filter({ visible: true }).first().click();
+  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText(/Link|Button/);
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('</slot></div><slot name="primary"><a href="/about/#contact">Get in touch</a></slot></section>');
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('<slot name="secondary"><a href="/#work">See our work</a></slot><slot name="primary"><a href="/about/#contact">Get in touch</a></slot></div></section>');
+  await undo(page);
+  await undo(page);
+  await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
 });

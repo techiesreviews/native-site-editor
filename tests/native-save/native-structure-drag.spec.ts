@@ -125,8 +125,10 @@ test("a row dragged in Structure takes its depth from the pointer's x", async ({
   expect(await depth(page)).toBe("2");
   await expect(row(page, "1.1")).toHaveClass(/is-drop-target/);
   await expect(row(page, "1.1.1")).not.toHaveClass(/is-drop-target/);
-  // Further left, <main> would refuse a Heading: it stays at the nearest depth that takes it.
+  // Further left, <main> takes a Heading straight in, as HTML allows (slice 82); back at the Section's depth to drop.
   await page.mouse.move(await levelX(page, 1), y, { steps: 4 });
+  await expect(ghost(page)).toHaveAttribute("data-where", "Between page bands › after Section");
+  await page.mouse.move(await levelX(page, 3), y, { steps: 4 });
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Div (grid)");
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/div><h2>What we do<\/h2><\/section>/);

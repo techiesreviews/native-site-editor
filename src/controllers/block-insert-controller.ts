@@ -179,7 +179,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
       done: `${name} moved. ${place.where}`, undone: `Undid moving the ${name}.`,
       // The step's undo belongs to this page's history: another file opened meanwhile stops it.
       current: () => still() && opened(),
-      selection: { before: { path, node: from }, after },
+      selection: { before: { path, node: [...from, ...request.inside ?? []] }, after },
     });
     if (error) { ports.select(undefined); ports.refuse(error); }
   }

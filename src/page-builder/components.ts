@@ -797,7 +797,7 @@ export function createComponentTools(deps: ComponentDeps) {
       holder.opened = { path: mode.chain[k].templatePath, root: templateRoot(sources[k]!), current: k === last };
       holder.children = level = levelRows(k);
     }
-    return { path: mode.templatePath, root: templateRoot(sources[0]!), nested: last > 0, items,
+    return { path: mode.templatePath, root: templateRoot(sources[0]!), nested: last > 0, items, source: sources[last],
       badge: (node: readonly number[]) => {
         const state = templateChip(node);
         return state && editMode?.badge(node, state);

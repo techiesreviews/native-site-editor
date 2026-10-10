@@ -42,6 +42,8 @@ export type PageMetaField = "title" | "description";
 interface TemplateRows {
   path: string;
   root?: number[];
+  /** The bytes of the template edited (the innermost opened) its rows were drawn from. */
+  source?: string;
   /** A nested component is open: the outline goes round its row, not the page instance's. */
   nested?: boolean;
   items: TemplateStructureItem[];
@@ -499,7 +501,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 
   const templatePaths = new WeakMap<NativeStructureItem, string>();
   const templateRoots = new WeakMap<NativeStructureItem, { path: string; node: number[] }>();
-  let rootAlias: { key: string; id: string; path: string; node: number[] } | undefined;
+  let rootAlias: { key: string; id: string; path: string; node: number[]; painted?: string } | undefined;
   const templateKey = (path: string, at: number[]) => `@${path}:${key(at)}`;
   const itemKey = (item: NativeStructureItem) => {
     const path = templatePaths.get(item);
@@ -526,7 +528,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (insideMain && !template) inMain.add(id);
     if (insideMain && !sealed && !template) movable.add(id);
     // Edit component mode: the parts of the template edited drag in it (slice 82); outer levels' rows don't.
-    if (own && !outerRows.has(item)) movable.add(id);
+    if (own && templatePaths.get(item) === template!.path && !outerRows.has(item)) movable.add(id);
     items.set(id, item);
     const el = node("div", "page-structure__row");
     el.setAttribute("role", "treeitem");
@@ -549,7 +551,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const opened = modeRows && !modeRows.nested ? { path: modeRows.path, root: modeRows.root, current: true } : own?.opened;
     if (opened?.root) {
       templateRoots.set(item, { path: opened.path, node: [...opened.root] });
-      if (opened.current) rootAlias = { key: templateKey(opened.path, opened.root), id, path: opened.path, node: [...opened.root] };
+      if (opened.current) rootAlias = { key: templateKey(opened.path, opened.root), id, path: opened.path, node: [...opened.root], painted: (modeRows ?? template)?.source };
       el.dataset.templatePath = opened.path;
     } else templateRoots.delete(item);
     if (modeRows?.nested) outerRows.add(item);
@@ -1151,8 +1153,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         else if (y > box.bottom - EDGE) host.scrollTop += EDGE_STEP;
       },
       // A template's rows were painted from its bytes.
-      painted: () => template === undefined ? structure?.paintedSource
-        : ([...items.values()].find((item) => templatePaths.get(item) === template) as TemplateStructureItem | undefined)?.paintedSource,
+      painted: () => template === undefined ? structure?.paintedSource : alias()?.painted,
     };
     return view;
   }

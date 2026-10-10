@@ -180,7 +180,10 @@ const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" |
 /** Whether `children` may go in `parent`; `instance`: an instance's items slot, the one opening in its seal. */
 const canContain = (parent: SourceNode, children: SourceNode[], instance = false) => !contentRefusal(parent, children, instance);
 // Elements whose content is text and inline elements only: a link goes in a paragraph, a Div doesn't.
-const phrasingOnly = (node: SourceNode) => (node.namespace ?? "html") === "html" && !VOID_ELEMENTS.has(node.name) && node.name !== "option" && (textNodes.has(node.name) || phrasing.has(node.name));
+const phrasingOnly = (node: SourceNode) => (node.namespace ?? "html") === "html" && !VOID_ELEMENTS.has(node.name) && !["option", "picture"].includes(node.name) && (textNodes.has(node.name) || phrasing.has(node.name));
+// Flow content with no headings, sections, headers or footers in it (an <address> no other <address> either).
+const plainFlow = new Set(["address", "dt", "th"]);
+const outline = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header", "footer", "section", "article", "aside", "nav"]);
 /** "A <div> can't go inside a <p>." */
 const cannot = (child: string, parent: string) => {
   const an = (name: string) => /^(?:[aeio]|h\d)/.test(name) ? "an" : "a";
@@ -211,6 +214,12 @@ function contentRefusal(parent: SourceNode, children: SourceNode[], instance = f
     if (ancestor.name === "dl" || ancestor.name === "template" || (ancestor.namespace ?? "html") !== "html") break;
     const item = ["dt", "dd"].includes(ancestor.name) ? children.map(definitionItems).find(Boolean) : undefined;
     if (item) return cannot(item.name, ancestor.name);
+  }
+  for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
+    if (ancestor.name === "template" || (ancestor.namespace ?? "html") !== "html") break;
+    const banned = plainFlow.has(ancestor.name)
+      ? descendants.find((node) => outline.has(node.name) || ancestor!.name === "address" && node.name === "address") : undefined;
+    if (banned) return cannot(banned.name, ancestor.name);
   }
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
     const nested = ancestor.name === "form" || ancestor.name === "label" ? descendants.find((node) => node.name === ancestor!.name)

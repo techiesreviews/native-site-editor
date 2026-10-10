@@ -68,3 +68,13 @@ test("Alt+arrows on a template's part move its slot with it, by the template's r
   assert.deepEqual(run([0, 2], "out"), { status: "refused", error: "Parts go inside the template's element, not beside it." });
   assert.equal(run([0], "down").status, "refused");
 });
+
+test("restricted containers refuse what they can't hold, descendants included", () => {
+  const source = '<main><address><p>a</p></address><picture><img src="a.png" alt=""></picture><dl><dt>t</dt></dl><h2>H</h2><div><h3>In</h3></div><span>s</span><section><p>x</p></section></main>';
+  assert.equal(nativeMoveRefusal(source, [0, 3], [0, 0]), "An <h2> can't go inside an <address>.");
+  assert.equal(nativeMoveRefusal(source, [0, 4], [0, 0]), "An <h3> can't go inside an <address>.");
+  assert.equal(nativeMoveRefusal(source, [0, 5], [0, 1]), "A <span> can't go inside a <picture>.");
+  assert.equal(nativeMoveRefusal(source, [0, 6], [0, 2, 0]), "A <section> can't go inside a <dt>.");
+  assert.equal(nativeMoveRefusal(source, [0, 5], [0, 0]), undefined);
+  assert.equal(nativeMoveRefusal(source, [0, 0], [0, 6]), undefined);
+});
