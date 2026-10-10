@@ -3,7 +3,7 @@ title: "Card copies on the source tree: card-grid's elementTree, plainText and s
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [41-card-tree-fill-and-swap, 42-card-tree-page-paths]
+blocked_by: [41-card-tree-fill-and-swap, 42-card-tree-page-paths, 45-element-end-at-parent]
 builder: sol
 phase: 4
 ---
