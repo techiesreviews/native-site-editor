@@ -18,7 +18,9 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
     const { buildAgentContext } = await ports.load();
     if (!stamp.holds()) return undefined;
     const input = ports.input();
-    return input && buildAgentContext(input);
+    if (!input) return undefined;
+    const context = await buildAgentContext(input);
+    return stamp.holds() ? context : undefined;
   }
   async function withAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
     const stamp = ports.stamp();

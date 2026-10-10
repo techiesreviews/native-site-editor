@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { SavedDraft, DraftScope } from "../src/drafts";
 import { createGuardedEdits, type Stamp } from "../src/guarded-edit";
-import { createMemoryWorkspace } from "./fakes/memory-workspace";
+import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import { applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { memoryUploadBytes } from "../src/uploads";
@@ -142,11 +142,14 @@ test("a verified own cached-model eviction advances only that path's proof", asy
 
 test("a repository switch during the media workspace load writes nothing", async () => {
   const workspace = createMemoryWorkspace();
+  // The Images session's stamp, taken before applyMediaBatch's lazy load (main.ts) and handed to the transaction.
   const stamp = createGuardedEdits(workspace.workspace).stamp("repository");
   const h = harness(stamp);
-  // The transaction receives the session's stamp after the lazy workspace load.
+  const loading = deferred<void>();
+  const loaded = loading.promise.then(() => applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)));
   workspace.setScope("lex/another-site@main");
-  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /repository changed/);
+  loading.resolve();
+  await assert.rejects(loaded, /repository changed/);
   assert.equal(h.records.size, 0);
   assert.equal(h.bytes.map.size, 0);
   assert.equal(h.steps(), 0);

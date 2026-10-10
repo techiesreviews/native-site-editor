@@ -483,11 +483,12 @@ function listShortcuts() {
   return entries.map(registerShortcut);
 }
 
-/** Every listed action holds the workspace it was offered in, including navigation and New page. */
+/** Every listed action holds the workspace it was offered in: after a repository or branch switch it is refused. */
 export function editorPaletteCommands(deps: EditorPaletteDeps): Command[] {
   const held = deps.stamp?.();
   return availableCommands().map(command => ({ ...command,
-    run: () => { if (held?.holds() ?? true) return command.run(); },
+    run: guardCommand(command.run, () => held?.holds() ?? true,
+      () => announceRefusal(deps, "The repository changed. Reopen the command palette and try again.")),
   }));
 }
 

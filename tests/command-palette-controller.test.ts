@@ -14,6 +14,7 @@ function fixture() {
   let site: ReturnType<CommandPalettePorts["site"]> = { routes: { "/": "index.html", "/notes/": "notes/index.html", "/about/": "about/index.html" }, components: { "feature-section": "components/feature.html" } };
   const workspace = createMemoryWorkspace();
   const edits = createGuardedEdits(workspace.workspace);
+  const announced: string[] = [];
   let indexed = false, indexCalls = 0, disposed = 0, opened = 0, inserted = 0, began = 0, started = 0;
   const sources = { "index.html": "<main><h1>Welcome home</h1></main>", "notes/index.html": "<main><h1>Notes heading</h1></main>", "about/index.html": "<main><h1>About the studio</h1></main>", "components/feature.html": "<section><h2>Feature</h2></section>" };
   let model: EditBarModel | undefined;
@@ -28,11 +29,11 @@ function fixture() {
     actions: { open: () => { opened++; }, isSectionTag: () => false, insert: async () => { inserted++; },
       editBar: () => model, select: () => {}, textSelected: () => false, history: () => {},
       toggleCode: () => {}, codeHidden: () => false, toggleStructure: () => {}, structureHidden: () => false,
-      newFile: () => {}, showPagesAndFiles: () => {}, announce: () => {}, onError: error => { throw error; },
+      newFile: () => {}, showPagesAndFiles: () => {}, announce: message => { announced.push(message); }, onError: error => { throw error; },
     },
     mountPalette: ((_host: HTMLElement, value: EditorPaletteDeps) => { deps.push(value); return { dispose: () => { disposed++; } }; }) as typeof mountEditorPalette,
   } satisfies CommandPalettePorts);
-  return { captureModel: () => { model = { kind: "Heading", controls: [], origin: { path: "index.html", source: sources["index.html"], stamp: edits.stamp("repository"), revision: "target", node: [0] } }; return model; }, controller, appStore, deps, sources, counters: () => ({ indexCalls, disposed, opened, inserted, began, started }), indexed: () => { indexed = true; }, noSite: () => { site = undefined; }, navigate: () => { workspace.setScope("workspace-2"); }, bump: () => workspace.bumpGeneration() };
+  return { captureModel: () => { model = { kind: "Heading", controls: [], origin: { path: "index.html", source: sources["index.html"], stamp: edits.stamp("repository"), revision: "target", node: [0] } }; return model; }, controller, appStore, deps, sources, counters: () => ({ indexCalls, disposed, opened, inserted, began, started }), announced, indexed: () => { indexed = true; }, noSite: () => { site = undefined; }, navigate: () => { workspace.setScope("workspace-2"); }, bump: () => workspace.bumpGeneration() };
 }
 
 test("derives title/heading pages, section components and draft sources without eager indexing", async () => {
@@ -99,7 +100,7 @@ test("palette and captured edit-bar controls hold the host workspace stamp", () 
 });
 
 
-test("palette actions after a switch do nothing", async t => {
+test("palette actions after a switch do nothing and say why", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   for (const switchWorkspace of ["navigate", "bump"] as const) {
     const f = fixture();
@@ -124,6 +125,7 @@ test("palette actions after a switch do nothing", async t => {
       assert.equal(f.counters().opened, 0);
       assert.equal(f.counters().began, 0);
       assert.equal(f.counters().started, 0);
+      assert.deepEqual(f.announced, Array(3).fill("The repository changed. Reopen the command palette and try again."));
     } finally {
       remove.forEach(dispose => dispose());
       f.controller.dispose(); f.appStore.dispose();

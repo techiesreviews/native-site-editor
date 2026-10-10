@@ -24,7 +24,7 @@ function fixture() {
     buildAgentContext: async value => { built++; assert.equal(value, input); return result; },
     agentAnswers: value => { answered++; return { ...value }; },
   };
-  return { host: createAgentSiteHost(ports), workspace, real, result, input,
+  return { host: createAgentSiteHost(ports), workspace, real, result, input, module,
     load: () => loading.resolve(module), dialog: () => dialog,
     run: async () => { ran++; return "done"; }, counts: () => ({ built, inputs, answered, swapped, ran }),
   };
@@ -38,6 +38,19 @@ test("an agent context built across a branch switch is dropped", async () => {
   assert.equal(await pending, undefined);
   assert.equal(f.counts().built, 0);
   assert.equal(f.counts().inputs, 0);
+});
+
+test("an agent context whose build spans a branch switch is dropped", async () => {
+  const f = fixture();
+  const building = deferred<void>();
+  f.module.buildAgentContext = async () => { await building.promise; return f.result; };
+  const pending = f.host.context();
+  f.load();
+  await Promise.resolve(); await Promise.resolve();
+  f.workspace.setScope("lex/site@dev");
+  building.resolve();
+  assert.equal(await pending, undefined);
+  assert.equal(f.counts().inputs, 1, "the switch came while the context was being built");
 });
 
 for (const change of ["scope", "generation"] as const) test(`agent answers across a ${change} switch never run or swap the confirm dialog`, async () => {
