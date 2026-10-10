@@ -1,6 +1,16 @@
+// Where a Block may go, and the plan of its move (sturdy-base slice 30;
+// design: block-move-design.md sections 4, 5). The page's rules and the
+// rules of the template edited in Edit component mode are two adapters of
+// one seam (`MoveRules`); both end in the editor's one move engine
+// (native-operations.ts `nativeMoveEdit`). Pure: src/page-builder/block-move.ts
+// picks the adapter, proves the bytes and writes the step.
+
 import { dropBlockName } from "./drop-target";
-import { blockLabel, templateMovePath, templateMoveRefusal } from "./block-insert";
-import { nativeOutline, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
+import { blockLabel } from "./block-insert";
+import { templateSlotRefusal } from "./native-elements";
+import { nativeMoveRefusal, nativeOutline, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
+import { isInstance as isInstanceIn } from "./rules/movable";
+import type { MarkupView } from "./rules/tree";
 
 /** `slot`: the parent is an instance, and this its items slot ("" the unnamed one). */
 export interface NativeElementMoveDestination { parent: number[]; index: number; slot?: string }
@@ -10,6 +20,11 @@ export type NativeElementMoveResult =
   | { status: "refused"; error: string };
 
 const same = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((step, index) => step === b[index]);
+// The outline read as markup, so the instance test is rules/movable.ts's own.
+const outlineView: MarkupView<NativeOutline> = {
+  kind: () => "element", name: node => node.name, children: node => node.children, text: () => "", parent: node => node.parent, foreign: node => node.foreign,
+};
+const isInstance = (node: NativeOutline) => isInstanceIn(node, outlineView);
 
 /** A fresh guarded edit and the moved element's path after removal/insertion; `items` opens instances' items slots. */
 export function nativeElementMovePlan(source: string, from: readonly number[], destination: NativeElementMoveDestination, items?: ItemsSlotRule): NativeElementMoveResult {
@@ -38,7 +53,7 @@ export function nativeSectionMovePlan(source: string, from: readonly number[], p
   if (!from.length || !same(from.slice(0, -1), parent)) return { status: "refused", error: "A section moves among its own siblings only." };
   let node = nativeOutline(source);
   for (const step of from) node = node?.children[step];
-  const slot = node?.parent?.opaque && node.parent.name.includes("-") ? node.slot : undefined;
+  const slot = node?.parent && isInstance(node.parent) ? node.slot : undefined;
   return nativeElementMovePlan(source, from, { parent: [...parent], index, slot }, items);
 }
 
@@ -48,7 +63,7 @@ export function nativeElementSiblingMove(source: string, from: readonly number[]
   let node = nativeOutline(source);
   for (const step of from) node = node?.children[step];
   const parent = node?.parent;
-  const slot = parent?.opaque && parent.name.includes("-") ? node?.slot : undefined;
+  const slot = parent && isInstance(parent) ? node?.slot : undefined;
   const index = from.at(-1)!;
   const current = nativeElementMovePlan(source, from, { parent: from.slice(0, -1), index, slot }, items);
   if (current.status !== "stayed") return current.status === "refused" ? current : { status: "refused", error: "The selected element cannot be moved." };
@@ -69,7 +84,7 @@ export function nativeElementDepthMove(source: string, from: readonly number[], 
   let node: NativeOutline = body;
   for (const step of from) {
     const child: NativeOutline | undefined = Number.isInteger(step) && step >= 0 ? node.children[step] : undefined;
-    if (node.opaque && !(child && node.name.includes("-") && items?.(node.name, child.slot))) return refuse("This element is inside a component or another opaque container; its parts cannot be moved here.");
+    if (node.opaque && !(child && isInstance(node) && items?.(node.name, child.slot))) return refuse("This element is inside a component or another opaque container; its parts cannot be moved here.");
     if (!child) return refuse("The selected element could not be found. Select it again before moving it.");
     node = child;
   }
@@ -82,11 +97,11 @@ export function nativeElementDepthMove(source: string, from: readonly number[], 
     return nativeElementMovePlan(source, from, { parent: from.slice(0, -2), index: from.at(-2)! + 1 }, items);
   }
   let previousIndex = from.at(-1)! - 1;
-  if (parent?.opaque && parent.name.includes("-")) {
+  if (parent && isInstance(parent)) {
     while (previousIndex >= 0 && parent.children[previousIndex].slot !== node.slot) previousIndex--;
   }
   const previous = parent?.children[previousIndex];
-  if (previous?.opaque && previous.name.includes("-")) return refuse(`${blockLabel(previous)} is a component: its parts are filled by editing them.`);
+  if (previous && isInstance(previous)) return refuse(`${blockLabel(previous)} is a component: its parts are filled by editing them.`);
   if (!previous || !["section", "div"].includes(previous.name)) return refuse("Alt+→ moves a block into the Section or Div just above it; there is none.");
   return nativeElementMovePlan(source, from, { parent: [...from.slice(0, -1), previousIndex], index: previous.children.length }, items);
 }
@@ -107,12 +122,56 @@ export function nativeElementMoveMessage(source: string, from: readonly number[]
   if (direction === "out") return `Moved out of ${label(parent)} into ${label(parent?.parent)}`;
   if (direction === "in") {
     let index = from.at(-1)! - 1;
-    if (parent?.opaque && parent.name.includes("-")) {
+    if (parent && isInstance(parent)) {
       while (index >= 0 && parent.children[index].slot !== node?.slot) index--;
     }
     return `Moved into ${label(parent?.children[index])}`;
   }
   return `Moved ${direction} in ${label(parent)}`;
+}
+
+const isNamedSlot = (node: NativeOutline) => Boolean(node.slotName);
+
+/**
+ * What a drag of the template's part at `path` (Edit component mode) moves:
+ * the part, or the named slot it fills alone (a slot moves with its
+ * element); nothing for the template's root, a nested component's insides
+ * or a path the template doesn't have.
+ */
+export function templateMovePath(template: string, path: readonly number[]): number[] | undefined {
+  const root = nativeOutline(template);
+  let node = root;
+  for (const step of path) {
+    if (node?.opaque) return undefined;
+    node = node?.children[step];
+  }
+  if (!node || path.length < 2) return undefined;
+  const at = [...path];
+  while (node.parent?.slotName && node.parent.children.length === 1 && at.length > 2) { node = node.parent; at.pop(); }
+  return at;
+}
+
+/**
+ * Why the template's part at `from` can't move into its element at
+ * `parent` (Edit component mode), or nothing when it can: inside the
+ * template's element, never into a named slot (each page fills it) or a
+ * nested component, and as HTML allows (nativeMoveRefusal).
+ */
+export function templateMoveRefusal(template: string, from: readonly number[], parent: readonly number[]): string | undefined {
+  let node = nativeOutline(template);
+  if (!node) return "The template's HTML could not be read exactly. Fix it in the code first.";
+  if (!parent.length) return "Parts go inside the template's element, not beside it.";
+  let moving: NativeOutline | undefined = node;
+  for (const step of from) moving = moving?.children[step];
+  const slots = (at: NativeOutline): boolean => at.slotName !== undefined || at.children.some(slots);
+  for (const step of parent) {
+    node = node.children[step];
+    if (!node) return "The template changed meanwhile. Try again.";
+    if (node.opaque) return `${blockLabel(node)} is its own component: open it to build inside its template.`;
+    if (isNamedSlot(node)) return templateSlotRefusal(node.slotName!);
+    if (node.slotName === "" && moving && slots(moving)) return "A slot can't go into the component's items: each page fills them.";
+  }
+  return nativeMoveRefusal(template, from, parent);
 }
 
 /**
@@ -144,4 +203,70 @@ export function templateKeyMove(template: string, at: readonly number[], directi
     result = refused ? refuse(refused) : nativeElementMovePlan(template, from, destination);
   }
   return result.status === "moved" ? { ...result, selection: [...result.selection, ...inside] } : result;
+}
+
+/** The slot `from` fills when its parent is an instance (its items slot, "" the unnamed one); else undefined. */
+export function ownSlot(source: string, from: readonly number[]): string | undefined {
+  let node = nativeOutline(source);
+  for (const step of from) node = node?.children[step];
+  return node?.parent && isInstance(node.parent) ? node.slot : undefined;
+}
+
+// ---- The seam: the page's rules and the template's (design section 5). ----
+
+/** What a planned move comes to: the edit and the moved element's path, where it stays, or why not. */
+export type MovePlan = NativeElementMoveResult;
+export type MoveStep = NativeMoveDirection;
+
+/** One document's move rules: what a press moves, where it may go, a key's step, a drop's place. */
+export interface MoveRules {
+  /** What a press on `at` moves: the element, or (a template) the named slot it fills alone; undefined: nothing. */
+  subject(source: string, at: readonly number[]): number[] | undefined;
+  /** Why the element at `from` can't go into `parent` (an instance's items slot `slot`), by its first gap; undefined: it can. */
+  refusal(source: string, from: readonly number[], parent: readonly number[], slot?: string): string | undefined;
+  /** A key's step: up and down among its siblings (its own slot's), out of and into a container. */
+  step(source: string, from: readonly number[], direction: MoveStep): MovePlan;
+  /** To a place: a drag's drop, an agent's gap. */
+  to(source: string, from: readonly number[], place: NativeElementMoveDestination): MovePlan;
+}
+
+/**
+ * A page's rules: any element the engine reaches (instances' items slots
+ * opened by `items`), keys with their wider reach (body-level header and
+ * footer); the drag-only rule (rules/movable.ts) is the caller's.
+ */
+export function pageRules(items: ItemsSlotRule): MoveRules {
+  return {
+    // As the engine reaches it: islands crossed only through items slots; an instance moves whole, no other island.
+    subject: (source, at) => {
+      let node = nativeOutline(source);
+      for (const step of at) {
+        const child: NativeOutline | undefined = node?.children[step];
+        if (!node || !child || node.opaque && !(isInstance(node) && items(node.name, child.slot))) return undefined;
+        node = child;
+      }
+      return at.length && node && !(node.opaque && !isInstance(node)) ? [...at] : undefined;
+    },
+    refusal: (source, from, parent, slot) => nativeMoveRefusal(source, from, parent, items, slot),
+    step: (source, from, direction) => nativeElementKeyMove(source, from, direction, items),
+    to: (source, from, place) => nativeElementMovePlan(source, from, place, items),
+  };
+}
+
+/**
+ * The rules of the template edited in Edit component mode (slice 82): a
+ * named slot moves with the element it holds alone, nothing goes into a
+ * named slot or a nested component, nor beside the template's element.
+ * `step` keeps the selection on `from`; the caller adds the part pressed.
+ */
+export function templateRules(): MoveRules {
+  return {
+    subject: templateMovePath,
+    refusal: (source, from, parent) => templateMoveRefusal(source, from, parent),
+    step: templateKeyMove,
+    to: (source, from, place) => {
+      const refused = templateMoveRefusal(source, from, place.parent);
+      return refused ? { status: "refused", error: refused } : nativeElementMovePlan(source, from, place);
+    },
+  };
 }

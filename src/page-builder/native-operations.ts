@@ -462,6 +462,8 @@ export function nativeHeadingLevel(source: string, parentPath: readonly number[]
 }
 /** An element of the page as the strict source tree holds it (body paths); components are `opaque`; `slot` is its `slot` attribute. */
 export interface NativeOutline { name: string; className: string; slot: string; opaque: boolean; heading: string; children: NativeOutline[]; parent?: NativeOutline;
+  /** SVG or MathML content, not HTML. */
+  foreign: boolean;
   /** A template's `<slot>`: its `name` ("" the unnamed slot). */
   slotName?: string }
 /** The page's element tree for rules that read structure, not geometry; undefined when the source is not exact. */
@@ -473,7 +475,7 @@ export function nativeOutline(source: string): NativeOutline | undefined {
     const open = source.slice(node.start, node.openEnd), tag = startTags(open)[0];
     const className = tag ? decodeHtmlEntities(startTagAttribute(open, tag, "class")?.value ?? "", true) : "";
     const heading = node.name === "section" ? node.children.find(child => /^h[1-6]$/.test(child.name)) : undefined;
-    const out: NativeOutline = { name: node.name, className, slot: node === root ? "" : slotOf(source, node), opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent };
+    const out: NativeOutline = { name: node.name, className, slot: node === root ? "" : slotOf(source, node), opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent, foreign: (node.namespace ?? "html") !== "html" };
     if (node.name === "slot" && (node.namespace ?? "html") === "html" && tag) out.slotName = decodeHtmlEntities(startTagAttribute(open, tag, "name")?.value ?? "", true);
     out.children = node.children.map(child => map(child, out));
     return out;
@@ -604,10 +606,4 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
 }
 export function applyGuardedSourceEdit(source: string, edit: GuardedSourceEdit) {
   return source === edit.source && source.slice(edit.start, edit.end) === edit.original ? source.slice(0, edit.start) + edit.text + source.slice(edit.end) : undefined;
-}
-
-/** Resolve the same before/after/inside contract used by insertion, then move once. */
-export function nativeMoveToEdit(source: string, from: readonly number[], selected: readonly number[], placement: NativePlacement) {
-  const destination = nativeDestinations(source, "", selected).find((item) => item.placement === placement);
-  return destination ? nativeMoveEdit(source, from, destination.point) : undefined;
 }

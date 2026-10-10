@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeElementChoices, nativeElementMarkup, nativeChoiceMarkup, PLACEHOLDER_IMAGE_PATH, PLACEHOLDER_IMAGE_WIDTH, PLACEHOLDER_IMAGE_HEIGHT, placeholderImageSvg } from "../src/page-builder/native-elements.ts";
 import { addCatalog, filterCatalog } from "../src/page-builder/add-catalog.ts";
-import { applyGuardedSourceEdit, nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit, nativeMoveToEdit } from "../src/page-builder/native-operations.ts";
+import { applyGuardedSourceEdit, nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit } from "../src/page-builder/native-operations.ts";
 const apply = (source: string, parent: number[], index: number, markup: string) => {
   const edit = nativeMarkupInsertEdit(source, parent, index, markup);
   return edit && applyGuardedSourceEdit(source, edit);
@@ -110,15 +110,15 @@ test("moves are one guarded edit, preserve site classes/comments and reject cycl
 test("source paths mirror preview script removal, and same-parent move directions remain exact", () => {
   const source = '<main><script>if (a < b) run()</script><section><p>A</p><p>B</p><p>C</p></section></main>';
   assert.equal(nativeDestinations(source, 'x', [0, 0])[2].description, 'Inside section, at the end');
-  const forward = nativeMoveToEdit(source, [0, 0, 0], [0, 0, 2], 'after')!;
+  const forward = nativeMoveEdit(source, [0, 0, 0], { parent: [0, 0], index: 3 })!;
   assert.equal(applyGuardedSourceEdit(source, forward), '<main><script>if (a < b) run()</script><section><p>B</p><p>C</p>\n<p>A</p></section></main>');
-  const backward = nativeMoveToEdit(source, [0, 0, 2], [0, 0, 0], 'before')!;
+  const backward = nativeMoveEdit(source, [0, 0, 2], { parent: [0, 0], index: 0 })!;
   assert.equal(applyGuardedSourceEdit(source, backward), '<main><script>if (a < b) run()</script><section><p>C</p>\n<p>A</p><p>B</p></section></main>');
   assert.equal(apply('<main></main>', [0], 0, '<p>x</p><script>alert(1)</script>'), undefined);
 });
 test("cross-parent moves reindent multiline CRLF without changing site strings", () => {
   const source = '<main>\r\n  <section>\r\n    <div class="site">\r\n      <p>A</p>\r\n    </div>\r\n  </section>\r\n  <section></section>\r\n</main>';
-  const edit = nativeMoveToEdit(source, [0, 0, 0], [0, 1], 'inside')!;
+  const edit = nativeMoveEdit(source, [0, 0, 0], { parent: [0, 1], index: 0 })!;
   const out = applyGuardedSourceEdit(source, edit)!;
   assert.ok(out.includes('<section>\r\n    <div class="site">\r\n      <p>A</p>\r\n    </div>\r\n  </section>'));
   assert.equal(/[^\r]\n/.test(out), false);

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveToEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, nativeEditInside, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
-import { nativeElementMovePlan } from "../src/page-builder/native-move-choices.ts";
+import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit, nativeMoveDestinationValid, nativeMovableBlock, nativeEditInside, applyGuardedSourceEdit } from "../src/page-builder/native-operations.ts";
+import { nativeElementMovePlan } from "../src/page-builder/block-move-rules.ts";
 
 test("definition-item auto-closing cannot turn preview paths into different source targets", async () => {
   const source = '<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
@@ -13,7 +13,6 @@ test("definition-item auto-closing cannot turn preview paths into different sour
     assert.deepEqual(proof, {children:['dt','dd','dd','dd','dd'],target:'main'});
     assert.deepEqual(nativeDestinations(source, 'index.html', [0,2,0]), []);
     assert.equal(nativeMarkupInsertEdit(source,[0,2,0],0,'<h2>New</h2>'),undefined);
-    assert.equal(nativeMoveToEdit(source,[0,3,0],[0,2,0],'inside'),undefined);
     for(const names of [['dt','dt'],['dt','dd'],['dd','dt'],['dd','dd']]) {
       const invalid=`<main><dl><${names[0]}><div><${names[1]}>Nested</${names[1]}></div></${names[0]}></dl><section></section></main>`;
       assert.equal(nativeMarkupInsertEdit(invalid,[0],1,'<section>New</section>'),undefined);

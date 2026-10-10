@@ -78,8 +78,9 @@ import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, 
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
-import { itemsSlotRule, templateMoveRefusal, templateMovePath } from "./page-builder/block-insert";
-import { nativeElementKeyMove, nativeElementMoveMessage, templateKeyMove, type NativeElementMoveResult, type NativeMoveDirection } from "./page-builder/native-move-choices";
+import { itemsSlotRule } from "./page-builder/block-insert";
+import { createBlockMoves } from "./page-builder/block-move";
+import { nativeElementKeyMove, nativeElementMoveMessage, templateKeyMove, templateMoveRefusal, templateMovePath, type NativeElementMoveResult, type NativeMoveDirection } from "./page-builder/block-move-rules";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
@@ -872,6 +873,24 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   refuse: (message, history) => refuse(message, history ? { history } : {}),
   error: errorMessage,
 }));
+// The Block move module (src/page-builder/block-move.ts): what a press moves, where it may go,
+// and the move as one guarded edit, on the page or the template edited. Its ways in arrive in
+// sturdy-base slices 31-33.
+const blockMoves = createBlockMoves({
+  edits: guardedEdits,
+  editing: () => componentTools?.editModeTemplate(),
+  mounted: path => appStore.openFile.value === path && Boolean(editorModule?.isMounted(path)),
+  forgetOpening: path => {
+    const draft = draftScope();
+    // A kept model of the page, forgotten when the open is refused: it holds bytes older than the draft's.
+    const kept = draft ? editorModule?.captureFileModelState(draft, path, true) : undefined;
+    return painted => {
+      if (draft && nativeEffectiveSource(path) !== painted && kept?.isCurrent() && !editorModule?.isMounted(path)) editorModule?.forgetDraftModel(draft, path);
+      updateNativePreviewSources();
+    };
+  },
+});
+void blockMoves;
 // The block rail's clicks and drags: one source edit per block, the new block selected.
 // Loaded with the first click.
 const blockInsertPorts: BlockInsertPorts = {

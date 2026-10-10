@@ -14,7 +14,7 @@
 import { templateSlots, type TemplateOf } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { nativeElementMarkup, templateSectionRefusal, templateSlotRefusal, type NativeElementKind } from "./native-elements";
-import { nativeHeadingLevel, nativeMoveRefusal, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
+import { nativeHeadingLevel, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
 export const blockNames: Record<NativeElementKind, string> = { section: "Section", div: "Div", heading: "Heading", paragraph: "Paragraph", image: "Image", button: "Button" };
 
@@ -185,48 +185,6 @@ export function templateDropRefusal(template: string, parent: readonly number[])
   if (isNamedSlot(node)) return templateSlotRefusal(node.slotName!);
   for (let at = node.parent; at; at = at.parent) if (isNamedSlot(at)) return templateSlotRefusal(at.slotName!);
   return "Blocks go inside a Section, a Div or the component's items.";
-}
-
-/**
- * What a drag of the template's part at `path` (Edit component mode) moves:
- * the part, or the named slot it fills alone (a slot moves with its
- * element); nothing for the template's root, a nested component's insides
- * or a path the template doesn't have.
- */
-export function templateMovePath(template: string, path: readonly number[]): number[] | undefined {
-  const root = nativeOutline(template);
-  let node = root;
-  for (const step of path) {
-    if (node?.opaque) return undefined;
-    node = node?.children[step];
-  }
-  if (!node || path.length < 2) return undefined;
-  const at = [...path];
-  while (node.parent?.slotName && node.parent.children.length === 1 && at.length > 2) { node = node.parent; at.pop(); }
-  return at;
-}
-
-/**
- * Why the template's part at `from` can't move into its element at
- * `parent` (Edit component mode), or nothing when it can: inside the
- * template's element, never into a named slot (each page fills it) or a
- * nested component, and as HTML allows (nativeMoveRefusal).
- */
-export function templateMoveRefusal(template: string, from: readonly number[], parent: readonly number[]): string | undefined {
-  let node = nativeOutline(template);
-  if (!node) return "The template's HTML could not be read exactly. Fix it in the code first.";
-  if (!parent.length) return "Parts go inside the template's element, not beside it.";
-  let moving: NativeOutline | undefined = node;
-  for (const step of from) moving = moving?.children[step];
-  const slots = (at: NativeOutline): boolean => at.slotName !== undefined || at.children.some(slots);
-  for (const step of parent) {
-    node = node.children[step];
-    if (!node) return "The template changed meanwhile. Try again.";
-    if (node.opaque) return `${blockLabel(node)} is its own component: open it to build inside its template.`;
-    if (isNamedSlot(node)) return templateSlotRefusal(node.slotName!);
-    if (node.slotName === "" && moving && slots(moving)) return "A slot can't go into the component's items: each page fills them.";
-  }
-  return nativeMoveRefusal(template, from, parent);
 }
 
 /**

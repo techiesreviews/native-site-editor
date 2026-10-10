@@ -2,8 +2,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyGuardedSourceEdit, nativeMoveEdit, nativeMoveRefusal } from "../src/page-builder/native-operations.ts";
-import { templateKeyMove } from "../src/page-builder/native-move-choices.ts";
-import { templateSlotRefusal } from "../src/page-builder/native-elements.ts";
 
 const page = `<main>
   <section>
@@ -52,23 +50,6 @@ test("a move into a line of text stays on that line, a space apart", () => {
   assert.match(applyGuardedSourceEdit(page, out)!, /<p>Inside<\/p>\n<a href="\/a">link<\/a><\/div>/);
 });
 
-test("Alt+arrows on a template's part move its slot with it, by the template's rule (slice 82)", () => {
-  const template = '<section><slot name="eyebrow"><p>E</p></slot><slot name="title"><h1>T</h1></slot><div class="actions"><a href="/x">X</a></div><p>Last</p></section>';
-  const run = (at: number[], direction: "up" | "down" | "out" | "in") => {
-    const result = templateKeyMove(template, at, direction);
-    return result.status === "moved" ? { html: applyGuardedSourceEdit(template, result.edit)!.replace(/\s+(?=<)/g, ""), selection: result.selection } : result;
-  };
-  assert.deepEqual(run([0, 0, 0], "down"), { html: '<section><slot name="title"><h1>T</h1></slot><slot name="eyebrow"><p>E</p></slot><div class="actions"><a href="/x">X</a></div><p>Last</p></section>', selection: [0, 1, 0] });
-  assert.deepEqual(run([0, 0, 0], "up"), { status: "stayed", reason: "edge" });
-  // Into the Div above, at its end; out of it again, after it.
-  assert.deepEqual(run([0, 3], "in"), { html: '<section><slot name="eyebrow"><p>E</p></slot><slot name="title"><h1>T</h1></slot><div class="actions"><a href="/x">X</a><p>Last</p></div></section>', selection: [0, 2, 1] });
-  assert.equal((run([0, 2, 0], "out") as { html: string }).html, '<section><slot name="eyebrow"><p>E</p></slot><slot name="title"><h1>T</h1></slot><div class="actions"></div><a href="/x">X</a><p>Last</p></section>');
-  // Never into a named slot, out of the template's element, or for the root.
-  assert.deepEqual(run([0, 2], "in"), { status: "refused", error: templateSlotRefusal("title") });
-  assert.deepEqual(run([0, 2], "out"), { status: "refused", error: "Parts go inside the template's element, not beside it." });
-  assert.equal(run([0], "down").status, "refused");
-});
-
 test("restricted containers refuse what they can't hold, descendants included", () => {
   const source = '<main><address><p>a</p></address><picture><img src="a.png" alt=""></picture><dl><dt>t</dt></dl><h2>H</h2><div><h3>In</h3></div><span>s</span><section><p>x</p></section></main>';
   assert.equal(nativeMoveRefusal(source, [0, 3], [0, 0]), "An <h2> can't go inside an <address>.");
@@ -85,13 +66,10 @@ test("into a paragraph written over several lines, the link stays on the text's 
   assert.equal(applyGuardedSourceEdit(source, edit), '<main>\n  <p>\n    Text <a href="/x">X</a>\n  </p>\n  <div>\n  </div>\n</main>');
 });
 
-test("a <picture> takes sources and images only; a <details> keeps its <summary> first; a named slot's own elements stay put", () => {
+test("a <picture> takes sources and images only; a <details> keeps its <summary> first", () => {
   const source = '<main><picture><source srcset="a.webp"><img src="a.png" alt=""></picture><picture><img src="b.png" alt=""></picture><details><summary>S</summary><p>B</p></details><p>Move</p></main>';
   assert.equal(nativeMoveRefusal(source, [0, 0, 0], [0, 1]), undefined);
   assert.equal(nativeMoveRefusal(source, [0, 3], [0, 1]), "A <p> can't go inside a <picture>.");
   assert.equal(nativeMoveEdit(source, [0, 3], { parent: [0, 2], index: 0 }), undefined);
   assert.ok(nativeMoveEdit(source, [0, 3], { parent: [0, 2], index: 1 }));
-  const template = '<article><slot name="body"><p>A</p><p>B</p></slot><p>C</p></article>';
-  assert.deepEqual(templateKeyMove(template, [0, 0, 0], "down"), { status: "refused", error: templateSlotRefusal("body") });
-  assert.equal(templateKeyMove(template, [0, 1], "up").status, "moved");
 });

@@ -162,5 +162,5 @@ export function insertIntoEmptyEdit(source: string, range: ElementRange, markup:
 }
 
 // Native HTML has a separate API; component tag/template insertion above is unchanged.
-export { nativeMarkupInsertEdit, nativeMoveEdit, nativeMoveToEdit, nativeDestinations, applyGuardedSourceEdit } from "./page-builder/native-operations";
+export { nativeMarkupInsertEdit, nativeMoveEdit, nativeDestinations, applyGuardedSourceEdit } from "./page-builder/native-operations";
 export type { GuardedSourceEdit, NativeDestination, NativePlacement } from "./page-builder/native-operations";

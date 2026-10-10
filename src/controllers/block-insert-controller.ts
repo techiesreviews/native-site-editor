@@ -16,9 +16,9 @@
 // across the lazy loads. The painted/typed-inside rules stay here.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
-import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, templateMoveRefusal } from "../page-builder/block-insert";
+import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal } from "../page-builder/block-insert";
 import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit, nativeMoveRefusal } from "../page-builder/native-operations";
-import { nativeElementMovePlan } from "../page-builder/native-move-choices";
+import { nativeElementMovePlan, templateMoveRefusal } from "../page-builder/block-move-rules";
 import { STALE_MESSAGE, type GuardedEdits, type Reads, type PlanResult, type Outcome, type Stamp } from "../guarded-edit";
 
 type NodeRequest = { path: string; node: number[] };
