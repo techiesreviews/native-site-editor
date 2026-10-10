@@ -478,3 +478,12 @@ test("another key that writes nothing still ends the group; a first group never 
   other.edits.now(typed("a"), { group: "title" });
   assert.deepEqual(other.m.steps(), ["range", "range"]);
 });
+
+test("a step written and recorded whose page refresh then fails is applied, with the refresh's message", async () => {
+  const { m, edits } = setup();
+  m.failRefresh();
+  const outcome = await edits.run(r => { r.exists("new.html"); return { creates: [{ path: "new.html", content: "<p>new</p>" }], done: "Created.", undone: "Undid." }; });
+  assert.deepEqual(outcome, { ok: true, status: "applied", message: "The files changed, but the editor changed while opening them. Review the current drafts." });
+  assert.deepEqual(m.steps(), ["operation"]);
+  assert.equal(m.workspace.source("new.html"), "<p>new</p>");
+});

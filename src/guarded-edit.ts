@@ -76,7 +76,8 @@ export type StaleKey =
   | { file: string } | { exists: string };
 
 export type Outcome =
-  | { ok: true; status: "applied" | "unchanged" | "stayed" }
+  /** `message`: the step is written and recorded, but opening the page after it failed (say it). */
+  | { ok: true; status: "applied" | "unchanged" | "stayed"; message?: string }
   | { ok: false; reason: "stale"; changed: StaleKey; message: string }
   | { ok: false; reason: "refused"; message: string };
 
@@ -106,6 +107,8 @@ export interface OperationRequest {
   undone: string;
   /** The stamp, guard, anchor and every read still hold: checked after each of its waits. */
   current: () => boolean;
+  /** Called once the step is written and recorded: an error after it is the page's refresh, not staleness. */
+  recorded: () => void;
   selection: { before?: NodeRef; after?: NodeRef };
 }
 
@@ -362,12 +365,14 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     if (rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
     const after = result.select?.after;
     if (after) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
+    let recorded = false;
     const error = await ws.operation({
       expectedSources: new Map(reads.sources), edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves,
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
-      current: () => !(current() ?? places.changed()), selection: { before: result.select?.before, after },
+      current: () => !(current() ?? places.changed()), recorded: () => { recorded = true; }, selection: { before: result.select?.before, after },
     });
     if (error === undefined) return { ok: true, status: "applied" };
+    if (recorded) return { ok: true, status: "applied", message: error };
     if (after) ws.select(undefined);
     changed = current() ?? places.changed();
     return changed ? stale(changed) : refused(error);

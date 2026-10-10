@@ -51,6 +51,7 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
   let openFile: string | undefined = init.open;
   const done: Step[] = [], undone: Step[] = [];
   const refusals: string[] = [], announced: string[] = [], selected: ((NodeRef & { source?: string }) | undefined)[] = [], flashed: string[] = [], opened: string[] = [];
+  let refreshFails = false;
   let branchHold: (Hold & { wait: Promise<void>; arrive(): void }) | undefined;
   let openHold: (Hold & { wait: Promise<void>; arrive(): void }) | undefined;
 
@@ -171,6 +172,9 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
       return true;
     };
     push({ kind: "operation", path: anchor, undo: () => transition("undo"), redo: () => transition("redo"), dispose: () => receipt.dispose() });
+    op.recorded();
+    // The structural branch opens the next page after the step; that can fail with the step kept.
+    if (refreshFails && (moves.length || deletes.length || creates.length || op.open)) return "The files changed, but the editor changed while opening them. Review the current drafts.";
     announced.push(op.done);
     if (op.open) opened.push(op.open);
     return undefined;
@@ -283,6 +287,8 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     setSite(next: NativeSite | undefined) { site = next; },
     /** Holds the next branch read the commit makes (a blob, an entry). */
     holdBranchRead(): Hold { branchHold = holdable(); return branchHold; },
+    /** Opening the page after a structural operation fails from now on (the step stays written). */
+    failRefresh() { refreshFails = true; },
     /** Holds the next `open` (the anchor page opening). */
     holdOpen(): Hold { openHold = holdable(); return openHold; },
   };

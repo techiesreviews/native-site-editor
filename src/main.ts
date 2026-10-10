@@ -3848,7 +3848,8 @@ interface NativeOperation {
    * whatever element took the removed one's place.
    */
   selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } };
-
+  /** Called once the drafts are written and the step recorded (an error after it is the page's refresh). */
+  recorded?: () => void;
 }
 
 // A branch file's blob and text, for a draft of an edit to it.
@@ -3984,6 +3985,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       dispose();
       return "The editor changed before this operation could be recorded. Review the current drafts.";
     }
+    op.recorded?.();
     afterFileChanges();
     announce(done);
     return undefined;
@@ -4094,6 +4096,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   if (!editor.recordHistoryAction(anchor, () => transition("undo"), () => transition("redo"), dispose)) {
     receipt.undo(); dispose(); releaseRefresh?.(); releaseRefresh = undefined; afterFileChanges(); return "The editor changed before this operation could be recorded.";
   }
+  op.recorded?.();
   refreshPending = true;
   afterFileChanges();
   if (!await refresh(next, true, done)) return receipt.error() ?? "The files changed, but the editor changed while opening them. Review the current drafts.";
