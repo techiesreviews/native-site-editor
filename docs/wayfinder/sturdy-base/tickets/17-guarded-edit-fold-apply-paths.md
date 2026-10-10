@@ -1,7 +1,7 @@
 ---
 title: "Move applyNativeOperation and applyNativeChange behind the guarded edit seam"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [11-guarded-edit-block-insert, 12-guarded-edit-cards, 13-guarded-edit-components, 14-guarded-edit-page-structure, 15-guarded-edit-pages-and-files, 16-guarded-edit-media-agents-save]
 builder: claude ★
@@ -28,3 +28,10 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/guarded-edit-de
 - `tests/guarded-edit.test.ts` unchanged and green; `tests/native-operation-history.test.ts` green.
 - A browser spec checks both: Undo after a block insert reselects and announces; a plain-repo rename with no open file succeeds and undoes.
 - `npm run check`, `npm test`, full `native-save` suite green; nightly groups run once.
+
+## Done (2026-10-11)
+
+- `applyNativeOperation` moved into the module's commit (`src/guarded-edit/commit.ts`); the `EditorWorkspace` port is the editor's primitives (drafts, branch reads, models, receipt sources, history, mounts, refresh), with `src/editor-workspace.ts` and `tests/fakes/memory-workspace.ts` as its adapters; `tests/guarded-edit.test.ts` unchanged (65 green). No expected source is filled in at commit: an unread write throws. `applyNativeChange` is the edit bar's `editOpenPage` (`edits.now`); Add section, the agent's add/remove section, write_file and draft writes, and site settings are plans (`addSectionStep` in component-plans.ts); `NativeOperation` and the agent site's `change`/`replaceMounted`/`template` ports are gone. main.ts −294 lines.
+- Restored: range edits' Undo/Redo select `before`/`after` and say `undone`/`done` (per-step draft-store companions, one per typing group); open-page settings reselect; with no file open, a structural step runs without an anchor and the page it opens takes the step (plain-repo Files-tab rename/move/delete work again; rename's Undo and Redo, refusal after an edit, refusal when a file opens meanwhile); Undo of Make component closes its stylesheet pane (already so; now in a spec).
+- Flakes: `native-boot-requests` had two (an `unroute` racing a delayed `continue`; the text index reading the injected unreadable sheet after the paint, which shows the preview alert); fixed in the spec. `native-branch-menu` did not fail in three full runs and 5 repeats. `native-canvas.spec.ts:382` (120 ms budget) failed once under load.
+- Tests: `tests/native-save/native-guarded-history.spec.ts` (3), file-operations (+2 plain-repo cases), editor-workspace and draft-store (per-step companion) updates.
