@@ -22,7 +22,8 @@ ordinary editable markup.
   item copied with its text reset.
 - A component item with a template, an item in a collection grid, or a plain
   item whose title is a heading then opens **Link to a page…**. All site pages except the current page and 404
-  are listed, the cards' folder first. Siblings' pages say **In this grid**
+  are listed as one plain list without group headings, the cards' folder first
+  and the rest after it, in site order within each. Siblings' pages say **In this grid**
   and cannot be picked. Esc leaves the new card blank.
 - Type an unknown title or address to get **+ Create page /work/oak-ash/**.
   Titles go under the folder inferred from sibling links, then the collection
@@ -32,11 +33,19 @@ ordinary editable markup.
 - Picking a page fills a component's slots from its content: title, description,
   image, address and matching text. Plain collection items get their title and
   link filled. A card with no link for its page (no link slot, no page link of
-  its own) gets its title's text wrapped in a link to it, marked **added** in
-  the strip (no class: the site's shared card link rule stretches it over the
-  card); a card component whose CSS has no positioned `:host` gets
-  `:host { position: relative; }` in the same undo step. The information strip lists sources, with **Change page** and
-  close; empty unnamed slots have no row.
+  its own) gets its title's text wrapped in a link to it (no class: the site's
+  shared card link rule stretches it over the card); a card component whose CSS
+  has no positioned `:host` gets
+  `:host { position: relative; }` in the same undo step. Filling closes the combobox
+  and leaves the card selected with its normal edit bar. The screen-reader
+  status announces
+  “Card filled from …”.
+- Before filling, a card slot's combobox has a **Card: card-project ▾** chip
+  with the same looks as Add card ▾. Each swap is one undo step and carries
+  content by role. Content a look cannot show is listed and kept aside only
+  while the combobox is open; swapping back restores it, without writing it
+  into the HTML meanwhile. Filling or closing the combobox drops it. A linked
+  card has no look chip.
 - Create page copies a sibling's structure and fills the already placed card.
   **One undo removes the page draft and fill**, restoring the blank card byte
   for byte; **a second undo removes the card**. Redo restores both steps and
@@ -127,7 +136,7 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
 - `src/page-builder/cards.ts`: the editor side (edit bar controls, adding,
   the Pages tab offer, delete) behind a small dependency object.
 - `src/components/card-grid-controls.ts` (+ `.css`): the ghost, its button and
-  the combobox and source strip over the preview frame; created by `native-preview.ts`, fed by
+  the combobox over the preview frame; created by `native-preview.ts`, fed by
   the runtime's `item-grids` message. Only the Add button accepts pointer
   events over the canvas; it sits above overlapping section insertion buttons.
 - `src/components/native-preview-runtime.js`, block "Repeated items": reports the grid

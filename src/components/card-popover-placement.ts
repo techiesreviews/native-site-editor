@@ -2,7 +2,7 @@
 interface VerticalBox { top: number; height: number }
 
 /**
- * Where "Link to a page…" and the fill strip stand: hung from the card's
+ * Where "Link to a page…" stands: hung from the card's
  * foot, below its edit bar when the bar is under the card; else above both;
  * else over the card, still clear of the bar when the view has room beside
  * it; only then clamped to the view.

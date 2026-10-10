@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cardFolder, pageChoiceGroups, type SitePage } from "../src/page-builder/page-choices.ts";
+import { cardFolder, pageChoices, type SitePage } from "../src/page-builder/page-choices.ts";
 
 // The starter's pages, in site order, plus a draft under /work/ and a page in another folder.
 const pages: SitePage[] = [
@@ -13,7 +13,7 @@ const pages: SitePage[] = [
   { route: "/notes/kiln-day/", file: "notes/kiln-day/index.html", title: "Kiln day" },
   { route: "/404.html", file: "404.html", title: "Page not found" },
 ];
-const titles = (groups: ReturnType<typeof pageChoiceGroups>) => groups.map((group) => [group.label, group.pages.map((page) => page.title)]);
+const titles = (choices: ReturnType<typeof pageChoices>) => choices.map((page) => page.title);
 
 test("the cards' folder is the most common parent of the pages they link to", () => {
   assert.equal(cardFolder(["/work/a/", "/notes/b/", "/work/c/"]), "/work/");
@@ -28,36 +28,34 @@ test("the cards' folder is the most common parent of the pages they link to", ()
   assert.equal(cardFolder(["/work/2025/a/", "/work/2025/b/"]), "/work/2025/");
 });
 
-test("pages under the inferred folder come first, then Other pages; the grid's own page and 404 are left out", () => {
-  const groups = pageChoiceGroups({ pages, own: "index.html", inGrid: ["/work/fern-and-kettle/", "/work/harbour-lane-pottery/"] });
-  assert.deepEqual(titles(groups), [
-    ["Under /work/", ["Fern & Kettle", "Harbour Lane Pottery", "Orchard Bakery"]],
-    ["Other pages", ["About", "Work", "Kiln day"]],
+test("pages under the inferred folder come first, then the rest; the grid's own page and 404 are left out", () => {
+  const choices = pageChoices({ pages, own: "index.html", inGrid: ["/work/fern-and-kettle/", "/work/harbour-lane-pottery/"] });
+  assert.deepEqual(titles(choices), [
+    "Fern & Kettle", "Harbour Lane Pottery", "Orchard Bakery", "About", "Work", "Kiln day",
   ]);
   // On another page, the home page is offered and that page is not.
-  const elsewhere = pageChoiceGroups({ pages, own: "about/index.html", inGrid: ["/work/fern-and-kettle/"] });
-  assert.deepEqual(elsewhere[1].pages.map((page) => page.route), ["/", "/work/", "/notes/kiln-day/"]);
+  const elsewhere = pageChoices({ pages, own: "about/index.html", inGrid: ["/work/fern-and-kettle/"] });
+  assert.deepEqual(elsewhere.slice(3).map((page) => page.route), ["/", "/work/", "/notes/kiln-day/"]);
 });
 
 test("pages a card of the grid links to are marked In this grid", () => {
-  const [under] = pageChoiceGroups({ pages, own: "index.html", inGrid: ["/work/fern-and-kettle/", "/work/harbour-lane-pottery/"] });
-  assert.deepEqual(under.pages.map((page) => [page.title, page.inGrid]), [["Fern & Kettle", true], ["Harbour Lane Pottery", true], ["Orchard Bakery", false]]);
+  const choices = pageChoices({ pages, own: "index.html", inGrid: ["/work/fern-and-kettle/", "/work/harbour-lane-pottery/"] });
+  assert.deepEqual(choices.slice(0, 3).map((page) => [page.title, page.inGrid]), [["Fern & Kettle", true], ["Harbour Lane Pottery", true], ["Orchard Bakery", false]]);
 });
 
-test("without a folder (no card links anywhere yet) every page is one group", () => {
-  const groups = pageChoiceGroups({ pages, own: "index.html", inGrid: [] });
-  assert.deepEqual(titles(groups), [["Pages", ["About", "Work", "Fern & Kettle", "Harbour Lane Pottery", "Orchard Bakery", "Kiln day"]]]);
+test("without a folder (no card links anywhere yet) every page stays in site order", () => {
+  const choices = pageChoices({ pages, own: "index.html", inGrid: [] });
+  assert.deepEqual(titles(choices), ["About", "Work", "Fern & Kettle", "Harbour Lane Pottery", "Orchard Bakery", "Kiln day"]);
 });
 
-test("search covers every page, by title or address, and drops empty groups", () => {
+test("search covers every page, by title or address, and keeps folder-first order", () => {
   const inGrid = ["/work/fern-and-kettle/"];
-  assert.deepEqual(titles(pageChoiceGroups({ pages, own: "index.html", inGrid, query: "  KILN " })), [["Other pages", ["Kiln day"]]]);
-  assert.deepEqual(titles(pageChoiceGroups({ pages, own: "index.html", inGrid, query: "orchard-b" })), [["Under /work/", ["Orchard Bakery"]]]);
-  assert.deepEqual(titles(pageChoiceGroups({ pages, own: "index.html", inGrid, query: "o" })), [
-    ["Under /work/", ["Fern & Kettle", "Harbour Lane Pottery", "Orchard Bakery"]],
-    ["Other pages", ["About", "Work", "Kiln day"]],
+  assert.deepEqual(titles(pageChoices({ pages, own: "index.html", inGrid, query: "  KILN " })), ["Kiln day"]);
+  assert.deepEqual(titles(pageChoices({ pages, own: "index.html", inGrid, query: "orchard-b" })), ["Orchard Bakery"]);
+  assert.deepEqual(titles(pageChoices({ pages, own: "index.html", inGrid, query: "o" })), [
+    "Fern & Kettle", "Harbour Lane Pottery", "Orchard Bakery", "About", "Work", "Kiln day",
   ]);
   // The left-out pages stay out of a search.
-  assert.deepEqual(pageChoiceGroups({ pages, own: "index.html", inGrid, query: "not found" }), []);
-  assert.deepEqual(pageChoiceGroups({ pages, own: "index.html", inGrid, query: "home" }), []);
+  assert.deepEqual(pageChoices({ pages, own: "index.html", inGrid, query: "not found" }), []);
+  assert.deepEqual(pageChoices({ pages, own: "index.html", inGrid, query: "home" }), []);
 });

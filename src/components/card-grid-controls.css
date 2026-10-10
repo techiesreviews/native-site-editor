@@ -131,7 +131,7 @@
   outline-offset: 2px;
 }
 
-/* A card component's look on its combobox and strip: "Card: card-project ▾". */
+/* A card component's look on its combobox: "Card: card-project ▾". */
 .card-look-chip {
   display: inline-flex;
   flex: none;
@@ -166,8 +166,7 @@
   font: 600 11px/1 var(--font-mono, ui-monospace, monospace);
   text-overflow: ellipsis;
 }
-.card-link__foot,
-.card-fill__foot {
+.card-link__foot {
   display: flex;
   align-items: center;
   gap: 8px;

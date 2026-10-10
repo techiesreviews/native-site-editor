@@ -1,13 +1,13 @@
 import { node } from "../ui/dom";
-import { createPageOffer, pageChoiceGroups, type CreatePageOffer, type PageChoice } from "../page-builder/page-choices";
+import { createPageOffer, pageChoices, type CreatePageOffer, type PageChoice } from "../page-builder/page-choices";
 import type { CardLinkPages, FrameBox } from "./card-grid-controls";
 import { cardPopoverPlacement } from "./card-popover-placement";
 import "./card-link-picker.css";
 
 // "Link to a page…" at the foot of a card just added (wayfinder
 // components-and-builder ticket 09 §1–3): a combobox over the site's pages,
-// those under the folder the grid's cards link into first, then "Other
-// pages" (src/page-builder/page-choices.ts); typed text that names no page
+// those under the folder the grid's cards link into first, then the rest
+// (src/page-builder/page-choices.ts); typed text that names no page
 // offers "+ Create page /work/…/". Pages a card of the grid links to
 // already are greyed, "In this grid", and can't be picked. Esc leaves the
 // card blank. Loaded on the first Add card that places a fresh card
@@ -89,32 +89,23 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   function render() {
     list.replaceChildren();
     entries = [];
-    const groups = pageChoiceGroups({ ...options.pages, query: input.value });
-    for (const [at, group] of groups.entries()) {
-      const section = node("div", "card-link__group");
-      section.setAttribute("role", "group");
-      const label = node("div", "card-link__group-label", group.label);
-      label.id = `${id}-group-${at}`;
-      section.setAttribute("aria-labelledby", label.id);
-      section.append(label);
-      for (const page of group.pages) {
-        const option = node("div", "card-link__option");
-        option.id = `${id}-option-${entries.length}`;
-        option.setAttribute("role", "option");
-        const main = node("span", "card-link__main");
-        main.append(node("span", "card-link__title", page.title), node("code", "card-link__route", page.route));
-        option.append(main);
-        if (page.inGrid) {
-          option.setAttribute("aria-disabled", "true");
-          option.append(node("span", "card-link__present", "In this grid"));
-        }
-        const entry = { option, disabled: page.inGrid, pick: () => pick(page) };
-        option.addEventListener("pointerdown", (event) => event.preventDefault());
-        option.addEventListener("click", () => pick(page));
-        section.append(option);
-        entries.push(entry);
+    const pages = pageChoices({ ...options.pages, query: input.value });
+    for (const page of pages) {
+      const option = node("div", "card-link__option");
+      option.id = `${id}-option-${entries.length}`;
+      option.setAttribute("role", "option");
+      const main = node("span", "card-link__main");
+      main.append(node("span", "card-link__title", page.title), node("code", "card-link__route", page.route));
+      option.append(main);
+      if (page.inGrid) {
+        option.setAttribute("aria-disabled", "true");
+        option.append(node("span", "card-link__present", "In this grid"));
       }
-      list.append(section);
+      const entry = { option, disabled: page.inGrid, pick: () => pick(page) };
+      option.addEventListener("pointerdown", (event) => event.preventDefault());
+      option.addEventListener("click", () => pick(page));
+      list.append(option);
+      entries.push(entry);
     }
     const offer = createPageOffer({ ...options.pages, query: input.value });
     if (offer) {
@@ -137,7 +128,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
       section.append(option);
       list.append(section);
     }
-    if (!groups.length && !offer) list.append(node("p", "card-link__empty", "No page matches."));
+    if (!pages.length && !offer) list.append(node("p", "card-link__empty", "No page matches."));
     setActive(entries.findIndex(entry => !entry.disabled));
   }
 

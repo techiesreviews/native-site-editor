@@ -20,7 +20,7 @@ import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { cardFill, cardFillContent, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
+import { cardFill, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
@@ -345,9 +345,8 @@ export function createCards(deps: CardsDeps) {
 
   // Swaps the card's look in place (card-swap.ts, loaded with the looks),
   // one undo step, keeping it selected: its content carried by role, `kept`
-  // what earlier looks held. A filled card's strip rows, and the card Change
-  // page fills from, follow the new look (ticket 09 §8, §10).
-  async function swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[]; filled?: CardFilled }): Promise<CardSwapped | undefined> {
+  // what earlier looks held while the combobox is open (ticket 09 §8, §10).
+  async function swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[] }): Promise<CardSwapped | undefined> {
     // The site and page as the swap was asked for: another site, or a change meanwhile, is not swapped over.
     const site = deps.site();
     const source = deps.source(card.path);
@@ -381,23 +380,11 @@ export function createCards(deps: CardsDeps) {
     if (css) {
       if (!await fillOperation(card, change, css, [], message, `Undid changing the ${noun}'s look.`)) return undefined;
     } else if (swapped.markup !== before && !deps.change(card.path, source!, [edit], card.node, message)) return undefined;
-    let filled = from.filled && { ...from.filled, filled: swapped.markup };
-    const file = filled && deps.site()?.routes[filled.route];
-    const page = file === undefined ? undefined : deps.source(file);
-    if (filled && page !== undefined) {
-      const baseTag = tagOf(filled.base);
-      const baseTemplate = baseTag ? template(baseTag) : undefined;
-      filled = {
-        ...filled,
-        rows: cardFill({ template: next, page: { route: filled.route, source: page }, siteUrl: deps.siteUrl() }).rows,
-        base: baseTemplate === undefined ? filled.base : cardSwap({ card: filled.base, template: baseTemplate, look, lookTemplate: next, variants: from.variants }).markup,
-      };
-    }
-    return { kept: swapped.kept, notShown: swapped.notShown, text: swapped.markup, filled };
+    return { kept: swapped.kept, notShown: swapped.notShown, text: swapped.markup };
   }
 
   /** Build both existing-page and new-page fills directly from the page's text. */
-  function fillFrom(card: NewCard, route: string, page: string, base?: string) {
+  function fillFrom(card: NewCard, route: string, page: string) {
     const source = deps.source(card.path);
     const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
     const element = range && itemElement(source!, range);
@@ -406,8 +393,7 @@ export function createCards(deps: CardsDeps) {
     const text = template(tag);
     const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
     if (!canFill(tag, grid, source.slice(range.start, range.end))) return undefined;
-    const before = source.slice(range.start, range.end);
-    const from = base ?? before;
+    const from = source.slice(range.start, range.end);
     const title = pageTitle(page, route).title;
     // Plain cards map the same facts onto their first body paragraph and image.
     let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
@@ -425,14 +411,14 @@ export function createCards(deps: CardsDeps) {
     // A CSS file there whose text is not read is left alone: the title link works without it.
     const host = cssPath && (cssBefore !== undefined || !deps.exists(cssPath)) ? { path: cssPath, before: cssBefore } : undefined;
     if (filled === undefined) return undefined;
-    return { source, host, expectedSources, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { rows, title, route, base: from, filled, content: cardFillContent(rows) } };
+    return { source, host, expectedSources, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { title, route } };
   }
 
-  /** Fill an existing page as one edit, preserving the original card for Change page. */
-  function fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined | Promise<CardFilled | undefined> {
+  /** Fill from an existing page as one edit. */
+  function fillCard(card: NewCard, route: string): CardFilled | undefined | Promise<CardFilled | undefined> {
     const file = deps.site()?.routes[route];
     const page = file === undefined ? undefined : deps.source(file);
-    const fill = page === undefined ? undefined : fillFrom(card, route, page, base);
+    const fill = page === undefined ? undefined : fillFrom(card, route, page);
     if (!fill) { refuse("That card or page is not there any more."); return undefined; }
     const message = `${capital(fill.noun)} filled from ${fill.result.title}`;
     const plainFill = () => (fill.edit.text === fill.source.slice(fill.edit.start, fill.edit.end) ||
@@ -513,7 +499,7 @@ export function createCards(deps: CardsDeps) {
   }
 
   /** Create a page and fill the placed card together, with the draft as its history companion. */
-  function createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined | Promise<CardFilled | undefined> {
+  function createPage(card: NewCard, request: CardPageRequest): CardFilled | undefined | Promise<CardFilled | undefined> {
     const source = deps.source(card.path);
     const route = routeOf(card.path);
     const site = deps.site();
@@ -526,7 +512,7 @@ export function createCards(deps: CardsDeps) {
     const inputs = new Map([site.routes["/"], ...siblings.map(sibling => sibling.route && site.routes[sibling.route])]
       .filter((path): path is string => Boolean(path)).map(path => [path, deps.source(path)]));
     const content = subpageDocument(siblings, request.title.trim(), target.value.route);
-    const fill = fillFrom(card, target.value.route, content, base);
+    const fill = fillFrom(card, target.value.route, content);
     if (!fill) { refuse("That card is not there any more."); return undefined; }
     // A fill that changes nothing has no edit to carry the page with it: one undo could not take the page back.
     if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) { refuse(`Nothing on this ${fill.noun} takes a page's title or address.`); return undefined; }

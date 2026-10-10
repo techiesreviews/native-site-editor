@@ -1,9 +1,8 @@
 // A card's fill plan, read from source without a DOM. Writing it is a
-// separate operation: these rows also supply the fill strip's provenance.
+// separate operation: these rows describe each slot's source and mapping.
 // An empty unnamed fallback has no row; text or image fallbacks still do.
 import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
 import { slotMarkup } from "../native-insert";
-import type { CardContent } from "./card-swap";
 import { allElements, elementTree, itemFill, plainText as itemPlainText, textLeaves, titleLeaf } from "./card-grid";
 
 export type CardFillRole = "title" | "body" | "image" | "link" | "other";
@@ -157,23 +156,6 @@ interface RangeEdit {
   text: string;
 }
 
-/**
- * What a fill gives a card by role (card-swap.ts), the page's facts its look
- * has no slot for too ("not used"): kept aside, they show on a swap to a look
- * with a place for them.
- */
-export function cardFillContent(rows: CardFillRow[]): CardContent {
-  const out: CardContent = { other: {} };
-  for (const row of rows) {
-    if (row.status === "kept") continue;
-    if (row.role === "title" && row.text) out.title = escapeText(row.text);
-    else if (row.role === "body" && row.text) out.body = escapeText(row.text);
-    else if (row.role === "image" && row.src) out.image = { src: row.src };
-    else if (row.role === "link" && row.href) out.link = row.status === "filled" ? { href: row.href, html: escapeText(row.text ?? "") } : { href: row.href };
-  }
-  return out;
-}
-
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 const elementsOf = (element: SourceElement) => element.children.filter((node): node is SourceElement => node.type === "element");
@@ -312,7 +294,7 @@ export function cardFillMarkup(card: string, template: string, rows: CardFillRow
  * meta description in its first paragraph after the title that holds no
  * link, and the og:image in its first image (cardImageEdits); a fact the
  * page lacks keeps what the card says, a fact the card has no place for is
- * "not used". Then the title and link as `itemFill`. The rows are the strip's.
+ * "not used". Then the title and link as `itemFill`. The rows describe the mapping.
  */
 export function itemPageFill(card: string, noun: string, title: string, href: string, facts: CardFillRow[]): { markup: string; rows: CardFillRow[] } | undefined {
   const root = elementTree(card)?.[0];

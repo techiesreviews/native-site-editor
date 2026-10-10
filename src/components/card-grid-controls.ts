@@ -3,9 +3,7 @@ import { icon } from "../icons";
 import { aOr } from "../page-builder/card-grid";
 import { ghostInView, STRIP } from "./card-ghost-view";
 import type { SitePage } from "../page-builder/page-choices";
-import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardLinkPicker } from "./card-link-picker";
-import type { CardFillStrip } from "./card-fill-strip";
 import type { CardLook } from "../page-builder/card-looks";
 import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import type { CardLookGallery } from "./card-look-gallery";
@@ -13,9 +11,9 @@ import type { CardContent } from "../page-builder/card-swap";
 import "./card-grid-controls.css";
 
 // Add card places and selects a card immediately. Component cards and collection
-// items then open Link to a page, including Create page; filling replaces the
-// picker with its source strip. Card slots also offer the looks gallery.
-// On a card component's combobox and strip, a "Card: card-project ▾" chip
+// items then open Link to a page, including Create page; filling closes the
+// picker. Card slots also offer the looks gallery.
+// On a card component's combobox, a "Card: card-project ▾" chip
 // opens the same looks and swaps the card's look in place; what the new look
 // shows none of is kept aside on the linker while it is open (spec decision
 // 12: never in the HTML), listed, and comes back on a swap to a look with a
@@ -98,24 +96,17 @@ export interface CardLinkPages {
   exists(path: string): boolean;
 }
 
-/** A card filled from a page: the rows of where its slots' content came from, the card before and after the fill. */
+/** A successful fill's page, used by the editor's announcements. */
 export interface CardFilled {
-  rows: CardFillRow[];
   title: string;
   route: string;
-  /** The card as it was before the first fill, which Change page fills again. */
-  base: string;
-  filled: string;
-  /** The page's content by role, what the card's look has no slot for too (card-fill.ts `cardFillContent`). */
-  content: CardContent;
 }
 
-/** A card swapped to another look: what to keep aside, what the look does not show, the card now, and a filled card's strip as it follows. */
+/** A card swapped to another look: what to keep aside, what the look does not show, the card now. */
 export interface CardSwapped {
   kept: CardContent;
   notShown: string[];
   text: string;
-  filled?: CardFilled;
 }
 
 export interface CardGridHandlers {
@@ -123,14 +114,14 @@ export interface CardGridHandlers {
   /** Places a card immediately; resolves to it when it can be filled from a page. A card slot accepts `look`. */
   addCard(grid: ItemGridReport, look?: CardLook): Promise<NewCard | undefined>;
   linkPages(card: NewCard): CardLinkPages | undefined;
-  /** Fills the card from the page at `route`, from `base` when given (one undo step); undefined when it could not. */
-  fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined | Promise<CardFilled | undefined>;
+  /** Fills the card from the page at `route` (one undo step); undefined when it could not. */
+  fillCard(card: NewCard, route: string): CardFilled | undefined | Promise<CardFilled | undefined>;
   /** Swaps the card to `look` in place (one undo step), its content carried, `kept` from earlier looks; the attributes the looks set (`variants`) give way. */
-  swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[]; filled?: CardFilled }): Promise<CardSwapped | undefined>;
+  swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[] }): Promise<CardSwapped | undefined>;
   /** The card's markup now; undefined once it is gone. */
   cardText(card: NewCard): string | undefined;
   /** Creates a page and fills the placed card as one undo step. */
-  createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined | Promise<CardFilled | undefined>;
+  createPage(card: NewCard, request: CardPageRequest): CardFilled | undefined | Promise<CardFilled | undefined>;
   /** The site's scripts: the attributes they set are no looks. */
   scripts(): { path: string; source: string }[];
 }
@@ -268,14 +259,11 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     addCard(grid);
   }
 
-  // "Link to a page…" on the card just added, while it stays selected; after
-  // a page is picked, the strip of where its content came from instead. A
-  // card slot's card has a look (its chip), and what earlier looks held.
+  // "Link to a page…" stays on the selected new card until it is filled.
+  // A card slot's card has a look chip and content earlier looks kept aside.
   interface Linker {
     card: NewCard;
     picker?: CardLinkPicker;
-    strip?: CardFillStrip;
-    filled?: CardFilled;
     filling?: boolean;
     seen: boolean;
     scrolled?: boolean;
@@ -315,7 +303,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   }
 
   const notShownNote = (entry: Linker) => entry.notShown?.length && entry.look
-    ? `Not shown by ${entry.look.label}: ${entry.notShown.join(", ")}. Kept aside while the page is open: it comes back with a look that has a place for it.`
+    ? `Not shown by ${entry.look.label}: ${entry.notShown.join(", ")}. Kept aside while the combobox is open: it comes back with a look that has a place for it.`
     : undefined;
 
   // The looks from a card's chip, for the linker it was opened on.
@@ -366,20 +354,17 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   async function swap(entry: Linker, look: CardLook, variants: string[]) {
     if (entry.look && lookKey(entry.look) === lookKey(look)) { entry.chip?.focus(); return; }
-    // Its own edit is not a change to the card that drops the strip (sourcesChanged).
+    // Its own edit does not close the combobox (sourcesChanged).
     entry.filling = true;
     let done: CardSwapped | undefined;
     try {
-      done = await handlers.swapCard(entry.card, look, { kept: entry.kept, variants, filled: entry.filled });
+      done = await handlers.swapCard(entry.card, look, { kept: entry.kept, variants });
     } finally {
       entry.filling = false;
     }
     if (!done || linker !== entry) return;
     Object.assign(entry, { look, kept: done.kept, notShown: done.notShown, swapped: done.text, seen: false });
-    if (entry.filled && done.filled) {
-      entry.filled = done.filled;
-      showStrip(entry, done.filled, true);
-    } else openPicker(entry, true);
+    openPicker(entry, true);
   }
 
   function openPicker(entry: Linker, focusLook = false) {
@@ -387,29 +372,22 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (!pages) { closeLinker(); return; }
     import("./card-link-picker").then(({ createCardLinkPicker }) => {
       if (linker !== entry) return;
-      entry.strip?.destroy();
-      entry.strip = undefined;
       entry.picker?.destroy();
       entry.picker = createCardLinkPicker(pane, {
         pages,
         look: lookChip(entry),
         note: notShownNote(entry),
         focusLook,
-        onPick: (page) => void fill(entry, () => handlers.fillCard(entry.card, page.route, entry.filled?.base)),
-        onCreate: (offer) => void fill(entry, () => handlers.createPage(entry.card, offer.request, entry.filled?.base)),
-        onEscape: () => {
-          // From Change page, Esc goes back to the strip; on a blank card it closes.
-          if (entry.filled) { showStrip(entry, entry.filled); return; }
-          closeLinker();
-          if (!ghost.hidden) add.focus();
-        },
+        onPick: (page) => void fill(entry, () => handlers.fillCard(entry.card, page.route)),
+        onCreate: (offer) => void fill(entry, () => handlers.createPage(entry.card, offer.request)),
+        onEscape: closeAndFocus,
       });
       placeLinker();
     }).catch(() => { if (linker === entry) linker = undefined; });
   }
 
   async function fill(entry: Linker, run: () => CardFilled | undefined | Promise<CardFilled | undefined>) {
-    // Its own edit is not a change to the card that drops the strip (sourcesChanged).
+    // Its own edit does not close the combobox (sourcesChanged).
     if (entry.filling) return;
     entry.filling = true;
     let filled: CardFilled | undefined;
@@ -419,46 +397,21 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       entry.filling = false;
     }
     if (linker !== entry) return;
-    if (filled) filledWith(entry, filled);
+    if (filled) closeAndFocus();
     // A change to the card while a fill that did not land was loading is seen now.
     else dropStale();
   }
 
-  /** A filled or swapped card that is not as it was written (undone, edited) drops its strip. */
+  /** Close an open combobox when its swapped card was undone or edited. */
   function dropStale() {
-    const written = linker?.filled?.filled ?? linker?.swapped;
+    const written = linker?.swapped;
     if (linker && written !== undefined && !linker.filling && handlers.cardText(linker.card) !== written) closeLinker();
   }
 
-  function filledWith(entry: Linker, filled: CardFilled) {
-    entry.filled = filled;
-    // The page's content, what the look does not show too, for a swap; the strip lists those rows "not used".
-    entry.kept = filled.content;
-    entry.notShown = undefined;
-    // The page shows the filled card after its next report: until then the selection may not name it.
-    entry.seen = false;
-    showStrip(entry, filled);
-  }
-
-  function showStrip(entry: Linker, filled: CardFilled, focusLook = false) {
-    import("./card-fill-strip").then(({ createCardFillStrip }) => {
-      if (linker !== entry || entry.filled !== filled) return;
-      entry.picker?.destroy();
-      entry.picker = undefined;
-      entry.strip?.destroy();
-      entry.strip = createCardFillStrip(pane, {
-        filled,
-        look: lookChip(entry),
-        note: notShownNote(entry),
-        focusLook,
-        onChange: () => openPicker(entry),
-        onClose: () => {
-          closeLinker();
-          if (!ghost.hidden) add.focus();
-        },
-      });
-      placeLinker();
-    }).catch(() => { if (linker === entry) closeLinker(); });
+  function closeAndFocus() {
+    closeLinker();
+    if (!ghost.hidden) add.focus();
+    else frame.focus();
   }
 
   // Hung from the card while the selection is the card (the runtime reports
@@ -480,11 +433,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const rect = element?.getBoundingClientRect();
     const paneRect = pane.getBoundingClientRect();
     const bar = rect && { left: rect.left - paneRect.left, top: rect.top - paneRect.top, width: rect.width, height: rect.height };
-    if (linker.strip) {
-      linker.strip.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, bar);
-      looksMenu?.view?.place();
-      return;
-    }
     const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, bar, !linker.scrolled) ?? 0;
     looksMenu?.view?.place();
     // Once, when it does not fit below the card: the page scrolls up to make room (its report places it again).
@@ -500,7 +448,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   function closeLinker() {
     closeLooks(false);
     linker?.picker?.destroy();
-    linker?.strip?.destroy();
     linker = undefined;
   }
 
@@ -591,7 +538,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     },
     /**
      * The page's text, styles or images changed: the looks gallery's pictures
-     * follow; a filled card that is not as it was filled (undone, edited) drops its strip.
+     * follow; an open combobox closes if its swapped card was undone or edited.
      */
     sourcesChanged() {
       gallery?.view?.refresh();

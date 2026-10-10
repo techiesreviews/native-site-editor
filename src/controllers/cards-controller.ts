@@ -29,11 +29,11 @@ export function createCardsController(ports: CardsControllerPorts) {
       describe: (grid) => cards?.describe(grid),
       addCard: (grid, look) => cards?.addCard(grid, look) ?? Promise.resolve(undefined),
       linkPages: (card) => cards?.linkPages(card),
-      fillCard: (card, route, base) => cards?.fillCard(card, route, base),
+      fillCard: (card, route) => cards?.fillCard(card, route),
       swapCard: (card, look, from) => cards?.swapCard(card, look, from) ?? Promise.resolve(undefined),
       scripts: () => cards?.scripts() ?? [],
       cardText: (card) => cards?.cardText(card),
-      createPage: (card, request, base) => cards?.createPage(card, request, base),
+      createPage: (card, request) => cards?.createPage(card, request),
     } satisfies CardGridHandlers as CardGridHandlers,
     controls(selection: NativePreviewSelection, source: string) {
       return cards ? withoutCardMoves(cards.controls(selection, source)) : [];

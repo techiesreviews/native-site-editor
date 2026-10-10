@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPageOffer, pageChoiceGroups } from "../src/page-builder/page-choices.ts";
+import { createPageOffer, pageChoices } from "../src/page-builder/page-choices.ts";
 
 const routes = { "/": "index.html", "/work/old/": "work/old/index.html" };
 const input = { routes, pages: [{ route: "/work/old/", file: "work/old/index.html", title: "Old page" }], folders: ["/", "/work/", "/work/old/"], inGrid: ["/work/old/"], exists: () => false };
@@ -28,8 +28,8 @@ test("a title that gives no URL has a disabled offer with the reason", () => {
 
 test("a taken planned address stays in search results even when the typed title has punctuation", () => {
   assert.equal(offer("Old!!!"), undefined);
-  assert.equal(pageChoiceGroups({ ...input, own: "index.html", query: "Old!!!" })[0].pages[0].route, "/work/old/");
-  assert.equal(pageChoiceGroups({ pages: [{ route: "/about.html", title: "About", file: "about.html" }], own: "index.html", inGrid: [], query: "/about.html/" })[0].pages[0].route, "/about.html");
+  assert.equal(pageChoices({ ...input, own: "index.html", query: "Old!!!" })[0].route, "/work/old/");
+  assert.equal(pageChoices({ pages: [{ route: "/about.html", title: "About", file: "about.html" }], own: "index.html", inGrid: [], query: "/about.html/" })[0].route, "/about.html");
 });
 
 test("an occupied new folder keeps its disabled reason when the page address is still free", () => {

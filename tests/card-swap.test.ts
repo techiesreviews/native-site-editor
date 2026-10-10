@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { cardSwap, readCardContent } from "../src/page-builder/card-swap.ts";
-import { cardFill, cardFillContent, cardFillMarkup } from "../src/page-builder/card-fill.ts";
 
 const project = [
   "<article>",
@@ -130,26 +129,6 @@ test("the start tag keeps its other attributes; the looks' attributes give way t
   // A card written on one line stays on one.
   assert.equal(cardSwap({ card: '<card-project><h3 slot="title">Oak</h3></card-project>', template: project, look: { tag: "card-quote", label: "card-quote" }, lookTemplate: quote }).markup,
     '<card-quote><h3 slot="title">Oak</h3><blockquote slot="body" class="quote">No quote yet.</blockquote></card-quote>');
-});
-
-test("a fill keeps aside the page's facts its look has no slot for: a swap to a look with one shows them", () => {
-  const page = '<!doctype html><html><head><title>Harbour · Larkspur</title><meta name="description" content="A quiet portfolio."><meta property="og:image" content="/images/harbour.svg"></head><body><main><h1>Harbour Lane Pottery</h1></main></body></html>';
-  const { rows } = cardFill({ template: quote, page: { route: "/work/harbour/", source: page } });
-  const blank = '<card-quote>\n  <h3 slot="title">Untitled quote</h3>\n  <blockquote slot="body" class="quote">No quote yet.</blockquote>\n</card-quote>';
-  const filledQuote = cardFillMarkup(blank, quote, rows);
-  assert.equal(filledQuote, '<card-quote>\n  <h3 slot="title"><a href="/work/harbour/">Harbour Lane Pottery</a></h3>\n  <blockquote slot="body" class="quote">A quiet portfolio.</blockquote>\n</card-quote>');
-  const kept = cardFillContent(rows);
-  assert.deepEqual(kept, { other: {}, title: "Harbour Lane Pottery", body: "A quiet portfolio.", link: { href: "/work/harbour/" }, image: { src: "/images/harbour.svg" } });
-  const swap = cardSwap({ card: filledQuote, template: quote, look: { tag: "card-project", label: "card-project" }, lookTemplate: project, kept });
-  assert.equal(swap.markup, [
-    "<card-project>",
-    '  <img slot="image" src="/images/harbour.svg" alt="">',
-    '  <p slot="note">Project</p>',
-    '  <h3 slot="title">Harbour Lane Pottery</h3>',
-    '  <p slot="body" class="body">A quiet portfolio.</p>',
-    '  <a slot="link" href="/work/harbour/">Read about Harbour Lane Pottery</a>',
-    "</card-project>",
-  ].join("\n"));
 });
 
 test("formatting around a whole title or body is content: it carries over", () => {

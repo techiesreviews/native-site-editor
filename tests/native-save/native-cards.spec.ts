@@ -829,8 +829,8 @@ test("a plain collection card fills its title and link from Create page and undo
   await expect(cards.last().locator("h3")).toHaveText("Oak");
   await expect(cards.last().locator("a")).toHaveAttribute("href", "/work/oak/");
   await expect.poll(() => storedDraft(page, "work/oak/index.html")).toBeTruthy();
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  await expect(strip.getByRole("listitem")).toHaveText(["Titleh1Oak", "Linkaddress/work/oak/"]);
+  await expect(picker(page)).toHaveCount(0);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
   await page.locator(".code-editor__undo").click();
   await expect.poll(() => homeDraft(page)).toBe(blank);
   await expect.poll(() => storedDraft(page, "work/oak/index.html")).toBeUndefined();

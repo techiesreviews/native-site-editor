@@ -133,7 +133,7 @@ test("of two named card slots, the one whose part of the template is under the p
   expect(Math.abs(a!.y - b!.y)).toBeLessThan(2);
 });
 
-test("a fresh card shows Link to a page… at its foot: the cards' folder first, then Other pages; Esc leaves the card blank", async ({ page, baseURL }) => {
+test("a fresh card shows Link to a page… at its foot: the cards' folder first, then the rest; Esc leaves the card blank", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "about/index.html", content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>About · Larkspur Studio</title>\n</head>\n<body>\n  <main>\n    <h1>About us</h1>\n  </main>\n</body>\n</html>\n' } });
@@ -165,27 +165,32 @@ test("a fresh card shows Link to a page… at its foot: the cards' folder first,
 
   // The cards' folder first, the page they link to greyed; then the rest, not the grid's own page.
   const list = page.getByRole("listbox", { name: "Pages" });
-  const under = list.getByRole("group", { name: "Under /work/" });
-  const other = list.getByRole("group", { name: "Other pages" });
-  await expect(list.getByRole("group")).toHaveCount(2);
-  await expect(under.getByRole("option")).toHaveText([/^Fern & Kettle\/work\/fern-and-kettle\/In this grid$/, /^Harbour Lane Pottery\/work\/harbour-lane-pottery\/$/]);
-  await expect(under.getByRole("option").first()).toHaveAttribute("aria-disabled", "true");
+  const harbour = list.getByRole("option", { name: /Harbour Lane Pottery/ });
+  const about = list.getByRole("option", { name: /About us/ });
+  await expect(list.getByRole("group")).toHaveCount(0);
+  await expect(list.getByRole("option")).toHaveText([
+    /^Fern & Kettle\/work\/fern-and-kettle\/In this grid$/,
+    /^Harbour Lane Pottery\/work\/harbour-lane-pottery\/$/,
+    /^About us\/about\/$/,
+  ]);
+  await expect(list.getByRole("option").first()).toHaveAttribute("aria-disabled", "true");
   // A page in the grid can't be picked: clicking it leaves the combobox open and the card as it is.
-  await under.getByRole("option").first().click({ force: true });
+  await list.getByRole("option").first().click({ force: true });
   await expect(input).toBeFocused();
   expect(await source(page)).toBe(added);
-  await expect(other.getByRole("option")).toHaveText([/^About us\/about\/$/]);
+  await expect(about).toHaveText(/^About us\/about\/$/);
   await expect(list.getByRole("option", { name: /Larkspur|Small websites/ })).toHaveCount(0);
   // The first page that can be picked is active, and arrows skip the greyed one.
-  await expect(under.getByRole("option", { name: /Harbour Lane Pottery/ })).toHaveAttribute("aria-selected", "true");
+  await expect(harbour).toHaveAttribute("aria-selected", "true");
   await input.press("ArrowDown");
-  await expect(other.getByRole("option")).toHaveAttribute("aria-selected", "true");
+  await expect(about).toHaveAttribute("aria-selected", "true");
   await input.press("ArrowDown");
-  await expect(under.getByRole("option", { name: /Harbour Lane Pottery/ })).toHaveAttribute("aria-selected", "true");
+  await expect(harbour).toHaveAttribute("aria-selected", "true");
   // Search covers every page, by title or address.
   await input.fill("abo");
-  await expect(list.getByRole("group")).toHaveCount(2);
-  await expect(other.getByRole("option")).toHaveText([/^About us/]);
+  await expect(list.getByRole("group", { name: "New page" })).toHaveCount(1);
+  await expect(list.getByRole("group", { name: /Under|Other pages/ })).toHaveCount(0);
+  await expect(about).toHaveText(/^About us/);
   await input.fill("harbour-lane");
   await expect(list.getByRole("option")).toHaveText([/^Harbour Lane Pottery/, /^\+ Create page/]);
   await input.fill("nothing like it");
@@ -247,7 +252,7 @@ const harbourCard = [
   "      </card-project>",
 ].join("\n");
 
-test("picking a page fills the new card from it and a strip lists each part's source; undo takes the fill back, then the card", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("picking a page fills the new card and closes the combobox; undo takes the fill back, then the card", { tag: "@smoke" }, async ({ page, baseURL }) => {
   const { made, added } = await openFillable(page, baseURL);
   const input = page.getByRole("combobox", { name: "Link to a page" });
   await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
@@ -262,78 +267,22 @@ test("picking a page fills the new card from it and a strip lists each part's so
   await expect(card.locator(":scope > a")).toHaveText("Read about Harbour Lane Pottery");
   await expect(card.locator(":scope > h3 > a")).toHaveCount(0);
   expect(await storedDraft(page, "components/card-project/card-project.css")).toBeUndefined();
-  // The combobox gives way to the strip: the page, then each slot and where its content came from.
   await expect(input).toHaveCount(0);
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  await expect(strip).toBeVisible();
-  await expect(strip.locator(".card-fill__title")).toHaveText("Filled from Harbour Lane Pottery /work/harbour-lane-pottery/");
-  await expect(strip.getByRole("listitem")).toHaveText([
-    "Imageog:image/images/harbour.svg",
-    "Note<card-note>Ceramics studio · Portfolio · 2025",
-    "Titleh1Harbour Lane Pottery",
-    "Bodymeta descriptionA quiet portfolio for a working potter.",
-    "Linkaddress/work/harbour-lane-pottery/",
-  ]);
-  await expect(strip.getByRole("button", { name: "Change page" })).toBeFocused();
-  // Information only: Change page and close are its only controls, with the card's look chip.
-  await expect(strip.getByRole("button")).toHaveText(["", "Change page", "Card: card-project"]);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
+  await expect(addCard(page)).toBeFocused();
+  await expect(page.locator("#status")).toHaveAttribute("role", "status");
+  await expect(page.locator("#status")).toHaveAttribute("aria-live", "polite");
+  await expect(page.locator("#status")).toHaveText("Card filled from Harbour Lane Pottery");
   // The card stays selected.
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(/Card project/);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(added);
-  await expect(strip).toHaveCount(0);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
   await expect(card.locator(":scope > h3")).toHaveText("Untitled project");
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(made);
   await expect(frame(page).locator("section-work > card-project")).toHaveCount(1);
-});
-
-test("Change page fills the card again from the card as it was added; Esc there goes back to the strip; close hides it", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
-  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "about/index.html", content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>About · Larkspur Studio</title>\n</head>\n<body>\n  <main>\n    <h1>About us</h1>\n  </main>\n</body>\n</html>\n' } });
-  const { added } = await openFillable(page, baseURL);
-  const input = page.getByRole("combobox", { name: "Link to a page" });
-  await input.press("Enter");
-  const filled = added.replace(freshWithImage, harbourCard);
-  await expect.poll(() => source(page)).toBe(filled);
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  await strip.getByRole("button", { name: "Change page" }).click();
-  await expect(input).toBeFocused();
-  await expect(strip).toHaveCount(0);
-  // Esc from Change page keeps the fill and shows the strip again.
-  await input.press("Escape");
-  await expect(strip).toBeVisible();
-  expect(await source(page)).toBe(filled);
-  await strip.getByRole("button", { name: "Change page" }).click();
-  await input.fill("about");
-  await input.press("Enter");
-  // A page without a note, description or image: those keep the new card's own text, not Harbour Lane's.
-  await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, [
-    "<card-project>",
-    '        <img slot="image" src="/images/placeholder.svg" alt="">',
-    '        <p slot="note">Project</p>',
-    '        <h3 slot="title">About us</h3>',
-    '        <p slot="body" class="body">No description yet.</p>',
-    '        <a slot="link" href="/about/">Read about About us</a>',
-    "      </card-project>",
-  ].join("\n")));
-  await expect(strip.locator(".card-fill__title")).toHaveText("Filled from About us /about/");
-  await expect(strip.getByRole("listitem").filter({ hasText: /^Body/ })).toHaveText("BodykeptNo description yet.");
-  // Undo takes the second fill back to the first, which has no strip.
-  expect(await undo(page)).toBe(true);
-  await expect.poll(() => source(page)).toBe(filled);
-  await expect(strip).toHaveCount(0);
-  // A new card's strip closes with its ×, the card as filled.
-  await frame(page).locator("section-work > card-project").nth(1).hover();
-  await addCard(page).click();
-  await input.press("Enter");
-  await expect(strip).toBeVisible();
-  const twice = await source(page);
-  await strip.getByRole("button", { name: "Close" }).click();
-  await expect(strip).toHaveCount(0);
-  await expect(addCard(page)).toBeFocused();
-  expect(await source(page)).toBe(twice);
 });
 
 test("Add card ▾ lists the card looks, rendered, and places a blank card of the one picked; the link combobox follows", async ({ page, baseURL }) => {
@@ -400,75 +349,55 @@ const harbourQuote = [
   "      </card-quote>",
 ].join("\n");
 
-test("the card's look chip swaps a filled card to a look without an image and back: the image returns, never in the HTML meanwhile; each swap is one undo step", async ({ page, baseURL }) => {
+test("the combobox keeps an edited image aside on a swap and restores it on a swap back; each swap is one undo step", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
-  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.css", content: ":host { display: block; }\narticle { padding: 24px; font-style: italic; }\n" } });
   const { added } = await openFillable(page, baseURL);
-  // On the combobox already: the card's look.
-  await expect(page.getByRole("group", { name: "Link the new card to a page" }).getByRole("button", { name: "Card: card-project" })).toBeVisible();
-  await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
-  const filled = added.replace(freshWithImage, harbourCard);
-  await expect.poll(() => source(page)).toBe(filled);
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  const chip = (look: string) => strip.getByRole("button", { name: `Card: ${look}` });
-  await chip("card-project").click();
-  await expect(chip("card-project")).toHaveAttribute("aria-expanded", "true");
+  // An image edited before linking is real content, rather than the template fallback.
+  const edited = added.replace(freshWithImage, freshWithImage.replace("/images/placeholder.svg", "/images/harbour.svg"));
+  await page.evaluate(async (text) => {
+    const { monaco } = await import("/src/components/monaco.ts");
+    monaco.editor.getModels().find(model => model.uri.path.endsWith("/index.html"))!.setValue(text);
+  }, edited);
+  await expect.poll(() => source(page)).toBe(edited);
+  const linker = page.getByRole("group", { name: "Link the new card to a page" });
+  const chip = (look: string) => linker.getByRole("button", { name: `Card: ${look}` });
   const menu = page.getByRole("dialog", { name: "Card look" });
-  // The same looks as Add card ▾, each with this card's content; its own look marked and focused.
+  await chip("card-project").click();
   const tiles = menu.locator(".card-looks__tile");
   await expect(tiles).toHaveText([/^card-projectusualcurrent$/, /^card-quote$/]);
   await expect(tiles.first()).toHaveAttribute("aria-pressed", "true");
   await expect(tiles.first()).toBeFocused();
-  await expect(tiles.nth(1).frameLocator("iframe").locator("card-quote > h3")).toHaveText("Harbour Lane Pottery");
-  // Esc closes it, back on the chip.
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
   await expect(chip("card-project")).toBeFocused();
-  await expect(strip).toBeVisible();
-
-  // card-quote has no image or note slot: they are kept aside, not written, and listed.
   await chip("card-project").click();
   await menu.getByRole("button", { name: "card-quote" }).click();
-  const quoted = added.replace(freshWithImage, harbourQuote);
-  await expect.poll(() => source(page)).toBe(quoted);
-  const cssPath = "components/card-quote/card-quote.css";
-  const cssBefore = ":host { display: block; }\narticle { padding: 24px; font-style: italic; }\n";
-  await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(cssBefore + ":host { position: relative; }\n");
-  expect(quoted).not.toContain("harbour.svg");
-  const card = frame(page).locator("section-work > :nth-child(3)");
-  await expect(card.locator("h3 > a")).toHaveText("Harbour Lane Pottery");
   await expect(chip("card-quote")).toBeFocused();
-  await expect(strip.locator(".card-look-note")).toHaveText("Not shown by card-quote: image (no image slot), note (no note slot). Kept aside while the page is open: it comes back with a look that has a place for it.");
-  // The rows follow the new look: its title links the card.
-  await expect(strip.getByRole("listitem")).toHaveText([
-    "Titleh1Harbour Lane Pottery",
-    "Bodymeta descriptionA quiet portfolio for a working potter.",
-    "Linkaddressadded/work/harbour-lane-pottery/the title links to the page",
-    "Imagenot used/images/harbour.svg",
-  ]);
-
-  // Back to card-project: the image and the note return, the card as it was filled.
+  const quoted = await source(page);
+  expect(quoted).not.toContain("harbour.svg");
+  await expect(linker.locator(".card-look-note")).toHaveText("Not shown by card-quote: image (no image slot). Kept aside while the combobox is open: it comes back with a look that has a place for it.");
   await chip("card-quote").click();
   await menu.getByRole("button", { name: "card-project, the usual card" }).click();
-  await expect.poll(() => source(page)).toBe(filled);
-  await expect.poll(() => card.locator(":scope > img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(320);
-  await expect(strip.locator(".card-look-note")).toHaveCount(0);
-  await expect(chip("card-project")).toBeFocused();
-
-  // Each swap is one undo step; undoing drops the strip, and what it kept aside with it.
+  await expect.poll(() => source(page)).toBe(edited);
+  await expect(linker.locator(".card-look-note")).toHaveCount(0);
+  await expect.poll(() => frame(page).locator("section-work > card-project").last().locator(":scope > img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(320);
+  // Fill closes the linker and offers no further look switch.
+  await page.getByRole("combobox", { name: "Link to a page" }).fill("harbour");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, harbourCard));
+  await expect(linker).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(edited);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(quoted);
-  await expect(strip).toHaveCount(0);
   expect(await undo(page)).toBe(true);
-  await expect.poll(() => source(page)).toBe(filled);
-  await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
-  expect(await undo(page)).toBe(true);
-  await expect.poll(() => source(page)).toBe(added);
+  await expect.poll(() => source(page)).toBe(edited);
 });
 
-test("the chip on the combobox swaps the blank card; filled in a look without an image, the page's image shows on a swap to one with it", async ({ page, baseURL }) => {
+test("the chip on the combobox swaps the blank card; filling then closes it with no look chip", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
@@ -484,26 +413,26 @@ test("the chip on the combobox swaps the blank card; filled in a look without an
   await page.getByRole("combobox", { name: "Link to a page" }).fill("harbour");
   await page.keyboard.press("Enter");
   await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, harbourQuote));
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  await expect(strip.getByRole("listitem").filter({ hasText: /^Image/ })).toHaveText("Imagenot used/images/harbour.svg");
-  await strip.getByRole("button", { name: "Card: card-quote" }).click();
-  await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-project, the usual card" }).click();
-  // The note keeps the new card's own placeholder: it is not the page's.
-  await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, harbourCard.replace("Ceramics studio · Portfolio · 2025", "Project")));
+  await expect(linker).toHaveCount(0);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
+  await expect(frame(page).locator("section-work > card-quote > img")).toHaveCount(0);
 });
 
-test("what a swap keeps aside lives only while the page is open: after a page switch the card is as written, with no chip", async ({ page, baseURL }) => {
+test("a card swapped before filling stays as written after a page switch, with no chip", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
   const { added } = await openFillable(page, baseURL);
-  await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  await strip.getByRole("button", { name: "Card: card-project" }).click();
+  const linker = page.getByRole("group", { name: "Link the new card to a page" });
+  await linker.getByRole("button", { name: "Card: card-project" }).click();
   await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+  await page.getByRole("combobox", { name: "Link to a page" }).fill("harbour");
+  await page.keyboard.press("Enter");
   const quoted = added.replace(freshWithImage, harbourQuote);
   await expect.poll(() => source(page)).toBe(quoted);
-  await expect(strip.locator(".card-look-note")).toContainText("image (no image slot)");
+  await expect(linker).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
 
   const explorer = page.locator("#explorer");
   const openPages = async () => {
@@ -515,7 +444,7 @@ test("what a swap keeps aside lives only while the page is open: after a page sw
   if ((await work.getAttribute("aria-expanded")) === "false") await work.press("ArrowRight");
   await explorer.getByRole("treeitem", { name: /^Fern & Kettle/ }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
-  await expect(strip).toHaveCount(0);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
   await openPages();
   await explorer.getByRole("treeitem", { name: /^Home/ }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
@@ -558,15 +487,13 @@ test("a card slot creates a page from the combobox; one undo removes page and fi
   await page.getByRole("option", { name: /Create page \/work\/oak-ash\// }).click();
   await expect.poll(async () => (await storedDraft(page, "work/oak-ash/index.html"))?.content).toContain("<h1>Oak &amp; Ash</h1>");
   await expect(frame(page).locator("section-work > card-project").last().locator("a")).toHaveAttribute("href", "/work/oak-ash/");
-  const strip = page.getByRole("group", { name: "Where the card's content came from" });
-  await expect(strip).toBeVisible();
-  await strip.getByRole("button", { name: "Change page" }).click();
-  await expect(page.getByRole("option", { name: /Oak & Ash/ })).toBeVisible();
-  await input.press("Escape");
+  await expect(input).toHaveCount(0);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(blank);
   await expect.poll(() => storedDraft(page, "work/oak-ash/index.html")).toBeUndefined();
-  await expect(strip).toHaveCount(0);
+  await expect(page.locator(".card-fill")).toHaveCount(0);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(made);
 });
@@ -732,10 +659,8 @@ for (const create of [false, true]) {
       await expect(cards.last().locator("img")).not.toHaveAttribute("srcset");
       await expect(cards.last().locator("img")).not.toHaveAttribute("sizes");
     }
-    const strip = page.getByRole("group", { name: "Where the card's content came from" });
-    await expect(strip.getByRole("listitem").filter({ hasText: /^Link/ })).toHaveText(`Linkaddressadded${route}the title links to the page`);
-    await expect(strip.getByRole("listitem").filter({ hasText: /^Body/ })).toHaveText(create ? "BodykeptA sentence or two about this article." : "Bodymeta descriptionA quiet portfolio for a working potter.");
-    await expect(strip.getByRole("listitem").filter({ hasText: /^Image/ })).toHaveText(create ? "Imagekept/old.jpg" : "Imageog:image/images/harbour.svg");
+    await expect(page.getByRole("combobox", { name: "Link to a page" })).toHaveCount(0);
+    await expect(page.locator(".card-fill")).toHaveCount(0);
     await expect.poll(() => cornerLink(page, "#work .cards > article:last-child")).toBe(route);
     expect(await undo(page)).toBe(true);
     await expect.poll(() => source(page)).toBe(blank);
@@ -767,7 +692,8 @@ for (const create of [false, true]) {
     } else await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
     const card = frame(page).locator("section-work > card-quote");
     await expect(card.locator("h3 > a")).toHaveAttribute("href", route);
-    await expect(page.getByRole("group", { name: "Where the card's content came from" }).getByRole("listitem").filter({ hasText: /^Link/ })).toHaveText(`Linkaddressadded${route}the title links to the page`);
+    await expect(page.locator(".card-fill")).toHaveCount(0);
+    await expect(input).toHaveCount(0);
     const afterCss = (create ? "" : css) + ":host { position: relative; }\n";
     await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(afterCss);
     await expect.poll(() => cornerLink(page, "section-work > card-quote")).toBe(route);
@@ -788,7 +714,7 @@ for (const create of [false, true]) {
 }
 
 for (const theme of ["light", "dark"]) {
-  test(`card picker and fill strip clear the edit bar below the card (${theme})`, async ({ page, baseURL }, testInfo) => {
+  test(`card picker clears the edit bar below the card (${theme})`, async ({ page, baseURL }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 1200 });
     await page.emulateMedia({ colorScheme: theme as "light" | "dark" });
     await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
@@ -821,21 +747,21 @@ for (const theme of ["light", "dark"]) {
     await expect(card.locator(":scope > h3")).toHaveText("Harbour Lane Pottery");
     await atTop();
     await expect(bar).toHaveAttribute("data-side", "below");
-    await clear(page.locator(".card-fill"));
+    await expect(page.locator(".card-fill")).toHaveCount(0);
     const open = bar.getByRole("button", { name: /Open page/ });
     await expect(open).toBeVisible();
     await expect.poll(() => open.evaluate(el => {
       const r = el.getBoundingClientRect();
       return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
     })).toBe(true);
-    await page.screenshot({ path: testInfo.outputPath(`strip-${theme}.png`) });
+    await page.screenshot({ path: testInfo.outputPath(`filled-${theme}.png`) });
     await open.click();
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/harbour-lane-pottery/index.html");
   });
 }
 
 for (const positioned of [false, true]) {
-  test(`swapping a filled card to a look with ${positioned ? "positioned" : "missing"} CSS: title link and CSS undo together`, async ({ page, baseURL }) => {
+  test(`swapping a blank card then filling a look with ${positioned ? "positioned" : "missing"} CSS: title link and CSS undo together`, async ({ page, baseURL }) => {
     await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
     await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
     const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
@@ -843,19 +769,20 @@ for (const positioned of [false, true]) {
     await edit("components/card-quote/card-quote.html", quoteTemplate);
     if (positioned) await edit(cssPath, ":host { position: relative; }\n");
     const { added } = await openFillable(page, baseURL);
-    await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
-    const filled = added.replace(freshWithImage, harbourCard);
-    await expect.poll(() => source(page)).toBe(filled);
-    const strip = page.getByRole("group", { name: "Where the card's content came from" });
-    await strip.getByRole("button", { name: "Card: card-project" }).click();
+    const linker = page.getByRole("group", { name: "Link the new card to a page" });
+    await linker.getByRole("button", { name: "Card: card-project" }).click();
     await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+    await expect(linker.getByRole("button", { name: "Card: card-quote" })).toBeFocused();
+    const blankQuote = await source(page);
+    await page.getByRole("combobox", { name: "Link to a page" }).fill("harbour");
+    await page.keyboard.press("Enter");
     const quoted = added.replace(freshWithImage, harbourQuote);
     await expect.poll(() => source(page)).toBe(quoted);
     await expect(frame(page).locator("section-work > card-quote h3 > a")).toHaveAttribute("href", "/work/harbour-lane-pottery/");
     if (positioned) expect(await storedDraft(page, cssPath)).toBeUndefined();
     else await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(":host { position: relative; }\n");
     expect(await undo(page)).toBe(true);
-    await expect.poll(() => source(page)).toBe(filled);
+    await expect.poll(() => source(page)).toBe(blankQuote);
     await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
     if (!positioned) {
       await page.locator(".code-editor__redo").click();

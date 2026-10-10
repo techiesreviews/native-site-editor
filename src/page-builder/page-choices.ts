@@ -1,7 +1,7 @@
 // The pages a new card can link to (wayfinder components-and-builder ticket
 // 09 §2, build slice 52): every page of the site but the grid's own and the
 // not-found page. Pages under the folder the grid's cards link into come
-// first, then "Other pages"; a search covers them all. Pages a card of the
+// first, then the rest; a search covers them all. Pages a card of the
 // grid already links to stay listed, marked, and can't be picked. Unknown
 // titles and addresses offer Create page, with errors shown disabled. Pure: the
 // "Link to a page…" combobox (src/components/card-link-picker.ts) shows it.
@@ -23,11 +23,6 @@ export interface PageChoice extends SitePage {
   inGrid: boolean;
 }
 
-export interface PageChoiceGroup {
-  label: string;
-  pages: PageChoice[];
-}
-
 /** The folder a grid's cards link into (`/work/`): the most common parent of the pages they link to, the first one seen on a tie. */
 export function cardFolder(routes: readonly (string | undefined)[]): string | undefined {
   const counts = new Map<string, number>();
@@ -45,9 +40,8 @@ export function cardFolder(routes: readonly (string | undefined)[]): string | un
  * The pages offered for a card of the grid on the page file `own`, whose
  * cards link to `inGrid`, in site order: those under the cards' folder,
  * then the others; with `query`, those whose title or address holds it.
- * Empty groups are left out.
  */
-export function pageChoiceGroups(input: { pages: readonly SitePage[]; own: string; inGrid: readonly string[]; folder?: string; query?: string }): PageChoiceGroup[] {
+export function pageChoices(input: { pages: readonly SitePage[]; own: string; inGrid: readonly string[]; folder?: string; query?: string }): PageChoice[] {
   const present = new Set(input.inGrid);
   const folder = cardFolder(input.inGrid);
   const typed = input.query?.trim().toLowerCase() ?? "";
@@ -57,12 +51,9 @@ export function pageChoiceGroups(input: { pages: readonly SitePage[]; own: strin
     .filter((page) => page.file !== input.own && page.file !== NATIVE_NOT_FOUND_PAGE && page.route !== NATIVE_NOT_FOUND_ROUTE)
     .filter((page) => !query || page.title.toLowerCase().includes(query) || page.route.toLowerCase().includes(query) || page.route.toLowerCase() === planned)
     .map((page): PageChoice => ({ ...page, inGrid: present.has(page.route) }));
-  if (!folder) return pages.length ? [{ label: "Pages", pages }] : [];
+  if (!folder) return pages;
   const under = (page: PageChoice) => page.route !== folder && page.route.startsWith(folder);
-  return [
-    { label: `Under ${folder}`, pages: pages.filter(under) },
-    { label: "Other pages", pages: pages.filter((page) => !under(page)) },
-  ].filter((group) => group.pages.length);
+  return [...pages.filter(under), ...pages.filter((page) => !under(page))];
 }
 
 /** A new page planned from the combobox; errors stay visible as disabled offers. */

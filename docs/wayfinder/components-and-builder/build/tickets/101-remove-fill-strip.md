@@ -1,7 +1,7 @@
 ---
 title: "Remove the \"Filled from\" strip; the look chip stays on the new card's combobox"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [100-minify-preview-runtime]
 builder: sol
@@ -17,3 +17,9 @@ Lex (2026-10-10): remove the "Filled from …" info strip that opens after a new
 - Specs updated (no strip; fill, one undo, look chip on the combobox before filling); screenshots light and dark. Blocked by 100 only to avoid a clash in the build.
 
 **Also (Lex, 2026-10-10, annotation):** in the "Link to a page…" list, remove the group headings ("Under /work/", "Other pages"); keep the order (the cards' folder first, then the rest) as one plain list. Lex on the strip: "a user can remove and add a new one if needed" — no Change page anywhere.
+
+## Done (2026-10-10)
+
+- The "Filled from" strip (`card-fill-strip.ts`/`.css`) and Change page are gone: picking or creating a page fills the card in one undo step and closes the combobox; the card stays selected, the status line announces "Card filled from …". The look chip and what a swap keeps aside live only on the open combobox (Option 2); `fillCard`/`createPage` lose `base`, `swapCard` its `filled` follow, `cardFillContent` went with them.
+- "Link to a page…" is one plain list (`pageChoices` in `page-choices.ts`, folder first then the rest), no group headings; "+ Create page" keeps its own section.
+- Built by Sol; tests: `page-choices`/`card-page-offer` units flattened; `native-add-card.spec.ts` (@smoke fill closes the combobox, status, two undos; chip cases swap before filling; Change page case removed) and `native-cards.spec.ts` updated. About 2.8 KB gzip less.
