@@ -1,7 +1,7 @@
 ---
 title: "The preview runtime is a bundle in dev, tests and build (canvas gesture rules as its first import)"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: claude ★
@@ -26,3 +26,9 @@ Today `vite-preview-runtime.ts` only minifies `src/components/native-preview-run
 - `tests/native-save/native-runtime-recovery.spec.ts` (a 404 runtime) and `native-preview-preload.spec.ts` still pass.
 - `npm run test:budget` passes; report the runtime's byte delta.
 - `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-10)
+
+- `vite-preview-runtime.ts` bundles the runtime with its imports (esbuild, IIFE, strict): minified with an external map under a hashed `/assets/` name in the build; readable with an inline map from a dev middleware (`no-cache`, rebuilt when a bundled file's mtime changes) in `npm run dev:ui` and `tests/native-save/server.ts`, which adds the plugin. The click and edit rules are `src/page-builder/rules/canvas-gesture.ts`, the runtime's first import.
+- Commits ae69bf33, ec242ce0 (review fixes). Runtime +31 bytes minified (79,673 → 79,704), +43 gzip; budget 332 KB of 355 KB.
+- Tests: `vite-preview-runtime.test.ts` rewritten (bundle runs in `node:vm`, dev cache and rebuild, dev middleware), `canvas-gesture.test.ts` imports the module. Unit 1,519/1,519; full native-save 864 passed, 56 skipped; smoke 42/42; @actual 54/54.
