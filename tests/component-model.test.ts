@@ -88,6 +88,9 @@ test("a template's slots: names, fallbacks and kinds", () => {
   assert.deepEqual(templateSlots(starter).map((slot) => [slot.name, slot.kind, slot.forward ?? ""]), [
     ["note", "text", "text"], ["title", "text", ""], ["image", "image", ""], ["link", "link", ""],
   ]);
+  // A price struck through is text, not content.
+  assert.deepEqual(templateSlots(`<div><slot name="price"><p>Was <del>£40</del> £30</p></slot><slot name="unit">per <var>n</var> <data value="1">item</data></slot></div>`)
+    .map((slot) => [slot.name, slot.kind]), [["price", "text"], ["unit", "text"]]);
 });
 
 test("items slots: the unnamed slot, or a named one whose fallback is card components (card-… with a heading slot)", () => {
@@ -397,6 +400,20 @@ test("make component: text keeps its rich inline content; images, pictures and s
   <img slot="image-2" src="/deco.png" alt="">
   <a slot="link" href="/more/">More</a>
 </block-promo>`);
+});
+
+test("make component: a paragraph with a price struck through is a text slot, not a block", () => {
+  const source = `<div class="sale">
+  <h2>Sale</h2>
+  <p>Was <del>£40</del> <ins>£30</ins></p>
+</div>`;
+  const plan = makeComponentPlan(source, rangeOf(source, "div"), "block-sale");
+  assert.ok(!("error" in plan));
+  assert.deepEqual(plan.slots.map(({ path, name, kind }) => [path.join("."), name, kind]), [["0", "title", "text"], ["1", "text", "text"]]);
+  assert.equal(plan.instance, `<block-sale>
+  <h2 slot="title">Sale</h2>
+  <p slot="text">Was <del>£40</del> <ins>£30</ins></p>
+</block-sale>`);
 });
 
 test("make component names slots by role, numbers repeats and breaks ties by class", () => {

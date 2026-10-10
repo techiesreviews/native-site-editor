@@ -66,6 +66,9 @@ test("text leaves are elements holding text and inline markup only", () => {
   const html = `<article><h3>Title <em>here</em></h3><div><p>One <a href="/x/">link</a></p><img src="/a.png" alt=""></div></article>`;
   const leaves = textLeaves(html, elementTree(html)!);
   assert.deepEqual(leaves.map((leaf) => leaf.name), ["h3", "p"]);
+  // A price struck through is part of its line: the paragraph is one leaf.
+  const price = `<article><p>Was <del>£40</del> <ins>£30</ins></p></article>`;
+  assert.deepEqual(textLeaves(price, elementTree(price)!).map((leaf) => leaf.name), ["p"]);
 });
 
 test("a new card copies the last one with its text reset to the template's fallbacks", () => {

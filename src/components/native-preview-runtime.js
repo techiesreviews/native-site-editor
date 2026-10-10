@@ -4,6 +4,7 @@
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
+import { INLINE_FORMATTING, TEXT_RUN_TAGS, TEXT_TAGS } from "../page-builder/rules/text-level.ts";
 import { domView } from "../page-builder/rules/tree.ts";
 
 (function () {
@@ -1656,14 +1657,13 @@ import { domView } from "../page-builder/rules/tree.ts";
   // the formatting inside. A text element holding only formatting counts,
   // and so does any element with text of its own beside it; a block of two
   // button links does not.
-  var TEXT_RUN = /^(h[1-6]|p|li|button|blockquote|figcaption|dt|dd|summary|legend|caption|label|td|th|a|strong|em|b|i|small|cite|q|mark|code)$/;
   function textRun(el) {
     if (!el.children.length) return false;
     var all = el.querySelectorAll("*");
     for (var i = 0; i < all.length; i++) {
-      if (!INLINE_TAGS.test(all[i].localName) || all[i].hasAttribute("slot")) return false;
+      if (!inlineTag(all[i].localName) || all[i].hasAttribute("slot")) return false;
     }
-    if (TEXT_RUN.test(el.localName)) return true;
+    if (TEXT_RUN_TAGS.has(el.localName)) return true;
     return Array.prototype.some.call(el.childNodes, function (n) { return n.nodeType === 3 && Boolean(n.textContent.trim()); });
   }
   // The heading that names a container: the first one inside it that no
@@ -2816,15 +2816,17 @@ import { domView } from "../page-builder/rules/tree.ts";
   // it was double-clicked) or Enter. The editor gets the element's text
   // before and after on Enter, on blur and before a format shortcut, and
   // writes the difference into the source.
-  var TEXT_TAGS = /^(h[1-6]|p|span|a|li|button|blockquote|figcaption|small|label|td|th|dt|dd|div|summary|legend|caption|strong|em|b|i|cite|q|mark|code)$/;
-  var INLINE_TAGS = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
+  // Formatting inside a line of text, and a slot showing text in it.
+  function inlineTag(name) {
+    return name === "slot" || INLINE_FORMATTING.has(name);
+  }
   function editableText(el) {
     if (!el || !state) return false;
     else if (ownerPath(el) !== state.pagePaths[state.route] && ownerPath(el) !== state.editableTemplatePath) return false;
-    if (!(TEXT_TAGS.test(el.localName) || textHost(el)) || !(el.textContent || "").trim()) return false;
+    if (!(TEXT_TAGS.has(el.localName) || textHost(el)) || !(el.textContent || "").trim()) return false;
     var all = el.querySelectorAll("*");
     for (var i = 0; i < all.length; i++) {
-      if (!INLINE_TAGS.test(all[i].localName)) return false;
+      if (!inlineTag(all[i].localName)) return false;
       // A slot showing the page's own text: that text is the thing to edit, not the template's fallback.
       if (all[i] instanceof HTMLSlotElement && all[i].assignedNodes().length) return false;
     }
@@ -2836,7 +2838,7 @@ import { domView } from "../page-builder/rules/tree.ts";
   function textHost(el) {
     if (el.localName.indexOf("-") < 0 || !el.shadowRoot || sectionLike(el)) return false;
     return Array.prototype.every.call(el.children, function (child) {
-      return INLINE_TAGS.test(child.localName) && !child.hasAttribute("slot");
+      return inlineTag(child.localName) && !child.hasAttribute("slot");
     });
   }
   function startEditing(el) {
@@ -3042,7 +3044,7 @@ import { domView } from "../page-builder/rules/tree.ts";
   // formatting styled inline-block (a Button inside a paragraph).
   function phrasing(el) {
     var display = getComputedStyle(el).display;
-    return display === "inline" || (INLINE_TAGS.test(el.localName) && display.indexOf("inline") === 0);
+    return display === "inline" || (inlineTag(el.localName) && display.indexOf("inline") === 0);
   }
   // A Section or Div holding blocks, not a run of text: no text of its own
   // and not only inline formatting (a Div of just <strong>Hi</strong> is
@@ -3051,7 +3053,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (el.localName !== "section" && el.localName !== "div") return false;
     var text = Array.prototype.some.call(el.childNodes, function (n) { return n.nodeType === 3 && /[^\t\n\f\r ]/.test(n.textContent); });
     return !text && Array.prototype.some.call(el.children, function (child) {
-      return !(INLINE_TAGS.test(child.localName) && !child.classList.contains("btn") && phrasing(child));
+      return !(inlineTag(child.localName) && !child.classList.contains("btn") && phrasing(child));
     });
   }
   // A selected link, Button or other inline element (a click selects it

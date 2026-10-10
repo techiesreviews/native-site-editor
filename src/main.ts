@@ -5,6 +5,7 @@ import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } f
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveRefusal } from "./page-builder/native-operations";
+import { INLINE_FORMATTING, TEXT_TAGS } from "./page-builder/rules/text-level";
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
 import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
@@ -1744,11 +1745,10 @@ function nativeInstanceContent(source: string, node: readonly number[], tag: str
   if (["img", "picture", "a", "button"].includes(tag)) return true;
   const route = nativePreview?.route();
   if (route && gridOfItem(source, [...node], { route, routes: nativeSite?.routes ?? {}, isSection: isNativeSectionTag })) return true;
-  if (!range.close || !(nativeTextTags.has(tag) || ["strong", "em", "b", "i", "cite", "q", "mark", "code"].includes(tag))) return false;
+  if (!range.close || !TEXT_TAGS.has(tag)) return false;
   const template = document.createElement("template");
   template.innerHTML = source.slice(range.tag.end, range.close.start);
-  const inline = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd)$/;
-  return Boolean(template.content.textContent?.trim()) && [...template.content.querySelectorAll("*")].every(element => inline.test(element.localName));
+  return Boolean(template.content.textContent?.trim()) && [...template.content.querySelectorAll("*")].every(element => INLINE_FORMATTING.has(element.localName));
 }
 
 function recordNativeSourceIntent(path: string) {

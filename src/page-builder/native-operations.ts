@@ -1,6 +1,7 @@
 // Conservative source operations: explicit balanced HTML only, never parser repairs.
 import { VOID_ELEMENTS, startTags, startTagAttribute } from "../../shared/html-source";
 import { decodeHtmlEntities } from "./html-entities";
+import { HTML_PHRASING } from "./rules/text-level";
 import type { InsertPoint } from "../components/insert-controls";
 
 export interface SourceEdit { start: number; end: number; text: string }
@@ -176,11 +177,11 @@ function scopedDescendants(node: SourceNode): SourceNode[] {
   if (node.name === "template" || (node.namespace ?? "html") !== "html") return [node];
   return [node, ...node.children.flatMap(scopedDescendants)];
 }
-const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template", "slot"].includes(node.name);
+const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || HTML_PHRASING.has(node.name) || customName(node.name) || ["svg", "math", "template", "slot"].includes(node.name);
 /** Whether `children` may go in `parent`; `instance`: an instance's items slot, the one opening in its seal. */
 const canContain = (parent: SourceNode, children: SourceNode[], instance = false) => !contentRefusal(parent, children, instance);
 // Elements whose content is text and inline elements only: a link goes in a paragraph, a Div doesn't.
-const phrasingOnly = (node: SourceNode) => (node.namespace ?? "html") === "html" && !VOID_ELEMENTS.has(node.name) && !["option", "picture"].includes(node.name) && (textNodes.has(node.name) || phrasing.has(node.name));
+const phrasingOnly = (node: SourceNode) => (node.namespace ?? "html") === "html" && !VOID_ELEMENTS.has(node.name) && !["option", "picture"].includes(node.name) && (textNodes.has(node.name) || HTML_PHRASING.has(node.name));
 // Flow content with no headings, sections, headers or footers in it (an <address> no other <address> either).
 const plainFlow = new Set(["address", "dt", "th"]);
 const outline = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "header", "footer", "section", "article", "aside", "nav"]);
@@ -232,7 +233,6 @@ function contentRefusal(parent: SourceNode, children: SourceNode[], instance = f
     : ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "caption", "colgroup", "col", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
   return wrong === undefined ? undefined : cannot(wrong, parent.name);
 }
-const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i", "u", "a", "img", "mark", "time", "s", "sub", "sup", "wbr", "abbr", "cite", "q", "kbd", "button", "label", "picture", "input", "var", "samp", "dfn", "data", "bdi", "bdo"]);
 function semanticTree(root: SourceNode, source: string) {
   return all(root).every((node) => {
     if (node.name === "plaintext") return false;

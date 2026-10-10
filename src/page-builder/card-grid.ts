@@ -13,6 +13,7 @@
 
 import { startTags, VOID_ELEMENTS, startTagAttribute, type StartTag } from "../../shared/html-source";
 import { isFolderRoute } from "../../shared/native-routes";
+import { INLINE_FORMATTING } from "./rules/text-level";
 
 // Words that name an item, preferred in this order when a tag or class has several.
 const NOUNS = ["card", "tile", "post", "article", "project", "member", "person", "testimonial", "quote", "feature", "plan", "product", "step", "slide", "logo", "column", "entry", "item", "link"];
@@ -130,9 +131,6 @@ export function elementTree(source: string, from = 0, to = source.length): Sourc
   return stack.length ? undefined : roots;
 }
 
-// Elements that sit inside a line of text.
-const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small", "code", "mark", "sub", "sup", "br", "wbr", "abbr", "time", "cite", "q", "kbd", "data", "var", "del", "ins"]);
-
 /** The text of a stretch of markup: tags and comments dropped, entities decoded, spaces collapsed. */
 export function plainText(html: string): string {
   return decodeEntities(html.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
@@ -160,7 +158,7 @@ export function escapeText(text: string): string {
  */
 export function textLeaves(source: string, elements: SourceElement[]): SourceElement[] {
   const out: SourceElement[] = [];
-  const inlineOnly = (element: SourceElement): boolean => element.children.every((child) => INLINE.has(child.name) && inlineOnly(child));
+  const inlineOnly = (element: SourceElement): boolean => element.children.every((child) => INLINE_FORMATTING.has(child.name) && inlineOnly(child));
   const visit = (element: SourceElement) => {
     // Scripts, styles and templates are not text to reset: they stay as written.
     if (VOID_ELEMENTS.has(element.name) || RAW_TEXT.has(element.name) || element.name === "template") return;

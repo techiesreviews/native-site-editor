@@ -19,6 +19,7 @@
 
 import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 import { CARD_ITEM_TAGS, itemKind } from "./rules/items";
+import { INLINE_FORMATTING, TEXT_RUN_TAGS } from "./rules/text-level";
 import { decodeHtmlEntities } from "./html-entities";
 import { hasHeadingSlot as headingSlotIn, isCardTag, isItemsSlot } from "./rules/cards";
 import type { RuleView } from "./rules/tree";
@@ -52,8 +53,6 @@ export function templateStructure(template: string, templateOf: TemplateOf = () 
     const path = [...parent, i]; paths.set(el, path); index(elements(el.children), path);
   });
   index(roots, []);
-  const inline = /^(a|strong|em|b|i|u|s|span|small|code|mark|sub|sup|br|wbr|abbr|time|cite|q|kbd|slot)$/;
-  const run = /^(h[1-6]|p|li|button|blockquote|figcaption|dt|dd|summary|legend|caption|label|td|th|a|strong|em|b|i|small|cite|q|mark|code)$/;
   const landmark = /^(section|article|main|header|footer|nav|aside)$/;
   const text = (nodes: SourceNode[]): string => nodes.map(n => n.type === "text"
     ? decodeHtmlEntities(template.slice(n.start, n.end)) : n.name === "br" ? " " : text(n.children)).join("");
@@ -107,8 +106,8 @@ export function templateStructure(template: string, templateOf: TemplateOf = () 
       return [row];
     }
     const descendants = [...walk(el.children)];
-    const isRun = descendants.length > 0 && descendants.every(child => inline.test(child.name) && attribute(template, child, "slot") === undefined)
-      && (run.test(el.name) || el.children.some(n => n.type === "text" && snippet(text([n]))));
+    const isRun = descendants.length > 0 && descendants.every(child => (child.name === "slot" || INLINE_FORMATTING.has(child.name)) && attribute(template, child, "slot") === undefined)
+      && (TEXT_RUN_TAGS.has(el.name) || el.children.some(n => n.type === "text" && snippet(text([n]))));
     if (isRun) {
       for (const child of descendants) if (child.name === "slot") row.chips.push(...badge(paths.get(child)!));
     } else row.children = visit(elements(el.children), row);
@@ -491,11 +490,10 @@ const attribute = (html: string, el: SourceElement, name: string) => startTagAtt
 
 // Elements whose whole content is one line of text.
 const TEXT_BLOCKS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "figcaption", "dt", "dd", "button", "label", "summary", "legend", "caption", "td", "th", "address"]);
-const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small", "code", "mark", "sub", "sup", "br", "wbr", "abbr", "time", "cite", "q", "kbd"]);
 
 /** Whether `nodes` hold text and inline formatting only (no images, blocks or components). */
 function textOnly(nodes: SourceNode[]): boolean {
-  return nodes.every((node) => node.type === "text" || (INLINE.has(node.name) && textOnly(node.children)));
+  return nodes.every((node) => node.type === "text" || (INLINE_FORMATTING.has(node.name) && textOnly(node.children)));
 }
 
 // ---- Templates and their slots. ----
@@ -542,7 +540,7 @@ function contentKind(html: string, nodes: SourceNode[]): SlotKind | undefined {
     const only = parts[0];
     if (only.name === "img" || only.name === "picture") return "image";
     if (only.name === "a" && textOnly(only.children)) return "link";
-    if ((TEXT_BLOCKS.has(only.name) || INLINE.has(only.name)) && textOnly(only.children)) return "text";
+    if ((TEXT_BLOCKS.has(only.name) || INLINE_FORMATTING.has(only.name)) && textOnly(only.children)) return "text";
     return "content";
   }
   return textOnly(parts) ? "text" : "content";

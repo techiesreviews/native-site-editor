@@ -56,6 +56,11 @@ test("a new instance carries its own copy of the template's text slots", () => {
     `<span slot="b">Go <a href="#z">here</a></span>`,
     `<span slot="c"><br></span>`,
   ]);
+  // A price struck through is a line of text too.
+  assert.deepEqual(slotMarkup(`<slot name="price">Was <del>£40</del> £30</slot><slot name="offer"><p>Was <del>£40</del> £30</p></slot>`), [
+    `<span slot="price">Was <del>£40</del> £30</span>`,
+    `<p slot="offer">Was <del>£40</del> £30</p>`,
+  ]);
   // A slot holding a whole heading or paragraph copies that element, so the
   // page source shows a heading; one holding blocks of blocks stays in the template.
   const hero = `<section>

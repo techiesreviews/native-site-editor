@@ -12,6 +12,7 @@
 
 import { VOID_ELEMENTS, isSectionTemplate, locateNativeElementRange, startTags, type ElementRange, type StartTag } from "./native-source-location";
 import { templateSlots } from "./page-builder/component-model";
+import { INLINE_FORMATTING } from "./page-builder/rules/text-level";
 
 export { isSectionTemplate };
 
@@ -25,8 +26,6 @@ export function componentLabel(tag: string) {
 
 // Elements that hold a line of text, which a slot fallback can be.
 const TEXT_BLOCKS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "blockquote", "figcaption", "dt", "dd", "address"]);
-
-const INLINE = new Set(["a", "strong", "em", "b", "i", "u", "s", "span", "small", "code", "mark", "sub", "sup", "br", "wbr", "abbr", "time", "cite", "q", "kbd"]);
 
 /**
  * Per-instance content for a template's slots: a `<span slot="…">` for each
@@ -51,7 +50,7 @@ export function slotMarkup(template: string) {
       : undefined;
     // An image alone is copied too, so each page can have its own.
     const image = first?.name === "img" && first.start === 0 && first.end === text.length && !/\sslot\s*=/i.test(text);
-    if (image || (inner !== undefined && (INLINE.has(first.name) || TEXT_BLOCKS.has(first.name)) && textOnly(inner)))
+    if (image || (inner !== undefined && (INLINE_FORMATTING.has(first.name) || TEXT_BLOCKS.has(first.name)) && textOnly(inner)))
       out.push(`${text.slice(0, first.nameEnd)} slot="${slot}"${text.slice(first.nameEnd)}`);
     else if (textOnly(text)) out.push(`<span slot="${slot}">${text}</span>`);
   }
@@ -96,8 +95,8 @@ function oneElement(html: string, first: StartTag) {
 
 function textOnly(html: string) {
   const plain = html.replace(COMMENTS, "");
-  return startTags(plain).every((tag) => INLINE.has(tag.name)) &&
-    [...plain.matchAll(/<\/([a-zA-Z][^\s>]*)/g)].every((match) => INLINE.has(match[1].toLowerCase()));
+  return startTags(plain).every((tag) => INLINE_FORMATTING.has(tag.name)) &&
+    [...plain.matchAll(/<\/([a-zA-Z][^\s>]*)/g)].every((match) => INLINE_FORMATTING.has(match[1].toLowerCase()));
 }
 
 /** The line ending `source` is written with: CRLF when it has any, else LF. */

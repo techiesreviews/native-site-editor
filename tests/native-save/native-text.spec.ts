@@ -186,6 +186,38 @@ test("text a page gives a component's default slot is the page's: a click select
   await expect(frame.locator("project-card").nth(1).locator("card-note")).toHaveAttribute("contenteditable", /plaintext-only|true/);
 });
 
+test("a line with a price struck through is text: typed into on the page and in a card's page content", async ({ page }) => {
+  const frame = page.frameLocator(".native-preview-frame");
+  const body = `<p slot="body">This card and the next one share a single template. Edit the template once and both update together.</p>`;
+  const withPrices = indexSource
+    .replace(`<h2 data-key="filler-title">Scroll to verify</h2>`, `<h2 data-key="filler-title">Scroll to verify</h2>\n    <p data-key="price">Was <del>£40</del> £30</p>`)
+    .replace(body, `<p slot="body">Was <del>£50</del> £35</p>`);
+  await pasteInto(page, "#content", withPrices);
+  const price = frame.locator("p[data-key='price']");
+  await expect(price.locator("del")).toHaveText("£40");
+  const kind = page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind");
+
+  // On the page: a double-click puts the caret in the whole line, the <del> kept.
+  await clickText(page, "p[data-key='price']", 0, true);
+  await expect(price).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("End");
+  await page.keyboard.type(" today");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => editorText(page, "#content")).toContain(`<p data-key="price">Was <del>£40</del> £30 today</p>`);
+
+  // In a card: the page's paragraph is the card's content, selected as itself, not the card.
+  const cardBody = frame.locator("project-card[data-key='card-1'] > p[slot='body']");
+  await clickText(page, "project-card[data-key='card-1'] > p[slot='body']");
+  await expect(kind).toHaveText("Paragraph");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  await clickText(page, "project-card[data-key='card-1'] > p[slot='body']", 0, true);
+  await expect(cardBody).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("End");
+  await page.keyboard.type(" now");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => editorText(page, "#content")).toContain(`<p slot="body">Was <del>£50</del> £35 now</p>`);
+});
+
 test("a click on an image selects it; a double-click opens Choose image", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });

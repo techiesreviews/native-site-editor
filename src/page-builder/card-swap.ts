@@ -11,6 +11,7 @@
 import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type SourceNode, type TemplateSlot } from "./component-model";
 import { cardRoles } from "./card-fill";
 import { slotMarkup } from "../native-insert";
+import { TEXT_LEVEL } from "./rules/text-level";
 import type { CardLook } from "./card-looks";
 
 /** What a card holds, by role; markup as the card wrote it. */
@@ -69,13 +70,10 @@ const shows = (html: string) => {
   return `${squash(plainText(html))}\n${images.join("\n")}`;
 };
 
-// Text-level elements: formatting that is content, never a box that holds it.
-const PHRASING = new Set(["a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "kbd", "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var", "wbr"]);
-
 /** The element that holds an element's text: its one child box, again and again, while nothing else is in it; formatting (`<em>`, a link) is content. */
 function holder(html: string, element: SourceElement): SourceElement {
   let target = element;
-  for (let only = elementsOf(target.children); only.length === 1 && only[0].close && !PHRASING.has(only[0].name) && target.children.every((node) => node === only[0] || blank(html, node)); only = elementsOf(target.children)) target = only[0];
+  for (let only = elementsOf(target.children); only.length === 1 && only[0].close && !TEXT_LEVEL.has(only[0].name) && target.children.every((node) => node === only[0] || blank(html, node)); only = elementsOf(target.children)) target = only[0];
   return target;
 }
 

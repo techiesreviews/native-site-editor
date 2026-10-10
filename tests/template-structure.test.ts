@@ -46,6 +46,10 @@ test("inline text runs collapse whitespace and entities, preserve breaks and cap
   assert.deepEqual(rows[0].children, []);
   assert.equal(rows[1].children.length, 2);
   assert.equal(rows[2].text.length, 80);
+  // A price struck through is one row, as on the canvas.
+  const price = templateStructure('<section><p>Was <del>£40</del> <ins>£30</ins></p></section>');
+  assert.equal(price[0].text, "Was £40 £30");
+  assert.deepEqual(price[0].children, []);
 });
 
 test("multiple roots stay rows; slot holders, table cells and nested instance parts carry no fixed chips", () => {
