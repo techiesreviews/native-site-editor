@@ -335,3 +335,9 @@ test("text-only collection fills omit body/image rows when neither facts nor pla
   assert.equal(result.markup, "<li>Oak</li>");
   assert.deepEqual(result.rows.map(row => row.role), ["title", "link"]);
 });
+
+test("an empty paragraph after the title is the plain card's text place too", () => {
+  const result = itemPageFill('<article><h3>New card</h3><p></p><p>Second</p></article>', "card", "Oak", "/oak/", plainFacts('<h1>Oak</h1><meta name="description" content="Description">'))!;
+  assert.equal(result.markup, '<article><h3><a href="/oak/">Oak</a></h3><p>Description</p><p>Second</p></article>');
+  assert.equal(result.rows.find(row => row.role === "body")!.status, "filled");
+});

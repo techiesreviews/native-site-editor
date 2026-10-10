@@ -32,6 +32,8 @@ export interface CardSwap {
   kept: CardContent;
   /** What the new look shows none of: "image (no image slot)". */
   notShown: string[];
+  /** Whether the swap wrapped the title in the card's link (a look with no link slot): its host then bounds the stretch rule. */
+  titleLinked: boolean;
 }
 
 interface RangeEdit {
@@ -191,12 +193,13 @@ export function cardSwap(input: { card: string; template: string; look: CardLook
   const { card, look, lookTemplate } = input;
   const kept = mergeCardContent(input.kept, readCardContent(card, input.template, new Set(Object.keys(input.kept?.other ?? {}))));
   const root = elementsOf(parseSource(card))[0];
-  if (!root?.close) return { markup: card, kept, notShown: [] };
+  if (!root?.close) return { markup: card, kept, notShown: [], titleLinked: false };
   const slots = templateSlots(lookTemplate);
   const { roleOf, titleSlot, linkSlot } = cardRoles(slots);
   const placed = new Set<string>();
   const fresh = slotMarkup(lookTemplate);
   const pieces: string[] = [];
+  let titleLinked = false;
   for (const slot of slots) {
     const role = roleOf(slot);
     const shape = () => slotShape(lookTemplate, slot);
@@ -212,7 +215,10 @@ export function cardSwap(input: { card: string; template: string; look: CardLook
       const link = !linkSlot && kept.link?.href ? kept.link.href : undefined;
       piece = withInner(element(`<h3 slot="${escapeAttribute(slot.name)}"></h3>`), link === undefined ? kept.title : `<a href="${escapeAttribute(link)}">${kept.title}</a>`);
       placed.add("title");
-      if (link !== undefined) placed.add("link");
+      if (link !== undefined) {
+        placed.add("link");
+        titleLinked = true;
+      }
     } else if (role === "body" && kept.body !== undefined) {
       piece = withInner(element(`<p slot="${escapeAttribute(slot.name)}"></p>`), kept.body);
       placed.add("body");
@@ -257,5 +263,5 @@ export function cardSwap(input: { card: string; template: string; look: CardLook
   const lead = (first && leadOf(card, first.start)) ?? `${end ?? ""}  `;
   const lines = body.includes("\n") && end !== undefined;
   const children = lines ? `${pieces.map((piece) => `${newline}${lead}${piece}`).join("")}${newline}${end}` : pieces.join("");
-  return { markup: `${startTag(card, root, look, input.variants ?? [])}${children}</${look.tag}>`, kept, notShown };
+  return { markup: `${startTag(card, root, look, input.variants ?? [])}${children}</${look.tag}>`, kept, notShown, titleLinked };
 }

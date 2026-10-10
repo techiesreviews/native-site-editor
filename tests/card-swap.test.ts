@@ -39,6 +39,17 @@ test("swapping keeps content by role, in the new look's own elements; the title 
   assert.deepEqual(swap.notShown, ["image (no image slot)", "note (no note slot)"]);
   assert.deepEqual(swap.kept.image, { src: "/images/harbour.svg", alt: "A kiln" });
   assert.deepEqual(swap.kept.other, { note: ['<p slot="note">Ceramics studio · 2025</p>'] });
+  assert.equal(swap.titleLinked, true);
+});
+
+test("the swap says whether it linked the title: not for a look with a link slot, nor when a same-name slot's content takes the title's place", () => {
+  const away = cardSwap({ card: filled, template: project, look: { tag: "card-quote", label: "card-quote" }, lookTemplate: quote });
+  const back = cardSwap({ card: away.markup, template: quote, look: { tag: "card-project", label: "card-project" }, lookTemplate: project, kept: away.kept });
+  assert.equal(back.titleLinked, false);
+  const named = cardSwap({ card: filled, template: project, look: { tag: "card-quote", label: "card-quote" }, lookTemplate: quote, kept: { other: { title: ['<h3 slot="title">Kept</h3>'] } } });
+  // The card's title is read back by name here, so it is placed as written: unlinked.
+  assert.ok(named.markup.includes('<h3 slot="title">Harbour <em>Lane</em> Pottery</h3>'));
+  assert.equal(named.titleLinked, false);
 });
 
 test("what was kept aside comes back on a swap to a look with a place for it: the card is as it was", () => {

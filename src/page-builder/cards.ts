@@ -20,14 +20,13 @@ import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { cardFill, cardRoles, cardFillContent, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
+import { cardFill, cardFillContent, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
 import type { CardContent } from "./card-swap";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
-import { templateSlots } from "./component-model";
 import { nativeLinkTarget } from "../../shared/native-routes";
 
 interface RangeEdit {
@@ -372,12 +371,12 @@ export function createCards(deps: CardsDeps) {
     const edit = { start: range.start, end: range.end, text: swapped.markup };
     const noun = itemNoun(look.tag);
     const message = `${capital(noun)} is now ${look.label}`;
-    const { titleSlot, linkSlot } = cardRoles(templateSlots(next));
-    const cssPath = !linkSlot && titleSlot && swapped.kept.title !== undefined && swapped.kept.link?.href ? templatePath?.replace(/\.html$/, ".css") : undefined;
+    // A title the swap linked (decision 3) needs its host positioned to bound the site's stretch rule, as a fill's does.
+    const cssPath = swapped.titleLinked ? templatePath?.replace(/\.html$/, ".css") : undefined;
     const cssBefore = cssPath ? deps.source(cssPath) : undefined;
     const host = cssPath && (cssBefore !== undefined || !deps.exists(cssPath)) ? { path: cssPath, before: cssBefore } : undefined;
     const change: CardEdit = { source: source!, edit, noun, host, expectedSources };
-    const css = host ? await hostCss(card, change) : undefined;
+    const css = host ? await hostCss(card, change, "the look") : undefined;
     if (css === null) return undefined;
     if (css) {
       if (!await fillOperation(card, change, css, [], message, `Undid changing the ${noun}'s look.`)) return undefined;
@@ -451,13 +450,13 @@ export function createCards(deps: CardsDeps) {
    * loaded only here) when it lacks it; null, refused, when the site, the
    * editor or any file the action read changed while it loaded.
    */
-  async function hostCss(card: NewCard, fill: CardEdit): Promise<{ path: string; before?: string; after: string } | undefined | null> {
+  async function hostCss(card: NewCard, fill: CardEdit, retry = "the page"): Promise<{ path: string; before?: string; after: string } | undefined | null> {
     const site = deps.site();
     const editor = deps.editor();
     const { cardLinkCss } = await import("./card-link-css");
     const read = new Map([...fill.expectedSources, ...(fill.host ? [[fill.host.path, fill.host.before] as const] : [])]);
     if (deps.site() !== site || deps.editor() !== editor || !editor?.isMounted(card.path) || [...read].some(([path, text]) => deps.source(path) !== text)) {
-      refuse("The page changed meanwhile; choose the page again.");
+      refuse(`The page changed meanwhile; choose ${retry} again.`);
       return null;
     }
     if (!fill.host) return undefined;

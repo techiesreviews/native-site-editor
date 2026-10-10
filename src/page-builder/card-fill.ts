@@ -320,8 +320,10 @@ export function itemPageFill(card: string, noun: string, title: string, href: st
   const source = card;
   const leaves = textLeaves(source, [root]);
   const heading = titleLeaf(source, root, leaves);
-  // A paragraph holding a link is the card's link ("Read about …"), not its text.
-  const body = heading && leaves.find(leaf => leaf.name === "p" && leaf.start >= heading.end && !allElements(leaf.children).some(child => child.name === "a"));
+  // The first paragraph after the title, text or empty; one holding a link is the card's link ("Read about …"), not its text.
+  const blank = (element: (typeof leaves)[number]) => !element.children.length && !itemPlainText(source.slice(element.innerStart, element.innerEnd));
+  const body = heading && allElements([root]).find(element => element.name === "p" && element.start >= heading.end
+    && (leaves.includes(element) || blank(element)) && !allElements(element.children).some(child => child.name === "a"));
   const img = [...descendants(parseSource(source))].find(element => element.name === "img");
   const edits: RangeEdit[] = [];
   const rows = facts.map((fact): CardFillRow => {
