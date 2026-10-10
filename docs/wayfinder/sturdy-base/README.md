@@ -58,6 +58,8 @@ One module (`src/page-builder/block-move.ts`) answers "what does this press move
 
 31 and 32 may run together (main.ts regions 520-614/1612-1722 vs 923-958). No file of 26/27 is edited (native-preview.ts keeps its `onMove`/`onBlockPress` handlers; the palette runs the bar's buttons as before); only main.ts is shared, in other regions. Run 31 before 18, or 18 allowlists the `itemsSlots()` peeks in page-structure-controller (712, 779) and main.ts (1693). Lead decides before 31-33 (design section 8, each recommended): B1 template Sections move by the template rules from the canvas and bar too; B2 a non-Section Structure row opens its page and moves, as Sections do; B3 Undo of every move reselects the block where it was; B4 Structure focus follows the real path after a Section or pending move; B5 Section Move buttons disabled at a slot's edge; B6 a row press on a Block that does not move starts no drag.
 
+**Decided by Lex (2026-10-10):** B1–B6 all yes; slices 31–33 build them.
+
 ## 5. One Variant lookup
 
 One module in `shared/` answers which Variants a tag (or `.btn`) has on the site, from the stylesheets and scripts the pages actually link, for the edit bar, the card looks, the code pane and `get_site` alike, behind a small files adapter (editor drafts, Worker `SiteFiles`).
