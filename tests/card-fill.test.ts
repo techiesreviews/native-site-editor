@@ -376,3 +376,10 @@ test("a slot named with a character reference is filled in the card's element of
   assert.equal(rows[0].slot, "café");
   assert.equal(cardFillMarkup('<card-x><h3 slot="caf&eacute;">Old</h3></card-x>', card, rows), `<card-x><h3 slot="caf&eacute;"><a href="${route}">Page</a></h3></card-x>`);
 });
+
+test("two slots whose names read the same are one slot, the first", () => {
+  const card = '<article><slot name="caf&eacute;"><h3>First</h3></slot><slot name="café"><p>Second</p></slot></article>';
+  const rows = cardFill({ template: card, page: { route: "/new/", source: '<h1>New</h1><meta name="description" content="Body">' } }).rows;
+  assert.deepEqual(rows.filter(row => row.slot !== undefined).map(row => row.slot), ["café"]);
+  assert.equal(cardFillMarkup('<card-x><h3 slot="café">Old</h3></card-x>', card, rows), '<card-x><h3 slot="café"><a href="/new/">New</a></h3></card-x>');
+});

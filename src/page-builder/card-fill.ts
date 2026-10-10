@@ -79,10 +79,12 @@ export function pageTitle(source: string, route: string, tree: SourceTree<Source
 /**
  * A card template's slots (templateSlots) with their names and forwards read
  * as the browser reads attribute values, as a card's `slot` attributes are
- * read here: `<slot name="caf&eacute;">` is filled by `slot="café"`.
+ * read here: `<slot name="caf&eacute;">` is filled by `slot="café"`. Each
+ * name once, the first slot of a name being the one filled.
  */
 export function cardSlots(template: string, tree = readSource(template)): TemplateSlot[] {
-  return templateSlots(template).map((slot) => ({ ...slot, name: tree.attribute(slot.element, "name")?.value ?? "", forward: tree.attribute(slot.element, "slot")?.value }));
+  const slots = templateSlots(template).map((slot) => ({ ...slot, name: tree.attribute(slot.element, "name")?.value ?? "", forward: tree.attribute(slot.element, "slot")?.value }));
+  return slots.filter((slot, at) => slots.findIndex((other) => other.name === slot.name) === at);
 }
 
 /**
