@@ -2,7 +2,7 @@
 // A rule that walks markup takes a `RuleView` instead of a tree type, so the
 // one rule runs on the preview's DOM (the runtime bundles these modules and
 // reads its shadow roots through `domView`) and on the editor's source tree
-// (component-model.ts `sourceView` over `parseSource`). Both read as the
+// (source-tree.ts `sourceView` over `parseSource`). Both read as the
 // browser does: text decoded, comments and the runtime's own styles not
 // there.
 
