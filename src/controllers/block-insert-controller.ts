@@ -100,8 +100,8 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
   async function click(kind: NativeElementKind, at = ports.target()) {
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
-    // A selection painted from other bytes names another element now.
-    if (at.node && at.painted !== undefined && at.painted !== source) { ports.refuse("The page is still updating. Try again in a moment."); return; }
+    // Only text changed inside the selected element: its position still holds.
+    if (at.node && at.painted !== undefined && !nativeEditInside(at.painted, source, at.node)) { ports.refuse("The page is still updating. Try again in a moment."); return; }
     const templateOf = (tag: string) => ports.template(tag)?.source;
     const target = at.template === undefined ? clickTarget(source, kind, at.node, templateOf) : templateClickTarget(source, at.template, kind, at.node);
     if (!target.ok) { ports.refuse(target.reason); return; }
@@ -120,7 +120,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
   async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string; slot?: string }, painted: string | undefined, at = ports.target(), pointer?: { x: number; y: number }) {
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it.", pointer); return; }
-    if (painted !== source) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
+    if (painted !== source && !(painted !== undefined && at.node && nativeEditInside(painted, source, at.node))) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
     // The frame measured the place; the template's own rule says whether it takes blocks.
     const refused = at.template === undefined ? undefined : templateDropRefusal(source, place.parent);
     if (refused) { ports.refuse(refused, pointer); return; }

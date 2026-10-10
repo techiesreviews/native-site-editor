@@ -45,25 +45,28 @@ test("clicking Section, Div, Heading, Paragraph builds a nested section, one und
   }
 });
 
-test("a block clicked in while text is typed in lands selected, not typed in, and the typing is kept", async ({ page, baseURL }) => {
-  await open(page, baseURL, 501, ".hero h1");
-  const heading = frame(page).locator(".hero h1");
-  await heading.dblclick();
-  await expect(heading).toHaveAttribute("contenteditable", /.+/);
+test("a rail click immediately after typing keeps the text and inserts after the paragraph, two undo steps", async ({ page, baseURL }) => {
+  await open(page, baseURL, 501, ".hero p.lead");
+  const original = await source(page);
+  const lead = frame(page).locator(".hero p.lead");
+  const originalText = await lead.textContent();
+  await lead.dblclick();
+  await expect(lead).toHaveAttribute("contenteditable", /.+/);
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(" typed");
-  // Focus leaving the page commits the typing; the heading stays the one typed in.
-  const paragraph = rail(page).getByRole("button", { name: "Paragraph", exact: true });
-  await paragraph.focus();
-  await expect.poll(async () => flat(await source(page))).toContain("A native browser preview typed</h1>");
-  await expect(heading).toHaveAttribute("contenteditable", /.+/);
-  await paragraph.click();
-  await expect(page.locator("#status")).toHaveText(/^Paragraph added\. .*› after Heading$/);
+  // Click directly: no focus-first or wait for the blur's text commit.
+  await rail(page).getByRole("button", { name: "Paragraph", exact: true }).click();
+  await expect(page.locator("#status")).toHaveText(/^Paragraph added\. .*› after Paragraph$/);
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await expect.poll(async () => flat(await source(page))).toMatch(/A native browser preview typed<\/h1><p>Text<\/p>/);
-  // Neither the new Paragraph nor the heading is typed in.
-  await expect(frame(page).locator(".hero h1 + p")).toHaveText("Text");
+  await expect.poll(async () => flat(await source(page))).toContain(`${originalText} typed</p><p>Text</p>`);
+  await expect(frame(page).locator(".hero p.lead + p")).toHaveText("Text");
   await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+  await undo(page);
+  await expect.poll(() => source(page)).toBe(original!.replace(`${originalText}</p>`, `${originalText} typed</p>`));
+  await expect(lead).toHaveText(`${originalText} typed`);
+  await undo(page);
+  await expect.poll(() => source(page)).toBe(original);
+  await expect(lead).toHaveText(originalText!);
 });
 
 test("the first Image drafts images/placeholder.svg in its undo step; a second writes no file", async ({ page, baseURL }) => {

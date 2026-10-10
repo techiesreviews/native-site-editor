@@ -64,6 +64,29 @@ test("a Paragraph dragged from the rail between two cards of a nested grid lands
   await expect.poll(() => source(page)).toBe(original);
 });
 
+test("a rail drop while typing keeps the text, ends typing, and takes two undo steps", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const original = await source(page);
+  const lead = frame(page).locator(".hero p.lead");
+  const originalText = await lead.textContent();
+  // Measure the drop before typing so no focus change commits the text first.
+  const to = await betweenCards(page);
+  await lead.dblclick();
+  await expect(lead).toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type(" typed");
+  await dragFromRail(page, "Paragraph", to);
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (grid) › after Card project");
+  await page.mouse.up();
+  await expect.poll(async () => flat(await source(page))).toMatch(/<\/card-project><p>Text<\/p><card-project>/);
+  await expect(lead).toHaveText(`${originalText} typed`);
+  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
+  await expect.poll(() => source(page)).toBe(original!.replace(`${originalText}</p>`, `${originalText} typed</p>`));
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});
+
 test("Alt steps the target up a level and Escape cancels the drag", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const original = await source(page);

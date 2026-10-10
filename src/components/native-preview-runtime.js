@@ -3580,6 +3580,12 @@
     if (e.source !== parent) return;
     var msg = e.data || {};
     if (msg.source !== "astro-native-preview-host") return;
+    if (msg.type === "finish-typing") {
+      leaveEditing();
+      // Text edits are posted first; the host drains their queue after this answer.
+      emit("typing-finished", { id: msg.id });
+      return;
+    }
     if (msg.type === "theme") {
       if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
       updateBoxes();

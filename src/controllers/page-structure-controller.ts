@@ -826,6 +826,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     moveNativeSectionAfterOpening,
     moveNativeSectionTo,
     applyNativeTextEdit,
+    textEdits: () => nativeTextEditQueue,
     nativeTextSourceEdit,
     prepareNativeTextEdit,
     get nativeFormatActions() { return nativeFormatActions; },

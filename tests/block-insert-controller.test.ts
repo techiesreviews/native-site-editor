@@ -88,7 +88,7 @@ test("a failed operation cancels the selection it asked for and flashes the erro
 });
 
 test("a selection painted from other bytes is refused; the click's own target is used", async () => {
-  const { controller, log } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0], painted: page.replace("Work", "Old") }) });
+  const { controller, log } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0], painted: page.replace("<title>Home", "<title>Old") }) });
   await controller.click("paragraph");
   assert.equal(log.ops.length, 0);
   assert.deepEqual(log.refusals, ["The page is still updating. Try again in a moment."]);
@@ -105,10 +105,26 @@ test("a drop inserts at its place, one step; a page changed since it was measure
   assert.deepEqual(log.ops[0].selection, { before: { path: "index.html", node: [0, 0, 0] }, after: { path: "index.html", node: [0, 0, 0] } });
   assert.equal(log.ops[0].done, "Paragraph added. Into Section › before Heading");
   const stale = setup();
-  await stale.controller.drop("paragraph", { parent: [0, 0], index: 0, where: "" }, page.replace("Work", "Play"));
+  await stale.controller.drop("paragraph", { parent: [0, 0], index: 0, where: "" }, page.replace("<title>Home", "<title>Play"));
   await stale.controller.drop("paragraph", { parent: [0, 0], index: 0, where: "" }, undefined);
   assert.equal(stale.log.ops.length, 0);
   assert.deepEqual(stale.log.refusals, ["The page is still updating. Try again in a moment.", "The page is still updating. Try again in a moment."]);
+});
+
+test("click and drop accept text typed inside the selection, but refuse changes outside it", async () => {
+  const before = page.replace("<h2>Work</h2>", "<p>Lead</p><p>Other</p>");
+  const typed = before.replace("<p>Lead</p>", "<p>Lead typed</p>");
+  for (const action of ["click", "drop"] as const) {
+    for (const outside of [false, true]) {
+      const source = outside ? typed.replace("<p>Other</p>", "<p>Changed</p>") : typed;
+      const { controller, log, files } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0], painted: before }) }, { "index.html": source });
+      if (action === "click") await controller.click("paragraph");
+      else await controller.drop("paragraph", { parent: [0, 0], index: 1, where: "After Paragraph" }, before);
+      assert.equal(log.ops.length, outside ? 0 : 1);
+      assert.deepEqual(log.refusals, outside ? ["The page is still updating. Try again in a moment."] : []);
+      if (!outside) assert.match(files["index.html"], /<p>Lead typed<\/p>\s*<p>Text<\/p>\s*<p>Other<\/p>/);
+    }
+  }
 });
 
 test("drops and clicks into an instance's items slot write its light DOM with the slot; other slots refuse", async () => {

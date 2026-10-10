@@ -693,10 +693,32 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     ]);
   }
 
+  let typingId = 0;
+  const typingFinishes = new Map<number, () => void>();
+  function finishTyping(): Promise<void> {
+    if (!frameState.ready || !frameState.active) return Promise.resolve();
+    const id = ++typingId;
+    return new Promise(resolve => {
+      const finish = () => {
+        clearTimeout(timer);
+        typingFinishes.delete(id);
+        resolve();
+      };
+      const timer = setTimeout(finish, 500);
+      typingFinishes.set(id, finish);
+      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "finish-typing", id }, "*");
+    });
+  }
+
   function onMessage(event: MessageEvent) {
     if (event.source !== frame.contentWindow) return;
     const data = event.data as { source?: string; type?: string; href?: string; context?: string } | undefined;
     if (data?.source !== "astro-native-preview") return;
+    if (data.type === "typing-finished") {
+      const raw = data as unknown as { id?: unknown };
+      if (typeof raw.id === "number") typingFinishes.get(raw.id)?.();
+      return;
+    }
     // Desktop files dropped onto a source-owned canvas image, including shadow roots.
     if (data.type === "image-drop" && site) {
       const raw = data as unknown as { path?: unknown; node?: unknown; width?: unknown; files?: unknown };
@@ -1348,6 +1370,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         inspections.delete(id);
       }
     },
+    /** Finish typing, answering after the runtime posts any text edit. */
+    finishTyping,
     /** The selection's container is selected (Escape on the block rail); above the top, nothing. */
     selectParent() {
       if (frameState.active) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-parent" }, "*");
@@ -1494,6 +1518,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
       endPress();
+      for (const finish of typingFinishes.values()) finish();
       site = undefined;
       shownRoute = undefined;
       postedRoutes.clear();
@@ -1516,6 +1541,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
+      for (const finish of typingFinishes.values()) finish();
       endProbe();
       endPress();
       frameState.destroy();

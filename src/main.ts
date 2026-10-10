@@ -327,9 +327,14 @@ function mountWorkspace() {
   repositorySelect = element<HTMLSelectElement>("repository");
   blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"), {
     onPick: kind => {
-      // The click's page, selection and repository, held while the insert code loads.
-      const current = blockInsertPorts.proof(), at = blockInsertPorts.target();
-      void loadBlockInsert().then(blocks => current() ? blocks.click(kind, at) : undefined).catch(errorMessage);
+      // Hold the click's proof while typing finishes and the insert code loads.
+      const current = blockInsertPorts.proof();
+      void finishRailTyping(current).then(async () => {
+        if (!current()) return;
+        const at = blockInsertPorts.target();
+        const blocks = await loadBlockInsert();
+        if (current()) await blocks.click(kind, at);
+      }).catch(errorMessage);
     },
     onUp: () => nativePreview?.selectParent(),
     // The drag's targets and drawing load with the first press on a block;
@@ -343,10 +348,14 @@ function mountWorkspace() {
       return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag(block, {
         tree: template ? undefined : structureDrop(drag, block),
         drop: (target, where, painted, pointer) => {
-          const at = blockInsertPorts.target();
-          if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-          if (current()) void loadBlockInsert().then(blocks => current() ? blocks.drop(kind, place, painted, at, pointer) : undefined).catch(errorMessage);
+          if (current()) void finishRailTyping(current).then(async () => {
+            if (!current()) return;
+            const at = blockInsertPorts.target();
+            if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
+            const blocks = await loadBlockInsert();
+            if (current()) await blocks.drop(kind, place, painted, at, pointer);
+          }).catch(errorMessage);
         },
         announce,
       }, drag.createBlockDrag, template?.path) : undefined);
@@ -783,6 +792,13 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     preview.selectAfterUpdate(undefined);
     errorMessage(error);
   }
+}
+
+// The runtime's answer follows its text edits; drain them before reading the selection.
+async function finishRailTyping(current: () => boolean) {
+  await nativePreview?.finishTyping();
+  if (!current()) return;
+  await pageStructureController.textEdits();
 }
 
 // The block rail's clicks and drags: one source edit per block, the new block selected.
