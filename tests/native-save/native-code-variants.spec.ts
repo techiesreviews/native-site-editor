@@ -59,7 +59,6 @@ test("variant providers isolate models, refresh markers and dispose without clob
   const result = await page.evaluate(async () => {
     const api = await import('/src/components/code-editor.ts');
     const { monaco } = await import('/src/components/monaco.ts');
-    const { componentVariants } = await import('/shared/variants.ts');
     const completionProviders: any[] = [];
     const hoverProviders: any[] = [];
     const registerCompletion = monaco.languages.registerCompletionItemProvider.bind(monaco.languages);
@@ -76,7 +75,9 @@ test("variant providers isolate models, refresh markers and dispose without clob
     htmlHost.style.height = cssHost.style.height = '300px';
     document.body.replaceChildren(htmlHost, cssHost);
     let css = ':host[data-broken] {} :host([data-tone=dark]) {}';
-    const lookup = () => ({ forTag: (tag: string) => tag === 'project-card' ? componentVariants(css).variants : undefined, isComponentCss: (path: string) => path === 'variants.css' });
+    // The site's files (shared/variant-lookup.ts VariantFiles): project-card's own CSS is variants.css.
+    const site = { pages: [], components: { 'project-card': 'variants.html' } };
+    const lookup = { site: () => site, read: (path: string) => path === 'variants.css' ? css : undefined };
     const disposeCss = api.mountCodeEditor(cssHost, { key: 'variant-css', path: 'variants.css', source: css, variants: lookup });
     const disposeHtml = api.mountCodeEditor(htmlHost, { key: 'variant-html', path: 'variants.html', source: '<project-card data-tone="sepia">', variants: lookup });
     const htmlModel = monaco.editor.getModels().find(model => model.uri.path.endsWith('/variants.html'))!;

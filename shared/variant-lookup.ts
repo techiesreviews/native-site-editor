@@ -18,7 +18,7 @@
 import { expandStyleImports, resolveImportPath } from "./css-imports";
 import { startTagAttribute, startTags } from "./html-source";
 import { nativeComponentCssPath, nativePageStylesheets } from "./native-project";
-import { globalVariants, scriptSetAttributes, siteVariants, variantsForClass, variantsForComponent, type SiteVariants, type Variant, type VariantWarning } from "./variants";
+import { globalVariants, scriptImports, scriptSetAttributes, siteVariants, variantsForClass, variantsForComponent, type SiteVariants, type Variant, type VariantWarning } from "./variants";
 
 /** The site as the lookup needs it: page files and component templates. */
 export interface VariantSite {
@@ -70,9 +70,11 @@ export function variantLookup(files: VariantFiles): VariantLookup {
 /**
  * For files read asynchronously in batches (the Worker): asks `ask` again
  * after each round of reads until it read nothing new; a path is asked for
- * once. `load` gives the texts it found (missing files left out). `likely`
+ * once. `load` gives the texts it found (missing files left out); its
+ * failure, or more rounds than `READ_ROUNDS`, fails the answer. `likely`
  * paths (the stylesheets the tab says the pages link) are read in the first
- * round with the pages, which saves a round when they are right.
+ * round with the pages, which saves a round when they are right; if that
+ * round fails, it is read again without them.
  */
 export async function readVariants<T>(site: VariantSite, load: (paths: string[]) => Promise<ReadonlyMap<string, string>>, ask: (lookup: VariantLookup) => T, likely: readonly string[] = []): Promise<T> {
   const texts = new Map<string, string>(), asked = new Set<string>(), wanted = new Set<string>();
@@ -86,10 +88,15 @@ export async function readVariants<T>(site: VariantSite, load: (paths: string[])
   for (let round = 0; ; round++) {
     wanted.clear();
     const answer = ask(lookup);
-    if (!wanted.size || round === READ_ROUNDS) return answer;
-    const paths = [...new Set([...wanted, ...(round ? [] : likely)])].filter((path) => !asked.has(path));
-    paths.forEach((path) => asked.add(path));
-    for (const [path, text] of await load(paths)) texts.set(path, text);
+    if (!wanted.size) return answer;
+    if (round === READ_ROUNDS) throw new Error(`The site's stylesheets and scripts link deeper than ${READ_ROUNDS} rounds of reads.`);
+    const needed = [...wanted];
+    needed.forEach((path) => asked.add(path));
+    const extra = round ? [] : likely.filter((path) => !asked.has(path));
+    const read = extra.length ? await load([...needed, ...new Set(extra)]).catch(() => load(needed)) : await load(needed);
+    for (const [path, text] of read) texts.set(path, text);
+    // A likely path read is not asked again; one that failed is asked for if needed.
+    for (const path of extra) if (texts.has(path)) asked.add(path);
   }
 }
 
@@ -104,14 +111,12 @@ function pageScripts(html: string, path: string) {
   });
 }
 
-/** The modules a script imports statically (or by a literal `import()`), as repository paths. */
-function scriptImports(source: string, path: string) {
-  const out: string[] = [];
-  for (const match of source.matchAll(/\b(?:import|export)\s*(?:[\w$*{}\s,]+?\s*from\s*)?\(?\s*(["'])((?:\.{1,2})?\/[^"'\n]+)\1/g)) {
-    const resolved = resolveImportPath(path, match[2]);
-    if (resolved) out.push(resolved);
-  }
-  return out;
+/** The site's modules a script imports (relative or root specifiers; bare ones are packages), as repository paths. */
+function importedScripts(source: string, path: string) {
+  return scriptImports(source).flatMap((specifier) => {
+    const resolved = /^\.{0,2}\//.test(specifier) ? resolveImportPath(path, specifier) : undefined;
+    return resolved ? [resolved] : [];
+  });
 }
 
 interface Memo { reads: Map<string, string | undefined>; value: unknown }
@@ -120,7 +125,7 @@ function createLookup(files: VariantFiles): VariantLookup {
   const memos = new Map<string, Memo>();
   // The reads of each answer being computed, innermost last.
   const recording: Map<string, string | undefined>[] = [];
-  let shape: VariantSite | undefined, shapeKey = "";
+  let shapeKey = "";
 
   const record = (path: string, text: string | undefined) => {
     for (const reads of recording) if (!reads.has(path)) reads.set(path, text);
@@ -145,15 +150,12 @@ function createLookup(files: VariantFiles): VariantLookup {
     reads.forEach((text, path) => record(path, text));
     return value;
   }
-  // The site's pages and components; another site drops every answer.
+  // The site's pages and components; other ones drop every answer.
   function site() {
     const now = files.site();
-    if (now !== shape) {
-      const key = now ? JSON.stringify([now.pages, now.components]) : "";
-      if (key !== shapeKey) memos.clear();
-      shape = now;
-      shapeKey = key;
-    }
+    const key = now ? JSON.stringify([now.pages, now.components]) : "";
+    if (key !== shapeKey) memos.clear();
+    shapeKey = key;
     return now;
   }
 
@@ -171,7 +173,7 @@ function createLookup(files: VariantFiles): VariantLookup {
       const source = read(queue[index]);
       if (source === undefined) continue;
       scriptNames(queue[index]).forEach((name) => names.add(name));
-      for (const path of scriptImports(source, queue[index])) if (!queue.includes(path)) queue.push(path);
+      for (const path of importedScripts(source, queue[index])) if (!queue.includes(path)) queue.push(path);
     }
     return names;
   });

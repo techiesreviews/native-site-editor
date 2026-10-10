@@ -5,9 +5,27 @@
 import { splitSelectorList } from "./cascade";
 import { blockEnd, preludeEnd, skipSpace, withoutComments } from "./slotted-css";
 
+// A script's tokens without comments: strings (and template literals without
+// substitutions) whole, so neither comments nor strings look like code.
+function scriptTokens(source: string) {
+  return source.match(/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[\w$]+|\?\.|\|\|=|&&=|\?\?=|[+*/%-]=|\+\+|--|===|==|=>|\S/g)?.filter((token) => !token.startsWith("//") && !token.startsWith("/*")) ?? [];
+}
+
+/** The modules a script imports by a literal specifier: `import "x"`, `import … from "x"`, `export … from "x"`, `import("x")`. */
+export function scriptImports(source: string): string[] {
+  const tokens = scriptTokens(source), out: string[] = [];
+  for (let index = 1; index < tokens.length; index++) {
+    const token = tokens[index], before = tokens[index - 1];
+    if (!/^(["'])[^]*\1$/.test(token)) continue;
+    const dynamic = before === "(" && tokens[index - 2] === "import" && tokens[index - 3] !== "." && tokens[index + 1] === ")";
+    if (before === "from" || (before === "import" && tokens[index - 2] !== ".") || dynamic) out.push(token.slice(1, -1));
+  }
+  return out;
+}
+
 /** Statically named attributes written by site scripts; dynamic names are unknown. */
 export function scriptSetAttributes(source: string): string[] {
-  const tokens = source.match(/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|[\w$]+|\?\.|\|\|=|&&=|\?\?=|[+*/%-]=|\+\+|--|===|==|=>|\S/g)?.filter((token) => !token.startsWith("//") && !token.startsWith("/*")) ?? [];
+  const tokens = scriptTokens(source);
   const names = new Set<string>();
   const literal = (token = "") => /^(["'`])[\w-]+\1$/.test(token) ? token.slice(1, -1) : undefined;
   for (let index = 0; index < tokens.length; index++) {

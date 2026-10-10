@@ -101,9 +101,12 @@ test("the same files give the same lookup and the same answer; a changed import,
   assert.notEqual(imported, first);
   assert.deepEqual(values(imported.variants, "data-size"), ["tiny"]);
 
-  files.files["scripts/open.js"] = "";
-  assert.ok(lookup.forTag("card-tip")!.variants.some((variant) => variant.attribute === "data-layout"));
-  assert.equal(lookup.forTag("card-tip")!.variants.filter((variant) => variant.attribute === "data-open").length, 1);
+  // data-ready is only in the component's own CSS: a script edit brings it back.
+  const warm = lookup.forTag("card-tip");
+  files.files["scripts/tips.js"] = 'import "./open.js";';
+  assert.notEqual(lookup.forTag("card-tip"), warm);
+  assert.ok(lookup.forTag("card-tip")!.variants.some((variant) => variant.attribute === "data-ready"));
+  files.files["scripts/tips.js"] = 'import "./open.js";\ntip.dataset.ready = "";';
 
   files.files["index.html"] = page(["/styles/site.css", "/styles/orphan.css"]);
   const linked = lookup.forTag("card-tip")!.variants;
@@ -112,6 +115,30 @@ test("the same files give the same lookup and the same answer; a changed import,
 
   files.files["components/card-new/card-new.html"] = "<article></article>";
   assert.deepEqual(attributes(lookup.forTag("card-new")!.variants), ["data-tone", "data-open", "data-color-scheme"]);
+});
+
+test("the same site object with other pages or components is another site", () => {
+  const files = site();
+  const shape = { pages: ["index.html"], components: { "card-tip": "components/card-tip/card-tip.html" } as Record<string, string> };
+  const lookup = variantLookup({ site: () => shape, read: (path) => files.files[path] });
+  assert.equal(lookup.forTag("card-tip")!.variants.some((variant) => variant.attribute === "data-color-scheme"), false);
+  shape.pages.push("about/index.html");
+  assert.ok(lookup.forTag("card-tip")!.variants.some((variant) => variant.attribute === "data-color-scheme"));
+  delete shape.components["card-tip"];
+  assert.equal(lookup.forTag("card-tip"), undefined);
+});
+
+test("script imports are read from code, not comments or strings; JavaScript types count", () => {
+  const files = site();
+  files.files["scripts/tips.js"] = '// import "./unused.js";\nconst text = "import \'./unused.js\'";\nimport/* open */"./open.js";\nexport { x } from "./more.mjs";\nimport("./late.js");\nimport "lit";';
+  files.files["scripts/more.mjs"] = 'tip.dataset.ready = "";';
+  files.files["scripts/late.js"] = '';
+  files.files["index.html"] = page(["/styles/site.css"]).replace("</head>", '<script type="text/javascript" src="/scripts/tips.js"></script></head>');
+  const tip = variantLookup(files).forTag("card-tip")!.variants;
+  assert.equal(tip.some((variant) => variant.attribute === "data-layout"), true, "unused.js is not imported");
+  assert.equal(tip.some((variant) => variant.attribute === "data-ready"), false, "more.mjs is");
+  assert.ok(files.reads.includes("scripts/late.js"));
+  assert.equal(files.reads.includes("scripts/unused.js") || files.reads.includes("lit"), false);
 });
 
 test("a file not read yet counts once it is read", () => {
@@ -144,4 +171,32 @@ test("readVariants reads in batched rounds, asks for each path once, and answers
   assert.equal(all.includes("scripts/unused.js") || all.includes("styles/orphan.css"), false, "only what the site links");
   // A failed read fails the answer.
   await assert.rejects(readVariants({ pages: ["index.html"], components: {} }, async () => { throw new Error("offline"); }, (lookup) => lookup.global()), /offline/);
+});
+
+test("readVariants reads likely paths with the pages, and again without them when that fails", async () => {
+  const files = site().files;
+  const shape = { pages: ["index.html"], components: {} };
+  const batches: string[][] = [];
+  const load = async (paths: string[]) => {
+    batches.push(paths);
+    if (paths.includes("styles/stale.css")) throw new Error("unreadable draft");
+    return new Map(paths.flatMap((path) => Object.hasOwn(files, path) ? [[path, files[path]] as const] : []));
+  };
+  const plain = await readVariants(shape, load, (lookup) => lookup.global());
+  const plainRounds = batches.length;
+  batches.length = 0;
+  assert.deepEqual(await readVariants(shape, load, (lookup) => lookup.global(), ["styles/site.css", "styles/tones.css"]), plain);
+  assert.equal(batches.length, plainRounds - 2, "the likely sheets save their rounds");
+  batches.length = 0;
+  assert.deepEqual(await readVariants(shape, load, (lookup) => lookup.global(), ["styles/stale.css"]), plain);
+  assert.deepEqual(batches.slice(0, 2), [["index.html", "styles/stale.css"], ["index.html"]]);
+});
+
+test("readVariants fails rather than answering without files linked too deep", async () => {
+  const files: Record<string, string> = { "index.html": page(["/s0.css"]) };
+  for (let depth = 0; depth < 20; depth++) files[`s${depth}.css`] = `@import "s${depth + 1}.css";`;
+  files["s20.css"] = '[data-deep="yes"] {}';
+  assert.deepEqual(variantLookup(memoryVariantFiles(files)).global().map(({ attribute }) => attribute), ["data-deep"]);
+  const load = async (paths: string[]) => new Map(paths.flatMap((path) => Object.hasOwn(files, path) ? [[path, files[path]] as const] : []));
+  await assert.rejects(readVariants({ pages: ["index.html"], components: {} }, load, (lookup) => lookup.global()), /deeper than/);
 });
