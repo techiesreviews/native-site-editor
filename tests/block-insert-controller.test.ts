@@ -258,6 +258,20 @@ test("a template the click read (its items slot), edited before the insert write
   assert.equal(selected(m), undefined);
 });
 
+test("a click with no painted bytes refuses when the page changes while it opens", async () => {
+  const { controller, m } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0] }) });
+  m.close();
+  const hold = m.holdOpen();
+  const pending = controller.click("paragraph");
+  await hold.reached;
+  m.writeDraft("index.html", page.replace("<h2>Work</h2>", "<div>Replacement</div>"));
+  hold.release();
+  await pending;
+  assert.deepEqual(m.refusals, [STALE_MESSAGE]);
+  assert.deepEqual(m.steps(), []);
+  assert.equal(m.source("index.html"), page.replace("<h2>Work</h2>", "<div>Replacement</div>"));
+});
+
 for (const action of ["click", "drop", "move"] as const) {
   test(`${action} refuses a caller stamp whose route changed`, async () => {
     const { controller, m, edits } = setup();

@@ -1,7 +1,7 @@
 ---
 title: "Block insert, rail clicks and block drags through the guarded edit"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [10-guarded-edit-module]
 builder: sol
@@ -22,3 +22,9 @@ The area with the most proof bugs (slices 30, 36, 40, 43, 94). Design: /home/ubu
 - `tests/block-insert-controller.test.ts` runs on the memory workspace (no faked proof ports) and adds: a template edited between a rail click and the insert refuses (the `click` gap).
 - No `generation`/`setupScope`/`editModeTemplate()?.entry` compare left in the block insert/drag code in `main.ts`.
 - `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-10)
+
+- `insert`, `click`, `drop`, `move` are each one `edits.run` whose plan reads the page, the items-slot and click-target templates and the placeholder image through `r`; `BlockInsertPorts` is `target`, `edits`, `refuse`. The rail's `onPick`/`drag` and `dragPageBlock` hold `guardedEdits.stamp()` across typing and the lazy loads (route = the drag's page check); painting reads use `guardedEdits.peek`. A click without painted bytes still refuses when the page changes while it opens.
+- Block inserts on the open page now take the range path (one Monaco step): Undo doesn't reselect `before` or announce until slice 17. Net JS −1.1 KB gzip (`guarded-edit.ts` moved from a shared boot chunk into the entry).
+- Tests: `tests/block-insert-controller.test.ts` on the memory workspace (16 → 21): template edited before the write refuses, stale stamp per action, page changed while opening, refresh failure keeps the step; the faked-proof cases went.

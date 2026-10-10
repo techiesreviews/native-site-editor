@@ -19,7 +19,7 @@ import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } f
 import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, templateMoveRefusal } from "../page-builder/block-insert";
 import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit, nativeMoveRefusal } from "../page-builder/native-operations";
 import { nativeElementMovePlan } from "../page-builder/native-move-choices";
-import type { GuardedEdits, Reads, PlanResult, Outcome, Stamp } from "../guarded-edit";
+import { STALE_MESSAGE, type GuardedEdits, type Reads, type PlanResult, type Outcome, type Stamp } from "../guarded-edit";
 
 type NodeRequest = { path: string; node: number[] };
 /** `template`: `path` is the template of this component, edited in Edit component mode. */
@@ -30,7 +30,7 @@ export interface BlockInsertPorts {
    * component's part gives its instance) and the page bytes it was painted from.
    */
   readonly target: () => RailTarget | undefined;
-  readonly edits: Pick<GuardedEdits, "run" | "stamp">;
+  readonly edits: Pick<GuardedEdits, "run" | "stamp" | "peek">;
   /** Shows a refusal or a recorded step's refresh error at the selection. */
   readonly refuse: (reason: string, pointer?: { x: number; y: number }) => void;
 }
@@ -88,9 +88,13 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
   /** A rail button clicked: the block goes where the selection (`at`, when the click was) says, or the reason flashes. */
   async function click(kind: NativeElementKind, at = ports.target(), since: Stamp = ports.edits.stamp()) {
     if (!at) { ports.refuse("Open a page to add blocks to it."); return; }
+    // The bytes the click's place is read on: those painted around the selection, else
+    // the bytes now; the page opening for the step must not change them.
+    const clicked = at.node && at.painted !== undefined ? undefined : ports.edits.peek.source(at.path);
     report(await ports.edits.run(r => {
       const source = r.source(at.path);
       if (source === undefined) return { refuse: "Open a page to add blocks to it." };
+      if (clicked !== undefined && source !== clicked) return { refuse: STALE_MESSAGE };
       // Only text changed inside the selected element: its position still holds.
       if (at.node && at.painted !== undefined && !nativeEditInside(at.painted, source, at.node)) return { refuse: "The page is still updating. Try again in a moment." };
       const target = at.template === undefined ? clickTarget(source, kind, at.node, tag => r.template(tag)?.source) : templateClickTarget(source, at.template, kind, at.node);
