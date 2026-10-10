@@ -21,3 +21,21 @@ One module for "check that nothing changed since I read it, then apply one guard
 | [18 Guard test: no untracked reads in plans or controllers](tickets/18-guarded-edit-read-guard-test.md) | S | sol | 17 |
 
 11 first (most proof bugs), then 12 and 13. Slices 11-16 all touch `src/main.ts` in different regions: at most two at once.
+
+## 2. Typed editor↔preview protocol, the runtime's rules shared
+
+Rules the runtime (DOM) and the editor (source) both apply live once in `src/page-builder/rules/`, unit tested and bundled into the runtime; a rule that walks a tree takes a small view, with a DOM adapter in the runtime and source adapters in the editor. One preview link (`src/components/preview-link.ts`) types every message, matches replies to requests and renders, and drops stale messages; a fake frame adapter tests it. The wire format does not change. Design: `~/Projects/native-site-editor/.scratch/sturdy/frame-protocol-design.md`. None of these needs slice 10.
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [20 The runtime is a bundle in dev, tests and build](tickets/20-runtime-bundle.md) | M | claude ★ | – |
+| [21 Rule: card components, card slots, items slots](tickets/21-rule-cards-and-items-slot.md) | M | claude ★ | 20 |
+| [22 Rule: repeated item kinds](tickets/22-rule-item-kinds.md) | S | sol | 20 |
+| [23 Rule: which block a press or drag moves](tickets/23-rule-movable-block.md) | M | sol | 20, 21 |
+| [24 Rule: inline formatting, text runs, phrasing sets](tickets/24-rule-text-level-tags.md) | S-M | sol | 20 |
+| [25 Protocol types and one reader (no casts)](tickets/25-protocol-types-and-reader.md) | M | sol | – |
+| [26 Preview link: replies, render versions, staleness; fake frame](tickets/26-preview-link.md) | L | claude ★ | 25 |
+| [27 Runtime and host listeners on the shared wire; dead messages go](tickets/27-runtime-wire-and-listeners.md) | S-M | sol | 20, 26 |
+| [28 Guard test: only the link talks to the frame; no copied rule sets](tickets/28-frame-guard-test.md) | S | sol | 21-24, 27 |
+
+20 first, then the rule slices (21 before 23), then 25-27. 21-24 all edit `native-preview-runtime.js` (different regions): at most two at once. 25 has no real blocker but shares `native-preview.ts` with 26; run it after the rule slices. Lead decides before 21 and 24: the browser's reading wins for blank text and slot names, and the one inline-formatting list (proposed: card-grid's, with `data var del ins`).
