@@ -1,6 +1,7 @@
 import { node, button } from "../ui/dom";
 import { icon } from "../icons";
 import { aOr } from "../page-builder/card-grid";
+import { cardFillContent } from "../page-builder/card-fill";
 import type { SitePage } from "../page-builder/page-choices";
 import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardLinkPicker } from "./card-link-picker";
@@ -8,11 +9,17 @@ import type { CardFillStrip } from "./card-fill-strip";
 import type { CardLook } from "../page-builder/card-looks";
 import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import type { CardLookGallery } from "./card-look-gallery";
+import type { CardContent } from "../page-builder/card-swap";
 import "./card-grid-controls.css";
 
 // Add card places and selects a card immediately. Component cards and collection
 // items then open Link to a page, including Create page; filling replaces the
 // picker with its source strip. Card slots also offer the looks gallery.
+// On a card component's combobox and strip, a "Card: card-project ▾" chip
+// opens the same looks and swaps the card's look in place; what the new look
+// shows none of is kept aside on the linker while it is open (spec decision
+// 12: never in the HTML), listed, and comes back on a swap to a look with a
+// place for it.
 
 export interface FrameBox {
   top: number;
@@ -101,6 +108,14 @@ export interface CardFilled {
   filled: string;
 }
 
+/** A card swapped to another look: what to keep aside, what the look does not show, the card now, and a filled card's strip as it follows. */
+export interface CardSwapped {
+  kept: CardContent;
+  notShown: string[];
+  text: string;
+  filled?: CardFilled;
+}
+
 export interface CardGridHandlers {
   describe(grid: ItemGridReport): GridDescription | undefined;
   /** Places a card immediately; resolves to it when it can be filled from a page. A card slot accepts `look`. */
@@ -108,10 +123,14 @@ export interface CardGridHandlers {
   linkPages(card: NewCard): CardLinkPages | undefined;
   /** Fills the card from the page at `route`, from `base` when given (one undo step); undefined when it could not. */
   fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined;
+  /** Swaps the card to `look` in place (one undo step), its content carried, `kept` from earlier looks; the attributes the looks set (`variants`) give way. */
+  swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[]; filled?: CardFilled }): Promise<CardSwapped | undefined>;
   /** The card's markup now; undefined once it is gone. */
   cardText(card: NewCard): string | undefined;
   /** Creates a page and fills the placed card as one undo step. */
   createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined;
+  /** The site's scripts: the attributes they set are no looks. */
+  scripts(): { path: string; source: string }[];
 }
 
 /** The least height of a ghost below a grid: its button, and a little more. */
@@ -247,29 +266,132 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   }
 
   // "Link to a page…" on the card just added, while it stays selected; after
-  // a page is picked, the strip of where its content came from instead.
-  let linker: { card: NewCard; picker?: CardLinkPicker; strip?: CardFillStrip; filled?: CardFilled; filling?: boolean; seen: boolean; scrolled?: boolean } | undefined;
+  // a page is picked, the strip of where its content came from instead. A
+  // card slot's card has a look (its chip), and what earlier looks held.
+  interface Linker {
+    card: NewCard;
+    picker?: CardLinkPicker;
+    strip?: CardFillStrip;
+    filled?: CardFilled;
+    filling?: boolean;
+    seen: boolean;
+    scrolled?: boolean;
+    /** The slot's own card component and the card's look, for its chip. */
+    usual?: string;
+    look?: CardLook;
+    chip?: HTMLButtonElement;
+    kept?: CardContent;
+    notShown?: string[];
+    /** The card as the last swap wrote it: another text means it was undone or edited. */
+    swapped?: string;
+  }
+  let linker: Linker | undefined;
 
   function addCard(grid: ItemGridReport, look?: CardLook) {
     closeLinker();
+    const usual = lookSupport && grid.slot !== undefined ? handlers.describe(grid)?.card : undefined;
     void handlers.addCard(grid, look).then((card) => {
       if (!card || !handlers.linkPages(card)) return;
       closeLinker();
-      const entry: NonNullable<typeof linker> = { card, seen: false };
+      const entry: Linker = { card, seen: false, ...(usual ? { usual, look: look ?? { tag: usual, label: usual } } : {}) };
       linker = entry;
       openPicker(entry);
     });
   }
 
-  function openPicker(entry: NonNullable<typeof linker>) {
+  /** "Card: card-project ▾" for a card slot's card. */
+  function lookChip(entry: Linker) {
+    if (!entry.look) return undefined;
+    const chip = button("", () => toggleLooks(entry), "card-look-chip");
+    chip.setAttribute("aria-haspopup", "dialog");
+    chip.setAttribute("aria-expanded", "false");
+    chip.title = "Change the card's look";
+    chip.append(node("span", "card-look-chip__what", "Card:"), " ", node("span", "card-look-chip__name", entry.look.label), icon("caret-down", 12));
+    entry.chip = chip;
+    return chip;
+  }
+
+  const notShownNote = (entry: Linker) => entry.notShown?.length && entry.look
+    ? `Not shown by ${entry.look.label}: ${entry.notShown.join(", ")}. Kept aside while the page is open: it comes back with a look that has a place for it.`
+    : undefined;
+
+  // The looks from a card's chip, for the linker it was opened on.
+  interface LooksMenu { entry: Linker; view?: CardLookGallery }
+  let looksMenu: LooksMenu | undefined;
+
+  function toggleLooks(entry: Linker) {
+    if (looksMenu) { closeLooks(true); return; }
+    const chip = entry.chip;
+    const card = handlers.cardText(entry.card);
+    if (!chip || !entry.look || !entry.usual || card === undefined || !lookSupport) return;
+    closeGallery(false);
+    const menu: LooksMenu = { entry };
+    looksMenu = menu;
+    chip.setAttribute("aria-expanded", "true");
+    const width = reports.selected?.item?.width;
+    import("./card-look-gallery").then(({ createCardLookGallery }) => {
+      if (looksMenu !== menu || linker !== entry) return;
+      menu.view = createCardLookGallery(pane, chip, {
+        inputs: () => lookSupport.inputs(),
+        prepare: (tags) => lookSupport.prepare(tags),
+        scripts: () => handlers.scripts(),
+        card: entry.usual!,
+        noun: "card",
+        cardWidth: Math.max(220, Math.min(420, width ?? 320)),
+        swap: { card, look: entry.look!, kept: entry.kept },
+        onPick: (look, variants) => {
+          closeLooks(false);
+          void swap(entry, look, variants);
+        },
+        onClose: (focus) => closeLooks(focus),
+      });
+      // Focus moved into it: the combobox folds its list, and the chip with it.
+      menu.view.place();
+    }).catch(() => { if (looksMenu === menu) closeLooks(false); });
+  }
+
+  function closeLooks(restoreFocus: boolean) {
+    if (!looksMenu) return;
+    const { entry } = looksMenu;
+    looksMenu.view?.destroy();
+    looksMenu = undefined;
+    entry.chip?.setAttribute("aria-expanded", "false");
+    if (restoreFocus && entry.chip?.isConnected) entry.chip.focus();
+  }
+
+  const lookKey = (look: CardLook) => `${look.tag}|${look.attribute?.name ?? ""}|${String(look.attribute?.value ?? "")}`;
+
+  async function swap(entry: Linker, look: CardLook, variants: string[]) {
+    if (entry.look && lookKey(entry.look) === lookKey(look)) { entry.chip?.focus(); return; }
+    // Its own edit is not a change to the card that drops the strip (sourcesChanged).
+    entry.filling = true;
+    let done: CardSwapped | undefined;
+    try {
+      done = await handlers.swapCard(entry.card, look, { kept: entry.kept, variants, filled: entry.filled });
+    } finally {
+      entry.filling = false;
+    }
+    if (!done || linker !== entry) return;
+    Object.assign(entry, { look, kept: done.kept, notShown: done.notShown, swapped: done.text, seen: false });
+    if (entry.filled && done.filled) {
+      entry.filled = done.filled;
+      showStrip(entry, done.filled, true);
+    } else openPicker(entry, true);
+  }
+
+  function openPicker(entry: Linker, focusLook = false) {
     const pages = handlers.linkPages(entry.card);
     if (!pages) { closeLinker(); return; }
     import("./card-link-picker").then(({ createCardLinkPicker }) => {
       if (linker !== entry) return;
       entry.strip?.destroy();
       entry.strip = undefined;
+      entry.picker?.destroy();
       entry.picker = createCardLinkPicker(pane, {
         pages,
+        look: lookChip(entry),
+        note: notShownNote(entry),
+        focusLook,
         onPick: (page) => fill(entry, page.route),
         onCreate: (offer) => {
           entry.filling = true;
@@ -291,19 +413,22 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     }).catch(() => { if (linker === entry) linker = undefined; });
   }
 
-  function fill(entry: NonNullable<typeof linker>, route: string) {
+  function fill(entry: Linker, route: string) {
     // Its own edit is not a change to the card that drops the strip (sourcesChanged).
     entry.filling = true;
     const filled = handlers.fillCard(entry.card, route, entry.filled?.base);
     entry.filling = false;
     if (!filled || linker !== entry) return;
     entry.filled = filled;
+    // The page's content, what the look does not show too, for a swap; the strip lists those rows "not used".
+    entry.kept = cardFillContent(filled.rows);
+    entry.notShown = undefined;
     // The page shows the filled card after its next report: until then the selection may not name it.
     entry.seen = false;
     showStrip(entry, filled);
   }
 
-  function showStrip(entry: NonNullable<typeof linker>, filled: CardFilled) {
+  function showStrip(entry: Linker, filled: CardFilled, focusLook = false) {
     import("./card-fill-strip").then(({ createCardFillStrip }) => {
       if (linker !== entry || entry.filled !== filled) return;
       entry.picker?.destroy();
@@ -311,6 +436,9 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       entry.strip?.destroy();
       entry.strip = createCardFillStrip(pane, {
         filled,
+        look: lookChip(entry),
+        note: notShownNote(entry),
+        focusLook,
         onChange: () => openPicker(entry),
         onClose: () => {
           closeLinker();
@@ -336,9 +464,11 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const view = { left, top, width: frameRect.width, height: frameRect.height };
     if (linker.strip) {
       linker.strip.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view);
+      looksMenu?.view?.place();
       return;
     }
     const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, !linker.scrolled) ?? 0;
+    looksMenu?.view?.place();
     // Once, when it does not fit below the card: the page scrolls up to make room (its report places it again).
     if (dy > 0 && frame instanceof HTMLIFrameElement) {
       const entry = linker;
@@ -350,6 +480,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   }
 
   function closeLinker() {
+    closeLooks(false);
     linker?.picker?.destroy();
     linker?.strip?.destroy();
     linker = undefined;
@@ -364,6 +495,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const card = shown?.about.card;
     if (gallery) { closeGallery(true); return; }
     if (!grid || !card || !lookSupport) return;
+    closeLooks(false);
     closeLinker();
     const entry: GalleryEntry = { grid, tracking: trackGrid(grid) };
     gallery = entry;
@@ -376,6 +508,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       entry.view = createCardLookGallery(pane, looks, {
         inputs: () => lookSupport.inputs(),
         prepare: (tags) => lookSupport.prepare(tags),
+        scripts: () => handlers.scripts(),
         card,
         noun: shown?.about.noun ?? "card",
         cardWidth: Math.max(220, Math.min(420, width)),
@@ -411,6 +544,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const target = event.target as Node;
     // A press elsewhere while the gallery is still loading: it does not open (once open, it closes itself).
     if (gallery && !gallery.view && !looks.contains(target)) closeGallery(false);
+    if (looksMenu && !looksMenu.view && !looksMenu.entry.chip?.contains(target)) closeLooks(false);
   }
   document.addEventListener("pointerdown", onPointerDown, true);
 
@@ -443,7 +577,9 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
      */
     sourcesChanged() {
       gallery?.view?.refresh();
-      if (linker?.filled && !linker.filling && handlers.cardText(linker.card) !== linker.filled.filled) closeLinker();
+      looksMenu?.view?.refresh();
+      const written = linker?.filled?.filled ?? linker?.swapped;
+      if (linker && written !== undefined && !linker.filling && handlers.cardText(linker.card) !== written) closeLinker();
     },
     /** The grid around the selection, as last reported. */
     selected() {

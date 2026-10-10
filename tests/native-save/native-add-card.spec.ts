@@ -266,8 +266,8 @@ test("picking a page fills the new card from it and a strip lists each part's so
     "Linkaddress/work/harbour-lane-pottery/",
   ]);
   await expect(strip.getByRole("button", { name: "Change page" })).toBeFocused();
-  // Information only: Change page and close are its only controls.
-  await expect(strip.getByRole("button")).toHaveText(["", "Change page"]);
+  // Information only: Change page and close are its only controls, with the card's look chip.
+  await expect(strip.getByRole("button")).toHaveText(["", "Change page", "Card: card-project"]);
   // The card stays selected.
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText(/Card project/);
   expect(await undo(page)).toBe(true);
@@ -381,6 +381,135 @@ test("Add card ▾ lists the card looks, rendered, and places a blank card of th
   await expect(frame(page).locator("section-work > card-project[data-layout=centered]")).toHaveCount(1);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(withQuote);
+});
+
+const quoteTemplate = '<article>\n  <slot name="title"><h3>Untitled quote</h3></slot>\n  <slot name="body"><p class="body">No quote yet.</p></slot>\n</article>\n';
+const harbourQuote = [
+  "<card-quote>",
+  '        <h3 slot="title"><a href="/work/harbour-lane-pottery/">Harbour Lane Pottery</a></h3>',
+  '        <p slot="body" class="body">A quiet portfolio for a working potter.</p>',
+  "      </card-quote>",
+].join("\n");
+
+test("the card's look chip swaps a filled card to a look without an image and back: the image returns, never in the HTML meanwhile; each swap is one undo step", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.css", content: ":host { display: block; }\narticle { padding: 24px; font-style: italic; }\n" } });
+  const { added } = await openFillable(page, baseURL);
+  // On the combobox already: the card's look.
+  await expect(page.getByRole("group", { name: "Link the new card to a page" }).getByRole("button", { name: "Card: card-project" })).toBeVisible();
+  await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
+  const filled = added.replace(freshWithImage, harbourCard);
+  await expect.poll(() => source(page)).toBe(filled);
+  const strip = page.getByRole("group", { name: "Where the card's content came from" });
+  const chip = (look: string) => strip.getByRole("button", { name: `Card: ${look}` });
+  await chip("card-project").click();
+  await expect(chip("card-project")).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByRole("dialog", { name: "Card look" });
+  // The same looks as Add card ▾, each with this card's content; its own look marked and focused.
+  const tiles = menu.locator(".card-looks__tile");
+  await expect(tiles).toHaveText([/^card-projectusualcurrent$/, /^card-quote$/]);
+  await expect(tiles.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(tiles.first()).toBeFocused();
+  await expect(tiles.nth(1).frameLocator("iframe").locator("card-quote > h3")).toHaveText("Harbour Lane Pottery");
+  // Esc closes it, back on the chip.
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(chip("card-project")).toBeFocused();
+  await expect(strip).toBeVisible();
+
+  // card-quote has no image or note slot: they are kept aside, not written, and listed.
+  await chip("card-project").click();
+  await menu.getByRole("button", { name: "card-quote" }).click();
+  const quoted = added.replace(freshWithImage, harbourQuote);
+  await expect.poll(() => source(page)).toBe(quoted);
+  expect(quoted).not.toContain("harbour.svg");
+  const card = frame(page).locator("section-work > :nth-child(3)");
+  await expect(card.locator("h3 > a")).toHaveText("Harbour Lane Pottery");
+  await expect(chip("card-quote")).toBeFocused();
+  await expect(strip.locator(".card-look-note")).toHaveText("Not shown by card-quote: image (no image slot), note (no note slot). Kept aside while the page is open: it comes back with a look that has a place for it.");
+  // The rows follow the new look: its title links the card.
+  await expect(strip.getByRole("listitem")).toHaveText([
+    "Titleh1Harbour Lane Pottery",
+    "Bodymeta descriptionA quiet portfolio for a working potter.",
+    "Linkaddressadded/work/harbour-lane-pottery/the title links to the page",
+    "Imagenot used/images/harbour.svg",
+  ]);
+
+  // Back to card-project: the image and the note return, the card as it was filled.
+  await chip("card-quote").click();
+  await menu.getByRole("button", { name: "card-project, the usual card" }).click();
+  await expect.poll(() => source(page)).toBe(filled);
+  await expect.poll(() => card.locator(":scope > img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(320);
+  await expect(strip.locator(".card-look-note")).toHaveCount(0);
+  await expect(chip("card-project")).toBeFocused();
+
+  // Each swap is one undo step; undoing drops the strip, and what it kept aside with it.
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(quoted);
+  await expect(strip).toHaveCount(0);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(filled);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(added);
+});
+
+test("the chip on the combobox swaps the blank card; filled in a look without an image, the page's image shows on a swap to one with it", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
+  const { added } = await openFillable(page, baseURL);
+  const linker = page.getByRole("group", { name: "Link the new card to a page" });
+  await linker.getByRole("button", { name: "Card: card-project" }).click();
+  await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+  // A blank card has no content: the quote's own placeholders, nothing kept aside.
+  const blankQuote = '<card-quote>\n        <h3 slot="title">Untitled quote</h3>\n        <p slot="body" class="body">No quote yet.</p>\n      </card-quote>';
+  await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, blankQuote));
+  await expect(linker.getByRole("button", { name: "Card: card-quote" })).toBeFocused();
+  await expect(linker.locator(".card-look-note")).toHaveCount(0);
+  await page.getByRole("combobox", { name: "Link to a page" }).fill("harbour");
+  await page.keyboard.press("Enter");
+  await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, harbourQuote));
+  const strip = page.getByRole("group", { name: "Where the card's content came from" });
+  await expect(strip.getByRole("listitem").filter({ hasText: /^Image/ })).toHaveText("Imagenot used/images/harbour.svg");
+  await strip.getByRole("button", { name: "Card: card-quote" }).click();
+  await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-project, the usual card" }).click();
+  // The note keeps the new card's own placeholder: it is not the page's.
+  await expect.poll(() => source(page)).toBe(added.replace(freshWithImage, harbourCard.replace("Ceramics studio · Portfolio · 2025", "Project")));
+});
+
+test("what a swap keeps aside lives only while the page is open: after a page switch the card is as written, with no chip", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
+  const { added } = await openFillable(page, baseURL);
+  await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
+  const strip = page.getByRole("group", { name: "Where the card's content came from" });
+  await strip.getByRole("button", { name: "Card: card-project" }).click();
+  await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+  const quoted = added.replace(freshWithImage, harbourQuote);
+  await expect.poll(() => source(page)).toBe(quoted);
+  await expect(strip.locator(".card-look-note")).toContainText("image (no image slot)");
+
+  const explorer = page.locator("#explorer");
+  const openPages = async () => {
+    if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+    await explorer.getByRole("tab", { name: "Pages" }).click();
+  };
+  await openPages();
+  const work = explorer.getByRole("treeitem", { name: "Work", exact: true });
+  if ((await work.getAttribute("aria-expanded")) === "false") await work.press("ArrowRight");
+  await explorer.getByRole("treeitem", { name: /^Fern & Kettle/ }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
+  await expect(strip).toHaveCount(0);
+  await openPages();
+  await explorer.getByRole("treeitem", { name: /^Home/ }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(frame(page).locator("section-work > card-quote > h3")).toHaveText("Harbour Lane Pottery");
+  // Nothing kept aside reached the HTML, and nothing offers to bring it back.
+  await expect.poll(() => source(page)).toBe(quoted);
+  await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
 });
 
 test("Add card ▾ dismissed while its gallery loads opens nothing", async ({ page, baseURL }) => {

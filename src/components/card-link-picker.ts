@@ -18,6 +18,11 @@ export interface CardLinkPickerOptions {
   onCreate(offer: CreatePageOffer): void;
   /** Esc: the card stays as it is. */
   onEscape(): void;
+  /** A card component's look chip, at its foot; it takes the focus first with `focusLook` (after a swap). */
+  look?: HTMLElement;
+  focusLook?: boolean;
+  /** What the card's look does not show, kept aside. */
+  note?: string;
 }
 
 let pickers = 0;
@@ -41,7 +46,9 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   list.setAttribute("role", "listbox");
   list.setAttribute("aria-label", "Pages");
   const hint = node("p", "card-link__hint", "Esc leaves the card blank");
-  box.append(input, list, hint);
+  const foot = node("div", "card-link__foot");
+  foot.append(hint, ...(options.look ? [options.look] : []));
+  box.append(input, list, ...(options.note ? [node("p", "card-look-note", options.note)] : []), foot);
   box.hidden = true;
   pane.append(box);
 
@@ -205,7 +212,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     box.style.top = `${below + height <= bottom - 8 || above < view.top + 8 ? Math.min(below, bottom - height - 8) : above}px`;
     if (!focused) {
       focused = true;
-      input.focus({ preventScroll: true });
+      (options.focusLook && options.look ? options.look : input).focus({ preventScroll: true });
     }
     return 0;
   }

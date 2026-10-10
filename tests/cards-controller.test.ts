@@ -23,6 +23,7 @@ function ports(overrides: Partial<CardsControllerPorts> = {}): CardsControllerPo
     dropNewDraft: () => {},
     operation: async () => undefined,
     pageLabel: () => "Home",
+    scripts: () => [],
     announce: () => {},
     ...overrides,
   } satisfies CardsControllerPorts;

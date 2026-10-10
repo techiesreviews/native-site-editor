@@ -1,9 +1,10 @@
-// The looks Add card ▾ offers for a card slot (wayfinder components-and-builder
-// ticket 09 §7 and §9): every card component on the site (a `card-…` tag
-// whose template has a heading slot), then the variants of the slot's own
-// card component, each a value of one of its `data-*` attributes as its CSS
-// (and the site's) styles them (shared/variants.ts). Mixed looks in one grid
-// are fine: an items slot takes any block. Pure; loaded with the gallery
+// The looks Add card ▾ and a card's look chip offer for a card slot
+// (wayfinder components-and-builder ticket 09 §7–9): every card component on
+// the site (a `card-…` tag whose template has a heading slot), then the
+// variants of the slot's own card component, each a value of one of its
+// `data-*` attributes as its CSS (and the site's) styles them
+// (shared/variants.ts), less those the site's scripts set. Mixed looks in one
+// grid are fine: an items slot takes any block. Pure; loaded with the gallery
 // (src/components/card-look-gallery.ts).
 
 import { isCardComponent, type TemplateOf } from "./component-model";
@@ -28,6 +29,8 @@ export interface CardLookSources {
   css?: string;
   /** The site's stylesheets the page links, imports expanded, for site-wide variant rules. */
   sheets?: readonly { path: string; source: string }[];
+  /** Attributes the site's scripts set (shared/variants.ts `scriptsSetAttributes`): left out where the component's CSS reads them, as the edit bar does. */
+  scriptAttributes?: Iterable<string>;
 }
 
 /** The looks: card components by name, then each variant value of the current one; tone is a band's, not a card's. */
@@ -36,7 +39,7 @@ export function cardLooks(sources: CardLookSources): CardLook[] {
   const tags = [...new Set(sources.tags)].filter((tag) => isCardComponent(tag, templateOf)).sort();
   const looks: CardLook[] = tags.map((tag) => ({ tag, label: tag }));
   if (!current || !tags.includes(current)) return looks;
-  const { variants } = variantsForComponent(current, { css: sources.css ?? "", site: siteVariants(sources.sheets ?? []) });
+  const { variants } = variantsForComponent(current, { css: sources.css ?? "", site: siteVariants(sources.sheets ?? []), scriptAttributes: sources.scriptAttributes });
   for (const variant of variants) {
     if (variant.attribute === "data-tone") continue;
     const name = variant.attribute;

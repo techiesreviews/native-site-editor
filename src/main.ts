@@ -3632,6 +3632,7 @@ const cardsController = createCardsController({
   },
   operation: applyNativeOperation,
   pageLabel: nativePageLabelOf,
+  scripts: () => Object.entries(nativeVariantSources(/\.(?:m?js)$/i)).map(([path, source]) => ({ path, source })),
   announce,
 });
 

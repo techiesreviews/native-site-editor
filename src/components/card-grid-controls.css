@@ -131,6 +131,59 @@
   outline-offset: 2px;
 }
 
+/* A card component's look on its combobox and strip: "Card: card-project ▾". */
+.card-look-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: var(--size-compact);
+  margin: 0 0 0 auto;
+  padding: 0 6px 0 10px;
+  border: 1px solid color-mix(in oklch, var(--primary) 45%, var(--control-line));
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--primary) 10%, var(--panel-surface));
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.card-look-chip:hover,
+.card-look-chip[aria-expanded="true"] {
+  background: color-mix(in oklch, var(--primary) 18%, var(--panel-surface));
+}
+.card-look-chip:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+.card-look-chip__what {
+  color: var(--muted);
+}
+.card-look-chip__name {
+  overflow: hidden;
+  font: 600 11px/1 var(--font-mono, ui-monospace, monospace);
+  text-overflow: ellipsis;
+}
+.card-link__foot,
+.card-fill__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* What the card's look does not show, kept aside. */
+.card-look-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--surface-subtle, var(--hover));
+  color: var(--muted);
+  font-size: var(--type-small);
+  line-height: 1.4;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card-ghost {
     animation: none;

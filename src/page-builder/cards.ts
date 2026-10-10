@@ -11,7 +11,7 @@
 import { refuse as showRefusal } from "../components/refusal-note";
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
-import type { CardFilled, CardLinkPages, CardPageRequest, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
+import type { CardFilled, CardLinkPages, CardPageRequest, CardSwapped, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
 import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, type NativeSite } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
@@ -23,6 +23,7 @@ import { cardFill, cardFillMarkup, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
+import type { CardContent } from "./card-swap";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
 import { nativeLinkTarget } from "../../shared/native-routes";
@@ -63,6 +64,8 @@ export interface CardsDeps {
   operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string } }): Promise<string | undefined>;
   /** What the Pages tab calls a page file ("Home"). */
   pageLabel(file: string): string;
+  /** The site's scripts, drafts applied (read lazily), for the attributes they set: those are no card looks. */
+  scripts(): { path: string; source: string }[];
   announce(text: string): void;
 }
 
@@ -335,6 +338,41 @@ export function createCards(deps: CardsDeps) {
     return range && source!.slice(range.start, range.end);
   }
 
+  const tagOf = (markup: string) => markup.slice(1).match(/^[^\s/>]+/)?.[0].toLowerCase();
+
+  // Swaps the card's look in place (card-swap.ts, loaded with the looks),
+  // one undo step, keeping it selected: its content carried by role, `kept`
+  // what earlier looks held. A filled card's strip rows, and the card Change
+  // page fills from, follow the new look (ticket 09 §8, §10).
+  async function swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[]; filled?: CardFilled }): Promise<CardSwapped | undefined> {
+    const source = deps.source(card.path);
+    const { cardSwap } = await import("./card-swap");
+    // The page as the swap was asked for: a change meanwhile is not swapped over.
+    if (deps.source(card.path) !== source) { refuse("The page changed meanwhile; choose the look again."); return undefined; }
+    const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+    const before = range && source!.slice(range.start, range.end);
+    const tag = before && tagOf(before);
+    const own = tag ? template(tag) : undefined;
+    const next = template(look.tag);
+    if (!range || own === undefined || next === undefined) { refuse("That card or its look is not there any more."); return undefined; }
+    const swapped = cardSwap({ card: before!, template: own, look, lookTemplate: next, kept: from.kept, variants: from.variants });
+    const edit = { start: range.start, end: range.end, text: swapped.markup };
+    if (swapped.markup !== before && !deps.change(card.path, source!, [edit], card.node, `${capital(itemNoun(look.tag))} is now ${look.label}`)) return undefined;
+    let filled = from.filled && { ...from.filled, filled: swapped.markup };
+    const file = filled && deps.site()?.routes[filled.route];
+    const page = file === undefined ? undefined : deps.source(file);
+    if (filled && page !== undefined) {
+      const baseTag = tagOf(filled.base);
+      const baseTemplate = baseTag ? template(baseTag) : undefined;
+      filled = {
+        ...filled,
+        rows: cardFill({ template: next, page: { route: filled.route, source: page }, siteUrl: deps.siteUrl() }).rows,
+        base: baseTemplate === undefined ? filled.base : cardSwap({ card: filled.base, template: baseTemplate, look, lookTemplate: next, variants: from.variants }).markup,
+      };
+    }
+    return { kept: swapped.kept, notShown: swapped.notShown, text: swapped.markup, filled };
+  }
+
   /** Build both existing-page and new-page fills directly from the page's text. */
   function fillFrom(card: NewCard, route: string, page: string, base?: string) {
     const source = deps.source(card.path);
@@ -548,7 +586,9 @@ export function createCards(deps: CardsDeps) {
     createPage,
     linkPages,
     fillCard,
+    swapCard,
     cardText,
+    scripts: () => deps.scripts(),
     move,
     controls,
 

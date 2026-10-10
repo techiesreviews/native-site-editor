@@ -8,13 +8,19 @@ import "./card-fill-strip.css";
 // ticket 09 §5): a strip on the card naming the page and, for each slot,
 // where its content came from (h1, meta description, og:image, address, a
 // matching element on the page, kept, not used). Information only: Change
-// page opens the combobox again, × closes it. Loaded with the first fill
+// page opens the combobox again, × closes it; a card component's look chip
+// sits beside Change page. Loaded with the first fill
 // (src/components/card-grid-controls.ts places and closes it).
 
 export interface CardFillStripOptions {
   filled: CardFilled;
   onChange(): void;
   onClose(): void;
+  /** A card component's look chip, beside Change page; it takes the focus first with `focusLook` (after a swap). */
+  look?: HTMLElement;
+  focusLook?: boolean;
+  /** What the card's look does not show, kept aside. */
+  note?: string;
 }
 
 const STATUS: Record<CardFillRow["status"], string | undefined> = { filled: undefined, kept: "kept", "not-used": "not used", added: "added" };
@@ -48,7 +54,9 @@ export function createCardFillStrip(pane: HTMLElement, options: CardFillStripOpt
   const list = node("ul", "card-fill__rows");
   list.append(...filled.rows.map(rowItem));
   const change = button("Change page", () => options.onChange(), "card-fill__change");
-  box.append(head, list, change);
+  const foot = node("div", "card-fill__foot");
+  foot.append(change, ...(options.look ? [options.look] : []));
+  box.append(head, list, ...(options.note ? [node("p", "card-look-note", options.note)] : []), foot);
   box.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
@@ -75,7 +83,7 @@ export function createCardFillStrip(pane: HTMLElement, options: CardFillStripOpt
       // The combobox it replaces had focus: it moves here, once.
       if (!focused) {
         focused = true;
-        change.focus({ preventScroll: true });
+        (options.focusLook && options.look ? options.look : change).focus({ preventScroll: true });
       }
     },
     destroy() {

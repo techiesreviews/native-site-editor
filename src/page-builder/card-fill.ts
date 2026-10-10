@@ -3,6 +3,7 @@
 // An empty unnamed fallback has no row; text or image fallbacks still do.
 import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
 import { slotMarkup } from "../native-insert";
+import type { CardContent } from "./card-swap";
 
 export type CardFillRole = "title" | "body" | "image" | "link" | "other";
 export type CardFillFrom = "h1" | "<title>" | "address" | "meta description" | "og:image" | "matched" | "kept" | "not used";
@@ -77,6 +78,26 @@ export function pageTitle(source: string, route: string, document = [...descenda
   return { title, from: h1Text ? "h1" : titleText ? "<title>" : "address" };
 }
 
+/**
+ * Which of a card template's slots (templateSlots) take its title (the first
+ * heading slot, else one named "title"), body (the first text slot after the
+ * title, else the last before it), image and link; any other is "other". The
+ * unnamed slot is content, never one of these. A page fills a card by these
+ * roles, and a look swap carries content by them (card-swap.ts).
+ */
+export function cardRoles(slots: TemplateSlot[]) {
+  const named = slots.filter(slot => slot.name);
+  const titleSlot = named.find(heading) ?? named.find(slot => slot.name === "title");
+  const titleAt = titleSlot ? slots.indexOf(titleSlot) : -1;
+  const textSlots = named.filter(slot => slot !== titleSlot && slot.kind === "text" && !heading(slot));
+  const bodySlot = textSlots.find(slot => slots.indexOf(slot) > titleAt) ?? textSlots.at(-1);
+  const imageSlot = named.find(slot => slot !== titleSlot && slot.kind === "image");
+  const linkSlot = named.find(slot => slot !== titleSlot && slot.kind === "link");
+  const roleOf = (slot: TemplateSlot): CardFillRole =>
+    slot === titleSlot ? "title" : slot === bodySlot ? "body" : slot === imageSlot ? "image" : slot === linkSlot ? "link" : "other";
+  return { titleSlot, bodySlot, imageSlot, linkSlot, roleOf };
+}
+
 /** Map a chosen page's facts to a card's slots; missing facts keep fallbacks. */
 export function cardFill(input: { template: string; page: { route: string; source: string }; siteUrl?: string }): CardFill {
   const { template, page: { source, route }, siteUrl } = input;
@@ -93,16 +114,9 @@ export function cardFill(input: { template: string; page: { route: string; sourc
   const description = meta("name", "description");
   const image = siteImage(meta("property", "og:image"), siteUrl);
   const slots = templateSlots(template);
-  // The default slot is content, never a page-fact destination.
-  const named = slots.filter(slot => slot.name);
-  const titleSlot = named.find(heading) ?? named.find(slot => slot.name === "title");
-  const titleAt = titleSlot ? slots.indexOf(titleSlot) : -1;
-  const textSlots = named.filter(slot => slot !== titleSlot && slot.kind === "text" && !heading(slot));
-  const bodySlot = textSlots.find(slot => slots.indexOf(slot) > titleAt) ?? textSlots.at(-1);
-  const imageSlot = named.find(slot => slot !== titleSlot && slot.kind === "image");
-  const linkSlot = named.find(slot => slot !== titleSlot && slot.kind === "link");
+  const { roleOf, titleSlot, bodySlot, imageSlot, linkSlot } = cardRoles(slots);
   const rows = slots.map((slot): CardFillRow => {
-    const role: CardFillRole = slot === titleSlot ? "title" : slot === bodySlot ? "body" : slot === imageSlot ? "image" : slot === linkSlot ? "link" : "other";
+    const role = roleOf(slot);
     const row: CardFillRow = { slot: slot.name, label: slotLabel(slot.name), role, from: "kept", status: "kept" };
     const fill = (from: CardFillFrom, value: Pick<CardFillRow, "text" | "href" | "src" | "matched">): CardFillRow =>
       ({ ...row, from, status: "filled", ...value });
@@ -140,6 +154,23 @@ interface RangeEdit {
   start: number;
   end: number;
   text: string;
+}
+
+/**
+ * What a fill gives a card by role (card-swap.ts), the page's facts its look
+ * has no slot for too ("not used"): kept aside, they show on a swap to a look
+ * with a place for them.
+ */
+export function cardFillContent(rows: CardFillRow[]): CardContent {
+  const out: CardContent = { other: {} };
+  for (const row of rows) {
+    if (row.status === "kept") continue;
+    if (row.role === "title" && row.text) out.title = escapeText(row.text);
+    else if (row.role === "body" && row.text) out.body = escapeText(row.text);
+    else if (row.role === "image" && row.src) out.image = { src: row.src };
+    else if (row.role === "link" && row.href) out.link = row.status === "filled" ? { href: row.href, html: escapeText(row.text ?? "") } : { href: row.href };
+  }
+  return out;
 }
 
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

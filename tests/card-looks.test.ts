@@ -51,3 +51,12 @@ test("no variants for a current tag that is not a card component, or with no CSS
   assert.equal(cardLooks({ tags, templateOf, current: "card-note", css }).length, 2);
   assert.equal(cardLooks({ tags, templateOf, current: "card-project" }).length, 2);
 });
+
+test("attributes the site's scripts set are left out, as the edit bar leaves them out", () => {
+  const scripted = `${css}:host([data-open]) article { outline: 1px solid; }\n`;
+  const looks = cardLooks({ tags, templateOf, current: "card-project", css: scripted, scriptAttributes: ["data-open", "data-featured"] });
+  assert.deepEqual(looks.slice(2).map((look) => look.label), ["card-project · centered", "card-project · wide"]);
+  // Without the scripts, they are looks like any other.
+  assert.deepEqual(cardLooks({ tags, templateOf, current: "card-project", css: scripted }).slice(2).map((look) => look.label),
+    ["card-project · featured", "card-project · centered", "card-project · wide", "card-project · open"]);
+});
