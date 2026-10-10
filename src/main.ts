@@ -2263,6 +2263,11 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
   let loaded = false, first = true;
   for (let round = 0; round < 20; round++) {
     const shown = nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), isFile);
+    // A stylesheet that cannot be read as text is left out of the page; a
+    // page or template the page needs cannot be, so it fails the read (known
+    // only once the sources that use it are read: an extra read with them may be unused).
+    const needed = [...shown.files].find((path) => !/\.css$/i.test(path) && !held(path) && nativeUnreadableFiles.has(path));
+    if (needed) throw new Error(`${needed}: ${nativeUnreadableFiles.get(needed)}`);
     for (const [tag, css] of shown.componentCss)
       if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
     for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
@@ -2290,10 +2295,7 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
       wanted.forEach((path, index) => { if (!entries[index] && /\.css$/i.test(path)) nativeMissingStyleFiles.add(path); });
       const { texts, unreadable } = await readNativeTexts(repo, found);
       if (!live()) return false;
-      // A stylesheet that cannot be read as text is left out of the page; a
-      // page or template the page needs cannot be, so it fails the read.
-      const needed = unreadable.find((file) => !/\.css$/i.test(file.path) && shown.files.has(file.path));
-      if (needed) throw new Error(`${needed.path}: ${needed.message}`);
+      // Checked at the next round's start, with what this read brought.
       if (unreadable.length) { noteNativeUnreadable(unreadable); loaded = true; }
       for (const file of found) {
         const text = texts.get(file.path);

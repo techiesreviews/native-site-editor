@@ -77,16 +77,38 @@ test("the text index meeting an unreadable stylesheet after the paint skips it, 
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(`${baseURL}/`);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".theme/latin1.css", base64: latin1('.x::after { content: "\u00e9"; }\n') } });
-  let paintedFirst = false, refusedAfterPaint = 0;
-  page.on("response", (response) => {
-    if (/\/api\/files?\?/.test(response.url()) && response.status() === 415 && paintedFirst) refusedAfterPaint++;
+  const sha = await page.evaluate(async () => {
+    const snapshot = await (await fetch("/api/snapshot?repo=native-demo-user%2Fnative-demo&branch=main", { credentials: "same-origin" })).json() as { tree: { path: string; sha: string }[] };
+    return snapshot.tree.find((entry) => entry.path === ".theme/latin1.css")!.sha;
+  });
+  // Its reads wait until the page is on screen, then GitHub refuses them.
+  let release!: () => void;
+  const painted = new Promise<void>((resolve) => { release = resolve; });
+  let asked = 0, refused = 0;
+  page.on("response", (response) => { if (/\/api\/files?\?/.test(response.url()) && response.status() === 415) refused++; });
+  await page.route(/\/api\/files?\?/, async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    if ([...(params.get("shas")?.split(",") ?? []), params.get("sha")].includes(sha)) { asked++; await painted; }
+    await route.continue();
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(preview(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  paintedFirst = true;
-  await expect.poll(() => refusedAfterPaint, { message: "the text index asked for the sheet after the paint", timeout: 15_000 }).toBeGreaterThan(0);
+  expect(refused).toBe(0);
+  release();
+  await expect.poll(() => refused, { message: "the text index asked for the sheet and was refused", timeout: 15_000 }).toBeGreaterThan(0);
+  expect(asked).toBeGreaterThan(0);
   await waitForTextIndex(page);
   await expect(page.locator(".native-preview-warning")).toHaveText(".theme/latin1.css: This file is not UTF-8 text. The preview shows the site without it.");
+  await expect(page.locator(".native-preview-error")).toBeHidden();
+  // Text on the page still edits.
+  if (await page.locator("#explorer").evaluate((element) => element.matches(":popover-open"))) await page.keyboard.press("Escape");
+  const heading = preview(page).locator(".hero h1");
+  await heading.dblclick();
+  await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type("Edited after the index");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#status")).toHaveText("Text changed");
   await expect(page.locator(".native-preview-error")).toBeHidden();
   expect(pageErrors).toEqual([]);
 });
@@ -108,4 +130,19 @@ test("an imported stylesheet and a component's stylesheet that are not UTF-8 tex
   await expect(page.locator(".native-preview-warning")).toContainText("components/site-footer/site-footer.css: This file is not UTF-8 text.");
   await expect(page.locator(".native-preview-error")).toBeHidden();
   expect(pageErrors).toEqual([]);
+});
+
+// Small sites read every component template with the page: one the page
+// does not use is only skipped, while one it uses cannot be drawn.
+test("an unreadable template the page does not use is skipped; one it uses is the preview's error", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/odd-block/odd-block.html", base64: latin1("<section>\u00e9</section>\n") } });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(preview(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  await waitForTextIndex(page);
+  await expect(page.locator(".native-preview-error")).toBeHidden();
+
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/site-footer/site-footer.html", base64: latin1("<footer>\u00e9</footer>\n") } });
+  await page.reload();
+  await expect(page.locator(".native-preview-error")).toHaveText("components/site-footer/site-footer.html: This file is not UTF-8 text.", { timeout: 30_000 });
 });
