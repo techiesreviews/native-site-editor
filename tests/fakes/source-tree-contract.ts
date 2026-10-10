@@ -152,6 +152,13 @@ export const contractCases: ContractCase[] = [
     page: [true, "p,style", undefined, "Aa{}"],
   },
   {
+    name: "raw text whose end tag is cut off at the end holds the text before it",
+    source: "<p>A</p><style>b</style ",
+    read: (tree) => [tree.exact, outline(tree), tree.text()],
+    expected: [false, "p,style", "Ab"],
+    page: [true, "p,style", "Ab"],
+  },
+  {
     name: "a start tag cut off at the end is not exact",
     source: "<p>A</p><img src=\"x",
     read: (tree) => [tree.exact, tree.text()],

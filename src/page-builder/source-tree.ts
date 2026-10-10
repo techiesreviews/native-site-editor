@@ -180,7 +180,9 @@ function parseTree(html: string, from: number, to: number, openRawText = false):
       const gt = close < 0 ? -1 : html.indexOf(">", close);
       if (close < 0 || gt < 0 || gt >= to) {
         exact = false;
-        if (openRawText && to > end) el.children.push({ type: "text", start: end, end: to, parent: el });
+        // Its text runs to the end, or to an end tag cut off there (the browser drops that).
+        const textEnd = close >= 0 && close < to ? close : to;
+        if (openRawText && textEnd > end) el.children.push({ type: "text", start: end, end: textEnd, parent: el });
         el.end = to;
         i = text = to;
       } else {
