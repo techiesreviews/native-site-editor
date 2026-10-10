@@ -149,6 +149,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [84 Nightly CI runs the @actual and @native-static groups](tickets/84-nightly-runs-tagged-groups.md) | sol | – |
 | [86 Make native-site-settings.spec.ts:216 deterministic](tickets/86-site-settings-flake.md) | sol | – |
 | [97 Get the boot bytes back under the 355 KB budget](tickets/97-byte-budget.md) | claude ★ | – |
+| [100 Minify the preview runtime at build time](tickets/100-minify-preview-runtime.md) | sol | – |
 | [87 Discard changes moves into the Publish menu](tickets/87-discard-in-publish-menu.md) | sol | – |
 | [63 Vendor the new starter for the preview editor](tickets/63-vendor-starter-for-preview.md) | sol | 05, 06, 15, 17, 58, 60, 65 |
 
