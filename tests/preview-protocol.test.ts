@@ -188,6 +188,12 @@ test("the reader keeps today's limits", () => {
   // 2000 structure rows in all, 12 levels deep.
   const rows = readFrameMessage(message("structure", { path: "", items: Array.from({ length: 2100 }, (_, i) => ({ tag: "p", node: [i] })) }));
   assert.equal(rows?.type === "structure" && rows.items.length, 2000);
+  // Children count toward the 2000 too.
+  const tree = readFrameMessage(message("structure", { path: "", items: Array.from({ length: 1500 }, (_, i) => ({ tag: "ul", node: [i], children: [{ tag: "li", node: [i, 0] }] })) }));
+  const total = (items: { children: unknown[] }[]): number => items.reduce((sum, item) => sum + 1 + total(item.children as { children: unknown[] }[]), 0);
+  assert.equal(tree?.type === "structure" && total(tree.items), 2000);
+  const wrapped = readFrameMessage(message("text-selection", { selection: { start: 0, end: 1, text: "a", wrappers: Array.from({ length: 60 }, () => "em") } }));
+  assert.equal(wrapped?.type === "text-selection" && wrapped.selection?.wrappers.length, 50);
   let deep: Record<string, unknown> = { tag: "div", node: [0] };
   for (let i = 0; i < 20; i++) deep = { tag: "div", node: [0], children: [deep] };
   const nested = readFrameMessage(message("structure", { path: "", items: [deep] }));
