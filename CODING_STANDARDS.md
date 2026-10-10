@@ -17,9 +17,10 @@ transactions and DOM mounting, and hands them in as ports.
   and files, editor model) before the first await, and re-check that same
   proof after every await and before every write. Taking a fresh proof after
   an await, in place of the old one, hides the race it exists to catch.
-- One transaction per user action: a multi-file or master write goes through
-  one `applyNativeOperation` (or the existing master transaction), so it
-  succeeds whole, fails whole, and undoes as one step.
+- One transaction per user action: a write goes through one guarded edit
+  (`edits.run` or `edits.now`, src/guarded-edit.ts) whose plan reads every
+  file it depends on through `r`, so it succeeds whole, fails whole, and
+  undoes as one step.
 - Module order holds: a port that main.ts evaluates before the controller's
   `const` exists reaches it through a hoisted function or an arrow.
 - Receivers travel with methods: a DOM, `window`, `Set`/`Map` or object
