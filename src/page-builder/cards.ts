@@ -6,14 +6,14 @@ import { selectionAfterRemove } from "./remove";
 // tab can still create or delete a page with its collection card.
 //
 // The grid markup and the page files are the collection: nothing else is
-// written. Every change is one range edit to the page in its editor, or
-// one operation over drafts (src/main.ts `applyNativeOperation`).
+// written. Every change is one guarded edit, with all its reads tracked and
+// its page and file changes in one undo step.
 
 import { refuse as showRefusal } from "../components/refusal-note";
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
 import type { CardFilled, CardLinkPages, CardPageRequest, CardSwapped, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
-import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, type NativeSite } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
@@ -27,7 +27,8 @@ import type { CardLook } from "./card-looks";
 import type { CardContent } from "./card-swap";
 import type { VariantFiles } from "../../shared/variant-lookup";
 import { decodeHtmlEntities } from "./html-entities";
-import { startTagAttribute } from "../../shared/html-source";
+import type { GuardedEdits, Outcome, Planned, Reads } from "../guarded-edit";
+import { isSectionTemplate, startTagAttribute } from "../../shared/html-source";
 import { nativeLinkTarget } from "../../shared/native-routes";
 
 interface RangeEdit {
@@ -38,32 +39,14 @@ interface RangeEdit {
 
 /** What the editor offers this module (src/main.ts). */
 export interface CardsDeps {
-  site(): NativeSite | undefined;
-  /** A file's text as edited (the mounted editor's, a draft's, else the branch's). */
-  source(path: string): string | undefined;
-  /** Whether a tag is a section (a `<section>` or a section component). */
-  isSection(tag: string): boolean;
-  editor(): {
-    isMounted(path: string): boolean;
-    replaceActiveRange(edit: RangeEdit & { path: string; expected: string }, group?: boolean, companion?: { undo(): void; redo(): void | string }): void;
-  } | undefined;
+  edits: GuardedEdits;
+  /** Reads the site's page creation inputs; resolves to a problem, if any. */
+  siteRead(): Promise<string | undefined>;
+  /** Whether the page is open, mounted and writable for a synchronous edit. */
+  editable(path: string): boolean;
   preview(): NativePreview | undefined;
-  /** Opens a page file in the editor unless it is open; resolves to whether it is mounted then. */
-  ensureOpen(path: string): Promise<boolean>;
   /** Opens a page in the editor and the preview. */
   openPage(file: string): void;
-  /** One verified edit to the mounted page as one undo step, selecting `next` after (src/main.ts `applyNativeChange`). */
-  change(path: string, source: string, edits: RangeEdit[], next: number[] | undefined, message: string): boolean;
-  /** Whether a repository path (a file, or a folder something is in) is there, on the branch or drafted. */
-  exists(path: string): boolean;
-  /** The site's address, from `.editor/config.json`. */
-  siteUrl(): string | undefined;
-  /** Writes a new file as a draft and finds the site's pages again; resolves to an error. */
-  saveNewDraft(path: string, content: string): string | undefined;
-  /** Takes a draft made by `saveNewDraft` back. */
-  dropNewDraft(path: string): void;
-  /** Creates and edits files as one operation (src/main.ts `applyNativeOperation`); resolves to an error. */
-  operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string }; current?: () => boolean; selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } } }): Promise<string | undefined>;
   /** What the Pages tab calls a page file ("Home"). */
   pageLabel(file: string): string;
   /** The site's files for its Variant lookup (shared/variant-lookup.ts), drafts applied, read lazily. */
@@ -147,40 +130,46 @@ export function planCardPage(input: { routes: Record<string, string>; exists(pat
 
 export function createCards(deps: CardsDeps) {
   const refuse = (reason: string) => { deps.announce(reason); showRefusal(reason); };
-  const routeOf = (path: string) => {
-    const site = deps.site();
+  function accepted(outcome: Outcome, stale: string): boolean {
+    if (!outcome.ok) { refuse(outcome.reason === "stale" ? stale : outcome.message); return false; }
+    if (outcome.message) refuse(outcome.message);
+    return true;
+  }
+  const routeOf = (reads: Reads, path: string) => {
+    const site = reads.site();
     return site ? Object.entries(site.routes).find(([, file]) => file === path)?.[0] : undefined;
   };
-  const context = (route: string): GridContext => ({ route, routes: deps.site()?.routes ?? {}, isSection: (tag) => deps.isSection(tag) });
-  const template = (tag: string) => {
-    const file = deps.site()?.components[tag];
-    return file ? deps.source(file) : undefined;
-  };
+  const context = (reads: Reads, route: string): GridContext => ({ route, routes: reads.site()?.routes ?? {}, isSection: (tag) => tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? "")) });
+  const template = (reads: Reads, tag: string) => reads.template(tag)?.source;
 
-  // The last grid read for each reported container, while its page's text is the same.
+  // Painting keeps the last grid read for each reported container while its page's text is the
+  // same; a plan reads afresh, so the templates behind section-ness are read through its `r`.
   const cache = new Map<string, { source: string; grid: SourceGrid | undefined }>();
-  function gridFor(path: string, parent: number[]): { source: string; grid: SourceGrid } | undefined {
-    const source = deps.source(path);
-    const route = routeOf(path);
+  function gridFor(reads: Reads, path: string, parent: number[]): { source: string; grid: SourceGrid } | undefined {
+    const source = reads.source(path), route = routeOf(reads, path);
     if (source === undefined || !route) return undefined;
+    if (reads !== deps.edits.peek) {
+      const grid = gridAt(source, parent, context(reads, route));
+      return grid ? { source, grid } : undefined;
+    }
     const key = `${path}|${parent.join(".")}`;
     let entry = cache.get(key);
     if (!entry || entry.source !== source) {
-      entry = { source, grid: gridAt(source, parent, context(route)) };
+      entry = { source, grid: gridAt(source, parent, context(reads, route)) };
       cache.set(key, entry);
       if (cache.size > 40) cache.delete(cache.keys().next().value!);
     }
     return entry.grid ? { source, grid: entry.grid } : undefined;
   }
 
-  const siteFolders = () => cardPageFolders(deps.site()?.routes ?? {});
-  const pageParent = (grid: SourceGrid) => grid.collection ?? mixedParent(deps.site()?.routes ?? {}, grid.items.map((item) => item.route));
+  const siteFolders = (reads: Reads) => cardPageFolders(reads.site()?.routes ?? {});
+  const pageParent = (reads: Reads, grid: SourceGrid) => grid.collection ?? mixedParent(reads.site()?.routes ?? {}, grid.items.map((item) => item.route));
 
   /** Where a new page goes for `request`, or why it cannot. */
-  function planPage(request: CardPageRequest): Checked<{ route: string; file: string }> {
-    const site = deps.site();
+  function planPage(reads: Reads, request: CardPageRequest): Checked<{ route: string; file: string }> {
+    const site = reads.site();
     if (!site) return { ok: false, error: "Open a native site first." };
-    return planCardPage({ routes: site.routes, exists: (path) => deps.exists(path), folders: siteFolders() }, request);
+    return planCardPage({ routes: site.routes, exists: (path) => reads.exists(path), folders: siteFolders(reads) }, request);
   }
 
   /**
@@ -189,16 +178,16 @@ export function createCards(deps: CardsDeps) {
    * text and its page link emptied. A verbatim copy when its text cannot be
    * reset (`reset` false).
    */
-  function cardMarkup(source: string, route: string, grid: SourceGrid, item: SourceGrid["items"][number], page?: { title: string; route: string }) {
+  function cardMarkup(reads: Reads, source: string, route: string, grid: SourceGrid, item: SourceGrid["items"][number], page?: { title: string; route: string }) {
     const element = itemElement(source, item.range);
     const tag = grid.kind.split(".")[0];
-    const component = tag.includes("-") ? template(tag) : undefined;
+    const component = tag.includes("-") ? template(reads, tag) : undefined;
     const slots = component ? slotFallbacks(component) : { fallbacks: {} };
     const copy = element && itemCopy(source, element, {
       noun: grid.noun,
       title: page?.title,
       href: item.route ? page?.route ?? "" : undefined,
-      isLinked: (href) => linkRoute(href, context(route)) === item.route,
+      isLinked: (href) => linkRoute(href, context(reads, route)) === item.route,
       fallbacks: slots.fallbacks,
     });
     return copy === undefined ? { text: source.slice(item.range.start, item.range.end), reset: false } : { text: copy, reset: true };
@@ -212,16 +201,16 @@ export function createCards(deps: CardsDeps) {
    * Studio"), no description, and its own address. With no sibling page to
    * copy, the home page's document with an empty `<main>`, as the Pages tab makes.
    */
-  function subpageDocument(siblings: { route?: string; title?: string }[], title: string, route: string): string {
-    const site = deps.site()!;
-    const linked = siblings.filter((item) => item.route && site.routes[item.route] && deps.source(site.routes[item.route]) !== undefined);
+  function subpageDocument(reads: Reads, siblings: { route?: string; title?: string }[], title: string, route: string): string {
+    const site = reads.site()!;
+    const linked = siblings.filter((item) => item.route && site.routes[item.route] && reads.source(site.routes[item.route]) !== undefined);
     const from = linked.at(-1);
-    const siteUrl = deps.siteUrl();
-    const blank = () => nativePageTemplate(deps.source(site.routes["/"] ?? ""), title, siteUrl ? `${siteUrl.replace(/\/$/, "")}${route}` : undefined);
+    const siteUrl = nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url;
+    const blank = () => nativePageTemplate(reads.source(site.routes["/"] ?? ""), title, siteUrl ? `${siteUrl.replace(/\/$/, "")}${route}` : undefined);
     if (!from?.route) return blank();
-    const sibling = deps.source(site.routes[from.route])!;
+    const sibling = reads.source(site.routes[from.route])!;
     const other = linked.slice(0, -1).at(-1);
-    const otherSource = other?.route ? deps.source(site.routes[other.route]) : undefined;
+    const otherSource = other?.route ? reads.source(site.routes[other.route]) : undefined;
     const range = (text: string) => mainRange(text) ?? nativePageBody(text);
     const otherLeaves = otherSource ? leafSummary(otherSource, range(otherSource)) : undefined;
     const oldTitle = from.title || firstHeadingText(sibling);
@@ -231,7 +220,7 @@ export function createCards(deps: CardsDeps) {
       to: route,
       oldTitle,
       fallback: (tag, slot) => {
-        const text = template(tag);
+        const text = template(reads, tag);
         return text ? slotFallbacks(text).fallbacks[slot] : undefined;
       },
     });
@@ -248,14 +237,15 @@ export function createCards(deps: CardsDeps) {
     return add && { ...add, noun: itemNoun(add.card), label: instanceLabel(source, parent) ?? "" };
   }
   function slotAddFor(path: string, parent: number[], slot: string) {
-    const source = deps.source(path);
+    const reads = deps.edits.peek;
+    const source = reads.source(path);
     if (source === undefined) return undefined;
     const key = `${path}|${parent.join(".")}|${slot}`;
-    const fresh = slotCache?.key === key && slotCache.source === source && [...slotCache.templates].every(([tag, text]) => template(tag) === text);
+    const fresh = slotCache?.key === key && slotCache.source === source && [...slotCache.templates].every(([tag, text]) => template(reads, tag) === text);
     if (!fresh) {
       const templates = new Map<string, string | undefined>();
       const add = slotAdd(source, parent, slot, (tag) => {
-        if (!templates.has(tag)) templates.set(tag, template(tag));
+        if (!templates.has(tag)) templates.set(tag, template(reads, tag));
         return templates.get(tag);
       });
       slotCache = { key, source, templates, add };
@@ -265,15 +255,16 @@ export function createCards(deps: CardsDeps) {
 
   /** The grid on the page shown that `report` names, as the source has it now. */
   function describe(report: ItemGridReport): GridDescription | undefined {
+    const reads = deps.edits.peek;
     // A card slot's Add card places its card at once; linking it to a page comes after (ticket 09 §1).
     if (report.slot !== undefined) {
       const add = slotAddFor(report.path, report.parent, report.slot);
       return add && { noun: add.noun, label: add.label, card: add.card };
     }
-    const found = gridFor(report.path, report.parent);
+    const found = gridFor(reads, report.path, report.parent);
     if (!found) return undefined;
     const tag = found.grid.kind.split(".")[0];
-    return { noun: found.grid.noun, label: found.grid.label, collection: pageParent(found.grid), card: template(tag) !== undefined ? tag : undefined };
+    return { noun: found.grid.noun, label: found.grid.label, collection: pageParent(reads, found.grid), card: template(reads, tag) !== undefined ? tag : undefined };
   }
 
   // Adds a card after the grid's last item and selects it: in an instance's
@@ -282,62 +273,69 @@ export function createCards(deps: CardsDeps) {
   // Add card ▾ places a card slot's card in the chosen `look` (ticket 09 §7).
   // Resolves to the fresh card, which a page can be linked to next (ticket 09 §1).
   async function addCard(path: string, parent: number[], slot?: string, look?: CardLook): Promise<NewCard | undefined> {
-    const before = deps.source(path);
-    const site = deps.site();
-    if (!(await deps.ensureOpen(path))) return;
-    if (deps.source(path) !== before || deps.site() !== site) { refuse("The page changed meanwhile; try adding the card again."); return; }
-    const found = gridFor(path, parent);
-    const route = routeOf(path);
-    const last = found?.grid.items[found.grid.items.length - 1];
-    const lastSlot = last && startTagAttribute(found.source, last.range.tag, "slot")?.value;
-    const slotName = slot ?? decodeHtmlEntities(lastSlot ?? "", true);
-    const text = look && deps.source(path);
-    const fresh = route && (!look ? slotAddFor(path, parent, slotName) : text === undefined ? undefined : slotAdd(text, parent, slotName, template, look));
-    if (fresh) {
-      const node = [...parent, fresh.index];
-      return deps.change(path, fresh.edit.source, [fresh.edit], node, `${capital(fresh.noun)} added to ${fresh.label}${look ? ` as ${look.label}` : ""}`) ? { path, node } : undefined;
-    }
-    if (look) { refuse("That card can't be added there any more."); return; }
-    if (!found || !route || !last) { refuse("That grid is not on the page any more."); return; }
-    const { source, grid } = found;
-    const copy = cardMarkup(source, route, grid, last);
-    const edit = insertAfterEdit(source, last.range, copy.text);
-    const what = capital(grid.noun);
-    const node = [...grid.parent, last.index + 1];
-    const changed = deps.change(path, source, [edit], node,
-      copy.reset ? `${what} added to ${grid.label}` : `${what} added to ${grid.label}, a copy of the last one (its text could not be reset)`);
-    return changed && canFill(grid.kind.split(".")[0], grid, copy.text) ? { path, node } : undefined;
+    let result: NewCard | undefined;
+    const outcome = await deps.edits.run(async reads => {
+      // The page and the site as the press found them: proved unchanged across the site read.
+      const before = reads.source(path);
+      reads.site();
+      const problem = await deps.siteRead();
+      if (problem) return { refuse: problem };
+      const found = gridFor(reads, path, parent);
+      const route = routeOf(reads, path);
+      const last = found?.grid.items.at(-1);
+      const lastSlot = last && startTagAttribute(found!.source, last.range.tag, "slot")?.value;
+      const slotName = slot ?? decodeHtmlEntities(lastSlot ?? "", true);
+      const fresh = route && before !== undefined && slotAdd(before, parent, slotName, tag => template(reads, tag), look);
+      if (fresh) {
+        result = { path, node: [...parent, fresh.index] };
+        return { edits: new Map([[path, [fresh.edit]]]), select: { after: result },
+          done: `${capital(fresh.noun)} added to ${fresh.label}${look ? ` as ${look.label}` : ""}`,
+          undone: `Undid adding the ${fresh.noun}.` };
+      }
+      if (look) return { refuse: "That card can't be added there any more." };
+      if (!found || !route || !last) return { refuse: "That grid is not on the page any more." };
+      const { source, grid } = found;
+      const copy = cardMarkup(reads, source, route, grid, last);
+      const node = [...grid.parent, last.index + 1];
+      if (canFill(reads, grid.kind.split(".")[0], grid, copy.text)) result = { path, node };
+      return { edits: new Map([[path, [insertAfterEdit(source, last.range, copy.text)]]]), select: { after: { path, node } },
+        done: copy.reset ? `${capital(grid.noun)} added to ${grid.label}` : `${capital(grid.noun)} added to ${grid.label}, a copy of the last one (its text could not be reset)`,
+        undone: `Undid adding the ${grid.noun}.` };
+    }, { anchor: path });
+    return accepted(outcome, "The page changed meanwhile; try adding the card again.") ? result : undefined;
   }
 
   /** Components, collections and plain cards with a heading can link to a page. */
-  function canFill(tag: string, grid?: SourceGrid, markup?: string): boolean {
+  function canFill(reads: Reads, tag: string, grid?: SourceGrid, markup?: string): boolean {
     const root = markup && elementTree(markup)?.[0];
     const title = root && titleLeaf(markup!, root);
-    return template(tag) !== undefined || Boolean(grid && pageParent(grid)) || Boolean(title && /^h[1-6]$/.test(title.name));
+    return template(reads, tag) !== undefined || Boolean(grid && pageParent(reads, grid)) || Boolean(title && /^h[1-6]$/.test(title.name));
   }
 
   /** The pages the new card can link to (page-choices.ts): the site's, its page file, and those the grid's other cards link to. */
   function linkPages(card: NewCard): CardLinkPages | undefined {
-    const site = deps.site();
+    const reads = deps.edits.peek;
+    const site = reads.site();
     if (!site) return undefined;
-    const source = deps.source(card.path);
-    const route = routeOf(card.path);
+    const source = reads.source(card.path);
+    const route = routeOf(reads, card.path);
     if (source === undefined || !route) return undefined;
-    const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
+    const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
     return {
       routes: site.routes,
-      folders: siteFolders(),
-      folder: grid && pageParent(grid),
-      exists: path => deps.exists(path),
+      folders: siteFolders(reads),
+      folder: grid && pageParent(reads, grid),
+      exists: path => reads.exists(path),
       own: card.path,
       inGrid: slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, site.routes)),
-      pages: Object.entries(site.routes).map(([route, file]) => ({ route, file, title: pageTitle(deps.source(file) ?? "", route).title })),
+      pages: Object.entries(site.routes).map(([route, file]) => ({ route, file, title: pageTitle(reads.source(file) ?? "", route).title })),
     };
   }
 
   /** The card's markup now; undefined once it is gone (undone, removed). */
   function cardText(card: NewCard): string | undefined {
-    const source = deps.source(card.path);
+    const reads = deps.edits.peek;
+    const source = reads.source(card.path);
     const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
     return range && source!.slice(range.start, range.end);
   }
@@ -348,123 +346,83 @@ export function createCards(deps: CardsDeps) {
   // one undo step, keeping it selected: its content carried by role, `kept`
   // what earlier looks held while the combobox is open (ticket 09 §8, §10).
   async function swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[] }): Promise<CardSwapped | undefined> {
-    // The site and page as the swap was asked for: another site, or a change meanwhile, is not swapped over.
-    const site = deps.site();
-    const source = deps.source(card.path);
-    const editor = deps.editor();
-    const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
-    const before = range && source!.slice(range.start, range.end);
-    const tag = before && tagOf(before);
-    const own = tag ? template(tag) : undefined;
-    const next = template(look.tag);
-    if (!range || own === undefined || next === undefined) { refuse("That card or its look is not there any more."); return undefined; }
-    const expectedSources = new Map<string, string | undefined>([[card.path, source]]);
-    if (tag && site?.components[tag]) expectedSources.set(site.components[tag], own);
-    const templatePath = site?.components[look.tag];
-    if (templatePath) expectedSources.set(templatePath, next);
-    const { cardSwap } = await import("./card-swap");
-    if (deps.site() !== site || deps.editor() !== editor || !editor?.isMounted(card.path) || [...expectedSources].some(([path, text]) => deps.source(path) !== text)) {
-      refuse("The page changed meanwhile; choose the look again.");
-      return undefined;
-    }
-    const swapped = cardSwap({ card: before!, template: own, look, lookTemplate: next, kept: from.kept, variants: from.variants });
-    const edit = { start: range.start, end: range.end, text: swapped.markup };
-    const noun = itemNoun(look.tag);
-    const message = `${capital(noun)} is now ${look.label}`;
-    // A title the swap linked (decision 3) needs its host positioned to bound the site's stretch rule, as a fill's does.
-    const cssPath = swapped.titleLinked ? templatePath?.replace(/\.html$/, ".css") : undefined;
-    const cssBefore = cssPath ? deps.source(cssPath) : undefined;
-    const host = cssPath && (cssBefore !== undefined || !deps.exists(cssPath)) ? { path: cssPath, before: cssBefore } : undefined;
-    const change: CardEdit = { source: source!, edit, noun, host, expectedSources };
-    const css = host ? await hostCss(card, change, "the look") : undefined;
-    if (css === null) return undefined;
-    if (css) {
-      if (!await fillOperation(card, change, css, [], message, `Undid changing the ${noun}'s look.`)) return undefined;
-    } else if (swapped.markup !== before && !deps.change(card.path, source!, [edit], card.node, message)) return undefined;
-    return { kept: swapped.kept, notShown: swapped.notShown, text: swapped.markup };
+    let result: CardSwapped | undefined;
+    const outcome = await deps.edits.run(async reads => {
+      const source = reads.source(card.path);
+      const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+      const before = range && source!.slice(range.start, range.end);
+      const tag = before && tagOf(before);
+      const own = tag ? template(reads, tag) : undefined;
+      const lookTemplate = reads.template(look.tag);
+      if (!range || own === undefined || !lookTemplate) return { refuse: "That card or its look is not there any more." };
+      const { cardSwap } = await import("./card-swap");
+      const swapped = cardSwap({ card: before!, template: own, look, lookTemplate: lookTemplate.source, kept: from.kept, variants: from.variants });
+      const css = await hostCss(reads, lookTemplate.path, swapped.titleLinked);
+      const noun = itemNoun(look.tag);
+      result = { kept: swapped.kept, notShown: swapped.notShown, text: swapped.markup };
+      return cardPlan(card, { start: range.start, end: range.end, text: swapped.markup }, css,
+        `${capital(noun)} is now ${look.label}`, `Undid changing the ${noun}'s look.`);
+    }, { anchor: card.path });
+    return accepted(outcome, "The page changed meanwhile; choose the look again.") ? result : undefined;
   }
 
   /** Build both existing-page and new-page fills directly from the page's text. */
-  function fillFrom(card: NewCard, route: string, page: string) {
-    const source = deps.source(card.path);
+  function fillFrom(reads: Reads, card: NewCard, route: string, page: string) {
+    const source = reads.source(card.path);
     const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
     const element = range && itemElement(source!, range);
     if (!element || !range || source === undefined) return undefined;
     const tag = element.name;
-    const text = template(tag);
-    const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
-    if (!canFill(tag, grid, source.slice(range.start, range.end))) return undefined;
+    const text = template(reads, tag);
+    const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
+    if (!canFill(reads, tag, grid, source.slice(range.start, range.end))) return undefined;
     const from = source.slice(range.start, range.end);
     const title = pageTitle(page, route).title;
     // Plain cards map the same facts onto their first body paragraph and image.
-    let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
+    let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
     const plain = text === undefined ? itemPageFill(from, grid!.noun, title, route, rows) : undefined;
     if (plain) rows = plain.rows;
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;
-    const expectedSources = new Map<string, string | undefined>([[card.path, source]]);
-    const pagePath = deps.site()?.routes[route];
-    if (pagePath) expectedSources.set(pagePath, page);
-    const templatePath = deps.site()?.components[tag];
-    if (templatePath) expectedSources.set(templatePath, text);
-    // A component's title link (decision 3) needs its host positioned to bound the site's stretch rule.
-    const cssPath = text !== undefined && rows.some(row => row.status === "added") ? templatePath?.replace(/\.html$/, ".css") : undefined;
-    const cssBefore = cssPath && deps.source(cssPath);
-    // A CSS file there whose text is not read is left alone: the title link works without it.
-    const host = cssPath && (cssBefore !== undefined || !deps.exists(cssPath)) ? { path: cssPath, before: cssBefore } : undefined;
     if (filled === undefined) return undefined;
-    return { source, host, expectedSources, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { title, route } };
+    return { source, templatePath: reads.template(tag)?.path, titleLinked: rows.some(row => row.status === "added"),
+      edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { title, route } };
   }
 
-  /** Fill from an existing page as one edit. */
-  function fillCard(card: NewCard, route: string): CardFilled | undefined | Promise<CardFilled | undefined> {
-    const file = deps.site()?.routes[route];
-    const page = file === undefined ? undefined : deps.source(file);
-    const fill = page === undefined ? undefined : fillFrom(card, route, page);
-    if (!fill) { refuse("That card or page is not there any more."); return undefined; }
-    const message = `${capital(fill.noun)} filled from ${fill.result.title}`;
-    const plainFill = () => (fill.edit.text === fill.source.slice(fill.edit.start, fill.edit.end) ||
-      deps.change(card.path, fill.source, [fill.edit], card.node, message) ? fill.result : undefined);
-    if (!fill.host) return plainFill();
-    return hostCss(card, fill).then(css => css === null ? undefined : css === undefined ? plainFill() : fillOperation(card, fill, css, [], message).then(ok => ok ? fill.result : undefined));
+  /** Fill from an existing page as one guarded edit. */
+  async function fillCard(card: NewCard, route: string): Promise<CardFilled | undefined> {
+    let result: CardFilled | undefined;
+    const outcome = await deps.edits.run(async reads => {
+      const file = reads.site()?.routes[route];
+      const page = file === undefined ? undefined : reads.source(file);
+      const fill = page === undefined ? undefined : fillFrom(reads, card, route, page);
+      if (!fill) return { refuse: "That card or page is not there any more." };
+      const css = await hostCss(reads, fill.templatePath, fill.titleLinked);
+      result = fill.result;
+      return cardPlan(card, fill.edit, css, `${capital(fill.noun)} filled from ${fill.result.title}`, `Undid filling the ${fill.noun}.`);
+    }, { anchor: card.path });
+    return accepted(outcome, "The page changed meanwhile; choose the page again.") ? result : undefined;
   }
 
-  type Fill = NonNullable<ReturnType<typeof fillFrom>>;
-
-  type CardEdit = Pick<Fill, "source" | "host" | "expectedSources" | "edit" | "noun">;
-
-  /**
-   * The component's CSS with `:host { position: relative; }` (card-link-css.ts,
-   * loaded only here) when it lacks it; null, refused, when the site, the
-   * editor or any file the action read changed while it loaded.
-   */
-  async function hostCss(card: NewCard, fill: CardEdit, retry = "the page"): Promise<{ path: string; before?: string; after: string } | undefined | null> {
-    const site = deps.site();
-    const editor = deps.editor();
+  /** Read the host before loading the CSS helper, including its absence. */
+  async function hostCss(reads: Reads, templatePath: string | undefined, titleLinked: boolean) {
+    if (!templatePath || !titleLinked) return undefined;
+    const path = templatePath.replace(/\.html$/, ".css");
+    const before = reads.source(path);
+    if (before === undefined && reads.exists(path)) return undefined;
     const { cardLinkCss } = await import("./card-link-css");
-    const read = new Map([...fill.expectedSources, ...(fill.host ? [[fill.host.path, fill.host.before] as const] : [])]);
-    if (deps.site() !== site || deps.editor() !== editor || !editor?.isMounted(card.path) || [...read].some(([path, text]) => deps.source(path) !== text)) {
-      refuse(`The page changed meanwhile; choose ${retry} again.`);
-      return null;
-    }
-    if (!fill.host) return undefined;
-    const after = cardLinkCss(fill.host.before);
-    return after === fill.host.before ? undefined : { ...fill.host, after };
+    const after = cardLinkCss(before);
+    return before === after ? undefined : { path, before, after };
   }
 
-  /** The card edit and its CSS change as one undo step (with a new page's file in `creates`). */
-  async function fillOperation(card: NewCard, fill: CardEdit, css: { path: string; before?: string; after: string }, creates: { path: string; content: string }[], done: string, undone = `Undid filling the ${fill.noun}.`): Promise<boolean> {
-    const edits = new Map([[card.path, applyEdits(fill.source, [fill.edit])]]);
-    const expectedSources = new Map(fill.expectedSources);
-    expectedSources.set(css.path, css.before);
-    if (css.before === undefined) creates.push({ path: css.path, content: css.after });
-    else edits.set(css.path, css.after);
-    // The page stays the open one throughout: its history takes the step.
-    const site = deps.site();
-    const editor = deps.editor();
-    const current = () => deps.site() === site && deps.editor() === editor && Boolean(editor?.isMounted(card.path));
-    const problem = await deps.operation({ creates, edits, expectedSources, done, undone, current, selection: { before: card, after: card } });
-    if (problem) refuse(problem);
-    return !problem;
+  /** The card range and optional host CSS share one step. */
+  function cardPlan(card: NewCard, edit: RangeEdit, css: Awaited<ReturnType<typeof hostCss>>, done: string, undone: string): Planned {
+    const edits: Planned["edits"] = new Map([[card.path, [edit]]]);
+    const creates: NonNullable<Planned["creates"]> = [];
+    if (css) {
+      if (css.before === undefined) creates.push({ path: css.path, content: css.after });
+      else edits.set(css.path, css.after);
+    }
+    return { edits, creates, select: { before: card, after: card }, done, undone };
   }
 
   /**
@@ -473,7 +431,7 @@ export function createCards(deps: CardsDeps) {
    * in an instance's card slot, the other cards' links under the folder most
    * of them go to (a card's second link, to About, is not a sibling).
    */
-  function siblingPages(source: string, card: NewCard, route: string, routes: Record<string, string>): { route?: string; title?: string }[] {
+  function siblingPages(reads: Reads, source: string, card: NewCard, route: string, routes: Record<string, string>): { route?: string; title?: string }[] {
     const titled = (range: SourceGrid["items"][number]["range"]) => {
       const element = itemElement(source, range);
       return element && itemTitle(source, element);
@@ -484,7 +442,7 @@ export function createCards(deps: CardsDeps) {
     // Only the card's own slot counts: an instance's two card slots are two lists.
     const slotOf = (element: (typeof children)[number] | undefined) => element && decodeHtmlEntities(startTagAttribute(source, element.tag, "slot")?.value ?? "", true);
     const sameSlot = (at: number) => at !== own && slotOf(children[at]) === slotOf(children[own]);
-    const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
+    const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
     const items = grid?.items.filter((item) => sameSlot(item.index));
     if (items?.some((item) => item.route)) return items.map((item) => ({ route: item.route, title: titled(item.range) }));
     const links = slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, routes));
@@ -499,80 +457,52 @@ export function createCards(deps: CardsDeps) {
     });
   }
 
-  /** Create a page and fill the placed card together, with the draft as its history companion. */
-  function createPage(card: NewCard, request: CardPageRequest): CardFilled | undefined | Promise<CardFilled | undefined> {
-    const source = deps.source(card.path);
-    const route = routeOf(card.path);
-    const site = deps.site();
-    const editor = deps.editor();
-    const preview = deps.preview();
-    if (source === undefined || !route || !site || !editor?.isMounted(card.path) || !preview) return undefined;
-    const target = planPage(request);
-    if (!target.ok) { refuse(target.error); return undefined; }
-    const siblings = siblingPages(source, card, route, site.routes);
-    const inputs = new Map([site.routes["/"], ...siblings.map(sibling => sibling.route && site.routes[sibling.route])]
-      .filter((path): path is string => Boolean(path)).map(path => [path, deps.source(path)]));
-    const content = subpageDocument(siblings, request.title.trim(), target.value.route);
-    const fill = fillFrom(card, target.value.route, content);
-    if (!fill) { refuse("That card is not there any more."); return undefined; }
-    // A fill that changes nothing has no edit to carry the page with it: one undo could not take the page back.
-    if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) { refuse(`Nothing on this ${fill.noun} takes a page's title or address.`); return undefined; }
-    const file = target.value.file;
-    if (!fill.host) return createWithCompanion(card, fill, file, content);
-    // The new page is made from these: they are proved unchanged across the wait too.
-    for (const [path, source] of inputs) fill.expectedSources.set(path, source);
-    return hostCss(card, fill).then(css => {
-      if (css === null) return undefined;
-      if (!css) return createWithCompanion(card, fill, file, content);
-      const done = `Created the page ${fill.result.title} at ${fill.result.route} and filled the ${fill.noun} from it`;
-      return fillOperation(card, fill, css, [{ path: file, content }], done).then(ok => ok ? fill.result : undefined);
-    });
-  }
-
-  /** The new page's draft as the fill's history companion: one undo takes both back. */
-  function createWithCompanion(card: NewCard, fill: Fill, file: string, content: string): CardFilled | undefined {
-    const source = fill.source;
-    const editor = deps.editor();
-    const preview = deps.preview();
-    if (deps.source(card.path) !== source || !editor?.isMounted(card.path) || !preview) { refuse("The page changed meanwhile; try again."); return undefined; }
-    const failed = deps.saveNewDraft(file, content);
-    if (failed) { refuse(failed); return undefined; }
-    const companion = {
-      undo: () => deps.dropNewDraft(file),
-      redo: () => {
-        const problem = deps.exists(file) ? `${file} already exists.` : deps.saveNewDraft(file, content);
-        if (problem) refuse(problem);
-        return problem;
-      },
-    };
-    preview.selectAfterUpdate({ path: card.path, node: card.node });
-    try {
-      editor.replaceActiveRange({ path: card.path, ...fill.edit, expected: source.slice(fill.edit.start, fill.edit.end) }, false, companion);
-    } catch (error) {
-      preview.selectAfterUpdate(undefined);
-      deps.dropNewDraft(file);
-      refuse(error instanceof Error ? error.message : "The card could not be filled.");
-      return undefined;
-    }
-    deps.announce(`Created the page ${fill.result.title} at ${fill.result.route} and filled the ${fill.noun} from it`);
-    return fill.result;
+  /** Create a page and fill the placed card in one guarded edit. */
+  async function createPage(card: NewCard, request: CardPageRequest): Promise<CardFilled | undefined> {
+    let result: CardFilled | undefined;
+    const outcome = await deps.edits.run(async reads => {
+      const source = reads.source(card.path), route = routeOf(reads, card.path), site = reads.site();
+      if (source === undefined || !route || !site) return { refuse: "That card is not there any more." };
+      const target = planPage(reads, request);
+      if (!target.ok) return { refuse: target.error };
+      const siblings = siblingPages(reads, source, card, route, site.routes);
+      // The home page is a creation input even when siblings supply the structure.
+      if (site.routes["/"]) reads.source(site.routes["/"]);
+      const content = subpageDocument(reads, siblings, request.title.trim(), target.value.route);
+      const fill = fillFrom(reads, card, target.value.route, content);
+      if (!fill) return { refuse: "That card is not there any more." };
+      if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) return { refuse: `Nothing on this ${fill.noun} takes a page's title or address.` };
+      const css = await hostCss(reads, fill.templatePath, fill.titleLinked);
+      result = fill.result;
+      const plan = cardPlan(card, fill.edit, css,
+        `Created the page ${fill.result.title} at ${fill.result.route} and filled the ${fill.noun} from it`, `Undid creating the page ${fill.result.title} and filling the ${fill.noun}.`);
+      plan.creates!.push({ path: target.value.file, content });
+      return plan;
+    }, { anchor: card.path });
+    return accepted(outcome, "The page changed meanwhile; try again.") ? result : undefined;
   }
 
   /** Moves the item at `node` one place among its grid's items, keeping it selected. */
-  function move(selection: { path: string; node?: number[] }, direction: "up" | "down"): boolean {
+  function move(selection: { path: string; node?: number[] }, direction: "up" | "down", painted = deps.edits.peek.source(selection.path), since = deps.edits.stamp()): boolean {
     const { path, node } = selection;
-    const route = routeOf(path);
-    const source = deps.source(path);
-    if (!node || !route || source === undefined || !deps.editor()?.isMounted(path)) return false;
-    const own = gridOfItem(source, node, context(route));
-    if (!own) return false;
-    const { grid, position } = own;
-    const other = grid.items[position + (direction === "up" ? -1 : 1)];
-    if (!other) return true;
-    const edits = swapEdits(source, grid.items[position].range, other.range);
-    const row = deps.preview()?.selectedItemGrid()?.row;
-    const words = direction === "up" ? (row ? "left" : "up") : (row ? "right" : "down");
-    return deps.change(path, source, edits, [...grid.parent, other.index], `${capital(grid.noun)} moved ${words}`);
+    if (!node || painted === undefined || !deps.editable(path)) return false;
+    let found = false;
+    const outcome = deps.edits.now(reads => {
+      if (reads.source(path) !== painted) return { refuse: "The source changed. Select the element again and try again." };
+      const route = routeOf(reads, path);
+      const own = route && gridOfItem(painted, node, context(reads, route));
+      if (!own) return { edits: new Map(), done: "", undone: "" };
+      found = true;
+      const { grid, position } = own;
+      const other = grid.items[position + (direction === "up" ? -1 : 1)];
+      if (!other) return { edits: new Map([[path, []]]), done: "", undone: "" };
+      const row = deps.preview()?.selectedItemGrid()?.row;
+      const words = direction === "up" ? (row ? "left" : "up") : (row ? "right" : "down");
+      return { edits: new Map([[path, swapEdits(painted, grid.items[position].range, other.range)]]),
+        select: { before: { path, node }, after: { path, node: [...grid.parent, other.index] } },
+        done: `${capital(grid.noun)} moved ${words}`, undone: `Undid moving the ${grid.noun}.` };
+    }, { anchor: path, since });
+    return accepted(outcome, "The source changed. Select the element again and try again.") && found;
   }
 
   /**
@@ -582,11 +512,12 @@ export function createCards(deps: CardsDeps) {
    * component's template on the page).
    */
   function controls(selection: NativePreviewSelection, source: string): EditBarControl[] {
-    const site = deps.site();
+    const reads = deps.edits.peek;
+    const site = reads.site();
     const preview = deps.preview();
     const node = selection.node;
     if (!site || !preview) return [];
-    const route = routeOf(selection.path);
+    const route = routeOf(reads, selection.path);
     if (!route) {
       // In a component's template: the runtime knows the page's item around it.
       const grid = preview.selectedItemGrid();
@@ -595,9 +526,9 @@ export function createCards(deps: CardsDeps) {
       return [selectItem(about.noun, grid.path, [...grid.parent, grid.index])];
     }
     if (!node) return [];
-    const own = gridOfItem(source, node, context(route));
+    const own = gridOfItem(source, node, context(reads, route));
     if (!own) {
-      const around = itemAround(source, node, context(route));
+      const around = itemAround(source, node, context(reads, route));
       return around ? [selectItem(around.grid.noun, selection.path, around.node)] : [];
     }
     const { grid, position } = own;
@@ -608,17 +539,26 @@ export function createCards(deps: CardsDeps) {
     const reported = preview.selectedItemGrid();
     const row = reported && reported.parent.join(".") === grid.parent.join(".") ? reported.row : false;
     const path = selection.path;
+    const since = deps.edits.stamp();
+    const change = (edits: RangeEdit[], next: number[] | undefined, done: string, undone: string) => {
+      if (!deps.editable(path)) return false;
+      const outcome = deps.edits.now(reads => {
+        if (reads.source(path) !== source) return { refuse: "The source changed. Select the element again and try again." };
+        return { edits: new Map([[path, edits]]), select: { before: { path, node }, after: next ? { path, node: next } : undefined }, done, undone };
+      }, { anchor: path, since });
+      return accepted(outcome, "The source changed. Select the element again and try again.");
+    };
     const out: EditBarControl[] = [
-      { kind: "button", icon: row ? "left" : "up", label: row ? "Move left" : "Move up", disabled: !previous, onPress: () => move(selection, "up") },
-      { kind: "button", icon: row ? "right" : "down", label: row ? "Move right" : "Move down", disabled: !next, onPress: () => move(selection, "down") },
-      { kind: "button", icon: "duplicate", label: "Duplicate", onPress: () => deps.change(path, source, [duplicateEdit(source, item.range)], [...grid.parent, item.index + 1], `${noun} duplicated`) },
+      { kind: "button", icon: row ? "left" : "up", label: row ? "Move left" : "Move up", disabled: !previous, onPress: () => move(selection, "up", source, since) },
+      { kind: "button", icon: row ? "right" : "down", label: row ? "Move right" : "Move down", disabled: !next, onPress: () => move(selection, "down", source, since) },
+      { kind: "button", icon: "duplicate", label: "Duplicate", onPress: () => change([duplicateEdit(source, item.range)], [...grid.parent, item.index + 1], `${noun} duplicated`, `Undid duplicating the ${grid.noun}.`) },
       {
         kind: "button",
         icon: "remove",
         label: "Remove",
         // Every Remove uses the same sibling/parent selection rule.
-        onPress: () => deps.change(path, source, [removeEdit(source, item.range)],
-          selectionAfterRemove(node, Boolean(locateNativeElementRange(source, [...node.slice(0, -1), node.at(-1)! + 1]))), `${noun} removed`),
+        onPress: () => change([removeEdit(source, item.range)],
+          selectionAfterRemove(node, Boolean(locateNativeElementRange(source, [...node.slice(0, -1), node.at(-1)! + 1]))), `${noun} removed`, `Undid removing the ${grid.noun}.`),
       },
       {
         kind: "button",
@@ -649,13 +589,13 @@ export function createCards(deps: CardsDeps) {
   }
 
   /** The grid on any page that lists the pages under `parent`, with the page it is on. */
-  function collectionFor(parent: string): { file: string; route: string; source: string; grid: SourceGrid } | undefined {
-    const site = deps.site();
+  function collectionFor(reads: Reads, parent: string): { file: string; route: string; source: string; grid: SourceGrid } | undefined {
+    const site = reads.site();
     if (!site || parent === "/") return undefined;
     for (const [route, file] of Object.entries(site.routes)) {
-      const source = deps.source(file);
+      const source = reads.source(file);
       if (source === undefined) continue;
-      const grid = pageGrids(source, context(route)).find((item) => item.collection === parent);
+      const grid = pageGrids(source, context(reads, route)).find((item) => item.collection === parent);
       if (grid) return { file, route, source, grid };
     }
     return undefined;
@@ -675,7 +615,8 @@ export function createCards(deps: CardsDeps) {
 
     /** The Pages tab's offer for a new subpage of `parent`: the label of its checkbox, when a grid lists those pages. */
     cardOffer(parent: string): string | undefined {
-      const found = collectionFor(parent);
+      const reads = deps.edits.peek;
+      const found = collectionFor(reads, parent);
       return found ? `Add ${aOr(found.grid.noun)} to “${found.grid.label}” on ${deps.pageLabel(found.file)}` : undefined;
     },
 
@@ -685,26 +626,32 @@ export function createCards(deps: CardsDeps) {
      * operation (one undo). Resolves to an error.
      */
     async createWithCard(request: { parent: string; title: string; slug: string }): Promise<string | undefined> {
-      const site = deps.site();
-      const found = collectionFor(request.parent);
-      if (!site || !found) return `No grid lists the pages under ${request.parent} any more.`;
-      const target = nativeNewTarget(request.parent, request.slug, { route: (route) => site.routes[route], exists: (path) => deps.exists(path) });
-      if (!target.ok) return target.error;
-      const { source, grid, file, route } = found;
-      const title = request.title.trim();
-      const content = subpageDocument(grid.items.map(item => { const element = itemElement(source, item.range); return { route: item.route, title: element && itemTitle(source, element) }; }), title, target.value.route);
-      const where = `“${grid.label}” on ${deps.pageLabel(file)}`;
-      const last = grid.items[grid.items.length - 1];
-      const copy = cardMarkup(source, route, grid, last, { title, route: target.value.route });
-      const next = applyEdits(source, [insertAfterEdit(source, last.range, copy.text)]);
-      return deps.operation({
-        creates: [{ path: target.value.file, content }],
-        edits: new Map([[file, next]]),
-        open: target.value.file,
-        done: `Created the page ${title} at ${target.value.route}, with its ${grid.noun} in ${where}.`,
-        undone: `Undid creating the page ${title} and its ${grid.noun}.`,
-        focus: { file: target.value.file },
+      const outcome = await deps.edits.run(async reads => {
+        const site = reads.site();
+        const found = collectionFor(reads, request.parent);
+        if (!site || !found) return { refuse: `No grid lists the pages under ${request.parent} any more.` };
+        const target = nativeNewTarget(request.parent, request.slug, { route: (route) => site.routes[route], exists: (path) => reads.exists(path) });
+        if (!target.ok) return { refuse: target.error };
+        const { source, grid, file, route } = found;
+        const title = request.title.trim();
+        if (site.routes["/"]) reads.source(site.routes["/"]);
+        const content = subpageDocument(reads, grid.items.map(item => { const element = itemElement(source, item.range); return { route: item.route, title: element && itemTitle(source, element) }; }), title, target.value.route);
+        const where = `“${grid.label}” on ${deps.pageLabel(file)}`;
+        const last = grid.items[grid.items.length - 1];
+        const copy = cardMarkup(reads, source, route, grid, last, { title, route: target.value.route });
+
+        return {
+          creates: [{ path: target.value.file, content }],
+          edits: new Map([[file, [insertAfterEdit(source, last.range, copy.text)]]]),
+          open: target.value.file,
+          done: `Created the page ${title} at ${target.value.route}, with its ${grid.noun} in ${where}.`,
+          undone: `Undid creating the page ${title} and its ${grid.noun}.`,
+          focus: { file: target.value.file },
+        };
       });
+      if (!outcome.ok) return outcome.message;
+      if (outcome.message) refuse(outcome.message);
+      return undefined;
     },
 
     /**
@@ -713,17 +660,18 @@ export function createCards(deps: CardsDeps) {
      * the page, and each page's text without them.
      */
     cardsLinkingTo(route: string, except: Set<string>): { label: string; edits: Map<string, string> } | undefined {
-      const site = deps.site();
+      const reads = deps.edits.peek;
+      const site = reads.site();
       if (!site) return undefined;
       const edits = new Map<string, string>();
       let first: { grid: SourceGrid; file: string } | undefined;
       let count = 0;
       for (const [pageRoute, file] of Object.entries(site.routes)) {
         if (except.has(file)) continue;
-        const source = deps.source(file);
+        const source = reads.source(file);
         if (source === undefined) continue;
         const removals: RangeEdit[] = [];
-        for (const grid of pageGrids(source, context(pageRoute))) {
+        for (const grid of pageGrids(source, context(reads, pageRoute))) {
           if (!grid.collection) continue;
           for (const item of grid.items) {
             if (item.route !== route) continue;

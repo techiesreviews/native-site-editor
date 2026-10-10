@@ -3733,44 +3733,13 @@ async function commitNativePage(page: {
 }
 
 // ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
-// Lifecycle and adapters live in the cards controller; draft and transaction ports stay host-owned.
+// Lifecycle and adapters live in the cards controller; every card write is a guarded edit (src/guarded-edit.ts).
 const cardsController = createCardsController({
-  site: () => nativeSite,
-  source: (path) => nativeEffectiveSource(path),
-  isSection: isNativeSectionTag,
-  editor: () => editorModule,
+  edits: guardedEdits,
+  siteRead: () => nativeSiteReadForCreate(),
+  editable: path => Boolean(draftScope()) && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path) && editorModule.captureHistoryHost(path)),
   preview: () => nativePreview,
-  ensureOpen: async (path) => {
-    // A card's page copies a sibling page or the home page: the site is read first.
-    if (await nativeSiteReadForCreate()) return false;
-    if (appStore.openFile.value === path && editorModule?.isMounted(path)) return true;
-    const epoch = generation;
-    await restoreFile(path, epoch, { linkDefaultStyle: false });
-    return epoch === generation && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
-  },
-  openPage: (file) => void restoreFile(file, generation),
-  change: applyNativeChange,
-  exists: nativePathExists,
-  siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
-  saveNewDraft: (path, content) => {
-    const scope = draftScope();
-    if (!scope) return "Open a repository first.";
-    draftStore().save({ ...scope, version: 1, path, baseSha: null, original: "", content, updatedAt: Date.now() });
-    const failure = draftStore().error;
-    if (failure) {
-      draftStore().remove(scope, path);
-      return failure;
-    }
-    afterFileChanges();
-    return undefined;
-  },
-  dropNewDraft: (path) => {
-    const scope = draftScope();
-    if (!scope || draftStore().get(scope, path)?.baseSha !== null) return;
-    if (!editorModule?.discardNewFile(path)) editorModule?.dropDraft(scope, path);
-    afterFileChanges();
-  },
-  operation: applyNativeOperation,
+  openPage: file => void restoreFile(file, generation),
   pageLabel: nativePageLabelOf,
   variantFiles: nativeVariantFiles,
   announce,
