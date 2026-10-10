@@ -107,8 +107,10 @@ test("a paragraph with a link keeps its link; a button's label edits", async ({ 
   await expect(frame(page).locator(".intro p a")).toHaveText("about us");
   await expect(frame(page).locator(".intro p")).toHaveText("Read about us now.");
 
+  // F2 on the focused row opens it too, all of it selected.
   const buttonRow = row(page, "Button", "Sign up");
-  await buttonRow.locator(".page-structure__text").dblclick();
+  await buttonRow.focus();
+  await buttonRow.press("F2");
   const label = tree(page).getByRole("textbox", { name: "Button: Text", exact: true });
   await expect(label).toBeFocused();
   await page.keyboard.type("Join us");
@@ -135,6 +137,18 @@ test("Edit component mode: the template's own heading edits from its row, in the
   await expect(promo.locator("h2")).toHaveText("Made with care");
   await field.press("Enter");
   await expect.poll(() => mounted(page, TEMPLATE)).toBe(template.replace("Made by hand", "Made with care"));
+  // Escape takes a second edit back, in the template and the page.
+  await headingRow.press("Enter");
+  await expect(field).toBeFocused();
+  await page.keyboard.type("Dropped");
+  await expect(promo.locator("h2")).toHaveText("Dropped");
+  await field.press("Escape");
+  await expect(promo.locator("h2")).toHaveText("Made with care");
+  await expect.poll(() => mounted(page, TEMPLATE)).toBe(template.replace("Made by hand", "Made with care"));
+  // The page's instance row stands for the component: it has no text field.
+  const instance = tree(page).getByRole("treeitem", { name: /^Section promo/ }).first();
+  await instance.locator(".page-structure__label").dblclick();
+  await expect(tree(page).getByRole("textbox")).toHaveCount(0);
   await expect.poll(() => effectiveSource(page, baseURL, TEMPLATE)).toBe(template.replace("Made by hand", "Made with care"));
   // The page's own source did not change.
   expect(await effectiveSource(page, baseURL, "index.html")).toContain(`<section-promo>\n    <p slot="body">Home's own words.</p>`);

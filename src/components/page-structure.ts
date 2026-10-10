@@ -741,13 +741,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         if (openMenu(el)) { event.preventDefault(); event.stopPropagation(); }
         return;
       }
-      if (event.key === "F2" && slotContext) { event.preventDefault(); requestSlotEdit(slotContext); return; }
-      // Enter on a row whose text edits in place starts editing it (everything selected).
-      if (event.key === "Enter" && slotContext && inPlace(slotContext.slot) && !editing) { event.preventDefault(); event.stopPropagation(); requestSlotEdit(slotContext); return; }
-      // An element's own text, likewise (slice 102); F2 too, as on a slot's row.
+      // Enter or F2 on a row whose element's own text edits here starts editing it (slice 102), a content slot's part included.
       if ((event.key === "Enter" || event.key === "F2") && ownText && !textEditing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && requestTextEdit(item)) {
         event.preventDefault(); event.stopPropagation(); return;
       }
+      if (event.key === "F2" && slotContext) { event.preventDefault(); requestSlotEdit(slotContext); return; }
+      // Enter on a row whose text edits in place starts editing it (everything selected).
+      if (event.key === "Enter" && slotContext && inPlace(slotContext.slot) && !editing) { event.preventDefault(); event.stopPropagation(); requestSlotEdit(slotContext); return; }
       onKey(event, item, el);
     });
     rows.set(id, el);
