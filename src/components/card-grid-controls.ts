@@ -1,7 +1,6 @@
 import { node, button } from "../ui/dom";
 import { icon } from "../icons";
 import { aOr } from "../page-builder/card-grid";
-import { cardFillContent } from "../page-builder/card-fill";
 import type { SitePage } from "../page-builder/page-choices";
 import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardLinkPicker } from "./card-link-picker";
@@ -106,6 +105,8 @@ export interface CardFilled {
   /** The card as it was before the first fill, which Change page fills again. */
   base: string;
   filled: string;
+  /** The page's content by role, what the card's look has no slot for too (card-fill.ts `cardFillContent`). */
+  content: CardContent;
 }
 
 /** A card swapped to another look: what to keep aside, what the look does not show, the card now, and a filled card's strip as it follows. */
@@ -421,7 +422,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (!filled || linker !== entry) return;
     entry.filled = filled;
     // The page's content, what the look does not show too, for a swap; the strip lists those rows "not used".
-    entry.kept = cardFillContent(filled.rows);
+    entry.kept = filled.content;
     entry.notShown = undefined;
     // The page shows the filled card after its next report: until then the selection may not name it.
     entry.seen = false;

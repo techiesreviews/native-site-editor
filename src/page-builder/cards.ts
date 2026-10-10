@@ -19,7 +19,7 @@ import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
 import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { cardFill, cardFillMarkup, pageTitle } from "./card-fill";
+import { cardFill, cardFillContent, cardFillMarkup, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
@@ -392,7 +392,7 @@ export function createCards(deps: CardsDeps) {
     // Only the copy's own page link, emptied when it was added; its other links keep their addresses.
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : root && itemCopy(from, root, { noun: grid!.noun, title, href: route, isLinked: (href) => !href.trim() });
     if (filled === undefined) return undefined;
-    return { source, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { rows, title, route, base: from, filled } };
+    return { source, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { rows, title, route, base: from, filled, content: cardFillContent(rows) } };
   }
 
   /** Fill an existing page as one edit, preserving the original card for Change page. */
