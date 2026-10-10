@@ -21,12 +21,12 @@ export interface CommandPalettePorts {
   startNewPage(): void;
   actions: Omit<EditorPaletteDeps, Derived>;
   /** Test seam; production keeps the existing keyboard layer and its lazy UI. */
-  mountPalette?: typeof mountEditorPalette;
+  mountPalette?: (host: HTMLElement, deps: EditorPaletteDeps) => Pick<ReturnType<typeof mountEditorPalette>, "dispose"> & Partial<Pick<ReturnType<typeof mountEditorPalette>, "frameShortcut">>;
 }
 
 /** Derives palette views from live workspace state and owns keyboard registration. */
 export function createCommandPaletteController(ports: CommandPalettePorts) {
-  let palette: ReturnType<typeof mountEditorPalette> | undefined;
+  let palette: ReturnType<NonNullable<CommandPalettePorts["mountPalette"]>> | undefined;
   let epoch = 0;
   const waits = new Set<{ timer: ReturnType<typeof setTimeout>; resolve(): void }>();
   function dispose() {
@@ -93,5 +93,5 @@ export function createCommandPaletteController(ports: CommandPalettePorts) {
     };
     palette = (ports.mountPalette ?? mountEditorPalette)(ports.host(), deps);
   }
-  return { mount, dispose };
+  return { mount, dispose, shortcut: (name: string) => palette?.frameShortcut?.(name) };
 }

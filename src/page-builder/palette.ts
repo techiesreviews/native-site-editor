@@ -703,24 +703,19 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
   };
   window.addEventListener("keydown", onKey, true);
 
-  // Keys forwarded from the preview frame.
-  const onMessage = (event: MessageEvent) => {
-    const data = event.data as { source?: unknown; type?: unknown; name?: unknown } | undefined;
-    if (data?.source !== "astro-native-preview" || data.type !== "shortcut" || typeof data.name !== "string") return;
-    const frames = [...document.querySelectorAll<HTMLIFrameElement>(".native-preview-frame")];
-    if (!frames.some((frame) => frame.contentWindow === event.source)) return;
-    if (otherModalOpen() && data.name !== "palette") return;
-    shortcut(data.name);
+  // Keys forwarded through this preview's link, while the palette is mounted.
+  const frameShortcut = (name: string) => {
+    if (disposed || (otherModalOpen() && name !== "palette")) return;
+    shortcut(name);
   };
-  window.addEventListener("message", onMessage);
 
   return {
     palette,
     sheet,
+    frameShortcut,
     dispose() {
       for (const remove of removers) remove();
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("message", onMessage);
       disposed = true;
       cancelPending();
       palette?.root.remove();

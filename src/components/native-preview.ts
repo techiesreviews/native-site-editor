@@ -220,6 +220,8 @@ export interface NativeTextEdit {
 export interface PressedBlock { node: number[]; tag: string; cls: string; band: boolean; painted: string | undefined; template?: boolean }
 
 export interface NativePreviewHandlers {
+  onShortcut?: (name: string) => void;
+  onRefusalNoteAction?: () => void;
   /** A right-click in the frame selected `selection`: open its element menu at `point` (host viewport). */
   onContextMenu?: (point: { x: number; y: number }, anchor: HTMLIFrameElement, selection: NativePreviewSelection) => void;
   /** A press, scroll, re-render with other bytes or History view: close that menu. */
@@ -736,6 +738,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   link.on("pin-rects", (message) => pins?.rects(message.rects));
   // A press or scroll in the frame closes the element menu, from any render.
   link.on("dismiss-context-menu", () => handlers.onDismissContextMenu?.());
+  link.on("shortcut", (message) => handlers.onShortcut?.(message.name));
+  link.on("refusal-note-action", () => handlers.onRefusalNoteAction?.());
   link.on("slot-ghosts", (message) => {
     const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
       { context: link.context(), pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });

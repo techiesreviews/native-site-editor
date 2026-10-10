@@ -206,7 +206,7 @@
   color: var(--component-text);
 }
 
-/* Breakpoints, width and the spacing toggle. */
+/* Breakpoints and width. */
 .canvas-tools {
   display: flex;
   flex: none;
@@ -245,10 +245,6 @@
   background: var(--panel-surface);
   box-shadow: var(--shadow-small);
   color: var(--text);
-}
-.canvas-spacing[aria-pressed="true"] {
-  background: var(--pressed);
-  color: var(--on-pressed);
 }
 .canvas-width {
   position: relative;

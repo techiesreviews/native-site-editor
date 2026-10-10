@@ -8,8 +8,8 @@ import { registerCommand, registerCommandSource } from "../src/page-builder/comm
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import type { EditBarModel } from "../src/components/edit-bar.ts";
-import type { EditorPaletteDeps, mountEditorPalette } from "../src/page-builder/palette.ts";
-function fixture() {
+import type { EditorPaletteDeps } from "../src/page-builder/palette.ts";
+function fixture(frameShortcut?: (name: string) => void) {
   const appStore = createAppStore(createDraftStore());
   let site: ReturnType<CommandPalettePorts["site"]> = { routes: { "/": "index.html", "/notes/": "notes/index.html", "/about/": "about/index.html" }, components: { "feature-section": "components/feature.html" } };
   const workspace = createMemoryWorkspace();
@@ -31,7 +31,7 @@ function fixture() {
       toggleCode: () => {}, codeHidden: () => false, toggleStructure: () => {}, structureHidden: () => false,
       newFile: () => {}, showPagesAndFiles: () => {}, announce: message => { announced.push(message); }, onError: error => { throw error; },
     },
-    mountPalette: ((_host: HTMLElement, value: EditorPaletteDeps) => { deps.push(value); return { dispose: () => { disposed++; } }; }) as typeof mountEditorPalette,
+    mountPalette: (_host, value) => { deps.push(value); return { dispose: () => { disposed++; }, frameShortcut }; },
   } satisfies CommandPalettePorts);
   return { captureModel: () => { model = { kind: "Heading", controls: [], origin: { path: "index.html", source: sources["index.html"], stamp: edits.stamp("repository"), revision: "target", node: [0] } }; return model; }, controller, appStore, deps, sources, counters: () => ({ indexCalls, disposed, opened, inserted, began, started }), announced, indexed: () => { indexed = true; }, noSite: () => { site = undefined; }, navigate: () => { workspace.setScope("workspace-2"); }, bump: () => workspace.bumpGeneration() };
 }
@@ -131,4 +131,26 @@ test("palette actions after a switch do nothing and say why", async t => {
       f.controller.dispose(); f.appStore.dispose();
     }
   }
+});
+
+
+test("frame shortcuts reach only the mounted palette and tolerate a dispose-only test seam", () => {
+  const names: string[] = [];
+  const f = fixture(name => names.push(name));
+  f.controller.shortcut("palette");
+  assert.deepEqual(names, []);
+  f.controller.mount();
+  f.controller.shortcut("palette");
+  f.controller.shortcut("undo");
+  assert.deepEqual(names, ["palette", "undo"]);
+  f.controller.dispose();
+  f.controller.shortcut("redo");
+  assert.deepEqual(names, ["palette", "undo"]);
+  f.appStore.dispose();
+
+  const withoutShortcut = fixture();
+  withoutShortcut.controller.mount();
+  assert.doesNotThrow(() => withoutShortcut.controller.shortcut("palette"));
+  withoutShortcut.controller.dispose();
+  withoutShortcut.appStore.dispose();
 });

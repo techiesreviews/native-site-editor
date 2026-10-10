@@ -14,8 +14,8 @@ import { parseDropReport, type DropReport } from "../page-builder/drop-report";
 import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
 import { readCrumbs, type CanvasCrumb } from "../page-builder/canvas-model";
 
-export const FRAME_SOURCE = "astro-native-preview";
-export const HOST_SOURCE = "astro-native-preview-host";
+import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire";
+export { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire";
 
 /** A component instance around the selection, as the frame reports it (the receiver adds `paintedSource`). */
 export type FrameHost = Omit<NonNullable<NativePreviewSelection["host"]>, "paintedSource">;

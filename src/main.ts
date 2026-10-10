@@ -1,4 +1,4 @@
-import { refuse } from "./components/refusal-note";
+import { dismissRefusalNote, refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
 import { createRowMenu } from "./components/row-menu";
 import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } from "./components/element-menu";
@@ -480,6 +480,8 @@ function mountWorkspace() {
   previewElementMenu?.element.remove();
   previewElementMenu = createRowMenu(app);
   nativePreview = createNativePreview(element("main"), {
+    onShortcut: name => paletteController.shortcut(name),
+    onRefusalNoteAction: dismissRefusalNote,
     ...previewSelection.handlers(),
     onDismissContextMenu: () => previewElementMenu?.close(false),
     // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).

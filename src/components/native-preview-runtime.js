@@ -1,6 +1,7 @@
 // The editing preview's runtime: a classic script the srcdoc frame loads.
 // Vite bundles it with the rules it imports into one IIFE
 // (vite-preview-runtime.ts): in dev, in the test server and in the build.
+import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire.ts";
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
@@ -75,7 +76,7 @@ import { domView } from "../page-builder/rules/tree.ts";
   var sheetInfo = new WeakMap();
 
   function emit(type, extra) {
-    var base = { source: "astro-native-preview", type: type };
+    var base = { source: FRAME_SOURCE, type: type };
     if (state) base.context = state.context;
     parent.postMessage(Object.assign(base, extra || {}), "*");
   }
@@ -3328,15 +3329,12 @@ import { domView } from "../page-builder/rules/tree.ts";
   // Design-tool feedback drawn over the page, never part of it: a label on
   // the hovered element (`section.hero`, a component's tag), a soft dashed
   // box for what the editor points at (a line hovered in the code pane, a
-  // crumb hovered in the breadcrumb), Webflow-style margin and padding
-  // shading when the editor turns it on, and the selection's ancestors for
+  // crumb hovered in the breadcrumb), and the selection's ancestors for
   // the breadcrumb. Esc and Ctrl/⌘+↑ select the parent.
   var canvasHint = null;
-  var canvasSpacing = false;
   var canvasCrumbEls = [];
   var canvasLabel = null;
   var canvasHintBox = null;
-  var canvasSpacingBoxes = null;
   // Where the editor's edit bar stands over the frame, for labels to keep clear of.
   var canvasAvoid = null;
   function canvasOverlay(name) {
@@ -3352,14 +3350,6 @@ import { domView } from "../page-builder/rules/tree.ts";
     canvasLabel = canvasOverlay("label");
     canvasLabel.style.cssText += "z-index:2147483647;padding:0 5px;border-radius:3px;white-space:nowrap;" +
       "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
-    canvasSpacingBoxes = ["margin", "margin", "margin", "margin", "padding", "padding", "padding", "padding"].map(function (kind) {
-      var el = canvasOverlay("spacing");
-      el.setAttribute("data-native-spacing", kind);
-      el.style.cssText += "align-items:center;justify-content:center;overflow:hidden;" +
-        "font:600 11px/1 system-ui,-apple-system,'Segoe UI',sans-serif;" +
-        (kind === "margin" ? "background:rgba(246,170,92,.42);color:#6b3d08;" : "background:rgba(132,196,104,.42);color:#24501a;");
-      return el;
-    });
   }
   // A component instance on the page (its tag is one of the site's components).
   function canvasIsComponent(el) {
@@ -3446,38 +3436,6 @@ import { domView } from "../page-builder/rules/tree.ts";
     var bar = canvasAvoid;
     return !!bar && left < bar.right && left + width > bar.left && top < bar.bottom && top + height > bar.top;
   }
-  function canvasPlace(box, left, top, width, height, value) {
-    if (!(width > 0.5 && height > 0.5)) { box.style.display = "none"; return; }
-    box.style.display = "flex";
-    box.style.left = left + "px";
-    box.style.top = top + "px";
-    box.style.width = width + "px";
-    box.style.height = height + "px";
-    box.textContent = Math.min(width, height) >= 14 && value >= 1 ? String(Math.round(value)) : "";
-  }
-  function canvasDrawSpacing(el) {
-    var rect = el && el.isConnected && el.getBoundingClientRect();
-    if (!rect || (!rect.width && !rect.height)) {
-      canvasSpacingBoxes.forEach(function (box) { box.style.display = "none"; });
-      return;
-    }
-    var s = getComputedStyle(el);
-    var px = function (name) { return Math.max(0, parseFloat(s.getPropertyValue(name)) || 0); };
-    var m = { t: px("margin-top"), r: px("margin-right"), b: px("margin-bottom"), l: px("margin-left") };
-    var p = { t: px("padding-top"), r: px("padding-right"), b: px("padding-bottom"), l: px("padding-left") };
-    var bd = { t: px("border-top-width"), r: px("border-right-width"), b: px("border-bottom-width"), l: px("border-left-width") };
-    var x = rect.left + window.scrollX, y = rect.top + window.scrollY, w = rect.width, h = rect.height;
-    var box = canvasSpacingBoxes;
-    canvasPlace(box[0], x - m.l, y - m.t, w + m.l + m.r, m.t, m.t);
-    canvasPlace(box[1], x + w, y, m.r, h, m.r);
-    canvasPlace(box[2], x - m.l, y + h, w + m.l + m.r, m.b, m.b);
-    canvasPlace(box[3], x - m.l, y, m.l, h, m.l);
-    var ix = x + bd.l, iy = y + bd.t, iw = w - bd.l - bd.r, ih = h - bd.t - bd.b;
-    canvasPlace(box[4], ix, iy, iw, p.t, p.t);
-    canvasPlace(box[5], ix + iw - p.r, iy + p.t, p.r, ih - p.t - p.b, p.r);
-    canvasPlace(box[6], ix, iy + ih - p.b, iw, p.b, p.b);
-    canvasPlace(box[7], ix, iy + p.t, p.l, ih - p.t - p.b, p.l);
-  }
   // Bar movement changes only which label position is clear of the bar.
   function canvasPaintLabel() {
     canvasEnsure();
@@ -3500,7 +3458,6 @@ import { domView } from "../page-builder/rules/tree.ts";
       canvasHintBox.style.border = "1px dashed " + hintColor;
       canvasHintBox.style.background = "color-mix(in srgb, " + hintColor + " 8%, transparent)";
     }
-    canvasDrawSpacing(canvasSpacing && !pressDragging() ? (hint || hovered || selected) : null);
   }
   function canvasSelect(el, reason) {
     if (editing && editing !== el) stopEditing(true);
@@ -3565,30 +3522,48 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (selected && (selected === el || el.contains(selected) || selected.contains(el))) updateBoxes();
     return true;
   }
+  // ---- End of canvas ----
+
+  function refreshScroll(event) {
+    dismissContextMenu();
+    var root = event.target && event.target.getRootNode ? event.target.getRootNode() : null;
+    if (event.currentTarget instanceof ShadowRoot) {
+      // Slotted light-DOM scrolls belong to the window listener. Detached
+      // instances retain their listener until collected, but do no work.
+      if (root !== event.currentTarget || !event.currentTarget.host.isConnected) return;
+    } else if (root instanceof ShadowRoot) return;
+    refreshPointerHover(); updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
+  }
+  window.addEventListener("scroll", refreshScroll, true);
+  var gridResizeSelectionPending = false;
+  window.addEventListener("resize", function () {
+    updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
+    // Refresh matching rules and computed values when a selected grid changes width.
+    // Coalesce resize events and read the current selection at the refresh.
+    if (gridResizeSelectionPending) return;
+    gridResizeSelectionPending = true;
+    requestAnimationFrame(function () {
+      gridResizeSelectionPending = false;
+      if (!selected || !selected.isConnected) return;
+      var display = getComputedStyle(selected).display;
+      if (display === "grid" || display === "inline-grid") emitSelection(selected, "refresh");
+    });
+  });
+  document.addEventListener("submit", function (e) { e.preventDefault(); });
   window.addEventListener("message", function (e) {
     if (e.source !== parent) return;
     var msg = e.data || {};
-    if (msg.source !== "astro-native-preview-host") return;
+    if (msg.source !== HOST_SOURCE) return;
     if (msg.type === "finish-typing") {
       leaveEditing();
       // Text edits are posted first; the host drains their queue after this answer.
       emit("typing-finished", { id: msg.id });
       return;
     }
-    if (msg.type === "theme") {
-      if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
-      updateBoxes();
-      return;
-    }
     if (msg.type === "canvas-avoid") {
       var bar = msg.rect;
       canvasAvoid = bar && ["top", "left", "bottom", "right"].every(function (key) { return typeof bar[key] === "number" && isFinite(bar[key]); }) ? bar : null;
       canvasPaintLabel();
-      return;
-    }
-    if (msg.type === "canvas-spacing") {
-      canvasSpacing = !!msg.on;
-      updateBoxes();
       return;
     }
     // A crumb of the breadcrumb, by its place in the last path sent; -1 is the page itself.
@@ -3623,40 +3598,8 @@ import { domView } from "../page-builder/rules/tree.ts";
         var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         wanted.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
       }
+      return;
     }
-  });
-  // ---- End of canvas ----
-
-  function refreshScroll(event) {
-    dismissContextMenu();
-    var root = event.target && event.target.getRootNode ? event.target.getRootNode() : null;
-    if (event.currentTarget instanceof ShadowRoot) {
-      // Slotted light-DOM scrolls belong to the window listener. Detached
-      // instances retain their listener until collected, but do no work.
-      if (root !== event.currentTarget || !event.currentTarget.host.isConnected) return;
-    } else if (root instanceof ShadowRoot) return;
-    refreshPointerHover(); updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
-  }
-  window.addEventListener("scroll", refreshScroll, true);
-  var gridResizeSelectionPending = false;
-  window.addEventListener("resize", function () {
-    updateBoxes(); scheduleInsertPoints(); scheduleItemGrids();
-    // Refresh matching rules and computed values when a selected grid changes width.
-    // Coalesce resize events and read the current selection at the refresh.
-    if (gridResizeSelectionPending) return;
-    gridResizeSelectionPending = true;
-    requestAnimationFrame(function () {
-      gridResizeSelectionPending = false;
-      if (!selected || !selected.isConnected) return;
-      var display = getComputedStyle(selected).display;
-      if (display === "grid" || display === "inline-grid") emitSelection(selected, "refresh");
-    });
-  });
-  document.addEventListener("submit", function (e) { e.preventDefault(); });
-  window.addEventListener("message", function (e) {
-    if (e.source !== parent) return;
-    var msg = e.data || {};
-    if (msg.source !== "astro-native-preview-host") return;
     if (msg.type === "viewing") { if (state) state.viewing = msg.viewing === true; return; }
     if (msg.type === "drop-probe") {
       if (typeof msg.x !== "number" || typeof msg.y !== "number" || !isFinite(msg.x) || !isFinite(msg.y)) return;
@@ -3784,5 +3727,5 @@ import { domView } from "../page-builder/rules/tree.ts";
   // Which load of the host's frame this document is, so a late `ready` from
   // the document it replaced is not taken for this one's.
   var frameLoad = document.querySelector('meta[name="ase-frame-load"]');
-  parent.postMessage({ source: "astro-native-preview", type: "ready", load: frameLoad ? frameLoad.getAttribute("content") : undefined }, "*");
+  parent.postMessage({ source: FRAME_SOURCE, type: "ready", load: frameLoad ? frameLoad.getAttribute("content") : undefined }, "*");
 })();

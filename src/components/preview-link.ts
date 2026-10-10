@@ -13,7 +13,8 @@
 // - `reply` only by `ask`, matched by request id; `ack` reports the route drawn;
 // - `lifecycle` (`ready`) only from the document the last `reload` loaded.
 // Checks against the host's state (the page on show, History, a component
-// shown alone) stay with the host.
+// shown alone) stay with the host. Frame shortcuts and refusal-note actions
+// also use this link; their receivers do not register separate window listeners.
 import { FRESHNESS, HOST_SOURCE, readFrameMessage, type Freshness, type FrameMessage, type HostMessage, type HostMessageBody } from "./preview-protocol";
 import type { UpdatePayload } from "./native-preview";
 

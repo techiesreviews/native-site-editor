@@ -40,6 +40,9 @@ export function overlaps(a: Rect, b: Rect) {
 }
 
 let dismiss: (() => void) | undefined;
+/** Dismiss the current note after an action forwarded by the preview link. */
+export function dismissRefusalNote() { dismiss?.(); }
+
 let said = 0;
 /** How many refusals were said so far: a caller can tell whether a step it ran said one. */
 export const refusalsSaid = () => said;
@@ -86,21 +89,15 @@ export function refuse(reason: string, near: RefusalNear = {}) {
     Object.assign(note.style, { left: `${plan.left}px`, top: `${plan.top}px` });
   }
   const onAction = () => clear();
-  const onFrameAction = (event: MessageEvent) => {
-    if (event.data?.source !== "astro-native-preview" || event.data?.type !== "refusal-note-action") return;
-    if ([...document.querySelectorAll<HTMLIFrameElement>(".native-preview-frame")].some(frame => frame.contentWindow === event.source)) clear();
-  };
   const clear = () => {
     clearTimeout(timer);
     note?.remove();
     window.removeEventListener("pointerdown", onAction, true);
     window.removeEventListener("keydown", onAction, true);
-    window.removeEventListener("message", onFrameAction);
     if (dismiss === clear) dismiss = undefined;
   };
   const timer = window.setTimeout(onAction, refusalNotePlan({ viewport: { width: innerWidth, height: innerHeight }, size: { width: 0, height: 0 } }).duration);
   dismiss = clear;
-  window.addEventListener("message", onFrameAction);
   window.addEventListener("pointerdown", onAction, true);
   window.addEventListener("keydown", onAction, true);
 }

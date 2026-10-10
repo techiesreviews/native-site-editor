@@ -5,7 +5,8 @@
 // Every diagnostic fails, except these, which are filtered:
 // - tests/tsconfig.json: errors other than unused declarations, located in tests/ (not fixed
 //   yet) or in worker/ (that program uses the DOM lib, not the Workers types; the worker
-//   project checks those files fully). Such errors in src/ or shared/ fail;
+//   project checks those files fully). Such errors in src/ or shared/ fail.
+//   preview-wire.test.ts is checked fully so its exhaustive protocol maps cannot drift;
 // - unused-declaration errors in src/prototype/ (owned by another session).
 // A tsc run that fails without a filterable diagnostic (a missing project, no inputs, a crash
 // or output on stderr) fails the check.
@@ -45,7 +46,7 @@ await Promise.all(projects.map(async ({ config, onlyUnusedIn }) => {
     if (match) {
       const [, file, number] = match;
       if (UNUSED.has(number)) keep = !UNUSED_EXEMPT.some((prefix) => file.startsWith(prefix));
-      else keep = !onlyUnusedIn.some((prefix) => file.startsWith(prefix));
+      else keep = file === "tests/preview-wire.test.ts" || !onlyUnusedIn.some((prefix) => file.startsWith(prefix));
     }
     if (!keep) { filtered++; return; }
     kept++;
