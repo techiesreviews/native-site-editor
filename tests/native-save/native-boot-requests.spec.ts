@@ -114,7 +114,9 @@ test('the linked stylesheet is read in the first wave, before any pre-paint read
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(preview(page).locator('.hero h1')).toBeVisible();
   await expect.poll(() => paints.length).toBeGreaterThan(0);
-  await page.unroute(/\/api\/files?\?/);
+  // A read still inside its 150 ms wait finishes on its own: a plain unroute would continue it
+  // first, and its own continue would then throw ("Route is already handled").
+  await page.unrouteAll({ behavior: 'wait' });
   const shas = await blobShas(page);
   const paint = Math.min(...paints);
   const early = reads.filter((read) => read.at < paint && read.shas.length);
@@ -170,7 +172,9 @@ test('an unreadable stylesheet no page links does not hold the preview back', as
   await page.route(/\/api\/files?\?/, async (route) => {
     const params = new URL(route.request().url()).searchParams;
     const asked = [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])];
-    if (asked.includes(unused)) { refused++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'This file is not UTF-8 text.' }) }); return; }
+    // The boot's predicted read only: the text index reads every sheet after the paint, and a
+    // refusal then fails the index (its alert would race the check below).
+    if (asked.includes(unused) && !refused) { refused++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'This file is not UTF-8 text.' }) }); return; }
     await route.continue();
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
