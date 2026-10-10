@@ -92,6 +92,19 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // edit bar may replace a live callback while retaining that same input node.
   let nativeAttributeFieldSession: { key: string; path: string; source: string; model: { isCurrent(): boolean }; epoch: number; scope: string } | undefined;
 
+  // Ask agent's element description (src/agent-site.ts, lazy with the rest of
+  // the editor's agent code) loads once an agent is connected and the bar
+  // offers it. After a failed load it is tried again only on a send.
+  let agentSite: typeof import("../agent-site") | undefined;
+  let agentSiteLoad: Promise<typeof import("../agent-site") | undefined> | undefined;
+  let agentSiteFailed = false;
+  function loadAgentSite(explicit = false) {
+    if (agentSiteFailed && !explicit) return Promise.resolve(undefined);
+    agentSiteFailed = false;
+    return agentSiteLoad ??= import("../agent-site").then((module) => agentSite = module)
+      .catch((error) => { agentSiteLoad = undefined; agentSiteFailed = true; void handleChunkLoadFailure(error); return undefined; });
+  }
+
   // Controls for the selected element. Structural actions need the element's
   // exact outer source range; when that cannot be told (implied end tags,
   // stray markup) they stay out rather than edit the wrong HTML.
@@ -562,17 +575,22 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const menu = ports.agentController.captureAsk();
     if (node && menu?.connected() && ports.nativeSite) {
       const site = ports.nativeSite;
+      void loadAgentSite();
       controls.push({
         kind: "prompt",
         label: "Ask agent",
         placeholder: "Ask the agent…",
         maxLength: REQUEST_TEXT_LIMIT,
         onSend: async (text) => {
-          const route = preview.route(), source = ports.nativeSources()[path];
-          // Loaded on first use, with the editor's other agent code (lazy in main.ts).
-          let agentSite: typeof import("../agent-site");
-          try { agentSite = await import("../agent-site"); } catch (error) { void handleChunkLoadFailure(error); return (error as Error).message; }
-          const about = agentSite.agentElement({ ...selection, route }, site, source);
+          let module = agentSite;
+          if (!module) {
+            // Sent before it arrived: the element is told only if the page is still the one asked about.
+            const epoch = ports.generation, scope = ports.setupScope(), route = preview.route(), source = ports.nativeSources()[path];
+            module = await loadAgentSite(true);
+            if (!module) return "The agent tools could not load. Try again.";
+            if (epoch !== ports.generation || scope !== ports.setupScope() || route !== preview.route() || source !== ports.nativeSources()[path]) return "The page changed meanwhile. Ask again.";
+          }
+          const about = module.agentElement({ ...selection, route: preview.route() }, site, ports.nativeSources()[path]);
           if (!about) return "This element cannot be pointed out to an agent.";
           try {
             await menu.ask(text, about);

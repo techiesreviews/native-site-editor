@@ -124,26 +124,43 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       }
     },
   };
-  // The Add panel (add-panel.ts and its own styles) loads the first time it
-  // opens. Until then it is closed: nothing to refresh, retarget or close.
+  // The Add panel (add-panel.ts and its own styles) is fetched once the page
+  // reports its insert points, after the first paint, and made on first open.
+  // Until then it is closed: nothing to refresh, retarget or close.
   let panel: AddPanel | undefined;
-  let panelLoad: Promise<AddPanel | undefined> | undefined;
-  // The opening asked for while it loads (a gap's plus, or docked); closing meanwhile drops it.
+  let panelLoad: Promise<typeof import("./add-panel") | undefined> | undefined;
+  // The opening asked for while it loads (a gap's plus, or docked); closing,
+  // or the gap going away, drops it.
   let pendingOpen: { gap?: InsertPoint } | undefined;
   let destroyed = false;
+  // After a failed load (said once), it is tried again only when the panel is asked for.
+  let panelFailed = false;
+  function loadPanel(explicit = false) {
+    if (panelFailed && !explicit) return Promise.resolve(undefined);
+    panelFailed = false;
+    return panelLoad ??= import("./add-panel").catch((error) => { panelLoad = undefined; panelFailed = true; void handleChunkLoadFailure(error); return undefined; });
+  }
   function openPanel(gap?: InsertPoint) {
     if (panel) {
       if (gap) panel.openFor(gap);
       else panel.openDocked();
       return;
     }
+    // A plus clicked again before the panel came: closed again, as an open one would be.
+    if (gap && pendingOpen?.gap && insertPointKey(pendingOpen.gap) === insertPointKey(gap)) {
+      pendingOpen = undefined;
+      return;
+    }
     pendingOpen = { gap };
-    panelLoad ??= import("./add-panel").then(({ createAddPanel }) => destroyed ? undefined : panel = createAddPanel(panelHandlers))
-      .catch((error) => { panelLoad = undefined; void handleChunkLoadFailure(error); return undefined; });
-    void panelLoad.then(() => {
+    void loadPanel(true).then((module) => {
       const open = pendingOpen;
       pendingOpen = undefined;
-      if (open && panel) openPanel(open.gap);
+      if (!module || !open || destroyed) return;
+      const key = open.gap && insertPointKey(open.gap);
+      if (key && !points.some((point) => insertPointKey(point) === key)) return;
+      panel ??= module.createAddPanel(panelHandlers);
+      if (open.gap) panel.openFor(open.gap);
+      else panel.openDocked();
     });
   }
   function closePanel(restoreFocus: boolean) {
@@ -155,6 +172,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     /** The runtime reported the page's insert points. */
     points(next: InsertPoint[]) {
       points = next;
+      void loadPanel();
       canvas.layout();
       empty.update(next);
       panel?.retarget();
@@ -200,6 +218,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     /** The page on show changed or went away. */
     clear() {
       points = [];
+      if (pendingOpen?.gap) pendingOpen = undefined;
       selection = selectedRect = undefined;
       empty.clear();
       flash.clear();
