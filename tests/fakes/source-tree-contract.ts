@@ -241,13 +241,23 @@ export const contractCases: ContractCase[] = [
       ["style", "<style>a::after{content:\"</section>\"}</style>"], ["p", null], ["b", "<b title=\"</p>\">B</b>"], ["span", "<span>S</span>"]],
   },
   {
+    // An ancestor's end tag ends both divs early; the end tags after it are stray, so no div has a
+    // range (the outer once read to the second </div>, and with it the inner).
+    name: "range: an end tag of another element inside fails closed",
+    source: "<section><div><div>A</section></div></div></section><div><p>B</p><div>C</div></div>",
+    read: (tree) => spans(tree),
+    expected: [["section", null], ["div", null], ["div", null],
+      ["div", "<div><p>B</p><div>C</div></div>"], ["p", "<p>B</p>"], ["div", "<div>C</div>"]],
+  },
+  {
     // The browser's adoption agency clones <b> into the <div>, mark and all: one start tag, two
-    // elements, so neither has a range (the clone once read as `<b><div>A</b>`).
+    // elements, so neither has a range (the clone once read as `<b><div>A</b>`); the div holds a
+    // </b> it did not open, so it has none either.
     name: "range: an element the browser cloned from one start tag has no range",
     source: "<b><div>A</b>B</div></b>",
     read: (tree) => spans(tree),
-    expected: [["b", null], ["div", "<div>A</b>B</div>"]],
-    page: [["b", null], ["div", "<div>A</b>B</div>"], ["b", null]],
+    expected: [["b", null], ["div", null]],
+    page: [["b", null], ["div", null], ["b", null]],
   },
   {
     name: "attribute: values decoded as the browser decodes attribute values, with their spans",

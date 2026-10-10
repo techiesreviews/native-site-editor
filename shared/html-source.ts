@@ -143,6 +143,15 @@ export function elementEnd(html: string, tags: StartTag[], tagIndex: number, bou
   // one extra end tag belongs here, and it is the last one.
   if (closes.length !== opens + 1) return undefined;
   const closeStart = tag.end + closes[closes.length - 1];
+  // Inside, no end tag without its start tag: one (an ancestor's `</section>`,
+  // say) would end this element before the end tag counted here. A raw text
+  // element's content is text.
+  const content = RAW_TEXT.has(tag.name) ? "" : asciiLower(markup.slice(0, closeStart - tag.end));
+  const unopened = new Map<string, number>();
+  for (const match of content.matchAll(/<\/([a-z][^\t\n\f\r />]*)/g)) unopened.set(match[1], (unopened.get(match[1]) ?? 0) + 1);
+  for (let i = tagIndex + 1; i < tags.length && tags[i].start < closeStart; i++)
+    if (unopened.has(tags[i].name)) unopened.set(tags[i].name, unopened.get(tags[i].name)! - 1);
+  if ([...unopened.values()].some((count) => count > 0)) return undefined;
   const gt = html.indexOf(">", closeStart);
   if (gt < 0 || gt >= boundary) return undefined;
   return { tag, start: tag.start, end: gt + 1, close: { start: closeStart, end: gt + 1 } };

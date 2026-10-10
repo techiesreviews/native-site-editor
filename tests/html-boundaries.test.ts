@@ -111,7 +111,7 @@ test('production fallback fill and insertion preserve attributes, raw text and U
 test('elementEnd fails closed on an end tag written in a comment, raw text, an attribute or after <plaintext>',()=>{
   for(const source of['<div><!-- </div> --></div>','<div><style>p::after{content:"</div>"}</style></div>','<div><textarea></div></textarea></div>',
     '<div><span title="</div>"></span></div>','<head><meta content="</head>"><!-- </head> --></head>','<div><plaintext></div></plaintext></div>',
-    '<head><script><!--<script></head></script><title>X</title></head>'])
+    '<head><script><!--<script></head></script><title>X</title></head>','<div>A</section></div>','<div><p>A</span></p></div>'])
     assert.equal(elementEnd(source,startTags(source),0,source.length),undefined,source);
   const own='<style>/* <!-- */</style>';
   assert.equal(elementEnd(own,startTags(own),0,own.length)?.end,own.length);
