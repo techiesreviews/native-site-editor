@@ -488,6 +488,8 @@ test("a card slot creates a page from the combobox; one undo removes page and fi
   await expect.poll(async () => (await storedDraft(page, "work/oak-ash/index.html"))?.content).toContain("<h1>Oak &amp; Ash</h1>");
   await expect(frame(page).locator("section-work > card-project").last().locator("a")).toHaveAttribute("href", "/work/oak-ash/");
   await expect(input).toHaveCount(0);
+  await expect(page.locator("#status")).toHaveText("Created the page Oak & Ash at /work/oak-ash/ and filled the card from it");
+  await expect(addCard(page)).toBeFocused();
   await expect(page.locator(".card-fill")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Card: / })).toHaveCount(0);
   expect(await undo(page)).toBe(true);
@@ -759,6 +761,31 @@ for (const theme of ["light", "dark"]) {
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/harbour-lane-pottery/index.html");
   });
 }
+
+test("a blank card linked by hand, swapped to a look without a link slot: its title links and :host CSS joins the swap's undo step", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  const cssPath = "components/card-quote/card-quote.css";
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "components/card-quote/card-quote.html", content: quoteTemplate } });
+  const { added } = await openFillable(page, baseURL);
+  // A title and link typed into the card while Link to a page… is still open (fallbacks count as nothing).
+  const linked = added.replace(freshWithImage, freshWithImage.replace("Untitled project", "Oak").replace("      </card-project>", '        <a slot="link" href="/about/">About</a>\n      </card-project>'));
+  await page.evaluate(async (text) => {
+    const { monaco } = await import("/src/components/monaco.ts");
+    monaco.editor.getModels().find(model => model.uri.path.endsWith("/index.html"))!.setValue(text);
+  }, linked);
+  await expect.poll(() => source(page)).toBe(linked);
+  const linker = page.getByRole("group", { name: "Link the new card to a page" });
+  await linker.getByRole("button", { name: "Card: card-project" }).click();
+  await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+  await expect(linker.getByRole("button", { name: "Card: card-quote" })).toBeFocused();
+  await expect(frame(page).locator("section-work > card-quote h3 > a")).toHaveAttribute("href", "/about/");
+  await expect(frame(page).locator("section-work > card-quote h3 > a")).toHaveText("Oak");
+  await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(":host { position: relative; }\n");
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(linked);
+  await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
+});
 
 for (const positioned of [false, true]) {
   test(`swapping a blank card then filling a look with ${positioned ? "positioned" : "missing"} CSS: title link and CSS undo together`, async ({ page, baseURL }) => {

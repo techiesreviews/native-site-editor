@@ -237,16 +237,18 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 - **Card first:** Add card places a fresh instance of the items slot's card
   component, working from 0 items ([04](../tickets/04-prototype-making-components.md) §8,
   [09](../tickets/09-prototype-add-existing-page.md) §1).
-- **"Link to a page…" combobox:** all pages but the grid's own and 404, the
-  cards' folder first, "In this grid" greyed, Create page for an unknown
+- **"Link to a page…" combobox:** all pages but the grid's own and 404, one
+  plain list with the cards' folder first (no group headings, slice 101), "In this grid" greyed, Create page for an unknown
   address or title, one undo step ([09](../tickets/09-prototype-add-existing-page.md) §2–3).
-- **Fill mapping**, matching slots, info strip
-  ([09](../tickets/09-prototype-add-existing-page.md) §4–5). Card links follow
+- **Fill mapping**, matching slots
+  ([09](../tickets/09-prototype-add-existing-page.md) §4–5); filling closes the
+  combobox, no info strip or Change page (slice 101). Card links follow
   the card (decision 3): a link slot is filled; a card without one gets its
   title wrapped in a link, stretched over the card by CSS. No `stretched` class.
-- **Card look:** split Add card ▾ gallery and a look chip on the card; card
+- **Card look:** split Add card ▾ gallery and a look chip on a new card's
+  combobox, before it is linked (slice 101); card
   components then variants; content kept by slot role across looks, with
-  what doesn't fit kept aside in the editor while the page is open
+  what doesn't fit kept aside in the editor while the combobox is open
   ([09](../tickets/09-prototype-add-existing-page.md) §7–10, decision 12).
 - **Starter:** a second card look for the gallery.
 
@@ -302,7 +304,7 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 9. **Names without a hyphen** get a prefix from what they were made from: `section-`, `card-`, else `block-`; + New component's form shows the result as typed, and so does renaming in Edit component mode's bar.
 10. **Make component works on containers only:** `section`, `div`, `article`, `aside`, `figure`, `nav`, or a `header`/`footer` inside article, aside, main, nav or section. Headings, paragraphs, other text elements, images, links, buttons, lists and forms are refused, as are document elements (including `<main>` and `<body>`), head content, the page's own header/footer, components and anything inside an instance.
 11. **Touch drag** is out of scope for this run; click-insert works on touch.
-12. **Content kept aside on a look swap** lives in the editor while the page is open (a swap back restores it); it is gone after a reload or page switch; nothing is written to the HTML.
+12. **Content kept aside on a look swap** lives in the editor while the new card's "Link to a page…" combobox is open (a swap back restores it; slice 101 narrowed it from "while the page is open"); it is gone once the card is filled, the combobox closes, or after a reload or page switch; nothing is written to the HTML.
 
 ## Out of scope
 

@@ -84,7 +84,7 @@ export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, op
   title.id = "card-looks-title";
   box.setAttribute("aria-labelledby", title.id);
   const sub = node("p", "card-looks__sub", swap
-    ? `Card components and their variants, with this ${options.noun}'s content. It keeps its title, text, image and link; what a look has no place for is kept aside while the page is open.`
+    ? `Card components and their variants, with this ${options.noun}'s content. It keeps its title, text, image and link; what a look has no place for is kept aside while Link to a page… is open.`
     : "Card components and their variants, with the site's styles. A blank card of the look goes after the last one; link it to a page next.");
   const grid = node("div", "card-looks__grid");
   box.append(title, sub, grid);
