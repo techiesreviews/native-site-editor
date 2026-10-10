@@ -20,6 +20,33 @@
 .edit-mode__tag {
   font: 600 var(--type-small) / 1 var(--font-mono);
 }
+/* The tag renamed in place (build slice 76): a caret in its own text, no
+   field look; a muted prefix shows what a name with no dash becomes. */
+.edit-mode__tag[tabindex] {
+  padding: 1px 3px;
+  border-radius: 3px;
+  cursor: default;
+}
+.edit-mode__tag[tabindex]:focus-visible,
+.edit-mode__tag--renaming {
+  outline: var(--focus-ring);
+  outline-offset: 0;
+}
+.edit-mode__tag--renaming {
+  cursor: text;
+}
+.edit-mode__name {
+  outline: none;
+}
+.edit-mode__tag--renaming > .edit-mode__name {
+  /* A caret still shows with every letter deleted. */
+  display: inline-block;
+  min-width: 1ch;
+  caret-color: currentColor;
+}
+.edit-mode__prefix {
+  color: color-mix(in oklch, var(--component-text) 55%, transparent);
+}
 .edit-mode__dot {
   color: color-mix(in oklch, var(--component-text) 55%, transparent);
 }

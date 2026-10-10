@@ -15,6 +15,13 @@
 // The page instance stays the target for Done; placeholders show every
 // level's own fallbacks.
 //
+// The component's tag in the bar is renamed in place (build slice 76): a
+// double-click (or F2) puts a caret in its text, edited like the slot chips'
+// names, made valid as typed, a muted prefix (section-, card-, block-) shown
+// before a name with no dash. Enter or leaving commits, Esc cancels; the owner
+// renames the component everywhere and tells the mode (`retag`), or refuses,
+// and the old name comes back with the reason under the bar.
+//
 // Selecting a part of the template shows its slot chip after the element's
 // name in the edit bar label (slot-chip.ts). The chip reports a click, and a
 // slot renamed in place, to the mode's owner as a window event,
@@ -28,6 +35,9 @@ import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
 import { mountDropdown } from "../components/dropdown";
 import { componentIcon } from "./component-icon";
 import { slotChip } from "../components/slot-chip";
+import { refuse } from "../components/refusal-note";
+import { normaliseField, normaliseName, previewComponentTag, type NameSource } from "./component-names";
+import { templateNameSource } from "./component-rename";
 import type { EditComponentFrameMode } from "../components/native-preview";
 import type { SlotChipState } from "./component-model";
 import "./edit-component-mode.css";
@@ -59,6 +69,10 @@ export interface EditComponentModePorts {
   /** The slim bar changed: the canvas bar takes its parts again. */
   changed: () => void;
   back: (index: number) => void;
+  /** The source of the template the mode edits now, for a new name's prefix. */
+  template: () => string | undefined;
+  /** Renames the component the mode edits now to `tag` (a valid name): resolves to the reason it was refused, if so. */
+  rename: (tag: string) => Promise<string | undefined>;
 }
 
 export function createEditComponentMode(ports: EditComponentModePorts) {
@@ -161,20 +175,122 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     applyFit();
   }
 
+  // ---- The tag renamed in place. ----
+  let renaming: { before: string; name: HTMLElement; prefix: HTMLElement; source: NameSource } | undefined;
+  // A committed name waiting for the owner: the tag shows it, not editable again until told.
+  let pending = false;
+  const showPrefix = () => {
+    if (!renaming) return;
+    const typed = renaming.name.textContent ?? "";
+    const tag = previewComponentTag(typed, renaming.source);
+    renaming.prefix.textContent = tag === normaliseName(typed) ? "" : tag.slice(0, tag.length - normaliseName(typed).length);
+  };
+  function startRename(tag: HTMLElement) {
+    const name = tag.querySelector<HTMLElement>(".edit-mode__name"), prefix = tag.querySelector<HTMLElement>(".edit-mode__prefix");
+    const template = ports.template();
+    if (renaming || pending || !name || !prefix || template === undefined) return;
+    renaming = { before: name.textContent ?? "", name, prefix, source: templateNameSource(template) };
+    tag.classList.add("edit-mode__tag--renaming");
+    try { name.contentEditable = "plaintext-only"; } catch { /* below */ }
+    if (name.contentEditable !== "plaintext-only") name.contentEditable = "true";
+    name.spellcheck = false;
+    name.setAttribute("role", "textbox");
+    name.setAttribute("aria-label", "Component name");
+    name.focus();
+    const range = document.createRange();
+    range.selectNodeContents(name);
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+  function endRename(commit: boolean) {
+    const was = renaming;
+    if (!was) return;
+    renaming = undefined;
+    const { name, prefix } = was;
+    const tag = name.parentElement!;
+    const focused = document.activeElement === name;
+    tag.classList.remove("edit-mode__tag--renaming");
+    name.removeAttribute("contenteditable");
+    name.removeAttribute("role");
+    name.removeAttribute("aria-label");
+    const typed = normaliseName(name.textContent ?? "", true);
+    const next = commit && typed ? previewComponentTag(typed, was.source) : was.before;
+    prefix.textContent = "";
+    name.textContent = next;
+    if (focused) tag.focus();
+    if (next === was.before) return;
+    pending = true;
+    void ports.rename(next).then((reason) => reason, (error: unknown) => error instanceof Error ? error.message : "The component could not be renamed.").then((reason) => {
+      pending = false;
+      if (!reason) return;
+      if (name.isConnected) name.textContent = was.before;
+      refuse(reason, { anchor: tag.isConnected ? tag : undefined });
+    });
+  }
+  /** The current level's tag: its name takes a caret on a double-click or F2. */
+  function tagLabel(text: string) {
+    const out = node("code", "edit-mode__tag");
+    const prefix = node("span", "edit-mode__prefix");
+    prefix.setAttribute("aria-hidden", "true");
+    const name = node("span", "edit-mode__name", text);
+    out.append("<", prefix, name, ">");
+    out.tabIndex = 0;
+    out.setAttribute("aria-current", "true");
+    out.setAttribute("aria-label", `<${text}>, the component edited. Double-click or F2 to rename it.`);
+    out.title = "Double-click to rename the component";
+    out.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      startRename(out);
+    });
+    name.addEventListener("input", (event) => {
+      if (!renaming || (event as InputEvent).isComposing) return;
+      if (name.childElementCount) name.textContent = name.textContent;
+      normaliseField(name);
+      showPrefix();
+    });
+    name.addEventListener("compositionend", () => { if (renaming) { normaliseField(name); showPrefix(); } });
+    name.addEventListener("beforeinput", (event) => {
+      if (renaming && (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak")) event.preventDefault();
+    });
+    name.addEventListener("focusout", () => queueMicrotask(() => {
+      if (renaming?.name === name && document.activeElement !== name) endRename(true);
+    }));
+    out.addEventListener("keydown", (event) => {
+      if (renaming) {
+        // The name's own keys: nothing reaches the editor's shortcuts.
+        event.stopPropagation();
+        if (event.isComposing || event.keyCode === 229) return;
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          endRename(event.key === "Enter");
+        }
+        return;
+      }
+      if (event.key === "F2" && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        startRename(out);
+      }
+    });
+    return out;
+  }
+
   function send() {
     ports.frame(now && { path: now.path, node: [...now.node], tag: now.tag,
       nested: now.chain.slice(1).map(({ tag, node }) => ({ tag, node: [...node] })) });
   }
   function render() {
     if (!now) return;
+    // A rename typed when the mode moves on is dropped.
+    if (renaming) { renaming.name.textContent = renaming.before; endRename(false); }
     title.replaceChildren(componentIcon(12), node("span", "edit-mode__verb", "Editing"));
     now.chain.forEach((level, index) => {
       if (index) title.append(node("span", "edit-mode__separator", "›"));
       const current = index === now!.chain.length - 1;
-      const crumb = current ? node("code", "edit-mode__tag", `<${level.tag}>`)
+      const crumb = current ? tagLabel(level.tag)
         : button(`<${level.tag}>`, () => ports.back(index), "edit-mode__tag edit-mode__crumb");
-      if (current) crumb.setAttribute("aria-current", "true");
-      else crumb.setAttribute("aria-label", `Back to <${level.tag}>`);
+      if (!current) crumb.setAttribute("aria-label", `Back to <${level.tag}>`);
       title.append(crumb);
     });
     noteLabel.textContent = notes.length > 1 ? `${notes[0]} (+${notes.length - 1} more)` : notes[0] ?? "";
@@ -208,6 +324,7 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     leave() {
       const was = now;
       if (!was) return undefined;
+      if (renaming) { renaming.name.textContent = renaming.before; endRename(false); }
       fitObserver?.disconnect();
       if (fitFrame !== undefined) cancelAnimationFrame(fitFrame);
       fitFrame = undefined;
@@ -237,6 +354,19 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     back(index: number) {
       if (!now) return;
       now.chain = backChain(now.chain, index);
+      render();
+      send();
+      ports.changed();
+    },
+    /**
+     * The component at `from` is now `to` (renamed, or that undone or redone): the levels that
+     * edit it follow, the frame is told, and `withNotes` replace the bar's notes.
+     */
+    retag(from: string, to: { tag: string; templatePath: string }, withNotes: readonly string[] = []) {
+      if (!now) return;
+      for (const level of now.chain) if (level.templatePath === from) Object.assign(level, to);
+      if (now.templatePath === from) Object.assign(now, to);
+      notes = [...withNotes];
       render();
       send();
       ports.changed();

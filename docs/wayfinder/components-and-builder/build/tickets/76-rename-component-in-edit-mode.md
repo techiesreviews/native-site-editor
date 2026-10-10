@@ -1,7 +1,7 @@
 ---
 title: Rename the component from Edit component mode's bar
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [41-edit-mode-shell, 45-slot-change-rewrites-pages, 72-atomic-redo-with-files]
 builder: claude ★
@@ -28,3 +28,9 @@ Lex (2026-10-09): Make component names the component automatically (slice 22), s
 - Nightly spec: with two pages using the component, in Edit component mode double-click the tag, type "showcase", Enter: the tag reads `<section-showcase>`, the files are at the new path and gone from the old, both pages' instances renamed and still rendered, the mode still open; one undo restores everything and redo applies it again; Esc cancels; a taken name is refused.
 
 **Decided (Lex, 2026-10-09):** exact tag selectors that name the old tag in the site's own stylesheets are renamed too, in the same undo step; the bar notes which files changed. (This replaces the earlier "leave them and list them".)
+
+## Done (2026-10-10)
+
+- Double-click (or F2) on the tag in Edit component mode's bar puts a caret in its name (no field look): made valid as typed (`normaliseField`), a muted `section-`/`card-`/`block-` prefix shown before a name with no dash (`templateNameSource`); Enter or leaving commits, Esc cancels, a taken or reserved name is refused with the reason under the tag and the old name comes back. `componentRenamePlan` (`component-rename.ts`, pure, lazy) moves the folder and its files, renames the instances on every page and in other templates (`renameInstances`) and exact tag selectors in the component's CSS and the site's stylesheets (`renameTagSelectors`, Lex's decision); one `applyNativeOperation` (moves + edits, every file read proven) is one undo step. The mode follows the template to its new path and back on Undo/Redo (`followRename`); the bar's note names the stylesheets changed. Main bundle +0.7 KB gzip (dev was already over the budget, slice 97).
+- Commit "Rename the component in place from Edit component mode's bar (slice 76)".
+- Tests: `tests/component-rename.test.ts` (14: moves, own CSS, two pages incl. attributes and two instances, page not open, fallback in another template, text left alone, stylesheets, nesting, taken, reserved, folder there, same name, prefixes, flat component, messages); nightly `native-rename-component-actual.spec.ts` (@actual: Esc, taken, typed with prefix, files moved, both pages, stylesheet note, Undo and Redo with the mode on, About rendered).

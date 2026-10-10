@@ -161,8 +161,12 @@ export interface ComponentDeps {
    * opened on, so Undo there after Done takes them back). Returns the release.
    */
   shareHistory?: (path: string, owner: string) => () => void;
-  /** Applies template edits as one history step; page edits can join the same map. */
-  operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; done: string; undone: string;
+  /** Every file of the site (renaming a component moves its folder). */
+  files?: () => string[];
+  /** Reads every page, template and stylesheet: resolves to why it could not. */
+  index?: () => Promise<string | undefined>;
+  /** Applies template edits (and moves) as one history step; page edits can join the same map. */
+  operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; moves?: { from: string; to: string }[]; done: string; undone: string;
     current?: () => boolean; selection?: { before: { path: string; node: number[] }; after: { path: string; node: number[] } } }) => Promise<string | undefined>;
 }
 
@@ -880,10 +884,86 @@ export function createComponentTools(deps: ComponentDeps) {
   function letGoLevels(keep: number) {
     for (const release of levelShares.splice(keep)) release();
   }
+  // Renames made in the mode (build slice 76): the mode follows its template across each one's
+  // Undo and Redo. Each holds the renamed template's share of the page's history.
+  const modeRenames: { from: { tag: string; templatePath: string }; to: { tag: string; templatePath: string }; release?: () => void }[] = [];
+
+  /**
+   * Renames the component the mode edits now to `name` (build slice 76): its folder and files move,
+   * its instances on every page and in other templates and the tag selectors naming it in the site's
+   * stylesheets follow, as one operation and one undo step. Resolves to why it was refused.
+   */
+  async function renameComponent(name: string): Promise<string | undefined> {
+    const mode = editMode?.active();
+    if (!mode || !deps.operation || !deps.files || deps.currentPath() !== mode.templatePath || explicitTemplate?.revision !== deps.revision())
+      return "Open the component in Edit component mode before renaming it.";
+    const revision = deps.revision(), entry = explicitTemplate, proof = JSON.stringify(mode);
+    const current = () => deps.revision() === revision && explicitTemplate === entry && deps.currentPath() === mode.templatePath
+      && JSON.stringify(editMode?.active()) === proof;
+    const changed = "The component or the repository changed meanwhile; it was not renamed.";
+    let plan: typeof import("./component-rename");
+    try {
+      const [loaded, problem] = await Promise.all([import("./component-rename"), deps.index?.()]);
+      if (problem) return problem;
+      plan = loaded;
+    } catch (error) {
+      void handleChunkLoadFailure(error);
+      return "Renaming could not load. Try again.";
+    }
+    const now = site();
+    if (!current() || !now) return changed;
+    const files = deps.files(), present = new Set(files), all = deps.sources();
+    // Only files that are there: a component's stylesheet it doesn't have is not read.
+    const sources = Object.fromEntries(Object.entries(all).filter(([path]) => present.has(path)));
+    const from = mode.tag;
+    const renamed = plan.componentRenamePlan({ from, typed: name, components: now.components, files, sources, pages: Object.values(now.routes) });
+    if ("unchanged" in renamed) return undefined;
+    if ("error" in renamed) return renamed.error;
+    const { tag, template } = renamed, { done, undone, notes } = plan.renameMessages(from, renamed);
+    const selected = deps.selection();
+    const part = selected?.path === mode.templatePath && selected.node ? [...selected.node] : [0];
+    const fromLevel = { tag: from, templatePath: mode.templatePath }, toLevel = { tag, templatePath: template };
+    // The template moves from under the mode: it stays on until told where it went.
+    modeOpening = true;
+    let error: string | undefined;
+    try {
+      error = await deps.operation({ expectedSources: new Map(Object.entries(sources)), moves: renamed.moves, edits: renamed.edits,
+        done, undone, current,
+        selection: { before: { path: mode.templatePath, node: part }, after: { path: template, node: part } } });
+    } finally {
+      modeOpening = false;
+    }
+    if (error) { barKey = ""; renderBar(); return error; }
+    if (deps.revision() !== revision || deps.currentPath() !== template || JSON.stringify(editMode?.active()) !== proof) { barKey = ""; renderBar(); return undefined; }
+    explicitTemplate = { path: template, revision };
+    modeRenames.push({ from: fromLevel, to: toLevel, release: deps.shareHistory?.(template, mode.path) });
+    editMode!.retag(fromLevel.templatePath, toLevel, notes);
+    // The part selected before stays selected in the renamed template.
+    const preview = deps.preview(), target = { path: template, node: part };
+    preview?.selectAfterUpdate(target);
+    preview?.flushPendingUpdate?.();
+    preview?.selectNode(target);
+    return undefined;
+  }
+
+  /** The mode's template went elsewhere by a rename's Undo or Redo (the file now open): the mode follows it. */
+  function followRename() {
+    const mode = editMode?.active(), path = deps.currentPath();
+    if (!mode || !path || path === mode.templatePath || explicitTemplate?.path !== mode.templatePath || explicitTemplate.revision !== deps.revision()) return;
+    const pair = modeRenames.find((each) => each.from.templatePath === mode.templatePath && each.to.templatePath === path)
+      ?? modeRenames.find((each) => each.to.templatePath === mode.templatePath && each.from.templatePath === path);
+    if (!pair) return;
+    const level = pair.from.templatePath === path ? pair.from : pair.to;
+    if (site()?.components[level.tag] !== path) return;
+    explicitTemplate = { path, revision: explicitTemplate.revision };
+    editMode!.retag(mode.templatePath, level);
+  }
+
   /** Ends the mode, if it is on; the instance it was on. */
   function leaveMode() {
     const was = editMode?.leave();
     if (was) deps.refreshStructure?.();
+    for (const each of modeRenames.splice(0)) each.release?.();
     keptNames.clear();
     letGoLevels(0);
     modeShare?.();
@@ -897,6 +977,8 @@ export function createComponentTools(deps: ComponentDeps) {
       frame: (mode) => deps.preview()?.editComponent?.(mode),
       changed: () => { barKey = ""; renderBar(); deps.refreshBar(); deps.refreshStructure?.(); },
       back: (index) => { void navigateMode(index); },
+      template: () => { const path = editMode?.active()?.templatePath; return path === undefined ? undefined : deps.sources()[path]; },
+      rename: renameComponent,
     });
   }).catch((error: unknown) => { editModeLoad = undefined; throw error; });
 
@@ -907,6 +989,7 @@ export function createComponentTools(deps: ComponentDeps) {
   let barKey = "";
   let barTag = "";
   function renderBar() {
+    if (!modeOpening) followRename();
     if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
     if (entryShare?.opened && entryShare.opened !== explicitTemplate) letGo(entryShare);
     // The mode lasts while its template stays open over its page; another file (Files, a page's element) ends it.
@@ -1969,12 +2052,14 @@ export function createComponentTools(deps: ComponentDeps) {
      * opening (`entry`, the same object until the template is opened again).
      */
     editModeTemplate() {
+      if (!modeOpening) followRename();
       const mode = editMode?.active();
       return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath && explicitTemplate.revision === deps.revision()
         ? { tag: mode.tag, path: mode.templatePath, page: mode.path, entry: explicitTemplate as object } : undefined;
     },
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
+      if (!modeOpening) followRename();
       if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
       return explicitTemplate && explicitTemplate.path === deps.currentPath() && explicitTemplate.revision === deps.revision()
         ? { ...explicitTemplate } : undefined;
@@ -1983,6 +2068,7 @@ export function createComponentTools(deps: ComponentDeps) {
     instanceSelection(selection: NativePreviewSelection): NativePreviewSelection | undefined {
       const host = selection.host;
       if (!host) return selection;
+      if (!modeOpening) followRename();
       if (explicitTemplate && explicitTemplate.path === deps.currentPath() && explicitTemplate.revision === deps.revision()) return selection;
       if (!host.path || !host.node || deps.previewPage() !== host.path) return;
       const at = instanceAt(host.path, host.node);
