@@ -46,6 +46,13 @@ test("a section moves among its siblings by the editor's engine (MCP move_sectio
   const crlf = `<main>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n  <section>B</section>\r\n  <section>C</section>\r\n</main>\r\n`;
   assert.equal(moved(crlf, [0, 0], [0], 3)!.html, `<main>\r\n  <section>B</section>\r\n  <section>C</section>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n</main>\r\n`);
   assert.equal(moved(crlf, [0, 2], [0], 0)!.html, `<main>\r\n  <section>C</section>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n  <section>B</section>\r\n</main>\r\n`);
+  // In an instance's items slot a section keeps its own slot; without the items rule the instance stays closed.
+  const list = `<main>\n  <section-list>\n    <section>A</section>\n    <section slot="more">X</section>\n    <section>B</section>\n  </section-list>\n</main>`;
+  const items = (tag: string) => tag === "section-list";
+  const inSlot = nativeSectionMovePlan(list, [0, 0, 1], [0, 0], 0, items);
+  assert.equal(inSlot.status, "moved");
+  if (inSlot.status === "moved") assert.equal(applyGuardedSourceEdit(list, inSlot.edit), `<main>\n  <section-list>\n    <section slot="more">X</section>\n    <section>A</section>\n    <section>B</section>\n  </section-list>\n</main>`);
+  assert.equal(nativeSectionMovePlan(list, [0, 0, 0], [0, 0], 3).status, "refused");
   // Move up/down on a section (the edit bar, Alt+Up/Down) is the same engine, one edit.
   const up = nativeElementSiblingMove(crlf, [0, 1], "up");
   assert.equal(up.status, "moved");
