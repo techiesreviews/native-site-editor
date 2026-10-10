@@ -253,7 +253,16 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   await expect.poll(() => page.locator("#content-secondary .code-editor__overridden")
     .evaluateAll((marks) => marks.map((mark) => mark.textContent).join("").replace(/\u00a0/g, " "))).toBe("color: var(--accent);");
 
-  // In the page's own paragraph the same shared rule wins.
+  // In the page's own paragraph the same shared rule wins. Edit component mode
+  // shades the page around the footer, so Done comes first. It selects the
+  // footer, whose edit bar sits over this short page's paragraph: the
+  // paragraph is selected from Structure first.
+  await page.locator(".canvas-bar").getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Site footer");
+  await page.getByRole("treeitem", { name: /^Paragraph Read the notes first/ }).locator(".page-structure__label").click();
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
   await page.mouse.move(0, 0);
   const pageLink = frame.locator("main a");
   await pageLink.click();
