@@ -1,3 +1,4 @@
+import { dropBlockName } from "./drop-target";
 import { blockLabel } from "./block-insert";
 import { nativeOutline, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
@@ -73,4 +74,28 @@ export function nativeElementDepthMove(source: string, from: readonly number[], 
   if (previous?.opaque && previous.name.includes("-")) return refuse(`${blockLabel(previous)} is a component: its parts are filled by editing them.`);
   if (!previous || !["section", "div"].includes(previous.name)) return refuse("Alt+→ moves a block into the Section or Div just above it; there is none.");
   return nativeElementMovePlan(source, from, { parent: [...from.slice(0, -1), previousIndex], index: previous.children.length }, items);
+}
+
+export type NativeMoveDirection = "up" | "down" | "out" | "in";
+
+/** The same keyboard move rule for canvas selections and Structure rows. */
+export function nativeElementKeyMove(source: string, from: readonly number[], direction: NativeMoveDirection, items?: ItemsSlotRule): NativeElementMoveResult {
+  return direction === "out" || direction === "in" ? nativeElementDepthMove(source, from, direction, items) : nativeElementSiblingMove(source, from, direction, items);
+}
+
+/** Container names come from the source before a successful keyboard move. */
+export function nativeElementMoveMessage(source: string, from: readonly number[], direction: NativeMoveDirection): string {
+  let node = nativeOutline(source);
+  for (const step of from) node = node?.children[step];
+  const parent = node?.parent;
+  const label = (container: NativeOutline | undefined) => container ? dropBlockName(container.name, container.className) : "container";
+  if (direction === "out") return `Moved out of ${label(parent)} into ${label(parent?.parent)}`;
+  if (direction === "in") {
+    let index = from.at(-1)! - 1;
+    if (parent?.opaque && parent.name.includes("-")) {
+      while (index >= 0 && parent.children[index].slot !== node?.slot) index--;
+    }
+    return `Moved into ${label(parent?.children[index])}`;
+  }
+  return `Moved ${direction} in ${label(parent)}`;
 }

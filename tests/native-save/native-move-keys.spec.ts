@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Alt+Up and Alt+Down move the selected section one sibling position from
 // the preview, the edit bar and the page structure sidebar: one undo step,
-// nothing at the ends. Ordinary elements do not move from the bar.
+// nothing at the ends. Other blocks move among their own siblings too.
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -69,9 +69,9 @@ test("Alt+Up/Down in the preview moves the selected section as one undo step and
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // A heading is an atom: it stays where it is and the key is not intercepted
-  // (the click also starts typing in it, where Alt+arrows belong to the caret).
-  await frame(page).locator(".hero h1").click();
+  // While typing, Alt+arrows retain their text meaning.
+  await frame(page).locator(".hero h1").dblclick();
+  await expect(frame(page).locator(".hero h1")).toHaveAttribute("contenteditable", /.+/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await status(page).evaluate((el) => { el.textContent = ""; });
   await page.keyboard.press("Alt+ArrowDown");
@@ -98,16 +98,16 @@ test("Alt+Up/Down with focus in the edit bar moves the section and keeps focus o
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
-  // Only whole sections move from the bar: a paragraph has no move buttons,
-  // and Alt+Up from its bar leaves the page exactly as it was.
+  // Paragraphs keep no move buttons; sibling keys still work from the bar.
   await select(page, "section.filler p:nth-of-type(2)");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   for (const name of ["Move up", "Move down", "Move to"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
   await status(page).evaluate((el) => { el.textContent = ""; });
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await expect(status(page)).not.toHaveText("Element moved");
-  await expect.poll(() => frame(page).locator("section.filler > p").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-key")))).toEqual(["filler-1", "filler-2", "filler-3", "filler-4", "filler-5"]);
+  await expect(status(page)).toHaveText("Moved up in Section");
+  await expect.poll(() => frame(page).locator("section.filler > p").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-key")))).toEqual(["filler-2", "filler-1", "filler-3", "filler-4", "filler-5"]);
+  await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
@@ -147,7 +147,7 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await row(page, "Heading A native browser preview").click();
   await status(page).evaluate((el) => { el.textContent = ""; });
   await page.keyboard.press("Alt+ArrowDown");
-  await expect(status(page)).toHaveText("Element moved");
+  await expect(status(page)).toHaveText("Moved down in Section");
   await expect(row(page, "Heading A native browser preview")).toBeFocused();
   await expect(frame(page).locator("section.hero > p:first-child + h1")).toHaveCount(1);
   const heading = indexSource.match(/    <h1[^>]*>[^<]*<\/h1>\n/)![0];
@@ -201,7 +201,7 @@ test("Alt+Left/Right in Structure moves a card across its Div, retains focus, an
   await movedCard(page).click();
   await page.keyboard.press("Alt+ArrowLeft");
   await expect(frame(page).locator("#work > div + card-project")).toHaveCount(1);
-  await expect(status(page)).toHaveText("Moved out of the container");
+  await expect(status(page)).toHaveText("Moved out of Div (grid) into Section");
   await expect(movedCard(page)).toBeFocused();
   await expect(movedCard(page)).toHaveAttribute("aria-level", "3");
   const outside = await cardsSource(page);
@@ -211,7 +211,7 @@ test("Alt+Left/Right in Structure moves a card across its Div, retains focus, an
   await movedCard(page).focus();
   await page.keyboard.press("Alt+ArrowRight");
   await expect(frame(page).locator("#work .cards > card-project")).toHaveCount(2);
-  await expect(status(page)).toHaveText("Moved into the container");
+  await expect(status(page)).toHaveText("Moved into Div (grid)");
   await expect(tree(page).getByRole("treeitem", { name: /^Block/ })).toHaveAttribute("aria-expanded", "true");
   await expect(movedCard(page)).toBeFocused();
   await expect(movedCard(page)).toHaveAttribute("aria-level", "4");
@@ -239,14 +239,79 @@ test("Alt+Left/Right on the canvas moves a whole card out and back, one undo ste
   await page.locator(".native-preview-frame").focus();
   await page.keyboard.press("Alt+ArrowLeft");
   await expect(frame(page).locator("#work > div + card-project")).toHaveCount(1);
-  await expect(status(page)).toHaveText("Moved out of the container");
+  await expect(status(page)).toHaveText("Moved out of Div (grid) into Section");
   const outside = await cardsSource(page);
   await page.locator(".native-preview-frame").focus();
   await page.keyboard.press("Alt+ArrowRight");
   await expect(frame(page).locator("#work .cards > card-project")).toHaveCount(2);
-  await expect(status(page)).toHaveText("Moved into the container");
+  await expect(status(page)).toHaveText("Moved into Div (grid)");
   await cardsUndo(page);
   await expect.poll(() => cardsSource(page)).toBe(outside);
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(original);
+});
+
+
+test("Alt+Up/Down on a canvas Paragraph moves among siblings, stays selected, and undoes each press", async ({ page }) => {
+  await editorMounted(page);
+  const original = await cardsSource(page);
+  const order = () => frame(page).locator("section.filler > p").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-key")));
+  await frame(page).locator('section.filler p[data-key="filler-2"]').click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(order).toEqual(["filler-2", "filler-1", "filler-3", "filler-4", "filler-5"]);
+  await expect(status(page)).toHaveText("Moved up in Section");
+  const up = await cardsSource(page);
+  // No re-selection: Down acts on the same Paragraph at its new path.
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(order).toEqual(["filler-1", "filler-2", "filler-3", "filler-4", "filler-5"]);
+  await expect(status(page)).toHaveText("Moved down in Section");
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(up);
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(original);
+});
+
+test("Alt+Up/Down on a canvas card moves among its section component's items, one undo per press", async ({ page, baseURL }) => {
+  await openCards(page, baseURL);
+  const edit = async (path: string, content: string) => {
+    const response = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+    expect(response.ok()).toBe(true);
+  };
+  await edit("components/section-work/section-work.html", '<section class="flow">\n  <slot name="title"><h2>Recent work</h2></slot>\n  <div class="cards"><slot><card-project></card-project></slot></div>\n</section>\n');
+  await edit("components/section-work/section-work.css", ":host { display: block; }\n.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }\n");
+  const home = (await cardsSource(page))!;
+  const made = home.replace('<section class="flow" id="work">', '<section-work id="work">').replace('<h2>Recent work</h2>\n      <div class="cards">', '<h2 slot="title">Recent work</h2>')
+    .replace(/<\/card-project>\n      <\/div>\n    <\/section>/, "</card-project>\n    </section-work>");
+  expect(made).toContain('</card-project>\n    </section-work>');
+  await edit("index.html", made);
+  await page.reload();
+  const titles = frame(page).locator('section-work > card-project > h3[slot="title"]');
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  const original = await cardsSource(page);
+  await select(page, "section-work > card-project:nth-of-type(2)");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card project");
+  for (const name of ["Move up", "Move down"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect(titles).toHaveText(["Harbour Lane Pottery", "Fern & Kettle"]);
+  await expect(status(page)).toHaveText("Moved up in Section work");
+  const up = await cardsSource(page);
+  // First in its items slot: the title is not a sibling item and no history is added.
+  await status(page).evaluate(el => { el.textContent = ""; });
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect(status(page)).toHaveText("");
+  expect(await cardsSource(page)).toBe(up);
+  await page.locator(".native-preview-frame").focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery"]);
+  await expect(status(page)).toHaveText("Moved down in Section work");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Card project");
+  await cardsUndo(page);
+  await expect.poll(() => cardsSource(page)).toBe(up);
   await cardsUndo(page);
   await expect.poll(() => cardsSource(page)).toBe(original);
 });

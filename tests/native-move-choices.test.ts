@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeElementDepthMove, nativeElementMovePlan, nativeElementSiblingMove } from "../src/page-builder/native-move-choices";
+import { nativeElementDepthMove, nativeElementMovePlan, nativeElementSiblingMove, nativeElementKeyMove, nativeElementMoveMessage } from "../src/page-builder/native-move-choices";
 import { applyGuardedSourceEdit } from "../src/page-builder/native-operations";
 
 test("sibling paths remain exact with repeated identical nodes and distinguish edges from refusals", () => {
@@ -199,4 +199,34 @@ test("Alt left/right moves an items child out after its instance or into the pre
   assert.equal(nativeElementDepthMove(band, [0, 0, 0], "out", workItems).status, "refused");
   const otherSlot = '<main><div><section-work><div slot="more"></div><p slot="items">A</p></section-work></div></main>';
   assert.equal(nativeElementDepthMove(otherSlot, [0, 0, 0, 1], "in", workItems).status, "refused");
+});
+
+
+test("keyboard move messages name the old and new containers from the painted source", () => {
+  const source = '<main><section><div class="flow"><p>A</p><p>B</p></div><div class="cards"><p>C</p></div><p>D</p></section></main>';
+  assert.equal(nativeElementMoveMessage(source, [0, 0, 0, 1], "out"), "Moved out of Div (stack) into Section");
+  assert.equal(nativeElementMoveMessage(source, [0, 0, 2], "in"), "Moved into Div (grid)");
+  assert.equal(nativeElementMoveMessage(source, [0, 0, 0, 1], "up"), "Moved up in Div (stack)");
+  assert.equal(nativeElementMoveMessage(source, [0, 0, 0], "down"), "Moved down in Section");
+  const items = '<main><section-work><div slot="items" class="cards"></div><h2 slot="title">Title</h2><card-project slot="items"></card-project></section-work></main>';
+  assert.equal(nativeElementMoveMessage(items, [0, 0, 2], "up"), "Moved up in Section work");
+  assert.equal(nativeElementMoveMessage(items, [0, 0, 0], "down"), "Moved down in Section work");
+  assert.equal(nativeElementMoveMessage(items, [0, 0, 2], "in"), "Moved into Div (grid)");
+});
+
+test("canvas and Structure keyboard rule moves Paragraphs and cards with the same selection and refusals", () => {
+  const source = '<main><section><p>A</p><p>B</p><card-project></card-project></section></main>';
+  for (const direction of ["up", "down"] as const) {
+    const result = nativeElementKeyMove(source, [0, 0, 1], direction);
+    assert.equal(result.status, "moved");
+    if (result.status === "moved") {
+      assert.deepEqual(result.selection, [0, 0, direction === "up" ? 0 : 2]);
+      const output = applyGuardedSourceEdit(source, result.edit)!.replace(/>\s+</g, "><");
+      assert.ok(output.includes(direction === "up" ? "<p>B</p><p>A</p><card-project>" : "<p>A</p><card-project></card-project><p>B</p>"));
+    }
+  }
+  const items = '<main><section-work><h2 slot="title">Title</h2><card-project>A</card-project><card-project>B</card-project></section-work></main>';
+  assert.equal(nativeElementKeyMove(items, [0, 0, 1], "down", workItems).status, "moved");
+  assert.deepEqual(nativeElementKeyMove(items, [0, 0, 1], "up", workItems), { status: "stayed", reason: "edge" });
+  assert.equal(nativeElementKeyMove(items, [0, 0, 0], "down", workItems).status, "refused");
 });

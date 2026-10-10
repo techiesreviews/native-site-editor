@@ -181,8 +181,9 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-// Only a whole section moves from the bar. A child (a heading here) shows no
-// Move up/down or Move to, and Alt+Up from its bar leaves the source alone.
+// Only a whole section has move buttons in the bar. A child (a paragraph here)
+// shows no Move up/down or Move to; Alt+Up from its bar steps it among its
+// siblings (ticket 78), one undo step.
 test("a child of a section has no move controls; the section keeps them", async ({ page }) => {
   const toolbar = bar(page);
   const order = () => frame(page).locator(".hero > *").evaluateAll((els) => els.map((el) => el.tagName));
@@ -193,13 +194,9 @@ test("a child of a section has no move controls; the section keeps them", async 
   const before = await order();
   await toolbar.getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await page.waitForTimeout(300);
-  expect(await order()).toEqual(before);
-  // Alt+Up with focus in the page does not move it either.
-  await frame(page).locator(".hero p.lead").click();
-  await page.keyboard.press("Alt+ArrowUp");
-  await page.waitForTimeout(300);
-  expect(await order()).toEqual(before);
+  await expect.poll(order).not.toEqual(before);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(order).toEqual(before);
   await frame(page).locator("section.cards").evaluate((el) => (el as HTMLElement).click());
   for (const name of ["Move up", "Move down"]) await expect(toolbar.getByRole("button", { name, exact: true })).toBeVisible();
   // The section still moves with Alt+Down from the page, as one undo step.
@@ -345,8 +342,8 @@ test("roving focus from the grip skips the disabled Move up of the first section
   await expect(toolbar.locator(".edit-bar__handle")).toBeFocused();
 });
 
-// A card of a grid has no move arrows, and Alt+Right in the page does not move it.
-test("a card has no move arrows and the page's Alt+arrows leave it in place", async ({ page }) => {
+// A card of a grid has no move arrows; Alt+Down from its bar steps it among its siblings (ticket 78).
+test("a card has no move arrows and Alt+Down steps it among its siblings", async ({ page }) => {
   const row = page.getByRole("treeitem", { name: "Section", exact: true });
   await row.locator(".page-structure__toggle").click();
   await page.getByRole("treeitem", { name: /^Project card Reusable cards$/ }).locator(".page-structure__label").click();
@@ -357,6 +354,7 @@ test("a card has no move arrows and the page's Alt+arrows leave it in place", as
   const before = await cards();
   await toolbar.getByRole("button", { name: "Duplicate", exact: true }).focus();
   await page.keyboard.press("Alt+ArrowDown");
-  await page.waitForTimeout(300);
-  expect(await cards()).toEqual(before);
+  await expect.poll(cards).not.toEqual(before);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(cards).toEqual(before);
 });

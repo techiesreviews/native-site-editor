@@ -181,12 +181,12 @@ test("a child has no Move down or Move to; its section's Move down still works a
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect(bar.getByRole("button", { name: "Move down", exact: true })).toHaveCount(0);
   await expect(bar.getByRole("button", { name: "Move to", exact: true })).toHaveCount(0);
-  // Alt+Down from the child's bar does not move it.
+  // Alt+Down from the child's bar steps it past its sibling (ticket 78), one undo step.
   const before = await source();
   await bar.getByRole("button", { name: "Bold", exact: true }).focus();
   await page.keyboard.press("Alt+ArrowDown");
-  await page.waitForTimeout(300);
-  expect(await source()).toBe(before);
+  await expect(frame.locator("#first > p").first()).toHaveAttribute("id", "second");
+  await undo(); await expect.poll(source).toBe(before);
 
   await frame.locator("#first").evaluate((el) => (el as HTMLElement).click());
   const down = bar.getByRole("button", { name: "Move down", exact: true });

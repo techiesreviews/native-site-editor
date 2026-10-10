@@ -1,7 +1,7 @@
 ---
 title: "Alt+↑/↓ moves any block among its siblings on the canvas"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [39-alt-arrow-depth-keys]
 builder: sol
@@ -15,3 +15,9 @@ From slice 39 (see its Done note): on the canvas Alt+↑/↓ still moves only Se
 ## Done when
 
 - Unit tests for the sibling move on the canvas path; the nightly move-keys spec covers Alt+↑/↓ on a Paragraph and a card on the canvas, with one undo each; the updated existing assertion still checks Sections.
+
+## Done (2026-10-10)
+
+- Alt+↑/↓ on the canvas (and from the edit bar, focus in the bar or on the name handle) steps any selected non-Section block among its siblings through the same rule as Structure rows (`nativeElementKeyMove`, one guarded helper `moveNativeBlock` in `main.ts`): same refusals, nothing at the ends, one undo step, the block stays selected; items-slot children step among their slot's own items. Sections keep `moveNativeSection`; no move buttons for non-Sections; template parts in Edit component mode don't step (as on their Structure rows). Move messages name the containers with slice 33's labels (`nativeElementMoveMessage`): "Moved out of Div (grid) into Section", "Moved into Div (grid)", "Moved up in Section work".
+- Commit: see `git log --grep "slice 78"` (built by Sol).
+- Tests: `tests/native-move-choices.test.ts` (messages, the key-move rule for Paragraphs and items-slot cards); nightly `native-move-keys.spec.ts` (canvas Paragraph and a `section-work` card, one undo each; Section assertions kept; new messages), `native-edit-bar-label.spec.ts` / `native-edit-bar-groups.spec.ts` (children now step from the bar, one undo).

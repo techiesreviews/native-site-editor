@@ -64,6 +64,8 @@ export interface PageStructurePorts {
   readonly wrapperAround: (inner: string, at: number, names: string[]) => ElementRange | undefined;
   /** Which slots of a component are items slots: blocks in them drag by the bar's name as page blocks do. */
   readonly itemsSlots: () => ItemsSlotRule;
+  /** Canvas and edit-bar sibling keys use the host's fresh source and one transaction. */
+  readonly moveBlock: (selection: NativePreviewSelection, direction: "up" | "down") => "moved" | "stayed";
 }
 
 export function createPageStructureController(ports: PageStructurePorts) {
@@ -491,7 +493,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     // Whole sections (a <section> or a section component) move, duplicate and
     // remove from icon buttons always in the bar, as one undo step each.
-    // Nothing else can be removed this way. Alt+Up/Down move the section too,
+    // Alt+Up/Down move any block; Sections keep their proven move path,
     // from the bar, the preview or the page structure (`moveNativeSection`),
     // as do plain Up/Down on the bar's name. Any block of the page's <main>
     // drags by its name in the bar (ticket 12 §10).
@@ -536,9 +538,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
       });
     }
     // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
-    // Only a whole section moves from the bar or the keyboard (Lex: "remove
-    // this on not the sections"), so a card's own move arrows are left out and
-    // no element move is offered here; the page structure still moves rows.
+    // Non-Sections have sibling keys, but no move arrow buttons in the bar.
+    if (!templateRoot && node && !isNativeSectionTag(selection.tag)) onMove = direction => ports.moveBlock(selection, direction);
     if (!templateRoot && !isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
     nativeElementMoveAction = onMove;
     // Edit component, Make component (src/page-builder/components.ts).
