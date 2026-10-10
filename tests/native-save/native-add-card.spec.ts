@@ -134,7 +134,6 @@ test("of two named card slots, the one whose part of the template is under the p
 });
 
 test("a fresh card shows Link to a page… at its foot: the cards' folder first, then Other pages; Esc leaves the card blank", async ({ page, baseURL }) => {
-  await page.setViewportSize({ width: 1440, height: 1200 });
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "about/index.html", content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>About · Larkspur Studio</title>\n</head>\n<body>\n  <main>\n    <h1>About us</h1>\n  </main>\n</body>\n</html>\n' } });
@@ -147,15 +146,19 @@ test("a fresh card shows Link to a page… at its foot: the cards' folder first,
   const picker = page.getByRole("group", { name: "Link the new card to a page" });
   const input = page.getByRole("combobox", { name: "Link to a page" });
   await expect(input).toBeFocused();
-  // Hung below the card and bar, or above both when there is no room below.
+  // Hung below the card and its edit bar, or above both when there is no
+  // room below, or else over the card; never over the bar.
   const boxes = () => Promise.all([frame(page).locator("section-work > card-project").nth(1).boundingBox(), picker.boundingBox()]);
   await expect.poll(async () => {
     const [card, box] = await boxes();
     const bar = (await page.getByRole("toolbar", { name: "Edit bar", exact: true }).boundingBox())!;
     const below = Math.max(card!.y + card!.height - 6, bar.y + bar.height + 8);
     const above = Math.min(card!.y + 6, bar.y - 8);
-    return Math.min(Math.abs(box!.y - below), Math.abs(box!.y + box!.height - above));
-  }).toBeLessThan(3);
+    const hung = Math.min(Math.abs(box!.y - below), Math.abs(box!.y + box!.height - above)) < 3;
+    const over = box!.y < card!.y + card!.height && box!.y + box!.height > card!.y;
+    const clear = box!.y + box!.height <= bar.y || box!.y >= bar.y + bar.height;
+    return clear && (hung || over);
+  }).toBe(true);
   const [card, box] = await boxes();
   expect(box!.x).toBeLessThan(card!.x + card!.width);
   expect(box!.x + box!.width).toBeGreaterThan(card!.x);

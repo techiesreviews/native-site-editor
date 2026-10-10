@@ -71,6 +71,17 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     if (top < list.scrollTop) list.scrollTop = top;
     else if (top + option.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = top + option.offsetHeight - list.clientHeight;
   };
+  // Only a pointer that moves makes the page under it active: a list that
+  // scrolls or re-renders under a still pointer keeps the keyboard's choice.
+  let point = "";
+  const onPointerMove = (event: PointerEvent) => {
+    const at = `${event.clientX},${event.clientY}`;
+    if (at === point) return;
+    point = at;
+    const index = entries.findIndex(({ option }) => option.contains(event.target as Node));
+    if (index >= 0 && index !== active && !entries[index].disabled) setActive(index);
+  };
+  box.ownerDocument.addEventListener("pointermove", onPointerMove, true);
   const pick = (page: PageChoice) => {
     if (!page.inGrid) options.onPick(page);
   };
@@ -99,7 +110,6 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
         }
         const entry = { option, disabled: page.inGrid, pick: () => pick(page) };
         option.addEventListener("pointerdown", (event) => event.preventDefault());
-        option.addEventListener("pointerenter", () => { if (!page.inGrid) setActive(entries.indexOf(entry)); });
         option.addEventListener("click", () => pick(page));
         section.append(option);
         entries.push(entry);
@@ -122,7 +132,6 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
       if (offer.error) option.setAttribute("aria-disabled", "true");
       const entry = { option, disabled: Boolean(offer.error), pick: () => { if (!offer.error) options.onCreate(offer); } };
       option.addEventListener("pointerdown", event => event.preventDefault());
-      option.addEventListener("pointerenter", () => { if (!entry.disabled) setActive(entries.indexOf(entry)); });
       option.addEventListener("click", entry.pick);
       entries.push(entry);
       section.append(option);
@@ -176,6 +185,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   return {
     place,
     destroy() {
+      box.ownerDocument.removeEventListener("pointermove", onPointerMove, true);
       box.remove();
     },
   };
