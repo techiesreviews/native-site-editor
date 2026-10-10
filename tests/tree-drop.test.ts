@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { NativeStructureItem } from "../src/components/native-preview";
 import type { DraggedBlock, DropTarget } from "../src/page-builder/drop-target";
-import { createStructureDrop, foldRows, springRow, type SpringTimer, levelAt, structureContainer, treeDrop, treeLineFor, type StructureDropView, type TreeRow } from "../src/page-builder/tree-drop";
+import { createStructureDrop, foldRows, springRow, type SpringTimer, levelAt, structureContainer, templateContainers, treeDrop, treeLineFor, type StructureDropView, type TreeRow } from "../src/page-builder/tree-drop";
 
 // A page as Structure shows it; `open` rows show their children.
 type Spec = [tag: string, children?: Spec[], extra?: { cls?: string; slot?: string; open?: boolean }];
@@ -322,4 +322,49 @@ test("in an instance sprung open, the gaps among its named parts drop at its ite
     assert.deepEqual([found.target!.container.kind, found.target!.container.path, found.target!.index, found.target!.ok], ["items", [0, 0, 0], 2, true]);
     assert.deepEqual(found.line, { y: list[4].end + 1, level: 4 });
   }
+});
+
+// Slice 82: a moved element takes any row HTML allows; Edit component mode's rows are the template's.
+test("a moved element goes into any row's element its content rules allow; others pass to the nearest that takes it", () => {
+  const text = items([["main", [["section", [["p"], ["ul", [["li"]], { open: true }]], { open: true }]], { open: true }]]);
+  const list = rowsOf(text);
+  const row = (node: string) => list.find((r) => r.item.node.join(".") === node)!;
+  const fits = (tag: string) => (c: { tag: string }) => c.tag === "ul" && tag !== "li" ? `A <${tag}> can't go inside a <ul>.` : c.tag === "p" && tag !== "a" ? `A <${tag}> can't go inside a <p>.` : undefined;
+  const move = (tag: string): DraggedBlock => ({ kind: "move", path: [9], band: false, fits: fits(tag) });
+  // Just below the paragraph, x one level in: inside it for a link, beside it for a Div.
+  const y = row("0.0.0").bottom + 1, level = row("0.0.0").level + 1;
+  const link = treeDrop(list, y, level, move("a"), noSlots).target!;
+  assert.deepEqual([link.container.path, link.container.kind, link.ok], [[0, 0, 0], "element", true]);
+  const div = treeDrop(list, y, level, move("div"), noSlots).target!;
+  assert.deepEqual([div.container.path, div.index, div.ok], [[0, 0], 1, true]);
+  // An <li> goes into the list; a new block never into anything but a Section or Div.
+  const li = treeDrop(list, row("0.0.1.0").bottom + 1, row("0.0.1.0").level, move("li"), noSlots).target!;
+  assert.deepEqual([li.container.path, li.index], [[0, 0, 1], 1]);
+  assert.deepEqual(structureContainer(row("0.0.0").item, noSlots)?.kind, "element");
+  assert.equal(treeDrop(list, y, level, paragraph, noSlots).target!.container.path.join("."), "0.0");
+});
+
+test("in a template's rows a part beside a slot-held part goes beside its slot; the items slot's rows are that slot's", () => {
+  const template = '<article><slot name="title"><h3>T</h3></slot><p class="body">B</p><slot><p>Item</p></slot></article>';
+  const containerOf = templateContainers(template, "card-x");
+  // Rows as Structure shows them: the slots have none; the framed instance's row stands for <article>.
+  const list: TreeRow[] = [
+    { item: { tag: "article", node: [0], text: "", heading: "", slot: "", children: [] }, level: 1, folded: false, top: 0, bottom: 20, end: 86 },
+    { item: { tag: "h3", node: [0, 0, 0], text: "T", heading: "", slot: "", children: [] }, level: 2, folded: false, top: 22, bottom: 42, end: 42 },
+    { item: { tag: "p", node: [0, 1], text: "B", heading: "", slot: "", children: [] }, level: 2, folded: false, top: 44, bottom: 64, end: 64 },
+    { item: { tag: "p", node: [0, 2, 0], text: "Item", heading: "", slot: "", children: [] }, level: 2, folded: false, top: 66, bottom: 86, end: 86 },
+  ];
+  const part: DraggedBlock = { kind: "move", path: [0, 1], band: false, template: true, fits: () => undefined };
+  // Above the heading: before the title slot, in the article.
+  const first = treeDrop(list, 23, 2, part, noSlots, containerOf).target!;
+  assert.deepEqual([first.container.path, first.index, first.ok], [[0], 0, true]);
+  // Below the placeholder item: after it, in the items slot.
+  const item = treeDrop(list, 85, 2, part, noSlots, containerOf).target!;
+  assert.deepEqual([item.container.path, item.container.kind, item.index], [[0, 2], "items", 1]);
+  // Inside the heading (x one deeper) takes no new block: beside its slot instead.
+  const named = treeDrop(list, 41, 3, { kind: "new", block: "paragraph", template: true }, noSlots, containerOf).target!;
+  assert.deepEqual([named.container.path, named.index, named.ok], [[0], 1, true]);
+  assert.equal(containerOf({ ...list[1].item, node: [0, 0] })?.kind, "slot");
+  assert.equal(containerOf(list[0].item, list[1].item)?.kind, "div");
+  assert.deepEqual(treeLineFor(list, { container: containerOf(list[0].item, list[3].item)!, index: 1 })?.line, { y: 87, level: 2 });
 });

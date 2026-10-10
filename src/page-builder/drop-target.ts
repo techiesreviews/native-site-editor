@@ -16,11 +16,14 @@ import { nativeKindLabel } from "../native-structure";
 
 /**
  * A new block from the rail (`template`: into the template edited in Edit
- * component mode), or a page element being moved (`band`: a section or section component).
+ * component mode), or an element being moved (`band`: a section or section
+ * component; `template`: a part of the template edited). A moved element's
+ * `fits` says why a container can't take it by HTML's content rules (slice
+ * 82), or nothing when it can; without it only a Section, a Div or an items slot takes it.
  */
 export type DraggedBlock =
   | { kind: "new"; block: NativeElementKind; template?: boolean }
-  | { kind: "move"; path: readonly number[]; band: boolean };
+  | { kind: "move"; path: readonly number[]; band: boolean; template?: boolean; fits?: (container: DropContainer) => string | undefined };
 
 export interface DropTarget {
   container: DropContainer;
@@ -48,9 +51,11 @@ export function dropRefusal(block: DraggedBlock, container: DropContainer): stri
     const inside = container.kind === "section" ? "a Section" : container.kind === "div" ? "a Div" : "a component";
     return `A Section goes only between page bands, not inside ${inside}.`;
   }
-  if (container.kind === "main") return "Blocks go inside a Section or a Div, not straight between page bands.";
-  if (container.kind === "slot" && block.kind === "new" && block.template) return templateSlotRefusal(container.slot ?? "");
+  if (container.kind === "slot" && block.template) return templateSlotRefusal(container.slot ?? "");
   if (container.kind === "slot") return `The “${container.slot}” slot is filled by editing its text, not by drops. Drop into the component's items instead.`;
+  if (block.kind === "move" && block.fits) return block.fits(container);
+  if (container.kind === "main") return "Blocks go inside a Section or a Div, not straight between page bands.";
+  if (container.kind === "element") return `Blocks go inside a Section${block.template ? ", a Div or the component's items" : " or a Div"}.`;
   return undefined;
 }
 
@@ -114,7 +119,9 @@ export function dropTarget(containers: readonly DropContainer[], p: { x: number;
   // Otherwise a named slot refuses where it is; a fixed part does too, except
   // at its edges (below), where the drop goes beside it.
   const first = containers[0];
-  if (!sibling && level <= 0 && !isBand(block) && (first.kind === "slot" || (first.kind === "fixed" || first.kind === "component") && !nearEdge(p, first.rect))) return at(0);
+  // A template's part moved over a named slot goes beside it instead: the slot is a part too.
+  const slotHolds = first.kind === "slot" && !(block.kind === "move" && block.template);
+  if (!sibling && level <= 0 && !isBand(block) && (slotHolds || (first.kind === "fixed" || first.kind === "component") && !nearEdge(p, first.rect))) return at(0);
   let i = sibling?.j ?? 0;
   if (!sibling) while (i < containers.length - 1 && escapes(containers, i, p)) i++;
   i = Math.min(i + Math.max(0, level), containers.length - 1);
@@ -185,5 +192,5 @@ export function dropLabel(target: DropTarget, block: DraggedBlock) {
   const before = items.find((child) => child.index >= target.index);
   const place = after ? `after ${dropBlockName(after.tag, after.cls)}` : before ? `before ${dropBlockName(before.tag, before.cls)}` : "";
   if (target.container.kind === "main") return `Between page bands › ${place || "the first"}`;
-  return `Into ${dropContainerName(target.container)} › ${place || "empty"}`;
+  return `Into ${dropContainerName(target.container)} › ${place || (target.container.empty ? "empty" : "at the end")}`;
 }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { blockMarkup, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, type BlockTarget } from "../src/page-builder/block-insert.ts";
+import { blockMarkup, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, templateMovePath, templateMoveRefusal, type BlockTarget } from "../src/page-builder/block-insert.ts";
+import { templateSlotRefusal } from "../src/page-builder/native-elements.ts";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit, nativeMoveEdit, nativeOutline } from "../src/page-builder/native-operations.ts";
 import type { NativeElementKind } from "../src/page-builder/native-elements.ts";
 
@@ -271,4 +272,22 @@ test("a place measured in a template's preview is checked against the template's
   // The items slot in a paragraph (card-note) takes no blocks; nor does a path the template no longer has.
   assert.ok(templateDropRefusal('<p class="card-note"><slot>Shared note</slot></p>', [0, 0]));
   assert.ok(templateDropRefusal(workTemplate, [0, 5]));
+});
+
+test("a template's part moves with the named slot it fills alone; the root and nested components' insides don't (slice 82)", () => {
+  const template = '<article><slot name="title"><h3>T</h3></slot><p>B</p><card-x><p>in</p></card-x><slot><p>a</p></slot><div><slot name="x"><p>1</p><p>2</p></slot></div></article>';
+  assert.deepEqual(templateMovePath(template, [0, 0, 0]), [0, 0]);
+  assert.deepEqual(templateMovePath(template, [0, 1]), [0, 1]);
+  assert.equal(templateMovePath(template, [0]), undefined);
+  assert.equal(templateMovePath(template, [0, 2, 0]), undefined);
+  // An items slot's placeholder item moves itself; so does one of several in a named slot.
+  assert.deepEqual(templateMovePath(template, [0, 3, 0]), [0, 3, 0]);
+  assert.deepEqual(templateMovePath(template, [0, 4, 0, 1]), [0, 4, 0, 1]);
+  assert.equal(templateMoveRefusal(template, [0, 1], [0, 4]), undefined);
+  assert.equal(templateMoveRefusal(template, [0, 1], [0, 3]), undefined);
+  assert.equal(templateMoveRefusal(template, [0, 1], [0, 0]), templateSlotRefusal("title"));
+  assert.equal(templateMoveRefusal(template, [0, 1], [0, 2]), "Card x is its own component: open it to build inside its template.");
+  assert.equal(templateMoveRefusal(template, [0, 0], [0, 3]), "A slot can't go into the component's items: each page fills them.");
+  assert.equal(templateMoveRefusal(template, [0, 4], [0, 1]), "A <div> can't go inside a <p>.");
+  assert.equal(templateMoveRefusal(template, [0, 1], []), "Parts go inside the template's element, not beside it.");
 });

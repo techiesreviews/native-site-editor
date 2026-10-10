@@ -12,6 +12,7 @@ import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { agentElement } from "../agent-site";
 import { isSectionTemplate } from "../native-insert";
 import { nativeMovableBlock, type ItemsSlotRule } from "../page-builder/native-operations";
+import { templateMovePath } from "../page-builder/block-insert";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
@@ -505,7 +506,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // drags by its name in the bar (ticket 12 §10).
     let onMove: EditBarModel["onMove"];
     const templateRoot = ports.componentTools?.isTemplateRoot(selection);
-    const draggable = Boolean(!templateRoot && node && nativeMovableBlock(source, node, ports.itemsSlots()));
+    // In Edit component mode, a part of the template edited (slice 82).
+    const editing = ports.componentTools?.editModeTemplate()?.path === path;
+    const draggable = Boolean(!templateRoot && node && (editing ? templateMovePath(source, node) : nativeMovableBlock(source, node, ports.itemsSlots())));
     if (!templateRoot && range && node && isNativeSectionTag(selection.tag)) {
       const parent = node.slice(0, -1);
       const index = node[node.length - 1];

@@ -7,7 +7,7 @@ import type { DropIndicator } from "./drop-indicator";
 import type { DraggedBlock, DropTarget } from "./drop-target";
 import type { InsertDragContext } from "./insert-drag";
 import { createBlockDragSession, type BlockDragSessionPorts } from "./block-drag-session";
-import { createStructureDrop, type StructureDrop, type StructureDropView } from "./tree-drop";
+import { createStructureDrop, createTemplateStructureDrop, type StructureDrop, type StructureDropView } from "./tree-drop";
 import { itemsSlots } from "./block-insert";
 import type { TemplateOf } from "./component-model";
 import { node } from "../ui/dom";
@@ -15,8 +15,13 @@ import "./block-drag.css";
 
 export { dropBlockName, dropStays } from "./drop-target";
 
-/** Page Structure's side of a drag of `block`; a component's items slots come from its template. */
-export function structureDrop(view: StructureDropView, block: DraggedBlock, templateOf: TemplateOf): StructureDrop {
+/**
+ * Page Structure's side of a drag of `block`; a component's items slots come
+ * from its template. In Edit component mode (`template`: the tag of the
+ * component edited) the view shows that template's rows.
+ */
+export function structureDrop(view: StructureDropView, block: DraggedBlock, templateOf: TemplateOf, template?: string): StructureDrop {
+  if (template !== undefined) return createTemplateStructureDrop(view, block, template);
   const known = new Map<string, readonly string[]>();
   return createStructureDrop(view, block, (tag) => {
     if (!known.has(tag)) known.set(tag, itemsSlots(tag, templateOf));

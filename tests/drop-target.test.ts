@@ -306,3 +306,36 @@ test("in a template (Edit component mode): a Section is refused everywhere, a ne
   // A named slot is filled on each page.
   assert.match(dropRefusal({ kind: "new", block: "paragraph", template: true }, box([0, 0], "slot", rect(40, 40, 720, 40), [], { slot: "title" }))!, /“title” slot is filled on each page/);
 });
+
+// Slice 82: a moved element goes into any element its content rules allow (`fits`).
+const para = box([1, 0, 1, 1], "element", rect(60, 180, 680, 100), [], { tag: "p", empty: false });
+const moved = (tag: string, path = [1, 0, 0]): DraggedBlock => ({ kind: "move", path, band: false,
+  fits: (c) => tag === "a" || c.tag !== "p" ? undefined : `A <${tag}> can't go inside a <p>.` });
+
+test("a moved element goes into any element that takes it, by its content rules (slice 82)", () => {
+  const link = dropTarget([para, ...chain], { x: 400, y: 230 }, moved("a"))!;
+  assert.deepEqual([link.container.path, link.index, link.ok], [[1, 0, 1, 1], 0, true]);
+  assert.equal(dropLabel(link, moved("a")), "Into Paragraph › at the end");
+  // A Div skips the paragraph that can't take it: beside it in the stack.
+  const div = dropTarget([para, ...chain], { x: 400, y: 260 }, moved("div"))!;
+  assert.deepEqual([div.container.path, div.index, div.ok], [[1, 0, 1], 2, true]);
+  // With nothing up the chain taking it, the innermost's reason shows.
+  const nowhere: DraggedBlock = { kind: "move", path: [1, 0, 0], band: false, fits: (c) => `A <li> can't go inside a <${c.tag}>.` };
+  const refused = dropTarget([para, ...chain], { x: 400, y: 230 }, nowhere)!;
+  assert.deepEqual([refused.container.path, refused.ok, dropLabel(refused, nowhere)], [[1, 0, 1, 1], false, "A <li> can't go inside a <p>."]);
+  // <main> takes a moved heading when HTML allows; new blocks and moves without `fits` keep ticket 10's rule.
+  assert.equal(dropRefusal(moved("h2"), main), undefined);
+  assert.equal(dropRefusal({ kind: "move", path: [1, 0, 0], band: false }, main), "Blocks go inside a Section or a Div, not straight between page bands.");
+  assert.equal(dropRefusal(paragraph, para), "Blocks go inside a Section or a Div.");
+  assert.equal(dropRefusal(moved("div"), para), "A <div> can't go inside a <p>.");
+});
+
+test("a template's part moved over a named slot goes beside it; a new block still refuses there (slice 82)", () => {
+  const root = box([0], "div", rect(0, 0, 400, 300), [child(0, rect(0, 0, 400, 60), "slot", "title"), child(1, rect(0, 80, 400, 60))], { tag: "article" });
+  const title = box([0, 0], "slot", rect(0, 0, 400, 60), [child(0, rect(0, 0, 400, 60), "h3")], { slot: "title" });
+  const part: DraggedBlock = { kind: "move", path: [0, 1], band: false, template: true, fits: (c) => c.kind === "slot" ? "named" : undefined };
+  const beside = dropTarget([title, root], { x: 200, y: 20 }, part)!;
+  assert.deepEqual([beside.container.path, beside.index, beside.ok], [[0], 0, true]);
+  const block = dropTarget([title, root], { x: 200, y: 20 }, { kind: "new", block: "paragraph", template: true })!;
+  assert.deepEqual([block.container.path, block.ok], [[0, 0], false]);
+});

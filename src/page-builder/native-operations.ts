@@ -8,7 +8,7 @@ export interface GuardedSourceEdit extends SourceEdit { original: string; source
 interface SourceNode { name: string; start: number; openEnd: number; closeStart: number; end: number; children: SourceNode[]; namespace?: "html" | "svg" | "math"; opaque?: boolean; interactive?: boolean; parent?: SourceNode }
 const raw = new Set(["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes", "plaintext", "noscript"]);
 const textNodes = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]);
-const containers = new Set(["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "blockquote", "select", "optgroup"]);
+const containers = new Set(["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "blockquote", "select", "optgroup", "td", "th", "details", "dialog", "address", "search"]);
 const interactive = new Set(["a", "button", "input", "select", "textarea", "label", "details"]);
 
 // Only actual HTML names; editor catalogue keys and foreign/custom names are not HTML.
@@ -178,35 +178,52 @@ function scopedDescendants(node: SourceNode): SourceNode[] {
 }
 const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || phrasing.has(node.name) || customName(node.name) || ["svg", "math", "template", "slot"].includes(node.name);
 /** Whether `children` may go in `parent`; `instance`: an instance's items slot, the one opening in its seal. */
-function canContain(parent: SourceNode, children: SourceNode[], instance = false) {
+const canContain = (parent: SourceNode, children: SourceNode[], instance = false) => !contentRefusal(parent, children, instance);
+// Elements whose content is text and inline elements only: a link goes in a paragraph, a Div doesn't.
+const phrasingOnly = (node: SourceNode) => (node.namespace ?? "html") === "html" && !VOID_ELEMENTS.has(node.name) && node.name !== "option" && (textNodes.has(node.name) || phrasing.has(node.name));
+/** "A <div> can't go inside a <p>." */
+const cannot = (child: string, parent: string) => {
+  const an = (name: string) => /^(?:[aeio]|h\d)/.test(name) ? "an" : "a";
+  return `${an(child) === "an" ? "An" : "A"} <${child}> can't go inside ${an(parent)} <${parent}>.`;
+};
+/** Why `children` can't go in `parent` by HTML's content rules (or the seal of an instance), or nothing when they can. */
+function contentRefusal(parent: SourceNode, children: SourceNode[], instance = false): string | undefined {
   // A template's <slot> is transparent: it holds what the element around it may (at the template's top, flow content).
   if (!instance && parent.name === "slot" && (parent.namespace ?? "html") === "html") {
     let around = parent.parent;
     while (around?.name === "slot") around = around.parent;
-    if (around?.name) return canContain(around, children);
-  } else if (instance ? !isInstance(parent) : parent.opaque || !containers.has(parent.name) || raw.has(parent.name) || textNodes.has(parent.name)) return false;
+    if (around?.name) return contentRefusal(around, children);
+  } else if (instance ? !isInstance(parent) : parent.opaque || raw.has(parent.name) || !containers.has(parent.name) && !phrasingOnly(parent)) {
+    return parent.opaque ? "Its parts belong to the component: open it to change them." : cannot(children[0]?.name ?? "", parent.name);
+  }
   const names = children.map((child) => child.name);
   const movingDescendants = (node: SourceNode): SourceNode[] => [node, ...(node.name === "template" && (node.namespace ?? "html") === "html" ? [] : node.children.flatMap(movingDescendants))];
   const descendants = children.flatMap(movingDescendants);
-  const definitionItems = (node: SourceNode): boolean => {
-    if (node.name === "dl" || node.name === "template" || (node.namespace ?? "html") !== "html") return false;
-    return ["dt", "dd"].includes(node.name) || node.children.some(definitionItems);
+  if (!instance && phrasingOnly(parent)) {
+    const block = children.flatMap(scopedDescendants).find((node) => !isPhrasing(node));
+    if (block) return cannot(block.name, parent.name);
+  }
+  const definitionItems = (node: SourceNode): SourceNode | undefined => {
+    if (node.name === "dl" || node.name === "template" || (node.namespace ?? "html") !== "html") return undefined;
+    return ["dt", "dd"].includes(node.name) ? node : node.children.map(definitionItems).find(Boolean);
   };
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
     if (ancestor.name === "dl" || ancestor.name === "template" || (ancestor.namespace ?? "html") !== "html") break;
-    if (["dt", "dd"].includes(ancestor.name) && children.some(definitionItems)) return false;
+    const item = ["dt", "dd"].includes(ancestor.name) ? children.map(definitionItems).find(Boolean) : undefined;
+    if (item) return cannot(item.name, ancestor.name);
   }
   for (let ancestor: SourceNode | undefined = parent; ancestor; ancestor = ancestor.parent) {
-    if (ancestor.name === "form" && descendants.some((node) => node.name === "form")) return false;
-    if (["a", "button"].includes(ancestor.name) && descendants.some((node) => node.interactive)) return false;
-    if (ancestor.name === "label" && descendants.some((node) => node.name === "label")) return false;
+    const nested = ancestor.name === "form" || ancestor.name === "label" ? descendants.find((node) => node.name === ancestor!.name)
+      : ["a", "button"].includes(ancestor.name) ? descendants.find((node) => node.interactive) : undefined;
+    if (nested) return cannot(nested.name, ancestor.name);
   }
-  if (parent.name === "ul" || parent.name === "ol") return names.every((name) => name === "li");
-  if (parent.name === "dl") return names.every((name) => name === "dt" || name === "dd");
-  if (["select", "optgroup"].includes(parent.name)) return names.every((name) => name === "option" || parent.name === "select" && name === "optgroup");
-  return !names.some((name) => ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "caption", "colgroup", "col", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
+  const only = parent.name === "ul" || parent.name === "ol" ? ["li"] : parent.name === "dl" ? ["dt", "dd"]
+    : parent.name === "select" ? ["option", "optgroup"] : parent.name === "optgroup" ? ["option"] : undefined;
+  const wrong = names.find((name) => only ? !only.includes(name)
+    : ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "caption", "colgroup", "col", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
+  return wrong === undefined ? undefined : cannot(wrong, parent.name);
 }
-const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i", "u", "a", "img", "mark", "time", "s", "sub", "sup", "wbr", "abbr", "cite", "q", "kbd"]);
+const phrasing = new Set(["strong", "em", "span", "br", "code", "small", "b", "i", "u", "a", "img", "mark", "time", "s", "sub", "sup", "wbr", "abbr", "cite", "q", "kbd", "button", "label", "picture", "input", "var", "samp", "dfn", "data", "bdi", "bdo"]);
 function semanticTree(root: SourceNode, source: string) {
   return all(root).every((node) => {
     if (node.name === "plaintext") return false;
@@ -331,6 +348,15 @@ function insertIndent(source: string, parent: SourceNode, index: number) {
   return { next, previous, indent, childIndent: !next && !previous ? `${indent}  ` : indent, nl: source.includes("\r\n") ? "\r\n" : "\n" };
 }
 function insertion(source: string, parent: SourceNode, index: number, markup: string): SourceEdit {
+  let around: SourceNode | undefined = parent;
+  while (around?.name === "slot") around = around.parent;
+  // In a line of text, on that line: a space apart from its neighbours, never a line of its own.
+  if (around && phrasingOnly(around)) {
+    const next = parent.children[index], previous = parent.children[index - 1];
+    const at = next ? next.start : previous ? previous.end : parent.closeStart;
+    const text = next ? `${markup} ` : !previous && /[\s>]/.test(source[at - 1] ?? ">") ? markup : ` ${markup}`;
+    return { start: at, end: at, text };
+  }
   const { next, previous, indent, childIndent, nl } = insertIndent(source, parent, index);
   const text = structuralIndent(markup, nl, childIndent);
   if (next) return { start: next.start, end: next.start, text: `${text}${nl}${indent}` };
@@ -433,25 +459,38 @@ export function nativeOutline(source: string): NativeOutline | undefined {
   return map(root);
 }
 /**
- * Where a move may go. With `items`, the destination may be an instance's
- * items slot (`slot`, "" the unnamed one), as for inserts and source paths.
+ * Where a move may go, or why not. With `items`, the destination may be an
+ * instance's items slot (`slot`, "" the unnamed one), as for inserts and source paths.
  */
-function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = "") {
+function moveDestination(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""):
+  { moving: SourceNode; parent: SourceNode; instance: boolean } | { reason: string } {
   const root = tree(source);
-  const moving = root && atPath(root, from, itemsOpener(source, items));
-  const parent = root && atPath(root, destination.parent, itemsOpener(source, items));
+  if (!root) return { reason: "The HTML here could not be read exactly. Fix it in the code first." };
+  const moving = atPath(root, from, itemsOpener(source, items));
+  const parent = atPath(root, destination.parent, itemsOpener(source, items));
   // A component instance moves whole (its bytes kept as they are); other opaque islands stay put.
-  if (!moving || (moving.opaque && !isInstance(moving)) || !from.length || !parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return undefined;
-  for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return undefined;
+  if (!moving || (moving.opaque && !isInstance(moving)) || !from.length) return { reason: "This element can't be moved." };
+  if (!parent || !Number.isInteger(destination.index) || destination.index < 0 || destination.index > parent.children.length) return { reason: "That place is not there any more." };
+  for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return { reason: "A block cannot go inside itself." };
   const instance = isInstance(parent);
-  if (instance && !items?.(parent.name, slot)) return undefined;
-  if (!canContain(parent, [moving], instance)) return undefined;
-  return { moving, parent, instance };
+  if (instance && !items?.(parent.name, slot)) return { reason: "Its parts belong to the component: open it to change them." };
+  const reason = contentRefusal(parent, [moving], instance);
+  return reason ? { reason } : { moving, parent, instance };
 }
 
 /** Validate a move destination, including legitimate same-parent no-op positions. */
 export function nativeMoveDestinationValid(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""): boolean {
-  return Boolean(moveDestination(source, from, destination, items, slot));
+  return !("reason" in moveDestination(source, from, destination, items, slot));
+}
+
+/**
+ * Why the element at `from` can't move into the element at `parent` (an
+ * instance's items slot `slot` with `items`) by HTML's content rules
+ * ("A <div> can't go inside a <p>."), or nothing when it can.
+ */
+export function nativeMoveRefusal(source: string, from: readonly number[], parent: readonly number[], items?: ItemsSlotRule, slot = ""): string | undefined {
+  const valid = moveDestination(source, from, { parent: [...parent], index: 0 }, items, slot);
+  return "reason" in valid ? valid.reason : undefined;
 }
 
 /** Whether `after` differs from `before` only inside the element at `path` (between its tags), as typing in it does. */
@@ -492,7 +531,7 @@ export function nativeMovableBlock(source: string, path: readonly number[], item
  */
 export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
   const valid = moveDestination(source, from, destination, items, slot);
-  if (!valid) return undefined;
+  if ("reason" in valid) return undefined;
   const { moving, parent } = valid;
   const index = from[from.length - 1];
   const sameSlot = moving.parent === parent && (!valid.instance || slotOf(source, moving) === slot);

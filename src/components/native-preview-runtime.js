@@ -1073,9 +1073,15 @@
     var right = Math.max.apply(null, parts.map(function (part) { return part.left + part.width; }));
     return { left: left, top: top, width: right - left, height: bottom - top };
   }
+  // An element a moved one may go into, as HTML allows (the editor checks
+  // the content rules): not one that holds no elements, nor a table's frame.
+  var DROP_LEAF = /^(area|base|br|col|embed|hr|img|input|link|meta|source|track|wbr|script|style|textarea|select|option|optgroup|iframe|video|audio|picture|canvas|object|table|thead|tbody|tfoot|tr|colgroup|head|title)$/;
+  function dropHolds(el) { return !DROP_LEAF.test(el.localName); }
   function dropContainers(x, y, moving, bands) {
     if (!pageEl || !state) return [];
-    var moved = Array.isArray(moving) ? walkNodePath(pageEl, moving) : null;
+    // A move (slice 82) may go into any element HTML allows, not only a Section or Div.
+    var moves = Array.isArray(moving);
+    var moved = moves ? walkNodePath(pageEl, moving) : null;
     function entry(el, kind, children, box, layoutEl, nodes, slot) {
       var all = dropKids(el);
       var out = { path: elementIndexPath(el), kind: kind, tag: el.localName, cls: el.getAttribute("class") || "",
@@ -1088,7 +1094,7 @@
     }
     // Edit component mode: the edited template's own parts, by template paths.
     var edited = editHost();
-    if (edited) return templateDropContainers(edited);
+    if (edited) return templateDropContainers(edited, moves ? walkNodePath(edited.shadowRoot, moving) : null);
     // Section probes need every page band even over the header or footer.
     // Keep the moved band too: insertion indices still refer to the source.
     if (bands === true) {
@@ -1134,8 +1140,8 @@
         return child ? walk(child, depth + 1).concat(chain) : chain;
       }
       var children = dropKids(el);
-      if (el !== pageEl && ["main", "section", "div"].indexOf(el.localName) >= 0) {
-        chain.push(entry(el, el.localName, children, dropRect(el), el, Array.prototype.slice.call(el.childNodes)));
+      if (el !== pageEl && (["main", "section", "div"].indexOf(el.localName) >= 0 || moves && dropHolds(el))) {
+        chain.push(entry(el, ["main", "section", "div"].indexOf(el.localName) >= 0 ? el.localName : "element", children, dropRect(el), el, Array.prototype.slice.call(el.childNodes)));
       }
       var child = children.find(under);
       return child ? walk(child, depth + 1).concat(chain) : chain;
@@ -1148,7 +1154,7 @@
     // children). A named slot refuses where it shows, a cards slot too; a
     // nested component refuses inside (open it to build there), its edges
     // passing the drop up.
-    function templateDropContainers(host) {
+    function templateDropContainers(host, moved) {
       var tag = host.localName;
       function slotInfo(slot) {
         var name = (slot.getAttribute("name") || "").trim();
@@ -1183,7 +1189,7 @@
         return report;
       }
       function walk(el, depth) {
-        if (depth > 100) return [];
+        if (depth > 100 || el === moved) return [];
         var chain = [];
         if (el.localName === "slot") {
           var info = slotInfo(el);
@@ -1195,15 +1201,16 @@
           if (!info.items) return chain;
         } else if (dropSealed(el)) {
           return [entry(el, "component", [], bandRect(el, 0), el, [])];
-        } else if (["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0) {
-          chain.push(part(entry(el, el.localName === "section" ? "section" : "div", dropKids(el), dropRect(el), el, Array.prototype.slice.call(el.childNodes)), el));
+        } else if (["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0 || moved && dropHolds(el)) {
+          var block = ["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0;
+          chain.push(part(entry(el, el.localName === "section" ? "section" : block ? "div" : "element", dropKids(el), dropRect(el), el, Array.prototype.slice.call(el.childNodes)), el));
         }
-        // Parts and named slots win over an items slot's larger area.
-        var kids = dropKids(el);
+        // Parts and named slots win over an items slot's larger area; the moved part is left out.
+        var kids = dropKids(el).filter(function (kid) { return kid !== moved; });
         var child = kids.find(function (kid) { return !isItems(kid) && hit(kid); }) || kids.find(function (kid) { return isItems(kid) && hit(kid); });
         return child ? walk(child, depth + 1).concat(chain) : chain;
       }
-      var tops = dropKids(host.shadowRoot);
+      var tops = dropKids(host.shadowRoot).filter(function (kid) { return kid !== moved; });
       var top = tops.find(function (kid) { return !isItems(kid) && hit(kid); }) || tops.find(function (kid) { return isItems(kid) && hit(kid); });
       return top ? walk(top, 0) : [];
     }
@@ -3087,12 +3094,19 @@
       return !(INLINE_TAGS.test(child.localName) && !child.classList.contains("btn") && phrasing(child));
     });
   }
+  // A selected link, Button or other inline element (a click selects it
+  // first) drags itself when pressed, not the text block around it (slice 82).
+  function pressSelected(el, inner) {
+    return selected && selected !== el && el.contains(selected) && selected.contains(inner) ? selected : el;
+  }
   function pressBlock(target) {
     var el = lightElement(target);
     if (!el || !pageEl || el === pageEl || !pageEl.contains(el)) return null;
+    var inner = el;
     // Inline content gives its text block; straight in a Section or Div
     // holding blocks, or in an items slot, it is a block of its own.
     while (el.parentElement && el.parentElement !== pageEl && !holdsBlocks(el.parentElement) && !dropItem(el) && phrasing(el)) el = el.parentElement;
+    el = pressSelected(el, inner);
     // A sealed ancestor takes the press, unless the way down from it goes through one of its items slots.
     for (var child = el, at = el.parentElement; at && at !== pageEl; child = at, at = at.parentElement) if (dropSealed(at) && !dropItem(child)) el = at;
     if (dropSealed(el) && el.localName.indexOf("-") < 0) return null;
@@ -3100,11 +3114,22 @@
     var page = state && state.pagePaths && state.pagePaths[state.route];
     return main && pageEl.contains(main) && page && ownerPath(el) === page ? el : null;
   }
+  // In Edit component mode the template's parts drag instead (slice 82):
+  // the part pressed (inline content gives its text block, as on the page,
+  // but an element a slot holds is a part of its own), never the
+  // template's root. The editor moves a named slot with its element.
+  function pressPart(el) {
+    var host = editHost(), root = host && editTemplateRoot(host);
+    if (!host || !el || el.getRootNode() !== host.shadowRoot || el === root) return null;
+    var inner = el;
+    while (el.parentElement && el.parentElement !== root && el.parentElement.localName !== "slot" && !holdsBlocks(el.parentElement) && phrasing(el)) el = el.parentElement;
+    return pressSelected(el, inner);
+  }
   window.addEventListener("pointerdown", function (e) {
     dismissContextMenu();
     press = null;
     // Edit component mode edits the template: the page's blocks stay put.
-    if (!state || editMode || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    if (!state || (editMode && !editHost()) || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     var target = deepestElement(e);
     if (!target || target.closest("input, textarea, select")) return;
     if (editing && editing.contains(target)) return;
@@ -3114,7 +3139,8 @@
     if (!press || e.pointerId !== press.id) return;
     if (!press.dragging) {
       if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 7) return;
-      var block = pressBlock(press.target);
+      var part = !!editHost();
+      var block = part ? pressPart(press.target) : pressBlock(press.target);
       var node = block && elementIndexPath(block);
       if (!node) { press = null; return; }
       press.dragging = true;
@@ -3127,7 +3153,7 @@
       updateBoxes();
       reportHover();
       emit("press-drag", { phase: "start", node: node, tag: block.localName, cls: block.getAttribute("class") || "",
-        band: sectionLike(block), x: e.clientX, y: e.clientY, alt: e.altKey });
+        band: !part && sectionLike(block), template: part, x: e.clientX, y: e.clientY, alt: e.altKey });
     } else emit("press-drag", { phase: "move", x: e.clientX, y: e.clientY, alt: e.altKey });
     e.preventDefault();
     var text = document.getSelection();

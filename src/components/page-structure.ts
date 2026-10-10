@@ -110,7 +110,7 @@ export interface PageStructureHandlers {
    * A press on the row of a block in `<main>` that may become a drag (the
    * page's block drag, insert-drag.ts `trackDrag`); none when it cannot.
    */
-  onRowDrag?: (press: DragPress, item: NativeStructureItem) => { justDragged(): boolean } | undefined;
+  onRowDrag?: (press: DragPress, item: NativeStructureItem, template?: { painted: string | undefined }) => { justDragged(): boolean } | undefined;
   /** Which slots of a component are items slots (block-insert.ts `itemsSlotRule`): their rows drag as page blocks do. */
   itemsSlots?: () => (tag: string, slot: string) => boolean;
   /** Status text for the screen reader. */
@@ -319,11 +319,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // The drag a press on a row began (insert-drag.ts): its release is not a click.
   let rowDrag: { justDragged(): boolean } | undefined;
 
-  function pressRow(event: PointerEvent, item: NativeStructureItem, el: HTMLElement) {
+  function pressRow(event: PointerEvent, item: NativeStructureItem, el: HTMLElement, template?: TemplateStructureItem) {
     rowDrag = undefined;
-    if (event.button !== 0 || !event.isPrimary || !structure?.path || !movable.has(key(item.node))) return;
+    if (event.button !== 0 || !event.isPrimary || !structure?.path || !movable.has(itemKey(item))) return;
     if ((event.target as HTMLElement).classList.contains("page-structure__toggle")) return;
-    rowDrag = handlers.onRowDrag?.({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, alt: event.altKey, source: el }, item);
+    rowDrag = handlers.onRowDrag?.({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, alt: event.altKey, source: el }, item,
+      template && { painted: template.paintedSource });
   }
 
   let renderingFields = false;
@@ -498,7 +499,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 
   const templatePaths = new WeakMap<NativeStructureItem, string>();
   const templateRoots = new WeakMap<NativeStructureItem, { path: string; node: number[] }>();
-  let rootAlias: { key: string; id: string } | undefined;
+  let rootAlias: { key: string; id: string; path: string; node: number[] } | undefined;
   const templateKey = (path: string, at: number[]) => `@${path}:${key(at)}`;
   const itemKey = (item: NativeStructureItem) => {
     const path = templatePaths.get(item);
@@ -524,7 +525,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const id = itemKey(item);
     if (insideMain && !template) inMain.add(id);
     if (insideMain && !sealed && !template) movable.add(id);
-    if (!template) items.set(id, item);
+    // Edit component mode: the parts of the template edited drag in it (slice 82); outer levels' rows don't.
+    if (own && !outerRows.has(item)) movable.add(id);
+    items.set(id, item);
     const el = node("div", "page-structure__row");
     el.setAttribute("role", "treeitem");
     el.setAttribute("aria-level", String(level));
@@ -546,7 +549,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const opened = modeRows && !modeRows.nested ? { path: modeRows.path, root: modeRows.root, current: true } : own?.opened;
     if (opened?.root) {
       templateRoots.set(item, { path: opened.path, node: [...opened.root] });
-      if (opened.current) rootAlias = { key: templateKey(opened.path, opened.root), id };
+      if (opened.current) rootAlias = { key: templateKey(opened.path, opened.root), id, path: opened.path, node: [...opened.root] };
       el.dataset.templatePath = opened.path;
     } else templateRoots.delete(item);
     if (modeRows?.nested) outerRows.add(item);
@@ -664,7 +667,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     // An unknown slot assignment keeps its CSS-drawn name; a known slot wears its badge.
     if (item.slot) el.dataset.slot = item.slot;
-    el.addEventListener("pointerdown", (event) => { if (inEditor(event.target)) return; notePress(event, el); if (!template && !modeRows) pressRow(event, item, el); });
+    el.addEventListener("pointerdown", (event) => { if (inEditor(event.target)) return; notePress(event, el); if (!modeRows) pressRow(event, item, el, own); });
     el.addEventListener("click", (event) => {
       if (rowDrag?.justDragged()) return;
       if (inEditor(event.target)) return;
@@ -1042,78 +1045,107 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const group = el.nextElementSibling;
     return (group instanceof HTMLElement && group.getAttribute("role") === "group" && !group.hidden ? group : el).getBoundingClientRect().bottom;
   };
-  const onWay = (id: string, path: readonly number[] | undefined) => path !== undefined && (key(path) === id || key(path).startsWith(`${id}.`));
-  const dropView: StructureDropView = {
-    over(x, y) {
-      if (tree.hidden) return false;
-      const hit = document.elementFromPoint(x, y);
-      return Boolean(hit && host.contains(hit));
-    },
-    rows: () => visibleRows().flatMap((el): TreeRow[] => {
-      const item = el.dataset.node !== undefined ? items.get(el.dataset.node) : undefined;
-      if (!item) return [];
-      const { top, bottom } = el.getBoundingClientRect();
-      return [{ item, folded: el.getAttribute("aria-expanded") === "false", level: Number(el.getAttribute("aria-level")) || 1, top, bottom, end: subtreeEnd(el) }];
-    }),
-    indent: () => ({
-      left: tree.getBoundingClientRect().left + LINE_LEFT,
-      step: parseFloat(getComputedStyle(tree).getPropertyValue("--structure-indent")) || 14,
-    }),
-    unfold(target, keep) {
-      for (const id of [...dragOpened].sort((a, b) => b.length - a.length)) {
-        if (onWay(id, target) || onWay(id, keep)) continue;
-        dragOpened.delete(id);
-        const el = rows.get(id), item = items.get(id);
-        if (el && item && !isFolded(id)) fold(item, el, true);
-      }
-      if (!target) { dragOpened.clear(); return; }
-      for (let depth = 1; depth <= target.length; depth++) dropView.open(target.slice(0, depth));
-    },
-    open(target) {
-      const id = key(target), el = rows.get(id), item = items.get(id);
-      if (el && item && el.hasAttribute("aria-expanded") && isFolded(id)) { fold(item, el, false); dragOpened.add(id); }
-    },
-    foldBelow(y, target) {
-      for (const path of [...foldRows(dropView.rows(), y, target, dragOpened)].reverse()) {
-        const id = key(path), el = rows.get(id), item = items.get(id);
-        if (!el || !item) continue;
-        dragOpened.delete(id);
-        fold(item, el, true);
-      }
-    },
-    spring(target) {
-      const el = target && rows.get(key(target));
-      if (el === springMarked) return;
-      springMarked?.classList.remove("is-spring");
-      springMarked = el;
-      springMarked?.classList.add("is-spring");
-    },
-    mark(shown, reveal, moving) {
-      const sig = JSON.stringify([shown, moving]);
-      // Asked every frame: a redrawn tree (rows replaced) is marked again.
-      if (sig === marked.sig && (!marked.row || marked.row.isConnected) && (!marked.moving || marked.moving.isConnected)) return;
-      marked.row?.classList.remove("is-drop-target", "is-drop-refused");
-      marked.moving?.classList.remove("is-drag-source");
-      marked = { sig };
-      tree.classList.toggle("is-dragging", Boolean(shown || moving));
-      const source = moving && rows.get(key(moving));
-      if (source) { source.classList.add("is-drag-source"); marked.moving = source; }
-      drop.hidden = !shown;
-      if (!shown) return;
-      drop.style.top = `${shown.line.y - tree.getBoundingClientRect().top}px`;
-      drop.style.setProperty("--depth", String(shown.line.level - 1));
-      drop.classList.toggle("is-refused", !shown.ok);
-      const container = shown.row && rows.get(key(shown.row));
-      if (container) { container.classList.add(shown.ok ? "is-drop-target" : "is-drop-refused"); marked.row = container; }
-      if (reveal) drop.scrollIntoView({ block: "nearest" });
-    },
-    edgeScroll(y) {
-      const box = host.getBoundingClientRect();
-      if (y < box.top + EDGE) host.scrollTop -= EDGE_STEP;
-      else if (y > box.bottom - EDGE) host.scrollTop += EDGE_STEP;
-    },
-    painted: () => structure?.paintedSource,
-  };
+  // A drag's view of the tree: the page's rows by body paths, or in Edit
+  // component mode (`template`) the rows of the template edited by template
+  // paths, the framed instance's row standing for the template's root.
+  function dropViewFor(template?: string): StructureDropView {
+    const alias = () => template !== undefined && rootAlias?.path === template ? rootAlias : undefined;
+    // The row of exactly that path.
+    const idOf = (path: readonly number[]) => {
+      if (template === undefined) return key(path);
+      const root = alias();
+      return root && key(path) === key(root.node) ? root.id : templateKey(template, [...path]);
+    };
+    // The row of that path, else of its nearest ancestor (a template's slot has none).
+    const rowOf = (path: readonly number[]) => {
+      for (let n = path.length; n > 0; n--) { const id = idOf(path.slice(0, n)); if (rows.has(id)) return id; }
+      return undefined;
+    };
+    const onWay = (id: string, path: readonly number[] | undefined) => path !== undefined && path.some((_, n) => idOf(path.slice(0, n + 1)) === id);
+    const view: StructureDropView = {
+      over(x, y) {
+        if (tree.hidden || (template !== undefined && !alias())) return false;
+        const hit = document.elementFromPoint(x, y);
+        return Boolean(hit && host.contains(hit));
+      },
+      rows: () => visibleRows().flatMap((el): TreeRow[] => {
+        const id = el.dataset.node, found = id !== undefined ? items.get(id) : undefined;
+        if (!found) return [];
+        let item = found;
+        const root = alias();
+        if (template === undefined ? templatePaths.has(found) : !root) return [];
+        if (root && id === root.id) item = { ...found, node: [...root.node] };
+        else if (root && (templatePaths.get(found) !== template || outerRows.has(found))) return [];
+        const { top, bottom } = el.getBoundingClientRect();
+        return [{ item, folded: el.getAttribute("aria-expanded") === "false", level: Number(el.getAttribute("aria-level")) || 1, top, bottom, end: subtreeEnd(el) }];
+      }),
+      indent: () => ({
+        left: tree.getBoundingClientRect().left + LINE_LEFT,
+        step: parseFloat(getComputedStyle(tree).getPropertyValue("--structure-indent")) || 14,
+      }),
+      unfold(target, keep) {
+        for (const id of [...dragOpened].sort((a, b) => b.length - a.length)) {
+          if (onWay(id, target) || onWay(id, keep)) continue;
+          dragOpened.delete(id);
+          const el = rows.get(id), item = items.get(id);
+          if (el && item && !isFolded(id)) fold(item, el, true);
+        }
+        if (!target) { dragOpened.clear(); return; }
+        for (let depth = 1; depth <= target.length; depth++) view.open(target.slice(0, depth));
+      },
+      open(target) {
+        const id = idOf(target), el = rows.get(id), item = items.get(id);
+        if (el && item && el.hasAttribute("aria-expanded") && isFolded(id)) { fold(item, el, false); dragOpened.add(id); }
+      },
+      foldBelow(y, target) {
+        const shown = view.rows();
+        const opened = new Set(shown.filter((row) => dragOpened.has(idOf(row.item.node))).map((row) => key(row.item.node)));
+        for (const path of [...foldRows(shown, y, target, opened)].reverse()) {
+          const id = idOf(path), el = rows.get(id), item = items.get(id);
+          if (!el || !item) continue;
+          dragOpened.delete(id);
+          fold(item, el, true);
+        }
+      },
+      spring(target) {
+        const el = target && rows.get(idOf(target));
+        if (el === springMarked) return;
+        springMarked?.classList.remove("is-spring");
+        springMarked = el;
+        springMarked?.classList.add("is-spring");
+      },
+      mark(shown, reveal, moving) {
+        const sig = JSON.stringify([shown, moving]);
+        // Asked every frame: a redrawn tree (rows replaced) is marked again.
+        if (sig === marked.sig && (!marked.row || marked.row.isConnected) && (!marked.moving || marked.moving.isConnected)) return;
+        marked.row?.classList.remove("is-drop-target", "is-drop-refused");
+        marked.moving?.classList.remove("is-drag-source");
+        marked = { sig };
+        tree.classList.toggle("is-dragging", Boolean(shown || moving));
+        // A template's named slot moves with its element: that element's row.
+        const inside = moving && !rows.has(idOf(moving)) ? view.rows().find((row) => onWay(idOf(moving), row.item.node)) : undefined;
+        const source = moving && rows.get(inside ? idOf(inside.item.node) : idOf(moving));
+        if (source) { source.classList.add("is-drag-source"); marked.moving = source; }
+        drop.hidden = !shown;
+        if (!shown) return;
+        drop.style.top = `${shown.line.y - tree.getBoundingClientRect().top}px`;
+        drop.style.setProperty("--depth", String(shown.line.level - 1));
+        drop.classList.toggle("is-refused", !shown.ok);
+        const containerId = shown.row && rowOf(shown.row), container = containerId ? rows.get(containerId) : undefined;
+        if (container) { container.classList.add(shown.ok ? "is-drop-target" : "is-drop-refused"); marked.row = container; }
+        if (reveal) drop.scrollIntoView({ block: "nearest" });
+      },
+      edgeScroll(y) {
+        const box = host.getBoundingClientRect();
+        if (y < box.top + EDGE) host.scrollTop -= EDGE_STEP;
+        else if (y > box.bottom - EDGE) host.scrollTop += EDGE_STEP;
+      },
+      // A template's rows were painted from its bytes.
+      painted: () => template === undefined ? structure?.paintedSource
+        : ([...items.values()].find((item) => templatePaths.get(item) === template) as TemplateStructureItem | undefined)?.paintedSource,
+    };
+    return view;
+  }
 
   function focusRowOnly(el: HTMLElement) {
     for (const other of rows.values()) other.tabIndex = -1;
@@ -1183,7 +1215,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       current?.scrollIntoView({ block: "nearest" });
     },
     /** What a block's drag draws in the tree and measures there (tree-drop.ts). */
-    dropView: () => dropView,
+    dropView: (template?: string) => dropViewFor(template),
     /** Source or mode changed without a new runtime structure report. */
     refresh() { rendered = ""; render(); },
     /** The page changed under the fields: show its title and description again. */

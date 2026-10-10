@@ -1,5 +1,6 @@
 // Inserting a block (Section, Div, Heading, Paragraph, Image, Button) into a
-// page, or moving one of the page's blocks: one source edit and one undo
+// page, or moving any of the page's elements (or the template's parts in
+// Edit component mode) where HTML allows: one source edit and one undo
 // step, with the block selected and its place flashed. The rail's click
 // (`click`) picks the place from the selection
 // (src/page-builder/block-insert.ts); a drag (`drop`, `move`) brings the
@@ -9,8 +10,8 @@
 // (`templateClickTarget`); each insert is one step on the template file.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
-import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal } from "../page-builder/block-insert";
-import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit } from "../page-builder/native-operations";
+import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, templateMoveRefusal } from "../page-builder/block-insert";
+import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit, nativeMoveRefusal } from "../page-builder/native-operations";
 import { nativeElementMovePlan } from "../page-builder/native-move-choices";
 
 type NodeRequest = { path: string; node: number[] };
@@ -155,11 +156,17 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
       if (file) templates.set(file.path, file.source);
       return file?.source;
     });
+    // In Edit component mode, the template's own rule: never into a named slot or a nested component.
+    const refused = at.template === undefined ? undefined : templateMoveRefusal(source, from, place.parent);
+    if (refused) { ports.refuse(`${name} was not moved: ${refused}`); return; }
     const plan = nativeElementMovePlan(source, from, place, items);
     // Where it already is (the drag says so): nothing to write.
     if (plan.status === "stayed") return;
     const next = plan.status === "moved" ? applyGuardedSourceEdit(source, plan.edit) : undefined;
-    if (plan.status !== "moved" || next === undefined) { ports.refuse(`${name} was not moved: the HTML there cannot take it.`); return; }
+    if (plan.status !== "moved" || next === undefined) {
+      ports.refuse(`${name} was not moved: ${nativeMoveRefusal(source, from, place.parent, items, place.slot) ?? "the HTML there cannot take it."}`);
+      return;
+    }
     const { path } = at;
     const opened = await ports.open(path);
     if (!opened || !still() || ports.source(path) !== source) { ports.refuse("The page changed meanwhile. Try again."); return; }

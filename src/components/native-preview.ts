@@ -206,8 +206,12 @@ export interface NativeTextEdit {
   after: string;
 }
 
-/** A block pressed in the page: its body path, tag and class, whether it is a band, and the page bytes it was painted from. */
-export interface PressedBlock { node: number[]; tag: string; cls: string; band: boolean; painted: string | undefined }
+/**
+ * A block pressed in the page: its body path, tag and class, whether it is a
+ * band, and the page bytes it was painted from; `template`: a part of the
+ * template edited in Edit component mode, by its template path and bytes.
+ */
+export interface PressedBlock { node: number[]; tag: string; cls: string; band: boolean; painted: string | undefined; template?: boolean }
 
 export interface NativePreviewHandlers {
   /** A right-click in the frame selected `selection`: open its element menu at `point` (host viewport). */
@@ -784,15 +788,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // that (frame-viewport points). The start names the block in the DOM of
     // the render it saw: a stale one starts nothing.
     if (data.type === "press-drag") {
-      const raw = data as { phase?: unknown; x?: unknown; y?: unknown; alt?: unknown; node?: unknown; tag?: unknown; cls?: unknown; band?: unknown };
+      const raw = data as { phase?: unknown; x?: unknown; y?: unknown; alt?: unknown; node?: unknown; tag?: unknown; cls?: unknown; band?: unknown; template?: unknown };
       const box = frame.getBoundingClientRect();
       const x = box.left + frame.clientLeft + Number(raw.x), y = box.top + frame.clientTop + Number(raw.y);
       if (raw.phase === "start") {
         endPress();
         if (!site || data.context !== context || viewing || !indexes(raw.node) || !raw.node.length || typeof raw.tag !== "string" || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        const painted = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[site.routes[route]] : undefined;
+        // A template's part: the bytes of the template edited (the innermost one opened).
+        const template = raw.template === true;
+        const tag = editMode && (editMode.nested?.[editMode.nested.length - 1]?.tag ?? editMode.tag);
+        const file = template ? tag && Object.hasOwn(site.components, tag) ? site.components[tag] : undefined : site.routes[route];
+        const painted = sentStructureSnapshot?.context === context && file !== undefined ? sentStructureSnapshot.sources[file] : undefined;
         pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: raw.alt === true, relayed: true },
-          { node: raw.node, tag: raw.tag, cls: typeof raw.cls === "string" ? raw.cls : "", band: raw.band === true, painted });
+          { node: raw.node, tag: raw.tag, cls: typeof raw.cls === "string" ? raw.cls : "", band: raw.band === true, painted, ...(template ? { template } : {}) });
         return;
       }
       if (raw.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, raw.alt === true);

@@ -188,7 +188,7 @@ test("a move measured on older bytes, onto itself or into a component's other pa
   await controller.move(move([0, 0, 0], "Heading", { parent: [0, 0], index: 1, where: "" }, nested));
   assert.equal(log.refusals.length, 1);
   await controller.move(move([0, 0, 0], "Heading", { parent: [0, 0, 1], index: 0, where: "" }, nested));
-  assert.equal(log.refusals[1], "Heading was not moved: the HTML there cannot take it.");
+  assert.equal(log.refusals[1], "Heading was not moved: Its parts belong to the component: open it to change them.");
   // Pressed on bytes that changed outside the block since: refused, not moved by its old path.
   const outside = nested.replace("<p>x</p>", "<p>y</p>");
   const changed = setup({}, { "index.html": outside });
@@ -228,5 +228,34 @@ test("a block moves into an instance's items slot with the slot's name; the temp
   assert.match(again.log.ops[0].edits.get("index.html")!, /<h2 slot="title">Work<\/h2>\s*<p>Note<\/p><\/section-work>/);
   const title = setup({}, { ...files, "index.html": work });
   await title.controller.move(move([0, 0], "Paragraph", { parent: [0, 1], index: 1, where: "", slot: "title" }, work));
-  assert.deepEqual([title.log.ops.length, title.log.refusals], [0, ["Paragraph was not moved: the HTML there cannot take it."]]);
+  assert.deepEqual([title.log.ops.length, title.log.refusals], [0, ["Paragraph was not moved: Its parts belong to the component: open it to change them."]]);
+});
+
+test("any element moves where HTML allows: a link into another paragraph; a Div into a paragraph refuses with the reason (slice 82)", async () => {
+  const text = '<!doctype html><html><head><title>Home</title></head><body><main><section><p>One <a href="/a">link</a>.</p><p>Two</p><div class="flow"></div></section><h2>Loose</h2></main></body></html>';
+  const { controller, log, files } = setup({}, { "index.html": text });
+  await controller.move(move([0, 0, 0, 0], "Link", { parent: [0, 0, 1], index: 0, where: "Into Paragraph › at the end" }, text));
+  assert.deepEqual(log.refusals, []);
+  assert.match(files["index.html"], /<p>One \.<\/p><p>Two <a href="\/a">link<\/a><\/p>/);
+  assert.deepEqual(log.ops[0].selection.after, { path: "index.html", node: [0, 0, 1, 0] });
+  const div = setup({}, { "index.html": text });
+  await div.controller.move(move([0, 0, 2], "Div", { parent: [0, 0, 0], index: 0, where: "" }, text));
+  assert.deepEqual([div.log.ops.length, div.log.refusals], [0, ["Div was not moved: A <div> can't go inside a <p>."]]);
+});
+
+test("in Edit component mode a template's part moves in the template; named slots and the outside refuse (slice 82)", async () => {
+  const template = '<article>\n  <slot name="title"><h3>Title</h3></slot>\n  <p class="body">Body</p>\n  <slot></slot>\n</article>';
+  const files = () => ({ "index.html": page, "components/card-x/card-x.html": template });
+  const target = () => ({ path: "components/card-x/card-x.html", template: "card-x" });
+  const { controller, log } = setup({ target }, files());
+  // The title slot moves with its heading, after the body paragraph.
+  await controller.move(move([0, 0], "Heading", { parent: [0], index: 2, where: "Into Article › after Paragraph" }, template));
+  assert.deepEqual(log.refusals, []);
+  assert.match(log.ops[0].edits.get("components/card-x/card-x.html")!, /<p class="body">Body<\/p>\s*<slot name="title"><h3>Title<\/h3><\/slot>\s*<slot><\/slot>/);
+  const into = setup({ target }, files());
+  await into.controller.move(move([0, 1], "Paragraph", { parent: [0, 0], index: 0, where: "" }, template));
+  assert.deepEqual([into.log.ops.length, into.log.refusals], [0, ["Paragraph was not moved: The “title” slot is filled on each page: drop beside it, or into the component's items."]]);
+  const out = setup({ target }, files());
+  await out.controller.move(move([0, 1], "Paragraph", { parent: [], index: 1, where: "" }, template));
+  assert.deepEqual([out.log.ops.length, out.log.refusals], [0, ["Paragraph was not moved: Parts go inside the template's element, not beside it."]]);
 });
