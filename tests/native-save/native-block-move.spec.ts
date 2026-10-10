@@ -159,7 +159,9 @@ test("a click selects a paragraph, a double-click types into it, Escape keeps it
   await expect.poll(async () => flat(await source(page))).toContain('<p class="lead">One (or three) or two sentences');
   // Pressed and moved at once, the clicked paragraph drags after the services list.
   await lead.click();
-  await pressAndMove(page, await pointIn(page, ".hero .lead", 0.3), await pointIn(page, "#services ul", 0.5, 0.6));
+  // At the list's bottom edge: a list item would take it (slice 82), the edge passes it beside the list.
+  const below = await pointIn(page, "#services ul", 0.5, 1);
+  await pressAndMove(page, await pointIn(page, ".hero .lead", 0.3), { x: below.x, y: below.y - 3 });
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Paragraph");
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after List");
   await page.mouse.up();
@@ -198,7 +200,8 @@ test("a press in typed text selects it, and the name chip moves it", async ({ pa
   let c: { x: number; y: number; width: number; height: number } | null = null;
   await expect.poll(async () => (c = await chip.boundingBox())).not.toBeNull();
   c = c!;
-  await pressAndMove(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 }, await pointIn(page, "#services ul", 0.5, 0.6));
+  const below = await pointIn(page, "#services ul", 0.5, 1);
+  await pressAndMove(page, { x: c.x + c.width / 2, y: c.y + c.height / 2 }, { x: below.x, y: below.y - 3 });
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after List");
   await page.mouse.up();
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/ul><p class="lead">One or two sentences[^<]*what they get\. Typed\.<\/p>/);
