@@ -32,23 +32,6 @@ export function scriptSetAttributes(source: string): string[] {
   return [...names];
 }
 
-// The latest scan of each script path, so the edit bar and the code pane
-// rescan only scripts whose content changed; paths no longer passed drop out.
-const scriptCache = new Map<string, { source: string; names: string[] }>();
-
-/** `scriptSetAttributes` over a site's scripts, cached per path and content. */
-export function scriptsSetAttributes(scripts: Iterable<{ path: string; source: string }>): string[] {
-  const seen = new Set<string>(), names = new Set<string>();
-  for (const { path, source } of scripts) {
-    seen.add(path);
-    let cached = scriptCache.get(path);
-    if (cached?.source !== source) scriptCache.set(path, cached = { source, names: scriptSetAttributes(source) });
-    for (const name of cached.names) names.add(name);
-  }
-  for (const path of scriptCache.keys()) if (!seen.has(path)) scriptCache.delete(path);
-  return [...names];
-}
-
 export interface VariantValue { value: string; label: string; conditions: string[] }
 export interface Variant {
   attribute: string;

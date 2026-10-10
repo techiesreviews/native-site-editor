@@ -111,7 +111,7 @@ test("a part chosen in the framed instance while the template opens stays select
     let current = "index.html";
     const asked: number[][] = [];
     const tools = createComponentTools({
-      site: () => ({ components: { "promo-box": templatePath }, routes: { "/": "index.html" } }) as never, revision: () => "r", sources: () => sources, scripts: () => [],
+      site: () => ({ components: { "promo-box": templatePath }, routes: { "/": "index.html" } }) as never, revision: () => "r", sources: () => sources, variantFiles: { site: () => undefined, read: () => undefined },
       editor: () => undefined, preview: () => ({ selectNode: (request: { node: number[] }) => asked.push(request.node), selectAfterUpdate: () => {}, editComponent: () => {} }),
       currentPath: () => current, selection: () => selection as never,
       openFile: async (path: string) => { current = path; selection = part; return true; },

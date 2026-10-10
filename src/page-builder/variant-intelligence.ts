@@ -1,27 +1,8 @@
-import { expandStyleImports } from "../../shared/css-imports";
-import { componentVariants, scriptsSetAttributes, siteVariants, variantsForComponent, valueLabel, type Variant } from "../../shared/variants";
+import { componentVariants, valueLabel, type Variant } from "../../shared/variants";
 
-export interface VariantLookup {
-  forTag(tag: string): Variant[] | undefined;
-  isComponentCss(path: string): boolean;
-}
-/** Component tags map to their own CSS paths. Kept in Monaco's lazy chunk. */
-export function createVariantLookup(sources: Record<string, string>, components: Record<string, string>): VariantLookup {
-  const componentPaths = new Set(Object.values(components));
-  const own = new Map(Object.entries(components).map(([tag, path]) => [tag, expandStyleImports([path], file => sources[file])]));
-  const ownPaths = new Set([...componentPaths, ...[...own.values()].flatMap(sheet => sheet.imported)]);
-  const sharedPaths = Object.keys(sources).filter(path => /\.css$/i.test(path) && !ownPaths.has(path));
-  const expanded = expandStyleImports(sharedPaths, path => sources[path]);
-  const roots = sharedPaths.filter(path => !expanded.imported.includes(path));
-  const site = siteVariants(expandStyleImports(roots.length ? roots : sharedPaths, path => sources[path]).sheets);
-  const scripted = scriptsSetAttributes(Object.entries(sources).filter(([path]) => /\.m?js$/i.test(path)).map(([path, source]) => ({ path, source })));
-  const byTag = new Map(Object.keys(components).map(tag => [tag,
-    variantsForComponent(tag, { css: own.get(tag)!.sheets.map(sheet => sheet.source).join("\n"), site, scriptAttributes: scripted }).variants]));
-  return { forTag: tag => byTag.get(tag.toLowerCase()), isComponentCss: path => componentPaths.has(path) };
-}
-export type VariantLookupFactory = typeof createVariantLookup;
-
-type Lookup = VariantLookup["forTag"];
+// The code pane's Variant notes for HTML and CSS text, pure; a tag's Variants
+// come from the site's one lookup (shared/variant-lookup.ts, in code-editor.ts).
+type Lookup = (tag: string) => readonly Variant[] | undefined;
 interface Span { start: number; end: number }
 interface Attribute extends Span { name: string; nameEnd: number; value?: string; valueStart?: number; valueEnd?: number; quoted?: boolean }
 interface Tag extends Span { name: string; nameEnd: number; attributes: Attribute[] }

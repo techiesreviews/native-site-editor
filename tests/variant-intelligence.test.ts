@@ -76,22 +76,3 @@ test("CSS warning mapping preserves broken offsets and fix; default warning only
   assert.equal(variantCssMarkers(css, false).length, 2);
   assert.deepEqual(variantCssMarkers(':host {} :host([data-tone=dark]) {}', true), []);
 });
-test("lookup merges expanded site and component imports, excluding scripts only from own CSS", async () => {
-  const { createVariantLookup } = await import("../src/page-builder/variant-intelligence.ts");
-  const lookup = createVariantLookup({
-    'hero.css': '@import "own.css"; :host {} :host([data-open]) {} :host([data-tone=own]) {}',
-    'own.css': ':host([data-layout=stacked]) {}',
-    'site.css': '@import "shared.css" screen;',
-    'shared.css': '[data-tone=dark] {} [data-open] {}',
-    'script.js': 'el.dataset.open = ""; el.setAttribute("data-tone", "own")',
-  }, { 'section-hero': 'hero.css', 'other-tag': 'absent.css' });
-  const variants = lookup.forTag('SECTION-HERO')!;
-  assert.deepEqual(variants.find(item => item.attribute === 'data-tone')!.values.map(item => item.value), ['dark']);
-  assert.deepEqual(variants.find(item => item.attribute === 'data-tone')!.conditions, ['@media screen']);
-  assert.ok(variants.some(item => item.attribute === 'data-open'));
-  assert.ok(variants.some(item => item.attribute === 'data-layout'));
-  assert.equal(lookup.isComponentCss('hero.css'), true);
-  assert.equal(lookup.isComponentCss('shared.css'), false);
-  assert.equal(lookup.forTag('missing-tag'), undefined);
-  assert.ok(!lookup.forTag('other-tag')!.some(item => item.attribute === 'data-layout'));
-});

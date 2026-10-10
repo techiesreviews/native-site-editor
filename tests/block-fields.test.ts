@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { startTags } from "../shared/html-source.ts";
 import { blockLayout, blockLayoutEdit, isButtonBlock } from "../src/page-builder/block-fields.ts";
 import { buttonVariantFields } from "../src/page-builder/variant-fields.ts";
+import { memorySiteVariants } from "./variant-files-fake.ts";
 
 const swap = (source: string, next: string) => {
   const edit = blockLayoutEdit(source, startTags(source)[0], next)!;
@@ -49,12 +50,12 @@ test("only an anchor with the complete btn class token is a Button block", () =>
 });
 
 test("Button fields use .btn axes, preserve Custom, notes and presence, and ignore global rules", () => {
-  const sheets = [{ path: "site.css", source: '[data-tone=dark] {} .btn[data-variant=secondary] {} .btn[data-size=small] {} @media (width > 720px) { .btn[data-featured] {} }' }];
-  const fields = buttonVariantFields(sheets, [{ name: "data-size", value: "huge" }]);
+  const lookup = memorySiteVariants({ sheets: { "site.css": '[data-tone=dark] {} .btn[data-variant=secondary] {} .btn[data-size=small] {} @media (width > 720px) { .btn[data-featured] {} }' } });
+  const fields = buttonVariantFields(lookup.forClass("btn"), [{ name: "data-size", value: "huge" }]);
   assert.deepEqual(fields.map(field => field.label), ["Variant", "Size", "Featured"]);
   assert.equal(fields[1].value, "=huge");
   assert.deepEqual(fields[1].options.at(-1), { label: "Custom", value: "=huge" });
   assert.equal(fields[2].kind, "yes-no");
   assert.equal(fields[2].note, "wide screens only");
-  assert.deepEqual(buttonVariantFields([{ path: "site.css", source: '[data-tone=dark] {}' }], []), []);
+  assert.deepEqual(buttonVariantFields(memorySiteVariants({ sheets: { "site.css": '[data-tone=dark] {}' } }).forClass("btn"), []), []);
 });

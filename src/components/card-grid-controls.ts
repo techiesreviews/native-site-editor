@@ -7,6 +7,7 @@ import type { CardLinkPicker } from "./card-link-picker";
 import type { CardLook } from "../page-builder/card-looks";
 import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import type { CardLookGallery } from "./card-look-gallery";
+import type { VariantFiles } from "../../shared/variant-lookup";
 import type { CardContent } from "../page-builder/card-swap";
 import "./card-grid-controls.css";
 
@@ -122,8 +123,8 @@ export interface CardGridHandlers {
   cardText(card: NewCard): string | undefined;
   /** Creates a page and fills the placed card as one undo step. */
   createPage(card: NewCard, request: CardPageRequest): CardFilled | undefined | Promise<CardFilled | undefined>;
-  /** The site's scripts: the attributes they set are no looks. */
-  scripts(): { path: string; source: string }[];
+  /** The site's files for its Variant lookup (shared/variant-lookup.ts): the card's Variants as the edit bar has them. */
+  variantFiles: VariantFiles;
 }
 
 // A card slot is its own grid: an instance can hold several (`slot`).
@@ -325,7 +326,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       menu.view = createCardLookGallery(pane, chip, {
         inputs: () => lookSupport.inputs(),
         prepare: (tags) => lookSupport.prepare(tags),
-        scripts: () => handlers.scripts(),
+        variantFiles: handlers.variantFiles,
         card: entry.usual!,
         noun: "card",
         cardWidth: Math.max(220, Math.min(420, width ?? 320)),
@@ -473,7 +474,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       entry.view = createCardLookGallery(pane, looks, {
         inputs: () => lookSupport.inputs(),
         prepare: (tags) => lookSupport.prepare(tags),
-        scripts: () => handlers.scripts(),
+        variantFiles: handlers.variantFiles,
         card,
         noun: shown?.about.noun ?? "card",
         cardWidth: Math.max(220, Math.min(420, width)),
@@ -545,7 +546,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       looksMenu?.view?.refresh();
       dropStale();
     },
-    /** The site's scripts were read late: the looks follow (those the scripts set are none). */
+    /** A file the Variant lookup asked for was read late: the looks follow. */
     refreshLooks() {
       gallery?.view?.refresh();
       looksMenu?.view?.refresh();

@@ -25,6 +25,7 @@ import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
 import type { CardContent } from "./card-swap";
+import type { VariantFiles } from "../../shared/variant-lookup";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
 import { nativeLinkTarget } from "../../shared/native-routes";
@@ -65,8 +66,8 @@ export interface CardsDeps {
   operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string }; current?: () => boolean; selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } } }): Promise<string | undefined>;
   /** What the Pages tab calls a page file ("Home"). */
   pageLabel(file: string): string;
-  /** The site's scripts, drafts applied (read lazily), for the attributes they set: those are no card looks. */
-  scripts(): { path: string; source: string }[];
+  /** The site's files for its Variant lookup (shared/variant-lookup.ts), drafts applied, read lazily. */
+  variantFiles: VariantFiles;
   announce(text: string): void;
 }
 
@@ -668,7 +669,7 @@ export function createCards(deps: CardsDeps) {
     fillCard,
     swapCard,
     cardText,
-    scripts: () => deps.scripts(),
+    variantFiles: deps.variantFiles,
     move,
     controls,
 

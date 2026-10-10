@@ -35,11 +35,12 @@ import { mountComponentPanelResize } from "./component-panel-resize";
 import { mountDropdown } from "../components/dropdown";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
-import { nativeComponentCssPath, nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
+import { nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
 import { expandStyleImports } from "../../shared/css-imports";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { CheckboxControl, EditBarControl, EditBarModel, SelectControl } from "../components/edit-bar";
 import type { VariantField } from "./variant-fields";
+import type { VariantFiles } from "../../shared/variant-lookup";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange } from "../native-source-location";
 import type { InsertPoint } from "../components/insert-controls";
@@ -123,8 +124,8 @@ export interface ComponentDeps {
   revision: () => string;
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
-  /** Current site scripts, read lazily for instance variants; late reads refresh the bar. */
-  scripts: () => { path: string; source: string }[];
+  /** The site's files for its Variant lookup (shared/variant-lookup.ts); late reads refresh the bar. */
+  variantFiles: VariantFiles;
   editor: () => CodeEditor | undefined;
   preview: () => { flushPendingUpdate?(): void; selectAfterUpdate(request: { path: string; node: number[] } | undefined): void; selectNode(request: { path: string; node: number[] }): void; editComponent?(mode: EditComponentFrameMode | undefined): void } & Partial<PreviewTextPatch> | undefined;
   /** The file open in the code pane. */
@@ -575,11 +576,9 @@ export function createComponentTools(deps: ComponentDeps) {
     const band = reader.isToneBand(elementChain(source, selection.node)?.map((element) => element.localName) ?? [], Object.values(current.routes).includes(selection.path), (tag) => templateOf(tag)?.source);
     if ((!button && !instance && !band) || !openingSourceSafe(source, range.tag)) return [];
     const at = { path: selection.path, node: selection.node, source, range, tag: selection.tag };
-    const sources = deps.sources();
     // An instance inside a template takes the site styles of the page the preview shows.
     const page = Object.values(current.routes).includes(at.path) ? at.path : deps.previewPage();
-    const linked = page ? nativePageStylesheets(sources[page] ?? "", page).filter((path) => sources[path] !== undefined) : [];
-    const sheets = expandStyleImports(linked, (path) => sources[path]).sheets;
+    const lookup = reader.variantLookup(deps.variantFiles), scope = { page };
     const revision = deps.revision();
     const pick = (field: VariantField, choice: string) => {
       const now = deps.sources()[at.path];
@@ -597,9 +596,9 @@ export function createComponentTools(deps: ComponentDeps) {
         : value === undefined ? `${field.label}: default` : `${field.label}: ${option}`;
       change(at.path, [attributeEdit(at.source, at.range.tag, field.attribute, value)], message, at.node);
     };
-    const variants = button ? reader.buttonVariantFields(sheets, attributes)
-      : instance ? reader.instanceVariantFields(at.tag, sources[nativeComponentCssPath(instance.templatePath)] ?? "", sheets, attributes, deps.scripts(), band)
-        : reader.bandVariantFields(sheets, attributes);
+    const variants = button ? reader.buttonVariantFields(lookup.forClass("btn", scope), attributes)
+      : instance ? reader.instanceVariantFields(lookup.forTag(at.tag, scope)?.variants ?? [], attributes, band)
+        : reader.bandVariantFields(lookup.global(scope), attributes);
     const fields = variants.map((field): SelectControl | CheckboxControl => {
       const note = field.note ? { note: field.note } : {};
       return field.kind === "yes-no"

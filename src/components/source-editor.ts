@@ -15,7 +15,7 @@
 // entry's revision.
 import { refuse, refusalsSaid } from "./refusal-note";
 import "./source-editor.css";
-import type { VariantLookup, VariantLookupFactory } from "../page-builder/variant-intelligence";
+import type { VariantFiles } from "../../shared/variant-lookup";
 import type { CssWorkspace } from "../page-builder/css-intelligence";
 import { draftStore, draftKey, type DraftScope, type SavedDraft } from "../drafts";
 import { createDraftStore, RECEIPT_REFUSAL, type DraftEvent, type DraftTextStore, type HistoryCompanion } from "../draft-store";
@@ -32,8 +32,8 @@ export interface SourceFile {
   key: string;
   /** Current, scope-bound CSS sources. The host opens a real editor for definitions. */
   cssWorkspace?: () => CssWorkspace | undefined;
-  /** The lazy view supplies the parser; the host supplies current, cached sources. */
-  variants?: (build: VariantLookupFactory) => VariantLookup | undefined;
+  /** The site's files for its Variant lookup (shared/variant-lookup.ts); the lazy view asks it. */
+  variants?: VariantFiles;
   path: string;
   source: string;
   readOnly?: boolean;
@@ -110,8 +110,8 @@ export interface PaneHost {
   /** The pane is still mounted. */
   isCurrent(): boolean;
   cssWorkspace?: () => CssWorkspace | undefined;
-  /** The lazy view supplies the parser; the host supplies current, cached sources. */
-  variants?: (build: VariantLookupFactory) => VariantLookup | undefined;
+  /** The site's files for its Variant lookup (shared/variant-lookup.ts); the lazy view asks it. */
+  variants?: VariantFiles;
   /** Called again when the host's variant sources change outside the store. */
   onVariantsChange(refresh: () => void): () => void;
   runHistory(direction: "undo" | "redo"): Promise<boolean>;

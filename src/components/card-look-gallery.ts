@@ -4,10 +4,9 @@ import { freshCardMarkup } from "../page-builder/card-slot";
 import { cardSwap, type CardContent } from "../page-builder/card-swap";
 import { createThumbnail, type Thumbnail } from "../page-builder/thumbnail";
 import { thumbnailDocument, type ThumbnailInputs } from "../page-builder/thumbnail-doc";
-import { expandStyleImports } from "../../shared/css-imports";
-import { nativeComponentCssPath, nativeDefaultRoute, nativePageStylesheets } from "../../shared/native-project";
+import { nativeDefaultRoute } from "../../shared/native-project";
 import { startTags } from "../../shared/html-source";
-import { scriptsSetAttributes } from "../../shared/variants";
+import { variantLookup, type VariantFiles } from "../../shared/variant-lookup";
 import "./card-look-gallery.css";
 
 // "Add card as…" from the ▾ of a card slot's Add card (wayfinder
@@ -28,8 +27,8 @@ export interface CardLookGalleryOptions {
   card: string;
   /** "card". */
   noun: string;
-  /** The site's scripts: the attributes they set are no looks (as the edit bar leaves them out). */
-  scripts(): { path: string; source: string }[];
+  /** The site's files for its Variant lookup: the card's Variants as the edit bar has them. */
+  variantFiles: VariantFiles;
   /** A card's look chip: the card's markup now, its look, and what was kept aside from earlier looks. */
   swap?: { card: string; look: CardLook; kept?: CardContent };
   /** A card's width in the grid, in canvas pixels. */
@@ -45,20 +44,13 @@ const ASPECT = 0.6;
 // Room around the card in a thumbnail, in canvas pixels (the page's own padding is inside it).
 const MARGIN = 48;
 
-/** The site's stylesheets the page on show links, imports expanded. */
-function pageSheets(inputs: ThumbnailInputs) {
-  const { site, sources } = inputs;
-  const file = site.routes[inputs.route] ?? site.routes[nativeDefaultRoute(site)];
-  const linked = file ? nativePageStylesheets(sources[file] ?? "", file).filter((path) => sources[path] !== undefined) : [];
-  return expandStyleImports(linked, (path) => sources[path]).sheets;
-}
-
-/** The looks for `card`'s slot, as the site reads now. */
-function looksOf(inputs: ThumbnailInputs, card: string, scriptAttributes: Iterable<string>) {
+/** The looks for `card`'s slot, as the site reads now: its Variants with the page on show's stylesheets. */
+function looksOf(inputs: ThumbnailInputs, card: string, files: VariantFiles) {
   const { site, sources } = inputs;
   const templateOf = (tag: string) => Object.hasOwn(site.components, tag) ? sources[site.components[tag]] : undefined;
-  const css = Object.hasOwn(site.components, card) ? sources[inputs.componentStyles[card] ?? nativeComponentCssPath(site.components[card])] : undefined;
-  return { templateOf, looks: cardLooks({ tags: Object.keys(site.components), templateOf, current: card, css, sheets: pageSheets(inputs), scriptAttributes }) };
+  const page = site.routes[inputs.route] ?? site.routes[nativeDefaultRoute(site)];
+  const variants = variantLookup(files).forTag(card, { page })?.variants;
+  return { templateOf, looks: cardLooks({ tags: Object.keys(site.components), templateOf, current: card, variants }) };
 }
 
 /** The card components and every component their templates use, nested, for their stylesheets. */
@@ -96,7 +88,7 @@ export function createCardLookGallery(pane: HTMLElement, anchor: HTMLElement, op
   function render() {
     const inputs = options.inputs();
     if (!inputs) return;
-    const { templateOf, looks } = looksOf(inputs, options.card, scriptsSetAttributes(options.scripts()));
+    const { templateOf, looks } = looksOf(inputs, options.card, options.variantFiles);
     const keys = looks.map(lookKey);
     const variants = [...new Set(looks.flatMap((look) => look.attribute ? [look.attribute.name] : []))];
     // The same looks: only their pictures follow the sources.

@@ -1516,7 +1516,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       postAssets();
       cardGrids?.sourcesChanged();
     },
-    /** The site's scripts were read late: an open card looks list follows. */
+    /** A file the Variant lookup asked for was read late: an open card looks list follows. */
     refreshCardLooks() {
       cardGrids?.refreshLooks();
     },

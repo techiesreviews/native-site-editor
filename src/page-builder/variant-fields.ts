@@ -6,12 +6,15 @@
 // a value) styled only inside a media or container query says where it
 // shows ("wide screens only").
 
+// The Variants come from the site's one lookup (shared/variant-lookup.ts).
 // Loaded when an instance, Button (`a.btn`) or potential page band is first selected
 // (src/page-builder/components.ts),
 // so the variant parser stays out of the boot bundle.
 
 import { isSectionTemplate, startTags } from "../../shared/html-source";
-import { globalVariants, scriptsSetAttributes, siteVariants, valueLabel, variantsForClass, variantsForComponent, type Variant } from "../../shared/variants";
+import { valueLabel, type Variant } from "../../shared/variants";
+
+export { variantLookup } from "../../shared/variant-lookup";
 
 /** A page band has no enclosing band or component instance, even when neither has a tone set. */
 export function isToneBand(chain: readonly string[], page: boolean, template: (tag: string) => string | undefined): boolean {
@@ -89,15 +92,14 @@ export function variantFields(variants: readonly Variant[], attributes: readonly
   });
 }
 
-/** Instance fields from component/page CSS, excluding script-set names only from the component CSS. */
-export function instanceVariantFields(tag: string, css: string, sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[], scripts: readonly { path: string; source: string }[] = [], band = false) {
-  const variants = variantsForComponent(tag, { css, site: siteVariants(sheets), scriptAttributes: scriptsSetAttributes(scripts) }).variants;
+/** An instance's fields from its component's Variants: Tone only on a page band. */
+export function instanceVariantFields(variants: readonly Variant[], attributes: readonly { name: string; value: string }[], band = false) {
   return variantFields(variants.filter((variant) => band || variant.attribute !== "data-tone"), attributes);
 }
 
-/** Plain page bands offer only Tone, from global attribute rules. */
-export function bandVariantFields(sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
-  return variantFields(globalVariants(siteVariants(sheets)).filter((variant) => variant.attribute === "data-tone"), attributes);
+/** Plain page bands offer only Tone, from the site's global Variants. */
+export function bandVariantFields(global: readonly Variant[], attributes: readonly { name: string; value: string }[]) {
+  return variantFields(global.filter((variant) => variant.attribute === "data-tone"), attributes);
 }
 
 /**
@@ -110,7 +112,7 @@ export function variantAttribute(field: VariantField, choice: string): string | 
   return choice.startsWith("=") ? choice.slice(1) : undefined;
 }
 
-/** Button axes use only the site's explicit .btn rules, never global component axes. */
-export function buttonVariantFields(sheets: readonly { path: string; source: string }[], attributes: readonly { name: string; value: string }[]) {
-  return variantFields(variantsForClass("btn", siteVariants(sheets)).filter((variant) => variant.attribute !== "data-tone"), attributes);
+/** Button axes use only the site's explicit .btn rules (`buttons`), never global component axes. */
+export function buttonVariantFields(buttons: readonly Variant[], attributes: readonly { name: string; value: string }[]) {
+  return variantFields(buttons.filter((variant) => variant.attribute !== "data-tone"), attributes);
 }

@@ -26,7 +26,8 @@ export const files: Record<string, string> = {
   "index.html": page("Home", `<site-header></site-header>\n<main>\n  <section class="hero" data-key="hero">\n    <h1>Welcome</h1>\n  </section>\n  <feature-block data-key="feature"><h2 slot="title">Fast</h2></feature-block>\n</main>\n`),
   "about/index.html": page("About", `<main>\n  <section><h1>About us</h1></section>\n</main>\n`),
   "404.html": page("Page not found", `<main>\n  <section><h1>Page not found</h1></section>\n</main>\n`),
-  "components/components.js": `const TAGS = ["feature-block", "site-header"];\n`,
+  // The loader imports the site script whose attributes are no Variants.
+  "components/components.js": `import "../scripts/state.mjs";\nconst TAGS = ["feature-block", "site-header"];\n`,
   "scripts/state.mjs": `el.setAttribute("data-open", "true"); el.dataset.colorScheme = "dark"; el.toggleAttribute("data-tone");\n`,
   "node_modules/ignored.js": `el.dataset.layout = "split";\n`,
   "components/feature-block/feature-block.html": `<section class="feature-block">\n  <slot name="title"><h2>A feature</h2></slot>\n</section>\n`,

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { componentVariants, siteVariants, variantsForComponent } from "../shared/variants.ts";
+import { componentVariants } from "../shared/variants.ts";
+import { memorySiteVariants } from "./variant-files-fake.ts";
 import { startTags } from "../shared/html-source.ts";
 import { attributeEdit } from "../src/page-builder/component-model.ts";
 import { conditionsNote, instanceVariantFields, variantAttribute, variantFields } from "../src/page-builder/variant-fields.ts";
@@ -70,8 +71,8 @@ test("a default value alias reads as the default and shows as its own option onl
 });
 
 test("site and global variants come in as fields too", () => {
-  const site = siteVariants([{ path: "styles/site.css", source: `card-tip[data-tone=accent] {} [data-color-scheme=dark] {}` }]);
-  const { variants } = variantsForComponent("card-tip", { css: ":host {} :host([data-featured]) {}", site });
+  const lookup = memorySiteVariants({ sheets: { "styles/site.css": `card-tip[data-tone=accent] {} [data-color-scheme=dark] {}` }, components: { "card-tip": ":host {} :host([data-featured]) {}" } });
+  const { variants } = lookup.forTag("card-tip")!;
   assert.deepEqual(variantFields(variants, []).map(({ attribute, kind }) => [attribute, kind]).sort(), [
     ["data-color-scheme", "choice"], ["data-featured", "yes-no"], ["data-tone", "choice"],
   ]);
@@ -110,13 +111,11 @@ test("explicit true checkboxes check only true and write the string true", () =>
 
 test("edit bar excludes script-set own CSS names but keeps site and global names", () => {
   const css = ':host {} :host([data-open]) {} :host([data-ready]) {} :host([data-tone=dark]) {}';
-  const sheets = [{ path: "site.css", source: 'card-tip[data-ready="true"] {} [data-color-scheme=dark] {}' }];
-  const scripts = [{ path: "tips.mjs", source: 'tip.toggleAttribute("data-open"); tip.dataset.ready = ""; document.documentElement.dataset.colorScheme = "dark";' }];
-  const read = () => instanceVariantFields("card-tip", css, sheets, [], scripts);
-  assert.deepEqual(read().map(field => field.attribute), ["data-ready", "data-color-scheme"]);
-  assert.equal(read().find(field => field.attribute === "data-ready")?.form, "true");
-  // A draft replacing the same path must invalidate the script scan.
-  scripts[0].source = 'tip.dataset.tone = "dark";';
-  assert.deepEqual(read().map(field => field.attribute), ["data-open", "data-ready", "data-color-scheme"]);
-  assert.equal(instanceVariantFields("card-tip", css, sheets, [], []).some(field => field.attribute === "data-open"), true);
+  const sheets = { "site.css": 'card-tip[data-ready="true"] {} [data-color-scheme=dark] {}' };
+  const scripts = { "tips.mjs": 'tip.toggleAttribute("data-open"); tip.dataset.ready = ""; document.documentElement.dataset.colorScheme = "dark";' };
+  const tipFields = (lookup: ReturnType<typeof memorySiteVariants>) => instanceVariantFields(lookup.forTag("card-tip")!.variants, []);
+  const read = tipFields(memorySiteVariants({ sheets, components: { "card-tip": css }, scripts }));
+  assert.deepEqual(read.map(field => field.attribute), ["data-ready", "data-color-scheme"]);
+  assert.equal(read.find(field => field.attribute === "data-ready")?.form, "true");
+  assert.equal(tipFields(memorySiteVariants({ sheets, components: { "card-tip": css } })).some(field => field.attribute === "data-open"), true);
 });

@@ -109,7 +109,9 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const header = site.components.find((item: any) => item.tag === "site-header");
     assert.deepEqual(header.variants, [feature.variants[2]]);
     assert.equal("variantWarnings" in header, false);
-    assert.equal(github.requests.filter((path) => path === "/graphql").length, 1, "saved variant files are batched");
+    // One batched query a round: the pages, component CSS and the sheets the tab
+    // lists; the loader the pages load; the script the loader imports.
+    assert.equal(github.requests.filter((path) => path === "/graphql").length, 3, "saved variant files are batched");
     assert.equal(github.requests.filter((path) => path.includes("/git/blobs/")).length, 1, "only the truncated import needs an individual read");
     assert.deepEqual(site.stylesheets, [{ file: "styles/site.css", imports: ["styles/tokens.css"] }]);
     assert.deepEqual(site.editor.previewSelection, { file: "index.html", id: "1.0", tag: "section", text: "Welcome" });
@@ -484,12 +486,12 @@ test("get_site applies variant drafts, reports unreadable files, skips missing i
     assert.ok(payload(failed).components.every((component: any) => !("variants" in component)));
     github.limited = false;
 
-    // New CSS, imported CSS and scripts all use the editor's draft texts.
-    const css = "components/feature-block/draft.css";
-    context.site!.components[0].css = css;
+    // Component CSS, imported CSS and scripts (a new one the loader imports, and one too large to read) all use the editor's draft texts.
+    const css = "components/feature-block/feature-block.css";
     context.drafts.push(
-      { path: css, baseSha: null, updatedAt: Date.now(), content: ':host([data-layout="draft"]) {} :host([data-busy]) {} :host[data-broken] {}' },
+      { path: css, baseSha: "0".repeat(40), updatedAt: Date.now(), content: ':host([data-layout="draft"]) {} :host([data-busy]) {} :host[data-broken] {}' },
       { path: "styles/tokens.css", baseSha: "0".repeat(40), updatedAt: Date.now(), content: '[data-color-scheme="light"] {}' },
+      { path: "components/components.js", baseSha: "0".repeat(40), updatedAt: Date.now(), content: 'import "../scripts/draft.js";\nimport "../scripts/huge.js";\n' },
       { path: "scripts/draft.js", baseSha: null, updatedAt: Date.now(), content: 'el.dataset.busy = "yes";' },
       { path: "scripts/huge.js", baseSha: null, updatedAt: Date.now(), size: 2 * 1024 * 1024 },
     );

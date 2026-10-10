@@ -228,7 +228,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (!context.pages || !context.site) return {};
     try {
       const files = new SiteFiles(connection.github, connection.repo, context, (hash) => draftText(env, grant.sessionId, hash));
-      return { components: await componentVariantsOf(files, context.site) };
+      return { components: await componentVariantsOf(files, context) };
     } catch {
       return { note: "Variants could not be read. Try get_site again in a moment." };
     }

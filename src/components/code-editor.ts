@@ -1,4 +1,5 @@
-import { createVariantLookup, variantSuggestions, variantHover, variantValueMarkers, variantCssMarkers } from "../page-builder/variant-intelligence";
+import { variantSuggestions, variantHover, variantValueMarkers, variantCssMarkers } from "../page-builder/variant-intelligence";
+import { variantLookup, type VariantLookup } from "../../shared/variant-lookup";
 import { cssVariableCompletion, cssVariableDeclarations, cssVariableReference, isCssPath } from "../page-builder/css-intelligence";
 import { monaco } from "./monaco";
 // @ts-expect-error Monaco's internal JS modules have no declarations.
@@ -392,14 +393,18 @@ export const monacoView: PaneViewFactory = (host) => {
     }));
   }
   if (host.variants) {
+    const files = host.variants;
     const current = (target: monaco.editor.ITextModel) => !disposed && !target.isDisposed() && target === model && host.isCurrent();
+    // No Variants while the host has no site to read (no draft scope, an old version).
+    const variants = () => files.site() ? variantLookup(files) : undefined;
+    const forTag = (lookup: VariantLookup) => (tag: string) => lookup.forTag(tag)?.variants;
     const range = (start: number, end: number) => monaco.Range.fromPositions(model.getPositionAt(start), model.getPositionAt(end));
     if (model.getLanguageId() === "html") {
       providers.push(monaco.languages.registerCompletionItemProvider("html", {
         triggerCharacters: [" ", '"', "'", "=", "-"],
         provideCompletionItems(target, position) {
-          const lookup = current(target) && host.variants?.(createVariantLookup);
-          return { suggestions: lookup ? variantSuggestions(target.getValue(), target.getOffsetAt(position), tag => lookup.forTag(tag)).map(item => ({
+          const lookup = current(target) && variants();
+          return { suggestions: lookup ? variantSuggestions(target.getValue(), target.getOffsetAt(position), forTag(lookup)).map(item => ({
             // Listed before the HTML service's generic attributes (aria-*, …).
             label: item.label, detail: item.detail, documentation: item.detail, sortText: `\u0000${item.label}`,
             kind: item.kind === "attribute" ? monaco.languages.CompletionItemKind.Property : monaco.languages.CompletionItemKind.Value,
@@ -411,8 +416,8 @@ export const monacoView: PaneViewFactory = (host) => {
       }));
       providers.push(monaco.languages.registerHoverProvider("html", {
         provideHover(target, position) {
-          const lookup = current(target) && host.variants?.(createVariantLookup);
-          const hover = lookup && variantHover(target.getValue(), target.getOffsetAt(position), tag => lookup.forTag(tag));
+          const lookup = current(target) && variants();
+          const hover = lookup && variantHover(target.getValue(), target.getOffsetAt(position), forTag(lookup));
           if (hover) return { range: range(hover.start, hover.end), contents: [{ value: hover.text.replace(/[\\`*_{}[\]()<>]/g, "\\$&") }] };
         },
       }));
@@ -421,11 +426,11 @@ export const monacoView: PaneViewFactory = (host) => {
     let previousMarkers = "";
     const refresh = () => {
       if (!current(model)) return;
-      const lookup = host.variants?.(createVariantLookup);
+      const lookup = variants();
       const text = model.getValue();
       const css = isCssPath(host.path);
       const markers = !lookup ? [] : css ? variantCssMarkers(text, lookup.isComponentCss(host.path)) :
-        model.getLanguageId() === "html" ? variantValueMarkers(text, tag => lookup.forTag(tag)) : [];
+        model.getLanguageId() === "html" ? variantValueMarkers(text, forTag(lookup)) : [];
       // CSS rules that never match warn; a Custom value in HTML is only a note.
       const severity = css ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info;
       const mapped = markers.map(marker => ({ ...range(marker.start, marker.end), message: marker.message, severity }));

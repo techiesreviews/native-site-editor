@@ -31,7 +31,7 @@ export function createCardsController(ports: CardsControllerPorts) {
       linkPages: (card) => cards?.linkPages(card),
       fillCard: (card, route) => cards?.fillCard(card, route),
       swapCard: (card, look, from) => cards?.swapCard(card, look, from) ?? Promise.resolve(undefined),
-      scripts: () => cards?.scripts() ?? [],
+      variantFiles: ports.variantFiles,
       cardText: (card) => cards?.cardText(card),
       createPage: (card, request) => cards?.createPage(card, request),
     } satisfies CardGridHandlers as CardGridHandlers,

@@ -5,7 +5,7 @@ import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } f
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveRefusal } from "./page-builder/native-operations";
-import type { VariantLookup, VariantLookupFactory } from "./page-builder/variant-intelligence";
+import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
 import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController } from "./controllers/media-controller";
@@ -669,7 +669,7 @@ function mountComponentTools() {
   return createComponentTools({
     site: () => nativeSite,
     sources: () => nativeSources(),
-    scripts: () => Object.entries(nativeVariantSources(/\.(?:m?js)$/i)).map(([path, source]) => ({ path, source })),
+    variantFiles: nativeVariantFiles,
     structureFields: true,
     files: () => nativeFiles(),
     index: ensureNativeTextIndex,
@@ -1246,7 +1246,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
     codePanes.applyWidth();
     disposeSecondary = editorModule.mountSourceEditor(
       element("content-secondary"),
-      { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, variants: nativeVariants, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
+      { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, variants: nativeVariantFiles, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
         onContextChange: (value) => {
           if (value) {
             syncLinkedStyles(value.path, value.content);
@@ -1466,47 +1466,51 @@ const previewSelection = createPreviewSelectionController({
   },
 });
 
-// Variant discovery uses effective sources, cached independently of HTML typing.
-let variantCache: { key: string; lookup: VariantLookup } | undefined;
+// The site's files for its one Variant lookup (shared/variant-lookup.ts), for
+// the edit bar, the card looks and the code pane: drafts applied. A file the
+// lookup asks for that is not read yet is read in the background (one
+// in-flight read per path in this scope) and they all ask again once it is
+// here; a failed read settles without asking again, and the next ask retries.
+let variantSite: { from: NativeSite; site: VariantSite } | undefined;
+let variantWanted: Set<string> | undefined;
 const variantReads = new Set<string>();
-/** Discovery sources shared by the code pane and the edit bar, with drafts applied. */
-function nativeVariantSources(extension: RegExp): Record<string, string> {
-  const scope = draftScope();
-  if (!nativeSite || !scope || versionView) return {};
-  const paths = nativeFiles(scope).filter(path => extension.test(path) && !/(?:^|\/)node_modules\//.test(path));
-  const sources: Record<string, string> = {};
-  for (const path of paths) {
+const nativeVariantFiles: VariantFiles = {
+  site: () => {
+    const site = nativeSite;
+    if (!site || !draftScope() || versionView) return undefined;
+    if (variantSite?.from !== site) variantSite = { from: site, site: { pages: Object.values(site.routes), components: site.components } };
+    return variantSite.site;
+  },
+  read: (path) => {
+    const scope = draftScope();
+    if (!nativeSite || !scope || versionView) return undefined;
     const source = nativeEffectiveSource(path, scope);
-    if (source !== undefined) sources[path] = source;
-  }
-  // Each path has one in-flight read in this scope, even when both consumers
-  // need it. Settle failures without refreshing; the next request retries.
+    if (source === undefined) {
+      if (!variantWanted) queueMicrotask(readVariantFiles);
+      (variantWanted ??= new Set()).add(path);
+    }
+    return source;
+  },
+};
+
+function readVariantFiles() {
+  const wanted = variantWanted, scope = draftScope(), repo = appStore.repository.value;
+  variantWanted = undefined;
+  if (!wanted || !nativeSite || !scope || !repo || versionView) return;
   const epoch = generation, scopeKey = setupScope();
   const key = (path: string) => JSON.stringify([epoch, scopeKey, path]);
-  const missing = paths.filter(path => sources[path] === undefined && !variantReads.has(key(path)));
-  if (missing.length && appStore.repository.value) {
-    missing.forEach(path => variantReads.add(key(path)));
-    const live = () => epoch === generation && scopeKey === setupScope();
-    void readNativePredicted(appStore.repository.value.full_name, missing, live).then((read) => {
-      missing.forEach(path => variantReads.delete(key(path)));
-      if (!live() || !read) return;
-      editorModule?.refreshVariants();
-      nativePreview?.refreshCardLooks();
-      if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
-    });
-  }
-  return sources;
-}
-
-function nativeVariants(build: VariantLookupFactory): VariantLookup | undefined {
-  const site = nativeSite;
-  if (!site || !draftScope() || versionView) return;
-  const sources = nativeVariantSources(/\.(?:css|m?js)$/i);
-  const key = JSON.stringify([generation, setupScope(), site.components, sources]);
-  if (variantCache?.key === key) return variantCache.lookup;
-  const lookup = build(sources, Object.fromEntries(Object.entries(site.components).map(([tag, file]) => [tag, nativeComponentCssPath(file)])));
-  variantCache = { key, lookup };
-  return lookup;
+  const files = new Set(nativeFiles(scope));
+  const missing = [...wanted].filter(path => files.has(path) && nativeEffectiveSource(path, scope) === undefined && !variantReads.has(key(path)));
+  if (!missing.length) return;
+  missing.forEach(path => variantReads.add(key(path)));
+  const live = () => epoch === generation && scopeKey === setupScope();
+  void readNativePredicted(repo.full_name, missing, live).then((read) => {
+    missing.forEach(path => variantReads.delete(key(path)));
+    if (!live() || !read) return;
+    editorModule?.refreshVariants();
+    nativePreview?.refreshCardLooks();
+    if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
+  });
 }
 
 /** A fresh source appStore.snapshot.value for CSS code intelligence. */
@@ -3708,7 +3712,7 @@ const cardsController = createCardsController({
   },
   operation: applyNativeOperation,
   pageLabel: nativePageLabelOf,
-  scripts: () => Object.entries(nativeVariantSources(/\.(?:m?js)$/i)).map(([path, source]) => ({ path, source })),
+  variantFiles: nativeVariantFiles,
   announce,
 });
 
@@ -4760,7 +4764,7 @@ async function mountSource(
     onDiscardChange: discardFileChange,
     deletedUpstream: savePublish.isDeleted,
     onSettleDeleted: savePublish.settleDeleted,
-    cssWorkspace: nativeCssWorkspace, variants: nativeVariants,
+    cssWorkspace: nativeCssWorkspace, variants: nativeVariantFiles,
     ensureHistoryTarget: async (path) => {
       const opened = await openSecondary(path);
       if (opened) renderLinkedStyle();
