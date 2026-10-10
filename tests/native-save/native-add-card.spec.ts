@@ -253,6 +253,8 @@ test("picking a page fills the new card from it and a strip lists each part's so
   await expect.poll(() => card.locator(":scope > img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(320);
   await expect(card.locator(":scope > a")).toHaveAttribute("href", "/work/harbour-lane-pottery/");
   await expect(card.locator(":scope > a")).toHaveText("Read about Harbour Lane Pottery");
+  await expect(card.locator(":scope > h3 > a")).toHaveCount(0);
+  expect(await storedDraft(page, "components/card-project/card-project.css")).toBeUndefined();
   // The combobox gives way to the strip: the page, then each slot and where its content came from.
   await expect(input).toHaveCount(0);
   const strip = page.getByRole("group", { name: "Where the card's content came from" });
@@ -649,3 +651,109 @@ test("Create page in one of two named card slots copies a page its own list link
   await expect.poll(draft).toContain("<h2>The brief</h2>");
   expect(await draft()).not.toContain("On the team since");
 });
+
+// Slice 55: use the starter's shared rule, including cards in an items slot.
+const cardLinkRule = `
+.cards > * { position: relative; }
+.cards > * :is(h2, h3, h4, [slot="title"]) > a:only-child::after,
+:not(main, body, section, div) > * > [slot="title"] > a:only-child::after {
+  content: ""; position: absolute; inset: 0;
+}
+`;
+
+async function cornerLink(page: Page, selector: string) {
+  return frame(page).locator(selector).evaluate(card => {
+    const box = card.getBoundingClientRect();
+    const hit = card.ownerDocument.elementFromPoint(box.right - 8, box.bottom - 8);
+    return hit?.closest("a")?.getAttribute("href");
+  });
+}
+
+for (const create of [false, true]) {
+  test(`a plain unlinked heading card ${create ? "creates a page" : "picks a page"}: title link added, whole card clickable, fill undoes once`, async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+    await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+    const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+    const home = (await source(page))!;
+    const made = home.replace(/<card-project>[\s\S]*?<\/card-project>/g, '<article class="quote"><h3>Quote</h3><p>Some words.</p></article>');
+    await edit("index.html", made);
+    await edit("styles/site.css", readFileSync(new URL("../../fixtures/native-cards/styles/site.css", import.meta.url), "utf8") + cardLinkRule + "\narticle.quote { padding: 24px; min-height: 180px; }\n");
+    await page.reload();
+    const cards = frame(page).locator("#work .cards > article");
+    await expect(cards).toHaveCount(2);
+    await cards.last().hover();
+    await addCard(page).click();
+    const input = page.getByRole("combobox", { name: "Link to a page" });
+    await expect(input).toBeFocused();
+    await expect(cards).toHaveCount(3);
+    const blank = await source(page);
+    // Esc leaves the placed card. Another Add card still offers the picker.
+    await input.press("Escape");
+    await expect(input).toHaveCount(0);
+    expect(await source(page)).toBe(blank);
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(made);
+    await cards.last().hover();
+    await addCard(page).click();
+    await expect(input).toBeFocused();
+    const route = create ? "/oak-ash/" : "/work/harbour-lane-pottery/";
+    if (create) {
+      await input.fill("Oak & Ash");
+      await page.getByRole("option", { name: /Create page \/oak-ash\// }).click();
+      await expect.poll(() => storedDraft(page, "oak-ash/index.html")).toBeTruthy();
+    } else await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
+    await expect(cards.last().locator("h3 > a")).toHaveAttribute("href", route);
+    await expect(cards.last().locator("h3 > a")).toHaveText(create ? "Oak & Ash" : "Harbour Lane Pottery");
+    await expect(cards.last().locator("p")).toHaveText("A sentence or two about this article.");
+    const strip = page.getByRole("group", { name: "Where the card's content came from" });
+    await expect(strip.getByRole("listitem").filter({ hasText: /^Link/ })).toHaveText(`Linkaddressadded${route}the title links to the page`);
+    await expect.poll(() => cornerLink(page, "#work .cards > article:last-child")).toBe(route);
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(blank);
+    await expect(cards.last().locator("h3 > a")).toHaveCount(0);
+    if (create) await expect.poll(() => storedDraft(page, "oak-ash/index.html")).toBeUndefined();
+  });
+
+  test(`a component without a link slot ${create ? "creates a page and CSS" : "picks a page and updates CSS"}: host positioning and fill share undo and redo`, async ({ page, baseURL }) => {
+    const home = await openSectionWork(page, baseURL, 0);
+    const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+    const cssPath = "components/card-quote/card-quote.css";
+    const css = ":host { display: block; }\narticle { padding: 24px; min-height: 180px; }\n";
+    await edit("components/card-quote/card-quote.html", quoteTemplate);
+    if (!create) await edit(cssPath, css);
+    await edit("components/section-work/section-work.html", '<section><slot name="title"><h2>Recent work</h2></slot><div class="cards"><slot><card-quote></card-quote></slot></div></section>');
+    await edit("styles/site.css", readFileSync(new URL("../../fixtures/native-cards/styles/site.css", import.meta.url), "utf8") + cardLinkRule);
+    await page.reload();
+    await expect(frame(page).locator("section-work > h2")).toBeVisible({ timeout: 30_000 });
+    await frame(page).locator("section-work > h2").hover();
+    await addCard(page).click();
+    const input = page.getByRole("combobox", { name: "Link to a page" });
+    await expect(input).toBeFocused();
+    const blank = await source(page);
+    const route = create ? "/oak-ash/" : "/work/harbour-lane-pottery/";
+    if (create) {
+      await input.fill("Oak & Ash");
+      await page.getByRole("option", { name: /Create page \/oak-ash\// }).click();
+      await expect.poll(() => storedDraft(page, "oak-ash/index.html")).toBeTruthy();
+    } else await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
+    const card = frame(page).locator("section-work > card-quote");
+    await expect(card.locator("h3 > a")).toHaveAttribute("href", route);
+    await expect(page.getByRole("group", { name: "Where the card's content came from" }).getByRole("listitem").filter({ hasText: /^Link/ })).toHaveText(`Linkaddressadded${route}the title links to the page`);
+    const afterCss = (create ? "" : css) + ":host { position: relative; }\n";
+    await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(afterCss);
+    await expect.poll(() => cornerLink(page, "section-work > card-quote")).toBe(route);
+    const filled = await source(page);
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(blank);
+    await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
+    await expect(card.locator("h3 > a")).toHaveCount(0);
+    if (create) await expect.poll(() => storedDraft(page, "oak-ash/index.html")).toBeUndefined();
+    await page.locator(".code-editor__redo").click();
+    await expect.poll(() => source(page)).toBe(filled);
+    await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(afterCss);
+    if (create) await expect.poll(() => storedDraft(page, "oak-ash/index.html")).toBeTruthy();
+    expect(await undo(page)).toBe(true);
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(home);
+  });
+}

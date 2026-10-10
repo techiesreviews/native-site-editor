@@ -124,13 +124,13 @@ export interface CardGridHandlers {
   addCard(grid: ItemGridReport, look?: CardLook): Promise<NewCard | undefined>;
   linkPages(card: NewCard): CardLinkPages | undefined;
   /** Fills the card from the page at `route`, from `base` when given (one undo step); undefined when it could not. */
-  fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined;
+  fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined | Promise<CardFilled | undefined>;
   /** Swaps the card to `look` in place (one undo step), its content carried, `kept` from earlier looks; the attributes the looks set (`variants`) give way. */
   swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[]; filled?: CardFilled }): Promise<CardSwapped | undefined>;
   /** The card's markup now; undefined once it is gone. */
   cardText(card: NewCard): string | undefined;
   /** Creates a page and fills the placed card as one undo step. */
-  createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined;
+  createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined | Promise<CardFilled | undefined>;
   /** The site's scripts: the attributes they set are no looks. */
   scripts(): { path: string; source: string }[];
 }
@@ -395,11 +395,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
         look: lookChip(entry),
         note: notShownNote(entry),
         focusLook,
-        onPick: (page) => fill(entry, page.route),
-        onCreate: (offer) => {
+        onPick: (page) => void fill(entry, page.route),
+        onCreate: async (offer) => {
+          if (entry.filling) return;
           entry.filling = true;
-          const filled = handlers.createPage(entry.card, offer.request, entry.filled?.base);
-          entry.filling = false;
+          let filled: CardFilled | undefined;
+          try {
+            filled = await handlers.createPage(entry.card, offer.request, entry.filled?.base);
+          } finally {
+            entry.filling = false;
+          }
           if (filled && linker === entry) filledWith(entry, filled);
         },
         onEscape: () => {
@@ -413,11 +418,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     }).catch(() => { if (linker === entry) linker = undefined; });
   }
 
-  function fill(entry: Linker, route: string) {
+  async function fill(entry: Linker, route: string) {
     // Its own edit is not a change to the card that drops the strip (sourcesChanged).
+    if (entry.filling) return;
     entry.filling = true;
-    const filled = handlers.fillCard(entry.card, route, entry.filled?.base);
-    entry.filling = false;
+    let filled: CardFilled | undefined;
+    try {
+      filled = await handlers.fillCard(entry.card, route, entry.filled?.base);
+    } finally {
+      entry.filling = false;
+    }
     if (filled && linker === entry) filledWith(entry, filled);
   }
 

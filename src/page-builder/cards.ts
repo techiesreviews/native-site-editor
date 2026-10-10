@@ -16,7 +16,7 @@ import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetai
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
-import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
+import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, itemFill, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
 import { cardFill, cardFillContent, cardFillMarkup, pageTitle } from "./card-fill";
@@ -61,7 +61,7 @@ export interface CardsDeps {
   /** Takes a draft made by `saveNewDraft` back. */
   dropNewDraft(path: string): void;
   /** Creates and edits files as one operation (src/main.ts `applyNativeOperation`); resolves to an error. */
-  operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string } }): Promise<string | undefined>;
+  operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string }; selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } } }): Promise<string | undefined>;
   /** What the Pages tab calls a page file ("Home"). */
   pageLabel(file: string): string;
   /** The site's scripts, drafts applied (read lazily), for the attributes they set: those are no card looks. */
@@ -304,12 +304,14 @@ export function createCards(deps: CardsDeps) {
     const node = [...grid.parent, last.index + 1];
     const changed = deps.change(path, source, [edit], node,
       copy.reset ? `${what} added to ${grid.label}` : `${what} added to ${grid.label}, a copy of the last one (its text could not be reset)`);
-    return changed && canFill(grid.kind.split(".")[0], grid) ? { path, node } : undefined;
+    return changed && canFill(grid.kind.split(".")[0], grid, copy.text) ? { path, node } : undefined;
   }
 
-  /** The small rule slice 55 can widen: a component template or a collection item. */
-  function canFill(tag: string, grid?: SourceGrid): boolean {
-    return template(tag) !== undefined || Boolean(grid && pageParent(grid));
+  /** Components, collections and plain cards with a heading can link to a page. */
+  function canFill(tag: string, grid?: SourceGrid, markup?: string): boolean {
+    const root = markup && elementTree(markup)?.[0];
+    const title = root && titleLeaf(markup!, root);
+    return template(tag) !== undefined || Boolean(grid && pageParent(grid)) || Boolean(title && /^h[1-6]$/.test(title.name));
   }
 
   /** The pages the new card can link to (page-choices.ts): the site's, its page file, and those the grid's other cards link to. */
@@ -383,28 +385,62 @@ export function createCards(deps: CardsDeps) {
     const tag = element.name;
     const text = template(tag);
     const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
-    if (!canFill(tag, grid)) return undefined;
+    if (!canFill(tag, grid, source.slice(range.start, range.end))) return undefined;
     const before = source.slice(range.start, range.end);
     const from = base ?? before;
     const title = pageTitle(page, route).title;
     // Plain collection items use the same facts, with Title and Link as their two roles.
-    const rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
-    const root = elementTree(from)?.[0];
-    // Only the copy's own page link, emptied when it was added; its other links keep their addresses.
-    const filled = text !== undefined ? cardFillMarkup(from, text, rows) : root && itemCopy(from, root, { noun: grid!.noun, title, href: route, isLinked: (href) => !href.trim() });
+    let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
+    const plain = text === undefined ? itemFill(from, grid!.noun, title, route) : undefined;
+    if (plain?.added) rows = rows.map(row => row.role === "link" ? { ...row, status: "added", text: title } : row);
+    const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;
+    const expectedSources = new Map<string, string | undefined>([[card.path, source]]);
+    const pagePath = deps.site()?.routes[route];
+    if (pagePath) expectedSources.set(pagePath, page);
+    const templatePath = deps.site()?.components[tag];
+    if (templatePath) expectedSources.set(templatePath, text);
+    // A component's title link (decision 3) needs its host positioned to bound the site's stretch rule.
+    const cssPath = text !== undefined && rows.some(row => row.status === "added") ? templatePath?.replace(/\.html$/, ".css") : undefined;
+    const cssBefore = cssPath && deps.source(cssPath);
+    // A CSS file there whose text is not read is left alone: the title link works without it.
+    const host = cssPath && (cssBefore !== undefined || !deps.exists(cssPath)) ? { path: cssPath, before: cssBefore } : undefined;
     if (filled === undefined) return undefined;
-    return { source, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { rows, title, route, base: from, filled, content: cardFillContent(rows) } };
+    return { source, host, expectedSources, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { rows, title, route, base: from, filled, content: cardFillContent(rows) } };
   }
 
   /** Fill an existing page as one edit, preserving the original card for Change page. */
-  function fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined {
+  function fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined | Promise<CardFilled | undefined> {
     const file = deps.site()?.routes[route];
     const page = file === undefined ? undefined : deps.source(file);
     const fill = page === undefined ? undefined : fillFrom(card, route, page, base);
     if (!fill) { refuse("That card or page is not there any more."); return undefined; }
-    if (fill.edit.text !== fill.source.slice(fill.edit.start, fill.edit.end) &&
-      !deps.change(card.path, fill.source, [fill.edit], card.node, `${capital(fill.noun)} filled from ${fill.result.title}`)) return undefined;
-    return fill.result;
+    const message = `${capital(fill.noun)} filled from ${fill.result.title}`;
+    const plainFill = () => (fill.edit.text === fill.source.slice(fill.edit.start, fill.edit.end) ||
+      deps.change(card.path, fill.source, [fill.edit], card.node, message) ? fill.result : undefined);
+    if (!fill.host) return plainFill();
+    return hostCss(fill).then(css => css === undefined ? plainFill() : fillOperation(card, fill, css, [], message).then(ok => ok ? fill.result : undefined));
+  }
+
+  type Fill = NonNullable<ReturnType<typeof fillFrom>>;
+
+  /** The component's CSS with `:host { position: relative; }` (card-link-css.ts, loaded only here), when it lacks it. */
+  async function hostCss(fill: Fill): Promise<{ path: string; before?: string; after: string } | undefined> {
+    const { cardLinkCss } = await import("./card-link-css");
+    if (!fill.host) return undefined;
+    const after = cardLinkCss(fill.host.before);
+    return after === fill.host.before ? undefined : { ...fill.host, after };
+  }
+
+  /** The fill and the component's CSS change as one undo step (with a new page's file in `creates`). */
+  async function fillOperation(card: NewCard, fill: Fill, css: { path: string; before?: string; after: string }, creates: { path: string; content: string }[], done: string): Promise<boolean> {
+    const edits = new Map([[card.path, applyEdits(fill.source, [fill.edit])]]);
+    const expectedSources = new Map(fill.expectedSources);
+    expectedSources.set(css.path, css.before);
+    if (css.before === undefined) creates.push({ path: css.path, content: css.after });
+    else edits.set(css.path, css.after);
+    const problem = await deps.operation({ creates, edits, expectedSources, done, undone: `Undid filling the ${fill.noun}.`, selection: { before: card, after: card } });
+    if (problem) refuse(problem);
+    return !problem;
   }
 
   /**
@@ -440,7 +476,7 @@ export function createCards(deps: CardsDeps) {
   }
 
   /** Create a page and fill the placed card together, with the draft as its history companion. */
-  function createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined {
+  function createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined | Promise<CardFilled | undefined> {
     const source = deps.source(card.path);
     const route = routeOf(card.path);
     const site = deps.site();
@@ -449,12 +485,30 @@ export function createCards(deps: CardsDeps) {
     if (source === undefined || !route || !site || !editor?.isMounted(card.path) || !preview) return undefined;
     const target = planPage(request);
     if (!target.ok) { refuse(target.error); return undefined; }
-    const content = subpageDocument(siblingPages(source, card, route, site.routes), request.title.trim(), target.value.route);
+    const siblings = siblingPages(source, card, route, site.routes);
+    const inputs = new Map([site.routes["/"], ...siblings.map(sibling => sibling.route && site.routes[sibling.route])]
+      .filter((path): path is string => Boolean(path)).map(path => [path, deps.source(path)]));
+    const content = subpageDocument(siblings, request.title.trim(), target.value.route);
     const fill = fillFrom(card, target.value.route, content, base);
     if (!fill) { refuse("That card is not there any more."); return undefined; }
     // A fill that changes nothing has no edit to carry the page with it: one undo could not take the page back.
     if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) { refuse(`Nothing on this ${fill.noun} takes a page's title or address.`); return undefined; }
     const file = target.value.file;
+    if (!fill.host) return createWithCompanion(card, fill, file, content);
+    return hostCss(fill).then(css => {
+      if (!css) return createWithCompanion(card, fill, file, content);
+      for (const [path, source] of inputs) fill.expectedSources.set(path, source);
+      const done = `Created the page ${fill.result.title} at ${fill.result.route} and filled the ${fill.noun} from it`;
+      return fillOperation(card, fill, css, [{ path: file, content }], done).then(ok => ok ? fill.result : undefined);
+    });
+  }
+
+  /** The new page's draft as the fill's history companion: one undo takes both back. */
+  function createWithCompanion(card: NewCard, fill: Fill, file: string, content: string): CardFilled | undefined {
+    const source = fill.source;
+    const editor = deps.editor();
+    const preview = deps.preview();
+    if (deps.source(card.path) !== source || !editor?.isMounted(card.path) || !preview) { refuse("The page changed meanwhile; try again."); return undefined; }
     const failed = deps.saveNewDraft(file, content);
     if (failed) { refuse(failed); return undefined; }
     const companion = {

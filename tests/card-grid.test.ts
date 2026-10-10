@@ -5,6 +5,7 @@ import {
   elementTree,
   insertAfterEdit,
   itemCopy,
+  itemFill,
   itemKind,
   itemNoun,
   itemTitle,
@@ -205,4 +206,30 @@ test("a card's link follows its page's URL change", () => {
   const changed = rewriteRouteLinks(grid, "/work/harbour-lane/", "/projects/harbour-lane/");
   assert.equal(changed.count, 1);
   assert.match(changed.text, /href="\/projects\/harbour-lane\/"/);
+});
+
+test("filling a plain card without a page link adds a title link and keeps the copy's other text", () => {
+  const card = '<article class="quote"><h3>New card</h3><p>A sentence or two about this card.</p></article>';
+  assert.deepEqual(itemFill(card, "card", "Oak & Ash", "/work/oak/"), {
+    markup: '<article class="quote"><h3><a href="/work/oak/">Oak &amp; Ash</a></h3><p>A sentence or two about this card.</p></article>',
+    added: true,
+  });
+});
+
+test("filling an existing whole-title link replaces its href and text without nesting", () => {
+  assert.deepEqual(itemFill('<article><h3><a class="title" href="#old">Old</a></h3></article>', "card", "Oak", "/work/oak/"), {
+    markup: '<article><h3><a class="title" href="/work/oak/">Oak</a></h3></article>', added: true,
+  });
+});
+
+test("a plain card's own emptied page link is filled, leaving its title unlinked and other addresses alone", () => {
+  assert.deepEqual(itemFill('<article><h3>New card</h3><p><a href="">Read about New card</a> <a href="/about/">About</a></p></article>', "card", "Oak", "/work/oak/"), {
+    markup: '<article><h3>Oak</h3><p><a href="/work/oak/">Read about Oak</a> <a href="/about/">About</a></p></article>', added: false,
+  });
+});
+
+test("a text-only collection item keeps its existing title fill without adding a link", () => {
+  assert.deepEqual(itemFill("<li>New item</li>", "item", "Oak", "/work/oak/"), {
+    markup: "<li>Oak</li>", added: false,
+  });
 });
