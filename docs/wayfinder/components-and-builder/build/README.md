@@ -76,6 +76,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [28 The block rail beside Structure](tickets/28-block-rail.md) | sol | 04 |
 | [29 Heading level from position](tickets/29-heading-level-from-position.md) | sol | 04 |
 | [30 Click a block to insert it by selection](tickets/30-click-insert-by-selection.md) | claude ★ | 28, 29 |
+| [94 Clicking a rail block right after typing inserts instead of refusing](tickets/94-rail-click-after-typing.md) | sol | – |
 | [31 Edit bars for Div, Button and Image blocks](tickets/31-block-edit-bars.md) | sol | 04, 12 |
 | [32 The preview reports nested containers](tickets/32-nested-container-geometry.md) | sol | – |
 | [33 Drop target model](tickets/33-drop-target-model.md) | claude ★ | 32 |
@@ -121,9 +122,11 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | Slice | Builder | Blocked by |
 | --- | --- | --- |
 | [50 Add card adds the slot's card component](tickets/50-add-card-adds-card-component.md) | claude ★ | 40 |
+| [95 Add card appears right after Make component, without a reload](tickets/95-add-card-after-make-component.md) | sol | – |
 | [51 Card fill mapping](tickets/51-card-fill-mapping.md) | sol | – |
 | [52 Link to a page… on a new card](tickets/52-link-to-page-combobox.md) | claude ★ | 50 |
 | [53 Fill the card from a page, with the info strip](tickets/53-fill-card-and-info-strip.md) | claude ★ | 51, 52 |
+| [96 Small overlaps: the card combobox and strip over Open page; the ⋯ button over a badge being renamed](tickets/96-overlay-overlaps.md) | sol | – |
 | [54 Create page from the card's combobox](tickets/54-create-page-from-combobox.md) | sol | 53 |
 | [55 Card links follow the card](tickets/55-stretched-link-on-non-link-grids.md) | sol | 53, 09 |
 | [56 Add card ▾: choose the card's look](tickets/56-add-card-look-gallery.md) | claude ★ | 50, 12 |
@@ -143,6 +146,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [62 Browser check of the starter's tones](tickets/62-tone-contrast-browser-check.md) | sol | 60 |
 | [84 Nightly CI runs the @actual and @native-static groups](tickets/84-nightly-runs-tagged-groups.md) | sol | – |
 | [86 Make native-site-settings.spec.ts:216 deterministic](tickets/86-site-settings-flake.md) | sol | – |
+| [97 Get the boot bytes back under the 355 KB budget](tickets/97-byte-budget.md) | claude ★ | – |
 | [87 Discard changes moves into the Publish menu](tickets/87-discard-in-publish-menu.md) | sol | – |
 | [63 Vendor the new starter for the preview editor](tickets/63-vendor-starter-for-preview.md) | sol | 05, 06, 15, 17, 58, 60, 65 |
 
