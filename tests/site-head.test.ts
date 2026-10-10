@@ -54,11 +54,13 @@ test("changing favicon drops stale MIME type while preserving sizes", () => {
 });
 test("head edits refuse malformed head or title instead of corrupting source", () => {
   assert.throws(() => upsertHeadTag("<body>Hello</body>", "title", "Title"), /complete <head>/);
-  assert.throws(() => upsertHeadTag("<head><title>Broken</head>", "title", "Title"), /incomplete/);
+  // A <title> with no </title> reads to the end of the file, so the head has no end tag either.
+  assert.throws(() => upsertHeadTag("<head><title>Broken</head>", "title", "Title"), /complete <head>/);
 });
-test("ambiguous head closing text fails closed rather than inserting metadata in a script", () => {
+test("head closing text inside a script is text: metadata goes into the head, not the script", () => {
   const html = '<head><script>const markup = "</head>";</script><title>Home</title></head><body>Keep</body>';
-  assert.throws(() => upsertHeadTag(html, "description", "Changed"), /complete <head>/);
+  assert.equal(upsertHeadTag(html, "description", "Changed"),
+    '<head>\n  <meta name="description" content="Changed">\n<script>const markup = "</head>";</script><title>Home</title></head><body>Keep</body>');
 });
 test("head tag names require exact closing boundaries", () => {
   assert.throws(() => upsertHeadTag('<head><title>Home</title></header><body>Keep</body>', "description", "Changed"), /complete <head>/);

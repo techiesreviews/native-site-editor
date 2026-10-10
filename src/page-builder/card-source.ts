@@ -36,6 +36,13 @@ export interface GridContext {
 }
 
 type Parsed = ReturnType<typeof parseMarked>;
+// The ranges read from one parse, so items share their ancestors' (markedRange walks up to them).
+const parsedRanges = new WeakMap<Parsed, Map<Element, ElementRange | undefined>>();
+const rangeIn = (source: string, parsed: Parsed, el: Element) => {
+  let ranges = parsedRanges.get(parsed);
+  if (!ranges) parsedRanges.set(parsed, ranges = new Map());
+  return markedRange(source, parsed.tags, parsed.root, el, parsed.end, ranges);
+};
 
 function childAt(root: ParentNode, path: number[]): Element | ParentNode | undefined {
   let at: ParentNode = root;
@@ -102,7 +109,7 @@ function gridIn(source: string, parsed: Parsed, container: Element | ParentNode,
   if (!run) return undefined;
   const items: SourceGrid["items"] = [];
   for (const index of run.indexes) {
-    const range = markedRange(source, parsed.tags, parsed.root, children[index], parsed.end);
+    const range = rangeIn(source, parsed, children[index]);
     if (!range) return undefined;
     items.push({ index, range, route: itemRoute(children[index], context) });
   }
@@ -169,7 +176,7 @@ export function mainRange(source: string): { start: number; end: number } | unde
   const parsed = parseMarked(source);
   const main = parsed.root.querySelector("main");
   if (main?.hasAttribute(MARK)) {
-    const range = markedRange(source, parsed.tags, parsed.root, main, parsed.end);
+    const range = rangeIn(source, parsed, main);
     if (range?.close) return { start: range.tag.end, end: range.close.start };
   }
   return undefined;

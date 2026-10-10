@@ -232,6 +232,24 @@ export const contractCases: ContractCase[] = [
       ["li", null], ["li", null], ["ul", "<ul><li>X</ul>"], ["li", null]],
   },
   {
+    // An end tag written in a comment or in raw text is not one: the ranges count only real end tags.
+    name: "range: an end tag inside a comment or raw text does not end an element",
+    source: "<div><div><!-- </div> --></div><section><section><style>a::after{content:\"</section>\"}</style></section></section>",
+    read: (tree) => spans(tree),
+    expected: [["div", null], ["div", "<div><!-- </div> --></div>"],
+      ["section", "<section><section><style>a::after{content:\"</section>\"}</style></section></section>"],
+      ["section", "<section><style>a::after{content:\"</section>\"}</style></section>"], ["style", "<style>a::after{content:\"</section>\"}</style>"]],
+  },
+  {
+    // The browser's adoption agency clones <b> into the <div>, mark and all: one start tag, two
+    // elements, so neither has a range (the clone once read as `<b><div>A</b>`).
+    name: "range: an element the browser cloned from one start tag has no range",
+    source: "<b><div>A</b>B</div></b>",
+    read: (tree) => spans(tree),
+    expected: [["b", null], ["div", "<div>A</b>B</div>"]],
+    page: [["b", null], ["div", "<div>A</b>B</div>"], ["b", null]],
+  },
+  {
     name: "attribute: values decoded as the browser decodes attribute values, with their spans",
     source: ATTRIBUTE_PAGE,
     read: (tree) => {

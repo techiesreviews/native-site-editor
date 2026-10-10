@@ -19,6 +19,13 @@ export const MARK = "data-native-src";
 // HTML folds ASCII letters only; Unicode lowercasing can also change offset lengths.
 export const asciiLower = (text: string) => text.replace(/[A-Z]/g, (char) => char.toLowerCase());
 
+// Where the raw text of a `name` element whose content starts at `from` ends: its end tag, else the end.
+function rawTextEnd(html: string, name: string, from: number) {
+  const close = new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "gi");
+  close.lastIndex = from;
+  return close.exec(html)?.index ?? html.length;
+}
+
 export function startTags(html: string): StartTag[] {
   const out: StartTag[] = [];
   let i = 0;
@@ -57,10 +64,7 @@ export function startTags(html: string): StartTag[] {
     i = end;
     if (RAW_TEXT.has(name)) {
       if (name === "plaintext") break;
-      const close = new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "gi");
-      close.lastIndex = i;
-      const match = close.exec(html);
-      i = match ? match.index : html.length;
+      i = rawTextEnd(html, name, i);
     }
   }
   return out;
@@ -103,9 +107,27 @@ export function elementEnd(html: string, tags: StartTag[], tagIndex: number, bou
   if (!tag) return undefined;
   if (VOID_ELEMENTS.has(tag.name)) return { tag, start: tag.start, end: tag.end };
   let opens = 0;
-  for (let i = tagIndex + 1; i < tags.length && tags[i].start < boundary; i++)
+  // The span with comments and descendants' raw text blanked, offsets kept: an end tag written
+  // there is not one. A raw text element's own content has no comments, only text.
+  let span = "";
+  let from = tag.end;
+  const markup = (to: number) => {
+    const text = html.slice(from, Math.max(from, to));
+    span += RAW_TEXT.has(tag.name) ? text : text.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => " ".repeat(comment.length));
+  };
+  for (let i = tagIndex + 1; i < tags.length && tags[i].start < boundary; i++) {
     if (tags[i].name === tag.name) opens++;
-  const span = asciiLower(html.slice(tag.end, boundary));
+    markup(tags[i].start);
+    span += html.slice(tags[i].start, tags[i].end);
+    from = tags[i].end;
+    if (RAW_TEXT.has(tags[i].name)) {
+      const end = Math.min(rawTextEnd(html, tags[i].name, from), boundary);
+      span += " ".repeat(Math.max(0, end - from));
+      from = Math.max(from, end);
+    }
+  }
+  markup(boundary);
+  span = asciiLower(span);
   const needle = `</${tag.name}`;
   const closes: number[] = [];
   for (let at = span.indexOf(needle); at >= 0; at = span.indexOf(needle, at + 1)) {

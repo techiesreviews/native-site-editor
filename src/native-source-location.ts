@@ -179,7 +179,9 @@ export function markedRange(html: string, tags: StartTag[], root: ParentNode, el
   if (ranges.has(el)) return ranges.get(el);
   const tag = tagOf(tags, el);
   let range: ElementRange | undefined;
-  if (tag) {
+  // One start tag the parser made two elements of (a formatting element the
+  // adoption agency cloned, mark and all) has no range of its own.
+  if (tag && root.querySelectorAll(`[${MARK}="${tags.indexOf(tag)}"]`).length === 1) {
     // The element's end tag precedes the next start tag outside its subtree,
     // and its parent's end tag (walking up the parse), so the last child of a
     // same-named parent (`<div><div>…</div></div>`) has its own end tag.

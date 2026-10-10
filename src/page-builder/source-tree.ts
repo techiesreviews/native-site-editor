@@ -303,6 +303,8 @@ export function readSource(source: string, options: { page?: true; from?: number
         const following = all.slice(all.indexOf(element) + 1).find((other) => !inside(other));
         const parentEnd = element.parent && rangeOf(element.parent)?.close?.start;
         const range = elementEnd(source, tags, tags.findIndex((tag) => tag.start === element.start), Math.min(following?.start ?? end, parentEnd ?? end));
+        // Shared by later reads, so frozen as the page adapter's are.
+        if (range) { Object.freeze(range.tag); if (range.close) Object.freeze(range.close); Object.freeze(range); }
         ranges.set(element, range);
         return range;
       };

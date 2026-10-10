@@ -107,3 +107,13 @@ test('production fallback fill and insertion preserve attributes, raw text and U
     assert.equal(fillMarkup(source,templateSlots(source)[0]),text.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g,''));
   }
 });
+
+test('elementEnd skips end tags written in comments and in raw text, and keeps offsets',()=>{
+  const source='<div><!-- </div> --><style>p::after{content:"</div>"}</style><textarea></div></textarea></div><p>x</p>';
+  const tags=startTags(source),range=elementEnd(source,tags,0,tags.at(-1)!.start)!;
+  assert.equal(source.slice(range.start,range.end),source.slice(0,source.indexOf('<p>')));
+  const comment='<style>/* <!-- */</style>';
+  assert.equal(elementEnd(comment,startTags(comment),0,comment.length)?.end,comment.length);
+  const open='<div><!-- </div>';
+  assert.equal(elementEnd(open,startTags(open),0,open.length),undefined);
+});
