@@ -197,6 +197,15 @@ test("a line with a price struck through is text: typed into on the page and in 
   await expect(price.locator("del")).toHaveText("£40");
   const kind = page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind");
 
+  // In Structure the line is one Paragraph row, with no row for the <del>.
+  const tree = page.getByRole("tree", { name: "Page structure", exact: true });
+  const filler = tree.getByRole("treeitem", { name: /^Section Scroll to verify/ }).first();
+  if (await filler.getAttribute("aria-expanded") === "false") await filler.locator(".page-structure__toggle").click();
+  const priceRow = tree.locator("[role=treeitem]")
+    .filter({ has: page.locator(":scope > .page-structure__label > .page-structure__kind[title='Paragraph']") }).filter({ hasText: "Was £40 £30" }).first();
+  await expect(priceRow).toBeVisible();
+  await expect(priceRow.locator("[role=treeitem]")).toHaveCount(0);
+
   // On the page: a double-click puts the caret in the whole line, the <del> kept.
   await clickText(page, "p[data-key='price']", 0, true);
   await expect(price).toHaveAttribute("contenteditable", /plaintext-only|true/);
