@@ -19,8 +19,10 @@ export const MARK = "data-native-src";
 // HTML folds ASCII letters only; Unicode lowercasing can also change offset lengths.
 export const asciiLower = (text: string) => text.replace(/[A-Z]/g, (char) => char.toLowerCase());
 
-// Where the raw text of a `name` element whose content starts at `from` ends: its end tag, else the end.
+// Where the raw text of a `name` element whose content starts at `from` ends: its end tag, else
+// the end (always the end for <plaintext>).
 function rawTextEnd(html: string, name: string, from: number) {
+  if (name === "plaintext") return html.length;
   const close = new RegExp(`</${name}(?=[\\t\\n\\f\\r />])`, "gi");
   close.lastIndex = from;
   return close.exec(html)?.index ?? html.length;
@@ -107,33 +109,36 @@ export function elementEnd(html: string, tags: StartTag[], tagIndex: number, bou
   if (!tag) return undefined;
   if (VOID_ELEMENTS.has(tag.name)) return { tag, start: tag.start, end: tag.end };
   let opens = 0;
-  // The span with comments and descendants' raw text blanked, offsets kept: an end tag written
-  // there is not one. A raw text element's own content has no comments, only text.
-  let span = "";
+  // The span again with comments, descendants' start tags and their raw text
+  // blanked. An end tag written there (`<!-- </div> -->`, a script's
+  // "</head>", an attribute value) is not one; rather than guess which are
+  // real, any such text fails closed. A raw text element's own content is text.
+  let markup = "";
   let from = tag.end;
-  const markup = (to: number) => {
-    const text = html.slice(from, Math.max(from, to));
-    span += RAW_TEXT.has(tag.name) ? text : text.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => " ".repeat(comment.length));
+  const text = (to: number) => {
+    const part = html.slice(from, Math.max(from, to));
+    markup += RAW_TEXT.has(tag.name) ? part : part.replace(/<!--[\s\S]*?(?:-->|$)/g, (comment) => " ".repeat(comment.length));
+    from = Math.max(from, to);
   };
+  const blank = (to: number) => { markup += " ".repeat(Math.max(0, to - from)); from = Math.max(from, to); };
   for (let i = tagIndex + 1; i < tags.length && tags[i].start < boundary; i++) {
     if (tags[i].name === tag.name) opens++;
-    markup(tags[i].start);
-    span += html.slice(tags[i].start, tags[i].end);
-    from = tags[i].end;
-    if (RAW_TEXT.has(tags[i].name)) {
-      const end = Math.min(rawTextEnd(html, tags[i].name, from), boundary);
-      span += " ".repeat(Math.max(0, end - from));
-      from = Math.max(from, end);
-    }
+    text(tags[i].start);
+    blank(Math.min(tags[i].end, boundary));
+    if (RAW_TEXT.has(tags[i].name)) blank(Math.min(rawTextEnd(html, tags[i].name, from), boundary));
   }
-  markup(boundary);
-  span = asciiLower(span);
+  text(boundary);
   const needle = `</${tag.name}`;
-  const closes: number[] = [];
-  for (let at = span.indexOf(needle); at >= 0; at = span.indexOf(needle, at + 1)) {
-    const after = span[at + needle.length];
-    if (after === undefined || after === ">" || after === "/" || /[\t\n\f\r ]/.test(after)) closes.push(at);
-  }
+  const closesIn = (span: string) => {
+    const at: number[] = [];
+    for (let i = span.indexOf(needle); i >= 0; i = span.indexOf(needle, i + 1)) {
+      const after = span[i + needle.length];
+      if (after === undefined || after === ">" || after === "/" || /[\t\n\f\r ]/.test(after)) at.push(i);
+    }
+    return at;
+  };
+  const closes = closesIn(asciiLower(html.slice(tag.end, boundary)));
+  if (closesIn(asciiLower(markup)).length !== closes.length) return undefined;
   // Every same-named descendant closes before this element does, so exactly
   // one extra end tag belongs here, and it is the last one.
   if (closes.length !== opens + 1) return undefined;

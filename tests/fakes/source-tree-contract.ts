@@ -232,13 +232,13 @@ export const contractCases: ContractCase[] = [
       ["li", null], ["li", null], ["ul", "<ul><li>X</ul>"], ["li", null]],
   },
   {
-    // An end tag written in a comment or in raw text is not one: the ranges count only real end tags.
-    name: "range: an end tag inside a comment or raw text does not end an element",
-    source: "<div><div><!-- </div> --></div><section><section><style>a::after{content:\"</section>\"}</style></section></section>",
+    // An end tag written in a comment, raw text or an attribute value is not one; rather than
+    // guess, a range whose stretch holds one is undefined, and so are its children's beyond it.
+    name: "range: an end tag written in a comment, raw text or an attribute fails closed",
+    source: "<div><div><!-- </div> --></div><section><section><style>a::after{content:\"</section>\"}</style></section></section><p><b title=\"</p>\">B</b></p><span>S</span>",
     read: (tree) => spans(tree),
-    expected: [["div", null], ["div", "<div><!-- </div> --></div>"],
-      ["section", "<section><section><style>a::after{content:\"</section>\"}</style></section></section>"],
-      ["section", "<section><style>a::after{content:\"</section>\"}</style></section>"], ["style", "<style>a::after{content:\"</section>\"}</style>"]],
+    expected: [["div", null], ["div", null], ["section", null], ["section", null],
+      ["style", "<style>a::after{content:\"</section>\"}</style>"], ["p", null], ["b", "<b title=\"</p>\">B</b>"], ["span", "<span>S</span>"]],
   },
   {
     // The browser's adoption agency clones <b> into the <div>, mark and all: one start tag, two
