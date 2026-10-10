@@ -118,6 +118,8 @@ export interface TextChange { start: number; end: number; text: string; expected
 export interface HistoryCompanion {
   undo(): void | string;
   redo(): void | string;
+  /** One per step: a grouped edit joining a step that has one already adds none (the step keeps its first). */
+  perStep?: boolean;
   ready?: (direction: "undo" | "redo") => string | undefined | Promise<string | undefined>;
 }
 /** Returning false refuses the step and keeps it in place. */
@@ -524,7 +526,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       last.inverse = [diffRange(entry.text, start)];
       last.after = entry.revision;
       last.records.after = entry.record;
-      if (input.companion) last.companions.push(input.companion);
+      if (input.companion && !(input.companion.perStep && last.companions.some(companion => companion.perStep))) last.companions.push(input.companion);
       clearRedo(found);
       emitHistory(history);
       return { ok: true, step: last.id };

@@ -22,7 +22,7 @@ function fake() {
       retainFileModel: () => () => {}, evictDraftModel: () => undefined, prepareHistorySources: () => undefined,
       replaceActiveRanges: (edits, companion) => { calls.push(`ranges ${edits.length}${companion ? " hooked" : ""}`); companion?.undo(); },
       replaceActiveRange: (_edit, group) => { calls.push(`range group=${group}`); },
-      closeActiveEditGroup: path => { calls.push(`close ${path}`); }, hasOpenEditGroup: () => false,
+      closeActiveEditGroup: path => { calls.push(`close ${path}`); },
       recordHistoryAction: () => true, holdHistoryRefresh: () => () => {},
     },
     shareHistory: () => () => {}, onMount: () => {}, paneFile: () => undefined, closePane: () => {}, afterFileChanges: () => {},

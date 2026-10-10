@@ -24,7 +24,6 @@ export interface WorkspaceEditor {
   replaceActiveRanges(edits: Range[], companion?: HistoryCompanion): void;
   replaceActiveRange(edit: Range, group?: boolean, companion?: HistoryCompanion): void;
   closeActiveEditGroup(path: string): void;
-  hasOpenEditGroup(path: string): boolean;
   recordHistoryAction(path: string, undo: () => boolean, redo: () => boolean, dispose: () => void): boolean;
   holdHistoryRefresh(path: string): () => void;
 }
@@ -112,8 +111,8 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     replaceRanges(path, edits, group, hooks) {
       const ranges = edits.map(edit => ({ path, ...edit }));
       // The hooks run on Undo and Redo before the text moves, so the preview selects in its new render;
-      // a keystroke joining the open typing group adds none (the group's first edit has them).
-      const companion = hooks && !(group && editor.hasOpenEditGroup(path)) ? { undo: () => { hooks.undo(); }, redo: () => { hooks.redo(); } } : undefined;
+      // one set per step: a keystroke joining the open typing group adds none (the store keeps the first).
+      const companion = hooks && { undo: () => { hooks.undo(); }, redo: () => { hooks.redo(); }, perStep: true };
       if (group && ranges.length === 1) editor.replaceActiveRange(ranges[0], true, companion);
       else if (group) throw new Error("A typing group takes one range at a time.");
       else editor.replaceActiveRanges(ranges, companion);

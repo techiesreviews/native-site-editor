@@ -129,6 +129,19 @@ test("grouped edits are one step until the group closes; companions follow the s
   assert.deepEqual(log.slice(2), ["redo one", "redo two"]);
 });
 
+test("a per-step companion joins a group only when the step has none yet", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });
+  const log: string[] = [];
+  const hooks = (name: string) => ({ undo: () => { log.push(`undo ${name}`); }, redo: () => { log.push(`redo ${name}`); }, perStep: true });
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 1, end: 1, text: "x" }], companion: hooks("one") });
+  store.edit({ scope, path: "a.html", history: "h", group: true, changes: [{ start: 2, end: 2, text: "y" }], companion: hooks("two") });
+  await store.undo("h");
+  assert.equal(store.text(scope, "a.html"), "ab");
+  await store.redo("h");
+  assert.deepEqual(log, ["undo one", "redo one"]);
+});
+
 test("a companion's ready refuses the move whole while history waits; the step stays and later moves", async () => {
   const { store } = setup();
   store.open(scope, "a.html", { text: "ab", baseSha: sha("a") });
