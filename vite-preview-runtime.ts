@@ -64,32 +64,35 @@ export function immutableRuntimeAsset(bundle: Pick<RuntimeBundle, "code" | "map"
  * build is not kept, so the next call tries again.
  */
 export function devRuntimeBundle(entry: string, target: BuildOptions["target"]) {
-  let current: { stamps: Map<string, number>; code: Promise<string> } | undefined;
-  const mtime = (path: string) => stat(path).then((s) => s.mtimeMs, () => -1);
+  let current: { stamps: Map<string, number>; code: Promise<string>; stamped: boolean } | undefined;
+  // A file that cannot be read is NaN, which equals nothing: never fresh.
+  const mtime = (path: string) => stat(path).then((s) => s.mtimeMs, () => NaN);
   const fresh = async (stamps: Map<string, number>) => {
     for (const [path, stamp] of stamps) if ((await mtime(path)) !== stamp) return false;
     return true;
   };
   return async (): Promise<string> => {
     const seen = current;
+    // A build still running (or still stamping its inputs) is the newest.
+    if (seen && !seen.stamped) return seen.code;
     if (seen && (await fresh(seen.stamps))) return seen.code;
     if (current && current !== seen) return current.code;
-    const stamps = new Map<string, number>();
-    const code = (async () => {
+    const next = { stamps: new Map<string, number>(), code: Promise.resolve(""), stamped: false };
+    next.code = (async () => {
       const started = Date.now();
       const bundle = await bundlePreviewRuntime({ entry, minify: false, sourcemap: "inline", target });
       // A file written while the build ran may be in it or not: stamp it as
-      // changed (NaN equals nothing), so the next request builds again.
+      // changed (NaN), so the next request builds again.
       for (const input of bundle.inputs) {
         const stamp = await mtime(input);
-        stamps.set(input, stamp >= started ? NaN : stamp);
+        next.stamps.set(input, stamp >= started ? NaN : stamp);
       }
+      next.stamped = true;
       return bundle.code;
     })();
-    const next = { stamps, code };
     current = next;
-    code.catch(() => { if (current === next) current = undefined; });
-    return code;
+    next.code.catch(() => { if (current === next) current = undefined; });
+    return next.code;
   };
 }
 

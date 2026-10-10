@@ -38,8 +38,9 @@ const run = (code: string, input?: unknown) => {
 test("the build bundles the runtime and its imports as one minified classic script with an external map", async () => {
   const bundle = await bundlePreviewRuntime({ entry, minify: true, sourcemap: "external", target });
   const runtime = immutableRuntimeAsset(bundle);
-  // An import left in would be a SyntaxError in a classic script.
-  assert.doesNotThrow(() => new Script(runtime.code));
+  // An import left in would be a SyntaxError in a classic script. Run in a
+  // context with no DOM, it gets as far as its first DOM read.
+  assert.throws(() => new Script(runtime.code).runInNewContext({}), (error: Error) => error.name === "ReferenceError" && !/import|export/.test(error.message));
   assert.ok(Buffer.byteLength(runtime.code) < Buffer.byteLength(source));
   assert.ok(runtime.code.endsWith(`//# sourceMappingURL=${runtime.fileName}.map\n`));
   const map = JSON.parse(runtime.map) as { sources: string[]; sourcesContent: string[]; mappings: string };
@@ -84,12 +85,18 @@ test("immutable names are deterministic and change with code or source-map bytes
 test("the dev bundle is kept until a bundled file changes, and a failed build is not kept", async () => {
   const { entry, write } = fixture(usesRule);
   const bundle = devRuntimeBundle(entry, target);
+  // Edits dated in the past, each earlier than the last: an mtime that changes, never one during a build.
+  const later = (path: string, seconds: number) => utimesSync(path, new Date(Date.now() + seconds * 1000), new Date(Date.now() + seconds * 1000));
   const [first, again] = await Promise.all([bundle(), bundle()]);
   assert.equal(first, again);
   assert.equal(run(first, 1), 2);
   assert.equal(await bundle(), first);
+  // Asked again and again while one build runs, they all wait for that one.
+  later(write("rule.ts", "export const rule = (n: number): number => n + 5;\n"), -90);
+  const during = await Promise.all([bundle(), bundle(), bundle()]);
+  assert.equal(new Set(during).size, 1);
+  assert.equal(run(during[0], 1), 6);
   // An edit to the imported rule, not the entry, rebuilds.
-  const later = (path: string, seconds: number) => utimesSync(path, new Date(Date.now() + seconds * 1000), new Date(Date.now() + seconds * 1000));
   later(write("rule.ts", "export const rule = (n: number): number => n + 2;\n"), -60);
   assert.equal(run(await bundle(), 1), 3);
   later(write("rule.ts", "export const rule = (n: number): number => ;\n"), -30);
@@ -97,6 +104,9 @@ test("the dev bundle is kept until a bundled file changes, and a failed build is
   await assert.rejects(bundle());
   later(write("rule.ts", "export const rule = (n: number): number => n + 3;\n"), -10);
   assert.equal(run(await bundle(), 1), 4);
+  // A bundled file that is gone is never fresh.
+  rmSync(join(entry, "../rule.ts"));
+  await assert.rejects(bundle());
 });
 
 test("the Vite dev server answers the runtime's URL with the bundle, uncached", async () => {
