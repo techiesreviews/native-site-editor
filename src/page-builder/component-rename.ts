@@ -137,7 +137,9 @@ export function renameInstances(html: string, from: string, to: string): string 
   return out;
 }
 
-const IDENT = /[a-zA-Z0-9_\-\u0080-￿\\]/;
+const IDENT = /[a-zA-Z0-9_\-\u0080-\uffff\\]/;
+// Functional pseudo-classes whose arguments are selectors.
+const SELECTOR_FUNCTIONS = new Set(["is", "where", "not", "has", "matches", "any", "-webkit-any", "-moz-any", "nth-child", "nth-last-child", "host", "host-context", "slotted"]);
 
 /** Skips a comment or string starting at `i`; the index after it, or `i` when there is none. */
 function skipped(css: string, i: number) {
@@ -166,18 +168,25 @@ export function renameTagSelectors(css: string, from: string, to: string): { css
   let rules = 0;
   const prelude = (start: number, end: number) => {
     let i = start;
-    // At-rule preludes (@media, @supports…) are not selectors.
     while (i < end) {
       const after = skipped(css, i);
       if (after !== i) { i = after; continue; }
       if (/\s/.test(css[i])) { i++; continue; }
       break;
     }
-    if (css[i] === "@") return;
+    // At-rule preludes (@media, @supports…) are not selectors; @scope's parentheses are.
+    const scope = /^@scope(?![\w-])/i.test(css.slice(i, i + 7));
+    if (css[i] === "@" && !scope) return;
+    if (scope) i += 6;
+    // Whether each open parenthesis holds selectors (:is(), :not()…, not :lang() or :nth-child(2n)'s formula alone).
+    const open: boolean[] = [];
+    let fn: string | undefined;
     let found = false;
     while (i < end) {
       const after = skipped(css, i);
       if (after !== i) { i = after; continue; }
+      if (css[i] === "(") { open.push(fn ? SELECTOR_FUNCTIONS.has(fn) : scope && !open.length); fn = undefined; i++; continue; }
+      if (css[i] === ")") { open.pop(); i++; continue; }
       if (css[i] === "[") {
         let j = i + 1;
         while (j < end && css[j] !== "]") { const next = skipped(css, j); j = next === j ? j + 1 : next; }
@@ -189,7 +198,8 @@ export function renameTagSelectors(css: string, from: string, to: string): { css
       while (j < end && IDENT.test(css[j])) j++;
       const before = css[i - 1] ?? "";
       const word = css.slice(i, j);
-      if (word.toLowerCase() === from && !/[.#:@%]/.test(before) && css[j] !== "(") {
+      if (css[j] === "(") fn = word.toLowerCase();
+      else if (word.toLowerCase() === from && !/[.#:@%]/.test(before) && (open.length ? open.at(-1) : !scope)) {
         edits.push({ start: i, end: j, text: to });
         found = true;
       }

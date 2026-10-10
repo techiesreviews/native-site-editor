@@ -154,6 +154,13 @@ test("nested rules and selector functions are renamed; declarations are not", ()
   assert.deepEqual(renameTagSelectors(`main { section-work { gap: 0 } :is(section-work, p) > a { color: section-work } }`, "section-work", "x-y"),
     { css: `main { x-y { gap: 0 } :is(x-y, p) > a { color: section-work } }`, rules: 2 });
   assert.deepEqual(renameTagSelectors(`a{}`, "section-work", "x-y"), { css: `a{}`, rules: 0 });
+  // Arguments that are not selectors stay; :nth-child's "of" list and @scope's roots are selectors.
+  assert.deepEqual(renameTagSelectors(`p:lang(section-work), li:nth-child(2n of section-work) {}`, "section-work", "x-y"),
+    { css: `p:lang(section-work), li:nth-child(2n of x-y) {}`, rules: 1 });
+  assert.deepEqual(renameTagSelectors(`@scope (section-work) to (section-work-2) { h2 { margin: 0 } }`, "section-work", "x-y"),
+    { css: `@scope (x-y) to (section-work-2) { h2 { margin: 0 } }`, rules: 1 });
+  assert.deepEqual(renameTagSelectors(`@media screen { @supports (display: grid) { section-work { display: grid } } }`, "section-work", "x-y"),
+    { css: `@media screen { @supports (display: grid) { x-y { display: grid } } }`, rules: 1 });
 });
 
 test("a taken or reserved name is refused", () => {

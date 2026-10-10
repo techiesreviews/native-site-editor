@@ -179,6 +179,8 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
   let renaming: { before: string; name: HTMLElement; prefix: HTMLElement; source: NameSource } | undefined;
   // A committed name waiting for the owner: the tag shows it, not editable again until told.
   let pending = false;
+  // Committed from the keyboard: the renamed tag takes the focus back (the operation opens the moved template meanwhile).
+  let refocus = false;
   const showPrefix = () => {
     if (!renaming) return;
     const typed = renaming.name.textContent ?? "";
@@ -221,9 +223,11 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
     if (focused) tag.focus();
     if (next === was.before) return;
     pending = true;
+    refocus = focused;
     void ports.rename(next).then((reason) => reason, (error: unknown) => error instanceof Error ? error.message : "The component could not be renamed.").then((reason) => {
       pending = false;
       if (!reason) return;
+      refocus = false;
       if (name.isConnected) name.textContent = was.before;
       refuse(reason, { anchor: tag.isConnected ? tag : undefined });
     });
@@ -367,9 +371,14 @@ export function createEditComponentMode(ports: EditComponentModePorts) {
       for (const level of now.chain) if (level.templatePath === from) Object.assign(level, to);
       if (now.templatePath === from) Object.assign(now, to);
       notes = [...withNotes];
+      // The tag committed from the keyboard keeps the focus (F2 renames it again).
+      const focused = title.contains(document.activeElement) || refocus;
+      refocus = false;
       render();
       send();
       ports.changed();
+      // After the bar is drawn again (it moves the title).
+      if (focused) title.querySelector<HTMLElement>(".edit-mode__tag[aria-current]")?.focus();
     },
     /** An operation refused its optimistic rename: draw the name from source again. */
     resetChip() { shownChip = undefined; },

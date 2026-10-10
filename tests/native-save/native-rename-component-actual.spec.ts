@@ -108,6 +108,12 @@ test("the component's tag is renamed in place everywhere as one undo step", { ta
   await page.keyboard.press("Enter");
   await expect.poll(files).toEqual(after);
   await expect(tag(page)).toHaveText("<section-showcase>");
+  // Committed from the keyboard, the tag keeps the focus: F2 edits it again, Esc leaves it.
+  await expect(tag(page)).toBeFocused();
+  await page.keyboard.press("F2");
+  await expect(name).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(tag(page)).toHaveText("<section-showcase>");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", NEW.html);
   await expect(page.locator("#status")).toHaveText("Renamed <section-work> to <section-showcase>. 2 pages using it follow.");
   await expect(page.locator(".edit-mode__note")).toContainText("styles/sections.css (1 rule)");
@@ -126,6 +132,7 @@ test("the component's tag is renamed in place everywhere as one undo step", { ta
   await page.getByRole("button", { name: "Redo", exact: true }).click();
   await expect.poll(files).toEqual(after);
   await expect(tag(page)).toHaveText("<section-showcase>");
+  await expect(page.locator(".edit-mode__note")).toContainText("styles/sections.css (1 rule)");
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
 
   // Done; About shows the renamed instance.
