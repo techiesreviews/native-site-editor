@@ -34,17 +34,17 @@ export function hasHeadingSlot<N>(roots: readonly N[], view: RuleView<N>): boole
 }
 
 /** Whether `nodes` are card components only, at least one, blank text between them. */
-function cardsOnly<N>(nodes: readonly N[], view: RuleView<N>, isCard: (element: N) => boolean) {
+function allCards<N>(nodes: readonly N[], view: RuleView<N>, isCard: (element: N) => boolean) {
   const parts = meaningful(nodes, view);
   return parts.length > 0 && parts.every((node) => view.kind(node) === "element" && isCard(node));
 }
 
 /** A card slot: a slot whose fallback is card components only (Add card adds the first one's kind), whatever it is named. */
 export function isCardSlot<N>(slot: N, view: RuleView<N>, isCard: (element: N) => boolean) {
-  return cardsOnly(view.children(slot), view, isCard);
+  return allCards(view.children(slot), view, isCard);
 }
 
 /** An items slot, which takes cards and other blocks: the unnamed slot (`name` as the browser reads it), or a card slot. */
 export function isItemsSlot<N>(name: string, fallback: readonly N[], view: RuleView<N>, isCard: (element: N) => boolean) {
-  return !name || cardsOnly(fallback, view, isCard);
+  return !name || allCards(fallback, view, isCard);
 }

@@ -2564,10 +2564,10 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (!(root instanceof ShadowRoot) || !sectionLike(root.host) || !fillsAnySlot(root.host)) return false;
     // Placeholders show every fallback.
     if (placeholdersOn(root.host)) return false;
-    return (slot.getAttribute("name") || "").split(/\s+/).some(function (name) {
-      var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
-      return !named || !slotAssigned(named);
-    });
+    // The first slot of its name is the one filled (the name as the browser reads it, not trimmed).
+    var name = slot.getAttribute("name") || "";
+    var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
+    return !named || !slotAssigned(named);
   }
   function fillsAnySlot(host) {
     return Array.prototype.some.call(host.childNodes, function (n) {

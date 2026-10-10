@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../src/page-builder/rules/cards.ts";
 import { domView, meaningful, type DomLikeNode, type RuleView } from "../src/page-builder/rules/tree.ts";
-import { isCardComponent, parseSource, sourceView, templateSlots, type SourceElement, type SourceNode } from "../src/page-builder/component-model.ts";
+import { isCardComponent, parseSource, readInstance, slotStates, sourceView, templateSlots, type SourceElement, type SourceNode } from "../src/page-builder/component-model.ts";
 import { cardSlotOf } from "../src/page-builder/card-slot.ts";
 
 // One rule, two trees: each case is a template as written (the editor reads
@@ -25,7 +25,7 @@ const comment = (data: string): Dom => ({ nodeType: 8, data, childNodes: [], par
 /** A shadow root's children: top-level nodes have no parent element. */
 const roots = (...nodes: Dom[]) => nodes;
 // The runtime hides its own injected styles.
-const injected = (element: Dom) => element.localName === "style" && Boolean(element.attributes?.["data-native-css"]);
+const injected = (element: Dom) => element.localName === "style" && (element.attributes?.["data-native-css"] !== undefined || element.attributes?.["data-native-component-css"] !== undefined);
 const dom = domView<Dom>(injected);
 const fromSource = (html: string) => ({ nodes: parseSource(html), view: sourceView(html) });
 
@@ -58,7 +58,7 @@ for (const { name, html, dom: nodes, heading } of headingCases) {
 }
 
 test("the DOM view leaves out the runtime's injected styles", () => {
-  const style = el("style", ["h2{}"], { "data-native-css": "1" });
+  const style = el("style", ["h2{}"], { "data-native-component-css": "" });
   const nodes = roots(el("h2", [el("slot", [], { name: "t" }), style]));
   assert.equal(hasHeadingSlot(nodes, dom), true);
   assert.equal(hasHeadingSlot(nodes, domView<Dom>(() => false)), false);
@@ -121,6 +121,15 @@ test("a slot named with white space keeps its name: not the unnamed items slot",
   const slots = templateSlots('<section><slot name=" "></slot><slot name=" cards "><card-a></card-a></slot></section>', templateOf);
   assert.deepEqual(slots.map((slot) => [slot.name, slot.items]), [[" ", false], [" cards ", true]]);
   assert.deepEqual(cardSlotOf("section-x", (tag) => (tag === "section-x" ? '<section><slot name=" cards "><card-a></card-a></slot></section>' : templateOf(tag))), [{ slot: " cards ", card: "card-a" }]);
+});
+
+test("a page fills a slot named with white space by that same name, as the browser assigns it", () => {
+  const template = '<section><slot name=" title "><h2>Fallback</h2></slot><slot name="title"><p>Other</p></slot></section>';
+  const page = '<section-x><h2 slot=" title ">Mine</h2></section-x>';
+  const [host] = parseSource(page) as SourceElement[];
+  const states = slotStates(template, readInstance(page, { tag: host.tag, start: host.start, end: host.end, close: host.close }));
+  assert.equal(states.get(" title ")?.filled, true);
+  assert.equal(states.get("title")?.filled, false);
 });
 
 test("the source view reads text decoded and a template's content as no children", () => {
