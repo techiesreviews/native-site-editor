@@ -157,6 +157,8 @@ test("nested rules and selector functions are renamed; declarations are not", ()
   // Arguments that are not selectors stay; :nth-child's "of" list and @scope's roots are selectors.
   assert.deepEqual(renameTagSelectors(`p:lang(section-work), li:nth-child(2n of section-work) {}`, "section-work", "x-y"),
     { css: `p:lang(section-work), li:nth-child(2n of x-y) {}`, rules: 1 });
+  assert.deepEqual(renameTagSelectors(`li:nth-child(n-1), li:nth-last-child(n-1 of n-1), ./**/n-1, #/**/n-1 {}`, "n-1", "x-y"),
+    { css: `li:nth-child(n-1), li:nth-last-child(n-1 of x-y), ./**/n-1, #/**/n-1 {}`, rules: 1 });
   assert.deepEqual(renameTagSelectors(`@scope (section-work) to (section-work-2) { h2 { margin: 0 } }`, "section-work", "x-y"),
     { css: `@scope (x-y) to (section-work-2) { h2 { margin: 0 } }`, rules: 1 });
   assert.deepEqual(renameTagSelectors(`@media screen { @supports (display: grid) { section-work { display: grid } } }`, "section-work", "x-y"),
