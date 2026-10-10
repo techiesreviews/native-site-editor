@@ -9,6 +9,7 @@ import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import type { CardLookGallery } from "./card-look-gallery";
 import type { VariantFiles } from "../../shared/variant-lookup";
 import type { CardContent } from "../page-builder/card-swap";
+import { HOST_SOURCE, type HostMessage } from "./preview-protocol";
 import "./card-grid-controls.css";
 
 // Add card places and selects a card immediately. Component cards and collection
@@ -440,7 +441,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     if (dy > 0 && frame instanceof HTMLIFrameElement) {
       const entry = linker;
       entry.scrolled = true;
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy }, "*");
+      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "scroll-by", dy } satisfies HostMessage, "*");
       // A page that could not scroll sends no new report: it shows where it fits then.
       window.setTimeout(() => { if (linker === entry) placeLinker(); }, 250);
     }
@@ -502,7 +503,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   function trackGrid(grid?: ItemGridReport) {
     const tracking = ++trackingRequest;
     if (frame instanceof HTMLIFrameElement)
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "item-grid-track", grid, tracking }, "*");
+      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "item-grid-track", grid, tracking } satisfies HostMessage, "*");
     return tracking;
   }
 

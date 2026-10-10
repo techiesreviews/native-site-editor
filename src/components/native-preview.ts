@@ -1,5 +1,6 @@
 import { samePreviewFiles } from "./preview-files";
-import { parseDropReport, type DropReport } from "../page-builder/drop-report";
+import type { DropReport } from "../page-builder/drop-report";
+import { HOST_SOURCE, readFrameMessage, type FrameHost, type HostMessage, type HostMessageBody, type PatchText } from "./preview-protocol";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
 export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
@@ -21,7 +22,7 @@ import { isSectionTemplate } from "../native-insert";
 import { startTags } from "../native-source-location";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
 import { withSlottedRules } from "../../shared/slotted-css";
-import { readCascade, readSelectedRules, type NativeCascade, type NativeSelectedRule } from "../style-cascade";
+import type { NativeCascade, NativeSelectedRule } from "../style-cascade";
 import { watchEditorTheme } from "../theme";
 import type { AddPanelHandlers } from "../page-builder/add-panel";
 import { createPageBuilder } from "../page-builder/page-builder";
@@ -30,7 +31,6 @@ import type { createBlockDrag } from "../page-builder/block-drag";
 import type { StructureDrop } from "../page-builder/tree-drop";
 import type { DragFeed, DragPress } from "../page-builder/insert-drag";
 import { createCanvasBar } from "./canvas-bar";
-import { readCrumbs } from "../page-builder/canvas-model";
 import { linkCodeToCanvas } from "../page-builder/code-link";
 import { createPreviewFrameState } from "./preview-frame-state";
 import "./native-preview.css";
@@ -262,10 +262,6 @@ export interface NativePreviewHandlers {
   onItemGrids?: (report: ItemGridsReport) => void;
 }
 
-// A list of element-child indexes from the runtime.
-const indexes = (value: unknown): value is number[] =>
-  Array.isArray(value) && value.length <= 500 && value.every((index) => Number.isInteger(index) && index >= 0);
-
 // The part of a page document the preview renders: its <body> content.
 function pageOf(source: string) {
   const { start, end } = nativePageBody(source);
@@ -325,6 +321,9 @@ function composeStyles(
 /** Assets the runtime does not have yet (`set`) and ones it should forget (`drop`). */
 export interface AssetChanges { set: Record<string, string>; drop: string[] }
 
+/** A render the host posts to the frame (`update`). */
+export type UpdatePayload = ReturnType<typeof composePayload> & { viewing: boolean };
+
 function composePayload(
   site: NativeSite,
   sources: Record<string, string>,
@@ -381,8 +380,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   frame.setAttribute("srcdoc", runtimeDoc(0));
   frameHost.append(frame);
   // The canvas around the frame: breakpoints and breadcrumb (canvas-bar.ts).
-  const toCanvas = (message: Record<string, unknown>) =>
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", ...message }, "*");
+  const toCanvas = (message: HostMessageBody<"canvas-crumb" | "canvas-avoid" | "canvas-hint" | "canvas-code-select">) =>
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, ...message } satisfies HostMessage, "*");
   const canvas = createCanvasBar(frameHost, frame, {
     onCrumb: (index) => toCanvas({ type: "canvas-crumb", action: "select", index }),
     onCrumbHover: (index) => toCanvas({ type: "canvas-crumb", action: "hover", index: index ?? -2 }),
@@ -400,12 +399,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let previewFocus = "";
   let componentColor = "";
   const postTheme = () =>
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "theme", focus: previewFocus, component: componentColor }, "*");
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "theme", focus: previewFocus, component: componentColor } satisfies HostMessage, "*");
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
   const postFocus = () => {
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "component-focus", tag: focusTag }, "*");
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "edit-component", mode: editMode }, "*");
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "component-focus", tag: focusTag } satisfies HostMessage, "*");
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "edit-component", mode: editMode } satisfies HostMessage, "*");
   };
   // Edit component mode (src/page-builder/edit-component-mode.ts): the instance edited in place.
   let editMode: EditComponentFrameMode | undefined;
@@ -444,7 +443,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // An earlier version on show (History) is not edited: its places are not the source's.
     insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
     prepare: (tags) => prepareStyles(tags),
-    scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "scroll-by", dy, smooth }, "*"),
+    scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "scroll-by", dy, smooth } satisfies HostMessage, "*"),
     dock: handlers.addPanelDock,
   });
   let slotSelection: { path: string; node: number[]; tag?: string; exact: boolean } | undefined;
@@ -464,14 +463,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const loadPins = () => pinsLoading ??= import("./agent-pins").then(({ createAgentPins }) => {
     if (pinsDisposed) return;
     pins = createAgentPins(pane, frame, {
-      locate: (list) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "pins", pins: list }, "*"),
+      locate: (list) => frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "pins", pins: list } satisfies HostMessage, "*"),
       onDismiss: (id) => handlers.onDismissRequest?.(id),
       onAnswer: async (id, text) => {
         if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
         await handlers.onAnswerRequest(id, text);
       },
       onShowPage: (target) => void followRoute(target),
-      onShowElement: (id) => frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "show-pin", id }, "*"),
+      onShowElement: (id) => frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "show-pin", id } satisfies HostMessage, "*"),
       onLayout: () => editBar.refit(),
     });
     pins?.update(pinRequests, route);
@@ -504,7 +503,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const changes = assetChanges();
     if (!Object.keys(changes.set).length && !changes.drop.length) return;
     const { styles, componentStyles: styled } = composeStyles(site, sources, componentStyles, assets, route, alone);
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "assets", assetChanges: changes, styles, componentStyles: styled }, "*");
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "assets", assetChanges: changes, styles, componentStyles: styled } satisfies HostMessage, "*");
   }
   let route = "/";
   // The component shown by itself, when its template is open and no page uses it.
@@ -528,8 +527,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     return new Promise(resolve => {
       const timer = setTimeout(() => endProbe(), 1000);
       probe = { id: ++probeId, context, path, page, done: report => { clearTimeout(timer); resolve(report); } };
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "drop-probe", id: probe.id,
-        x: at.x, y: at.y, moving, bands }, "*");
+      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "drop-probe", id: probe.id,
+        x: at.x, y: at.y, moving, bands } satisfies HostMessage, "*");
     });
   }
   let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>> } | undefined;
@@ -598,8 +597,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // shared files): a change to any of them drops the patch too.
   let livePatch: { path: string; base: string; others: Record<string, string> } | undefined;
   let lastPatchRequest: NativeNodeRequest | undefined;
-  const postPatch = (message: Record<string, unknown>) =>
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "patch-text", ...message }, "*");
+  const postPatch = (message: PatchText) =>
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "patch-text", ...message } satisfies HostMessage, "*");
   const patchMisses = new Map<number, () => void>();
   let messageId = 0;
   const stopTheme = watchEditorTheme(({ colors }) => {
@@ -643,7 +642,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     sentStructureSnapshot = { context, sources: { ...sources } };
     postedRoutes.set(++messageId, alone ? "/" : route);
     frame.contentWindow?.postMessage(
-      { source: "astro-native-preview-host", type: "update", id: messageId, payload: { ...payload, viewing: Boolean(viewing) } },
+      { source: HOST_SOURCE, type: "update", id: messageId, payload: { ...payload, viewing: Boolean(viewing) } } satisfies HostMessage,
       "*",
     );
   }
@@ -714,50 +713,41 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       };
       const timer = setTimeout(() => finish(false), 1000);
       typingFinishes.set(id, finish);
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "finish-typing", id }, "*");
+      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "finish-typing", id } satisfies HostMessage, "*");
     });
   }
 
   function onMessage(event: MessageEvent) {
     if (event.source !== frame.contentWindow) return;
-    const data = event.data as { source?: string; type?: string; href?: string; context?: string } | undefined;
-    if (data?.source !== "astro-native-preview") return;
-    if (data.type === "typing-finished") {
-      const raw = data as unknown as { id?: unknown };
-      if (typeof raw.id === "number") typingFinishes.get(raw.id)?.(true);
+    const message = readFrameMessage(event.data);
+    if (!message) return;
+    if (message.type === "typing-finished") {
+      typingFinishes.get(message.id)?.(true);
       return;
     }
     // Desktop files dropped onto a source-owned canvas image, including shadow roots.
-    if (data.type === "image-drop" && site) {
-      const raw = data as unknown as { path?: unknown; node?: unknown; width?: unknown; files?: unknown };
-      if (data.context !== context || typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
-      if (!Array.isArray(raw.node) || !raw.node.length || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
-      if (!Array.isArray(raw.files) || !raw.files.every((file) => file instanceof File)) return;
-      handlers.onImageDrop?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined }, raw.files);
+    if (message.type === "image-drop" && site) {
+      if (message.context !== context || !nativeSitePaths(site).includes(message.path)) return;
+      handlers.onImageDrop?.({ path: message.path, node: message.node, width: message.width }, message.files);
       return;
     }
-    if (data.type === "image-edit" && site && !viewing) {
-      const raw = data as unknown as { path?: unknown; node?: unknown; width?: unknown };
-      if (data.context !== context || typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path) || !indexes(raw.node) || !raw.node.length) return;
-      handlers.onImageEdit?.({ path: raw.path, node: raw.node, width: typeof raw.width === "number" ? raw.width : undefined });
+    if (message.type === "image-edit" && site && !viewing) {
+      if (message.context !== context || !nativeSitePaths(site).includes(message.path)) return;
+      handlers.onImageEdit?.({ path: message.path, node: message.node, width: message.width });
       return;
     }
     // A text patch the page could not take: its full update goes now.
-    if (data.type === "patched") {
-      const raw = data as unknown as { id?: unknown; ok?: unknown };
-      const miss = typeof raw.id === "number" ? patchMisses.get(raw.id) : undefined;
-      if (typeof raw.id === "number") patchMisses.delete(raw.id);
-      if (raw.ok !== true) miss?.();
+    if (message.type === "patched") {
+      const miss = patchMisses.get(message.id);
+      patchMisses.delete(message.id);
+      if (!message.ok) miss?.();
       return;
     }
     // Typed text is checked against the current source, so it counts even
     // when a render was requested since.
-    if (data.type === "text-edit" && site) {
-      const raw = data as unknown as Record<string, unknown>;
-      if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
-      if (typeof raw.before !== "string" || typeof raw.after !== "string" || raw.after.length > 100_000) return;
-      if (!Array.isArray(raw.node) || raw.node.length > 500 || !raw.node.every((index) => Number.isInteger(index) && index >= 0)) return;
-      const edit: NativeTextEdit = { path: raw.path, node: raw.node as number[], before: raw.before, after: raw.after };
+    if (message.type === "text-edit" && site) {
+      if (!nativeSitePaths(site).includes(message.path)) return;
+      const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after };
       handlers.onTextEdit?.(edit);
       return;
     }
@@ -772,96 +762,85 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // A Ctrl/⌘+click on a link inside the preview (including inside shadow
     // roots) to one of the site's pages navigates the preview only, keeping
     // the current source edits untouched.
-    if (data.type === "route" && typeof data.href === "string" && site) {
-      followRoute(data.href);
+    if (message.type === "route" && site) {
+      followRoute(message.href);
       return;
     }
-    if (data.type === "format") {
-      const format = (data as { format?: unknown }).format;
-      if (format === "strong" || format === "em" || format === "link") handlers.onFormat?.(format);
+    if (message.type === "format") {
+      handlers.onFormat?.(message.format);
       return;
     }
-    if (data.type === "move") {
-      const direction = (data as { direction?: unknown }).direction;
-      if (direction === "up" || direction === "down" || direction === "out" || direction === "in") handlers.onMove?.(direction);
+    if (message.type === "move") {
+      handlers.onMove?.(message.direction);
       return;
     }
     // A block pressed in the page and moved 7 px, and the pointer after
     // that (frame-viewport points). The start names the block in the DOM of
     // the render it saw: a stale one starts nothing.
-    if (data.type === "press-drag") {
-      const raw = data as { phase?: unknown; x?: unknown; y?: unknown; alt?: unknown; node?: unknown; tag?: unknown; cls?: unknown; band?: unknown; template?: unknown };
+    if (message.type === "press-drag") {
       const box = frame.getBoundingClientRect();
-      const x = box.left + frame.clientLeft + Number(raw.x), y = box.top + frame.clientTop + Number(raw.y);
-      if (raw.phase === "start") {
+      const x = box.left + frame.clientLeft + message.x, y = box.top + frame.clientTop + message.y;
+      if (message.phase === "start") {
         endPress();
-        if (!site || data.context !== context || viewing || !indexes(raw.node) || !raw.node.length || typeof raw.tag !== "string" || !Number.isFinite(x) || !Number.isFinite(y)) return;
+        if (!site || message.context !== context || viewing || !message.node?.length || message.tag === undefined || !Number.isFinite(x) || !Number.isFinite(y)) return;
         // A template's part: the bytes of the template edited (the innermost one opened).
-        const template = raw.template === true;
+        const template = message.template;
         const tag = editMode && (editMode.nested?.[editMode.nested.length - 1]?.tag ?? editMode.tag);
         const file = template ? tag && Object.hasOwn(site.components, tag) ? site.components[tag] : undefined : site.routes[route];
         const painted = sentStructureSnapshot?.context === context && file !== undefined ? sentStructureSnapshot.sources[file] : undefined;
-        pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: raw.alt === true, relayed: true },
-          { node: raw.node, tag: raw.tag, cls: typeof raw.cls === "string" ? raw.cls : "", band: raw.band === true, painted, ...(template ? { template } : {}) });
+        pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: message.alt, relayed: true },
+          { node: message.node, tag: message.tag, cls: message.cls, band: message.band, painted, ...(template ? { template } : {}) });
         return;
       }
-      if (raw.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, raw.alt === true);
-      else if (raw.phase === "end" && Number.isFinite(x) && Number.isFinite(y)) { pressFeed?.up(x, y); pressFeed = undefined; }
-      else if (raw.phase === "end" || raw.phase === "cancel") endPress();
+      if (message.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, message.alt);
+      else if (message.phase === "end" && Number.isFinite(x) && Number.isFinite(y)) { pressFeed?.up(x, y); pressFeed = undefined; }
+      else if (message.phase === "end" || message.phase === "cancel") endPress();
       return;
     }
     // Esc or Ctrl/⌘+↑ climbed past the top, or the breadcrumb's body was chosen.
-    if (data.type === "canvas-clear") {
+    if (message.type === "canvas-clear") {
       clearSelection();
       return;
     }
     // Pins' places describe the DOM too, but each report is whole and
     // sent only when it changed, so none is dropped.
-    if (data.type === "pin-rects") {
-      const raw = (data as { rects?: unknown }).rects;
-      if (!Array.isArray(raw)) return;
-      pins?.rects(raw.slice(0, 200).flatMap((item) =>
-        item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string"
-          ? [{ id: (item as { id: string }).id, rect: readRect((item as { rect?: unknown }).rect) ?? null }]
-          : []));
+    if (message.type === "pin-rects") {
+      pins?.rects(message.rects);
       return;
     }
-    if (data.type === "drop-containers") {
-      const raw = data as unknown as { id?: unknown; context?: unknown };
-      if (!probe || raw.id !== probe.id) return;
-      const valid = raw.context === probe.context && context === probe.context && site?.routes[route] === probe.page &&
+    if (message.type === "drop-containers") {
+      if (!probe || message.id !== probe.id) return;
+      const valid = message.context === probe.context && context === probe.context && site?.routes[route] === probe.page &&
         frameState.active && !viewing && !alone;
-      endProbe(valid ? parseDropReport(data, probe.path) : undefined);
+      endProbe(valid && message.report?.path === probe.path ? message.report : undefined);
       return;
     }
     // A press or scroll in the frame closes the element menu, from any render.
-    if (data.type === "dismiss-context-menu") {
+    if (message.type === "dismiss-context-menu") {
       handlers.onDismissContextMenu?.();
       return;
     }
-    if (data.type !== "ready" && data.context !== context) {
-      if (data.type === "select" && (data as { reason?: unknown }).reason === "click") staleClick = true;
+    if (message.type !== "ready" && message.context !== context) {
+      if (message.type === "select" && message.reason === "click") staleClick = true;
       return;
     }
-    if (data.type === "slot-ghosts") {
-      const report = site && frameState.active && !viewing && readSlotGhostReport((data as { report?: unknown }).report,
+    if (message.type === "slot-ghosts") {
+      const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
         { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
       if (report) slotGhosts.update(report); else slotGhosts.clear(false);
       return;
     }
-    if (data.type === "inspect-result") {
-      const answer = data as { id?: number; report?: unknown };
-      inspections.get(Number(answer.id))?.(answer.report);
+    if (message.type === "inspect-result") {
+      inspections.get(message.id)?.(message.report);
       return;
     }
-    if (data.type === "ack") {
-      renderDrawn(Number((data as { id?: unknown }).id));
+    if (message.type === "ack") {
+      renderDrawn(message.id);
       return;
     }
-    if (data.type === "ready") {
+    if (message.type === "ready") {
       // A late `ready` from the document the last reload replaced.
-      const load = (data as { load?: unknown }).load;
-      if (load !== undefined && load !== String(frameLoads)) return;
+      if (message.load !== undefined && message.load !== String(frameLoads)) return;
       endPress();
       sentAssets.clear();
       postedRoutes.clear();
@@ -878,18 +857,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     }
     // Runtime-reported render failures (bad define, recursive templates) surface
     // as a banner but keep the frame visible, unless a hard load error is shown.
-    if (data.type === "error" && typeof (data as { message?: string }).message === "string") {
-      if (!loadError) showBanner((data as { message: string }).message, false);
+    if (message.type === "error") {
+      if (!loadError) showBanner(message.message, false);
       return;
     }
-    if (data.type === "clear-error") {
+    if (message.type === "clear-error") {
       if (!loadError) showBanner(undefined, false);
       return;
     }
-    if (data.type === "insert-points" && site) {
-      const raw = data as unknown as { path?: unknown; points?: unknown };
-      const path = raw.path;
-      if (typeof path !== "string" || site.routes[route] !== path || !Array.isArray(raw.points)) return;
+    if (message.type === "insert-points" && site) {
+      if (site.routes[route] !== message.path) return;
       // An earlier version on show (History): its gaps are counted in its
       // markup, not the current source's, so nothing is offered there.
       if (viewing) {
@@ -897,109 +874,53 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         pageBuilder.points([]);
         return;
       }
-      const points = raw.points.slice(0, 500).flatMap((item): InsertPoint[] => {
-        if (!item || typeof item !== "object") return [];
-        const point = item as Record<string, unknown>;
-        if (!indexes(point.parent) || !Number.isInteger(point.index) || (point.index as number) < 0) return [];
-        if (!["top", "left", "width"].every((key) => typeof point[key] === "number" && Number.isFinite(point[key]))) return [];
-        return [{
-          path,
-          parent: point.parent,
-          index: point.index as number,
-          top: point.top as number,
-          left: point.left as number,
-          width: point.width as number,
-          before: typeof point.before === "string" ? point.before.slice(0, 60) : "",
-          tag: typeof point.tag === "string" ? point.tag.slice(0, 100) : undefined,
-          empty: point.empty === true || undefined,
-          height: typeof point.height === "number" && Number.isFinite(point.height) ? point.height : undefined,
-        }];
-      });
-      insertControls.update(points);
-      pageBuilder.points(points);
+      insertControls.update(message.points);
+      pageBuilder.points(message.points);
       return;
     }
-    if (data.type === "section-hover") {
-      const item = (data as { item?: unknown }).item as { parent?: unknown; index?: unknown } | null | undefined;
-      const valid = item && Array.isArray(item.parent) && item.parent.every((index) => Number.isInteger(index) && index >= 0) &&
-        Number.isInteger(item.index) && (item.index as number) >= 0;
-      insertControls.hover(valid ? { parent: item.parent as number[], index: item.index as number } : undefined);
+    if (message.type === "section-hover") {
+      insertControls.hover(message.item);
       return;
     }
-    if (data.type === "text-selection") {
-      handlers.onTextSelection?.(readTextSelection((data as { selection?: unknown }).selection));
+    if (message.type === "text-selection") {
+      handlers.onTextSelection?.(message.selection);
       return;
     }
-    if (data.type === "item-grids" && site) {
-      const raw = data as { hover?: unknown; selected?: unknown; tracking?: unknown };
-      const report = { hover: readItemGrid(raw.hover), selected: readItemGrid(raw.selected),
-        tracking: typeof raw.tracking === "number" && Number.isSafeInteger(raw.tracking) && raw.tracking > 0 ? raw.tracking : undefined };
+    if (message.type === "item-grids" && site) {
+      const report = { hover: onPage(message.hover), selected: onPage(message.selected), tracking: message.tracking };
       cardGrids?.update(report);
       handlers.onItemGrids?.(report);
       return;
     }
-    if (data.type === "structure" && site) {
-      const raw = data as unknown as { path?: unknown; items?: unknown };
-      const path = typeof raw.path === "string" && (raw.path === "" || site.routes[route] === raw.path) ? raw.path : undefined;
-      if (path === undefined || !sentStructureSnapshot || sentStructureSnapshot.context !== data.context) return;
+    if (message.type === "structure" && site) {
+      const path = message.path === "" || site.routes[route] === message.path ? message.path : undefined;
+      if (path === undefined || !sentStructureSnapshot || sentStructureSnapshot.context !== message.context) return;
       const paintedSource = sentStructureSnapshot.sources[path];
       if (path && paintedSource === undefined) return;
-      let count = 0;
-      const readItems = (value: unknown, depth: number): NativeStructureItem[] => {
-        if (!Array.isArray(value) || depth > 12) return [];
-        return value.flatMap((entry): NativeStructureItem[] => {
-          if (!entry || typeof entry !== "object" || ++count > 2000) return [];
-          const item = entry as Record<string, unknown>;
-          if (typeof item.tag !== "string" || !Array.isArray(item.node) || item.node.length > 500 ||
-            !item.node.every((index) => Number.isInteger(index) && index >= 0)) return [];
-          const text = (key: string) => (typeof item[key] === "string" ? (item[key] as string).slice(0, 80) : "");
-          return [{ tag: item.tag.slice(0, 100), node: item.node as number[], className: typeof item.className === "string" ? item.className : "", text: text("text"), heading: text("heading"), slot: text("slot"), children: readItems(item.children, depth + 1) }];
-        });
-      };
-      handlers.onStructure?.({ path, items: readItems(raw.items, 0), paintedSource });
+      handlers.onStructure?.({ path, items: message.items, paintedSource });
       return;
     }
-    if (data.type === "selection-rect") {
-      const rect = readRect((data as { rect?: unknown }).rect);
-      if (rect) {
-        editBar.move(rect);
-        pageBuilder.selectionRect(rect);
-        handlers.onSelectionRect?.(rect);
-      }
+    if (message.type === "selection-rect") {
+      editBar.move(message.rect);
+      pageBuilder.selectionRect(message.rect);
+      handlers.onSelectionRect?.(message.rect);
       return;
     }
     // An earlier version on show (History): nothing on it can be selected or edited.
-    if (data.type === "select" && viewing) {
-      if ((data as { reason?: unknown }).reason === "click") postClearSelection();
+    if (message.type === "select" && viewing) {
+      if (message.reason === "click") postClearSelection();
       return;
     }
-    if (data.type === "select" && site) {
-      const raw = data as unknown as {
-        path?: unknown;
-        tag?: unknown;
-        text?: unknown;
-        selectors?: unknown;
-        cascade?: unknown;
-        reason?: unknown;
-        node?: unknown;
-        link?: unknown;
-        rect?: unknown;
-        pageNode?: unknown;
-        selector?: unknown;
-        host?: unknown;
-        hostChain?: unknown;
-        crumbs?: unknown;
-        menu?: { x?: unknown; y?: unknown };
-      };
+    if (message.type === "select" && site) {
       // Geometry refreshes of the chosen element keep its menu usable.
-      if (raw.reason !== "refresh" || raw.path === "") handlers.onDismissContextMenu?.();
+      if (message.reason !== "refresh" || message.path === "") handlers.onDismissContextMenu?.();
       slotSelection = undefined;
-      const reason = raw.reason === "refresh" && !staleClick ? "refresh" : "click";
+      const reason = message.reason === "refresh" && !staleClick ? "refresh" : "click";
       staleClick = false;
       if (reason === "click") codeLink.cancel();
       // The runtime lost its selection in a re-render (the element was
       // removed or replaced) and nothing was requested in its place.
-      if (raw.path === "" && reason === "refresh") {
+      if (message.path === "" && reason === "refresh") {
         slotGhosts.clear();
         canvas.setCrumbs([]);
         editBar.hide();
@@ -1007,129 +928,79 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
         return;
       }
-      const painted = sentStructureSnapshot && sentStructureSnapshot.context === data.context ? sentStructureSnapshot : undefined;
-      if (typeof raw.path !== "string" || !nativeSitePaths(site).includes(raw.path)) return;
-      const selectors = readSelectedRules(raw.selectors, styleSourcePaths());
-      const selectedNode = indexes(raw.node) ? raw.node : undefined;
+      const painted = sentStructureSnapshot && sentStructureSnapshot.context === message.context ? sentStructureSnapshot : undefined;
+      if (message.path === undefined || !nativeSitePaths(site).includes(message.path)) return;
+      const selectors = onSite(message.selectors);
+      const selectedNode = message.node;
       // Inside a component's template: the page's instance it renders in.
       const pagePath = site.routes[route];
-      const slotHost = readHost(raw.host);
-      if (raw.path === pagePath && selectedNode) slotSelection = { path: pagePath, node: [...selectedNode],
-        tag: typeof raw.tag === "string" ? raw.tag : undefined, exact: typeof raw.tag === "string" && Object.hasOwn(site.components, raw.tag) };
+      const slotHost = inSite(message.host);
+      if (message.path === pagePath && selectedNode) slotSelection = { path: pagePath, node: [...selectedNode],
+        tag: message.tag, exact: message.tag !== undefined && Object.hasOwn(site.components, message.tag) };
       else if (slotHost?.path === pagePath && slotHost.node) slotSelection = { path: pagePath, node: [...slotHost.node], tag: slotHost.tag, exact: true };
       slotGhosts.selectionChanged();
-      const instance = indexes(raw.pageNode) && pagePath ? { path: pagePath, node: raw.pageNode } : undefined;
-      pageBuilder.selected(raw.path, selectedNode, readRect(raw.rect), instance);
-      canvas.setCrumbs(readCrumbs(raw.crumbs));
+      const instance = message.pageNode && pagePath ? { path: pagePath, node: message.pageNode } : undefined;
+      pageBuilder.selected(message.path, selectedNode, message.rect, instance);
+      canvas.setCrumbs(message.crumbs);
       const selection: NativePreviewSelection = {
-        path: raw.path,
-        paintedSource: painted?.sources[raw.path],
-        tag: typeof raw.tag === "string" ? raw.tag : "",
-        text: typeof raw.text === "string" ? raw.text : "",
+        path: message.path,
+        paintedSource: painted?.sources[message.path],
+        tag: message.tag ?? "",
+        text: message.text,
         reason,
         selectors,
-        cascade: readCascade(raw.cascade),
-        node: Array.isArray(raw.node) && raw.node.length <= 500 &&
-          raw.node.every((index) => Number.isInteger(index) && index >= 0)
-          ? raw.node as number[]
-          : undefined,
-        link: typeof raw.link === "string" ? raw.link : undefined,
-        rect: readRect(raw.rect),
-        selector: typeof raw.selector === "string" ? raw.selector.slice(0, 2000) : undefined,
-        host: readHost(raw.host),
-        hostChain: readHostChain(raw.hostChain),
+        cascade: message.cascade,
+        node: message.node,
+        link: message.link,
+        rect: message.rect,
+        selector: message.selector,
+        host: inSite(message.host),
+        hostChain: inSiteChain(message.hostChain),
       };
       handlers.onSelect?.(selection);
       // A right-click: the element menu at the pointer (frame points to the host's).
-      const menuX = raw.menu?.x, menuY = raw.menu?.y;
-      if (typeof menuX === "number" && typeof menuY === "number" && Number.isFinite(menuX) && Number.isFinite(menuY)) {
+      if (message.menu) {
         const box = frame.getBoundingClientRect();
-        handlers.onContextMenu?.({ x: box.left + frame.clientLeft + menuX, y: box.top + frame.clientTop + menuY }, frame, selection);
+        handlers.onContextMenu?.({ x: box.left + frame.clientLeft + message.menu.x, y: box.top + frame.clientTop + message.menu.y }, frame, selection);
       }
       return;
     }
-    if (data.type === "default-styles" && site) {
-      const raw = data as unknown as { selectors?: unknown; cascade?: unknown };
-      handlers.onDefaultStyles?.({ selectors: readSelectedRules(raw.selectors, styleSourcePaths()), cascade: readCascade(raw.cascade) });
+    if (message.type === "default-styles" && site) {
+      handlers.onDefaultStyles?.({ selectors: onSite(message.selectors), cascade: message.cascade });
       return;
     }
-    if (data.type === "component-styles" && site) {
-      const raw = data as unknown as { tags?: unknown };
-      const tags = Array.isArray(raw.tags)
-        ? raw.tags.filter((tag): tag is string => typeof tag === "string" && Object.hasOwn(site!.components, tag))
-        : [];
+    if (message.type === "component-styles" && site) {
+      const tags = message.tags.filter((tag) => Object.hasOwn(site!.components, tag));
       if (tags.length) handlers.onComponentStyles?.([...new Set(tags)]);
     }
   }
   window.addEventListener("message", onMessage);
-  function readRect(raw: unknown): SelectionRect | undefined {
-    if (!raw || typeof raw !== "object") return undefined;
-    const rect = raw as Record<string, unknown>;
-    const keys = ["top", "left", "width", "height", "bottom", "right"] as const;
-    if (!keys.every((key) => typeof rect[key] === "number" && Number.isFinite(rect[key]))) return undefined;
-    const read = Object.fromEntries(keys.map((key) => [key, rect[key] as number])) as unknown as SelectionRect;
-    // The page's own top bar over the viewport (src/components/edit-bar.ts):
-    // kept only when a finite, non-negative number.
-    if (typeof rect.inset === "number" && Number.isFinite(rect.inset) && rect.inset > 0) read.inset = rect.inset;
-    return read;
+  // The rest of a frame report's checks, against what the editor shows:
+  // a card grid on the page on show,
+  function onPage(grid: ItemGridReport | null): ItemGridReport | null {
+    return grid && site && site.routes[route] === grid.path ? grid : null;
   }
-  function readItemGrid(raw: unknown): ItemGridReport | null {
-    if (!raw || typeof raw !== "object" || !site) return null;
-    const grid = raw as Record<string, unknown>;
-    const frameBox = (value: unknown) => {
-      const read = readRect(value && typeof value === "object" ? { ...value, bottom: 0, right: 0 } : undefined);
-      return read && { top: read.top, left: read.left, width: read.width, height: read.height };
-    };
-    const box = frameBox(grid.ghost);
-    const item = frameBox(grid.item);
-    if (typeof grid.path !== "string" || site.routes[route] !== grid.path || !indexes(grid.parent) || !box) return null;
-    // An empty card slot has no item: index and position -1, count 0.
-    const slot = typeof grid.slot === "string" ? grid.slot : undefined;
-    const empty = slot !== undefined && grid.count === 0 && grid.index === -1 && grid.position === -1;
-    if (!empty && ![grid.index, grid.position, grid.count].every((value) => Number.isInteger(value) && (value as number) >= 0)) return null;
-    return {
-      path: grid.path,
-      parent: grid.parent,
-      index: grid.index as number,
-      position: grid.position as number,
-      count: grid.count as number,
-      row: grid.row === true,
-      beside: grid.beside === true,
-      ghost: box,
-      ...(slot === undefined ? {} : { slot }),
-      ...(item ? { item } : {}),
-    };
+  // matched rules from the site's files and their stylesheets,
+  function onSite(selectors: NativeSelectedRule[]) {
+    const allowed = styleSourcePaths();
+    return selectors.filter((rule) => allowed.has(rule.path));
   }
-  function readHost(raw: unknown) {
-    if (!raw || typeof raw !== "object") return undefined;
-    const { tag, selector, path, node, rect } = raw as Record<string, unknown>;
-    if (typeof tag !== "string" || typeof selector !== "string") return undefined;
-    const host: NonNullable<NativePreviewSelection["host"]> = { tag: tag.slice(0, 100), selector: selector.slice(0, 2000) };
-    if (typeof path === "string" && site && nativeSitePaths(site).includes(path) && indexes(node)) {
+  // and an instance in one of the site's files, with the source it was painted from.
+  function inSite(raw: FrameHost | undefined) {
+    if (!raw) return undefined;
+    const { tag, selector, path, node, rect } = raw;
+    const host: NonNullable<NativePreviewSelection["host"]> = { tag, selector };
+    if (path !== undefined && node && site && nativeSitePaths(site).includes(path)) {
       host.path = path;
       host.node = node;
-      host.rect = readRect(rect);
+      host.rect = rect;
       host.paintedSource = sentStructureSnapshot && sentStructureSnapshot.context === context ? sentStructureSnapshot.sources[path] : undefined;
     }
     return host;
   }
-  function readHostChain(raw: unknown) {
-    if (!Array.isArray(raw) || !raw.length || raw.length > 16) return undefined;
-    const chain = raw.map(readHost);
-    return chain.every((host): host is NonNullable<NativePreviewSelection["host"]> => Boolean(host?.path && host.node)) ? chain : undefined;
-  }
-  function readTextSelection(raw: unknown): NativeTextSelection | undefined {
-    if (!raw || typeof raw !== "object") return undefined;
-    const value = raw as Record<string, unknown>;
-    if (!Number.isInteger(value.start) || !Number.isInteger(value.end) || typeof value.text !== "string") return undefined;
-    const start = value.start as number;
-    const end = value.end as number;
-    const caret = value.caret === true && end === start && value.text === "";
-    if (start < 0 || (end <= start && !caret) || value.text.length > 100_000) return undefined;
-    const wrappers = Array.isArray(value.wrappers)
-      ? value.wrappers.filter((name): name is string => typeof name === "string").slice(0, 50)
-      : [];
-    return caret ? { start, end, text: "", wrappers, caret } : { start, end, text: value.text, wrappers };
+  function inSiteChain(raw: FrameHost[] | undefined) {
+    const chain = raw?.map(inSite);
+    return chain?.every((host): host is NonNullable<NativePreviewSelection["host"]> => Boolean(host?.path && host.node)) ? chain : undefined;
   }
   function followRoute(href: string) {
     if (!site) return false;
@@ -1152,7 +1023,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function postClearSelection() {
     slotSelection = undefined;
     slotGhosts.clear();
-    frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "clear-selection" }, "*");
+    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "clear-selection" } satisfies HostMessage, "*");
   }
   function clearSelection() {
     selectNode = undefined;
@@ -1230,7 +1101,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     editComponent(mode: EditComponentFrameMode | undefined) {
       editMode = mode && { ...mode, node: [...mode.node], nested: mode.nested?.map((step) => ({ ...step, node: [...step.node] })) };
       pane.classList.toggle("is-editing-component", Boolean(mode));
-      if (frameState.ready) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "edit-component", mode: editMode }, "*");
+      if (frameState.ready) frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "edit-component", mode: editMode } satisfies HostMessage, "*");
     },
     /** The component whose template is open, shown in the canvas bar (canvas-bar.ts). */
     setCanvasComponent(parts: { tag: string; lead: Element[]; end: Element[] } | undefined) {
@@ -1308,7 +1179,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!frameState.active) return;
       // The caret needs the frame's focus.
       if (edit) frame.focus();
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-node", request, ...(edit === undefined ? {} : { edit }) }, "*");
+      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "select-node", request, ...(edit === undefined ? {} : { edit }) } satisfies HostMessage, "*");
     },
     /**
      * Sets an element's text in the page at once, ahead of the render its
@@ -1376,7 +1247,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         return await new Promise((resolve, reject) => {
           inspections.set(id, resolve);
           setTimeout(() => reject(new Error("The preview did not answer. Keep the editor tab visible and try again.")), 8000);
-          frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "inspect", id, request }, "*");
+          frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "inspect", id, request } satisfies HostMessage, "*");
         });
       } finally {
         inspections.delete(id);
@@ -1386,7 +1257,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     finishTyping,
     /** The selection's container is selected (Escape on the block rail); above the top, nothing. */
     selectParent() {
-      if (frameState.active) frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "select-parent" }, "*");
+      if (frameState.active) frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "select-parent" } satisfies HostMessage, "*");
     },
     /** The next selection of this element (a block just inserted or moved) flashes. */
     flashInsert(request: NativeNodeRequest) {
@@ -1437,7 +1308,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      */
     setViewing(bar: HTMLElement | undefined) {
       handlers.onDismissContextMenu?.();
-      frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "viewing", viewing: Boolean(bar) }, "*");
+      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "viewing", viewing: Boolean(bar) } satisfies HostMessage, "*");
       endProbe();
       viewing?.remove();
       viewing = bar;

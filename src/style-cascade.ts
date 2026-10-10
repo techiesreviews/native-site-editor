@@ -65,7 +65,7 @@ function readDeclaration(raw: unknown): NativeDeclaration[] {
 }
 
 /** The runtime's matched rules, keeping those from files the project has. */
-export function readSelectedRules(raw: unknown, allowedPaths: ReadonlySet<string>): NativeSelectedRule[] {
+export function readSelectedRules(raw: unknown, allowedPaths: Pick<ReadonlySet<string>, "has">): NativeSelectedRule[] {
   if (!Array.isArray(raw)) return [];
   return raw.slice(0, MAX_RULES).flatMap((item): NativeSelectedRule[] => {
     if (!isRecord(item) || typeof item.path !== "string" || typeof item.selector !== "string" || !allowedPaths.has(item.path)) return [];
