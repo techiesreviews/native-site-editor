@@ -33,10 +33,18 @@ export interface ComponentLoaderInput {
 const headOf = (source: string) => [...descendants(parseSource(source))].find(element => element.name === "head");
 const attribute = (source: string, element: SourceElement, name: string) => startTagAttributes(source, element.tag).find(item => item.name === name)?.value;
 
-/** Only an actual script in the head counts; comments and body scripts do not. */
+/** The head's own elements: what sits in `<noscript>` or `<template>` never runs with scripting on. */
+const headElements = (head: SourceElement) =>
+  head.children.filter((node): node is SourceElement => node.type === "element");
+
+/**
+ * Only a module script of the head's own counts (the loader uses `import.meta`, so a classic
+ * script fails); comments, body scripts and scripts in `<noscript>` or `<template>` do not.
+ */
 export function pageLoadsComponentLoader(source: string, path: string): boolean {
   const head = headOf(source);
-  return Boolean(head && [...descendants(head.children)].some(element => element.name === "script" &&
+  return Boolean(head && headElements(head).some(element => element.name === "script" &&
+    (attribute(source, element, "type") ?? "").trim().toLowerCase() === "module" &&
     resolveImportPath(path, attribute(source, element, "src") ?? "") === COMPONENT_LOADER_PATH));
 }
 
@@ -44,7 +52,7 @@ export function pageLoadsComponentLoader(source: string, path: string): boolean 
 export function addComponentLoaderScript(source: string): string | undefined {
   const head = headOf(source);
   if (!head?.close) return;
-  const link = [...descendants(head.children)].filter(element => element.name === "link" &&
+  const link = headElements(head).filter(element => element.name === "link" &&
     (attribute(source, element, "rel") ?? "").toLowerCase().split(/\s+/).includes("stylesheet")).at(-1);
   const newline = source.includes("\r\n") ? "\r\n" : "\n";
   const at = link?.end ?? head.close.start;

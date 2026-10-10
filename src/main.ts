@@ -828,7 +828,7 @@ async function applyNativeComponentChange(path: string, source: string, edits: {
     edits: new Map([[path, next], ...plan.edits]),
     current: () => plan.current() && editorModule === editor && Boolean(proof.isCurrent()),
     selection: { before: before?.node ? { path: before.path, node: [...before.node] } : undefined, after: { path, node: select } },
-    done: plan.added ? `${message}. ${plan.added}` : message,
+    done: [plan.added ? `${message}.` : message, plan.added, ...plan.notes].filter(Boolean).join(" "),
     undone: plan.added ? "Undid adding the section and the component loader." : "Undid adding the section." });
   if (error) { nativePreview?.selectAfterUpdate(undefined); errorMessage(new Error(error)); return false; }
   return { added: [plan.added, ...plan.notes].filter(Boolean).join(" ") };

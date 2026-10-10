@@ -41,7 +41,20 @@ for (const rule of [COMPONENT_LOADER_RULE, "body {}"])
   });
 
 for (const [path, src] of [["index.html", "/components/components.js"], ["index.html", "components/components.js"], ["index.html", "./components/components.js?v=3"], ["about/index.html", "../components/components.js?cache=1#x"], ["about/index.html", "/components/components.js?v=3"]])
-  test(`script src resolves: ${path}: ${src}`, () => assert.equal(pageLoadsComponentLoader(page(`<script src="${src}"></script>`), path), true));
+  test(`script src resolves: ${path}: ${src}`, () => assert.equal(pageLoadsComponentLoader(page(`<script type="module" src="${src}"></script>`), path), true));
+
+test("classic, JSON, noscript and template scripts do not load the site's loader", () => {
+  for (const script of ['<script src="/components/components.js"></script>', '<script type="application/json" src="/components/components.js"></script>',
+    `<noscript>${COMPONENT_LOADER_SCRIPT}</noscript>`, `<template>${COMPONENT_LOADER_SCRIPT}</template>`])
+    assert.equal(pageLoadsComponentLoader(page(script), "index.html"), false, script);
+});
+
+test("the script goes after the head's own last stylesheet, not one inside noscript or template", () => {
+  const source = '<!doctype html>\n<html>\n<head>\n  <link rel="stylesheet" href="/styles/site.css">\n  <noscript><link rel="stylesheet" href="/styles/no-js.css"></noscript>\n  <template><link rel="stylesheet" href="/x.css"></template>\n</head>\n<body></body>\n</html>\n';
+  const next = addComponentLoaderScript(source)!;
+  assert.ok(next.includes(`<link rel="stylesheet" href="/styles/site.css">\n  ${COMPONENT_LOADER_SCRIPT}\n  <noscript>`), next);
+  assert.equal(pageLoadsComponentLoader(next, "index.html"), true);
+});
 
 test("comments, external scripts, and body scripts do not load the site's loader", () => {
   for (const source of [page(`<!-- ${COMPONENT_LOADER_SCRIPT} -->`), page('<script src="https://elsewhere.test/components/components.js"></script>'), page().replace("<body>", `<body>${COMPONENT_LOADER_SCRIPT}`)]) {
