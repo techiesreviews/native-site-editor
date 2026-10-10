@@ -339,12 +339,12 @@ function mountWorkspace() {
   blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"), {
     onPick: kind => {
       // The click's page, selection and repository, held while typing finishes and the insert code loads.
-      const current = blockInsertPorts.proof(), at = blockInsertPorts.target();
-      void finishRailTyping(current).then(async finished => {
-        if (!current()) return;
+      const since = guardedEdits.stamp(), at = blockInsertPorts.target();
+      void finishRailTyping(() => since.holds()).then(async finished => {
+        if (!since.holds()) return;
         if (!finished) { blockInsertPorts.refuse(STILL_UPDATING); return; }
         const blocks = await loadBlockInsert();
-        if (current()) await blocks.click(kind, at);
+        if (since.holds()) await blocks.click(kind, at, since);
       }).catch(errorMessage);
     },
     onUp: () => nativePreview?.selectParent(),
@@ -352,21 +352,21 @@ function mountWorkspace() {
     // the press's repository, branch and session hold through both loads.
     // In Edit component mode, into the template edited (its items slots are its own <slot> elements).
     drag: kind => {
-      const current = blockInsertPorts.proof();
+      const since = guardedEdits.stamp();
       const template = componentTools?.editModeTemplate();
       const block = { kind: "new", block: kind, ...(template ? { template: true } : {}) } as const;
       // In Edit component mode Page Structure takes it into the template edited, as the canvas does.
-      return loadBlockDrag().then(drag => current() ? nativePreview?.blockDrag(block, {
+      return loadBlockDrag().then(drag => since.holds() ? nativePreview?.blockDrag(block, {
         tree: structureDrop(drag, block, template),
         drop: (target, where, painted, pointer) => {
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
           const at = blockInsertPorts.target();
           if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
-          if (current()) void finishRailTyping(current).then(async finished => {
-            if (!current()) return;
+          if (since.holds()) void finishRailTyping(() => since.holds()).then(async finished => {
+            if (!since.holds()) return;
             if (!finished) { blockInsertPorts.refuse(STILL_UPDATING, pointer); return; }
             const blocks = await loadBlockInsert();
-            if (current()) await blocks.drop(kind, place, painted, at, pointer);
+            if (since.holds()) await blocks.drop(kind, place, painted, at, pointer, since);
           }).catch(errorMessage);
         },
         announce,
@@ -885,54 +885,6 @@ async function finishRailTyping(current: () => boolean) {
   return true;
 }
 
-// The block rail's clicks and drags: one source edit per block, the new block selected.
-// Loaded with the first click.
-const blockInsertPorts: BlockInsertPorts = {
-  target: () => {
-    const route = nativePreview?.route();
-    const path = route !== undefined && nativeSite && !versionView ? nativeSite.routes[route] : undefined;
-    if (!path) return undefined;
-    // Edit component mode builds in the template edited, a part of it selected.
-    const template = componentTools?.editModeTemplate();
-    if (template && template.page === path) {
-      const selection = appStore.selection.value;
-      return selection?.path === template.path ? { path: template.path, node: selection.node, painted: selection.paintedSource, template: template.tag } : { path: template.path, template: template.tag };
-    }
-    // A part of a component's template stands for its instance on the page.
-    const selection = appStore.selection.value;
-    const host = selection && [selection.host, ...selection.hostChain ?? []].find(item => item?.path === path && item.node);
-    return selection?.path === path ? { path, node: selection.node, painted: selection.paintedSource } : { path, node: host?.node, painted: host?.paintedSource };
-  },
-  source: path => nativeEffectiveSource(path),
-  exists: nativePathExists,
-  template: tag => {
-    const path = nativeSite && Object.hasOwn(nativeSite.components, tag) ? nativeSite.components[tag] : undefined;
-    const source = path === undefined ? undefined : nativeEffectiveSource(path);
-    return path === undefined || source === undefined ? undefined : { path, source };
-  },
-  proof: () => {
-    // Edit component mode entered or left, or its template opened again, ends the step too.
-    const epoch = generation, scope = setupScope(), template = componentTools?.editModeTemplate()?.entry;
-    return () => epoch === generation && scope === setupScope() && !versionView && componentTools?.editModeTemplate()?.entry === template;
-  },
-  open: async path => {
-    const epoch = generation;
-    if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, epoch, { linkDefaultStyle: false });
-    const editor = editorModule;
-    const open = () => epoch === generation && appStore.openFile.value === path && editorModule === editor && Boolean(editor?.isMounted(path));
-    return open() ? open : undefined;
-  },
-  apply: op => applyNativeOperation(op),
-  select: (request, where) => {
-    nativePreview?.selectAfterUpdate(request);
-    if (request && where) nativePreview?.flashInsert(request);
-  },
-  refuse: (reason, pointer) => {
-    if (pointer) { refuse(reason, { pointer }); return; }
-    nativePreview?.flashRefusal(reason);
-    refuse(reason, { visible: document.querySelector<HTMLElement>(".pb-flash-label.is-refused") ?? undefined });
-  },
-};
 // The guarded edit module (src/guarded-edit.ts) over this host: one way to
 // prove nothing changed since a plan read the files, then write one undo
 // step. Its writes are today's (applyNativeOperation, the editor's ranges);
@@ -955,12 +907,36 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   announce,
   operation: op => applyNativeOperation(op),
 }));
-void guardedEdits;
+// The block rail's clicks and drags: one source edit per block, the new block selected.
+// Loaded with the first click.
+const blockInsertPorts: BlockInsertPorts = {
+  target: () => {
+    const route = nativePreview?.route();
+    const path = route !== undefined && nativeSite && !versionView ? nativeSite.routes[route] : undefined;
+    if (!path) return undefined;
+    // Edit component mode builds in the template edited, a part of it selected.
+    const template = componentTools?.editModeTemplate();
+    if (template && template.page === path) {
+      const selection = appStore.selection.value;
+      return selection?.path === template.path ? { path: template.path, node: selection.node, painted: selection.paintedSource, template: template.tag } : { path: template.path, template: template.tag };
+    }
+    // A part of a component's template stands for its instance on the page.
+    const selection = appStore.selection.value;
+    const host = selection && [selection.host, ...selection.hostChain ?? []].find(item => item?.path === path && item.node);
+    return selection?.path === path ? { path, node: selection.node, painted: selection.paintedSource } : { path, node: host?.node, painted: host?.paintedSource };
+  },
+  edits: guardedEdits,
+  refuse: (reason, pointer) => {
+    if (pointer) { refuse(reason, { pointer }); return; }
+    nativePreview?.flashRefusal(reason);
+    refuse(reason, { visible: document.querySelector<HTMLElement>(".pb-flash-label.is-refused") ?? undefined });
+  },
+};
 const loadBlockDrag = lazyModule(() => import("./page-builder/block-drag"));
 // Page Structure's side of a block's drag: its line, and its own targets
 // (in Edit component mode, the rows of the template edited).
 const structureDrop = (drag: Awaited<ReturnType<typeof loadBlockDrag>>, block: DraggedBlock, template?: { path: string; tag: string }) =>
-  pageStructure && drag.structureDrop(pageStructure.dropView(template?.path), block, tag => blockInsertPorts.template(tag)?.source, template?.tag);
+  pageStructure && drag.structureDrop(pageStructure.dropView(template?.path), block, tag => guardedEdits.peek.template(tag)?.source, template?.tag);
 
 // A page block dragged by its name in the edit bar (`pressed` none: the
 // selection) or pressed in the page: moved where it is dropped, one undo
@@ -980,7 +956,7 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   const node = template ? from.painted === undefined ? undefined : templateMovePath(from.painted, from.node) : from.node;
   if (!node) return undefined;
   // Another page shown meanwhile ends it too: its probes measure that page.
-  const proof = blockInsertPorts.proof(), current = () => proof() && blockInsertPorts.target()?.path === at.path;
+  const since = guardedEdits.stamp();
   const painted = from.painted, items = nativeMoveItems();
   // Why a container can't take it, by the bytes the press measured (the probe's paths are theirs).
   const fits = (container: DropContainer) => painted === undefined ? "The page is still updating. Try again in a moment."
@@ -991,15 +967,15 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   let name = press.source?.textContent?.trim() || from.tag;
   const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, from.tag));
   return trackDrag(press, () => ({ name, tag: from.tag, component }), () => loadBlockDrag().then(drag => {
-    if (!current()) return undefined;
+    if (!since.holds()) return undefined;
     if (pressed) name = drag.dropBlockName(from.tag, from.cls);
     return nativePreview?.blockDrag(block, {
       tree: structureDrop(drag, block, template),
       drop: (target, where, painted) => {
         if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
         const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-        const request = { from: node, name, pressed: from.painted, place, painted, current, inside: from.node.slice(node.length) };
-        if (current()) void loadBlockInsert().then(blocks => current() ? blocks.move(request, at) : undefined).catch(errorMessage);
+        const request = { from: node, name, pressed: from.painted, place, painted, inside: from.node.slice(node.length) };
+        if (since.holds()) void loadBlockInsert().then(blocks => since.holds() ? blocks.move(request, at, since) : undefined).catch(errorMessage);
       },
       announce,
     }, drag.createBlockDrag, template?.path);
@@ -2128,7 +2104,7 @@ function nativeSources(site = nativeSite): Record<string, string> {
 
 /** Alt+arrow moves open an instance's seal at its items slots, as drags do. */
 function nativeMoveItems() {
-  return itemsSlotRule(tag => blockInsertPorts.template(tag)?.source);
+  return itemsSlotRule(tag => guardedEdits.peek.template(tag)?.source);
 }
 
 function nativeEffectiveSource(path: string, scope = draftScope()) {
