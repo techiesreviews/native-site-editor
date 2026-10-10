@@ -1,3 +1,4 @@
+import { templateRemoval } from "./remove";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
 // Components, first class (docs/page-builder/components.md): what the page
@@ -2088,6 +2089,46 @@ export function createComponentTools(deps: ComponentDeps) {
       const source = mode && deps.sources()[mode.templatePath];
       const root = source === undefined ? undefined : templateRoot(source);
       return Boolean(mode && selection.path === mode.templatePath && root && selection.node?.join() === root.join());
+    },
+    /** Template removals share the slot-change transaction, including every file read. */
+    removeControl(selection: NativePreviewSelection, kind: string): EditBarControl[] {
+      const mode = editMode?.active(), node = selection.node;
+      const source = deps.sources()[selection.path];
+      if (!mode || mode.templatePath !== selection.path || deps.currentPath() !== selection.path
+        || explicitTemplate?.revision !== deps.revision() || source === undefined || selection.paintedSource !== source || !node || !deps.operation) return [];
+      const now = site(), sources = deps.sources();
+      const files = Object.fromEntries([...Object.values(now?.routes ?? {}), ...Object.values(now?.components ?? {})]
+        .filter(path => path !== selection.path && sources[path] !== undefined).map(path => [path, sources[path]]));
+      const plan = templateRemoval(source, node, files, mode.tag);
+      if (!plan) return [];
+      const revision = deps.revision(), entry = explicitTemplate;
+      const current = () => deps.revision() === revision && explicitTemplate === entry
+        && deps.currentPath() === selection.path && editMode?.active()?.templatePath === mode.templatePath;
+      const pageCount = [...plan.pages.keys()].filter(path => Object.values(now?.routes ?? {}).includes(path)).length;
+      const componentCount = plan.pages.size - pageCount;
+      const counted = [[pageCount, "page"], [componentCount, "component"]].filter(([count]) => count)
+        .map(([count, what]) => `${count} ${what}${count === 1 ? "" : "s"}`);
+      const followed = counted.length ? ` ${counted.join(" and ")} using it ${plan.pages.size === 1 ? "follows" : "follow"}.` : "";
+      const done = `${kind} removed` + (plan.slots.length ? `; ${plan.slots.map(name => `slot “${name || "items"}” removed`).join("; ")}.` : "") + followed;
+      return [{ kind: "button", icon: "remove", label: "Remove", onPress: () => {
+        const selected = deps.selection();
+        void (async () => {
+          if (!current() || deps.sources()[selection.path] !== source) return;
+          const error = await deps.operation!({ expectedSources: new Map([[selection.path, source], ...Object.entries(files)]),
+            edits: new Map([[selection.path, plan.source], ...plan.pages]), done, undone: `Undid removing ${kind.toLowerCase()}.`, current,
+            selection: { before: { path: selection.path, node: [...node] }, after: { path: selection.path, node: plan.select } } });
+          if (!current()) return;
+          if (error) refuse(error);
+          else if (deps.selection() === selected || deps.selection()?.path === selection.path && deps.selection()?.node?.join() === node.join()) {
+            const preview = deps.preview(), target = { path: selection.path, node: plan.select };
+            preview?.selectAfterUpdate(target);
+            preview?.flushPendingUpdate?.();
+            preview?.selectNode(target);
+          }
+          deps.refreshBar();
+          deps.refreshStructure?.();
+        })().catch((error: unknown) => { if (current()) refuse(error instanceof Error ? error.message : "The part could not be removed."); });
+      } }];
     },
     controls,
     variantControls,

@@ -558,6 +558,7 @@ function mountWorkspace() {
       return { ...structureLabel(item, component), component };
     },
     onSelect: (path, node, edit) => nativePreview?.selectNode({ path, node }, edit),
+    onRemove: (path, node, source) => pageStructureController.removeRow(path, node, source),
     componentSlots: (path, node) => componentTools?.structure(path, node),
     templateRows: (path, node) => componentTools?.templateRows(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,

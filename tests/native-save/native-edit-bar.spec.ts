@@ -185,12 +185,12 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(bar(page)).toBeVisible();
 
   // Heading controls have no move controls: only a whole section moves from the bar's buttons; the name drags.
-  await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
+  // Any element on the page can be removed (slice 81).
   expect(await bar(page).locator("button, select").evaluateAll(controls => controls.map(control => ({
     name: control.getAttribute("aria-label") ?? control.textContent?.trim(), disabled: (control as HTMLButtonElement | HTMLSelectElement).disabled,
   })))).toEqual([
     { name: "Heading", disabled: false }, { name: "Heading level", disabled: false }, { name: "Text size", disabled: false },
-    { name: "Bold", disabled: false }, { name: "Italic", disabled: false },
+    { name: "Bold", disabled: false }, { name: "Italic", disabled: false }, { name: "Remove", disabled: false },
   ]);
   await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
   // Tab walks every enabled control; native selects retain their own arrow keys.
@@ -206,6 +206,8 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(bar(page).getByRole("button", { name: "Remove", exact: true })).toBeFocused();
   // Past the end, back to the start: the heading's name (its drag handle).
   await page.keyboard.press("ArrowRight");
   await expect(bar(page).locator(".edit-bar__handle")).toBeFocused();
@@ -217,7 +219,7 @@ test("a selected link takes an address as typed with page suggestions, and the b
   await expect(bar(page).locator(".edit-bar__handle")).toBeFocused();
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("End");
-  await expect(bar(page).getByRole("button", { name: "Italic", exact: true })).toBeFocused();
+  await expect(bar(page).getByRole("button", { name: "Remove", exact: true })).toBeFocused();
 
   // A section gets a bar without text controls; the page's main container none at all.
   await child!.evaluate(() => (document.querySelector("section.hero") as HTMLElement).click());

@@ -65,7 +65,8 @@ test("the section icons move, duplicate and remove it as single undo steps", asy
   await bar(page).getByRole("button", { name: "Remove" }).click();
   await expect(frame.locator("section.cards")).toHaveCount(0);
   await expect(page.locator("#status")).toHaveText("Section removed");
-  // The previous section is selected next.
+  await expect.poll(() => selectionOn(page, "section.filler")).toBe(true);
+  // The next section takes the removed section’s index.
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
   await expect.poll(() => editorText(page, "#content")).toContain(`  </section>\n  <section class="filler"`);
   await undo(page);
@@ -80,8 +81,8 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await image.click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
-  // Only whole sections move, duplicate or go away.
-  await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(0);
+  // Only whole sections move or duplicate from the bar; any element can be removed.
+  await expect(bar(page).getByRole("button", { name: "Remove" })).toHaveCount(1);
 
   // No alt attribute: the field warns, and opening it writes the file's name at once.
   const altButton = bar(page).getByRole("button", { name: "Alt text missing" });

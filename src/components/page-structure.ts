@@ -97,6 +97,8 @@ export interface PageStructureHandlers {
   label: (item: NativeStructureItem) => { kind: string; text: string; component?: boolean };
   /** A row was chosen: select this element in the preview, not typing in it (`edit` false: a click), or typing in its text there (true: a double-click). */
   onSelect: (path: string, node: number[], edit?: boolean) => void;
+  /** Delete selects the row and runs the edit bar’s Remove, against its painted source. */
+  onRemove?: (path: string, node: number[], source: string | undefined) => boolean;
   /**
    * Alt+Up/Down on a row: move that element one sibling position. "moved",
    * "stayed" (an edge or refused move) or "pending" (the page file is
@@ -793,7 +795,18 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const visibleRows = () =>
     [...tree.querySelectorAll<HTMLElement>("[role='treeitem']")].filter((el) => !el.closest("[role='group'][hidden]"));
 
+  let focusRemoval = false;
   function onKey(event: KeyboardEvent, item: NativeStructureItem, el: HTMLElement) {
+    if (!event.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+      && (event.key === "Delete" || event.key === "Backspace") && structure?.path) {
+      event.preventDefault(); event.stopPropagation();
+      if (outerRows.has(item)) return;
+      const at = rowTarget(item, structure.path);
+      const source = templatePaths.has(item) || templateRoots.has(item)
+        ? (item as TemplateStructureItem).paintedSource ?? handlers.pageSource?.(at.path) : structure.paintedSource;
+      focusRemoval = Boolean(handlers.onRemove?.(at.path, at.node, source));
+      return;
+    }
     // Template rows, and the framed instance's own, never move the page's elements.
     if ((templatePaths.has(item) || templateRoots.has(item) || framedRows.has(item)) && event.altKey) { event.preventDefault(); event.stopPropagation(); return; }
     const list = visibleRows();
@@ -978,6 +991,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (openSlot && !editorWaiting && !keepPending && paintFresh !== false && !tree.querySelector("[data-slot-editor]")) { openSlot = undefined; }
     leftEditing = undefined;
     const currentSelection = setSelected(selected);
+    if (focusRemoval && currentSelection) {
+      if (document.activeElement === document.body || tree.contains(document.activeElement)) { reveal(currentSelection); focusRowOnly(currentSelection); }
+      focusRemoval = false;
+    }
     if (pendingTemplate && currentSelection) { reveal(currentSelection); currentSelection.scrollIntoView({ block: "nearest" }); }
     if (focusedControl && !tree.contains(document.activeElement)) {
       const again = [...(rowElement(focusedControl.id)?.querySelectorAll<HTMLElement>("button, .slot-chip[role='button']") ?? [])]

@@ -1,3 +1,4 @@
+import { selectionAfterRemove } from "./remove";
 // Cards: grids of repeated items in the editor (docs/page-builder/cards.md).
 // Add card places a blank card first. Component cards and collection items
 // open Link to a page; choosing a page fills the card, and Create page copies
@@ -607,9 +608,9 @@ export function createCards(deps: CardsDeps) {
         kind: "button",
         icon: "remove",
         label: "Remove",
-        // The previous item is selected next, else the next one.
+        // Every Remove uses the same sibling/parent selection rule.
         onPress: () => deps.change(path, source, [removeEdit(source, item.range)],
-          previous ? [...grid.parent, previous.index] : next ? [...grid.parent, next.index - 1] : undefined, `${noun} removed`),
+          selectionAfterRemove(node, Boolean(locateNativeElementRange(source, [...node.slice(0, -1), node.at(-1)! + 1]))), `${noun} removed`),
       },
       {
         kind: "button",

@@ -205,7 +205,7 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   for (const control of model.controls) {
     if (control.kind === "button") {
       if (control.disabled) continue;
-      add(control, control.ariaLabel ?? control.label, control.onPress, control.label === "Remove" ? { keywords: ["delete", "selection", kind.toLowerCase()] } : {});
+      add(control, control.ariaLabel ?? control.label, control.onPress, control.label === "Remove" ? { keywords: ["delete", "backspace", "remove the selected element", "when not typing", "selection", kind.toLowerCase()] } : {});
     } else if (control.kind === "select") {
       for (const option of control.options) {
         if (option.value === control.value || option.value === "custom") continue;
@@ -459,7 +459,7 @@ function listShortcuts() {
     { area: "Canvas", label: "Link the selected text", keys: [["Mod", "K"]], note: "With text selected; otherwise ⌘K opens the palette" },
     { area: "Canvas", label: "Move the selected section", keys: [["Alt", "ArrowUp"], ["Alt", "ArrowDown"]], note: "Also on the edit bar and in the page structure" },
     { area: "Canvas", label: "Duplicate the selected section", keys: [["Mod", "D"]], note: "When not typing" },
-    { area: "Canvas", label: "Remove the selected section", keys: [["Delete"], ["Backspace"]], note: "When not typing" },
+    { area: "Canvas", label: "Remove the selected element", keys: [["Delete"], ["Backspace"]], note: "When not typing" },
     { area: "Canvas", label: "Select parent", keys: [["Shift", "Enter"]], note: "When not typing" },
     { area: "Canvas", label: "Follow a link to its page", keys: [["Mod", "Click"]] },
     { area: "Edit bar", label: "Move between controls", keys: [["ArrowLeft"], ["ArrowRight"]] },

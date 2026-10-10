@@ -227,3 +227,30 @@ test("Structure's Edit component opens the mode on that row's instance; a page r
   await expect(frame(page).locator("section-work").getByText("Fern & Kettle", { exact: true })).toBeVisible();
   expect(await frameMark(page)).toBe("slice-41");
 });
+
+test("Delete a slot's element removes template slot and page fill; one undo restores both", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  const originalPage = homeWithWork();
+  const root = page.getByRole("treeitem", { name: /^Section work/ }).first();
+  await root.locator(".page-structure__label").click();
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+  const heading = page.getByRole("treeitem", { name: /^Heading Section title/ }).first();
+  await heading.locator(".page-structure__label").click();
+  await expect(toolbar(page).getByRole("button", { name: "Remove", exact: true })).toBeVisible();
+  await frame(page).locator("body").evaluate(body => { body.tabIndex = -1; body.focus(); });
+  await page.keyboard.press("Delete");
+  const source = (path: string) => page.evaluate(async path => (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
+  await expect.poll(() => source(TEMPLATE)).toBe(workTemplate.replace('  <slot name="title"><h2>Section title</h2></slot>\n', ""));
+  await expect(page.locator("#status")).toContainText('slot “title” removed');
+  await canvasBar(page).getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect.poll(() => source("index.html")).toBe(originalPage.replace('      <h2 slot="title">Recent work</h2>\n', ""));
+  await frame(page).locator("body").evaluate(body => { body.tabIndex = -1; body.focus(); });
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => source("index.html")).toBe(originalPage);
+  // Open the template after Undo to verify both files were restored together.
+  await root.locator(".page-structure__label").click();
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
+  await expect.poll(() => source(TEMPLATE)).toBe(workTemplate);
+});

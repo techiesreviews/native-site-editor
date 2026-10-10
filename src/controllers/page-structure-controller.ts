@@ -1,3 +1,4 @@
+import { pageRemovable, selectionAfterRemove } from "../page-builder/remove";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit, swapEdits, moveEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
@@ -75,6 +76,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   // The edit bar last shown, whose controls the command palette offers while it shows.
   let nativeEditBarModel: EditBarModel | undefined;
+  // Delete on a Structure row: the row's element is selected, and the bar drawn for it runs its Remove (soon, or never).
+  let rowRemoval: { path: string; node: number[]; source: string; epoch: number; scope: string; until: number } | undefined;
 
   // A link just made from the bar around selected text (`node` is the text
   // element, `link` the new link's index path): its Address opens at once
@@ -93,12 +96,14 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // stray markup) they stay out rather than edit the wrong HTML.
   function renderNativeEditBar(selection: NativePreviewSelection) {
     nativeElementMoveAction = undefined;
+    nativeEditBarModel = undefined;
     const preview = ports.nativePreview;
     const editor = ports.editorModule;
     const { path, node, rect } = selection;
     // The page's `main` container has nothing the bar can do; it stays out of the way.
-    if (!preview || !editor || !path || !rect || ports.appStore.openFile.value !== path || !editor.isMounted(path) || selection.tag === "main") {
+    if (!preview || !editor || !path || !rect || ports.appStore.openFile.value !== path || !editor.isMounted(path) || selection.tag === "main" && ports.componentTools?.editModeTemplate()?.path !== path) {
       nativeFormatActions = {};
+      rowRemoval = undefined;
       preview?.hideEditBar();
       ports.componentTools?.show(undefined);
       return;
@@ -491,8 +496,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
         onClose: () => editor.closeActiveEditGroup(path),
       });
     }
-    // Whole sections (a <section> or a section component) move, duplicate and
-    // remove from icon buttons always in the bar, as one undo step each.
+    // Whole sections (a <section> or a section component) move and duplicate
+    // from icon buttons always in the bar, as one undo step each; Remove is
+    // below, for any removable element (slice 81).
     // Alt+Up/Down move any block; Sections keep their proven move path,
     // from the bar, the preview or the page structure (`moveNativeSection`),
     // as do plain Up/Down on the bar's name. Any block of the page's <main>
@@ -529,18 +535,23 @@ export function createPageStructureController(ports: PageStructurePorts) {
         label: "Duplicate",
         onPress: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
       });
-      controls.push({
-        kind: "button",
-        icon: "remove",
-        label: "Remove",
-        // The previous sibling is selected next, else the next one, which takes this index.
-        onPress: () => change([removeEdit(source, range)], index > 0 ? [...parent, index - 1] : after ? node : undefined, `${kind} removed`),
-      });
     }
     // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
     // Non-Sections have sibling keys, but no move arrow buttons in the bar.
     if (!templateRoot && node && !isNativeSectionTag(selection.tag)) onMove = direction => ports.moveBlock(selection, direction);
     if (!templateRoot && !isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
+    if (range && node) {
+      const template = ports.componentTools?.editModeTemplate();
+      const chain = ["body", ...node.map((_, depth) => ports.locateNativeElementRange(source, node.slice(0, depth + 1))?.tag.name ?? "")];
+      const allowed = selection.paintedSource === source && !selection.host && pageRemovable(chain);
+      // A card's own Remove (cards.ts) stays, an items slot's card included.
+      if (template?.path === path) controls.push(...(ports.componentTools?.removeControl(selection, kind) ?? []));
+      else if (Object.values(ports.nativeSite?.routes ?? {}).includes(path) && allowed && !controls.some(control => control.label === "Remove")) {
+        controls.push({ kind: "button", icon: "remove", label: "Remove",
+          onPress: () => change([removeEdit(source, range)], selectionAfterRemove(node,
+            Boolean(ports.locateNativeElementRange(source, [...node.slice(0, -1), node.at(-1)! + 1]))), `${kind} removed`) });
+      }
+    }
     nativeElementMoveAction = onMove;
     // Edit component, Make component (src/page-builder/components.ts).
     if (ports.componentTools) controls.push(...ports.componentTools.controls(selection));
@@ -575,6 +586,13 @@ export function createPageStructureController(ports: PageStructurePorts) {
     nativeEditBarModel = model;
     preview.showEditBar(model, rect, ports.previewSelection.textSelection());
     ports.componentTools?.show(selection);
+    const pending = rowRemoval;
+    rowRemoval = undefined;
+    if (pending && pending.path === path && pending.node.join() === node?.join()
+      && pending.source === source && pending.epoch === ports.generation && pending.scope === ports.setupScope() && Date.now() < pending.until) {
+      const remove = controls.find(control => control.kind === "button" && control.label === "Remove");
+      if (remove?.kind === "button" && !remove.disabled) remove.onPress();
+    }
   }
 
   // The Address of a link just made closed with no address: the link goes
@@ -830,6 +848,18 @@ export function createPageStructureController(ports: PageStructurePorts) {
     nativeTextSourceEdit,
     prepareNativeTextEdit,
     get nativeFormatActions() { return nativeFormatActions; },
+    removeRow(path: string, node: number[], source: string | undefined) {
+      if (source === undefined || ports.nativeEffectiveSource(path) !== source || !ports.nativePreview) return false;
+      const chain = ["body", ...node.map((_, depth) => ports.locateNativeElementRange(source, node.slice(0, depth + 1))?.tag.name ?? "")];
+      const template = ports.componentTools?.editModeTemplate();
+      if (template?.path === path) {
+        const target: NativePreviewSelection = { path, node, tag: chain.at(-1)!, text: "", reason: "click", selectors: [], paintedSource: source };
+        if (!ports.componentTools?.removeControl(target, "Element").length) return false;
+      } else if (!Object.values(ports.nativeSite?.routes ?? {}).includes(path) || !pageRemovable(chain)) return false;
+      rowRemoval = { path, node: [...node], source, epoch: ports.generation, scope: ports.setupScope(), until: Date.now() + 2000 };
+      ports.nativePreview?.selectNode({ path, node }, false);
+      return true;
+    },
     get nativeEditBarModel() { return nativeEditBarModel; },
     get nativeElementMoveAction() { return nativeElementMoveAction; },
     set nativeElementMoveAction(value: typeof nativeElementMoveAction) { nativeElementMoveAction = value; },

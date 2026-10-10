@@ -2788,7 +2788,7 @@
     else if (mod && !e.altKey && key === "z") name = e.shiftKey ? "redo" : "undo";
     else if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === "y") name = "redo";
     else if (mod && !e.altKey && !e.shiftKey && key === "d" && section) name = "duplicate";
-    else if (plain && (e.key === "Delete" || e.key === "Backspace") && section) name = "remove";
+    else if (plain && (e.key === "Delete" || e.key === "Backspace") && selected && selected.isConnected) name = "remove";
     else if (e.shiftKey && !mod && !e.altKey && e.key === "Enter" && selected) name = "parent";
     if (!name) return;
     e.preventDefault();
