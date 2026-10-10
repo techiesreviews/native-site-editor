@@ -133,7 +133,7 @@ test("slot changes rewrite the template and both pages as one undo step", { tag:
   if (shots) await page.screenshot({ path: `${shots}/3-home-after-done.png` });
   // A page edit after Done, then three Undos and three Redos on the page: each step finds the pages as it left them.
   const redo = () => page.getByRole("button", { name: "Redo", exact: true }).click();
-  await frame(page).locator("card-project h3", { hasText: "Fern & Kettle" }).click();
+  await frame(page).locator("card-project h3", { hasText: "Fern & Kettle" }).dblclick();
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Fern and Kettle");
   await page.keyboard.press("Enter");
