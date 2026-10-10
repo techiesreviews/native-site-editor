@@ -172,6 +172,9 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     /** The runtime reported the page's insert points. */
     points(next: InsertPoint[]) {
       points = next;
+      // A gap that went away is not opened when its panel arrives, even if it comes back.
+      const pending = pendingOpen?.gap && insertPointKey(pendingOpen.gap);
+      if (pending && !next.some((point) => insertPointKey(point) === pending)) pendingOpen = undefined;
       void loadPanel();
       canvas.layout();
       empty.update(next);
