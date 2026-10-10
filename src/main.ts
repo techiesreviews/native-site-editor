@@ -1613,7 +1613,6 @@ const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | 
 const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down" | "out" | "in") => number[] | "stayed" | undefined>();
 
 const pageStructureController = createPageStructureController({
-  stamp: () => guardedEdits.stamp("repository"),
   get nativePreview() { return nativePreview; },
   get editorModule() { return editorModule; },
   get appStore() { return appStore; },
