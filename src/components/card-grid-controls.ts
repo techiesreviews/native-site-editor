@@ -9,7 +9,7 @@ import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import type { CardLookGallery } from "./card-look-gallery";
 import type { VariantFiles } from "../../shared/variant-lookup";
 import type { CardContent } from "../page-builder/card-swap";
-import { HOST_SOURCE, type HostMessage } from "./preview-protocol";
+import type { HostMessageBody } from "./preview-protocol";
 import "./card-grid-controls.css";
 
 // Add card places and selects a card immediately. Component cards and collection
@@ -139,7 +139,9 @@ export interface CardLookSupport {
   prepare(tags: string[]): void;
 }
 
-export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, handlers: CardGridHandlers, lookSupport?: CardLookSupport) {
+/** `send`: a message to the frame, through the preview's link (preview-link.ts). */
+export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, handlers: CardGridHandlers,
+  send: (message: HostMessageBody<"scroll-by" | "item-grid-track">) => void, lookSupport?: CardLookSupport) {
   const layer = node("div", "card-grid-layer");
   const ghost = node("div", "card-ghost");
   ghost.hidden = true;
@@ -438,10 +440,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, bar, !linker.scrolled) ?? 0;
     looksMenu?.view?.place();
     // Once, when it does not fit below the card: the page scrolls up to make room (its report places it again).
-    if (dy > 0 && frame instanceof HTMLIFrameElement) {
+    if (dy > 0) {
       const entry = linker;
       entry.scrolled = true;
-      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "scroll-by", dy } satisfies HostMessage, "*");
+      send({ type: "scroll-by", dy });
       // A page that could not scroll sends no new report: it shows where it fits then.
       window.setTimeout(() => { if (linker === entry) placeLinker(); }, 250);
     }
@@ -502,8 +504,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
 
   function trackGrid(grid?: ItemGridReport) {
     const tracking = ++trackingRequest;
-    if (frame instanceof HTMLIFrameElement)
-      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "item-grid-track", grid, tracking } satisfies HostMessage, "*");
+    send({ type: "item-grid-track", grid, tracking });
     return tracking;
   }
 

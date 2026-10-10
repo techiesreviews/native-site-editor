@@ -1,6 +1,7 @@
 import { samePreviewFiles } from "./preview-files";
 import type { DropReport } from "../page-builder/drop-report";
-import { HOST_SOURCE, readFrameMessage, type FrameHost, type HostMessage, type HostMessageBody, type PatchText } from "./preview-protocol";
+import type { FrameHost } from "./preview-protocol";
+import { createPreviewLink, iframeFramePort } from "./preview-link";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
 export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
@@ -39,7 +40,7 @@ import "./native-preview.css";
 // site's pages (the `<body>` of each `.html` document, see
 // shared/native-project.ts) and the custom elements defined under
 // `components/` (flat `<name>.html` or one folder per component,
-// `<name>/<name>.html`) from in-memory source, patched over `postMessage`
+// `<name>/<name>.html`) from in-memory source, patched over messages (preview-link.ts)
 // and never reloaded per edit, the way the site's own loader renders them.
 //
 // This is the editor's only preview: a sandboxed frame rendered in place. It
@@ -64,6 +65,9 @@ const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href
 // waits this long for `ready` once the frame is attached and then treats it
 // as a failed chunk load (chunk-recovery: reload, or the update notice).
 const RUNTIME_READY_TIMEOUT_MS = 8000;
+// The runtime answers a text patch at once; one not answered by then is let go
+// (its full update comes with the next render anyway).
+const PATCH_ANSWER_MS = 5000;
 const RUNTIME_DOC = `<!doctype html>
 <html lang="en">
 <head>
@@ -379,12 +383,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   frame.setAttribute("sandbox", "allow-scripts");
   frame.setAttribute("srcdoc", runtimeDoc(0));
   frameHost.append(frame);
+  // Every message to and from the frame (preview-link.ts).
+  const link = createPreviewLink(iframeFramePort(frame));
   // The canvas around the frame: breakpoints and breadcrumb (canvas-bar.ts).
-  const toCanvas = (message: HostMessageBody<"canvas-crumb" | "canvas-avoid" | "canvas-hint" | "canvas-code-select">) =>
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, ...message } satisfies HostMessage, "*");
   const canvas = createCanvasBar(frameHost, frame, {
-    onCrumb: (index) => toCanvas({ type: "canvas-crumb", action: "select", index }),
-    onCrumbHover: (index) => toCanvas({ type: "canvas-crumb", action: "hover", index: index ?? -2 }),
+    onCrumb: (index) => link.send({ type: "canvas-crumb", action: "select", index }),
+    onCrumbHover: (index) => link.send({ type: "canvas-crumb", action: "hover", index: index ?? -2 }),
   });
   const errorBox = node("div", "native-preview-error");
   errorBox.setAttribute("role", "alert");
@@ -398,13 +402,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The runtime draws its hover and selection boxes in the editor's color.
   let previewFocus = "";
   let componentColor = "";
-  const postTheme = () =>
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "theme", focus: previewFocus, component: componentColor } satisfies HostMessage, "*");
+  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor });
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
   const postFocus = () => {
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "component-focus", tag: focusTag } satisfies HostMessage, "*");
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "edit-component", mode: editMode } satisfies HostMessage, "*");
+    link.send({ type: "component-focus", tag: focusTag });
+    link.send({ type: "edit-component", mode: editMode });
   };
   // Edit component mode (src/page-builder/edit-component-mode.ts): the instance edited in place.
   let editMode: EditComponentFrameMode | undefined;
@@ -443,18 +446,18 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // An earlier version on show (History) is not edited: its places are not the source's.
     insert: (point, choice) => { if (!viewing) handlers.onInsert?.(point, choice); },
     prepare: (tags) => prepareStyles(tags),
-    scroll: (dy, smooth) => frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "scroll-by", dy, smooth } satisfies HostMessage, "*"),
+    scroll: (dy, smooth) => link.send({ type: "scroll-by", dy, smooth }),
     dock: handlers.addPanelDock,
   });
   let slotSelection: { path: string; node: number[]; tag?: string; exact: boolean } | undefined;
   const slotGhosts = mountSlotGhosts(pane, frame, {
     onFill: target => handlers.onSlotGhostFill?.(target),
-    expectedIsCurrent: report => Boolean(frameState.active && !viewing && site && report.context === context &&
+    expectedIsCurrent: report => Boolean(frameState.active && !viewing && site && report.context === link.context() &&
       report.pagePath === site.routes[route] && report.templatePath === site.components[report.tag] &&
       slotSelection?.path === report.pagePath && report.hostNode.every((index, i) => slotSelection!.node[i] === index) &&
       (!slotSelection.exact || (slotSelection.node.length === report.hostNode.length && slotSelection.tag === report.tag))),
   });
-  const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards, { inputs: thumbnailInputs, prepare: prepareStyles }) : undefined;
+  const cardGrids = handlers.cards ? createCardGridControls(pane, frame, handlers.cards, link.send, { inputs: thumbnailInputs, prepare: prepareStyles }) : undefined;
   // The runtime finds each pin's element and reports where it is (`pin-rects`).
   let pinRequests: PinRequest[] = [];
   let pins: ReturnType<typeof createAgentPins> | undefined;
@@ -463,14 +466,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const loadPins = () => pinsLoading ??= import("./agent-pins").then(({ createAgentPins }) => {
     if (pinsDisposed) return;
     pins = createAgentPins(pane, frame, {
-      locate: (list) => frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "pins", pins: list } satisfies HostMessage, "*"),
+      locate: (list) => link.send({ type: "pins", pins: list }),
       onDismiss: (id) => handlers.onDismissRequest?.(id),
       onAnswer: async (id, text) => {
         if (!handlers.onAnswerRequest) throw new Error("No agent is connected.");
         await handlers.onAnswerRequest(id, text);
       },
       onShowPage: (target) => void followRoute(target),
-      onShowElement: (id) => frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "show-pin", id } satisfies HostMessage, "*"),
+      onShowElement: (id) => link.send({ type: "show-pin", id }),
       onLayout: () => editBar.refit(),
     });
     pins?.update(pinRequests, route);
@@ -503,40 +506,27 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const changes = assetChanges();
     if (!Object.keys(changes.set).length && !changes.drop.length) return;
     const { styles, componentStyles: styled } = composeStyles(site, sources, componentStyles, assets, route, alone);
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "assets", assetChanges: changes, styles, componentStyles: styled } satisfies HostMessage, "*");
+    link.send({ type: "assets", assetChanges: changes, styles, componentStyles: styled });
   }
   let route = "/";
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
   let editableTemplatePath: string | undefined;
-  let context = "";
-  let probeId = 0;
-  // `path`: the file the report measures (the page, or in Edit component mode the template edited); `page`: the page shown.
-  let probe: { id: number; context: string; path: string; page: string; done: (report?: DropReport) => void } | undefined;
-  function endProbe(report?: DropReport) {
-    const pending = probe;
-    probe = undefined;
-    pending?.done(report);
-  }
-  /** Measure nested containers at a frame-viewport point, or all page bands in <main>. */
+  /**
+   * Measure nested containers at a frame-viewport point, or all page bands in <main>:
+   * the report on `path` (the page, or in Edit component mode the template edited)
+   * while `page` is still shown. A render asked for meanwhile ends it (preview-link.ts).
+   */
   function probeDrop(at: { x: number; y: number }, moving?: number[], bands?: boolean, template?: string): Promise<DropReport | undefined> {
-    endProbe();
+    link.cancel("drop-probe");
     const page = site?.routes[route], path = template ?? page;
     if (!page || !path || !frameState.active || !frameState.ready || viewing || alone || rafHandle ||
       !Number.isFinite(at.x) || !Number.isFinite(at.y)) return Promise.resolve(undefined);
-    return new Promise(resolve => {
-      const timer = setTimeout(() => endProbe(), 1000);
-      probe = { id: ++probeId, context, path, page, done: report => { clearTimeout(timer); resolve(report); } };
-      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "drop-probe", id: probe.id,
-        x: at.x, y: at.y, moving, bands } satisfies HostMessage, "*");
+    return link.ask({ type: "drop-probe", x: at.x, y: at.y, moving, bands }, 1000).then((answer) => {
+      const valid = site?.routes[route] === page && frameState.active && !viewing && !alone;
+      return valid && answer?.report?.path === path ? answer.report : undefined;
     });
   }
-  let sentStructureSnapshot: { context: string; sources: Readonly<Record<string, string>> } | undefined;
-  let renderVersion = 0;
-  // A click reported against an older render. The runtime re-reports its
-  // selection as a refresh after the next update, and that refresh then counts
-  // as the click, so clicks during a re-render are not lost.
-  let staleClick = false;
   // Armed while the frame is attached (parked or shown) and its document awaits `ready`.
   let readyWatchdog: ReturnType<typeof setTimeout> | undefined;
   const disarmReadyWatchdog = () => { clearTimeout(readyWatchdog); readyWatchdog = undefined; };
@@ -555,7 +545,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     pane.inert = true;
     pane.setAttribute("aria-hidden", "true");
   };
-  let frameLoads = 0;
   const frameState = createPreviewFrameState({
     attach: () => host.prepend(pane),
     park,
@@ -567,13 +556,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     // A fresh document for the next site: nothing of the old page or its assets
     // survives. The load number changes the srcdoc so the frame really navigates.
     reload: () => {
-      endProbe();
       sentAssets.clear();
-      postedRoutes.clear();
       lastAvoid = "";
       if (rafHandle) cancelAnimationFrame(rafHandle);
       rafHandle = 0;
-      frame.setAttribute("srcdoc", runtimeDoc(++frameLoads));
+      frame.setAttribute("srcdoc", runtimeDoc(link.reload()));
     },
     armWatchdog: () => armReadyWatchdog(),
     disarmWatchdog: () => disarmReadyWatchdog(),
@@ -589,7 +576,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // A structure field's text, set in the page ahead of its render (patchText):
   // the latest per frame, and what to do when the page could not take it.
   let pendingPatch: { request: NativeNodeRequest; text: string; miss?: () => void } | undefined;
-  let patchHandle = 0, patchId = 0;
+  let patchHandle = 0;
   // The page's live patch: the source it holds good on top of. A full update
   // of any other source (Undo, another edit) drops it first, so the page never
   // shows typed text its source does not have.
@@ -597,10 +584,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // shared files): a change to any of them drops the patch too.
   let livePatch: { path: string; base: string; others: Record<string, string> } | undefined;
   let lastPatchRequest: NativeNodeRequest | undefined;
-  const postPatch = (message: PatchText) =>
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "patch-text", ...message } satisfies HostMessage, "*");
-  const patchMisses = new Map<number, () => void>();
-  let messageId = 0;
+  // A text patch (`miss`: the page could not take it, its full update goes now), or the live patch dropped.
+  function postPatch(patch: { request: NativeNodeRequest; text: string; end?: true } | { drop: true }, miss?: () => void) {
+    if ("drop" in patch) return link.send({ type: "patch-text", drop: true });
+    void link.ask({ type: "patch-text", ...patch }, PATCH_ANSWER_MS).then((answer) => { if (answer && !answer.ok) miss?.(); });
+  }
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
     componentColor = colors.component;
@@ -613,9 +601,6 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   let selectText: { start: number; end: number } | undefined;
   // The id a followed link's fragment names, scrolled to after the next render.
   let scrollHash: string | undefined;
-  // Agents' inspections waiting for the runtime's answer, by request id.
-  const inspections = new Map<number, (report: unknown) => void>();
-  let inspectionId = 0;
 
   function showBanner(message: string | undefined, hideFrame: boolean) {
     if (message) {
@@ -635,29 +620,20 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!site || !frameState.ready || !frameState.active) return;
     if (livePatch && (sources[livePatch.path] !== livePatch.base || othersChanged(livePatch.others, livePatch.path))) dropPatch();
     const held = selectNode?.source !== undefined && sources[selectNode.path] !== selectNode.source ? selectNode : undefined;
-    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, context, held ? undefined : selectNode, selectText, scrollHash, editableTemplatePath);
+    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, link.context(), held ? undefined : selectNode, selectText, scrollHash, editableTemplatePath);
     selectNode = held;
     selectText = undefined;
     scrollHash = undefined;
-    sentStructureSnapshot = { context, sources: { ...sources } };
-    postedRoutes.set(++messageId, alone ? "/" : route);
-    frame.contentWindow?.postMessage(
-      { source: HOST_SOURCE, type: "update", id: messageId, payload: { ...payload, viewing: Boolean(viewing) } } satisfies HostMessage,
-      "*",
-    );
+    link.render({ ...payload, viewing: Boolean(viewing) }, sources, alone ? "/" : route);
   }
-  // The route each posted render shows, until the runtime acknowledges it
-  // (after the frame drew it): the host reads that page's images only then,
-  // so no image is read before the page is on screen.
-  const postedRoutes = new Map<number, string>();
+  // The route of each render the frame drew (its `ack`): the host reads that
+  // page's images only then, so no image is read before the page is on screen.
   let shownRoute: string | undefined;
-  function renderDrawn(id: number) {
-    const drawn = postedRoutes.get(id);
-    for (const key of [...postedRoutes.keys()]) if (key <= id) postedRoutes.delete(key);
-    if (drawn === undefined || drawn === shownRoute) return;
+  link.drawn((drawn) => {
+    if (drawn === shownRoute) return;
     shownRoute = drawn;
     handlers.onRouteShown?.(drawn);
-  }
+  });
   function othersChanged(others: Record<string, string>, path: string) {
     // Files that only arrived since (a stylesheet loading) do not count.
     for (const key of Object.keys(others)) if (key !== path && sources[key] !== others[key]) return true;
@@ -669,17 +645,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (livePatch) { livePatch = undefined; postPatch({ drop: true }); }
   }
   function schedule() {
-    endProbe();
-    if (!site) return;
+    if (!site) { link.cancel("drop-probe"); return; }
     slotGhosts.clear();
     slotSelection = undefined;
-    renderVersion++;
-    context = [
-      renderVersion,
+    link.stale([
       route,
       alone ?? "",
       Object.entries(sources).map(([path, source]) => `${path}:${source.length}:${source.charCodeAt(0) || 0}:${source.charCodeAt(source.length - 1) || 0}`).join("|"),
-    ].join("\n");
+    ].join("\n"));
     pins?.update(pinRequests, route);
     if (rafHandle) return;
     rafHandle = requestAnimationFrame(post);
@@ -700,281 +673,191 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
 
   // Typing finished on request (a rail click or drop): true once the runtime
   // answered, after any text edit it posted; false when it did not in time.
-  let typingId = 0;
-  const typingFinishes = new Map<number, (answered: boolean) => void>();
   function finishTyping(): Promise<boolean> {
     if (!frameState.ready || !frameState.active) return Promise.resolve(true);
-    const id = ++typingId;
-    return new Promise(resolve => {
-      const finish = (answered: boolean) => {
-        clearTimeout(timer);
-        typingFinishes.delete(id);
-        resolve(answered);
-      };
-      const timer = setTimeout(() => finish(false), 1000);
-      typingFinishes.set(id, finish);
-      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "finish-typing", id } satisfies HostMessage, "*");
-    });
+    return link.ask({ type: "finish-typing" }, 1000).then(Boolean);
   }
 
-  function onMessage(event: MessageEvent) {
-    if (event.source !== frame.contentWindow) return;
-    const message = readFrameMessage(event.data);
-    if (!message) return;
-    if (message.type === "typing-finished") {
-      typingFinishes.get(message.id)?.(true);
-      return;
-    }
-    // Desktop files dropped onto a source-owned canvas image, including shadow roots.
-    if (message.type === "image-drop" && site) {
-      if (message.context !== context || !nativeSitePaths(site).includes(message.path)) return;
-      handlers.onImageDrop?.({ path: message.path, node: message.node, width: message.width }, message.files);
-      return;
-    }
-    if (message.type === "image-edit" && site && !viewing) {
-      if (message.context !== context || !nativeSitePaths(site).includes(message.path)) return;
-      handlers.onImageEdit?.({ path: message.path, node: message.node, width: message.width });
-      return;
-    }
-    // A text patch the page could not take: its full update goes now.
-    if (message.type === "patched") {
-      const miss = patchMisses.get(message.id);
-      patchMisses.delete(message.id);
-      if (!message.ok) miss?.();
-      return;
-    }
-    // Typed text is checked against the current source, so it counts even
-    // when a render was requested since.
-    if (message.type === "text-edit" && site) {
-      if (!nativeSitePaths(site).includes(message.path)) return;
-      const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after };
-      handlers.onTextEdit?.(edit);
-      return;
-    }
-    // Messages that carry a user's action (`text-edit` above, `route`,
-    // `format`, `move`, a press drag's steps after its start) are read even
-    // when they carry an older render context: they are not descriptions of
-    // a render, and the host checks what they ask against the current
-    // source. The rest (`select`, `text-selection`, `insert-points`,
-    // `structure`, the rects, a press drag's start) describe the runtime's DOM and
-    // are dropped when a render requested since is still pending; the
-    // runtime reports them again after that render.
-    // A Ctrl/⌘+click on a link inside the preview (including inside shadow
-    // roots) to one of the site's pages navigates the preview only, keeping
-    // the current source edits untouched.
-    if (message.type === "route" && site) {
-      followRoute(message.href);
-      return;
-    }
-    if (message.type === "format") {
-      handlers.onFormat?.(message.format);
-      return;
-    }
-    if (message.type === "move") {
-      handlers.onMove?.(message.direction);
-      return;
-    }
-    // A block pressed in the page and moved 7 px, and the pointer after
-    // that (frame-viewport points). The start names the block in the DOM of
-    // the render it saw: a stale one starts nothing.
-    if (message.type === "press-drag") {
-      const box = frame.getBoundingClientRect();
-      const x = box.left + frame.clientLeft + message.x, y = box.top + frame.clientTop + message.y;
-      if (message.phase === "start") {
-        endPress();
-        if (!site || message.context !== context || viewing || !message.node?.length || message.tag === undefined || !Number.isFinite(x) || !Number.isFinite(y)) return;
-        // A template's part: the bytes of the template edited (the innermost one opened).
-        const template = message.template;
-        const tag = editMode && (editMode.nested?.[editMode.nested.length - 1]?.tag ?? editMode.tag);
-        const file = template ? tag && Object.hasOwn(site.components, tag) ? site.components[tag] : undefined : site.routes[route];
-        const painted = sentStructureSnapshot?.context === context && file !== undefined ? sentStructureSnapshot.sources[file] : undefined;
-        pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: message.alt, relayed: true },
-          { node: message.node, tag: message.tag, cls: message.cls, band: message.band, painted, ...(template ? { template } : {}) });
-        return;
-      }
-      if (message.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, message.alt);
-      else if (message.phase === "end" && Number.isFinite(x) && Number.isFinite(y)) { pressFeed?.up(x, y); pressFeed = undefined; }
-      else if (message.phase === "end" || message.phase === "cancel") endPress();
-      return;
-    }
-    // Esc or Ctrl/⌘+↑ climbed past the top, or the breadcrumb's body was chosen.
-    if (message.type === "canvas-clear") {
-      clearSelection();
-      return;
-    }
-    // Pins' places describe the DOM too, but each report is whole and
-    // sent only when it changed, so none is dropped.
-    if (message.type === "pin-rects") {
-      pins?.rects(message.rects);
-      return;
-    }
-    if (message.type === "drop-containers") {
-      if (!probe || message.id !== probe.id) return;
-      const valid = message.context === probe.context && context === probe.context && site?.routes[route] === probe.page &&
-        frameState.active && !viewing && !alone;
-      endProbe(valid && message.report?.path === probe.path ? message.report : undefined);
-      return;
-    }
-    // A press or scroll in the frame closes the element menu, from any render.
-    if (message.type === "dismiss-context-menu") {
-      handlers.onDismissContextMenu?.();
-      return;
-    }
-    if (message.type !== "ready" && message.context !== context) {
-      if (message.type === "select" && message.reason === "click") staleClick = true;
-      return;
-    }
-    if (message.type === "slot-ghosts") {
-      const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
-        { context, pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
-      if (report) slotGhosts.update(report); else slotGhosts.clear(false);
-      return;
-    }
-    if (message.type === "inspect-result") {
-      inspections.get(message.id)?.(message.report);
-      return;
-    }
-    if (message.type === "ack") {
-      renderDrawn(message.id);
-      return;
-    }
-    if (message.type === "ready") {
-      // A late `ready` from the document the last reload replaced.
-      if (message.load !== undefined && message.load !== String(frameLoads)) return;
+  // What the frame reports, each as soon as it counts (preview-link.ts): a
+  // user's action (`text-edit`, `route`, `format`, `move`, a press drag's
+  // steps after its start) even from an older render, as the host checks what
+  // it asks against the current source; a description of the runtime's DOM
+  // (`select`, `text-selection`, `insert-points`, `structure`, the rects, a
+  // press drag's start) only for the render last asked for, with the sources
+  // it was painted from: the runtime reports it again after that render.
+  // Desktop files dropped onto a source-owned canvas image, including shadow roots.
+  link.on("image-drop", (message) => {
+    if (!site || !nativeSitePaths(site).includes(message.path)) return;
+    handlers.onImageDrop?.({ path: message.path, node: message.node, width: message.width }, message.files);
+  });
+  link.on("image-edit", (message) => {
+    if (!site || viewing || !nativeSitePaths(site).includes(message.path)) return;
+    handlers.onImageEdit?.({ path: message.path, node: message.node, width: message.width });
+  });
+  // Typed text is checked against the current source, so it counts even
+  // when a render was requested since.
+  link.on("text-edit", (message) => {
+    if (!site || !nativeSitePaths(site).includes(message.path)) return;
+    const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after };
+    handlers.onTextEdit?.(edit);
+  });
+  // A Ctrl/⌘+click on a link inside the preview (including inside shadow
+  // roots) to one of the site's pages navigates the preview only, keeping
+  // the current source edits untouched.
+  link.on("route", (message) => { if (site) followRoute(message.href); });
+  link.on("format", (message) => handlers.onFormat?.(message.format));
+  link.on("move", (message) => handlers.onMove?.(message.direction));
+  // A block pressed in the page and moved 7 px, and the pointer after
+  // that (frame-viewport points). The start names the block in the DOM of
+  // the render it saw: one from an older render is not heard.
+  link.on("press-drag", (message, paintedSources) => {
+    const box = frame.getBoundingClientRect();
+    const x = box.left + frame.clientLeft + message.x, y = box.top + frame.clientTop + message.y;
+    if (message.phase === "start") {
       endPress();
-      sentAssets.clear();
-      postedRoutes.clear();
-      shownRoute = undefined;
-      // A parked frame only records it; activate() sends the rest.
-      if (!frameState.markReady()) return;
-      postTheme();
-      lastAvoid = "";
-      postAvoid();
-      postFocus();
-      pins?.reset();
-      schedule();
+      if (!site || viewing || !message.node?.length || message.tag === undefined || !Number.isFinite(x) || !Number.isFinite(y)) return;
+      // A template's part: the bytes of the template edited (the innermost one opened).
+      const template = message.template;
+      const tag = editMode && (editMode.nested?.[editMode.nested.length - 1]?.tag ?? editMode.tag);
+      const file = template ? tag && Object.hasOwn(site.components, tag) ? site.components[tag] : undefined : site.routes[route];
+      const painted = file !== undefined ? paintedSources?.[file] : undefined;
+      pressFeed = handlers.onBlockPress?.({ pointerId: -1, x, y, alt: message.alt, relayed: true },
+        { node: message.node, tag: message.tag, cls: message.cls, band: message.band, painted, ...(template ? { template } : {}) });
       return;
     }
-    // Runtime-reported render failures (bad define, recursive templates) surface
-    // as a banner but keep the frame visible, unless a hard load error is shown.
-    if (message.type === "error") {
-      if (!loadError) showBanner(message.message, false);
+    if (message.phase === "move" && Number.isFinite(x) && Number.isFinite(y)) pressFeed?.move(x, y, message.alt);
+    else if (message.phase === "end" && Number.isFinite(x) && Number.isFinite(y)) { pressFeed?.up(x, y); pressFeed = undefined; }
+    else if (message.phase === "end" || message.phase === "cancel") endPress();
+  });
+  // Esc or Ctrl/⌘+↑ climbed past the top, or the breadcrumb's body was chosen.
+  link.on("canvas-clear", () => clearSelection());
+  // Pins' places describe the DOM too, but each report is whole and
+  // sent only when it changed, so none is dropped.
+  link.on("pin-rects", (message) => pins?.rects(message.rects));
+  // A press or scroll in the frame closes the element menu, from any render.
+  link.on("dismiss-context-menu", () => handlers.onDismissContextMenu?.());
+  link.on("slot-ghosts", (message) => {
+    const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
+      { context: link.context(), pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
+    if (report) slotGhosts.update(report); else slotGhosts.clear(false);
+  });
+  // The frame's document loaded (a late `ready` from a replaced one is not heard).
+  link.on("ready", () => {
+    endPress();
+    sentAssets.clear();
+    shownRoute = undefined;
+    // A parked frame only records it; activate() sends the rest.
+    if (!frameState.markReady()) return;
+    postTheme();
+    lastAvoid = "";
+    postAvoid();
+    postFocus();
+    pins?.reset();
+    schedule();
+  });
+  // Runtime-reported render failures (bad define, recursive templates) surface
+  // as a banner but keep the frame visible, unless a hard load error is shown.
+  link.on("error", (message) => { if (!loadError) showBanner(message.message, false); });
+  link.on("clear-error", () => { if (!loadError) showBanner(undefined, false); });
+  link.on("insert-points", (message) => {
+    if (!site || site.routes[route] !== message.path) return;
+    // An earlier version on show (History): its gaps are counted in its
+    // markup, not the current source's, so nothing is offered there.
+    if (viewing) {
+      insertControls.update([]);
+      pageBuilder.points([]);
       return;
     }
-    if (message.type === "clear-error") {
-      if (!loadError) showBanner(undefined, false);
-      return;
-    }
-    if (message.type === "insert-points" && site) {
-      if (site.routes[route] !== message.path) return;
-      // An earlier version on show (History): its gaps are counted in its
-      // markup, not the current source's, so nothing is offered there.
-      if (viewing) {
-        insertControls.update([]);
-        pageBuilder.points([]);
-        return;
-      }
-      insertControls.update(message.points);
-      pageBuilder.points(message.points);
-      return;
-    }
-    if (message.type === "section-hover") {
-      insertControls.hover(message.item);
-      return;
-    }
-    if (message.type === "text-selection") {
-      handlers.onTextSelection?.(message.selection);
-      return;
-    }
-    if (message.type === "item-grids" && site) {
-      const report = { hover: onPage(message.hover), selected: onPage(message.selected), tracking: message.tracking };
-      cardGrids?.update(report);
-      handlers.onItemGrids?.(report);
-      return;
-    }
-    if (message.type === "structure" && site) {
-      const path = message.path === "" || site.routes[route] === message.path ? message.path : undefined;
-      if (path === undefined || !sentStructureSnapshot || sentStructureSnapshot.context !== message.context) return;
-      const paintedSource = sentStructureSnapshot.sources[path];
-      if (path && paintedSource === undefined) return;
-      handlers.onStructure?.({ path, items: message.items, paintedSource });
-      return;
-    }
-    if (message.type === "selection-rect") {
-      editBar.move(message.rect);
-      pageBuilder.selectionRect(message.rect);
-      handlers.onSelectionRect?.(message.rect);
-      return;
-    }
+    insertControls.update(message.points);
+    pageBuilder.points(message.points);
+  });
+  link.on("section-hover", (message) => insertControls.hover(message.item));
+  link.on("text-selection", (message) => handlers.onTextSelection?.(message.selection));
+  link.on("item-grids", (message) => {
+    if (!site) return;
+    const report = { hover: onPage(message.hover), selected: onPage(message.selected), tracking: message.tracking };
+    cardGrids?.update(report);
+    handlers.onItemGrids?.(report);
+  });
+  link.on("structure", (message, paintedSources) => {
+    if (!site) return;
+    const path = message.path === "" || site.routes[route] === message.path ? message.path : undefined;
+    if (path === undefined || !paintedSources) return;
+    const paintedSource = paintedSources[path];
+    if (path && paintedSource === undefined) return;
+    handlers.onStructure?.({ path, items: message.items, paintedSource });
+  });
+  link.on("selection-rect", (message) => {
+    editBar.move(message.rect);
+    pageBuilder.selectionRect(message.rect);
+    handlers.onSelectionRect?.(message.rect);
+  });
+  // A click reported against an older render arrives as the next refresh's click (preview-link.ts).
+  link.on("select", (message, paintedSources) => {
     // An earlier version on show (History): nothing on it can be selected or edited.
-    if (message.type === "select" && viewing) {
+    if (viewing) {
       if (message.reason === "click") postClearSelection();
       return;
     }
-    if (message.type === "select" && site) {
-      // Geometry refreshes of the chosen element keep its menu usable.
-      if (message.reason !== "refresh" || message.path === "") handlers.onDismissContextMenu?.();
-      slotSelection = undefined;
-      const reason = message.reason === "refresh" && !staleClick ? "refresh" : "click";
-      staleClick = false;
-      if (reason === "click") codeLink.cancel();
-      // The runtime lost its selection in a re-render (the element was
-      // removed or replaced) and nothing was requested in its place.
-      if (message.path === "" && reason === "refresh") {
-        slotGhosts.clear();
-        canvas.setCrumbs([]);
-        editBar.hide();
-        pageBuilder.selected("", undefined, undefined);
-        handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
-        return;
-      }
-      const painted = sentStructureSnapshot && sentStructureSnapshot.context === message.context ? sentStructureSnapshot : undefined;
-      if (message.path === undefined || !nativeSitePaths(site).includes(message.path)) return;
-      const selectors = onSite(message.selectors);
-      const selectedNode = message.node;
-      // Inside a component's template: the page's instance it renders in.
-      const pagePath = site.routes[route];
-      const slotHost = inSite(message.host);
-      if (message.path === pagePath && selectedNode) slotSelection = { path: pagePath, node: [...selectedNode],
-        tag: message.tag, exact: message.tag !== undefined && Object.hasOwn(site.components, message.tag) };
-      else if (slotHost?.path === pagePath && slotHost.node) slotSelection = { path: pagePath, node: [...slotHost.node], tag: slotHost.tag, exact: true };
-      slotGhosts.selectionChanged();
-      const instance = message.pageNode && pagePath ? { path: pagePath, node: message.pageNode } : undefined;
-      pageBuilder.selected(message.path, selectedNode, message.rect, instance);
-      canvas.setCrumbs(message.crumbs);
-      const selection: NativePreviewSelection = {
-        path: message.path,
-        paintedSource: painted?.sources[message.path],
-        tag: message.tag ?? "",
-        text: message.text,
-        reason,
-        selectors,
-        cascade: message.cascade,
-        node: message.node,
-        link: message.link,
-        rect: message.rect,
-        selector: message.selector,
-        host: inSite(message.host),
-        hostChain: inSiteChain(message.hostChain),
-      };
-      handlers.onSelect?.(selection);
-      // A right-click: the element menu at the pointer (frame points to the host's).
-      if (message.menu) {
-        const box = frame.getBoundingClientRect();
-        handlers.onContextMenu?.({ x: box.left + frame.clientLeft + message.menu.x, y: box.top + frame.clientTop + message.menu.y }, frame, selection);
-      }
+    if (!site) return;
+    // Geometry refreshes of the chosen element keep its menu usable.
+    if (message.reason !== "refresh" || message.path === "") handlers.onDismissContextMenu?.();
+    slotSelection = undefined;
+    const reason = message.reason === "refresh" ? "refresh" : "click";
+    if (reason === "click") codeLink.cancel();
+    // The runtime lost its selection in a re-render (the element was
+    // removed or replaced) and nothing was requested in its place.
+    if (message.path === "" && reason === "refresh") {
+      slotGhosts.clear();
+      canvas.setCrumbs([]);
+      editBar.hide();
+      pageBuilder.selected("", undefined, undefined);
+      handlers.onSelect?.({ path: "", tag: "", text: "", reason, selectors: [] });
       return;
     }
-    if (message.type === "default-styles" && site) {
-      handlers.onDefaultStyles?.({ selectors: onSite(message.selectors), cascade: message.cascade });
-      return;
+    if (message.path === undefined || !nativeSitePaths(site).includes(message.path)) return;
+    const selectors = onSite(message.selectors);
+    const selectedNode = message.node;
+    // Inside a component's template: the page's instance it renders in.
+    const pagePath = site.routes[route];
+    const slotHost = inSite(message.host, paintedSources);
+    if (message.path === pagePath && selectedNode) slotSelection = { path: pagePath, node: [...selectedNode],
+      tag: message.tag, exact: message.tag !== undefined && Object.hasOwn(site.components, message.tag) };
+    else if (slotHost?.path === pagePath && slotHost.node) slotSelection = { path: pagePath, node: [...slotHost.node], tag: slotHost.tag, exact: true };
+    slotGhosts.selectionChanged();
+    const instance = message.pageNode && pagePath ? { path: pagePath, node: message.pageNode } : undefined;
+    pageBuilder.selected(message.path, selectedNode, message.rect, instance);
+    canvas.setCrumbs(message.crumbs);
+    const selection: NativePreviewSelection = {
+      path: message.path,
+      paintedSource: paintedSources?.[message.path],
+      tag: message.tag ?? "",
+      text: message.text,
+      reason,
+      selectors,
+      cascade: message.cascade,
+      node: message.node,
+      link: message.link,
+      rect: message.rect,
+      selector: message.selector,
+      host: inSite(message.host, paintedSources),
+      hostChain: inSiteChain(message.hostChain, paintedSources),
+    };
+    handlers.onSelect?.(selection);
+    // A right-click: the element menu at the pointer (frame points to the host's).
+    if (message.menu) {
+      const box = frame.getBoundingClientRect();
+      handlers.onContextMenu?.({ x: box.left + frame.clientLeft + message.menu.x, y: box.top + frame.clientTop + message.menu.y }, frame, selection);
     }
-    if (message.type === "component-styles" && site) {
-      const tags = message.tags.filter((tag) => Object.hasOwn(site!.components, tag));
-      if (tags.length) handlers.onComponentStyles?.([...new Set(tags)]);
-    }
-  }
-  window.addEventListener("message", onMessage);
+  });
+  link.on("default-styles", (message) => {
+    if (site) handlers.onDefaultStyles?.({ selectors: onSite(message.selectors), cascade: message.cascade });
+  });
+  link.on("component-styles", (message) => {
+    if (!site) return;
+    const tags = message.tags.filter((tag) => Object.hasOwn(site!.components, tag));
+    if (tags.length) handlers.onComponentStyles?.([...new Set(tags)]);
+  });
   // The rest of a frame report's checks, against what the editor shows:
   // a card grid on the page on show,
   function onPage(grid: ItemGridReport | null): ItemGridReport | null {
@@ -986,7 +869,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     return selectors.filter((rule) => allowed.has(rule.path));
   }
   // and an instance in one of the site's files, with the source it was painted from.
-  function inSite(raw: FrameHost | undefined) {
+  function inSite(raw: FrameHost | undefined, painted: Readonly<Record<string, string>> | undefined) {
     if (!raw) return undefined;
     const { tag, selector, path, node, rect } = raw;
     const host: NonNullable<NativePreviewSelection["host"]> = { tag, selector };
@@ -994,12 +877,12 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       host.path = path;
       host.node = node;
       host.rect = rect;
-      host.paintedSource = sentStructureSnapshot && sentStructureSnapshot.context === context ? sentStructureSnapshot.sources[path] : undefined;
+      host.paintedSource = painted?.[path];
     }
     return host;
   }
-  function inSiteChain(raw: FrameHost[] | undefined) {
-    const chain = raw?.map(inSite);
+  function inSiteChain(raw: FrameHost[] | undefined, painted: Readonly<Record<string, string>> | undefined) {
+    const chain = raw?.map((host) => inSite(host, painted));
     return chain?.every((host): host is NonNullable<NativePreviewSelection["host"]> => Boolean(host?.path && host.node)) ? chain : undefined;
   }
   function followRoute(href: string) {
@@ -1023,12 +906,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function postClearSelection() {
     slotSelection = undefined;
     slotGhosts.clear();
-    frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "clear-selection" } satisfies HostMessage, "*");
+    link.send({ type: "clear-selection" });
   }
   function clearSelection() {
     selectNode = undefined;
     selectText = undefined;
-    staleClick = false;
     codeLink.cancel();
     canvas.setCrumbs([]);
     editBar.hide();
@@ -1051,15 +933,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const key = JSON.stringify(rect);
     if (key === lastAvoid) return;
     lastAvoid = key;
-    toCanvas({ type: "canvas-avoid", rect });
+    link.send({ type: "canvas-avoid", rect });
   };
   const avoidWatch = new MutationObserver(() => requestAnimationFrame(postAvoid));
   avoidWatch.observe(editBar.element, { attributes: true, attributeFilter: ["style", "hidden"], childList: true });
 
   const codeLink = linkCodeToCanvas({
     owns: (path) => Boolean(site && frameState.active && frameState.ready && !viewing && nativeSitePaths(site).includes(path)),
-    hint: (request) => toCanvas({ type: "canvas-hint", request: request ?? null }),
-    select: (request) => toCanvas({ type: "canvas-code-select", request }),
+    hint: (request) => link.send({ type: "canvas-hint", request: request ?? null }),
+    select: (request) => link.send({ type: "canvas-code-select", request }),
   });
 
   return {
@@ -1077,7 +959,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         // `template`: Edit component mode's template, whose parts the frame reports by template paths.
         probe: (at, moving, bands) => {
           // With no update waiting (or the probe is refused), the frame shows the last sources sent.
-          const shown = sentStructureSnapshot?.context === context ? sentStructureSnapshot.sources[template ?? site!.routes[route]] : undefined;
+          const shown = link.painted()?.[template ?? site!.routes[route]];
           return probeDrop(at, moving ? [...moving] : undefined, bands, template).then((report) => { if (report) painted = shown; return report; });
         },
         // A target picked in Page Structure was measured on the bytes its rows were painted from.
@@ -1101,7 +983,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     editComponent(mode: EditComponentFrameMode | undefined) {
       editMode = mode && { ...mode, node: [...mode.node], nested: mode.nested?.map((step) => ({ ...step, node: [...step.node] })) };
       pane.classList.toggle("is-editing-component", Boolean(mode));
-      if (frameState.ready) frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "edit-component", mode: editMode } satisfies HostMessage, "*");
+      if (frameState.ready) link.send({ type: "edit-component", mode: editMode });
     },
     /** The component whose template is open, shown in the canvas bar (canvas-bar.ts). */
     setCanvasComponent(parts: { tag: string; lead: Element[]; end: Element[] } | undefined) {
@@ -1152,8 +1034,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
           pageBuilder.clear();
           cardGrids?.clear();
           // Quietly: the runtime reports the lost selection after the render,
-          // and a click here would cancel the file open that led to this.
-          staleClick = false;
+          // and a click here would cancel the file open that led to this
+          // (clearing the selection forgets a stale click, preview-link.ts).
           editBar.hide();
           postClearSelection();
         }
@@ -1179,7 +1061,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!frameState.active) return;
       // The caret needs the frame's focus.
       if (edit) frame.focus();
-      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "select-node", request, ...(edit === undefined ? {} : { edit }) } satisfies HostMessage, "*");
+      link.send({ type: "select-node", request, ...(edit === undefined ? {} : { edit }) });
     },
     /**
      * Sets an element's text in the page at once, ahead of the render its
@@ -1203,10 +1085,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         patchHandle = 0;
         const next = pendingPatch; pendingPatch = undefined;
         if (!next || !frameState.active || !livePatch) { next?.miss?.(); return; }
-        const id = ++patchId;
-        if (next.miss) patchMisses.set(id, next.miss);
-        if (patchMisses.size > 64) patchMisses.delete(patchMisses.keys().next().value!);
-        postPatch({ id, request: next.request, text: next.text });
+        postPatch({ request: next.request, text: next.text }, next.miss);
       });
     },
     /** The field wrote `source` itself: the live patch holds good on top of it. */
@@ -1225,7 +1104,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       pendingPatch = undefined;
       const was = livePatch; livePatch = undefined;
       if (!frameState.active) return;
-      if (finish && request && request.path === path) postPatch({ id: ++patchId, request, text: finish.text, end: true });
+      if (finish && request && request.path === path) postPatch({ request, text: finish.text, end: true });
       else if (was) {
         // Ended without its text written (refused, stale, a refused Escape): the
         // page is drawn again from its sources, so it shows what they hold.
@@ -1242,22 +1121,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!frameState.active || !site || !frameState.ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
       // A scheduled render is posted on the next frame, before this request.
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
-      const id = ++inspectionId;
-      try {
-        return await new Promise((resolve, reject) => {
-          inspections.set(id, resolve);
-          setTimeout(() => reject(new Error("The preview did not answer. Keep the editor tab visible and try again.")), 8000);
-          frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "inspect", id, request } satisfies HostMessage, "*");
-        });
-      } finally {
-        inspections.delete(id);
-      }
+      const answer = await link.ask({ type: "inspect", request }, 8000);
+      if (!answer) throw new Error("The preview did not answer. Keep the editor tab visible and try again.");
+      return answer.report;
     },
     /** Ends typing as Escape does: true once the runtime answered (after any text edit it posted). */
     finishTyping,
     /** The selection's container is selected (Escape on the block rail); above the top, nothing. */
     selectParent() {
-      if (frameState.active) frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "select-parent" } satisfies HostMessage, "*");
+      if (frameState.active) link.send({ type: "select-parent" });
     },
     /** The next selection of this element (a block just inserted or moved) flashes. */
     flashInsert(request: NativeNodeRequest) {
@@ -1308,8 +1180,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      */
     setViewing(bar: HTMLElement | undefined) {
       handlers.onDismissContextMenu?.();
-      frame.contentWindow?.postMessage({ source: HOST_SOURCE, type: "viewing", viewing: Boolean(bar) } satisfies HostMessage, "*");
-      endProbe();
+      link.send({ type: "viewing", viewing: Boolean(bar) });
+      link.cancel("drop-probe");
       viewing?.remove();
       viewing = bar;
       pane.classList.toggle("is-viewing", Boolean(bar));
@@ -1401,10 +1273,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
       endPress();
-      for (const finish of typingFinishes.values()) finish(false);
       site = undefined;
       shownRoute = undefined;
-      postedRoutes.clear();
       editableTemplatePath = undefined;
       pageBuilder.setViewing(Boolean(viewing));
       componentStyles = {};
@@ -1424,11 +1294,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
-      for (const finish of typingFinishes.values()) finish(false);
-      endProbe();
+      link.close();
       endPress();
       frameState.destroy();
-      window.removeEventListener("message", onMessage);
       if (rafHandle) cancelAnimationFrame(rafHandle);
       editBar.destroy();
       canvas.destroy();

@@ -751,8 +751,7 @@ test("queued grid reports cannot close a newly opened Add card as… gallery bef
     Object.assign(frame.style, { width: "360px", height: "520px" });
     pane.append(frame);
     document.body.append(pane);
-    const requests: { tracking?: number }[] = [];
-    frame.contentWindow!.postMessage = (request: { tracking?: number }) => { requests.push(request); };
+    const requests: { type: string; tracking?: number }[] = [];
     const controls = createCardGridControls(pane, frame, {
       describe: () => ({ noun: "card", label: "Work", card: "card-project" }),
       addCard: async () => undefined,
@@ -760,7 +759,7 @@ test("queued grid reports cannot close a newly opened Add card as… gallery bef
       fillCard: () => undefined,
       cardText: () => undefined,
       createPage: () => undefined,
-    }, { inputs: () => undefined, prepare: () => {} });
+    }, (request) => { requests.push(request); }, { inputs: () => undefined, prepare: () => {} });
     const grid = { path: "index.html", parent: [1, 1], slot: "", index: 1, position: 1, count: 2, row: true, beside: false,
       ghost: { top: 300, left: 20, width: 320, height: 32 } };
     const add = pane.querySelector<HTMLButtonElement>(".card-ghost__looks")!;
