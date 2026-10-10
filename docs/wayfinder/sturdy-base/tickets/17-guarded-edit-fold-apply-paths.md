@@ -17,8 +17,12 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/guarded-edit-de
 - Expected sources are no longer auto-filled at apply time (3865-3867): an unread write throws.
 - The `EditorWorkspace` port narrows to primitives (section 6); the memory adapter follows. The module suite does not change.
 
+- Restore the interim gaps earlier slices accepted: Undo/Redo of a range-path edit (block insert/move from slice 11, open-page settings from slice 15) reselects the "before" element and announces "Undid …" again.
+- Plain repositories (no `index.html`): Files-tab rename, move and delete work again with no file open, as before slice 15 (which made them refuse with "Open a page before changing these files."). The stamp works without an open anchor; keep the undo step and the refusal when the file changed.
+
 ## Done when
 
 - `grep -n "applyNativeOperation\\|NativeOperation\\|applyNativeChange" src` finds nothing; `main.ts` shrinks by roughly 300 lines.
 - `tests/guarded-edit.test.ts` unchanged and green; `tests/native-operation-history.test.ts` green.
+- A browser spec checks both: Undo after a block insert reselects and announces; a plain-repo rename with no open file succeeds and undoes.
 - `npm run check`, `npm test`, full `native-save` suite green; nightly groups run once.
