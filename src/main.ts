@@ -11,7 +11,7 @@ import { createPageStructureController } from "./controllers/page-structure-cont
 import { createMediaController } from "./controllers/media-controller";
 import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
-import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageLinkSources, pageOnBranchHere, pageDeleteDraftStamp } from "./controllers/pages-controller";
+import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
@@ -74,7 +74,7 @@ import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import type { FileMove } from "./native-page-moves";
 import type { MenuItem } from "./components/row-menu";
-import { deleteFile, duplicateFile, listChanges, moveFile, restoreFile as restoreDraftFile, type FileChange, type MovableFile } from "./file-changes";
+import { deleteFile, duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange, type MovableFile } from "./file-changes";
 import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
@@ -114,7 +114,7 @@ import { createSavePublishController } from "./controllers/save-publish-controll
 import { createFileOperationsController } from "./controllers/file-operations-controller";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
-import { createGuardedEdits } from "./guarded-edit";
+import { createGuardedEdits, type Reads, type PlanResult, type Stamp, type Outcome } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
 import type {
   EditorContext,
@@ -899,7 +899,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   editModeEntry: () => componentTools?.editModeTemplate()?.entry,
   site: () => nativeSite,
   source: path => nativeEffectiveSource(path),
-  exists: nativePathExists,
+  exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   openFile: () => appStore.openFile.value,
   restore: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
   editor: editorModule,
@@ -1874,32 +1874,26 @@ function nativeTitles(site: NativeSite) {
 // undo step until it closes); another page's is one operation over the
 // drafts. Resolves to an error.
 async function writeNativePageMeta(path: string, field: PageMetaField, value: string, group = true): Promise<string | undefined> {
-  if (!nativeRouteForPath(path)) return "This page has no URL in the site.";
-  const source = nativeEffectiveSource(path);
-  if (source === undefined) return "The page could not be read.";
-  const next = withPageField(source, field, value);
-  const edit = minimalTextEdit(source, next);
-  if (!edit) return undefined;
-  const label = field === "title" ? "Title" : "Description";
-  const done = value.trim() ? `${label} updated` : `${label} removed`;
-  if (editorModule?.isMounted(path)) {
-    try {
-      editorModule.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, group);
-    } catch (error) {
-      return error instanceof Error ? error.message : "The page could not be changed.";
-    }
-    updateCurrentPageLabel();
-    if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree();
-    element("status").textContent = done;
-    return undefined;
-  }
-  return applyNativeOperation({
-    expectedSources: new Map<string, string | undefined>([[path, source], ]),
-    edits: new Map([[path, next]]),
-    done,
-    undone: `Undid changing the ${field} of ${nativePageLabelOf(path)}.`,
-    focus: { file: path },
-  });
+  const plan = (r: Reads): PlanResult => {
+    const site = r.site(), route = site && Object.entries(site.routes).find(([, file]) => file === path)?.[0];
+    if (!site || !route) return { refuse: "This page has no URL in the site." };
+    const source = r.source(path);
+    if (source === undefined) return { refuse: "The page could not be read." };
+    const edit = minimalTextEdit(source, withPageField(source, field, value));
+    const label = field === "title" ? "Title" : "Description";
+    const page = nativePageLabel(path, { routes: site.routes, titles: { [route]: nativePageHead(source).title }, heading: () => firstHeadingText(source) }) ?? path;
+    return { edits: new Map([[path, edit ? [{ ...edit, expected: source.slice(edit.start, edit.end) }] : []]]),
+      done: value.trim() ? `${label} updated` : `${label} removed`,
+      undone: `Undid changing the ${field} of ${page}.`, focus: { file: path } };
+  };
+  const outcome = appStore.openFile.value === path && editorModule?.isMounted(path)
+    ? guardedEdits.now(plan, { group: group ? `page-meta:${path}:${field}` : undefined })
+    : await guardedEdits.run(plan);
+  if (outcome.message) return outcome.message;
+  updateCurrentPageLabel();
+  if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree();
+  if (outcome.ok && outcome.status === "applied") element("status").textContent = value.trim() ? `${field === "title" ? "Title" : "Description"} updated` : `${field === "title" ? "Title" : "Description"} removed`;
+  return undefined;
 }
 
 // ---- Page-builder site controls. Kept together to isolate this slice's wiring. ----
@@ -1908,13 +1902,14 @@ function nativeSitePageChoices() {
   return Object.entries(nativeSite?.routes ?? {}).map(([route, file]) => ({ route, file, label: nativePageLabelOf(file) }));
 }
 
-function nativeNavigationTarget(pagePath: string | undefined) {
-  if (!nativeSite || !pagePath) return undefined;
-  const page = nativeEffectiveSource(pagePath) ?? "";
+function nativeNavigationTarget(pagePath: string | undefined, r: Reads = guardedEdits.peek) {
+  const site = r.site();
+  if (!site || !pagePath) return undefined;
+  const page = r.source(pagePath) ?? "";
   // Only offer the header component actually used on this page.
-  const headerPath = nativeSite.components["site-header"];
+  const headerPath = site.components["site-header"];
   if (headerPath && /<site-header(?:\s|>)/i.test(page)) {
-    const source = nativeEffectiveSource(headerPath);
+    const source = r.source(headerPath);
     const list = source !== undefined ? readNavigation(source, true) : undefined;
     if (source !== undefined && list) return { path: headerPath, source, list, shared: true };
   }
@@ -1925,66 +1920,74 @@ function nativeNavigationTarget(pagePath: string | undefined) {
 let siteLinkPreferenceScope = "";
 let siteLinkPreferences = new Map<string, SiteLinkPreference>();
 
-function nativeSettingsController({ createSiteSettings }: typeof import("./components/site-settings")) {
-  const scope = setupScope(), epoch = generation;
+function nativeSettingsController({ createSiteSettings }: typeof import("./components/site-settings"), shown: string[] = []) {
+  const scope = setupScope();
+  let since = guardedEdits.stamp();
   if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
-  // Pin page data (bytes or absence) with the pages.
-  const expectedSources = new Map([...nativeSitePaths(nativeSite!), NATIVE_CONFIG_PATH].map((path) => [path, nativeEffectiveSource(path)] as const));
-  let routes = JSON.stringify(nativeSite?.routes);
-  // After this dialog's own Apply succeeds, its result is the new baseline,
-  // so input kept from meanwhile can be applied on top of it. The operation
-  // itself refused any other change; no await separates it from this.
-  const applied = (error: string | undefined) => {
-    if (error === undefined && !stale()) {
-      for (const path of expectedSources.keys()) expectedSources.set(path, nativeEffectiveSource(path));
-      routes = JSON.stringify(nativeSite?.routes);
-    }
-    return error;
-  };
-  const sourcesChanged = () => routes !== JSON.stringify(nativeSite?.routes) || [...expectedSources].some(([path, source]) => nativeEffectiveSource(path) !== source);
-  const stale = () => scope !== setupScope() || epoch !== generation;
+  let baseline = new Map(shown.map(path => [path, guardedEdits.peek.source(path)] as const));
   const changed = "The repository or source changed meanwhile. Reopen settings and try again.";
+  const stale = () => !since.holds();
+  const sourcesChanged = () => [...baseline].some(([path, source]) => guardedEdits.peek.source(path) !== source);
+  const checkShown = (r: Reads) => [...baseline].some(([path, source]) => r.source(path) !== source);
+  const applied = (outcome: Outcome) => {
+    if (!outcome.ok) return outcome.reason === "stale" ? changed : outcome.message;
+    since = guardedEdits.stamp();
+    baseline = new Map(shown.map(path => [path, guardedEdits.peek.source(path)] as const));
+    return outcome.message;
+  };
   return createSiteSettings({
     async applyPage(path, fields) {
-      if (stale() || sourcesChanged()) return changed;
-      const source = nativeEffectiveSource(path);
-      if (source === undefined || !nativeRouteForPath(path)) return "The page could not be read.";
-      let next = source;
-      try {
-        for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value);
-      } catch (error) { return error instanceof Error ? error.message : "Page settings could not be changed."; }
-      if (next === source) return undefined;
-      return applied(await applyNativeOperation({ expectedSources, edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." }));
+      return applied(await guardedEdits.run(r => {
+        if (checkShown(r)) return { refuse: changed };
+        const source = r.source(path), site = r.site();
+        if (source === undefined || !site || !Object.values(site.routes).includes(path)) return { refuse: "The page could not be read." };
+        let next = source;
+        try { for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value); }
+        catch (error) { return { refuse: error instanceof Error ? error.message : "Page settings could not be changed." }; }
+        return { edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." };
+      }, { since }));
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
-    applyUrl: (path, value, keep) => stale() || sourcesChanged() ? Promise.resolve(changed) : changeNativeUrl(path, value, keep, expectedSources),
+    async applyUrl(path, value, keep) {
+      const error = await changeNativeUrl(path, value, keep, since, baseline);
+      if (!error) {
+        since = guardedEdits.stamp();
+        // The page may have moved: the settings panel closes on URL Apply.
+        baseline = new Map(shown.map(file => [file, guardedEdits.peek.source(file)] as const));
+      }
+      return error;
+    },
     async applySite(values) {
-      if (stale() || sourcesChanged()) return changed;
-      return applied(await applyNativeSiteSettings(values, expectedSources));
+      return applied(await guardedEdits.run(r => checkShown(r) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));
     },
     async open404() {
       if (stale() || sourcesChanged() || !nativeSite) return changed;
       if (nativeSite.routes["/404.html"]) { await restoreFile(nativeSite.routes["/404.html"], generation); return undefined; }
-      // Made from the home page's document, so that is read first.
-      const unread = await nativeSiteReadForCreate();
-      if (unread) return unread;
-      if (stale() || sourcesChanged() || !nativeSite) return changed;
-      let source = nativePageTemplate(nativeHomeTemplate(), "Page not found");
-      source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
-      source = upsertHeadTag(source, "robots", "noindex");
-      source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
-      return applyNativeOperation({ expectedSources, creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." });
+      return applied(await guardedEdits.run(async r => {
+        if (checkShown(r)) return { refuse: changed };
+        const site = r.site();
+        if (!site) return { refuse: changed };
+        const unread = await nativeSiteReadForCreate();
+        if (unread) return { refuse: unread };
+        const template = r.source(site.routes["/"]);
+        if (template === undefined) return { refuse: NATIVE_HOME_UNREAD };
+        r.exists("404.html");
+        let source = nativePageTemplate(template, "Page not found");
+        source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
+        source = upsertHeadTag(source, "robots", "noindex");
+        source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
+        return { creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." };
+      }, { since }));
     },
     async applyNavigation(path, original, links) {
-      if (stale() || sourcesChanged()) return changed;
-      const source = nativeEffectiveSource(path);
-      if (source !== original) return "Navigation changed while this panel was open. Reopen it to review the latest links.";
-      const list = readNavigation(source, path.startsWith("components/"));
-      if (!list) return "This header's navigation is not a simple list of links.";
-      let next: string;
-      try { next = editNavigation(source, list, links); }
-      catch (error) { return error instanceof Error ? error.message : "Navigation could not be changed."; }
-      return applyNativeOperation({ expectedSources, edits: new Map([[path, next]]), done: "Navigation applied as a draft. Save to GitHub to keep it.", undone: "Undid changing navigation." });
+      return applied(await guardedEdits.run(r => {
+        const source = r.source(path);
+        if (source !== original) return { refuse: "Navigation changed while this panel was open. Reopen it to review the latest links." };
+        const list = readNavigation(source, path.startsWith("components/"));
+        if (!list) return { refuse: "This header's navigation is not a simple list of links." };
+        try { return { edits: new Map([[path, editNavigation(source, list, links)]]), done: "Navigation applied as a draft. Save to GitHub to keep it.", undone: "Undid changing navigation." }; }
+        catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
+      }, { since }));
     },
     async uploadImage() {
       const picked = await pickFiles({ accept: "image/*", multiple: false });
@@ -2022,7 +2025,7 @@ async function openNativePageSettings(path: string) {
   if (problem) { errorMessage(new Error(problem)); return; }
   const source = nativeEffectiveSource(path), route = nativeRouteForPath(path);
   if (source === undefined || !route) return;
-  try { nativeSettingsController(settings).page({ path, source, route, images: nativeImagePaths() }); }
+  try { nativeSettingsController(settings, [path]).page({ path, source, route, images: nativeImagePaths() }); }
   catch (error) { errorMessage(error); }
 }
 
@@ -2033,27 +2036,29 @@ async function openNativeSiteSettings() {
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
   try {
-    nativeSettingsController(settings).site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
+    nativeSettingsController(settings, [NATIVE_CONFIG_PATH, nativeSite.routes["/"]]).site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
   } catch (error) { errorMessage(error); }
 }
 
-async function applyNativeSiteSettings(values: SiteSettingsValues, expectedSources: Map<string, string | undefined>) {
-  if (!nativeSite) return "Open a native site first.";
-  const config = nativeEffectiveSource(NATIVE_CONFIG_PATH);
-  const before = readSiteIdentity(config, nativeEffectiveSource(nativeSite.routes["/"]) ?? "");
+function applyNativeSiteSettings(values: SiteSettingsValues, r: Reads): PlanResult {
+  const site = r.site();
+  if (!site) return { refuse: "Open a native site first." };
+  const config = r.source(NATIVE_CONFIG_PATH);
+  const before = readSiteIdentity(config, r.source(site.routes["/"]) ?? "");
   const edits = new Map<string, string>();
   try {
     const nextConfig = withSiteIdentityConfig(config, values);
     if (config !== nextConfig) edits.set(NATIVE_CONFIG_PATH, nextConfig);
-    for (const path of new Set(Object.values(nativeSite.routes))) {
-      const source = nativeEffectiveSource(path);
-      if (source === undefined) return `${path} could not be read. No settings were applied.`;
+    for (const path of new Set(Object.values(site.routes))) {
+      const source = r.source(path);
+      if (source === undefined) return { refuse: `${path} could not be read. No settings were applied.` };
       const next = withSiteIdentityPage(source, before, values);
       if (next !== source) edits.set(path, next);
     }
-  } catch (error) { return error instanceof Error ? error.message : "Site settings could not be changed."; }
-  if (!edits.size) return undefined;
-  return applyNativeOperation({ expectedSources, edits, done: `Site settings applied to ${edits.size} files as drafts. Save to GitHub to keep them.`, undone: "Undid site settings on all affected pages." });
+  } catch (error) { return { refuse: error instanceof Error ? error.message : "Site settings could not be changed." }; }
+  const creates: { path: string; content: string }[] = [];
+  if (config === undefined && edits.has(NATIVE_CONFIG_PATH)) { creates.push({ path: NATIVE_CONFIG_PATH, content: edits.get(NATIVE_CONFIG_PATH)! }); edits.delete(NATIVE_CONFIG_PATH); }
+  return { creates, edits, done: `Site settings applied to ${edits.size + creates.length} files as drafts. Save to GitHub to keep them.`, undone: "Undid site settings on all affected pages." };
 }
 
 async function openNativeNavigation(pagePath: string) {
@@ -3626,7 +3631,6 @@ const filesTreeController = createFilesTreeController({
 function renderFileTree() { filesTreeController.render(); }
 function renderDraftFiles() { filesTreeController.refresh(); }
 function fileRow(path: string) { return filesTreeController.row(path); }
-const treeSignature = (state: TreeState) => filesTreeController.signature(state);
 
 // The explorer's Pages | Files | Images tabs: tab state and tree rendering
 // live in the Pages controller; the host mounts the DOM and paints the tabs.
@@ -3702,11 +3706,11 @@ async function nativeSiteReadForCreate() {
 // og:url of each (`file`, at `moved` after the move) follow it from `from`
 // to `to`, written into `edits` (by the path after the move) on top of the
 // link updates there.
-function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[]) {
-  const siteUrl = nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url;
+function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[], r: Reads) {
+  const siteUrl = nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url;
   for (const page of pages) {
     const path = page.moved ?? page.file;
-    const text = edits.get(path) ?? nativeEffectiveSource(page.file);
+    const text = edits.get(path) ?? r.source(page.file);
     if (text === undefined) continue;
     const next = nativePageMovedUrl(text, page.from, page.to, siteUrl);
     if (next !== text) edits.set(path, next);
@@ -3716,21 +3720,6 @@ function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; mo
 function nativePageLabelOf(file: string) { return pagesController.pageLabel(file); }
 function createNativeNew(request: NativeNewRequest): Promise<string | undefined> { return pagesController.createNew(request); }
 function createNativeFolderPage(route: string) { return pagesController.createFolderPage(route); }
-
-// Writes a new page (a creation or a copy) as a new draft; then routes are
-// found again, the trees drawn, the page opened, and Undo right after takes
-// it back.
-async function commitNativePage(page: {
-  file: string;
-  route: string;
-  title: string;
-  content: string;
-  done: string;
-}): Promise<string | undefined> {
-  const expectedSources = new Map([...nativeSitePaths(nativeSite!)].map(path => [path, nativeEffectiveSource(path)] as const));
-  return applyNativeOperation({ expectedSources, creates: [{ path: page.file, content: page.content }], open: page.file,
-    done: page.done, undone: `Undid creating the page ${page.title}.` });
-}
 
 // ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
 // Lifecycle and adapters live in the cards controller; every card write is a guarded edit (src/guarded-edit.ts).
@@ -3747,6 +3736,7 @@ const cardsController = createCardsController({
 
 // Pages policy belongs to the controller; guarded writes remain host transactions.
 const pagesController = createPagesController({
+  edits: guardedEdits,
   site: () => nativeSite,
   routeForPath: nativeRouteForPath,
   source: nativeEffectiveSource,
@@ -3754,16 +3744,10 @@ const pagesController = createPagesController({
   baseFiles: () => nativeBaseFiles,
   drafts: () => { const scope = draftScope(); return scope ? draftStore().list(scope) : []; },
   hasDraftScope: () => Boolean(draftScope()),
-  scope: setupScope,
-  generation: () => generation,
-  indexScope: nativeTextIndexScopeKey,
-  exists: nativePathExists,
   routeInfo: nativeRouteInfo,
   titles: nativeTitles,
   siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
   writeMeta: (file, field, value, flush) => writeNativePageMeta(file, field, value, flush),
-  commitPage: commitNativePage,
-  operation: operation => applyNativeOperation(operation),
   ensureIndex: ensureNativeTextIndex,
   readRedirects: readNativeRedirects,
   withMovedPageUrls,
@@ -3794,27 +3778,18 @@ function retitleNativePage(file: string, title: string): Promise<string | undefi
 function duplicateNativePage(file: string) { return pagesController.duplicate(file); }
 function removeNativePagesTarget(target: NativePagesTarget) { return pagesController.remove(target); }
 function nativeUrlPlan(file: string, value: string): UrlPlan { return pagesController.urlPlan(file, value); }
-function changeNativeUrl(file: string, value: string, keep: boolean, openingSources?: Map<string, string | undefined>): Promise<string | undefined> {
-  return pagesController.changeUrl(file, value, keep, openingSources);
+function changeNativeUrl(file: string, value: string, keep: boolean, since?: Stamp, baseline?: ReadonlyMap<string, string | undefined>): Promise<string | undefined> {
+  return pagesController.changeUrl(file, value, keep, since, baseline);
 }
 function nativeDropProblem(source: NativePagesTarget, parent: string): string | undefined { return pagesController.dropProblem(source, parent); }
 function confirmNativeMove(source: NativePagesTarget, parent: string) { return pagesController.confirmMove(source, parent); }
 function moveNativePageTo(target: NativePagesTarget) { return pagesController.moveTo(target); }
 
 // Shared file operations use the same pure source/draft policy as Pages.
-function nativeLinkSources(): Record<string, string | undefined> {
-  const scope = draftScope();
-  return pageLinkSources(nativeFiles(scope), path => nativeEffectiveSource(path, scope));
-}
 function onBranchHere(path: string) {
   const scope = draftScope();
   return pageOnBranchHere(path, nativeBaseFiles, scope ? draftStore().list(scope) : []);
 }
-function deleteTargetDraftStamp(path: string, prefix?: string): string {
-  const scope = draftScope();
-  return pageDeleteDraftStamp(scope ? draftStore().list(scope) : [], path, prefix);
-}
-
 // `_redirects` as it is now: its draft, or the branch's file.
 async function readNativeRedirects(): Promise<string | undefined> {
   const repo = appStore.repository.value, epoch = generation, scopeKey = setupScope();
@@ -3824,7 +3799,10 @@ async function readNativeRedirects(): Promise<string | undefined> {
   if (!nativeBaseFiles.includes(NATIVE_REDIRECTS_PATH) || !appStore.repository.value) return undefined;
   const entry = await findEntry(NATIVE_REDIRECTS_PATH);
   if (epoch !== generation || scopeKey !== setupScope() || !repo) throw new Error("The repository changed while reading redirects.");
-  return entry ? readFile(repo.full_name, entry.sha) : undefined;
+  const text = entry ? await readFile(repo.full_name, entry.sha) : undefined;
+  if (epoch !== generation || scopeKey !== setupScope()) throw new Error("The repository changed while reading redirects.");
+  if (text !== undefined) nativeBaseSources.set(NATIVE_REDIRECTS_PATH, text);
+  return text;
 }
 
 // ---- One undoable operation over several files. ----
@@ -4001,6 +3979,12 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
   const beforeSources = new Map(expectedSources);
   if (!beforeSources.has(anchor)) beforeSources.set(anchor, nativeEffectiveSource(anchor));
   const baseSources = new Map(nativeBaseSources);
+  // Plain repositories do not have a native source index. Keep the mounted
+  // anchor's unchanged text in this receipt's baseline too.
+  if (!nativeSite && !baseSources.has(anchor)) {
+    const source = nativeEffectiveSource(anchor);
+    if (source !== undefined) baseSources.set(anchor, source);
+  }
   for (const [path, base] of bases) if (base) baseSources.set(path, base.text);
   for (const [path, file] of movable) if (file.sha && file.text !== undefined) baseSources.set(path, file.text);
   // Model proofs guard the currently displayed text separately. During a
@@ -4332,14 +4316,14 @@ function pathNow(path: string, state = treeState()): "file" | "folder" | "delete
 }
 
 const fileOperationsController = createFileOperationsController({
-  generation: () => generation, setupScope, draftScope, site: () => nativeSite,
+  edits: guardedEdits, draftScope,
   engaged: () => nativeEngaged, repository: () => appStore.repository.value,
-  parentOf, treeState, treeSignature, pathNow, branchFilesUnder, findEntry, draftStore,
+  parentOf, treeState, pathNow, branchFilesUnder, findEntry, draftStore,
   baseSource: path => nativeBaseSources.get(path), readFiles, readFile,
-  nativeLinkSources, nativeRouteForPath, nativeFiles, nativeEffectiveSource,
-  nativeTextIndexScopeKey, deleteTargetDraftStamp, ensureNativeTextIndex, branchPathProblem,
+  nativeFiles,
+  ensureNativeTextIndex, branchPathProblem,
   onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,
-  applyNativeOperation, applyFileOperation, undoFileChanges,
+  undoFileChanges,
   duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
   afterFileChanges, announce, refuse, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
   openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
@@ -4375,14 +4359,6 @@ async function branchFilesUnder(folder: string): Promise<TreeEntry[]> {
   if (!entry) return [];
   const listed = await api<Directory>("tree", { repo: appStore.repository.value.full_name, sha: entry.sha, recursive: "1" });
   return listed.entries.filter((item) => item.type !== "tree").map((item) => ({ ...item, path: `${folder}/${item.path}` }));
-}
-
-interface FileOperationRecord {
-  /** The drafts of every path it touched, as they were before. */
-  before: Map<string, SavedDraft | undefined>;
-  moves: { from: string; to?: string }[];
-  /** The file open before, and where it went. */
-  opened?: { from: string; to?: string };
 }
 
 // Closes what shows the files among `paths` (the editor, the style pane) and
@@ -4460,70 +4436,6 @@ async function openAfter(path: string | undefined, keepExplorer?: boolean, quiet
   else if (path && !draft?.deleted) await restoreFile(path, epoch, keep);
   else if (nativeSite?.routes["/"]) await restoreFile(nativeSite.routes["/"], epoch, keep);
   else if (appStore.snapshot.value) showDirectory(appStore.snapshot.value);
-}
-
-/**
- * Renames, moves (`to`) or deletes (no `to`) files as one operation: the
- * drafts, routes found again, the trees drawn, and the open file kept open
- * where it went (or the home page opened when it is gone). Resolves to an
- * error message, or nothing.
- */
-async function applyFileOperation(ops: { file: MovableFile; to?: string }[]): Promise<string | undefined> {
-  const scope = draftScope();
-  if (!scope || !ops.length) return "Open a repository first.";
-  const store = draftStore();
-  const moves = ops.map((op) => (op.to ? { from: op.file.path, to: op.to } : { from: op.file.path }));
-  const before = new Map<string, SavedDraft | undefined>();
-  const remember = (path: string) => { if (!before.has(path)) before.set(path, store.get(scope, path)); };
-  for (const op of ops) {
-    remember(op.file.path);
-    if (op.to) remember(op.to);
-    const from = store.get(scope, op.file.path)?.movedFrom;
-    if (from) remember(from);
-  }
-  const opened = releaseFiles(new Set(ops.map((op) => op.file.path)));
-  for (const op of ops) {
-    if (op.to) moveFile(store, scope, op.file, op.to);
-    else deleteFile(store, scope, op.file);
-  }
-  const failure = store.error;
-  if (failure) {
-    for (const [path, draft] of before) draft ? store.save(draft) : store.remove(scope, path);
-    afterFileChanges();
-    await openAfter(opened);
-    return failure;
-  }
-  afterFileChanges();
-  const record: FileOperationRecord = { before, moves };
-  if (opened) {
-    const to = ops.find((op) => op.file.path === opened)?.to;
-    record.opened = { from: opened, to };
-    await openAfter(to);
-  }
-  // Undo in the open file's editor takes the whole operation back.
-  if (appStore.openFile.value && editorModule?.isMounted(appStore.openFile.value)) editorModule.recordHistoryAction(appStore.openFile.value, () => undoFileOperation(record));
-  return undefined;
-}
-
-// Undo right after an operation: the drafts as they were, and the file that
-// was open open again.
-async function undoFileOperation(record: FileOperationRecord) {
-  const scope = draftScope();
-  if (!scope) return;
-  const store = draftStore();
-  const opened = releaseFiles(new Set([...record.before.keys()]));
-  for (const [path, draft] of record.before) draft ? store.save(draft) : store.remove(scope, path);
-  afterFileChanges();
-  const back = record.opened?.from ?? (opened && record.moves.find((move) => move.to === opened)?.from) ?? opened;
-  if (back) await openAfter(back);
-  announce(`Undid ${describeMoves(record.moves)}.`);
-}
-
-function describeMoves(moves: { from: string; to?: string }[]) {
-  if (moves.length !== 1) return moves.some((move) => move.to) ? `moving ${moves.length} files` : `deleting ${moves.length} files`;
-  const [move] = moves;
-  if (!move.to) return `deleting ${move.from}`;
-  return parentOf(move.from) === parentOf(move.to) ? `renaming ${move.from} to ${move.to}` : `moving ${move.from} to ${move.to}`;
 }
 
 /**

@@ -1,26 +1,14 @@
+import type { GuardedEdits, Reads, Stamp, PlanResult, Outcome } from "../guarded-edit";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
 import { editNavigation, readNavigation } from "../page-builder/site-navigation";
-import { parentRoute, routeSlug, routeFolder, isRouteWithin, movedRoute, planPageMove, rewriteRouteLinks, editNativeRedirects, type PageMovePlan, type FileMove } from "../native-page-moves";
+import { parentRoute, routeSlug, routeFolder, isRouteWithin, movedRoute, planPageMove, rewriteRouteLinks, editNativeRedirects, type PageMovePlan } from "../native-page-moves";
 import { isFolderRoute, nativeRouteFile } from "../../shared/native-routes";
-import { NATIVE_REDIRECTS_PATH, nativePageUrl, nativePageWithUrl, nativePageWithDetail, nativeSitePaths, type NativeSite } from "../../shared/native-project";
+import { NATIVE_REDIRECTS_PATH, nativePageUrl, nativePageWithUrl, nativePageWithDetail, nativePageHead, nativeSiteSettings, NATIVE_CONFIG_PATH, type NativeSite } from "../../shared/native-project";
 import type { NativeNewRequest, NativePagesTarget } from "../components/pages-tree";
 import type { PagePickerItem } from "../components/page-picker";
 import type { UrlPlan } from "../components/url-change";
 import type { SavedDraft } from "../drafts";
-
-export interface PagesOperation {
-  expectedSources?: Map<string, string | undefined>;
-  moves?: FileMove[];
-  deletes?: string[];
-  creates?: { path: string; content: string }[];
-  edits?: Map<string, string>;
-  open?: string;
-  done: string;
-  undone: string;
-  focus?: { file?: string; route?: string };
-  current?: () => boolean;
-}
 
 export interface PagesConfirmation {
   ask(question: { title: string; notes: string[]; action: string }): Promise<boolean>;
@@ -41,6 +29,7 @@ export interface NativeNewPlan extends NativeNewTarget {
 }
 
 export interface PagesPorts {
+  edits: Pick<GuardedEdits, "run" | "stamp" | "peek">;
   site(): NativeSite | undefined;
   routeForPath(file: string): string | undefined;
   source(path: string): string | undefined;
@@ -48,21 +37,15 @@ export interface PagesPorts {
   baseFiles(): string[];
   drafts(): SavedDraft[];
   hasDraftScope(): boolean;
-  scope(): string;
-  generation(): number;
-  indexScope(): string;
-  exists(path: string): boolean;
   routeInfo(route: string, site: NativeSite): { title?: string };
   titles(site: NativeSite): Record<string, string | undefined>;
   /** `.editor/config.json`'s `site.url`, read now. */
   siteUrl(): string | undefined;
   writeMeta(file: string, field: "title", value: string, flush: false): Promise<string | undefined>;
-  commitPage(input: { file: string; route: string; title: string; content: string; done: string }): Promise<string | undefined>;
-  operation(operation: PagesOperation): Promise<string | undefined>;
   ensureIndex(): Promise<string | undefined>;
   readRedirects(): Promise<string | undefined>;
-  withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[]): void;
-  pageLinks(paths: string[], moves: Map<string, string>, action: "deleted"): string | undefined;
+  withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[], reader: Reads): void;
+  pageLinks(paths: string[], moves: Map<string, string>, action: "deleted", reader: Reads): string | undefined;
   cardsLinkingTo(route: string, excluding: Set<string>): { label: string; edits: Map<string, string> } | undefined;
   confirmation(): PagesConfirmation | undefined;
   picker(): { pick(question: { title: string; items: PagePickerItem[] }): Promise<string | undefined> } | undefined;
@@ -83,7 +66,7 @@ export interface PagesPorts {
   siteReadForCreate(): Promise<string | undefined>;
   /** Creates the page with its card, when card grids are mounted; else undefined. */
   createWithCard(request: NativeNewRequest): Promise<string | undefined> | undefined;
-  navigationTarget(pagePath: string | undefined): { path: string; source: string; list: NonNullable<ReturnType<typeof readNavigation>>; shared: boolean } | undefined;
+  navigationTarget(pagePath: string | undefined, reader: Reads): { path: string; source: string; list: NonNullable<ReturnType<typeof readNavigation>>; shared: boolean } | undefined;
   restoreDeleted(file: string): void;
   announce(message: string): void;
   /** A refusal: said in #status and shown on screen. */
@@ -117,35 +100,23 @@ export function pageOnBranchHere(path: string, baseFiles: readonly string[], dra
   return !draft || (draft.baseSha !== null && !draft.deleted);
 }
 
-export function pageDeleteDraftStamp(drafts: readonly SavedDraft[], path: string, prefix?: string): string {
-  return JSON.stringify(drafts.filter((draft) => draft.path === path || (prefix && draft.path.startsWith(prefix))).sort((a, b) => a.path.localeCompare(b.path)));
-}
-
 export function createPagesController(ports: PagesPorts) {
   const changedMove = "The repository or source changed meanwhile. Review it and try again.";
-  function moveProof(target: NativePagesTarget) {
-    const site = ports.site(), epoch = ports.generation(), scope = ports.scope(), index = ports.indexScope();
-    const files = JSON.stringify([...ports.files()].sort()), routes = JSON.stringify(site?.routes);
-    const sources = new Map(Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
-    const drafts = deleteTargetDraftStamp(target.file ?? "", isFolderRoute(target.route) ? routeFolder(target.route) : undefined);
-    return () => site === ports.site() && epoch === ports.generation() && scope === ports.scope() && index === ports.indexScope()
-      && routes === JSON.stringify(ports.site()?.routes) && files === JSON.stringify([...ports.files()].sort())
-      && (!target.file || ports.routeForPath(target.file) === target.route)
-      && [...sources].every(([path, source]) => ports.source(path) === source)
-      && drafts === deleteTargetDraftStamp(target.file ?? "", isFolderRoute(target.route) ? routeFolder(target.route) : undefined);
+  const fileKey = () => [...ports.files()].sort().join("\n");
+  function message(outcome: Outcome, changed: string): string | undefined {
+    return !outcome.ok && outcome.reason === "stale" ? changed : outcome.message;
   }
-
   // ---- The Pages tab's Rename, Duplicate and Delete. ----
 
   // A page's title in its head, as the Page block's Title field sets it.
   async function retitleNativePage(file: string, title: string): Promise<string | undefined> {
     const route = ports.routeForPath(file);
     if (!ports.site() || !route) return "This page has no URL in the site.";
-    const epoch = ports.generation(), scope = ports.scope();
+    const since = ports.edits.stamp();
     const error = await ports.writeMeta(file, "title", title, false);
     if (error) return error;
     // The metadata write legitimately rebuilds the site; guard workspace and target URL.
-    if (epoch !== ports.generation() || scope !== ports.scope() || ports.routeForPath(file) !== route) return "The repository changed meanwhile. Try again.";
+    if (!since.holds() || ports.routeForPath(file) !== route) return "The repository changed meanwhile. Try again.";
     ports.refreshMeta();
     renderPagesTree();
     ports.refreshLabel();
@@ -155,33 +126,34 @@ export function createPagesController(ports: PagesPorts) {
   // A copy of a page beside it: `<slug>-copy/index.html` (then `-copy-2`, …),
   // its content as it is now, titled "… (copy)".
   async function duplicateNativePage(file: string) {
-    const site = ports.site();
-    const route = ports.routeForPath(file);
-    if (!site || !route) return;
-    const name = route === "/" ? "home" : routeSlug(route).replace(/\.html$/, "");
-    const parent = route === "/" ? "/" : parentRoute(route);
-    let target: Checked<NativeNewTarget> | undefined;
-    for (let n = 1; n < 100; n++) {
-      target = nativeNewTarget(parent, `${name}-copy${n > 1 ? `-${n}` : ""}`, { route: (r) => site.routes[r], exists: (path) => ports.exists(path) });
-      if (target.ok) break;
-    }
-    if (!target?.ok) { ports.error(new Error(target?.error ?? "No name is free for the copy.")); return; }
-    const original = ports.source(file);
-    if (original === undefined) { ports.error(new Error("The page could not be read.")); return; }
-    const label = ports.routeInfo(route, site).title?.trim() || (route === "/" ? "Home" : firstHeadingText(original)) || routeHeading(route);
-    const title = `${label} (copy)`;
-    const error = await ports.commitPage({
-      file: target.value.file, route: target.value.route, title,
-      content: nativePageWithUrl(nativePageWithDetail(original, "title", title), nativeAddress(target.value.route)),
-      done: `Duplicated ${label} as ${title} at ${target.value.route}.`,
-    });
+    const since = ports.edits.stamp();
+    const outcome = await ports.edits.run(r => {
+      const site = r.site(), route = site && Object.entries(site.routes).find(([, path]) => path === file)?.[0];
+      if (!site || !route) return { refuse: "This page has no URL in the site." };
+      const name = route === "/" ? "home" : routeSlug(route).replace(/\.html$/, "");
+      const parent = route === "/" ? "/" : parentRoute(route);
+      let target: Checked<NativeNewTarget> | undefined;
+      for (let n = 1; n < 100; n++) {
+        target = nativeNewTarget(parent, `${name}-copy${n > 1 ? `-${n}` : ""}`, { route: route => site.routes[route], exists: path => r.exists(path) });
+        if (target.ok) break;
+      }
+      if (!target?.ok) return { refuse: target?.error ?? "No name is free for the copy." };
+      const original = r.source(file);
+      if (original === undefined) return { refuse: "The page could not be read." };
+      const label = nativePageHead(original).title?.trim() || (route === "/" ? "Home" : firstHeadingText(original)) || routeHeading(route);
+      const title = `${label} (copy)`;
+      return { creates: [{ path: target.value.file, content: nativePageWithUrl(nativePageWithDetail(original, "title", title), address(target.value.route, r)) }],
+        open: target.value.file, done: `Duplicated ${label} as ${title} at ${target.value.route}.`, undone: `Undid creating the page ${title}.` };
+    }, { since });
+    const error = message(outcome, "The repository changed meanwhile. Try again.");
     if (error) ports.error(new Error(error));
   }
 
-  // Index loading fills source caches; draft mutations are independent evidence
-  // that the target changed while its delete entry waited for that index.
-  function deleteTargetDraftStamp(path: string, prefix?: string): string {
-    return pageDeleteDraftStamp(ports.drafts(), path, prefix);
+  // The drafts of a page and, for a folder page, of everything in its folder: an edit while its
+  // Delete waits for the index is evidence even before the index has read the file.
+  function targetDrafts(target: NativePagesTarget) {
+    const folder = isFolderRoute(target.route) ? routeFolder(target.route) : undefined;
+    return JSON.stringify(ports.drafts().filter(draft => draft.path === target.file || (folder && draft.path.startsWith(folder))).sort((a, b) => a.path.localeCompare(b.path)));
   }
 
   // Delete in the Pages tab. A page with subpages asks whether they go too
@@ -190,85 +162,78 @@ export function createPagesController(ports: PagesPorts) {
   async function removeNativePagesTarget(target: NativePagesTarget) {
     const site = ports.site();
     if (!target.file || !site || !ports.confirmation()) return;
-    const scope = ports.scope(), epoch = ports.generation(), indexScope = ports.indexScope();
-    const source = ports.source(target.file), fileList = [...ports.files()].sort().join("\n");
-    const targetDrafts = deleteTargetDraftStamp(target.file, isFolderRoute(target.route) ? routeFolder(target.route) : undefined);
-    const stale = () => scope !== ports.scope() || epoch !== ports.generation() || indexScope !== ports.indexScope()
-      || ports.site()?.routes[target.route] !== target.file || (source !== undefined && ports.source(target.file!) !== source) || [...ports.files()].sort().join("\n") !== fileList
-      || deleteTargetDraftStamp(target.file!, isFolderRoute(target.route) ? routeFolder(target.route) : undefined) !== targetDrafts;
+    const file = target.file;
+    // The stamp, the file list and the target's drafts as Delete was pressed: a change while the
+    // index loads refuses before the dialog opens (the guard is proved before the plan runs).
+    const since = ports.edits.stamp(), key = fileKey(), drafts = targetDrafts(target);
+    let cancelled = false, cancel = `Cancelled deleting ${target.label}`;
     const indexed = await ports.ensureIndex();
-    if (stale()) { ports.error(new Error("The repository or source changed meanwhile. Try again.")); return; }
-    if (indexed) { ports.error(new Error(indexed)); return; }
-    const files = ports.files();
-    const folder = isFolderRoute(target.route) ? routeFolder(target.route) : undefined;
-    const inside = folder === undefined ? [] : files.filter((path) => path.startsWith(folder) && path !== target.file);
-    const everything = [target.file, ...inside];
-    const onGitHub = (paths: string[]) => paths.some((path) => ports.baseFiles().includes(path));
-    const links = ports.pageLinks(everything, new Map(), "deleted");
-    const saveNote = (paths: string[]) => onGitHub(paths)
-      ? "It is removed from GitHub when you save. Until then, Restore brings it back."
-      : "It is not on GitHub yet, so this discards it.";
-    let paths = [target.file];
-    // Its card in a grid listing pages (src/page-builder/cards.ts) can go with it.
-    const card = ports.cardsLinkingTo(target.route, new Set(everything));
-    const cardOption = card ? { label: card.label, checked: true } : undefined;
-    // The card's edits and the deletes were computed from these sources: an
-    // agent or resync write while the dialog is open refuses, never overwritten.
-    const expectedSources = new Map([...everything, ...(card?.edits.keys() ?? [])].map((path) => [path, ports.source(path)] as const));
-    let removeCard = false;
-    if (target.subpages > 0) {
-      const count = `${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`;
-      const answer = await ports.confirmation()!.choose({
-        title: `Delete ${target.label}?`,
-        notes: [
-          `${target.label} (${target.route}) has ${count}. Delete them too, with everything in ${folder}, or only this page: its subpages then stay at their URLs, under ${target.route} with no page of its own.`,
-          ...(links ? [links] : []),
-          saveNote(everything),
-        ],
-        actions: [
-          { label: "Delete only this page", value: "only" },
-          { label: `Delete ${target.label} and its ${count}`, value: "all" },
-        ],
-        option: cardOption,
-      });
-      if (!answer.value) { ports.announce(`Cancelled deleting ${target.label}`); return; }
-      if (answer.value === "all") paths = everything;
-      removeCard = answer.option;
-    } else {
-      const question = {
-        title: `Delete the page ${target.label} (${target.file})?`,
-        notes: [...(links ? [links] : []), ...(inside.length ? [`Everything else in ${folder} goes with it.`] : []), saveNote(everything)],
-        action: "Delete",
+    if (indexed && since.holds()) { ports.error(new Error(indexed)); return; }
+    const outcome = await ports.edits.run(async r => {
+      if (r.site()?.routes[target.route] !== target.file) return { refuse: "The repository or source changed meanwhile. Try again." };
+      const files = ports.files();
+      const folder = isFolderRoute(target.route) ? routeFolder(target.route) : undefined;
+      const inside = folder === undefined ? [] : files.filter((path) => path.startsWith(folder) && path !== target.file);
+      const everything = [file, ...inside];
+      const onGitHub = (paths: string[]) => paths.some((path) => ports.baseFiles().includes(path));
+      const links = ports.pageLinks(everything, new Map(), "deleted", r);
+      const saveNote = (paths: string[]) => onGitHub(paths)
+        ? "It is removed from GitHub when you save. Until then, Restore brings it back."
+        : "It is not on GitHub yet, so this discards it.";
+      let paths = [file];
+      // Its card in a grid listing pages (src/page-builder/cards.ts) can go with it.
+      const card = ports.cardsLinkingTo(target.route, new Set(everything));
+      const cardOption = card ? { label: card.label, checked: true } : undefined;
+      // The card's edits and the deletes were computed from these sources: an
+      // agent or resync write while the dialog is open refuses, never overwritten.
+      for (const path of [...everything, ...(card?.edits.keys() ?? [])]) { r.exists(path); r.source(path); }
+      let removeCard = false;
+      if (target.subpages > 0) {
+        const count = `${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`;
+        const answer = await ports.confirmation()!.choose({
+          title: `Delete ${target.label}?`,
+          notes: [
+            `${target.label} (${target.route}) has ${count}. Delete them too, with everything in ${folder}, or only this page: its subpages then stay at their URLs, under ${target.route} with no page of its own.`,
+            ...(links ? [links] : []),
+            saveNote(everything),
+          ],
+          actions: [
+            { label: "Delete only this page", value: "only" },
+            { label: `Delete ${target.label} and its ${count}`, value: "all" },
+          ],
+          option: cardOption,
+        });
+        if (!answer.value) { cancelled = true; return { stayed: cancel }; }
+        if (answer.value === "all") paths = everything;
+        removeCard = answer.option;
+      } else {
+        const question = {
+          title: `Delete the page ${target.label} (${target.file})?`,
+          notes: [...(links ? [links] : []), ...(inside.length ? [`Everything else in ${folder} goes with it.`] : []), saveNote(everything)],
+          action: "Delete",
+        };
+        const answer = cardOption
+          ? await ports.confirmation()!.choose({ ...question, actions: [{ label: question.action, value: "confirm" }], option: cardOption })
+          : { value: (await ports.confirmation()!.ask(question)) ? "confirm" : undefined, option: false };
+        if (answer.value !== "confirm") { cancelled = true; cancel = `Cancelled deleting ${target.file}`; return { stayed: cancel }; }
+        if (inside.length) paths = everything;
+        removeCard = answer.option;
+      }
+      const parent = parentRoute(target.route);
+      const what = paths.length > 1 && target.subpages
+        ? `${target.label} and its ${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`
+        : `the page ${target.label}`;
+      return {
+        deletes: paths,
+        ...(removeCard && card ? { edits: card.edits } : {}),
+        done: `Deleted ${what}${removeCard && card ? " and its card" : ""}.`,
+        undone: `Undid deleting ${what}.`,
+        focus: { route: parent === "/" ? undefined : parent },
       };
-      const answer = cardOption
-        ? await ports.confirmation()!.choose({ ...question, actions: [{ label: question.action, value: "confirm" }], option: cardOption })
-        : { value: (await ports.confirmation()!.ask(question)) ? "confirm" : undefined, option: false };
-      if (answer.value !== "confirm") { ports.announce(`Cancelled deleting ${target.file}`); return; }
-      if (inside.length) paths = everything;
-      removeCard = answer.option;
-    }
-    const parent = parentRoute(target.route);
-    const what = paths.length > 1 && target.subpages
-      ? `${target.label} and its ${target.subpages} ${target.subpages === 1 ? "subpage" : "subpages"}`
-      : `the page ${target.label}`;
-    if (scope !== ports.scope() || epoch !== ports.generation()) { ports.error(new Error("The repository changed meanwhile. Try again.")); return; }
-    // Unless only the page goes, its folder goes as the dialog listed it: a file
-    // added to it (or gone) while the dialog was open refuses, never left behind.
-    const listed = (list: string[]) => [...list].sort().join("\n");
-    if (paths.length > 1 || target.subpages === 0) {
-      const insideNow = folder === undefined ? [] : ports.files().filter((path) => path.startsWith(folder) && path !== target.file);
-      if (listed(insideNow) !== listed(inside)) { ports.error(new Error("The repository or source changed meanwhile. Review the latest files and try again.")); return; }
-    }
-    const error = await ports.operation({
-      expectedSources,
-      current: () => !stale(),
-      deletes: paths,
-      ...(removeCard && card ? { edits: card.edits } : {}),
-      done: `Deleted ${what}${removeCard && card ? " and its card" : ""}.`,
-      undone: `Undid deleting ${what}.`,
-      focus: { route: parent === "/" ? undefined : parent },
-    });
-    if (error) ports.error(new Error(error));
+    }, { since, guard: () => fileKey() === key && targetDrafts(target) === drafts });
+    if (cancelled) { if (!outcome.ok) ports.announce(cancel); return; }
+    const error = message(outcome, "The repository or source changed meanwhile. Try again.");
+    if (error) { ports.error(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); }
   }
 
   // ---- Changing a page's URL, Move to… and dragging in the Pages tab. ----
@@ -289,9 +254,9 @@ export function createPagesController(ports: PagesPorts) {
   // What changing the URL of the page `file` to the typed `value` does: the
   // files that move (the page, and for a folder page its whole folder), the
   // links that change, the old URLs that could redirect; or why it cannot.
-  function planNativeUrlChange(file: string, value: string): Checked<NativeUrlChange> {
-    const site = ports.site();
-    const from = ports.routeForPath(file);
+  function planNativeUrlChange(file: string, value: string, r: Reads): Checked<NativeUrlChange> {
+    const site = r.site();
+    const from = site && Object.entries(site.routes).find(([, path]) => path === file)?.[0];
     if (!site || !from || !ports.hasDraftScope()) return { ok: false, error: "This page has no URL in the site." };
     const normalized = normalizeRoute(value);
     if (!normalized.ok) return normalized;
@@ -303,13 +268,13 @@ export function createPagesController(ports: PagesPorts) {
     const moved = new Map(move.moves.map((item) => [item.from, item.to]));
     const links: NativeUrlChange["links"] = [];
     let complete = true;
-    for (const [path, source] of Object.entries(nativeLinkSources())) {
+    for (const [path, source] of Object.entries(pageLinkSources(ports.files(), path => r.source(path)))) {
       if (source === undefined) { complete = false; continue; }
       const rewritten = rewriteRouteLinks(source, from, to);
       if (rewritten.count) links.push({ path: moved.get(path) ?? path, from: path, text: rewritten.text, count: rewritten.count });
     }
     const redirect = move.routes.filter(([route]) => onBranchHere(site.routes[route])).map(([route]) => route);
-    return { ok: true, value: { from, to, label: nativePageLabelOf(file), move, links, complete, redirect, live: onBranchHere(file) } };
+    return { ok: true, value: { from, to, label: nativePageLabel(file, { routes: site.routes, titles: { [from]: nativePageHead(r.source(file) ?? "").title }, heading: path => firstHeadingText(r.source(path)) }) ?? file, move, links, complete, redirect, live: onBranchHere(file) } };
   }
 
   // A change's summary, as the URL field and the confirmation say it.
@@ -331,7 +296,7 @@ export function createPagesController(ports: PagesPorts) {
   }
 
   function nativeUrlPlan(file: string, value: string): UrlPlan {
-    const planned = planNativeUrlChange(file, value);
+    const planned = planNativeUrlChange(file, value, ports.edits.peek);
     if (!planned.ok) return planned.error === UNCHANGED_URL ? { ok: false, error: "", unchanged: true } : planned;
     const change = planned.value;
     return {
@@ -350,59 +315,52 @@ export function createPagesController(ports: PagesPorts) {
   // (`_redirects`, which is also kept free of chains to the old URLs and of
   // redirects away from the new ones). The open page stays open where it
   // went. Undo right after takes it all back.
-  async function changeNativeUrl(file: string, value: string, keep: boolean, openingSources?: Map<string, string | undefined>): Promise<string | undefined> {
-    const site = ports.site(), index = ports.indexScope();
-    const epoch = ports.generation(), scope = ports.scope(), paths = JSON.stringify([...ports.files()].sort()), routes = JSON.stringify(ports.site()?.routes);
-    const expectedSources = new Map(openingSources ?? Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
-    const stale = () => site !== ports.site() || index !== ports.indexScope() || epoch !== ports.generation() || scope !== ports.scope() || paths !== JSON.stringify([...ports.files()].sort()) || routes !== JSON.stringify(ports.site()?.routes) ||
-      [...expectedSources].some(([path, source]) => ports.source(path) !== source);
-    const changed = "The repository or source changed while preparing the URL change. Review it and try again.";
-    if (stale()) return changed;
-    const indexed = await ports.ensureIndex();
-    if (stale()) return changed;
-    if (indexed) return indexed;
-    for (const [path, source] of Object.entries(nativeLinkSources())) if (!expectedSources.has(path)) expectedSources.set(path, source);
-    expectedSources.set(NATIVE_REDIRECTS_PATH, ports.source(NATIVE_REDIRECTS_PATH));
-    const planned = planNativeUrlChange(file, value);
-    if (!planned.ok) return planned.error === UNCHANGED_URL ? undefined : planned.error;
-    const change = planned.value;
-    const edits = new Map(change.links.map((item) => [item.path, item.text]));
-    const moved = new Map(change.move.moves.map((item) => [item.from, item.to]));
-    ports.withMovedPageUrls(edits, change.move.routes.map(([from, to]) => ({ file: ports.site()!.routes[from], moved: moved.get(ports.site()!.routes[from]), from, to })));
-    let redirects: string | undefined;
-    try {
-      redirects = await ports.readRedirects();
-      if (stale()) return changed;
-    } catch (error) {
-      return error instanceof Error ? error.message : `${NATIVE_REDIRECTS_PATH} could not be read.`;
-    }
-    const redirected = keep ? change.redirect : [];
+  function urlChangePlan(r: Reads, change: NativeUrlChange, keep: boolean): PlanResult {
+    const site = r.site()!;
+    for (const move of change.move.moves) { r.exists(move.from); r.source(move.from); }
+    const edits = new Map(change.links.map(item => [item.path, item.text]));
+    const moved = new Map(change.move.moves.map(item => [item.from, item.to]));
+    ports.withMovedPageUrls(edits, change.move.routes.map(([from, to]) => ({ file: site.routes[from], moved: moved.get(site.routes[from]), from, to })), r);
+    const redirects = r.source(NATIVE_REDIRECTS_PATH), redirected = keep ? change.redirect : [];
+    const creates: { path: string; content: string }[] = [];
     if (redirects !== undefined || redirected.length) {
       const next = editNativeRedirects(redirects, change.from, change.to, redirected);
-      if (next !== (redirects ?? "")) edits.set(NATIVE_REDIRECTS_PATH, next);
+      if (next !== (redirects ?? "")) {
+        if (redirects === undefined) creates.push({ path: NATIVE_REDIRECTS_PATH, content: next });
+        else edits.set(NATIVE_REDIRECTS_PATH, next);
+      }
     }
     const count = change.links.reduce((sum, item) => sum + item.count, 0);
-    const summary = count
-      ? `${count} ${count === 1 ? "link" : "links"} updated in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}`
-      : "no links to update";
-    if (stale()) return changed;
-    return ports.operation({
-      expectedSources,
-      current: () => !stale(),
-      moves: change.move.moves,
-      edits,
+    const summary = count ? `${count} ${count === 1 ? "link" : "links"} updated in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}` : "no links to update";
+    return { moves: change.move.moves, edits, creates,
       done: `URL changed to ${change.to} — ${summary}${redirected.length ? `; ${change.from} redirects there` : ""}.`,
-      undone: `Undid changing the URL of ${change.label} to ${change.to}.`,
-      focus: { file: change.move.target },
-    });
+      undone: `Undid changing the URL of ${change.label} to ${change.to}.`, focus: { file: change.move.target } };
+  }
+
+  async function changeNativeUrl(file: string, value: string, keep: boolean, since: Stamp = ports.edits.stamp(), baseline?: ReadonlyMap<string, string | undefined>): Promise<string | undefined> {
+    const key = fileKey();
+    const outcome = await ports.edits.run(async r => {
+      if (baseline && [...baseline].some(([path, source]) => r.source(path) !== source)) return { refuse: "The repository or source changed meanwhile. Reopen settings and try again." };
+      const indexed = await ports.ensureIndex();
+      if (indexed) return { refuse: indexed };
+      const planned = planNativeUrlChange(file, value, r);
+      if (!planned.ok) return planned.error === UNCHANGED_URL ? { stayed: "That is the page's URL now." } : { refuse: planned.error };
+      // Read the plan before the asynchronous redirects fetch too.
+      for (const move of planned.value.move.moves) { r.exists(move.from); r.source(move.from); }
+      try { await ports.readRedirects(); }
+      catch (error) { return { refuse: error instanceof Error ? error.message : `${NATIVE_REDIRECTS_PATH} could not be read.` }; }
+      return urlChangePlan(r, planned.value, keep);
+    }, { since, guard: () => fileKey() === key });
+    return message(outcome, baseline ? "The repository or source changed meanwhile. Reopen settings and try again." : "The repository or source changed while preparing the URL change. Review it and try again.");
   }
 
   // The rows of Move to…: the top level, then every folder URL of the site,
   // the page itself, its subpages and where it is now not chosen.
-  function nativeMoveChoices(target: NativePagesTarget): PagePickerItem[] {
-    const site = ports.site();
+  function nativeMoveChoices(target: NativePagesTarget, r: Reads = ports.edits.peek): PagePickerItem[] {
+    const site = r.site();
     if (!site) return [];
-    const tree = buildNativePagesTree({ routes: site.routes, titles: ports.titles(site), heading: (file) => firstHeadingText(ports.source(file)) });
+    const titles = Object.fromEntries(Object.entries(site.routes).map(([route, file]) => [route, nativePageHead(r.source(file) ?? "").title]));
+    const tree = buildNativePagesTree({ routes: site.routes, titles, heading: file => firstHeadingText(r.source(file)) });
     const parent = parentRoute(target.route);
     const items: PagePickerItem[] = [{ route: "/", label: "Top level", level: 1, disabled: parent === "/" ? "It is there now." : undefined }];
     const walk = (page: NativePageNode, level: number) => {
@@ -430,42 +388,46 @@ export function createPagesController(ports: PagesPorts) {
   // Moves a page under `parent` ("/" the top level) after a confirmation that
   // says its new URL, what else moves, the links updated, and offers to keep
   // the old URL working: Move to… and a drop in the Pages tab.
-  async function confirmNativeMove(source: NativePagesTarget, parent: string) {
+  async function confirmNativeMove(source: NativePagesTarget, parent?: string, since: Stamp = ports.edits.stamp()) {
     if (!source.file || !ports.confirmation()) return;
-    let current = moveProof(source);
+    const key = fileKey(), drafts = targetDrafts(source), cancel = `Cancelled moving ${source.label}`;
+    let cancelled = false;
+    // The picker's titles and the move's links come with the site index: loaded first, and a change
+    // meanwhile refuses before the picker or the dialog opens (the guard is proved before the plan).
     const indexed = await ports.ensureIndex();
-    if (!current()) { ports.error(new Error(changedMove)); return; }
-    if (indexed) { ports.error(new Error(indexed)); ports.refuse(indexed); return; }
-    current = moveProof(source);
-    const to = movedRoute(parent, source.route);
-    const planned = planNativeUrlChange(source.file, to);
-    if (!planned.ok) { ports.error(new Error(planned.error)); ports.refuse(planned.error); return; }
-    const change = planned.value;
-    const openingSources = new Map(Object.entries(nativeLinkSources()).filter(([, source]) => source !== undefined));
-    const answer = await ports.confirmation()!.choose({
-      title: `Move ${change.label} to ${to}?`,
-      notes: [`Its URL changes from ${change.from} to ${to}.`, describeUrlChange(change), ...change.move.warnings],
-      actions: [{ label: "Move", value: "move" }],
-      option: change.redirect.length ? { label: `Keep the old URL working (${change.from} redirects to ${to})`, checked: change.live } : undefined,
-    });
-    if (!current()) { ports.error(new Error(changedMove)); return; }
-    if (!answer.value) { ports.announce(`Cancelled moving ${change.label}`); return; }
-    const error = await changeNativeUrl(source.file, to, answer.option, openingSources);
-    if (error) ports.error(new Error(error));
+    if (indexed && since.holds()) { ports.error(new Error(indexed)); ports.refuse(indexed); return; }
+    const outcome = await ports.edits.run(async r => {
+      if (r.site()?.routes[source.route] !== source.file) return { refuse: changedMove };
+      if (parent === undefined) {
+        parent = await ports.picker()!.pick({ title: `Move ${source.label} to…`, items: nativeMoveChoices(source, r) });
+        if (parent === undefined) { cancelled = true; return { stayed: cancel }; }
+      }
+      const to = movedRoute(parent, source.route);
+      const planned = planNativeUrlChange(source.file!, to, r);
+      if (!planned.ok) return { refuse: planned.error };
+      try { await ports.readRedirects(); }
+      catch (error) { return { refuse: error instanceof Error ? error.message : `${NATIVE_REDIRECTS_PATH} could not be read.` }; }
+      // The entire plan is read before asking, including metadata and redirects.
+      const preview = urlChangePlan(r, planned.value, false);
+      const change = planned.value;
+      const answer = await ports.confirmation()!.choose({
+        title: `Move ${change.label} to ${to}?`,
+        notes: [`Its URL changes from ${change.from} to ${to}.`, describeUrlChange(change), ...change.move.warnings],
+        actions: [{ label: "Move", value: "move" }],
+        option: change.redirect.length ? { label: `Keep the old URL working (${change.from} redirects to ${to})`, checked: change.live } : undefined,
+      });
+      if (!answer.value) { cancelled = true; return { stayed: cancel }; }
+      return answer.option ? urlChangePlan(r, change, true) : preview;
+    }, { since, guard: () => fileKey() === key && targetDrafts(source) === drafts });
+    if (cancelled) { if (!outcome.ok) ports.announce(cancel); return; }
+    const error = message(outcome, changedMove);
+    if (error) { ports.error(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); }
   }
 
   async function moveNativePageTo(target: NativePagesTarget) {
     if (!ports.picker() || !target.file) return;
-    // The choices are labelled by page titles, which come with the site index.
-    let current = moveProof(target);
-    const problem = await ports.ensureIndex();
-    if (!current()) { ports.error(new Error(changedMove)); return; }
-    if (problem) { ports.error(new Error(problem)); return; }
-    current = moveProof(target);
-    const parent = await ports.picker()!.pick({ title: `Move ${target.label} to…`, items: nativeMoveChoices(target) });
-    if (!current()) { ports.error(new Error(changedMove)); return; }
-    if (parent === undefined) { ports.announce(`Cancelled moving ${target.label}`); return; }
-    await confirmNativeMove(target, parent);
+    const since = ports.edits.stamp();
+    await confirmNativeMove(target, undefined, since);
   }
 
   // ---- The explorer's Pages | Files | Images tabs and the Pages tree. ----
@@ -508,21 +470,21 @@ export function createPagesController(ports: PagesPorts) {
 
   // Typing in the Pages tab checks the target only; creating (`create`) needs
   // the home page's document read (siteReadForCreate) and makes the page from it.
-  function planNativeNew(request: NativeNewRequest, create = false): Checked<NativeNewPlan> {
-    const site = ports.site();
+  function planNativeNew(request: NativeNewRequest, create = false, r: Reads = ports.edits.peek): Checked<NativeNewPlan> {
+    const site = r.site();
     if (!site || !ports.hasDraftScope()) return { ok: false, error: "Open a native site first." };
     const title = request.title.trim();
     if (!title) return { ok: false, error: "Enter the page's title." };
     if (!request.slug.trim()) return { ok: false, error: "The title gives no URL: add letters or digits, or change the URL." };
     const target = nativeNewTarget(request.parent, request.slug, {
       route: (route) => site.routes[route],
-      exists: (path) => ports.exists(path),
+      exists: (path) => r.exists(path),
     });
     if (!target.ok) return target;
-    const template = nativeHomeTemplate();
+    const template = site ? r.source(site.routes["/"]) : undefined;
     if (!create) return { ok: true, value: { ...target.value, title, content: "" } };
     if (template === undefined) return { ok: false, error: NATIVE_HOME_UNREAD };
-    return { ok: true, value: { ...target.value, title, content: nativePageTemplate(template, title, nativeAddress(target.value.route)) } };
+    return { ok: true, value: { ...target.value, title, content: nativePageTemplate(template, title, address(target.value.route, r)) } };
   }
 
   // The home page's document, which new pages copy (its stylesheets, scripts,
@@ -554,63 +516,69 @@ export function createPagesController(ports: PagesPorts) {
   // Creates a new page as a new draft; routes are found again, the tree drawn
   // and the page opened (the explorer closes). Undo in the editor right after
   // takes it back, as Discard changes on the new file does.
-  async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
-    // The page is made from the home page's document, so that is read first.
-    const unread = await ports.siteReadForCreate();
-    if (unread) return unread;
-    const planned = planNativeNew(request, true);
-    if (!planned.ok) return planned.error;
-    const plan = planned.value;
-    const epoch = ports.generation(), scope = ports.scope();
-    const expectedSources = new Map([...nativeSitePaths(ports.site()!)].map((path) => [path, ports.source(path)] as const));
-    // With its card in the grid that lists its siblings: the page made from a sibling's, as one operation.
-    if (request.addCard) {
-      const withCard = ports.createWithCard(request);
-      if (withCard) return withCard;
-    }
-    if (request.addToNavigation && request.parent === "/") {
-      const problem = await ports.ensureIndex();
-      if (problem) return problem;
-      if (epoch !== ports.generation() || scope !== ports.scope() || [...expectedSources].some(([path, source]) => ports.source(path) !== source)) return "The page template or repository changed. Create the page again.";
-      const nav = ports.navigationTarget(ports.site()?.routes["/"]);
-      if (!nav) return "No editable header navigation found. Uncheck Add to navigation to create only the page.";
-      let navigation: string;
-      try { navigation = editNavigation(nav.source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }]); }
-      catch (error) { return error instanceof Error ? error.message : "Navigation could not be changed."; }
-      // For a plain header, copy its updated navigation to the new page as well.
-      let page = plan.content;
-      if (!nav.shared) {
-        const list = readNavigation(page);
-        if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }]);
-      }
-      return ports.operation({ expectedSources, creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file, done: `Created ${plan.title} and added it to navigation as drafts.`, undone: `Undid creating ${plan.title} and adding it to navigation.` });
-    }
-    return ports.commitPage({ file: plan.file, route: plan.route, title: plan.title, content: plan.content, done: `Created the page ${plan.title} at ${plan.route}.` });
+  function address(route: string, r: Reads) {
+    return nativePageUrl(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url, route);
   }
 
-  // A URL with subpages and no page of its own gets its page, `index.html` in
-  // its folder, made like a new page.
-  async function createNativeFolderPage(route: string) {
-    if (!ports.site() || !ports.hasDraftScope()) return;
-    // Made from the home page's document, so that is read first.
+  async function createNativeNew(request: NativeNewRequest): Promise<string | undefined> {
+    const since = ports.edits.stamp();
     const unread = await ports.siteReadForCreate();
+    if (!since.holds()) return "The page template or repository changed. Create the page again.";
+    if (unread) return unread;
+    if (request.addCard) { const withCard = ports.createWithCard(request); if (withCard) return withCard; }
+    const outcome = await ports.edits.run(async r => {
+      const planned = planNativeNew(request, true, r);
+      if (!planned.ok) return { refuse: planned.error };
+      const plan = planned.value;
+      if (request.addToNavigation && request.parent === "/") {
+        const problem = await ports.ensureIndex();
+        if (problem) return { refuse: problem };
+        const nav = ports.navigationTarget(r.site()?.routes["/"], r);
+        if (!nav) return { refuse: "No editable header navigation found. Uncheck Add to navigation to create only the page." };
+        const source = r.source(nav.path);
+        if (source === undefined) return { refuse: "Navigation could not be read." };
+        let navigation: string, page = plan.content;
+        try {
+          navigation = editNavigation(source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }]);
+          if (!nav.shared) {
+            const list = readNavigation(page);
+            if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }]);
+          }
+        } catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
+        return { creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file,
+          done: `Created ${plan.title} and added it to navigation as drafts.`, undone: `Undid creating ${plan.title} and adding it to navigation.` };
+      }
+      return { creates: [{ path: plan.file, content: plan.content }], open: plan.file,
+        done: `Created the page ${plan.title} at ${plan.route}.`, undone: `Undid creating the page ${plan.title}.` };
+    }, { since });
+    return message(outcome, "The page template or repository changed. Create the page again.");
+  }
+
+  async function createNativeFolderPage(route: string) {
+    const since = ports.edits.stamp();
+    if (!ports.site() || !ports.hasDraftScope()) return;
+    const unread = await ports.siteReadForCreate();
+    if (!since.holds()) { ports.error(new Error("The repository changed meanwhile. Try again.")); return; }
     if (unread) { ports.error(new Error(unread)); return; }
-    const site = ports.site();
-    if (!site || !ports.hasDraftScope()) return;
     const file = nativeRouteFile(route);
-    // Its page deleted in the drafts: Create page brings it back.
-    if (ports.drafts().find((draft) => draft.path === file)?.deleted) { ports.restoreDeleted(file); return; }
-    if (site.routes[route] || ports.exists(file)) { ports.error(new Error(`The URL ${route} has a page already.`)); return; }
-    const title = routeHeading(route);
-    const content = nativePageTemplate(nativeHomeTemplate(), title, nativeAddress(route));
-    const error = await ports.commitPage({ file, route, title, content, done: `Created the page ${title} at ${route}.` });
+    if (ports.drafts().find(draft => draft.path === file)?.deleted) { ports.restoreDeleted(file); return; }
+    const outcome = await ports.edits.run(r => {
+      const site = r.site();
+      if (!site || !ports.hasDraftScope()) return { refuse: "Open a native site first." };
+      if (site.routes[route] || r.exists(file)) return { refuse: `The URL ${route} has a page already.` };
+      const template = r.source(site.routes["/"]);
+      if (template === undefined) return { refuse: NATIVE_HOME_UNREAD };
+      const title = routeHeading(route), content = nativePageTemplate(template, title, address(route, r));
+      return { creates: [{ path: file, content }], open: file, done: `Created the page ${title} at ${route}.`, undone: `Undid creating the page ${title}.` };
+    }, { since });
+    const error = message(outcome, "The repository changed meanwhile. Try again.");
     if (error) ports.error(new Error(error));
   }
 
   return { retitle: retitleNativePage, duplicate: duplicateNativePage, remove: removeNativePagesTarget,
     urlPlan: nativeUrlPlan, changeUrl: changeNativeUrl, moveChoices: nativeMoveChoices,
     dropProblem: nativeDropProblem, confirmMove: confirmNativeMove, moveTo: moveNativePageTo,
-    linkSources: nativeLinkSources, onBranchHere, deleteDraftStamp: deleteTargetDraftStamp,
+    linkSources: nativeLinkSources, onBranchHere,
     explorerTab: () => explorerTab, selectTab: selectExplorerTab, updateTabs: updateExplorerTabs, renderTree: renderPagesTree,
     planNew: planNativeNew, homeTemplate: nativeHomeTemplate, address: nativeAddress, pageLabel: nativePageLabelOf,
     createNew: createNativeNew, createFolderPage: createNativeFolderPage };
