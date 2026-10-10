@@ -233,3 +233,16 @@ test("a text-only collection item keeps its existing title fill without adding a
     markup: "<li>Oak</li>", added: false,
   });
 });
+
+test("a link around the card's heading is pointed at the page, never nested; a bare href is filled too", () => {
+  assert.deepEqual(itemFill('<article><a href="https://example.org/"><h3>New card</h3></a></article>', "card", "Oak", "/work/oak/"), {
+    markup: '<article><a href="/work/oak/"><h3>Oak</h3></a></article>', added: true,
+  });
+  assert.deepEqual(itemFill('<article><h3><a class="t" href>New card</a></h3></article>', "card", "Oak", "/work/oak/"), {
+    markup: '<article><h3><a class="t" href="/work/oak/">Oak</a></h3></article>', added: true,
+  });
+  // A heading with more than its link becomes one link of the page's title.
+  assert.deepEqual(itemFill('<article><h3><a href="#x">Old</a> and more</h3></article>', "card", "Oak", "/work/oak/"), {
+    markup: '<article><h3><a href="/work/oak/">Oak</a></h3></article>', added: true,
+  });
+});

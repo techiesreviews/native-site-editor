@@ -395,18 +395,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
         look: lookChip(entry),
         note: notShownNote(entry),
         focusLook,
-        onPick: (page) => void fill(entry, page.route),
-        onCreate: async (offer) => {
-          if (entry.filling) return;
-          entry.filling = true;
-          let filled: CardFilled | undefined;
-          try {
-            filled = await handlers.createPage(entry.card, offer.request, entry.filled?.base);
-          } finally {
-            entry.filling = false;
-          }
-          if (filled && linker === entry) filledWith(entry, filled);
-        },
+        onPick: (page) => void fill(entry, () => handlers.fillCard(entry.card, page.route, entry.filled?.base)),
+        onCreate: (offer) => void fill(entry, () => handlers.createPage(entry.card, offer.request, entry.filled?.base)),
         onEscape: () => {
           // From Change page, Esc goes back to the strip; on a blank card it closes.
           if (entry.filled) { showStrip(entry, entry.filled); return; }
@@ -418,17 +408,26 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     }).catch(() => { if (linker === entry) linker = undefined; });
   }
 
-  async function fill(entry: Linker, route: string) {
+  async function fill(entry: Linker, run: () => CardFilled | undefined | Promise<CardFilled | undefined>) {
     // Its own edit is not a change to the card that drops the strip (sourcesChanged).
     if (entry.filling) return;
     entry.filling = true;
     let filled: CardFilled | undefined;
     try {
-      filled = await handlers.fillCard(entry.card, route, entry.filled?.base);
+      filled = await run();
     } finally {
       entry.filling = false;
     }
-    if (filled && linker === entry) filledWith(entry, filled);
+    if (linker !== entry) return;
+    if (filled) filledWith(entry, filled);
+    // A change to the card while a fill that did not land was loading is seen now.
+    else dropStale();
+  }
+
+  /** A filled or swapped card that is not as it was written (undone, edited) drops its strip. */
+  function dropStale() {
+    const written = linker?.filled?.filled ?? linker?.swapped;
+    if (linker && written !== undefined && !linker.filling && handlers.cardText(linker.card) !== written) closeLinker();
   }
 
   function filledWith(entry: Linker, filled: CardFilled) {
@@ -591,8 +590,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     sourcesChanged() {
       gallery?.view?.refresh();
       looksMenu?.view?.refresh();
-      const written = linker?.filled?.filled ?? linker?.swapped;
-      if (linker && written !== undefined && !linker.filling && handlers.cardText(linker.card) !== written) closeLinker();
+      dropStale();
     },
     /** The site's scripts were read late: the looks follow (those the scripts set are none). */
     refreshLooks() {

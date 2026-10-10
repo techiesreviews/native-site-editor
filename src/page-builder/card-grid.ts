@@ -361,23 +361,33 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
   return applyEdits(source.slice(item.start, item.end), own);
 }
 
-/** Fill a placed plain card; its own page link was emptied by Add card. */
+/**
+ * A placed plain card filled from a page (`title`, `href`): its own page
+ * link, emptied by Add card, takes the address (itemCopy). Without one, the
+ * link is added (spec decision 3, no class; the site's card rule stretches
+ * it): a link around the heading, or one that is the heading's whole content,
+ * is pointed at the page; else the heading's text becomes a link.
+ */
 export function itemFill(card: string, noun: string, title: string, href: string): { markup: string; added: boolean } | undefined {
   const root = elementTree(card)?.[0];
-  if (!root) return undefined;
-  const linked = allElements([root]).some(element => element.name === "a" && attribute(card, element, "href")?.trim() === "");
-  const markup = itemCopy(card, root, { noun, title, href, isLinked: value => !value.trim() });
-  if (markup === undefined) return undefined;
-  if (linked) return { markup, added: false };
-  const item = elementTree(markup)?.[0];
-  const heading = item && titleLeaf(markup, item);
+  const markup = root && itemCopy(card, root, { noun, title, href, isLinked: value => !value.trim() });
+  const item = markup === undefined ? undefined : elementTree(markup)?.[0];
+  if (markup === undefined || !item) return undefined;
+  const links = allElements([item]).filter(element => element.name === "a");
+  if (links.some(link => attribute(markup, link, "href") === href)) return { markup, added: false };
+  const heading = titleLeaf(markup, item);
   // Collections also accept text-only items; keep their existing copy fill.
   if (!heading || !/^h[1-6]$/.test(heading.name)) return { markup, added: false };
-  const anchor = heading.children.length === 1 && heading.children[0].name === "a" ? heading.children[0] : undefined;
-  const text = escapeText(title);
-  const edits = anchor
-    ? [hrefEdit(startTagAttribute(markup, anchor.tag, "href") ?? { start: anchor.tag.end - 1, end: anchor.tag.end - 1 }, href), { start: anchor.innerStart, end: anchor.innerEnd, text }]
-    : [{ start: heading.innerStart, end: heading.innerEnd, text: `<a href="${escapeAttribute(href)}">${text}</a>` }];
+  const around = links.find(link => link.start <= heading.start && heading.end <= link.end);
+  const only = heading.children.length === 1 && heading.children[0].name === "a" && !plainText(markup.slice(heading.innerStart, heading.children[0].start) + markup.slice(heading.children[0].end, heading.innerEnd))
+    ? heading.children[0] : undefined;
+  const link = around ?? only;
+  const pointed = (anchor: SourceElement): Edit => {
+    const old = startTagAttribute(markup, anchor.tag, "href");
+    return old ? hrefEdit(old, href) : { start: anchor.tag.end - 1, end: anchor.tag.end - 1, text: ` href="${escapeAttribute(href)}"` };
+  };
+  // itemCopy already gave the heading (or its whole link) the page's title.
+  const edits = link ? [pointed(link)] : [{ start: heading.innerStart, end: heading.innerEnd, text: `<a href="${escapeAttribute(href)}">${escapeText(title)}</a>` }];
   return { markup: applyEdits(markup, edits), added: true };
 }
 

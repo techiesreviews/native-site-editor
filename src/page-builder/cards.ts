@@ -418,14 +418,25 @@ export function createCards(deps: CardsDeps) {
     const plainFill = () => (fill.edit.text === fill.source.slice(fill.edit.start, fill.edit.end) ||
       deps.change(card.path, fill.source, [fill.edit], card.node, message) ? fill.result : undefined);
     if (!fill.host) return plainFill();
-    return hostCss(fill).then(css => css === undefined ? plainFill() : fillOperation(card, fill, css, [], message).then(ok => ok ? fill.result : undefined));
+    return hostCss(card, fill).then(css => css === null ? undefined : css === undefined ? plainFill() : fillOperation(card, fill, css, [], message).then(ok => ok ? fill.result : undefined));
   }
 
   type Fill = NonNullable<ReturnType<typeof fillFrom>>;
 
-  /** The component's CSS with `:host { position: relative; }` (card-link-css.ts, loaded only here), when it lacks it. */
-  async function hostCss(fill: Fill): Promise<{ path: string; before?: string; after: string } | undefined> {
+  /**
+   * The component's CSS with `:host { position: relative; }` (card-link-css.ts,
+   * loaded only here) when it lacks it; null, refused, when the site, the
+   * editor or any file the fill read changed while it loaded.
+   */
+  async function hostCss(card: NewCard, fill: Fill): Promise<{ path: string; before?: string; after: string } | undefined | null> {
+    const site = deps.site();
+    const editor = deps.editor();
     const { cardLinkCss } = await import("./card-link-css");
+    const read = new Map([...fill.expectedSources, ...(fill.host ? [[fill.host.path, fill.host.before] as const] : [])]);
+    if (deps.site() !== site || deps.editor() !== editor || !editor?.isMounted(card.path) || [...read].some(([path, text]) => deps.source(path) !== text)) {
+      refuse("The page changed meanwhile; choose the page again.");
+      return null;
+    }
     if (!fill.host) return undefined;
     const after = cardLinkCss(fill.host.before);
     return after === fill.host.before ? undefined : { ...fill.host, after };
@@ -495,9 +506,11 @@ export function createCards(deps: CardsDeps) {
     if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) { refuse(`Nothing on this ${fill.noun} takes a page's title or address.`); return undefined; }
     const file = target.value.file;
     if (!fill.host) return createWithCompanion(card, fill, file, content);
-    return hostCss(fill).then(css => {
+    // The new page is made from these: they are proved unchanged across the wait too.
+    for (const [path, source] of inputs) fill.expectedSources.set(path, source);
+    return hostCss(card, fill).then(css => {
+      if (css === null) return undefined;
       if (!css) return createWithCompanion(card, fill, file, content);
-      for (const [path, source] of inputs) fill.expectedSources.set(path, source);
       const done = `Created the page ${fill.result.title} at ${fill.result.route} and filled the ${fill.noun} from it`;
       return fillOperation(card, fill, css, [{ path: file, content }], done).then(ok => ok ? fill.result : undefined);
     });
