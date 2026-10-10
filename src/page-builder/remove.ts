@@ -39,7 +39,7 @@ export function templateRemoval(source: string, node: readonly number[], files: 
   const slot = parent?.element.name === "slot" && elements(parent.element.children).length === 1 ? parent : undefined;
   const removed = slot?.element ?? target;
   const slots = [...descendants([removed])].filter(element => element.name === "slot")
-    .map(element => (startTagAttribute(source, element.tag, "name")?.value ?? "").trim());
+    .map(element => startTagAttribute(source, element.tag, "name")?.value ?? "");
   const edit = removeEdit(source, removed);
   const template = source.slice(0, edit.start) + source.slice(edit.end);
   const following = { ...files };

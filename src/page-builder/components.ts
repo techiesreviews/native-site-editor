@@ -379,7 +379,7 @@ export function createComponentTools(deps: ComponentDeps) {
     // With `around`, the instance the selection sits in, not the selection itself.
     for (let depth = chain.length - (around ? 2 : 1); depth >= 0; depth--) {
       if (!isComponent(chain[depth].localName)) continue;
-      const within = depth < chain.length - 1 ? (chain[depth + 1].getAttribute("slot") ?? "").trim() : undefined;
+      const within = depth < chain.length - 1 ? chain[depth + 1].getAttribute("slot") ?? "" : undefined;
       return instanceAt(selection.path, selection.node.slice(0, depth + 1), within);
     }
     return undefined;

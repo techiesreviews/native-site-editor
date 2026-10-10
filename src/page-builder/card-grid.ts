@@ -280,7 +280,7 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
   const leaves = textLeaves(source, [item]);
   const titleAt = titleLeaf(source, item, leaves);
   const oldTitle = titleAt ? plainText(source.slice(titleAt.innerStart, titleAt.innerEnd)) : undefined;
-  const slotOf = (leaf: SourceElement) => attribute(source, leaf, "slot")?.trim();
+  const slotOf = (leaf: SourceElement) => attribute(source, leaf, "slot");
   const titleText = options.title?.trim()
     || (titleAt && slotOf(titleAt) && options.fallbacks?.[slotOf(titleAt)!])
     || `New ${options.noun}`;
@@ -441,7 +441,7 @@ export function pageBodyCopy(source: string, main: { start: number; end: number 
       return;
     }
     // Text a page puts in a component's slot resets to the component's own fallback.
-    const slot = attribute(source, leaf, "slot")?.trim();
+    const slot = attribute(source, leaf, "slot");
     const host = parents.get(leaf);
     const fallback = slot && host?.name.includes("-") ? options.fallback?.(host.name, slot) : undefined;
     replaced.push({ start: leaf.innerStart, end: leaf.innerEnd, text: escapeText(fallback ?? placeholderFor(leaf.name, "page", options.title)) });
@@ -479,7 +479,7 @@ export function slotFallbacks(template: string): { fallbacks: Record<string, str
   const fallbacks: Record<string, string> = {};
   for (const tag of startTags(template)) {
     if (tag.name !== "slot") continue;
-    const name = startTagAttribute(template, tag, "name")?.value.trim();
+    const name = startTagAttribute(template, tag, "name")?.value;
     if (!name) continue;
     const close = template.toLowerCase().indexOf("</slot", tag.end);
     const text = close < 0 ? "" : plainText(template.slice(tag.end, close));

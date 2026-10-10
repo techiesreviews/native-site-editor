@@ -2,9 +2,14 @@
 // Vite bundles it with the rules it imports into one IIFE
 // (vite-preview-runtime.ts): in dev, in the test server and in the build.
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
+import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
+import { domView } from "../page-builder/rules/tree.ts";
 
 (function () {
+  // The page and templates as the shared rules read them (rules/tree.ts):
+  // the runtime's own injected styles are not there.
+  var ruleView = domView(injectedStyle);
   var state = null;
   var defined = {};
   var shadowRoots = new Set();
@@ -1002,23 +1007,10 @@ import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts
   function dropSealed(el) {
     return el.localName.indexOf("-") >= 0 || ["template", "noscript", "xmp", "noembed", "noframes", "svg", "math"].indexOf(el.localName) >= 0;
   }
-  // What counts in a template: elements and text that is not white space.
-  function dropMeaningful(nodes) {
-    return Array.prototype.filter.call(nodes, function (n) {
-      return n.nodeType === 1 ? !injectedStyle(n) : n.nodeType === 3 && /[^\t\n\f\r ]/.test(n.textContent);
-    });
-  }
-  function dropHeading(n) { return n && n.nodeType === 1 && /^h[1-6]$/.test(n.localName); }
-  // A card component: a card-… instance whose template (its shadow root) has
-  // a heading slot, a slot holding a heading or a heading's only content
-  // (component-model.ts isCardComponent and hasHeadingSlot).
-  function dropCard(el) {
-    if (el.nodeType !== 1 || el.localName.indexOf("card-") !== 0 || !el.shadowRoot) return false;
-    return Array.prototype.some.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
-      var inside = dropMeaningful(slot.childNodes);
-      var parent = slot.parentNode;
-      return (inside.length === 1 && dropHeading(inside[0])) || (dropHeading(parent) && dropMeaningful(parent.childNodes).length === 1);
-    });
+  // A card component instance: a card-… element whose template (its shadow
+  // root) has a heading slot (rules/cards.ts, as component-model.ts reads it).
+  function isCardElement(el) {
+    return el.nodeType === 1 && isCardTag(el.localName) && !!el.shadowRoot && hasHeadingSlot(ruleView.children(el.shadowRoot), ruleView);
   }
   // What an empty slot sits between in its parent, shown: the boxes before
   // and after it (a sibling slot by what it shows). None when it is alone.
@@ -1040,20 +1032,19 @@ import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts
     if (next) out.next = next;
     return out;
   }
-  function dropItemsSlot(slot) {
-    var fallback = dropMeaningful(slot.childNodes);
-    return !slot.name || (fallback.length > 0 && fallback.every(dropCard));
+  // An items slot: the unnamed one, or a card slot (rules/cards.ts).
+  function itemsSlot(slot) {
+    return isItemsSlot(slot.name, ruleView.children(slot), ruleView, isCardElement);
   }
   function dropItem(el) {
     var parent = el.parentElement;
-    return !!(parent && parent.localName.indexOf("-") >= 0 && parent.shadowRoot && el.assignedSlot && dropItemsSlot(el.assignedSlot));
+    return !!(parent && parent.localName.indexOf("-") >= 0 && parent.shadowRoot && el.assignedSlot && itemsSlot(el.assignedSlot));
   }
   function dropSlots(el) {
     return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
       var name = slot.getAttribute("name") || "";
       var assigned = slot.assignedElements().filter(function (child) { return child.parentElement === el && !injectedStyle(child); });
-      // An items slot: the unnamed one, or one whose fallback is card components only.
-      var items = dropItemsSlot(slot);
+      var items = itemsSlot(slot);
       var parentEl = slot.parentElement || el;
       var hidden = getComputedStyle(slot).display === "none" || parentEl.closest("[data-native-empty]");
       var own = dropUnion(assigned.length ? assigned : Array.prototype.slice.call(slot.childNodes));
@@ -1163,7 +1154,7 @@ import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts
     function templateDropContainers(host, moved) {
       var tag = host.localName;
       function slotInfo(slot) {
-        var name = (slot.getAttribute("name") || "").trim();
+        var name = slot.getAttribute("name") || "";
         return { name: name, items: !name };
       }
       var isItems = function (el) { return el.localName === "slot" && slotInfo(el).items; };
@@ -1356,12 +1347,11 @@ import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts
     var run = repeatedRun(kinds);
     return run ? run.indexes.map(function (i) { return children[i]; }) : null;
   }
-  // An instance's card slot (src/page-builder/card-slot.ts): an items slot
-  // whose fallback is card components only. Its items are a grid however
-  // few they are, none included, since Add card adds the fallback's card.
-  function cardSlot(slot) {
-    var fallback = dropMeaningful(slot.childNodes);
-    return fallback.length > 0 && fallback.every(dropCard);
+  // An instance's card slot (rules/cards.ts, src/page-builder/card-slot.ts):
+  // its items are a grid however few they are, none included, since Add card
+  // adds the fallback's card.
+  function isCardSlotElement(slot) {
+    return isCardSlot(slot, ruleView, isCardElement);
   }
   function cardSlotItems(host, slot) {
     return slot.assignedElements().filter(function (child) { return child.parentElement === host && !injectedStyle(child); });
@@ -1377,10 +1367,10 @@ import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts
     while (pageEl && current && current !== pageEl) {
       var host = current.parentElement;
       var assigned = current.assignedSlot;
-      if (host && assigned && pageEl.contains(host) && cardSlot(assigned))
+      if (host && assigned && pageEl.contains(host) && isCardSlotElement(assigned))
         return { container: host, item: current, items: cardSlotItems(host, assigned), slot: assigned };
       if (current.shadowRoot && pageEl.contains(current)) {
-        var slots = Array.prototype.filter.call(current.shadowRoot.querySelectorAll("slot"), cardSlot);
+        var slots = Array.prototype.filter.call(current.shadowRoot.querySelectorAll("slot"), isCardSlotElement);
         var empty = slots.filter(function (slot) { return !cardSlotItems(current, slot).length; })[0];
         var chosen = current === el || fromTemplate ? nearestCardSlot(current, slots, point) : empty;
         if (chosen) {
@@ -1407,7 +1397,7 @@ import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts
     var bestDistance = Infinity;
     slots.forEach(function (slot) {
       var wrapper = slot.parentElement;
-      var own = wrapper && Array.prototype.filter.call(wrapper.querySelectorAll("slot"), cardSlot).length === 1;
+      var own = wrapper && Array.prototype.filter.call(wrapper.querySelectorAll("slot"), isCardSlotElement).length === 1;
       var area = own ? dropRect(wrapper) : dropUnion(cardSlotItems(host, slot));
       if (!area || !area.width || !area.height) return;
       var dx = Math.max(area.left - point.x, 0, point.x - area.left - area.width);

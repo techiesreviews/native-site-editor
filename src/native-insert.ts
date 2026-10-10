@@ -42,7 +42,7 @@ export function slotMarkup(template: string) {
   const out: string[] = [];
   for (const match of template.matchAll(/<slot\b([^>]*)>([\s\S]*?)<\/slot\s*>/gi)) {
     const name = /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(match[1]);
-    const slot = (name?.[1] ?? name?.[2] ?? name?.[3] ?? "").trim();
+    const slot = name?.[1] ?? name?.[2] ?? name?.[3] ?? "";
     const text = withoutDataKeys(match[2].replace(COMMENTS, "").trim().replace(/\s+/g, " "));
     if (!text || !slot) continue;
     const first = startTags(text)[0];

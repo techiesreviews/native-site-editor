@@ -463,7 +463,7 @@ export function nativeOutline(source: string): NativeOutline | undefined {
     const className = tag ? decodeHtmlEntities(startTagAttribute(open, tag, "class")?.value ?? "", true) : "";
     const heading = node.name === "section" ? node.children.find(child => /^h[1-6]$/.test(child.name)) : undefined;
     const out: NativeOutline = { name: node.name, className, slot: node === root ? "" : slotOf(source, node), opaque: Boolean(node.opaque), heading: heading ? text(heading) : "", children: [], parent };
-    if (node.name === "slot" && (node.namespace ?? "html") === "html" && tag) out.slotName = decodeHtmlEntities(startTagAttribute(open, tag, "name")?.value ?? "", true).trim();
+    if (node.name === "slot" && (node.namespace ?? "html") === "html" && tag) out.slotName = decodeHtmlEntities(startTagAttribute(open, tag, "name")?.value ?? "", true);
     out.children = node.children.map(child => map(child, out));
     return out;
   };

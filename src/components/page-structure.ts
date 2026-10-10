@@ -800,10 +800,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const missing = slotModel ? slotModel.slots.filter(slot => !slot.assignedNodes.length) : [];
     const slotOrder = (name: string) => { const at = slotModel!.slots.findIndex(slot => slot.name === name); return at < 0 ? slotModel!.slots.length : at; };
     for (const child of children) {
-      while (missing.length && slotOrder(child.slot.trim()) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
+      while (missing.length && slotOrder(child.slot) > slotOrder(missing[0].name)) group.append(...slotOnlyRow(slotModel!, missing.shift()!, level + 1));
       const slot = slotModel?.slots.find(slot => slot.assignedNodes.some(node => key([...node]) === key(child.node)));
       const anchor = slot && item.children.find(candidate => slot.assignedNodes.some(node => key([...node]) === key(candidate.node)))?.node;
-      const items = Boolean(component) && Boolean(itemsSlot?.(item.tag, child.slot.trim()));
+      const items = Boolean(component) && Boolean(itemsSlot?.(item.tag, child.slot));
       group.append(...row(child, level + 1, childInMain, slot && anchor && slotModel ? { model: slotModel, slot, anchor } : undefined, sealed || (Boolean(component) && !items), modeRows ?? template));
     }
     for (const slot of missing) group.append(...slotOnlyRow(slotModel!, slot, level + 1));

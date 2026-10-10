@@ -95,7 +95,7 @@ export function readCardContent(card: string, template: string, byName: Readonly
   const fills = new Map<string, SourceNode[]>();
   for (const node of root.children) {
     if (blank(card, node)) continue;
-    const name = node.type === "element" ? (attribute(card, node, "slot") ?? "").trim() : "";
+    const name = node.type === "element" ? attribute(card, node, "slot") ?? "" : "";
     fills.set(name, [...(fills.get(name) ?? []), node]);
   }
   for (const [name, nodes] of fills) {

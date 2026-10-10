@@ -83,6 +83,6 @@ test("a slot name with spaces still finds every page's fill", () => {
   const spaced = '<section><slot name=" title "><h1>T</h1></slot><p>Fixed</p></section>';
   const page = '<main><section-hero><h1 slot=" title ">Home</h1></section-hero></main>';
   const plan = templateRemoval(spaced, [0, 0, 0], { "index.html": page }, "section-hero")!;
-  assert.deepEqual(plan.slots, ["title"]);
+  assert.deepEqual(plan.slots, [" title "]);
   assert.equal(plan.pages.get("index.html"), "<main><section-hero></section-hero></main>");
 });

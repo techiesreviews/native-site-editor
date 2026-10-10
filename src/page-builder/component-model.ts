@@ -20,6 +20,8 @@
 import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 import { CARD_ITEM_TAGS, itemKind } from "./rules/items";
 import { decodeHtmlEntities } from "./html-entities";
+import { hasHeadingSlot as headingSlotIn, isCardTag, isItemsSlot } from "./rules/cards";
+import type { RuleView } from "./rules/tree";
 import type { NativeStructureItem } from "../components/native-preview";
 
 export interface TemplateStructureItem extends NativeStructureItem {
@@ -244,6 +246,20 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
 }
 
 const elements = (nodes: SourceNode[]) => nodes.filter((node): node is SourceElement => node.type === "element");
+
+/**
+ * `html`'s source tree as the shared rules read it (src/page-builder/rules/):
+ * text decoded, a `<template>`'s content not its children, as in the DOM.
+ */
+export function sourceView(html: string): RuleView<SourceNode> {
+  return {
+    kind: (node) => node.type,
+    name: (node) => (node.type === "element" ? node.name : ""),
+    children: (node) => (node.type === "element" && node.name !== "template" ? node.children : []),
+    text: (node) => (node.type === "text" ? decodeHtmlEntities(html.slice(node.start, node.end)) : ""),
+    parent: (node) => node.parent,
+  };
+}
 
 export function* descendants(nodes: SourceNode[]): Generator<SourceElement> {
   for (const node of nodes) {
@@ -509,21 +525,14 @@ export interface TemplateSlot {
 /** A component's template by its tag; undefined when the site has no such component. */
 export type TemplateOf = (tag: string) => string | undefined;
 
-/** A card component: a `card-…` component whose template has a heading slot (ticket 09 rule 9). */
+/** A card component: a `card-…` component whose template has a heading slot (ticket 09 rule 9; rules/cards.ts). */
 export function isCardComponent(tag: string, templateOf: TemplateOf) {
-  const template = tag.startsWith("card-") ? templateOf(tag) : undefined;
+  const template = isCardTag(tag) ? templateOf(tag) : undefined;
   return template !== undefined && hasHeadingSlot(template);
 }
 
-/**
- * Whether `nodes` are card component instances only, at least one. Text in
- * between counts as the preview's drop report reads it (character references
- * decoded, only ASCII white space blank).
- */
-function cardsOnly(html: string, nodes: SourceNode[], templateOf: TemplateOf) {
-  const parts = nodes.filter((node) => node.type !== "text" || /[^\t\n\f\r ]/.test(decodeHtmlEntities(html.slice(node.start, node.end))));
-  return parts.length > 0 && parts.every((node) => node.type === "element" && isCardComponent(node.name, templateOf));
-}
+/** Whether a source node is a card component instance: the shared rules' `isCard` in the editor. */
+export const isCardNode = (templateOf: TemplateOf) => (node: SourceNode) => node.type === "element" && isCardComponent(node.name, templateOf);
 
 /** What a run of content is: a text line, an image, a link, or anything else. */
 function contentKind(html: string, nodes: SourceNode[]): SlotKind | undefined {
@@ -563,7 +572,7 @@ export function templateSlots(template: string, templateOf: TemplateOf = () => u
   const seen = new Set<string>();
   for (const el of descendants(parseSource(template))) {
     if (el.name !== "slot") continue;
-    const name = (attribute(template, el, "name") ?? "").trim();
+    const name = attribute(template, el, "name") ?? "";
     if (seen.has(name)) continue;
     seen.add(name);
     const fallback = el.close ? template.slice(el.tag.end, el.close.start) : "";
@@ -574,7 +583,7 @@ export function templateSlots(template: string, templateOf: TemplateOf = () => u
       fallback,
       kind: contentKind(template, el.children) ?? slotKindFromName(name),
       ...(forward ? { forward } : {}),
-      items: !name || cardsOnly(template, el.children, templateOf),
+      items: isItemsSlot(decodeHtmlEntities(name, true), el.children, sourceView(template), isCardNode(templateOf)),
     });
   }
   return out;
@@ -604,7 +613,7 @@ export function readInstance(source: string, range: InstanceRange): Instance {
   const children = range.close ? meaningful(source, parseSource(source, range.tag.end, range.close.start)) : [];
   const fills = new Map<string, SourceNode[]>();
   for (const child of children) {
-    const name = child.type === "element" ? (attribute(source, child, "slot") ?? "").trim() : "";
+    const name = child.type === "element" ? attribute(source, child, "slot") ?? "" : "";
     fills.set(name, [...(fills.get(name) ?? []), child]);
   }
   return { tag: range.tag.name, range, children, fills, attributes: startTagAttributes(source, range.tag) };
@@ -629,10 +638,10 @@ function shownSlots(template: string, filled: ReadonlySet<string>, hostHasConten
   const section = isSectionTemplate(template);
   const slots = new Map<string, SourceElement>();
   for (const el of descendants(tree)) if (el.name === "slot") {
-    const name = (attribute(template, el, "name") ?? "").trim();
+    const name = attribute(template, el, "name") ?? "";
     if (!slots.has(name)) slots.set(name, el);
   }
-  const nameOf = (slot: SourceElement) => (attribute(template, slot, "name") ?? "").trim();
+  const nameOf = (slot: SourceElement) => attribute(template, slot, "name") ?? "";
   const assigned = (name: string) => slots.has(name) && filled.has(name);
   const unmet = (slot: SourceElement) => section && hostHasContent && !assigned(nameOf(slot));
   const hasFallback = (slot: SourceElement) => meaningful(template, slot.children).length > 0;
@@ -863,7 +872,7 @@ export function fillInsertEdit(source: string, instance: Instance, slots: Templa
   const target = order(slotName);
   const newline = lineEnding(source);
   const placed = instance.children.filter((child): child is SourceElement => child.type === "element");
-  const nameOf = (el: SourceElement) => (attribute(source, el, "slot") ?? "").trim();
+  const nameOf = (el: SourceElement) => attribute(source, el, "slot") ?? "";
   if (!instance.children.length) {
     if (!/</.test(markup)) return { start: range.tag.end, end: range.close.start, text: markup };
     const indent = indentOf(source, range.start);
@@ -1143,7 +1152,7 @@ export function detachMarkup(source: string, template: string, instance: Instanc
     if (node.type === "text") return template.slice(node.start, node.end);
     if (hidden(node)) return REMOVED;
     if (node.name === "slot") {
-      const name = (attribute(template, node, "name") ?? "").trim();
+      const name = attribute(template, node, "name") ?? "";
       const pass = attribute(template, node, "slot") ?? forward;
       const fill = instance.fills.get(name);
       if (fill?.length) {
@@ -1507,9 +1516,9 @@ export function slotChipState(template: string, path: readonly number[], templat
   if (chain.slice(at + 1, -1).some((el) => el.name.includes("-"))) return undefined;
   if (at >= 0) {
     const slot = chain[at];
-    const name = (attribute(template, slot, "name") ?? "").trim();
+    const name = attribute(template, slot, "name") ?? "";
     const where = path.slice(0, at + 1);
-    return !name || cardsOnly(template, slot.children, templateOf)
+    return isItemsSlot(decodeHtmlEntities(name, true), slot.children, sourceView(template), isCardNode(templateOf))
       ? { state: "items", name, slot: where, count: elements(slot.children).length }
       : { state: "slot", name, slot: where };
   }
@@ -1825,16 +1834,9 @@ function planComponent(source: string, range: InstanceRange, tag: string, choice
   };
 }
 
-/** Whether a template has a heading slot (a slot holding a heading, or a heading's only content): a card component's mark. */
+/** Whether a template has a heading slot (a slot holding a heading, or a heading's only content): a card component's mark (rules/cards.ts). */
 export function hasHeadingSlot(template: string) {
-  const heading = (el: SourceElement) => /^h[1-6]$/.test(el.name);
-  const visit = (nodes: SourceNode[], parent?: SourceElement): boolean => elements(nodes).some((el) => {
-    if (el.name !== "slot") return visit(el.children, el);
-    const inside = meaningful(template, el.children);
-    return (inside.length === 1 && inside[0].type === "element" && heading(inside[0]))
-      || Boolean(parent && heading(parent) && meaningful(template, parent.children).length === 1);
-  });
-  return visit(parseSource(template));
+  return headingSlotIn(parseSource(template), sourceView(template));
 }
 
 /** A word's singular, by the common English endings: `services` → `service`, `stories` → `story`. */

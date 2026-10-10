@@ -9,8 +9,9 @@
 // (card-grid.ts `itemCopy`). Pure: src/page-builder/cards.ts writes the edit
 // as one undo step.
 
-import { descendants, isCardComponent, parseSource, startTagAttributes, templateSlots, type SourceElement, type TemplateOf } from "./component-model";
+import { descendants, isCardComponent, isCardNode, parseSource, sourceView, startTagAttributes, templateSlots, type SourceElement, type TemplateOf } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
+import { isCardSlot } from "./rules/cards";
 import { itemsSlotRule } from "./block-insert";
 import { slotMarkup } from "../native-insert";
 import { nativeInstanceInsertEdit, nativeOutline, type GuardedSourceEdit } from "./native-operations";
@@ -26,12 +27,11 @@ export interface CardSlot {
 export function cardSlotOf(tag: string, templateOf: TemplateOf): CardSlot[] {
   const template = templateOf(tag);
   if (template === undefined) return [];
+  const view = sourceView(template);
+  const isCard = isCardNode(templateOf);
   return templateSlots(template, templateOf).flatMap((entry) => {
-    // Card components only, as the preview tells one: blank text between them, the unnamed slot too.
-    const nodes = entry.element.children;
-    const cards = nodes.flatMap((node) => (node.type === "element" ? [node.name] : []));
-    const blank = nodes.every((node) => node.type === "element" || !/[^\t\n\f\r ]/.test(decodeHtmlEntities(template.slice(node.start, node.end))));
-    return entry.items && blank && cards.length && cards.every((tag) => isCardComponent(tag, templateOf)) ? [{ slot: decodeHtmlEntities(entry.name, true), card: cards[0] }] : [];
+    const card = entry.element.children.find((node): node is SourceElement => node.type === "element");
+    return card && isCardSlot(entry.element, view, isCard) ? [{ slot: decodeHtmlEntities(entry.name, true), card: card.name }] : [];
   });
 }
 
