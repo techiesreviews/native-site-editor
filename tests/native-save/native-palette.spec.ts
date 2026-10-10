@@ -423,8 +423,10 @@ test("typing in a nested component keeps question mark, undo and Shift+Enter ins
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   const bar = page.getByRole("toolbar", { name: "Edit bar" });
   await bar.getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveText("Editing<project-card>");
   await text.click();
-  await bar.getByRole("button", { name: "Edit Card note component", exact: true }).click();
+  // In Edit component mode the card note inside the card opens in place (slice 47).
+  await bar.getByRole("button", { name: "Open Card note component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
   // A template-owned text node (rather than assigned slot text) is editable inside both shadow roots.
   await page.locator("#content [role='textbox']").first().focus();

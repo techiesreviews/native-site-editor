@@ -178,18 +178,26 @@ test("the breadcrumb follows a selection into components within components", asy
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(current(page)).toHaveText("project-card");
   const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  const title = page.locator(".canvas-bar .edit-mode__title");
   await bar.getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await expect(title).toHaveText("Editing<project-card>");
   await frame.getByText("Shared across cards").first().click();
   await expect(current(page)).toHaveText("card-note");
-  await bar.getByRole("button", { name: "Edit Card note component", exact: true }).click();
-  await frame.getByText("Shared across cards").first().click();
+  // In Edit component mode a component inside the template opens in place
+  // (slice 47); the mode's title is the way back out, its crumbs the template's.
+  await bar.getByRole("button", { name: "Open Card note component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/card-note/card-note.html");
-  await expect(crumbs(page)).toHaveText(["body", "main.page", "section.cards", "project-card", "article.project-card", "Editing<card-note>", "p.card-note"]);
-  await expect(page.locator(".canvas-crumb--component")).toHaveText(["project-card", "Editing<card-note>"]);
-  await crumbs(page).filter({ hasText: /^project-card$/ }).click();
-  await expect(current(page)).toHaveText("project-card");
+  await expect(title).toHaveText("Editing<project-card>›<card-note>");
+  await frame.locator("project-card").first().locator("card-note p.card-note").click();
+  await expect(current(page)).toHaveText("p.card-note");
+  await page.locator(".canvas-bar").getByRole("button", { name: "Back to <project-card>", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
+  await expect(title).toHaveText("Editing<project-card>");
+  await expect(current(page)).toHaveText("card-note");
+  await page.locator(".canvas-bar").getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect(current(page)).toHaveText("project-card");
 });
 
 test("the code pane's cursor selects its element on the canvas, and a hovered line points at its element", async ({ page }) => {
