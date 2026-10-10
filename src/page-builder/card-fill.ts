@@ -4,6 +4,7 @@
 import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
 import { slotMarkup } from "../native-insert";
 import type { CardContent } from "./card-swap";
+import { allElements, elementTree, itemFill, plainText as itemPlainText, textLeaves, titleLeaf } from "./card-grid";
 
 export type CardFillRole = "title" | "body" | "image" | "link" | "other";
 export type CardFillFrom = "h1" | "<title>" | "address" | "meta description" | "og:image" | "matched" | "kept" | "not used";
@@ -304,4 +305,40 @@ export function cardFillMarkup(card: string, template: string, rows: CardFillRow
     }
   }
   return applyEdits(card, edits);
+}
+
+/**
+ * A placed plain card filled from a page: `facts` (cardFill's rows) put the
+ * meta description in its first paragraph after the title that holds no
+ * link, and the og:image in its first image (cardImageEdits); a fact the
+ * page lacks keeps what the card says, a fact the card has no place for is
+ * "not used". Then the title and link as `itemFill`. The rows are the strip's.
+ */
+export function itemPageFill(card: string, noun: string, title: string, href: string, facts: CardFillRow[]): { markup: string; rows: CardFillRow[] } | undefined {
+  const root = elementTree(card)?.[0];
+  if (!root) return undefined;
+  const source = card;
+  const leaves = textLeaves(source, [root]);
+  const heading = titleLeaf(source, root, leaves);
+  // A paragraph holding a link is the card's link ("Read about …"), not its text.
+  const body = heading && leaves.find(leaf => leaf.name === "p" && leaf.start >= heading.end && !allElements(leaf.children).some(child => child.name === "a"));
+  const img = [...descendants(parseSource(source))].find(element => element.name === "img");
+  const edits: RangeEdit[] = [];
+  const rows = facts.map((fact): CardFillRow => {
+    const row = { ...fact, slot: undefined };
+    if (row.role !== "body" && row.role !== "image") return row;
+    const target = row.role === "body" ? body : img;
+    if (!target) return { ...row, from: "not used", status: "not-used" };
+    if (row.status === "filled") {
+      if (row.role === "body" && body && row.text !== undefined) edits.push({ start: body.innerStart, end: body.innerEnd, text: escapeText(row.text) });
+      if (row.role === "image" && img && row.src !== undefined) edits.push(...cardImageEdits(source, img, row.src));
+      return row;
+    }
+    return row.role === "body" && body
+      ? { ...row, from: "kept", status: "kept", text: itemPlainText(source.slice(body.innerStart, body.innerEnd)) }
+      : { ...row, from: "kept", status: "kept", src: img && startTagAttributes(source, img.tag).find(attribute => attribute.name === "src")?.value };
+  }).filter(row => row.status !== "not-used" || Boolean(row.text || row.src));
+  // The title and the card's link are filled over the facts (itemFill keeps the rest of the text).
+  const filled = itemFill(applyEdits(source, edits), noun, title, href);
+  return filled && { markup: filled.markup, rows: rows.map(row => row.role === "link" && filled.added ? { ...row, status: "added", text: title } : row) };
 }
