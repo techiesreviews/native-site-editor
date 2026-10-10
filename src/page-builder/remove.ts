@@ -39,7 +39,7 @@ export function templateRemoval(source: string, node: readonly number[], files: 
   const slot = parent?.element.name === "slot" && elements(parent.element.children).length === 1 ? parent : undefined;
   const removed = slot?.element ?? target;
   const slots = [...descendants([removed])].filter(element => element.name === "slot")
-    .map(element => startTagAttribute(source, element.tag, "name")?.value ?? "");
+    .map(element => (startTagAttribute(source, element.tag, "name")?.value ?? "").trim());
   const edit = removeEdit(source, removed);
   const template = source.slice(0, edit.start) + source.slice(edit.end);
   const following = { ...files };
@@ -50,5 +50,16 @@ export function templateRemoval(source: string, node: readonly number[], files: 
       pages.set(path, text);
     }
   }
-  return { source: template, pages, slots: [...new Set(slots)], select: selectionAfterRemove(slot?.node ?? node, slot?.next ?? hasNext) };
+  return { source: template, pages, slots: [...new Set(slots)], select: slotElement(template, selectionAfterRemove(slot?.node ?? node, slot?.next ?? hasNext)) };
+}
+
+/** A `<slot>` is not selected itself: its one element is (as a click on it selects). */
+function slotElement(source: string, node: number[]): number[] {
+  let list = elements(parseSource(source)), target: SourceElement | undefined;
+  for (const index of node) {
+    target = list[index];
+    if (!target) return node;
+    list = elements(target.children);
+  }
+  return target?.name === "slot" && list.length === 1 ? [...node, 0] : node;
 }

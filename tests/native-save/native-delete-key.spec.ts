@@ -32,7 +32,7 @@ test("Delete removes a selected paragraph, selects the next sibling, and one key
   await expect(frame(page).locator(".hero .lead")).toHaveCount(1);
 });
 
-test("Backspace while typing removes one character and keeps the paragraph", async ({ page }) => {
+test("Backspace and Delete while typing remove one character each and keep the paragraph", async ({ page }) => {
   const paragraph = frame(page).locator(".hero .lead");
   const text = (await paragraph.textContent())!;
   await paragraph.dblclick();
@@ -43,6 +43,12 @@ test("Backspace while typing removes one character and keeps the paragraph", asy
   });
   await page.keyboard.press("Backspace");
   await expect(paragraph).toHaveText(text.slice(0, -1));
+  await paragraph.evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element); range.collapse(true);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+  });
+  await page.keyboard.press("Delete");
+  await expect(paragraph).toHaveText(text.slice(1, -1));
   await expect(paragraph).toHaveCount(1);
 });
 

@@ -71,3 +71,18 @@ test("a part inside a slot's element, or one of several fallback elements, goes 
   assert.deepEqual(one.slots, []);
   assert.deepEqual(one.select, [0, 0, 0]);
 });
+
+test("after a removal the next slot's element is selected, not its <slot>", () => {
+  const hero = '<section><slot name="eyebrow"><p>E</p></slot><slot name="title"><h1>T</h1></slot></section>';
+  assert.deepEqual(templateRemoval(hero, [0, 0, 0], files, "section-hero")?.select, [0, 0, 0]);
+  const fixed = '<section><p>Fixed</p><slot name="title"><h1>T</h1></slot></section>';
+  assert.deepEqual(templateRemoval(fixed, [0, 0], files, "section-hero")?.select, [0, 0, 0]);
+});
+
+test("a slot name with spaces still finds every page's fill", () => {
+  const spaced = '<section><slot name=" title "><h1>T</h1></slot><p>Fixed</p></section>';
+  const page = '<main><section-hero><h1 slot=" title ">Home</h1></section-hero></main>';
+  const plan = templateRemoval(spaced, [0, 0, 0], { "index.html": page }, "section-hero")!;
+  assert.deepEqual(plan.slots, ["title"]);
+  assert.equal(plan.pages.get("index.html"), "<main><section-hero></section-hero></main>");
+});

@@ -855,7 +855,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
       if (template?.path === path) {
         const target: NativePreviewSelection = { path, node, tag: chain.at(-1)!, text: "", reason: "click", selectors: [], paintedSource: source };
         if (!ports.componentTools?.removeControl(target, "Element").length) return false;
-      } else if (!Object.values(ports.nativeSite?.routes ?? {}).includes(path) || !pageRemovable(chain)) return false;
+        // On a page the bar drawn for the row decides (a card's own Remove, an items slot's card included).
+      } else if (!Object.values(ports.nativeSite?.routes ?? {}).includes(path)) return false;
       rowRemoval = { path, node: [...node], source, epoch: ports.generation, scope: ports.setupScope(), until: Date.now() + 2000 };
       ports.nativePreview?.selectNode({ path, node }, false);
       return true;

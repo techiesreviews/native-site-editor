@@ -254,3 +254,22 @@ test("Delete a slot's element removes template slot and page fill; one undo rest
   await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
   await expect.poll(() => source(TEMPLATE)).toBe(workTemplate);
 });
+
+test("Delete on a focused Structure row removes a card in an instance's items slot; one undo restores it", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+  const original = await source();
+  const row = page.getByRole("treeitem", { name: /^Section work/ }).first();
+  if (await row.getAttribute("aria-expanded") === "false") await row.locator(".page-structure__toggle").click();
+  const cards = row.locator("xpath=following-sibling::*[1]").getByRole("treeitem", { name: /^Card project/ });
+  await expect(cards).toHaveCount(3);
+  await cards.first().focus();
+  await page.keyboard.press("Delete");
+  await expect(frame(page).getByText("Fern & Kettle", { exact: true })).toHaveCount(0);
+  await expect(cards).toHaveCount(2);
+  // The next card takes its place and the focus.
+  await expect(cards.first()).toBeFocused();
+  await expect(frame(page).getByText("Harbour Lane Pottery", { exact: true })).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(source).toBe(original);
+});
