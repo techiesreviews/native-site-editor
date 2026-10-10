@@ -74,7 +74,7 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
     const open = async () => {
       if (entry === "canvas") {
         await expect(async () => {
-          await frame(page).locator("section-work").getByText(LEDE, { exact: true }).click({ button: "right" });
+          await frame(page).locator("section-work p.lede:visible").click({ button: "right" });
           await expect(menu(page)).toBeVisible({ timeout: 1000 });
         }).toPass();
       } else if (entry === "Structure right-click") await ledeRow(page).click({ button: "right" });
