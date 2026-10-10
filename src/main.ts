@@ -83,7 +83,7 @@ import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { itemsSlotRule, templateMoveRefusal, templateMovePath } from "./page-builder/block-insert";
-import { nativeElementKeyMove, nativeElementMoveMessage, type NativeMoveDirection } from "./page-builder/native-move-choices";
+import { nativeElementKeyMove, nativeElementMoveMessage, templateKeyMove, type NativeMoveDirection } from "./page-builder/native-move-choices";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
@@ -575,7 +575,14 @@ function mountWorkspace() {
     planUrl: nativeUrlPlan,
     applyUrl: changeNativeUrl,
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
-    onMove: (path, item, direction) => {
+    // In Edit component mode a row of the template edited (`template`: the bytes it was painted from).
+    onMove: (path, item, direction, template) => {
+      if (template) {
+        if (template.painted === undefined || nativeEffectiveSource(path) !== template.painted || componentTools?.editModeTemplate()?.path !== path || appStore.openFile.value !== path || !editorModule?.isMounted(path)) {
+          refuse("The source changed. Wait for the preview before moving this element."); return "stayed";
+        }
+        return moveNativeTemplatePart(path, template.painted, item.node, direction);
+      }
       const paintedSource = nativeStructurePaintedSources.get(item);
       if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
         refuse("The source changed. Wait for the preview before moving this element."); return "stayed";
@@ -899,7 +906,7 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
       drop: (target, where, painted) => {
         if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
         const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-        const request = { from: node, name, pressed: from.painted, place, painted, current };
+        const request = { from: node, name, pressed: from.painted, place, painted, current, inside: from.node.slice(node.length) };
         if (current()) void loadBlockInsert().then(blocks => current() ? blocks.move(request, at) : undefined).catch(errorMessage);
       },
       announce,
@@ -1614,14 +1621,23 @@ function moveNativeBlock(path: string, source: string, node: number[], direction
   return applyNativeChange(path, source, [result.edit], result.selection, nativeElementMoveMessage(source, node, direction)) ? result.selection : "stayed";
 }
 
+/** In Edit component mode, Alt+arrows on a template's part (slice 82): one guarded move and one step on the template. */
+function moveNativeTemplatePart(path: string, source: string, node: number[], direction: NativeMoveDirection): number[] | "stayed" {
+  const result = templateKeyMove(source, node, direction);
+  if (result.status === "refused") { refuse(result.error); return "stayed"; }
+  if (result.status === "stayed") return "stayed";
+  const from = templateMovePath(source, node) ?? node;
+  return applyNativeChange(path, source, [result.edit], result.selection, nativeElementMoveMessage(source, from, direction)) ? result.selection : "stayed";
+}
+
 function moveNativeCanvasBlock(selection: NativePreviewSelection, direction: NativeMoveDirection): "moved" | "stayed" {
-  // In Edit component mode the template's parts (other than Sections) don't step among siblings, as on their Structure rows.
-  if ((direction === "up" || direction === "down") && componentTools?.editModeTemplate()?.path === selection.path) return "stayed";
   const source = nativeEffectiveSource(selection.path);
   if (!selection.node || source === undefined || selection.paintedSource !== source || versionView || appStore.openFile.value !== selection.path || !editorModule?.isMounted(selection.path)) {
     refuse("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
   }
-  return moveNativeBlock(selection.path, source, selection.node, direction) === "stayed" ? "stayed" : "moved";
+  // In Edit component mode the template's parts move in the template, by its drags' rules.
+  const move = componentTools?.editModeTemplate()?.path === selection.path ? moveNativeTemplatePart : moveNativeBlock;
+  return move(selection.path, source, selection.node, direction) === "stayed" ? "stayed" : "moved";
 }
 
 function applyNativeChange(...args: Parameters<typeof pageStructureController.applyNativeChange>) {

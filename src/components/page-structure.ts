@@ -105,7 +105,7 @@ export interface PageStructureHandlers {
    * opening first; the move follows). A moved path restores focus after a
    * depth change. A handled refusal keeps row focus.
    */
-  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down" | "out" | "in") => "moved" | "stayed" | "pending" | number[] | undefined;
+  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down" | "out" | "in", template?: { painted: string | undefined }) => "moved" | "stayed" | "pending" | number[] | undefined;
   /**
    * A press on the row of a block in `<main>` that may become a drag (the
    * page's block drag, insert-drag.ts `trackDrag`); none when it cannot.
@@ -810,7 +810,17 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       focusRemoval = Boolean(handlers.onRemove?.(at.path, at.node, source));
       return;
     }
-    // Template rows, and the framed instance's own, never move the page's elements.
+    // Template rows, and the framed instance's own, never move the page's elements; the rows
+    // of the template edited move its parts in it (slice 82).
+    const part = movable.has(itemKey(item)) && templatePaths.has(item) ? item as TemplateStructureItem : undefined;
+    if (part && event.altKey && !event.ctrlKey && !event.metaKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+      const direction = ({ ArrowUp: "up", ArrowDown: "down", ArrowLeft: "out", ArrowRight: "in" } as const)[event.key as "ArrowUp"];
+      const outcome = handlers.onMove?.(templatePaths.get(item)!, item, direction, { painted: part.paintedSource });
+      if (Array.isArray(outcome)) focusAfterRender = templateKey(templatePaths.get(item)!, outcome);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if ((templatePaths.has(item) || templateRoots.has(item) || framedRows.has(item)) && event.altKey) { event.preventDefault(); event.stopPropagation(); return; }
     const list = visibleRows();
     const at = list.indexOf(el);

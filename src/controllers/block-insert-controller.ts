@@ -139,9 +139,10 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
    * bytes) dragged to `place` (measured on the `painted` bytes; `slot` for
    * an instance's items slot): moved there as one step, or the reason
    * flashes when the page has changed since or the HTML there cannot take
-   * it. `current`: the drag's own proof (its page still on show).
+   * it. `current`: the drag's own proof (its page still on show); `inside`:
+   * the path from the moved slot down to the part pressed in it.
    */
-  async function move(request: { from: number[]; name: string; pressed: string | undefined; place: { parent: number[]; index: number; where: string; slot?: string }; painted: string | undefined; current?: () => boolean }, at = ports.target()) {
+  async function move(request: { from: number[]; name: string; pressed: string | undefined; place: { parent: number[]; index: number; where: string; slot?: string }; painted: string | undefined; current?: () => boolean; inside?: number[] }, at = ports.target()) {
     const { from, name, place } = request;
     const proof = ports.proof(), still = () => proof() && (request.current?.() ?? true);
     const source = at && ports.source(at.path);
@@ -170,7 +171,8 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     const { path } = at;
     const opened = await ports.open(path);
     if (!opened || !still() || ports.source(path) !== source) { ports.refuse("The page changed meanwhile. Try again."); return; }
-    const after = { path, node: plan.selection };
+    // A template's part moved with its slot stays selected inside it.
+    const after = { path, node: [...plan.selection, ...request.inside ?? []] };
     ports.select({ ...after, source: next }, place.where);
     const error = await ports.apply({
       expectedSources: new Map([...templates, [path, source]]), edits: new Map([[path, next]]),

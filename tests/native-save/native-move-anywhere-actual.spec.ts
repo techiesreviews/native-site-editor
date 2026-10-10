@@ -90,4 +90,22 @@ test("on the page a component's parts stay closed; in Edit component mode its pa
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('</p></slot><p>Text</p><div class="actions">');
   await undo(page);
   await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
+
+  // Alt+arrows on the canvas and on Structure rows move the template's parts by the same rules.
+  await frame(page).locator("section-hero").first().locator("p.eyebrow").filter({ visible: true }).first().click();
+  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('</h1></slot><slot name="eyebrow"><p class="eyebrow">Larkspur Studio</p></slot><slot name="lead">');
+  await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await undo(page);
+  await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
+  const lead = structure(page).getByRole("treeitem", { name: /^Paragraph One or two sentences/ }).first();
+  await lead.locator(".page-structure__label").click();
+  await lead.focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('<slot name="eyebrow"><p class="eyebrow">Larkspur Studio</p></slot><slot name="lead">');
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(page.locator("#status")).toHaveText(/The “eyebrow” slot is filled on each page/);
+  await undo(page);
+  await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
 });

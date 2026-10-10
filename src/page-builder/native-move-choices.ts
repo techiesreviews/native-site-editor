@@ -1,5 +1,5 @@
 import { dropBlockName } from "./drop-target";
-import { blockLabel } from "./block-insert";
+import { blockLabel, templateMovePath, templateMoveRefusal } from "./block-insert";
 import { nativeOutline, nativeMoveDestinationValid, nativeMoveEdit, type GuardedSourceEdit, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 
 /** `slot`: the parent is an instance, and this its items slot ("" the unnamed one). */
@@ -98,4 +98,32 @@ export function nativeElementMoveMessage(source: string, from: readonly number[]
     return `Moved into ${label(parent?.children[index])}`;
   }
   return `Moved ${direction} in ${label(parent)}`;
+}
+
+/**
+ * Alt+arrows on a part of the template edited in Edit component mode (slice
+ * 82), by the rules of its drags: a named slot moves with the element it
+ * holds alone; ↑/↓ step among its siblings; ← goes after the element around
+ * it, → to the end of the element just above it, wherever the template's
+ * rule (templateMoveRefusal) and HTML allow. The selection stays on the
+ * part pressed (inside its slot).
+ */
+export function templateKeyMove(template: string, at: readonly number[], direction: NativeMoveDirection): NativeElementMoveResult {
+  const refuse = (error: string): NativeElementMoveResult => ({ status: "refused", error });
+  const from = templateMovePath(template, at);
+  if (!from) return refuse("The template's root stays where it is; a nested component's parts move in its own template.");
+  const inside = at.slice(from.length);
+  let result: NativeElementMoveResult;
+  if (direction === "up" || direction === "down") result = nativeElementSiblingMove(template, from, direction);
+  else {
+    let node = nativeOutline(template);
+    for (const step of from) node = node?.children[step];
+    const index = from.at(-1)!;
+    const destination = direction === "out" ? { parent: from.slice(0, -2), index: from.at(-2)! + 1 }
+      : { parent: [...from.slice(0, -1), index - 1], index: node?.parent?.children[index - 1]?.children.length ?? 0 };
+    if (direction === "in" && index === 0) return refuse("Alt+→ moves a part into the element just above it; there is none.");
+    const refused = templateMoveRefusal(template, from, destination.parent);
+    result = refused ? refuse(refused) : nativeElementMovePlan(template, from, destination);
+  }
+  return result.status === "moved" ? { ...result, selection: [...result.selection, ...inside] } : result;
 }
