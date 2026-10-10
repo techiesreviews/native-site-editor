@@ -119,8 +119,23 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
 }
 
 test("roots, nested component contents and outer rows offer no slot menu; items slots do", { tag: "@actual" }, async ({ page, baseURL }) => {
-  await openMode(page, baseURL, workTemplate.replace("<card-project></card-project>", '<card-project><p slot="body">Nested fill</p></card-project>'));
+  await openMode(page, baseURL, workTemplate.replace("<card-project></card-project>", '<card-project><p slot="body">Nested fill</p></card-project>')
+    .replace("<h2>Section title</h2></slot>", "<h2>Section title</h2><p>More title</p></slot>"));
+  // A second part of a slot's fallback has no badge in Structure, so no menu there; the canvas uses the label chip.
+  const more = outline(page).getByRole("treeitem", { name: "Paragraph More title", exact: true });
+  await expect(more.locator(":scope > .slot-chip")).toHaveCount(0);
+  await more.click({ button: "right" });
+  await expect(menu(page)).toHaveCount(0);
+  await expect(async () => {
+    await frame(page).locator("section-work").getByText("More title", { exact: true }).click({ button: "right" });
+    await expect(menu(page).getByRole("menuitem")).toHaveText(["Rename slot", "Remove slot"], { timeout: 1000 });
+  }).toPass();
+  await menu(page).getByRole("menuitem", { name: "Rename slot", exact: true }).click();
+  await expect(chip(page).locator(".slot-chip__name")).toBeFocused();
+  await page.keyboard.press("Escape");
   const root = outline(page).getByRole("treeitem").first();
+  // The root selected again, as the mode opened: the edit bar sits clear of the part below.
+  await root.locator(".page-structure__label").click();
   await expect(root.getByRole("button", { name: /^Actions for / })).toHaveCount(0);
   await root.click({ button: "right" });
   await expect(menu(page)).toHaveCount(0);

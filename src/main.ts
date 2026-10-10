@@ -546,7 +546,7 @@ function mountWorkspace() {
         if (opening) announce("The source changed. Wait for the preview before using this action.");
         return [];
       }
-      return elementMenuItems({ path, node: template?.node ?? item.node, tag: item.tag, renameChip: template?.chip }).map(entry => ({ ...entry, run: () => {
+      return elementMenuItems({ path, node: template ? template.node : item.node, tag: item.tag, paintedSource: painted, renameChip: template?.chip }).map(entry => ({ ...entry, run: () => {
         if (!fresh()) { announce("The source changed. Wait for the preview before using this action."); return; }
         entry.run();
       } }));

@@ -506,12 +506,16 @@ export function createComponentTools(deps: ComponentDeps) {
 
   function slotMenu(target: ElementMenuTarget): MenuItem[] {
     const mode = editMode?.active();
-    if (!mode || target.path !== mode.templatePath || !target.node?.length) return [];
     const source = deps.sources()[target.path], revision = deps.revision(), entry = explicitTemplate;
+    // The node path must have been read against the template's current bytes.
+    if (!mode || target.path !== mode.templatePath || !target.node?.length || source === undefined || target.paintedSource !== source) return [];
     const state = templateChip(target.node);
     return slotMenuItems(state).map(label => ({ label, run: () => {
       if (editMode?.active()?.templatePath !== mode.templatePath || explicitTemplate !== entry
-        || deps.revision() !== revision || deps.sources()[target.path] !== source) return;
+        || deps.revision() !== revision || deps.sources()[target.path] !== source) {
+        deps.announce("The template changed meanwhile; select the part again.");
+        return;
+      }
       if (label === "Rename slot") {
         if (target.renameChip) renameSlotChip(target.renameChip());
         else {

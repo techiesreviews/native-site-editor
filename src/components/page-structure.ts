@@ -53,7 +53,7 @@ interface TemplateRows {
 export interface PageStructureHandlers {
   templateRows?: (path: string, at: readonly number[]) => TemplateRows | undefined;
   /** `opening` checks a user action; painting the affordance stays silent on stale source. */
-  menuItems?: (path: string, item: NativeStructureItem, opening?: boolean, template?: { source: string | undefined; node: number[]; chip: () => HTMLElement | undefined }) => MenuItem[];
+  menuItems?: (path: string, item: NativeStructureItem, opening?: boolean, template?: { source: string | undefined; node: number[] | undefined; chip: () => HTMLElement | undefined }) => MenuItem[];
   /** Source-guarded instance fields; synthetic slot rows never identify DOM nodes. */
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
@@ -574,7 +574,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     el.append(toggle, label);
     // The element's actions (Make component…), shared with a right-click in the preview.
     const menuPath = own?.path ?? structure!.path;
-    const menuTemplate = own ? { source: own.paintedSource, node: own.chips[0] ?? item.node, chip: () => el.querySelector<HTMLElement>(":scope > .slot-chip") ?? undefined } : undefined;
+    // A template row's menu acts on its one badge; a row with none (or several) has no slot actions.
+    const menuTemplate = own ? { source: own.paintedSource, node: own.chips.length === 1 ? own.chips[0] : undefined, chip: () => el.querySelector<HTMLElement>(":scope > .slot-chip") ?? undefined } : undefined;
     const entries = (opening = false) => handlers.menuItems?.(menuPath, item, opening, menuTemplate) ?? [];
     const hasMenu = entries().length > 0;
     if (slotModel || template || modeRows || hasMenu) {
