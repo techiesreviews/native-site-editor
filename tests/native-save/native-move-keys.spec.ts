@@ -152,7 +152,7 @@ test("Alt+Up/Down on a page structure row moves the section and keeps its row fo
   await expect(frame(page).locator("section.hero > p:first-child + h1")).toHaveCount(1);
   const heading = indexSource.match(/    <h1[^>]*>[^<]*<\/h1>\n/)![0];
   const paragraph = indexSource.match(/    <p[^>]*class="lead"[^>]*>[^<]*<\/p>\n/)![0];
-  await expect.poll(() => editorText(page, "#content")).toBe(indexSource.replace(heading + paragraph, "    \n" + paragraph + heading));
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource.replace(heading + paragraph, paragraph + heading));
   await undo(page);
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
