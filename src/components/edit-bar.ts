@@ -371,7 +371,9 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       onFormat(key === "b" ? "strong" : key === "i" ? "em" : "link");
       return;
     }
-    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove) {
+    // Selects and text fields keep their own Alt+arrows (a select opens on Alt+Down).
+    const field = target.tagName === "SELECT" || target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+    if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && onMove && !field) {
       event.preventDefault();
       event.stopPropagation();
       onMove(event.key === "ArrowUp" ? "up" : "down");

@@ -315,3 +315,14 @@ test("Alt+Up/Down on a canvas card moves among its section component's items, on
   await cardsUndo(page);
   await expect.poll(() => cardsSource(page)).toBe(original);
 });
+
+test("Alt+Down on a select in a heading's bar is the select's, not a move", async ({ page }) => {
+  await select(page, ".hero h1");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+  await bar(page).getByRole("combobox", { name: "Heading level" }).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Escape");
+  await expect(frame(page).locator("section.hero > h1:first-child")).toHaveCount(1);
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+});
