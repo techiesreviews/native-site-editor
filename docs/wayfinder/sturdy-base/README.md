@@ -2,7 +2,7 @@
 
 A week (from 2026-10-10) of cleanup under the editor, no new features. Order: (0) agent-drift bugs, (1) one guarded edit module, (2) a typed editor↔preview protocol, (3) one Block move module, then (6) one HTML source-tree reader for cards, (4) Edit component mode in one module, (5) one Variant lookup.
 
-Tickets are numbered by candidate: 01-09 for (0), 10-19 for (1), 20s for (2), 30s for (3). Each slice lands on `dev` with `npm run check`, `npm test` and the full `native-save` suite green, and deploys to preview only. ★ = a Claude agent builds it; the rest go to Sol.
+Tickets are numbered by candidate: 01-09 for (0), 10-19 for (1), 20s for (2), 30s for (3), 50s for (5). Each slice lands on `dev` with `npm run check`, `npm test` and the full `native-save` suite green, and deploys to preview only. ★ = a Claude agent builds it; the rest go to Sol.
 
 ## 1. Guarded edit
 
@@ -41,3 +41,11 @@ Rules the runtime (DOM) and the editor (source) both apply live once in `src/pag
 20 first, then the rule slices (21 before 23), then 25-27. 21-24 all edit `native-preview-runtime.js` (different regions): at most two at once. 25 has no real blocker but shares `native-preview.ts` with 26; run it after the rule slices. Lead decides before 21 and 24: the browser's reading wins for blank text and slot names, and the one inline-formatting list (proposed: card-grid's, with `data var del ins`).
 
 **Decided by the lead (2026-10-10), for slices 21–24:** the browser's reading wins for blank text around slots and for slot names (slice 21); the single inline-formatting list is `card-grid.ts`'s, including `data var del ins` (slice 24; paragraphs with those tags become typeable on the canvas); shared rules live in `src/page-builder/rules/`; the runtime stays plain JS this week, checked by slice 27's message-name test.
+
+## 5. One Variant lookup
+
+One module in `shared/` answers which Variants a tag (or `.btn`) has on the site, from the stylesheets and scripts the pages actually link, for the edit bar, the card looks, the code pane and `get_site` alike, behind a small files adapter (editor drafts, Worker `SiteFiles`).
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [50 One Variant lookup for the editor and the Worker](tickets/50-one-variant-lookup.md) | M | claude ★ | – |
