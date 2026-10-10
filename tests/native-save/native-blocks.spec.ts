@@ -58,7 +58,7 @@ test("a block clicked in while text is typed in lands selected, not typed in, an
   await expect.poll(async () => flat(await source(page))).toContain("A native browser preview typed</h1>");
   await expect(heading).toHaveAttribute("contenteditable", /.+/);
   await paragraph.click();
-  await expect(label(page)).toHaveText(/› after Heading$/);
+  await expect(page.locator("#status")).toHaveText(/^Paragraph added\. .*› after Heading$/);
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect.poll(async () => flat(await source(page))).toMatch(/A native browser preview typed<\/h1><p>Text<\/p>/);
   // Neither the new Paragraph nor the heading is typed in.

@@ -160,8 +160,9 @@ test("a click selects a paragraph, a double-click types into it, Escape keeps it
   await lead.click();
   await pressAndMove(page, await pointIn(page, ".hero .lead", 0.3), await pointIn(page, "#services ul", 0.5, 0.6));
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Paragraph");
-  await expect(where(page)).toHaveText("Into Section › after List");
+  await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after List");
   await page.mouse.up();
+  await expect(page.locator("#status")).toHaveText("Paragraph moved. Into Section › after List");
   await expect.poll(async () => flat(await source(page))).toMatch(/<\/ul><p class="lead">One \(or three\) or two sentences/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect(frame(page).locator("#services > p.lead")).not.toHaveAttribute("contenteditable", /.+/);
