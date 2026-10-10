@@ -55,6 +55,9 @@ export interface BlockInsert {
   before?: NodeRequest;
 }
 
+/** Whether `path` is `node` or inside it. */
+const within = (path: readonly number[], node: readonly number[]) => node.every((index, at) => path[at] === index);
+
 export function createBlockInsertController(ports: BlockInsertPorts) {
   /**
    * Inserts the block as one step; the first Image also writes the site's
@@ -120,7 +123,9 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
   async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string; slot?: string }, painted: string | undefined, at = ports.target(), pointer?: { x: number; y: number }) {
     const source = at && ports.source(at.path);
     if (!at || source === undefined) { ports.refuse("Open a page to add blocks to it.", pointer); return; }
-    if (painted !== source && !(painted !== undefined && at.node && nativeEditInside(painted, source, at.node))) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
+    // Text typed into the selection since leaves the places around it as measured, not those inside it.
+    const typed = painted !== undefined && at.node !== undefined && !within(place.parent, at.node) && nativeEditInside(painted, source, at.node);
+    if (painted !== source && !typed) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
     // The frame measured the place; the template's own rule says whether it takes blocks.
     const refused = at.template === undefined ? undefined : templateDropRefusal(source, place.parent);
     if (refused) { ports.refuse(refused, pointer); return; }

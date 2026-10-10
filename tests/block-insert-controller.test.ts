@@ -127,6 +127,15 @@ test("click and drop accept text typed inside the selection, but refuse changes 
   }
 });
 
+test("a drop measured inside the selection refuses once anything changed in it", async () => {
+  const before = page.replace("<h2>Work</h2>", "<div><p>A</p><p>B</p></div>");
+  const swapped = before.replace("<p>A</p><p>B</p>", "<p>B</p><p>A</p>");
+  const { controller, log } = setup({ target: () => ({ path: "index.html", node: [0, 0, 0], painted: before }) }, { "index.html": swapped });
+  await controller.drop("paragraph", { parent: [0, 0, 0], index: 1, where: "Into Div › after Paragraph" }, before);
+  assert.equal(log.ops.length, 0);
+  assert.deepEqual(log.refusals, ["The page is still updating. Try again in a moment."]);
+});
+
 test("drops and clicks into an instance's items slot write its light DOM with the slot; other slots refuse", async () => {
   const work = '<!doctype html><html><head><title>Home</title></head><body><main><section-work><h2 slot="title">Work</h2></section-work></main></body></html>';
   const files = {

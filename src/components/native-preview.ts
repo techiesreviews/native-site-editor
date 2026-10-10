@@ -693,18 +693,20 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     ]);
   }
 
+  // Typing finished on request (a rail click or drop): true once the runtime
+  // answered, after any text edit it posted; false when it did not in time.
   let typingId = 0;
-  const typingFinishes = new Map<number, () => void>();
-  function finishTyping(): Promise<void> {
-    if (!frameState.ready || !frameState.active) return Promise.resolve();
+  const typingFinishes = new Map<number, (answered: boolean) => void>();
+  function finishTyping(): Promise<boolean> {
+    if (!frameState.ready || !frameState.active) return Promise.resolve(true);
     const id = ++typingId;
     return new Promise(resolve => {
-      const finish = () => {
+      const finish = (answered: boolean) => {
         clearTimeout(timer);
         typingFinishes.delete(id);
-        resolve();
+        resolve(answered);
       };
-      const timer = setTimeout(finish, 500);
+      const timer = setTimeout(() => finish(false), 1000);
       typingFinishes.set(id, finish);
       frame.contentWindow?.postMessage({ source: "astro-native-preview-host", type: "finish-typing", id }, "*");
     });
@@ -716,7 +718,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (data?.source !== "astro-native-preview") return;
     if (data.type === "typing-finished") {
       const raw = data as unknown as { id?: unknown };
-      if (typeof raw.id === "number") typingFinishes.get(raw.id)?.();
+      if (typeof raw.id === "number") typingFinishes.get(raw.id)?.(true);
       return;
     }
     // Desktop files dropped onto a source-owned canvas image, including shadow roots.
@@ -1370,7 +1372,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         inspections.delete(id);
       }
     },
-    /** Finish typing, answering after the runtime posts any text edit. */
+    /** Ends typing as Escape does: true once the runtime answered (after any text edit it posted). */
     finishTyping,
     /** The selection's container is selected (Escape on the block rail); above the top, nothing. */
     selectParent() {
@@ -1518,7 +1520,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
       endPress();
-      for (const finish of typingFinishes.values()) finish();
+      for (const finish of typingFinishes.values()) finish(false);
       site = undefined;
       shownRoute = undefined;
       postedRoutes.clear();
@@ -1541,7 +1543,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return frameState.active;
     },
     destroy() {
-      for (const finish of typingFinishes.values()) finish();
+      for (const finish of typingFinishes.values()) finish(false);
       endProbe();
       endPress();
       frameState.destroy();

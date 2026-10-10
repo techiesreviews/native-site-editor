@@ -327,11 +327,11 @@ function mountWorkspace() {
   repositorySelect = element<HTMLSelectElement>("repository");
   blockRail = mountBlockRail(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("add-panel-toggle"), {
     onPick: kind => {
-      // Hold the click's proof while typing finishes and the insert code loads.
-      const current = blockInsertPorts.proof();
-      void finishRailTyping(current).then(async () => {
+      // The click's page, selection and repository, held while typing finishes and the insert code loads.
+      const current = blockInsertPorts.proof(), at = blockInsertPorts.target();
+      void finishRailTyping(current).then(async finished => {
         if (!current()) return;
-        const at = blockInsertPorts.target();
+        if (!finished) { blockInsertPorts.refuse(STILL_UPDATING); return; }
         const blocks = await loadBlockInsert();
         if (current()) await blocks.click(kind, at);
       }).catch(errorMessage);
@@ -349,10 +349,11 @@ function mountWorkspace() {
         tree: template ? undefined : structureDrop(drag, block),
         drop: (target, where, painted, pointer) => {
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-          if (current()) void finishRailTyping(current).then(async () => {
+          const at = blockInsertPorts.target();
+          if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
+          if (current()) void finishRailTyping(current).then(async finished => {
             if (!current()) return;
-            const at = blockInsertPorts.target();
-            if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
+            if (!finished) { blockInsertPorts.refuse(STILL_UPDATING, pointer); return; }
             const blocks = await loadBlockInsert();
             if (current()) await blocks.drop(kind, place, painted, at, pointer);
           }).catch(errorMessage);
@@ -794,11 +795,14 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   }
 }
 
-// The runtime's answer follows its text edits; drain them before reading the selection.
+// A rail click or drop ends typing first, as Escape does: the runtime's
+// answer follows its text edit, whose queue is then drained. False when the
+// page did not answer: inserting before the typed text lands could move it.
+const STILL_UPDATING = "The page is still updating. Try again in a moment.";
 async function finishRailTyping(current: () => boolean) {
-  await nativePreview?.finishTyping();
-  if (!current()) return;
-  await pageStructureController.textEdits();
+  if (nativePreview && !await nativePreview.finishTyping()) return false;
+  if (current()) await pageStructureController.textEdits();
+  return true;
 }
 
 // The block rail's clicks and drags: one source edit per block, the new block selected.
