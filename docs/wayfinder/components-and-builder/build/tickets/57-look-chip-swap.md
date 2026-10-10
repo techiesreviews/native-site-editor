@@ -22,3 +22,5 @@ Ticket [09](../../tickets/09-prototype-add-existing-page.md) §8 and §10.
 
 - Unit tests: keep by role; fallback not counted; kept-aside listed and restored; other slots by name.
 - Nightly spec: swap a filled card to a look without an image and back; the image returns, and the HTML never holds the kept-aside image. After a page switch, swapping back does not bring it back.
+
+**Also (2026-10-10, from slice 56):** the look list (shared with the ▾ gallery) must leave out attributes the site's scripts set, as the edit bar does (slice 71); fix it once for both.
