@@ -327,6 +327,10 @@ test("a template's part moves with the named slot it fills alone; the root and n
   // An items slot's placeholder item moves itself; so does one of several in a named slot.
   assert.deepEqual(rules.subject(template, [0, 3, 0]), [0, 3, 0]);
   assert.deepEqual(rules.subject(template, [0, 4, 0, 1]), [0, 4, 0, 1]);
+  // An island moves nowhere; a nested instance moves whole.
+  assert.equal(rules.subject("<article><svg></svg><template></template></article>", [0, 0]), undefined);
+  assert.equal(rules.subject("<article><svg></svg><template></template></article>", [0, 1]), undefined);
+  assert.deepEqual(rules.subject(template, [0, 2]), [0, 2]);
   // The page's rules take the part pressed itself.
   assert.deepEqual(page().subject(template, [0, 0, 0]), [0, 0, 0]);
   assert.equal(rules.refusal(template, [0, 1], [0, 4]), undefined);

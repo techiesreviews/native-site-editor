@@ -78,7 +78,8 @@ export type MoveOutcome = Settled | { status: "pending"; settled: Promise<Settle
 export interface BlockMoves {
   /**
    * What a press on `at` moves, where it may go and which steps it has, from `at.painted`
-   * (templates through `peek`). Painting only: the bar's drag handle and Move buttons, a drag's
+   * (templates through `peek`); each answer is worked out when first read and kept, so a drag's
+   * hover asks once per container. Painting only: the bar's drag handle and Move buttons, a drag's
    * hover, a Page Structure row press. Undefined: nothing here moves.
    */
   grip(at: MoveAt): Grip | undefined;
@@ -113,7 +114,7 @@ function lazy<K extends string, V>(keys: readonly K[], value: (key: K) => V) {
 function words(to: MoveTo, section: boolean, source: string, from: readonly number[]) {
   if ("drop" in to) return { done: `${to.name} moved. ${to.where}`, undone: `Undid moving the ${to.name}.` };
   if ("gap" in to) return { done: "Section moved", undone: "Undid moving the section" };
-  const done = section ? `Moved ${to.step}` : nativeElementMoveMessage(source, from, to.step);
+  const done = section && (to.step === "up" || to.step === "down") ? `Moved ${to.step}` : nativeElementMoveMessage(source, from, to.step);
   return { done, undone: `Undid: ${done}` };
 }
 
@@ -132,11 +133,13 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
     const from = rules.subject(source, at.node);
     if (!from) return undefined;
     const refusals = new Map<string, string | undefined>();
+    // Worked out when read: a press reads some, the bar others.
+    const asked = lazy(["band", "drags"], key => key === "band" ? !template && isSection(tagAt(source, from), edits.peek) : template || nativeMovableBlock(source, from, items));
     return {
       from,
       inside: at.node.slice(from.length),
-      band: !template && isSection(tagAt(source, from), edits.peek),
-      drags: template || nativeMovableBlock(source, from, items),
+      get band() { return asked.band; },
+      get drags() { return asked.drags; },
       refusal(parent, slot) {
         const key = JSON.stringify([parent, slot ?? null]);
         if (!refusals.has(key)) refusals.set(key, rules.refusal(source, from, parent, slot));

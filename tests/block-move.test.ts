@@ -87,10 +87,33 @@ test("a step, a drop and a gap to the same place write the same bytes and name t
     assert.deepEqual(f.moves.move(f.at([0, 0]), run.to), { status: "moved", node: [0, 1] }, run.done);
     assert.equal(f.page(), expected, run.done);
     assert.deepEqual(f.m.announced, [run.done]);
+    assert.deepEqual(f.m.steps(), ["range"], run.done);
     assert.ok(f.m.undo());
     assert.equal(f.m.announced.at(-1), run.undone);
     assert.deepEqual(f.m.selected.at(-1), { path: PAGE, node: [0, 0] });
+    assert.ok(f.m.redo());
+    assert.deepEqual(f.m.selected.at(-1), { path: PAGE, node: [0, 1] });
   }
+  // The template's part the same way: a step and a drop.
+  for (const to of [{ step: "down" as const }, { drop: { parent: [0], index: 2 }, painted: templates[HERO], name: "Paragraph", where: "Into Section" }]) {
+    const f = setup({ open: HERO, editing: HERO });
+    assert.deepEqual(f.moves.move(f.at([0, 0, 0], HERO), to), { status: "moved", node: [0, 1, 0] });
+    assert.equal(f.m.workspace.source(HERO), `<section>\n  <slot name="title"><h1>T</h1></slot>\n  <slot name="eyebrow"><p>E</p></slot>\n  <p>Last</p>\n</section>`);
+    assert.deepEqual(f.m.steps(), ["range"]);
+    assert.ok(f.m.undo());
+    assert.deepEqual(f.m.selected.at(-1), { path: HERO, node: [0, 0, 0] });
+    assert.ok(f.m.redo());
+    assert.deepEqual(f.m.selected.at(-1), { path: HERO, node: [0, 1, 0] });
+  }
+});
+
+test("a Section steps out and in by the Block words, up and down by its own", () => {
+  const page = "<main><section><div class=\"flow\"><x-band></x-band></div></section></main>";
+  const f = setup({ page });
+  assert.deepEqual(f.moves.move(f.at([0, 0, 0, 0]), { step: "out" }), { status: "moved", node: [0, 0, 1] });
+  assert.equal(f.m.announced.at(-1), "Moved out of Div (stack) into Section");
+  assert.deepEqual(f.moves.move(f.at([0, 0, 1]), { step: "up" }), { status: "moved", node: [0, 0, 0] });
+  assert.equal(f.m.announced.at(-1), "Moved up");
 });
 
 test("CRLF stays CRLF and a <pre>'s line breaks stay content", () => {
@@ -264,6 +287,15 @@ test("a page not mounted opens first: the move is pending, then settles as one s
   assert.deepEqual(f.forgotten, []);
 });
 
+test("a move its rules refuse after the page opened is refused, nothing forgotten", async () => {
+  const f = setup({ open: "styles/site.css" });
+  const out = f.moves.move(f.at([0, 0, 1]), { gap: { parent: [0, 0], index: 0 }, section: true });
+  assert.deepEqual(out.status === "pending" && await out.settled, { status: "refused", message: "A section moves among its own siblings only." });
+  assert.equal(f.page(), SOURCE);
+  assert.deepEqual(f.m.steps(), []);
+  assert.deepEqual(f.forgotten, []);
+});
+
 test("leaving Edit component mode while the page opens still moves it", async () => {
   const f = setup({ open: "styles/site.css" });
   f.m.enterEditMode();
@@ -347,6 +379,10 @@ test("grip: what a press moves, its steps (false at a slot's edge), its refusals
   assert.equal(f.moves.grip(f.at([])), undefined);
   const g = setup({ open: HERO, editing: HERO });
   assert.equal(g.moves.grip(g.at([0], HERO)), undefined);
+  // Nor an island in a template: no drag starts for it.
+  g.m.typeInto(HERO, "<article><svg></svg><card-project></card-project><p>A</p></article>");
+  assert.equal(g.moves.grip(g.at([0, 0], HERO)), undefined);
+  assert.deepEqual(g.moves.grip(g.at([0, 1], HERO))?.drags, true);
   // Keys reach a body-level footer; a drag doesn't.
   const doc = "<html><head></head><body><main><p>A</p></main><footer><p>F</p></footer></body></html>";
   const h = setup({ page: doc });

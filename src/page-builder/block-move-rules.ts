@@ -261,7 +261,13 @@ export function pageRules(items: ItemsSlotRule): MoveRules {
  */
 export function templateRules(): MoveRules {
   return {
-    subject: templateMovePath,
+    // An island (SVG, a <template>) moves nowhere; a nested instance moves whole.
+    subject: (source, at) => {
+      const from = templateMovePath(source, at);
+      let node = from && nativeOutline(source);
+      for (const step of from ?? []) node = node?.children[step];
+      return node && !(node.opaque && !isInstance(node)) ? from : undefined;
+    },
     refusal: (source, from, parent) => templateMoveRefusal(source, from, parent),
     step: templateKeyMove,
     to: (source, from, place) => {
