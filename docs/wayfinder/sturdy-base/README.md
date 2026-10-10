@@ -2,7 +2,7 @@
 
 A week (from 2026-10-10) of cleanup under the editor, no new features. Order: (0) agent-drift bugs, (1) one guarded edit module, (2) a typed editor↔preview protocol, (3) one Block move module, then (6) one HTML source-tree reader for cards, (4) Edit component mode in one module, (5) one Variant lookup.
 
-Tickets are numbered by candidate: 01-09 for (0), 10-19 for (1), 20s for (2), 30s for (3), 50s for (5). Each slice lands on `dev` with `npm run check`, `npm test` and the full `native-save` suite green, and deploys to preview only. ★ = a Claude agent builds it; the rest go to Sol.
+Tickets are numbered by candidate: 01-09 for (0), 10-19 for (1), 20s for (2), 30s for (3), 40s for (6), 50s for (5). Each slice lands on `dev` with `npm run check`, `npm test` and the full `native-save` suite green, and deploys to preview only. ★ = a Claude agent builds it; the rest go to Sol.
 
 ## 1. Guarded edit
 
@@ -59,6 +59,20 @@ One module (`src/page-builder/block-move.ts`) answers "what does this press move
 31 and 32 may run together (main.ts regions 520-614/1612-1722 vs 923-958). No file of 26/27 is edited (native-preview.ts keeps its `onMove`/`onBlockPress` handlers; the palette runs the bar's buttons as before); only main.ts is shared, in other regions. Run 31 before 18, or 18 allowlists the `itemsSlots()` peeks in page-structure-controller (712, 779) and main.ts (1693). Lead decides before 31-33 (design section 8, each recommended): B1 template Sections move by the template rules from the canvas and bar too; B2 a non-Section Structure row opens its page and moves, as Sections do; B3 Undo of every move reselects the block where it was; B4 Structure focus follows the real path after a Section or pending move; B5 Section Move buttons disabled at a slot's edge; B6 a row press on a Block that does not move starts no drag.
 
 **Decided by Lex (2026-10-10):** B1–B6 all yes; slices 31–33 build them.
+
+## 4. One card source reader
+
+One interface (`SourceTree`, `src/page-builder/source-tree.ts`) for every HTML read card code makes: the element at a path as the preview counts it, its exact range, its attributes and text decoded as the browser reads them. Two adapters: the page adapter (`readPage`, the browser's parser and its cache in `native-source-location.ts`) for every path from the preview, and the source adapter (`readSource`, the pure `parseSource` moved from component-model) for templates, card markup and pages in Node tests; one contract suite runs on both, with parity on the fixtures. `elementTree`, card-grid's `plainText`, three entity decoders and four attribute readers go; card rules take a tree and run in Node. The strict editing tree stays the insert engine's. Design: `~/Projects/native-site-editor/.scratch/sturdy/card-tree-design.md`.
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [40 Module, page and source adapters, contract and parity suites (no card callers)](tickets/40-source-tree-module.md) | M | claude ★ | – |
+| [41 Card fill and Change look read markup through the tree](tickets/41-card-tree-fill-and-swap.md) | M | sol | 40 |
+| [42 Card grids, slot links and sibling pages read page paths through the tree](tickets/42-card-tree-page-paths.md) | M | sol | 40, 33 |
+| [43 Card copies on the tree: elementTree, plainText and the slot scan go](tickets/43-card-tree-copies.md) | M-L | sol | 41, 42 |
+| [44 Guard test: card files read HTML through the tree only](tickets/44-card-tree-guard-test.md) | S | sol | 41-43 |
+
+40 shares no file with 17, 25-27 or 30-34 and may start now; 41 (card-fill.ts, card-swap.ts only) may run beside 30-34. 42 edits cards.ts after 33 (which deletes the card `move` 42 would otherwise rewrite); 43 edits cards.ts after 42 and card-fill.ts after 41 (other functions). No slice edits main.ts (`gridOfItem` keeps a string overload), card-grid-controls.ts (26), native-insert.ts (30) or the runtime (27). Lead decides before 41-43 (design section 9, each recommended, each fixing an inconsistency): T1 page titles, descriptions and matched text written with character references (`Caf&eacute;`) read as the browser shows them in Link to a page and in a card fill, instead of being written as `Caf&amp;eacute;`; T2 Change look keeps alt text and link addresses with references as written; T3 "In this grid" and Create page's sibling pages are the card's own when a `<script>` sits among an instance's children; T4 an implied end tag inside an instance no longer loses Create page's sibling titles or mixes two slots of one card component; T5 Add card's copy writes a slot fallback's text as the browser shows it and takes a fallback holding a nested slot whole; T6 a card's link address is decoded once. Without a decision the slice keeps today's behaviour for that item.
 
 ## 5. One Variant lookup
 
