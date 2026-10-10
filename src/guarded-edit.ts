@@ -162,7 +162,10 @@ export interface EditorWorkspace {
   evictModel(path: string, proof: Proof): Proof | undefined;
   /** The mounted files' own text steps for a receipt (src/components/source-editor.ts prepareHistorySources). */
   prepareSources(edits: { path: string; expectedSource: string; text: string }[]): (Proof & { dispose?(): void; apply(): boolean; undo(): boolean; redo(): boolean }) | undefined;
-  /** Replaces ranges of the mounted file `path` as one editor step (`group`: joins the open typing group), with `hooks` on its Undo and Redo. Throws on failure. */
+  /**
+   * Replaces ranges of the mounted file `path` as one editor step (`group`: joins the open typing group),
+   * with `hooks` on its Undo and Redo (a keystroke joining the open group keeps the group's own). Throws on failure.
+   */
   replaceRanges(path: string, edits: Required<RangeEdit>[], group: boolean, hooks?: HistoryHooks): void;
   /** Ends the open typing group of `path`. */
   closeGroup(path: string): void;
@@ -367,8 +370,9 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     // A new typing group never joins one the editor holds open for another action.
     if (key !== undefined && !group) ws.closeGroup(path);
     const { before, after, flash } = planned.select ?? {};
-    // The step's own Undo and Redo select and say what moved (a typing group: from its first keystroke).
-    const hooks = key !== undefined && group?.key === key ? undefined : {
+    // The step's own Undo and Redo select and say what moved (a typing group: from its first
+    // keystroke; the workspace keeps them only on the step it starts).
+    const hooks = {
       undo: () => { if (before) ws.select(before); if (planned.undone) ws.announce(planned.undone); },
       redo: () => { if (after) ws.select(after, undefined, true); if (planned.done) ws.announce(planned.done); },
     };
@@ -409,7 +413,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     try { result = await plan(reads.r); }
     finally { reads.seal(); }
     const writes = "done" in result ? prepare(result, reads) : undefined;
-    const current = (): StaleKey | undefined => proved() ?? (!opened || opened.isCurrent() ? undefined : "anchor") ?? reads.changed();
+    // With no page open, none may open meanwhile: the step would land over it.
+    const current = (): StaleKey | undefined => proved() ?? ((opened ? opened.isCurrent() : ws.openFile() === undefined) ? undefined : "anchor") ?? reads.changed();
     changed = current();
     if (changed) return stale(changed);
     if ("refuse" in result) return refused(result.refuse);

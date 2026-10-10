@@ -40,11 +40,13 @@ test("Undo of a block from the rail selects what was selected before and says so
 });
 
 test("a plain repository renames a file in the Files tab with no file open; Undo takes it back", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  // Signed in on the demo site first; the plain repository then opens by a fresh load of its address.
+  await openHome(page, baseURL);
   await page.request.post(`${baseURL}/__demo/onboarding`, { data: { add: [{ name: "guarded-notes", kind: "no-site" }] } });
   const repos = await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json() as { id: number; name: string }[];
   const repo = repos.find((entry) => entry.name === "guarded-notes")!;
   await page.goto(`${baseURL}/#repo=${repo.id}&branch=main`);
+  await page.reload();
   const explorer = page.locator("#explorer");
   if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
   const readme = explorer.getByRole("button", { name: "README.md", exact: true });
@@ -63,6 +65,10 @@ test("a plain repository renames a file in the Files tab with no file open; Undo
   await expect.poll(() => storedDraft(page, "NOTES.md")).toBeUndefined();
   await expect.poll(() => storedDraft(page, "README.md")).toBeUndefined();
   await expect(page.locator("#primary-title")).toHaveText("README.md");
+  // Redo from the file where it was renames it again.
+  await page.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(status(page)).toHaveText("Renamed README.md to NOTES.md.");
+  await expect(page.locator("#primary-title")).toHaveText("NOTES.md");
 });
 
 test("Undo of Make component closes the new component's stylesheet pane", async ({ page, baseURL }) => {

@@ -179,6 +179,18 @@ test("with no file open a plain rename opens the file where it went, whose Undo 
   assert.deepEqual(plain.memory.steps(), []);
 });
 
+test("with no file open, a file opened while a plain rename reads the branch refuses it", async () => {
+  const h = fixture(); h.memory.close();
+  const hold = h.memory.holdBranchRead();
+  const renaming = h.controller.moveFileTarget(target, "b.txt", "rename");
+  await hold.reached;
+  await h.memory.workspace.open("open.txt");
+  hold.release();
+  assert.equal(await renaming, "The repository changed meanwhile. Try again.");
+  assert.deepEqual([h.memory.workspace.exists("a.txt"), h.memory.workspace.exists("b.txt"), h.memory.openFile()], [true, false, "open.txt"]);
+  assert.deepEqual(h.memory.steps(), []);
+});
+
 test("with no file open, Undo of a plain rename refuses once the file changed", async () => {
   const h = fixture(); h.memory.close();
   await h.controller.moveFileTarget(target, "b.txt", "rename");

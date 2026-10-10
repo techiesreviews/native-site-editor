@@ -228,7 +228,7 @@ export function createCommit(ws: EditorWorkspace) {
     const release = () => { releaseRefresh?.(); releaseRefresh = undefined; };
     if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); release(); return error; }
     // Files created or moved in keep the anchor's history while the step lives.
-    const unshare = anchor === undefined ? () => {} : ws.shareHistory([...creates.map(file => file.path), ...moves.map(move => move.to)], anchor);
+    let unshare = anchor === undefined ? () => {} : ws.shareHistory([...creates.map(file => file.path), ...moves.map(move => move.to)], anchor);
     const moved = new Map(moves.map(move => [move.from, move.to]));
     // With no page open, the page the step opens takes its history: what it says to open, else the
     // first text file it moves. Its Undo opens that file where it was.
@@ -240,7 +240,11 @@ export function createCommit(ws: EditorWorkspace) {
     // A pane remount over this step's exact bytes keeps Undo available; anything else still refuses.
     const adoptPane = (path: string) => { if (structuralLive()) receipt.adoptOwnMount(path, ws.model(path), ws.mountedSource(path)); };
     adopters.add(adoptPane);
-    const dispose = () => { adopters.delete(adoptPane); receipt.dispose(); unshare(); };
+    // The files the step reopens, mounted since it was prepared: their models are kept for its
+    // Undo and Redo (a page left for the other one is proved again as it returns).
+    const kept = new Map<string, () => void>();
+    const keep = () => { for (const path of [home, next]) if (path !== undefined && !kept.has(path) && ws.mounted(path)) kept.set(path, ws.retainModel(path)); };
+    const dispose = () => { adopters.delete(adoptPane); receipt.dispose(); unshare(); for (const release of kept.values()) release(); kept.clear(); };
 
     /** Opens `path` after the step, its Undo or its Redo, proving the step's files through the opening. */
     const refresh = (path: string | undefined, initial: boolean, message?: string, previousStatus = ws.status()): boolean | Promise<boolean> => {
@@ -260,6 +264,7 @@ export function createCommit(ws: EditorWorkspace) {
       const finish = () => {
         try {
           if (!structuralLive() || !complete(owned)) return failed();
+          keep();
           ws.afterFileChanges();
           ws.showRow(initial && op.focus ? op.focus : path ? { file: path } : undefined);
           if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message);
@@ -321,6 +326,8 @@ export function createCommit(ws: EditorWorkspace) {
     ws.afterFileChanges();
     const opened = await refresh(next, true, done);
     if (next === undefined || ws.openFile() !== next || !ws.mounted(next) || !ws.recordHistory(next, undo, redo, dispose)) dispose();
+    // The file where it was, reopened by Undo, keeps that history for Redo.
+    else if (home !== undefined) unshare = ws.shareHistory([home], next);
     return opened ? undefined : receipt.error() ?? OPENING_FAILED;
   };
 }

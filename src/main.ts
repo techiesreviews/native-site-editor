@@ -799,6 +799,9 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
   let planned: SectionPlanned | undefined;
+  // The page opens first when another file is in the editor (Edit component mode on a template it
+  // uses ends then): the repository and branch hold, as the page's bytes do.
+  const since = guardedEdits.stamp("repository");
   const outcome = await guardedEdits.run(async r => {
     const plan = await addSectionStep(r, { path, select: [...point.parent, point.index], message: `${choice.label} added`, before,
       loader: native ? undefined : nativeComponentLoaderPlan,
@@ -810,7 +813,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
       } });
     if (!("refuse" in plan)) planned = plan;
     return plan;
-  }, { anchor: path, guard: () => !planned?.loader || planned.loader.current() });
+  }, { since, anchor: path, guard: () => !versionView && (!planned?.loader || planned.loader.current()) });
   if (!outcome.ok || outcome.message) errorMessage(new Error(!outcome.ok && outcome.reason === "stale" ? moved : outcome.message));
 }
 
@@ -1908,6 +1911,9 @@ function nativeSettingsController({ createSiteSettings }: typeof import("./compo
   };
   return createSiteSettings({
     async applyPage(path, fields) {
+      // The element selected on the page as it was applied: its Undo and Redo select it again.
+      const selected = appStore.selection.value;
+      const at = selected?.path === path && selected.node ? { path, node: [...selected.node] } : undefined;
       return applied(await guardedEdits.run(r => {
         if (checkShown(r)) return { refuse: changed };
         const source = r.source(path), site = r.site();
@@ -1915,7 +1921,7 @@ function nativeSettingsController({ createSiteSettings }: typeof import("./compo
         let next = source;
         try { for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value); }
         catch (error) { return { refuse: error instanceof Error ? error.message : "Page settings could not be changed." }; }
-        return { edits: new Map([[path, next]]), done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." };
+        return { edits: new Map([[path, next]]), ...at ? { select: { before: at, after: at } } : {}, done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." };
       }, { since }));
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
@@ -4639,7 +4645,6 @@ const agentSiteActions: AgentSiteActions = {
     return undefined;
   },
   sectionTags: () => new Set(nativeSectionChoices().map((choice) => choice.tag)),
-  template: (tag) => (nativeSite?.components[tag] ? nativeSources()[nativeSite.components[tag]] : undefined),
   moveSection: moveNativeSectionTo,
   moveFile: (path, to, keepOldUrl) =>
     withAgentAnswers({ option: keepOldUrl }, async () => {

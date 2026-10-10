@@ -346,7 +346,6 @@ export interface AgentSiteActions {
   }>;
   setPageDetail(path: string, field: "title" | "description", value: string): Promise<string | undefined>;
   sectionTags(): ReadonlySet<string>;
-  template(tag: string): string | undefined;
   /** The page structure's drag (moveNativeSectionTo). */
   moveSection(target: { path: string; node: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined;
   /** The Files tab's rename or move, with its confirmation answered. */
@@ -515,12 +514,16 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
         if (!parent || !container) throw new Conflict("That place for sections is not on the page any more.");
         if (!tags.has(tag)) throw new Conflict(`<${tag}> is not a section component.`);
         const index = Math.min(Math.max(0, args.index ?? container.children), container.children);
-        const edit = nativeInsertEdit(source, parent, index, tag, actions.template(tag) ?? "");
-        if (!edit) throw new Conflict(`${componentLabel(tag)} could not be placed exactly in ${path}.`);
+        const unplaced = `${componentLabel(tag)} could not be placed exactly in ${path}.`;
         let planned: SectionPlanned | undefined;
         await guarded(actions.edits.run(async r => {
+          // The template is read through `r`: one changed during the loader's wait refuses the step.
           const plan = await addSectionStep(r, { path, select: [...parent, index], message: `${componentLabel(tag)} added`, loader: actions.loaderPlan,
-            edit: page => page === source ? [edit] : CHANGED(path) });
+            edit: (page, reads) => {
+              if (page !== source) return CHANGED(path);
+              const edit = nativeInsertEdit(page, parent, index, tag, reads.template(tag)?.source ?? "");
+              return edit ? [edit] : unplaced;
+            } });
           if (!("refuse" in plan)) planned = plan;
           return plan;
         }, { anchor: path, guard: () => !planned?.loader || planned.loader.current() }));
