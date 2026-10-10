@@ -345,10 +345,11 @@ export function createCards(deps: CardsDeps) {
   // what earlier looks held. A filled card's strip rows, and the card Change
   // page fills from, follow the new look (ticket 09 §8, §10).
   async function swapCard(card: NewCard, look: CardLook, from: { kept?: CardContent; variants: string[]; filled?: CardFilled }): Promise<CardSwapped | undefined> {
+    // The site and page as the swap was asked for: another site, or a change meanwhile, is not swapped over.
+    const site = deps.site();
     const source = deps.source(card.path);
     const { cardSwap } = await import("./card-swap");
-    // The page as the swap was asked for: a change meanwhile is not swapped over.
-    if (deps.source(card.path) !== source) { refuse("The page changed meanwhile; choose the look again."); return undefined; }
+    if (deps.site() !== site || deps.source(card.path) !== source) { refuse("The page changed meanwhile; choose the look again."); return undefined; }
     const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
     const before = range && source!.slice(range.start, range.end);
     const tag = before && tagOf(before);

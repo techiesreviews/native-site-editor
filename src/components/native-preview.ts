@@ -1482,6 +1482,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       postAssets();
       cardGrids?.sourcesChanged();
     },
+    /** The site's scripts were read late: an open card looks list follows. */
+    refreshCardLooks() {
+      cardGrids?.refreshLooks();
+    },
     /** Attach the frame parked so its runtime loads before the first page is known. */
     preload() {
       frameState.preload();

@@ -582,6 +582,11 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       const written = linker?.filled?.filled ?? linker?.swapped;
       if (linker && written !== undefined && !linker.filling && handlers.cardText(linker.card) !== written) closeLinker();
     },
+    /** The site's scripts were read late: the looks follow (those the scripts set are none). */
+    refreshLooks() {
+      gallery?.view?.refresh();
+      looksMenu?.view?.refresh();
+    },
     /** The grid around the selection, as last reported. */
     selected() {
       return reports.selected ?? undefined;

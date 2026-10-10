@@ -1445,6 +1445,7 @@ function nativeVariantSources(extension: RegExp): Record<string, string> {
       missing.forEach(path => variantReads.delete(key(path)));
       if (!live() || !read) return;
       editorModule?.refreshVariants();
+      nativePreview?.refreshCardLooks();
       if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
     });
   }

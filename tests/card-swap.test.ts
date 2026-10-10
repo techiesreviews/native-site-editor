@@ -140,3 +140,17 @@ test("a fill keeps aside the page's facts its look has no slot for: a swap to a 
     "</card-project>",
   ].join("\n"));
 });
+
+test("formatting around a whole title or body is content: it carries over", () => {
+  const card = '<card-project>\n  <h3 slot="title"><em>Oak</em></h3>\n  <p slot="body" class="body"><strong>All of it.</strong></p>\n</card-project>';
+  const swap = cardSwap({ card, template: project, look: { tag: "card-quote", label: "card-quote" }, lookTemplate: quote });
+  assert.equal(swap.markup, '<card-quote>\n  <h3 slot="title"><em>Oak</em></h3>\n  <blockquote slot="body" class="quote"><strong>All of it.</strong></blockquote>\n</card-quote>');
+});
+
+test("content carried to a slot of its name stays that slot's, by name, when its role there differs: an edit there is what comes back", () => {
+  const away = cardSwap({ card: filled, template: project, look: { tag: "card-feature", label: "card-feature" }, lookTemplate: feature });
+  // In card-feature the note slot is the body's place: it holds the note.
+  const edited = away.markup.replace("Ceramics studio · 2025", "Stoneware · 2026");
+  const back = cardSwap({ card: edited, template: feature, look: { tag: "card-project", label: "card-project" }, lookTemplate: project, kept: away.kept });
+  assert.equal(back.markup, filled.replace("Ceramics studio · 2025", "Stoneware · 2026"));
+});

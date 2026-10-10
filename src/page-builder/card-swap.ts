@@ -67,17 +67,24 @@ const shows = (html: string) => {
   return `${squash(plainText(html))}\n${images.join("\n")}`;
 };
 
-/** The element that holds an element's text: its one child element, again and again, while nothing else is in it (not a link). */
+// Text-level elements: formatting that is content, never a box that holds it.
+const PHRASING = new Set(["a", "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "kbd", "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var", "wbr"]);
+
+/** The element that holds an element's text: its one child box, again and again, while nothing else is in it; formatting (`<em>`, a link) is content. */
 function holder(html: string, element: SourceElement): SourceElement {
   let target = element;
-  for (let only = elementsOf(target.children); only.length === 1 && only[0].close && only[0].name !== "a" && target.children.every((node) => node === only[0] || blank(html, node)); only = elementsOf(target.children)) target = only[0];
+  for (let only = elementsOf(target.children); only.length === 1 && only[0].close && !PHRASING.has(only[0].name) && target.children.every((node) => node === only[0] || blank(html, node)); only = elementsOf(target.children)) target = only[0];
   return target;
 }
 
 const find = (element: SourceElement, name: string) => (element.name === name ? element : [...descendants(element.children)].find((child) => child.name === name));
 
-/** What the card `card` (an instance's markup) holds in the slots of its `template`; a slot showing its fallback holds nothing. */
-export function readCardContent(card: string, template: string): CardContent {
+/**
+ * What the card `card` (an instance's markup) holds in the slots of its
+ * `template`; a slot showing its fallback holds nothing. Slots named in
+ * `byName` (content carried there by name) are read by name, whatever their role.
+ */
+export function readCardContent(card: string, template: string, byName: ReadonlySet<string> = new Set()): CardContent {
   const out: CardContent = { other: {} };
   const root = elementsOf(parseSource(card))[0];
   if (!root?.close) return out;
@@ -92,7 +99,7 @@ export function readCardContent(card: string, template: string): CardContent {
   for (const [name, nodes] of fills) {
     const slot = slots.find((entry) => entry.name === name);
     const fallback = slot?.fallback ?? "";
-    const role = slot ? roleOf(slot) : "other";
+    const role = slot && !byName.has(name) ? roleOf(slot) : "other";
     const element = elementsOf(nodes)[0];
     if (role === "title" && element) {
       let html = inner(card, holder(card, element));
@@ -182,7 +189,7 @@ function startTag(card: string, root: SourceElement, look: CardLook, variants: r
  */
 export function cardSwap(input: { card: string; template: string; look: CardLook; lookTemplate: string; kept?: CardContent; variants?: readonly string[] }): CardSwap {
   const { card, look, lookTemplate } = input;
-  const kept = mergeCardContent(input.kept, readCardContent(card, input.template));
+  const kept = mergeCardContent(input.kept, readCardContent(card, input.template, new Set(Object.keys(input.kept?.other ?? {}))));
   const root = elementsOf(parseSource(card))[0];
   if (!root?.close) return { markup: card, kept, notShown: [] };
   const slots = templateSlots(lookTemplate);
