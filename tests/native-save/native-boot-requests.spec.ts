@@ -64,17 +64,19 @@ test('a page made before the text index has read the home page still copies its 
   // opened by its address) is held until the page is asked for.
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
-  let home = '';
   let heldReads = 0;
+  // Known before the editor opens: under load the index can read the home page soon after the paint.
+  await page.goto(`${baseURL}/`);
+  const home = (await blobShas(page))['index.html'];
+  expect(home).toBeTruthy();
   await page.route(/\/api\/files?\?/, async (route) => {
     const params = new URL(route.request().url()).searchParams;
     const asked = [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])];
-    if (home && asked.includes(home)) { heldReads++; await held; }
+    if (asked.includes(home)) { heldReads++; await held; }
     await route.continue();
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=about/index.html`);
   await expect(preview(page).locator('h1[data-key="about-title"]')).toHaveText('About this project');
-  home = (await blobShas(page))['index.html'];
   const explorer = page.locator('#explorer');
   if (!(await explorer.isVisible())) await page.locator('#explorer-toggle').click();
   await explorer.getByRole('tab', { name: 'Pages' }).click();

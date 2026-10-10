@@ -2292,8 +2292,8 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
       if (!live()) return false;
       // A stylesheet that cannot be read as text is left out of the page; a
       // page or template the page needs cannot be, so it fails the read.
-      const page = unreadable.find((file) => !/\.css$/i.test(file.path));
-      if (page) throw new Error(`${page.path}: ${page.message}`);
+      const needed = unreadable.find((file) => !/\.css$/i.test(file.path) && shown.files.has(file.path));
+      if (needed) throw new Error(`${needed.path}: ${needed.message}`);
       if (unreadable.length) { noteNativeUnreadable(unreadable); loaded = true; }
       for (const file of found) {
         const text = texts.get(file.path);
@@ -2697,12 +2697,13 @@ async function loadNativeComponentStyles(tags: string[]) {
       const path = nativeComponentCssPath(site.components[tag]);
       // A stylesheet drafted here (new, or moved with its component) is its draft; a deleted one is missing.
       const draft = scope ? draftStore().get(scope, path) : undefined;
-      if ((draft && !draft.deleted) || (!draft && nativeBaseSources.has(path))) nativeComponentStyles.set(tag, path);
+      // One that cannot be read as text is the component's all the same: it styles nothing.
+      if ((draft && !draft.deleted) || (!draft && (nativeBaseSources.has(path) || nativeUnreadableFiles.has(path)))) nativeComponentStyles.set(tag, path);
       else if (draft?.deleted) nativeMissingComponentStyles.add(tag);
       else lookups.push({ tag, path });
       // A component the page made on the fly, before the text index read its template.
       const template = site.components[tag];
-      if (!nativeBaseSources.has(template) && !(scope && draftStore().get(scope, template))) lookups.push({ path: template });
+      if (!nativeBaseSources.has(template) && !nativeUnreadableFiles.has(template) && !(scope && draftStore().get(scope, template))) lookups.push({ path: template });
     }
     // Looked up together, read in one request.
     const entries = await Promise.all(lookups.map((lookup) => findEntry(lookup.path)));
@@ -2712,10 +2713,12 @@ async function loadNativeComponentStyles(tags: string[]) {
       if (entry) found.push({ ...lookup, sha: entry.sha });
       else if (lookup.tag) nativeMissingComponentStyles.add(lookup.tag);
     });
-    const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
+    const { texts, unreadable } = await readNativeTexts(repo, found);
     if (epoch !== generation || request !== nativeSourcesRequest || nativeSite !== site) return;
+    noteNativeUnreadable(unreadable);
     for (const file of found) {
-      if (!nativeBaseSources.has(file.path)) nativeBaseSources.set(file.path, contents[file.sha]);
+      const text = texts.get(file.path);
+      if (!nativeBaseSources.has(file.path) && text !== undefined) nativeBaseSources.set(file.path, text);
       if (file.tag) nativeComponentStyles.set(file.tag, file.path);
     }
   } finally {

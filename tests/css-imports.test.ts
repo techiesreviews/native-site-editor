@@ -144,6 +144,14 @@ test("a missing file is reported and the rest still applies", () => {
   assert.deepEqual(result.imported, ["src/styles/gone.css", "src/styles/a.css"]);
 });
 
+test("an import the host could not read as text is skipped without an error", () => {
+  const files: Record<string, string> = { "src/styles/site.css": `@import "latin1.css";\n@import "gone.css";\nbody {}` };
+  const result = expandStyleImports(["src/styles/site.css"], (path) => files[path], (path) => path === "src/styles/latin1.css");
+  assert.deepEqual(result.sheets.map((sheet) => sheet.path), ["src/styles/site.css"]);
+  assert.deepEqual(result.errors, ["src/styles/site.css imports src/styles/gone.css, which is missing from this branch."]);
+  assert.deepEqual(result.imported, ["src/styles/latin1.css", "src/styles/gone.css"]);
+});
+
 test("an imported sheet's rule maps to the imported file's own byte range", () => {
   const base = "/* base */\n.lead { color: blue; }\n.filler { padding: 1px; }\n";
   const files = { "src/styles/site.css": `@import "base.css" layer(base);\n.lead { color: red; }`, "src/styles/base.css": base };

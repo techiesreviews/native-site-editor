@@ -315,7 +315,7 @@ function composeStyles(
   // per file, each import before the sheet that imports it (see
   // shared/css-imports.ts).
   const linked = routeStylesheets(site, sources, alone ? "/" : route);
-  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path]);
+  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path], (path) => unreadable.has(path));
   const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets), wrappers, importer, kind }));
   const page = site.routes[alone ? "/" : route] ?? "";
   const styleErrors = [

@@ -238,9 +238,10 @@ export function wrapImported(css: string, wrappers: readonly ImportWrapper[]) {
 /**
  * The sheets a list of stylesheets becomes once imports are expanded, in
  * cascade order. A list without imports comes back one sheet per entry,
- * unchanged.
+ * unchanged. An import of a file the host could not read as text
+ * (`unreadable`) is skipped without an error: the host says so itself.
  */
-export function expandStyleImports(paths: readonly string[], read: (path: string) => string | undefined): ExpandedStyles {
+export function expandStyleImports(paths: readonly string[], read: (path: string) => string | undefined, unreadable?: (path: string) => boolean): ExpandedStyles {
   const sheets: ExpandedSheet[] = [];
   const errors: string[] = [];
   const imported = new Set<string>();
@@ -268,7 +269,7 @@ export function expandStyleImports(paths: readonly string[], read: (path: string
       }
       const content = read(target);
       if (content === undefined) {
-        errors.push(`${path} imports ${target}, which is missing from this branch.`);
+        if (!unreadable?.(target)) errors.push(`${path} imports ${target}, which is missing from this branch.`);
         continue;
       }
       if (sheets.length >= MAX_SHEETS) {
