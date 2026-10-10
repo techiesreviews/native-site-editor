@@ -1,6 +1,7 @@
 import { node, button } from "../ui/dom";
 import { icon } from "../icons";
 import { aOr } from "../page-builder/card-grid";
+import { ghostInView, STRIP } from "./card-ghost-view";
 import type { SitePage } from "../page-builder/page-choices";
 import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardLinkPicker } from "./card-link-picker";
@@ -134,9 +135,6 @@ export interface CardGridHandlers {
   scripts(): { path: string; source: string }[];
 }
 
-/** The least height of a ghost below a grid: its button, and a little more. */
-const STRIP = 32;
-
 // A card slot is its own grid: an instance can hold several (`slot`).
 const gridKey = (grid: ItemGridReport) => `${grid.path}|${grid.parent.join(".")}${grid.slot === undefined ? "" : `|${grid.slot}`}`;
 const sameReport = (a: ItemGridReport | null | undefined, b: ItemGridReport | null | undefined) =>
@@ -221,13 +219,17 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     shown = { grid, about };
     // Down a column (a list), the button starts the line, as a list's next item would, and keeps clear of the section plus.
     const column = !grid.row;
-    const box = { ...grid.ghost, height: column ? Math.max(grid.ghost.height, 32) : grid.ghost.height };
+    const reported = { ...grid.ghost, height: column ? Math.max(grid.ghost.height, STRIP) : grid.ghost.height };
+    const view = ghostInView(reported, frameRect.height, grid.item, grid.beside);
+    const box = view?.box ?? reported;
+    const clipped = view?.clipped ?? false;
     // Below a row of cards with no room for one before the page's next
-    // content, the runtime reports a strip ending at that content: drawn as
-    // a line with its button, not a card-sized box.
-    const strip = grid.row && !grid.beside && box.height <= STRIP;
+    // content, the runtime reports a strip ending at that content, and a
+    // ghost cut at the frame's bottom edge can be one: drawn as a line with
+    // its button, not a card-sized box.
+    const strip = (grid.row || clipped) && !grid.beside && box.height <= STRIP;
     ghost.classList.toggle("is-strip", strip);
-    ghost.hidden = box.top > frameRect.height || box.top + box.height < 0;
+    ghost.hidden = !view;
     Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` });
     ghost.classList.toggle("is-column", column);
     const name = about.noun;

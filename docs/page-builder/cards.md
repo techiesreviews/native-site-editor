@@ -14,6 +14,8 @@ ordinary editable markup.
   (beside it when there is room in the row, else at the start of the next row,
   or below it in a list), with **+ Add card** (Add item, Add link…) in it.
   The ghost also shows while an item, or anything in one, is selected.
+  A ghost running past the bottom of the view is cut at that edge (a line
+  with its button when little is left), so Add card stays reachable.
 - Add card places a card immediately, selected, as one undo step: a card
   slot's fresh component with template fallbacks, or a plain grid's last
   item copied with its text reset.
