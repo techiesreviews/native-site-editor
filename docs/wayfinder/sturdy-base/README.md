@@ -19,6 +19,7 @@ One module for "check that nothing changed since I read it, then apply one guard
 | [16 Media, agent and save waits hold a stamp](tickets/16-guarded-edit-media-agents-save.md) | S | sol | 10 |
 | [17 Move applyNativeOperation/applyNativeChange behind the seam](tickets/17-guarded-edit-fold-apply-paths.md) | L | claude ★ | 11-16 |
 | [18 Guard test: no untracked reads in plans or controllers](tickets/18-guarded-edit-read-guard-test.md) | S | sol | 17 |
+| [19 A stylesheet GitHub can't read as text doesn't break the preview after it paints](tickets/19-unreadable-stylesheet-after-paint.md) | S | claude ★ | 17 |
 
 11 first (most proof bugs), then 12 and 13. Slices 11-16 all touch `src/main.ts` in different regions: at most two at once.
 
