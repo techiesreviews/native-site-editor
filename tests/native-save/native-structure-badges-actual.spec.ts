@@ -164,11 +164,13 @@ test("Structure frames template parts and mirrors slot chip edits in both themes
   await expect(chip(page)).toHaveText("title");
   await frame(page).locator("section-work").getByText(LEDE, { exact: true }).click();
   await expect(lede).toHaveAttribute("aria-selected", "true");
-  // Template rows fold and navigate, but never offer page-only controls or moves.
+  // Template rows fold and navigate, never offer page-only controls, and Alt+Up moves the part in the template (slice 82).
   await expect(title.getByRole("button", { name: "Attributes" })).toHaveCount(0);
   await lede.focus();
   await page.keyboard.press("Alt+ArrowUp");
-  expect(await source()).toBe(workTemplate);
+  await expect.poll(async () => (await source()).replace(/\s+(?=<)/g, "")).toContain('<section class="flow"><p class="lede">A few of the sites we made this year.</p><slot name="title">');
+  await undo();
+  await expect.poll(source).toBe(workTemplate);
   // Nor does the framed instance's own row move it on the page.
   const home = await effectiveSource(page, baseURL, "index.html");
   await outline.getByRole("treeitem").first().focus();
