@@ -42,6 +42,8 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
   let state: "prepared" | "applied" | "undone" | "failed" = "prepared";
   // Files mounted since the step, moved through their own receipt (see transition).
   let lateStep: { paths: string[]; sources: Sources; origin: "applied" | "undone"; applied: boolean } | undefined;
+  // Files mounted since the step and adopted over its bytes (adoptOwnMount).
+  const adopted = new Set<string>();
   const recordsCurrent = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
   const modelsCurrent = () => [...proofs].every(([path, proof]) => proof.isCurrent() && (host.persistentModels || host.mounted(path) === mounted.get(path)));
   const sourceCurrent = (expected: Map<string, string | undefined>) => [...expected].every(([path, text]) => host.source(path) === text);
@@ -85,29 +87,31 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     // one receipt kept from its first transition, so the model returns to the exact revisions
     // its own history steps expect (and goes on doing so once it is unmounted again).
     const owned = new Set(modelEdits.map(edit => edit.path));
-    const late = edited.filter(path => !owned.has(path) && mounted.get(path) && (host.mounted(path) || lateStep?.paths.includes(path)));
+    // Only an editable model takes it (a read-only pane, or a page the step's own UI opens, follows the drafts).
+    let late = edited.filter(path => !owned.has(path) && adopted.has(path) && (host.mounted(path) || lateStep?.paths.includes(path)));
     // An unmounted cache is evicted only with its exact proof. Unrelated models
     // retain their original proof through every own source transition.
-    for (const path of edited) if (!owned.has(path) && !late.includes(path)) {
+    for (const path of edited) if (!mounted.get(path)) {
       const proof = host.evictModel(path, proofs.get(path)!);
       if (!proof) return false;
       proofs.set(path, proof);
     }
     let lateMove = () => true, lateBack = () => true, lateCurrent = () => true;
-    if (late.length) {
-      // The phase this transition leaves (an Undo leaves the applied step).
-      const leaving = after ? "undone" : "applied";
-      let step = lateStep;
-      if (!step || step.paths.join("\n") !== late.join("\n") || !step.sources.isCurrent()) {
-        step?.sources.dispose?.();
-        step = lateStep = undefined;
-        const from = after ? plan.beforeSources : plan.afterSources, to = after ? plan.afterSources : plan.beforeSources;
-        const edits = late.map(path => ({ path, expectedSource: from.get(path), text: to.get(path) }));
-        const prepared = edits.every(edit => edit.expectedSource !== undefined && edit.text !== undefined)
-          ? host.prepareSources(edits as { path: string; expectedSource: string; text: string }[]) : undefined;
-        if (!prepared) { lastError = `The editor for ${late[0]} changed.`; return false; }
-        step = lateStep = { paths: late, sources: prepared, origin: leaving, applied: false };
-      }
+    // The phase this transition leaves (an Undo leaves the applied step).
+    const leaving = after ? "undone" : "applied";
+    let step = late.length ? lateStep : undefined;
+    if (late.length && (!step || step.paths.join("\n") !== late.join("\n") || !step.sources.isCurrent())) {
+      step?.sources.dispose?.();
+      step = lateStep = undefined;
+      const from = after ? plan.beforeSources : plan.afterSources, to = after ? plan.afterSources : plan.beforeSources;
+      const edits = late.map(path => ({ path, expectedSource: from.get(path), text: to.get(path) }));
+      const prepared = edits.every(edit => edit.expectedSource !== undefined && edit.text !== undefined)
+        ? host.prepareSources(edits as { path: string; expectedSource: string; text: string }[]) : undefined;
+      // None to be had (a read-only model after all): the drafts move alone, as for any other file.
+      if (prepared) step = lateStep = { paths: late, sources: prepared, origin: leaving, applied: false };
+      else late = [];
+    }
+    if (step) {
       const kept = step;
       const away = leaving === kept.origin;
       lateMove = away ? () => (kept.applied ? kept.sources.redo() : (kept.applied = kept.sources.apply())) : () => kept.sources.undo();
@@ -214,7 +218,7 @@ export function prepareNativeTextHistory(host: NativeTextHistoryHost, plan: Nati
     if (!texts.has(path) || texts.get(path) === undefined || modelText !== texts.get(path) || host.source(path) !== texts.get(path)) return false;
     if (records.has(path) && host.store.get(scope, path) !== records.get(path)) return false;
     if (!host.mounted(path) || !proof.isCurrent()) return false;
-    proofs.set(path, proof); mounted.set(path, true);
+    proofs.set(path, proof); mounted.set(path, true); adopted.add(path);
     // Lease the adopted model like the ones captured at prepare time, so
     // leaving the page keeps it (clean) instead of disposing the proven model.
     // It replaces the path's earlier lease (taken first, so a model adopted
