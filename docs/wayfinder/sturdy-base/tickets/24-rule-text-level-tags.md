@@ -1,7 +1,7 @@
 ---
 title: "One home for inline formatting, text runs and phrasing tag sets"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [20-runtime-bundle]
 builder: sol
@@ -25,3 +25,10 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/frame-protocol-
 - `tests/rules-text-level.test.ts` pins the sets; `tests/canvas-gesture.test.ts`, component-model and card-grid tests green, plus one case per consumer for a `<del>` paragraph.
 - No inline/phrasing tag list left outside `rules/text-level.ts` (checked by slice 28's guard; until then by `rg '"strong", "em"|strong\|em' src`).
 - `native-canvas`, `native-text*`, `native-cards`, `native-make-component*` specs green; `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-10)
+
+- `src/page-builder/rules/text-level.ts` holds `INLINE_FORMATTING` (card-grid's list, with `data var del ins`), `TEXT_TAGS` (the canvas's typeable elements; replaces the runtime's `TEXT_TAGS` and main.ts's `nativeTextTags` + formatting), `TEXT_RUN_TAGS`, `HTML_PHRASING` and `TEXT_LEVEL`. The runtime, component-model, native-insert, main.ts, card-grid, card-swap and native-operations import them; their eight copies are gone (`slot` added by the runtime and the template reader where they use the list).
+- Behaviour: a line like `<p>Was <del>£40</del> £30</p>` is now typed into on the canvas, one Structure row, a "text" slot, a Make component text slot, copied as a slot fallback, and page content inside a card instance.
+- Commits d9904adf, d1980159 (built by Claude, reviewed by Sol: no defects; a Structure check added for its validation gap).
+- Tests: `tests/rules-text-level.test.ts`, `<del>` cases in card-grid, native-insert, template-structure and component-model tests, and one native-text spec. Unit 1,632/1,632; full native-save 873 passed, 56 skipped; smoke 42/42; @actual 54/54.
