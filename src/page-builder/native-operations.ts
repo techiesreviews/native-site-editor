@@ -362,8 +362,10 @@ function insertion(source: string, parent: SourceNode, index: number, markup: st
   // In a line of text, on that line: a space apart from its neighbours, never a line of its own.
   if (around && phrasingOnly(around)) {
     const next = parent.children[index], previous = parent.children[index - 1];
-    const at = next ? next.start : previous ? previous.end : parent.closeStart;
-    const text = next ? `${markup} ` : !previous && /[\s>]/.test(source[at - 1] ?? ">") ? markup : ` ${markup}`;
+    // At the end of the text: after its last word, before the line breaks that close it.
+    let at = next ? next.start : previous ? previous.end : parent.closeStart;
+    if (!next && !previous) while (at > parent.openEnd && /\s/.test(source[at - 1])) at--;
+    const text = next ? `${markup} ` : !previous && at === parent.openEnd ? markup : ` ${markup}`;
     return { start: at, end: at, text };
   }
   const { next, previous, indent, childIndent, nl } = insertIndent(source, parent, index);
@@ -577,7 +579,8 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
   const insert = insertion(source, parent, destination.index, markup);
   // An empty parent already on separate lines supplies the insertion's first newline.
   const closeLine = source.lastIndexOf("\n", parent.closeStart - 1) + 1;
-  if (!parent.children.length && !inPre(parent) && closeLine > parent.openEnd && /^[ \t]*$/.test(source.slice(closeLine, parent.closeStart))) {
+  // (Not in a line of text: there the insertion stays on the text's line.)
+  if (!parent.children.length && !inPre(parent) && !phrasingOnly(parent) && closeLine > parent.openEnd && /^[ \t]*$/.test(source.slice(closeLine, parent.closeStart))) {
     insert.start = closeLine;
     insert.text = insert.text.replace(/^\r?\n/, "");
   }

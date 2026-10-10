@@ -78,3 +78,9 @@ test("restricted containers refuse what they can't hold, descendants included", 
   assert.equal(nativeMoveRefusal(source, [0, 5], [0, 0]), undefined);
   assert.equal(nativeMoveRefusal(source, [0, 0], [0, 6]), undefined);
 });
+
+test("into a paragraph written over several lines, the link stays on the text's line", () => {
+  const source = '<main>\n  <p>\n    Text\n  </p>\n  <div>\n    <a href="/x">X</a>\n  </div>\n</main>';
+  const edit = nativeMoveEdit(source, [0, 1, 0], { parent: [0, 0], index: 0 })!;
+  assert.equal(applyGuardedSourceEdit(source, edit), '<main>\n  <p>\n    Text <a href="/x">X</a>\n  </p>\n  <div>\n  </div>\n</main>');
+});
