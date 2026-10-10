@@ -5,9 +5,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createGuardedEdits, type Reads } from "../src/guarded-edit";
-import { componentRenameStep, slotChipPlan, templateRemovalPlan } from "../src/page-builder/component-plans";
+import { componentRenameStep, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type PreparedComponentLoader } from "../src/page-builder/component-plans";
 import * as rename from "../src/page-builder/component-rename";
-import { slotChipState } from "../src/page-builder/component-model";
+import { makeComponentPlan, slotChipState, type MakeComponentPlan } from "../src/page-builder/component-model";
+import * as carry from "../src/page-builder/component-css";
+import { elementEnd, startTags } from "../shared/html-source";
 import type { SlotChipReport } from "../src/page-builder/edit-component-mode";
 import { createMemoryWorkspace, deferred, type MemoryWorkspace } from "./fakes/memory-workspace";
 
@@ -133,4 +135,89 @@ test("leaving and entering Edit component mode again during an await refuses the
     assert.equal(!outcome.ok && outcome.reason === "stale" && outcome.changed, "edit-mode");
     assert.deepEqual(m.steps(), []);
   }
+});
+
+// ---- Make component and a new component: the files are the page step's creates. ----
+
+
+const HOME = '<!doctype html><html><head><link rel="stylesheet" href="/styles/site.css"></head><body><main><section class="promo"><h2>Hi</h2><p>Body</p></section></main></body></html>';
+const SITE_CSS = ".promo { color: red; }";
+function making(loader?: PreparedComponentLoader) {
+  const m = createMemoryWorkspace({ branch: { "index.html": HOME, "styles/site.css": SITE_CSS }, open: "index.html", site: { routes: { "/": "index.html" }, components: {} } });
+  const tags = startTags(HOME), range = elementEnd(HOME, tags, tags.findIndex(tag => tag.name === "section"), HOME.length)!;
+  const bare = makeComponentPlan(HOME, range, "section-promo", {}, []) as MakeComponentPlan;
+  const plan = (r: Reads) => makeComponentStep(r, { path: "index.html", source: HOME, range, node: [0, 0], tag: "section-promo", bare, carry, loader: loader && (async () => loader) });
+  return { m, edits: createGuardedEdits(m.workspace), plan };
+}
+
+test("Make component writes the page and the component's files in one undo step", async () => {
+  const { m, edits, plan } = making();
+  const before = bytes(m);
+  const outcome = await edits.run(plan, { anchor: "index.html" });
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.match(m.workspace.source("index.html")!, /<main><section-promo>\s*<h2 slot="title">Hi<\/h2>\s*<p slot="text">Body<\/p>\s*<\/section-promo><\/main>/);
+  assert.match(m.workspace.source("components/section-promo/section-promo.html")!, /<h2>/);
+  assert.ok(m.workspace.exists("components/section-promo/section-promo.css"));
+  assert.deepEqual(m.steps(), ["operation"]);
+  assert.equal(m.announced.at(-1), "Made the component <section-promo>: components/section-promo/section-promo.html");
+  assert.ok(m.undo());
+  assert.equal(bytes(m), before);
+  assert.ok(m.redo());
+  assert.ok(m.workspace.exists("components/section-promo/section-promo.html"));
+});
+
+test("Make component refuses, writing nothing, when the page's stylesheet, a new file's path or the component map changed meanwhile", async () => {
+  for (const meanwhile of [
+    (m: MemoryWorkspace) => m.writeDraft("styles/site.css", ".promo { color: blue; }"),
+    (m: MemoryWorkspace) => m.writeDraft("components/section-promo/section-promo.css", "/* theirs */"),
+    // A component of the same name arrives elsewhere (the map is read too).
+    (m: MemoryWorkspace) => { m.writeDraft("components/section-promo.html", "<p>theirs</p>"); m.setSite({ routes: { "/": "index.html" }, components: { "section-promo": "components/section-promo.html" } }); },
+  ]) {
+    const { m, edits, plan } = making();
+    const hold = m.holdBranchRead();
+    const pending = edits.run(plan, { anchor: "index.html" });
+    await hold.reached;
+    meanwhile(m);
+    hold.release();
+    const outcome = await pending;
+    assert.equal(outcome.ok, false);
+    assert.equal(m.workspace.source("index.html"), HOME);
+    assert.equal(m.workspace.exists("components/section-promo/section-promo.html"), false);
+    assert.deepEqual(m.steps(), []);
+  }
+});
+
+test("the component loader a site lacks joins Make component's step", async () => {
+  const withScript = HOME.replace("</head>", '<script type="module" src="/components/components.js"></script></head>');
+  const loader: PreparedComponentLoader = {
+    creates: [{ path: "components/components.js", content: "// loader" }], edits: new Map([["index.html", withScript]]), pages: ["index.html"],
+    added: "Added the component loader.", notes: [], expectedSources: new Map([["index.html", HOME]]), current: () => true,
+  };
+  const { m, edits, plan } = making(loader);
+  const outcome = await edits.run(plan, { anchor: "index.html" });
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.equal(m.workspace.source("components/components.js"), "// loader");
+  assert.match(m.workspace.source("index.html")!, /components\.js/);
+  assert.deepEqual(m.steps(), ["operation"]);
+  assert.equal(m.announced.at(-1), "Made the component <section-promo>: components/section-promo/section-promo.html. Added the component loader.");
+  assert.ok(m.undo());
+  assert.equal(m.workspace.exists("components/components.js"), false);
+});
+
+test("a new component is the page's insert and the blank component's files, one undo step; a taken name refuses", async () => {
+  const m = createMemoryWorkspace({ branch: { "index.html": HOME }, open: "index.html", site: { routes: { "/": "index.html" }, components: { "section-taken": "components/section-taken/section-taken.html" } } });
+  const edits = createGuardedEdits(m.workspace);
+  const at = HOME.indexOf("</main>");
+  const plan = (tag: string) => (r: Reads) => newComponentStep(r, { path: "index.html", source: HOME, node: [0, 1], tag,
+    insert: () => ({ start: at, end: at, text: `<${tag}></${tag}>` }) });
+  assert.deepEqual(await edits.run(plan("section-taken"), { anchor: "index.html" }), { ok: false, reason: "refused", message: "There is a component <section-taken> already." });
+  assert.deepEqual(m.steps(), []);
+  const outcome = await edits.run(plan("section-new"), { anchor: "index.html" });
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.match(m.workspace.source("index.html")!, /<section-new><\/section-new><\/main>/);
+  assert.ok(m.workspace.exists("components/section-new/section-new.html"));
+  assert.deepEqual(m.steps(), ["operation"]);
+  assert.ok(m.undo());
+  assert.equal(m.workspace.source("index.html"), HOME);
+  assert.equal(m.workspace.exists("components/section-new/section-new.html"), false);
 });

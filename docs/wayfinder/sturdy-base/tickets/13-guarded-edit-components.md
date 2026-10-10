@@ -1,7 +1,7 @@
 ---
 title: "Component tools (slot chip, Make component, rename, slot menu, Edit component mode) through the guarded edit"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [10-guarded-edit-module]
 builder: claude ★
@@ -24,3 +24,10 @@ If this is more than a day, split: 13a chip + slot menu + rename, 13b Make compo
 - No `deps.revision` left in `components.ts`; `component-draft-transaction.ts` deleted.
 - Tests: an empty template that gains content during a slot change refuses (the 854 gap); Make component writes the page and the component files in one undo step; leaving and re-entering Edit component mode during an await refuses.
 - `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-10)
+
+- 13a (a658ef70): slot chip, template removal and rename are guarded plans (`src/page-builder/component-plans.ts`) reading every page and template through `r` (the 854 gap closed); the slot menu holds a stamp; `select.historyOnly` in the module. 13b (this commit): Make component, the agent's make_component and New component are one guarded step whose component files (and the slice 103 loader) are `creates`; `component-draft-transaction.ts` and its companion are gone (the agent's first file before a native site, which has no page history, writes through `src/new-drafts.ts`); no `deps.revision` left: Edit component mode's entry holds a stamp, sessions and actions hold stamps.
+- Beyond the ticket: guarded creates also check the path's folders against the branch (`branchPathProblem`, as the old companion did); the entry and openings ignore the route shown (opening a template may show a page using it), as the old revision did; harness specs build `edits` from the memory workspace.
+- Tests: `tests/component-plans.test.ts` (11: chip, removal, rename, Make component one step + stale stylesheet/new path/component map, loader in the step, New component, mode re-entered during an await), `tests/new-drafts.test.ts` (4, moved), `tests/guarded-edit.test.ts` (+1).
+

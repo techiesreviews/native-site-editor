@@ -582,6 +582,8 @@ test("child selections omit template entry while root entry rejects stale or mis
   const result = await page.evaluate(async () => {
     const modulePath = "/src/page-builder/components.ts";
     const { createComponentTools } = await import(modulePath);
+    const editsPath = "/src/guarded-edit.ts", memoryPath = "/tests/fakes/memory-workspace.ts";
+    const [{ createGuardedEdits }, { createMemoryWorkspace }] = await Promise.all([import(editsPath), import(memoryPath)]);
     const templatePath = "components/project-card/project-card.html";
     const sources: Record<string, string> = {
       "index.html": "<project-card></project-card>",
@@ -595,12 +597,12 @@ test("child selections omit template entry while root entry rejects stale or mis
     const host = document.createElement("div");
     document.body.append(host);
     const tools = createComponentTools({
-      site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }), revision: () => "scope", sources: () => sources,
+      site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }), edits: createGuardedEdits(createMemoryWorkspace().workspace), sources: () => sources,
       editor: () => undefined, preview: () => ({ selectNode: (at: { path: string; node: number[] }) => selected.push(at), selectAfterUpdate: () => {} }),
       currentPath: () => path, selection: () => selection,
       openFile: async (file: string) => { opened.push(file); path = file; return true; },
       announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], upload: async () => undefined,
-      links: () => [], pageLabel: (file: string) => file, createFiles: async () => ({ error: "Unavailable" }),
+      links: () => [], pageLabel: (file: string) => file,
       panelHost: host, addStrip: (strip: HTMLElement) => host.append(strip), codeTitle: document.createElement("div"), previewPage: () => "index.html",
     });
     try {

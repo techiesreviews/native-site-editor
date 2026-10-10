@@ -52,6 +52,5 @@ await, so concurrent agent edits retain their existing invalidation behavior.
 `tests/native-save/native-history-action.spec.ts` mounts the real Monaco editor and
 uses the production journal. It covers legacy behavior, action/text ordering,
 false refusals in both directions, throw/rejection recovery, reentrant calls,
-replacement journals and async Undo/Redo across mounted session changes. Existing
-component creation tests continue to validate model history with owned file
-companions.
+replacement journals and async Undo/Redo across mounted session changes. Component creation is a guarded edit's step with creates
+(`tests/component-plans.test.ts`).

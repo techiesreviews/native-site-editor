@@ -101,6 +101,7 @@ test("a part chosen in the framed instance while the template opens stays select
   await page.goto(baseURL!);
   const asked = await page.evaluate(async () => {
     const { createComponentTools } = await import("/src/page-builder/components.ts");
+    const { createGuardedEdits } = await import("/src/guarded-edit.ts"), { createMemoryWorkspace } = await import("/tests/fakes/memory-workspace.ts");
     const templatePath = "components/promo-box/promo-box.html";
     const sources: Record<string, string> = { "index.html": "<main><promo-box></promo-box></main>", [templatePath]: "<section><h2>Title</h2><p>Body</p></section>" };
     const host = document.createElement("div");
@@ -111,12 +112,12 @@ test("a part chosen in the framed instance while the template opens stays select
     let current = "index.html";
     const asked: number[][] = [];
     const tools = createComponentTools({
-      site: () => ({ components: { "promo-box": templatePath }, routes: { "/": "index.html" } }) as never, revision: () => "r", sources: () => sources, variantFiles: { site: () => undefined, read: () => undefined },
+      site: () => ({ components: { "promo-box": templatePath }, routes: { "/": "index.html" } }) as never, edits: createGuardedEdits(createMemoryWorkspace().workspace), sources: () => sources, variantFiles: { site: () => undefined, read: () => undefined },
       editor: () => undefined, preview: () => ({ selectNode: (request: { node: number[] }) => asked.push(request.node), selectAfterUpdate: () => {}, editComponent: () => {} }),
       currentPath: () => current, selection: () => selection as never,
       openFile: async (path: string) => { current = path; selection = part; return true; },
       announce: () => {}, error: () => {}, images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
-      createFiles: async () => ({ error: "Unavailable" }) as never, panelHost: host, canvasComponent: () => {}, codeTitle: document.createElement("div"),
+      panelHost: host, canvasComponent: () => {}, codeTitle: document.createElement("div"),
       previewPage: () => "index.html", refreshBar: () => {},
     });
     try { await tools.editComponent("promo-box"); } finally { tools.destroy(); host.remove(); }

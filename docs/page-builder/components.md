@@ -148,9 +148,9 @@ name is changed afterwards in Edit component mode.
 - A site whose pages do not load `components/components.js` is noted.
 
 The new files are drafts; writing them and replacing the element is one undo
-step (the code editor's history companion): Undo/Redo in the top bar take the
-files back and write them again. (⌘Z typed inside the code pane is the code
-editor's own text undo and leaves the new files as drafts to discard.)
+step of the page (a guarded edit whose plan creates the files beside the page's
+edit, `src/page-builder/component-plans.ts`): Undo/Redo take the files back and
+write them again, or refuse whole when one of them changed since.
 
 ## Deferred instance slot adapter
 
@@ -165,7 +165,7 @@ export interface ComponentInstanceSlotTarget {
   pageNode: number[];
   tag: string;
   templatePath: string;
-  expectedRevision: string;
+  stamp: Stamp;
   expectedPageSource: string;
   expectedTemplateSource: string;
   expectedSelection: NativePreviewSelection;
@@ -173,7 +173,7 @@ export interface ComponentInstanceSlotTarget {
 }
 ```
 
-The host adapter binds the report to the current revision, complete page
+The host adapter binds the report to a guarded edit stamp (`edits.stamp()`: repository, branch, version view, page shown and Edit component mode entry), complete page
 and template sources, and the exact active selection object. `isCurrent`
 must prove that the editor model, session, version and repository context
 are unchanged; the existing `captureFileModelState(scope, pagePath)` can

@@ -1,6 +1,5 @@
-import type { ComponentLoaderPlan } from "./component-loader";
-import { componentRenameStep, slotChipPlan, templateRemovalPlan, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
-import { STALE_MESSAGE, type GuardedEdits, type Outcome } from "../guarded-edit";
+import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
+import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
 // Components, first class (docs/page-builder/components.md): what the page
@@ -37,8 +36,7 @@ import { mountComponentPanelResize } from "./component-panel-resize";
 import { mountDropdown } from "../components/dropdown";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
-import { nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
-import { expandStyleImports } from "../../shared/css-imports";
+import { nativePageBody, type NativeSite } from "../../shared/native-project";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { CheckboxControl, EditBarControl, EditBarModel, SelectControl } from "../components/edit-bar";
 import type { VariantField } from "./variant-fields";
@@ -46,8 +44,6 @@ import type { VariantFiles } from "../../shared/variant-lookup";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { elementPathAt, locateNativeElementRange, parseMarked, type ElementRange } from "../native-source-location";
 import type { InsertPoint } from "../components/insert-controls";
-import type { HistoryCompanion } from "../draft-store";
-import { blankComponentFiles } from "./blank-component";
 import { componentLabel, nativeInsertEdit } from "../native-insert";
 import {
   attributeEdit,
@@ -90,22 +86,9 @@ import type { EditComponentFrameMode } from "../components/native-preview";
 import type { EditComponentMode, SlotChipReport } from "./edit-component-mode";
 import "../components/create-dialog.css";
 
-export interface PreparedComponentLoader extends ComponentLoaderPlan {
-  expectedSources: Map<string, string | undefined>;
-  current(): boolean;
-}
+export type { PreparedComponentLoader } from "./component-plans";
 
 type CodeEditor = typeof import("../components/source-editor");
-
-/** File operations stay bound to their original scope and exact created drafts. */
-export interface ComponentFileReceipt {
-  isCurrent(): boolean;
-  /** Takes back the drafts it still owns (a creation that did not go through). */
-  undo(): void;
-  /** The files' side of the page edit's undo step: all of them or a refusal, before the page moves. */
-  companion: HistoryCompanion;
-}
-export type ComponentFileCreation = { error: string } | { receipt: ComponentFileReceipt };
 
 /** Host-bound snapshot for a deferred slot action; never supplied by iframe DOM alone. */
 export interface ComponentInstanceSlotTarget {
@@ -113,7 +96,8 @@ export interface ComponentInstanceSlotTarget {
   pageNode: number[];
   tag: string;
   templatePath: string;
-  expectedRevision: string;
+  /** The workspace when the target was taken (deps.edits.stamp()). */
+  stamp: Stamp;
   /** Complete file sources, including page markup outside the instance. */
   expectedPageSource: string;
   expectedTemplateSource: string;
@@ -125,8 +109,6 @@ export interface ComponentInstanceSlotTarget {
 
 export interface ComponentDeps {
   site: () => NativeSite | undefined;
-  /** Stable scope/generation identity; creating this component must not change it. */
-  revision: () => string;
   /** Every page, component and stylesheet's current source. */
   sources: () => Record<string, string>;
   /** The site's files for its Variant lookup (shared/variant-lookup.ts); late reads refresh the bar. */
@@ -149,8 +131,6 @@ export interface ComponentDeps {
   links: () => { label: string; value: string }[];
   /** A page's name as the Pages tab shows it. */
   pageLabel: (file: string) => string;
-  /** Creates drafts atomically; the receipt owns cleanup, undo and redo in the captured scope. */
-  createFiles: (files: { path: string; content: string }[]) => Promise<ComponentFileCreation>;
   /** The sidebar, whose foot holds the properties panel. */
   panelHost: HTMLElement;
   /** Enable only when the host wires Structure componentSlots. */
@@ -174,11 +154,9 @@ export interface ComponentDeps {
   files?: () => string[];
   /** Reads every page, template and stylesheet: resolves to why it could not. */
   index?: () => Promise<string | undefined>;
-  loaderPlan?: (path: string, nextPageText: string) => Promise<PreparedComponentLoader | string | undefined>;
-  /** Applies template edits (and moves) as one history step; page edits can join the same map. */
-  operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; moves?: { from: string; to: string }[]; creates?: { path: string; content: string }[]; done: string; undone: string;
-    current?: () => boolean; selection?: { before?: { path: string; node: number[] }; after: { path: string; node: number[] } } }) => Promise<string | undefined>;
-  /** Guarded edits (src/guarded-edit.ts): the slot chip, template removals and renames are its plans. */
+  /** Plans the component loader a page needs once it shows a component (slice 103; src/main.ts). */
+  loaderPlan?: LoaderPlanner;
+  /** Guarded edits (src/guarded-edit.ts): every multi-file component change is one of its plans (component-plans.ts). */
   edits: GuardedEdits;
 }
 
@@ -443,7 +421,7 @@ export function createComponentTools(deps: ComponentDeps) {
   /** The edit bar's component identity for a selection: the mark on an instance, the chip inside one. */
   function identity(selection: NativePreviewSelection): Pick<EditBarModel, "component" | "context" | "chip"> {
     const out: Pick<EditBarModel, "component" | "context" | "chip"> = {};
-    const revision = deps.revision();
+    const stamp = deps.edits.stamp();
     const path = deps.currentPath();
     const source = deps.sources()[selection.path];
     const editor = deps.editor();
@@ -456,7 +434,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const templateSource = template && deps.sources()[template.path];
       if (!template || templateSource === undefined) return undefined;
       return () => {
-        if (selectionKey(deps.selection()) !== expectedSelection || deps.revision() !== revision || deps.currentPath() !== path
+        if (selectionKey(deps.selection()) !== expectedSelection || !stamp.holds() || deps.currentPath() !== path
           || deps.editor() !== editor || deps.sources()[selection.path] !== source
           || !template || templateOf(tag)?.path !== template.path || deps.sources()[template.path] !== templateSource) {
           refuse("This component action is stale. Select the component again to edit its current template.");
@@ -587,10 +565,10 @@ export function createComponentTools(deps: ComponentDeps) {
     // An instance inside a template takes the site styles of the page the preview shows.
     const page = Object.values(current.routes).includes(at.path) ? at.path : deps.previewPage();
     const lookup = reader.variantLookup(deps.variantFiles), scope = { page };
-    const revision = deps.revision();
+    const stamp = deps.edits.stamp();
     const pick = (field: VariantField, choice: string) => {
       const now = deps.sources()[at.path];
-      if (now !== at.source || deps.revision() !== revision) {
+      if (now !== at.source || !stamp.holds()) {
         refuse(`The ${button ? "button" : instance ? "instance" : "band"} changed. Select it again to pick a variant.`);
         return;
       }
@@ -625,8 +603,18 @@ export function createComponentTools(deps: ComponentDeps) {
    * in the instance on show, else the template's first element. Resolves to
    * whether Edit component mode opened (with `notes` in its bar).
    */
-  let explicitTemplate: { path: string; revision: string } | undefined;
+  // Edit component's opening of a template (the Edit component mode entry the guarded edit's
+  // stamps hold): it stands while its own stamp holds, all but the entry key, which it is itself.
+  let explicitTemplate: { path: string; stamp: Stamp } | undefined;
   let modeOpening = false;
+  /**
+   * The repository, branch and version view are still the stamp's: the page shown may have moved (opening a
+   * template can show a page that uses it) and so may the mode's entry. The mode itself ends with its page (renderBar).
+   */
+  const scopeHolds = (stamp: Stamp) => [undefined, "route", "edit-mode"].includes(stamp.changed() as string);
+  const standing = (entry: typeof explicitTemplate): entry is NonNullable<typeof explicitTemplate> => Boolean(entry && scopeHolds(entry.stamp));
+  /** Opens `path` as the template edited: a new entry, with a new stamp or the one it `kept` (a rename moved it). */
+  const enter = (path: string, kept?: Stamp) => (explicitTemplate = { path, stamp: kept ?? deps.edits.stamp() });
 
   /**
    * Opens the template of a nested instance in the mode (`step`), or goes back to the chain's
@@ -640,7 +628,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!level) return false;
     const template = templateOf(level.tag);
     if (!template || template.path !== level.templatePath) return false;
-    const revision = deps.revision(), editor = deps.editor();
+    const stamp = deps.edits.stamp(), editor = deps.editor();
     const sources = before.chain.map((entry) => [entry.templatePath, deps.sources()[entry.templatePath]] as const);
     const pageSource = deps.sources()[before.path];
     const proof = JSON.stringify(before);
@@ -651,11 +639,11 @@ export function createComponentTools(deps: ComponentDeps) {
     modeOpening = true;
     try {
       if (fromPath !== before.templatePath || !(await deps.openFile(template.path))) return false;
-      if (deps.revision() !== revision || deps.editor() !== editor || deps.currentPath() !== template.path
+      if (!scopeHolds(stamp) || deps.editor() !== editor || deps.currentPath() !== template.path
         || deps.previewPage() !== before.path || deps.sources()[before.path] !== pageSource
         || deps.sources()[template.path] !== template.source || JSON.stringify(mode.active()) !== proof
         || sources.some(([path, source]) => deps.sources()[path] !== source)) return false;
-      explicitTemplate = { path: template.path, revision };
+      enter(template.path);
       if (index === undefined && step) { mode.drill(step); if (release) levelShares.push(release); }
       else if (index !== undefined) { mode.back(index); letGoLevels(index); }
       done = true;
@@ -685,7 +673,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const index = moded.chain.findIndex((level) => level.tag === tag);
       return navigateMode(index < 0 ? undefined : index, { tag, templatePath: template.path, node: nested.node });
     }
-    const openingRevision = deps.revision();
+    const openingStamp = deps.edits.stamp();
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
     const framed = instance ?? instanceOf(from, tag);
     const framedSource = framed && deps.sources()[framed.path];
@@ -697,8 +685,8 @@ export function createComponentTools(deps: ComponentDeps) {
     const share: EntryShare | undefined = release && { release };
     if (share) { letGo(entryShare); entryShare = share; }
     if (!(await deps.openFile(template.path))
-      || deps.revision() !== openingRevision || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { letGo(share); return false; }
-    const opened = explicitTemplate = { path: template.path, revision: deps.revision() };
+      || !scopeHolds(openingStamp) || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { letGo(share); return false; }
+    const opened = enter(template.path);
     if (share) share.opened = opened;
     // The template's code takes the caret straight away: typing edits it at once.
     deps.editor()?.focusEditor?.(template.path);
@@ -715,7 +703,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const entered = framed && modeLoad ? modeLoad.then((loaded) => {
       // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
       // A later Edit component (another instance) supersedes this one.
-      if (latestEntry !== entry || explicitTemplate !== opened || deps.revision() !== opened.revision || deps.currentPath() !== template.path
+      if (latestEntry !== entry || explicitTemplate !== opened || !standing(opened) || deps.currentPath() !== template.path
         || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return false; }
       if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return false; }
       // A mode already on (another instance) gives way: its share goes, the frame is told only the new mode.
@@ -835,7 +823,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const mode = editMode?.active();
     const refuseChip = (reason: string) => { event.preventDefault(); refuse(reason); };
     if (!mode || report.template !== mode.templatePath || deps.currentPath() !== mode.templatePath
-      || explicitTemplate?.revision !== deps.revision()) { refuseChip("Select a part in Edit component mode before changing its slot."); return; }
+      || !standing(explicitTemplate)) { refuseChip("Select a part in Edit component mode before changing its slot."); return; }
     // A rename refused is told now, so the chip shows its old name again.
     const peeked = slotChipPlan(deps.edits.peek, report);
     if ("refuse" in peeked) { refuseChip(peeked.refuse); return; }
@@ -901,9 +889,10 @@ export function createComponentTools(deps: ComponentDeps) {
    */
   async function renameComponent(name: string): Promise<string | undefined> {
     const mode = editMode?.active();
-    if (!mode || !deps.files || deps.currentPath() !== mode.templatePath || explicitTemplate?.revision !== deps.revision())
+    const entry = explicitTemplate;
+    if (!mode || !deps.files || deps.currentPath() !== mode.templatePath || !standing(entry))
       return "Open the component in Edit component mode before renaming it.";
-    const stamp = deps.edits.stamp(), revision = deps.revision(), proof = JSON.stringify(mode);
+    const stamp = deps.edits.stamp(), proof = JSON.stringify(mode);
     const sameMode = () => JSON.stringify(editMode?.active()) === proof;
     const changed = "The component or the repository changed meanwhile; it was not renamed.";
     let rename: typeof import("./component-rename");
@@ -937,8 +926,8 @@ export function createComponentTools(deps: ComponentDeps) {
     if (outcome.status !== "applied" || !planned) return undefined;
     const { tag, template, notes } = planned;
     // The mode's own entry moved with its template; the rest of the stamp still holds.
-    if (![undefined, "edit-mode"].includes(stamp.changed() as string) || deps.currentPath() !== template || !sameMode()) { barKey = ""; renderBar(); return undefined; }
-    explicitTemplate = { path: template, revision };
+    if (!scopeHolds(stamp) || deps.currentPath() !== template || !sameMode()) { barKey = ""; renderBar(); return undefined; }
+    enter(template, entry.stamp);
     modeRenames.push({ from: { tag: mode.tag, templatePath: mode.templatePath }, to: { tag, templatePath: template }, notes, release: deps.shareHistory?.(template, mode.path) });
     editMode!.retag(mode.templatePath, { tag, templatePath: template }, notes);
     // The part selected before stays selected in the renamed template.
@@ -952,13 +941,13 @@ export function createComponentTools(deps: ComponentDeps) {
   /** The mode's template went elsewhere by a rename's Undo or Redo (the file now open): the mode follows it. */
   function followRename() {
     const mode = editMode?.active(), path = deps.currentPath();
-    if (!mode || !path || path === mode.templatePath || explicitTemplate?.path !== mode.templatePath || explicitTemplate.revision !== deps.revision()) return;
+    if (!mode || !path || path === mode.templatePath || explicitTemplate?.path !== mode.templatePath || !standing(explicitTemplate)) return;
     const pair = modeRenames.find((each) => each.from.templatePath === mode.templatePath && each.to.templatePath === path)
       ?? modeRenames.find((each) => each.to.templatePath === mode.templatePath && each.from.templatePath === path);
     if (!pair) return;
     const back = pair.from.templatePath === path, level = back ? pair.from : pair.to;
     if (site()?.components[level.tag] !== path) return;
-    explicitTemplate = { path, revision: explicitTemplate.revision };
+    enter(path, explicitTemplate.stamp);
     editMode!.retag(mode.templatePath, level, back ? [] : pair.notes);
   }
 
@@ -994,7 +983,7 @@ export function createComponentTools(deps: ComponentDeps) {
   let barTag = "";
   function renderBar() {
     if (!modeOpening) followRename();
-    if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
+    if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || !standing(explicitTemplate))) explicitTemplate = undefined;
     if (entryShare?.opened && entryShare.opened !== explicitTemplate) letGo(entryShare);
     // The mode lasts while its template stays open over its page; another file (Files, a page's element) ends it.
     const moded = editMode?.active();
@@ -1349,7 +1338,7 @@ export function createComponentTools(deps: ComponentDeps) {
   function fillInstanceSlot(target: ComponentInstanceSlotTarget, name: string): boolean {
     const selection = deps.selection();
     const sameNode = (a: number[] | undefined, b: number[]) => Boolean(a && a.length === b.length && a.every((part, index) => part === b[index]));
-    if (!target.isCurrent() || deps.revision() !== target.expectedRevision
+    if (!target.isCurrent() || !target.stamp.holds()
       || selection !== target.expectedSelection || selection.host
       || selection.path !== target.pagePath || selection.tag !== target.tag || !sameNode(selection.node, target.pageNode)
       || deps.previewPage() !== target.pagePath || !editable(target.pagePath)
@@ -1593,7 +1582,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const path = selection.path;
     const nodePath = selection.node;
     const source = deps.sources()[path];
-    const revision = deps.revision();
+    const stamp = deps.edits.stamp();
     // The name and the page CSS the component takes along (slice 64) are worked out by modules loaded here.
     let carry: typeof import("./component-css");
     let names: typeof import("./component-names");
@@ -1604,7 +1593,7 @@ export function createComponentTools(deps: ComponentDeps) {
       refuse("Make component could not load. Try again.");
       return;
     }
-    if (deps.revision() !== revision || deps.sources()[path] !== source) { refuse("The page or repository changed meanwhile; select the element again."); return; }
+    if (!stamp.holds() || deps.sources()[path] !== source) { refuse("The page or repository changed meanwhile; select the element again."); return; }
     const current = site();
     if (!nodePath || source === undefined || !current) return;
     const range = locateNativeElementRange(source, nodePath);
@@ -1614,12 +1603,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const tag = names.automaticComponentName(source.slice(range.start, range.end), taken);
     const bare = makeComponentPlan(source, range, tag, {}, taken);
     if ("error" in bare) { refuse(bare.error); return; }
-    const { sheets, unchanged } = pageStyles(path, source, revision);
-    const made = carry.withPageCss(bare, source, range, tag, sheets);
-    const result = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged });
+    const result = await makeComponent({ path, node: [...nodePath], tag, source, range, bare, carry, stamp });
     if (typeof result === "string") return;
-    const notes = [...made.notes, ...made.cards.flatMap(card => card.notes), ...(result?.loader.notes ?? [])];
-    const madeRevision = deps.revision();
+    const { made, loader } = result;
+    const notes = [...made.notes, ...made.cards.flatMap(card => card.notes), ...(loader?.notes ?? [])];
+    const madeStamp = deps.edits.stamp();
     // A mode that hasn't opened in a few seconds (its module held) counts as the code pane.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const inMode = await Promise.race([
@@ -1627,27 +1615,13 @@ export function createComponentTools(deps: ComponentDeps) {
       new Promise<boolean>((done) => { timer = setTimeout(() => done(false), 8000); }),
     ]).finally(() => clearTimeout(timer));
     // Where the code pane opens instead of the mode, the notes go to the status line.
-    if (deps.revision() === madeRevision) deps.announce([madeMessage(tag, made), ...(result?.loader.added ? [result.loader.added] : []), ...(inMode ? [] : notes)].join(" "));
+    if (scopeHolds(madeStamp)) deps.announce([madeMessage(tag, made), ...(loader?.added ? [loader.added] : []), ...(inMode ? [] : notes)].join(" "));
   }
 
-  /**
-   * The page's stylesheets, imports expanded, for the CSS Make component
-   * carries; `unchanged`: the page, those stylesheets and the repository are
-   * as they were, so the plan made from them still holds.
-   */
-  function pageStyles(path: string, source: string, revision: string) {
-    const sources = deps.sources();
-    const linked = nativePageStylesheets(source, path).filter((file) => sources[file] !== undefined);
-    const expanded = expandStyleImports(linked, (file) => sources[file]);
-    const styled = [...new Set([...linked, ...expanded.imported])].map((file) => [file, sources[file]] as const);
-    const unchanged = () => deps.revision() === revision && deps.sources()[path] === source && styled.every(([file, text]) => deps.sources()[file] === text);
-    return { sheets: expanded.sheets, unchanged };
-  }
-
-  /** Make component without a dialog, using the same plan and undo transaction. */
+  /** Make component without a dialog, using the same plan and undo step. */
   async function makeFromAgent(request: { path: string; source: string; node: number[]; tag: string; fixed?: string[] }) {
     const { path, source, node: nodePath, tag, fixed = [] } = request;
-    const revision = deps.revision();
+    const stamp = deps.edits.stamp();
     let carry: typeof import("./component-css");
     try {
       carry = await import("./component-css");
@@ -1655,7 +1629,7 @@ export function createComponentTools(deps: ComponentDeps) {
       void handleChunkLoadFailure(error);
       return "Make component could not load. Try again.";
     }
-    if (deps.revision() !== revision) return "The repository changed meanwhile. Read the page again.";
+    if (!stamp.holds()) return "The repository changed meanwhile. Read the page again.";
     const current = site();
     if (!current || !editable(path)) return "Open the page first.";
     // The element id was read against the source whose hash the agent gave.
@@ -1675,143 +1649,58 @@ export function createComponentTools(deps: ComponentDeps) {
     if ("error" in paths) return paths.error;
     const bare = makeComponentPlan(source, range, tag, { fixed: paths.fixed }, taken);
     if ("error" in bare) return bare.error;
-    const { sheets, unchanged } = pageStyles(path, source, revision);
-    const made = carry.withPageCss(bare, source, range, tag, sheets);
-    const done = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged });
+    const done = await makeComponent({ path, node: [...nodePath], tag, source, range, bare, carry, stamp });
     if (typeof done === "string") return done;
+    const { made, loader } = done;
     return {
-      tag, files: [...new Set([...madeFiles(tag, made).map(file => file.path), ...(done?.loader.creates.map(file => file.path) ?? []), ...(done?.loader.edits.keys() ?? [])])],
+      tag, files: [...new Set([...madeFiles(tag, made).map(file => file.path), ...(loader?.creates.map(file => file.path) ?? []), ...(loader?.edits.keys() ?? [])])],
       slots: made.slots.filter((slot) => !slot.fixed).map((slot) => slot.name),
-      cards: made.cards.map((card) => card.tag), notes: [...made.notes, ...made.cards.flatMap((card) => card.notes), ...(done ? [done.loader.added, ...done.loader.notes].filter(Boolean) : [])],
+      cards: made.cards.map((card) => card.tag), notes: [...made.notes, ...made.cards.flatMap((card) => card.notes), ...(loader ? [loader.added, ...loader.notes].filter(Boolean) : [])],
     };
   }
 
-  const madeMessage = (tag: string, made: MakeComponentPlan) =>
-    `Made the component <${tag}>: components/${tag}/${tag}.html${made.cards.map((card) => `, and <${card.tag}>`).join("")}`;
-
-  /** The files Make component writes: the component's template and CSS, then each card component's. */
-  function madeFiles(tag: string, made: MakeComponentPlan) {
-    return [{ tag, template: made.template, css: made.css }, ...made.cards].flatMap((component) => [
-      { path: `components/${component.tag}/${component.tag}.html`, content: component.template },
-      { path: `components/${component.tag}/${component.tag}.css`, content: component.css },
-    ]);
-  }
-
   /**
-   * Writes the new component's files (and its card component's) as drafts
-   * and replaces the element with an instance, its items with card
-   * instances, as one undo step: undoing the page's edit takes the new files
-   * back, redoing writes them again, each whole or refused before the page
-   * moves. Resolves to why nothing was made, if so.
+   * Replaces the element with an instance, its items with card instances, and creates the new
+   * component's files (and its cards', and the loader when the site lacks it) as one undo step
+   * on the page (component-plans.ts). Resolves to what was made, or why nothing was.
    */
-  async function makeComponent(request: { path: string; nodePath: number[]; tag: string; source: string; range: ElementRange; made: MakeComponentPlan; unchanged: () => boolean }) {
-    const { path, nodePath, tag, source, range, made, unchanged } = request;
+  async function makeComponent(request: { path: string; node: number[]; tag: string; source: string; range: ElementRange; bare: MakeComponentPlan; carry: typeof import("./component-css"); stamp: Stamp }) {
+    const { path, stamp } = request;
     const stop = (message: string) => { refuse(message); return message; };
-    const changed = "The page, its styles or the repository changed meanwhile; no component was made.";
-    if (!unchanged()) return stop(changed);
-    const editorBefore = deps.editor();
-    if (!editorBefore || !editable(path)) return stop("Open the page first.");
-    const proof = editorBefore.captureHistoryHost(path);
-    const next = source.slice(0, range.start) + made.instance + source.slice(range.end);
-    const loader = await deps.loaderPlan?.(path, next);
-    if (typeof loader === "string") return stop(loader);
-    if (!unchanged() || deps.editor() !== editorBefore || !proof?.isCurrent()) return stop(changed);
-    if (loader && deps.operation) {
-      const edits = new Map([[path, next], ...loader.edits]);
-      deps.preview()?.selectAfterUpdate({ path, node: nodePath });
-      const error = await deps.operation({ expectedSources: loader.expectedSources, edits,
-        creates: [...madeFiles(tag, made), ...loader.creates],
-        current: () => unchanged() && loader.current() && deps.editor() === editorBefore && Boolean(proof.isCurrent()) && editable(path),
-        selection: { before: { path, node: nodePath }, after: { path, node: nodePath } },
-        done: loader.added ? `${madeMessage(tag, made)}. ${loader.added}` : madeMessage(tag, made),
-        undone: loader.added ? `Undid making <${tag}> and adding the component loader.` : `Undid making <${tag}>.` });
-      if (error) { deps.preview()?.selectAfterUpdate(undefined); return stop(error); }
-      return { loader };
-    }
-    const result = await deps.createFiles(madeFiles(tag, made));
-    if ("error" in result) { deps.error(new Error(result.error)); return result.error; }
-    const receipt = result.receipt;
-    const editor = deps.editor();
-    // Cleanup belongs to the files' receipt, even if another repository
-    // now has a draft at the same path.
-    if (!unchanged() || !receipt.isCurrent()) {
-      receipt.undo();
-      return stop(changed);
-    }
-    if (!editor || !editable(path)) {
-      receipt.undo();
-      return stop("Open the page first.");
-    }
-    deps.preview()?.selectAfterUpdate({ path, node: nodePath });
-    try {
-      editor.replaceActiveRange({ path, start: range.start, end: range.end, text: made.instance, expected: source.slice(range.start, range.end) }, false, receipt.companion);
-      deps.announce(madeMessage(tag, made));
-    } catch (error) {
-      receipt.undo();
-      deps.preview()?.selectAfterUpdate(undefined);
-      deps.error(error);
-      return error instanceof Error ? error.message : "The component could not be made.";
-    }
+    if (!editable(path)) return stop("Open the page first.");
+    let planned: MadePlanned | undefined;
+    const outcome = await deps.edits.run(async r => {
+      const plan = await makeComponentStep(r, { ...request, loader: deps.loaderPlan });
+      if (!("refuse" in plan)) planned = plan;
+      return plan;
+    }, { since: stamp, anchor: path, guard: () => !planned?.loader || planned.loader.current() });
+    if (!outcome.ok) return stop(outcome.reason === "stale" ? "The page, its styles or the repository changed meanwhile; no component was made." : outcome.message);
+    if (outcome.message) refuse(outcome.message);
+    return planned!;
   }
 
-  /** Drafts and inserts a blank section as one action, then opens Edit component mode on it. */
+  /** Inserts a new blank section component's instance and creates its files as one undo step, then opens Edit component mode on it. */
   async function newComponent(tag: string, point: InsertPoint): Promise<boolean> {
     const { path } = point;
     const parent = [...point.parent], index = point.index;
-    const revision = deps.revision(), source = deps.sources()[path];
-    const editor = deps.editor();
-    const unchanged = () => deps.revision() === revision && deps.sources()[path] === source && deps.editor() === editor;
-    if (!editor || source === undefined || !Object.values(site()?.routes ?? {}).includes(path)) return false;
-    if (!editable(path)) {
-      if (!(await deps.openFile(path)) || !unchanged()) return false;
-    }
-    const proof = editor.captureHistoryHost(path);
-    const current = () => unchanged() && editable(path) && Boolean(proof?.isCurrent());
-    if (!current()) return false;
-    const problem = tagNameProblem(tag, Object.keys(site()?.components ?? {}));
-    if (problem) { refuse(problem); return false; }
-    const files = blankComponentFiles(tag);
-    const edit = nativeInsertEdit(source, parent, index, tag, files[0].content);
-    if (!edit) { refuse("The insertion point changed; choose the destination again."); return false; }
+    const stamp = deps.edits.stamp(), source = deps.sources()[path];
+    if (source === undefined || !Object.values(site()?.routes ?? {}).includes(path)) return false;
     const selectedBefore = deps.selection();
     const before = selectedBefore?.node ? { path: selectedBefore.path, node: [...selectedBefore.node] } : undefined;
-    const next = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
-    const loader = await deps.loaderPlan?.(path, next);
-    if (typeof loader === "string") { refuse(loader); return false; }
-    if (!current()) { refuse("The page or repository changed meanwhile; no component was made."); return false; }
-    if (loader && deps.operation) {
-      deps.preview()?.selectAfterUpdate({ path, node: [...parent, index] });
-      const error = await deps.operation({ expectedSources: loader.expectedSources,
-        creates: [...files, ...loader.creates], edits: new Map([[path, next], ...loader.edits]),
-        current: () => current() && loader.current(),
-        selection: { before, after: { path, node: [...parent, index] } },
-        done: `Made the component <${tag}>: components/${tag}/${tag}.html${loader.added ? `. ${loader.added}` : ""}`,
-        undone: loader.added ? `Undid making <${tag}> and adding the component loader.` : `Undid making <${tag}>.` });
-      if (error) { deps.preview()?.selectAfterUpdate(undefined); refuse(error); return false; }
-      await editComponent(tag, undefined, { path, node: [...parent, index] }, loader.notes);
-      if (deps.revision() === revision) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${loader.added ? `. ${loader.added}` : ""}`);
-      return true;
-    }
-    const result = await deps.createFiles(files);
-    if ("error" in result) { deps.error(new Error(result.error)); return false; }
-    const { receipt } = result;
-    if (!current() || !receipt.isCurrent()) {
-      receipt.undo();
-      refuse("The page or repository changed meanwhile; no component was made.");
-      return false;
-    }
-    deps.preview()?.selectAfterUpdate({ path, node: [...parent, index] });
-    try {
-      editor.replaceActiveRange({ path, ...edit, expected: source.slice(edit.start, edit.end) }, false, receipt.companion);
-    } catch (error) {
-      receipt.undo();
-      deps.preview()?.selectAfterUpdate(undefined);
-      deps.error(error);
-      return false;
-    }
-    // createFiles refreshes the host's component registry before it resolves.
-    await editComponent(tag, undefined, { path, node: [...parent, index] });
-    if (deps.revision() === revision) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html`);
+    let planned: NewPlanned | undefined;
+    // The page opens first when another file is in the editor (its history takes the step).
+    const outcome = await deps.edits.run(async r => {
+      const plan = await newComponentStep(r, { path, source, node: [...parent, index], tag, before, loader: deps.loaderPlan,
+        insert: (page, template) => nativeInsertEdit(page, parent, index, tag, template) });
+      if (!("refuse" in plan)) planned = plan;
+      return plan;
+    }, { since: stamp, anchor: path, guard: () => !planned?.loader || planned.loader.current() });
+    if (!outcome.ok) { refuse(outcome.reason === "stale" ? "The page or repository changed meanwhile; no component was made." : outcome.message); return false; }
+    if (outcome.message) refuse(outcome.message);
+    const madeStamp = deps.edits.stamp();
+    // The step refreshed the host's component registry before it resolved.
+    await editComponent(tag, undefined, { path, node: [...parent, index] }, planned?.loader?.notes ?? []);
+    if (scopeHolds(madeStamp)) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${planned?.loader?.added ? `. ${planned.loader.added}` : ""}`);
     return true;
   }
 
@@ -1824,7 +1713,8 @@ export function createComponentTools(deps: ComponentDeps) {
     source: string;
     editor: CodeEditor;
     hostProof: { isCurrent(): boolean };
-    revision: string;
+    /** The workspace when the session opened. */
+    stamp: Stamp;
     /** Another file whose change ends the session too (an instance's template). */
     watch?: string;
     /** What the edit acts on, found again in `expected` (refused, said so, when it moved on). */
@@ -1835,7 +1725,7 @@ export function createComponentTools(deps: ComponentDeps) {
    * `cancel` takes back; a source that moves on without it makes it stale.
    */
   function sourceSession<At extends SessionAt>(scope: SessionScope<At>, plan: (at: At, value: string, part?: ComponentSlotPart) => RangeEdit | { error: string } | undefined, message: string) {
-    const { path, editor, hostProof, revision, read } = scope;
+    const { path, editor, hostProof, stamp, read } = scope;
     const initialProof = editor.prepareHistorySources([{ path, expectedSource: scope.source, text: scope.source }]);
     if (!initialProof) return;
     let expected = scope.source, closed = false, wrote = false, writing = false, lastNode: number[] | undefined;
@@ -1847,7 +1737,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const close = () => {
       if (closed) return;
       closed = true;
-      const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+      const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && stamp.holds() && deps.editor() === editor;
       proof.dispose?.();
       if (ownsGroup) editor.closeActiveEditGroup(path);
       else if (wrote) closeOwnGroup?.();
@@ -1855,7 +1745,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const reject = () => { close(); return false; };
     const cancel = () => {
       if (closed) return false;
-      const owns = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+      const owns = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && stamp.holds() && deps.editor() === editor;
       closed = true;
       proof.dispose?.();
       if (!wrote) return true;
@@ -1872,7 +1762,7 @@ export function createComponentTools(deps: ComponentDeps) {
       /** The source moved on without this session, or its file or scope did. */
       // (Its own write, still under way, is not "moved on": what it starts may look in here before it returns.)
       stale: () => !writing && (closed || deps.sources()[path] !== expected || (scope.watch !== undefined && deps.sources()[scope.watch] !== watchedAtOpen)
-        || !hostProof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor),
+        || !hostProof.isCurrent() || !stamp.holds() || deps.editor() !== editor),
       write(value: string, part?: ComponentSlotPart) {
         if (closed) return reject();
         const at = read(expected, proof);
@@ -1971,17 +1861,17 @@ export function createComponentTools(deps: ComponentDeps) {
       lines: opened.value.lines,
       breaks: opened.value.breaks,
       open() {
-        const revision = deps.revision();
+        const stamp = deps.edits.stamp();
         const hostProof = editor.captureHistoryHost(path);
         const initial = locate(deps.sources()[path] ?? "");
         if (!hostProof || !initial || deps.editor() !== editor || !editable(path)) return;
         const read = (expected = initial.source, proof?: { isCurrent(): boolean }) => {
-          const at = deps.sources()[path] === expected && hostProof.isCurrent() && (!proof || proof.isCurrent()) && deps.revision() === revision && deps.editor() === editor && editable(path)
+          const at = deps.sources()[path] === expected && hostProof.isCurrent() && (!proof || proof.isCurrent()) && stamp.holds() && deps.editor() === editor && editable(path)
             ? locate(expected) : undefined;
           if (!at || at.element.name !== initial.element.name) { refuse("The text changed meanwhile; edit it again."); return; }
           return at;
         };
-        const session = sourceSession({ path, source: initial.source, editor, hostProof, revision, read },
+        const session = sourceSession({ path, source: initial.source, editor, hostProof, stamp, read },
           (at, value, part) => part === "text" ? elementTextWrite(initial.source, initial.element, at.source, value) : undefined, "Text changed");
         if (!session) return;
         // Typing shows in the page ahead of its write where the page on show holds the element (not a template's part).
@@ -1996,12 +1886,12 @@ export function createComponentTools(deps: ComponentDeps) {
     const initial = instanceAt(path, [...nodePath]);
     const editor = deps.editor();
     if (!initial || !editable(path) || !editor) return;
-    const revision = deps.revision();
+    const stamp = deps.edits.stamp();
     const hostProof = editor.captureHistoryHost(path);
     if (!hostProof) return;
     const read = (expectedSource = initial.source, proof?: { isCurrent(): boolean }, staleMessage = "The instance changed; reopen its field before editing.") => {
       const at = instanceAt(path, [...initial.node]);
-      if (!at || !hostProof.isCurrent() || proof && !proof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor || !editable(path)
+      if (!at || !hostProof.isCurrent() || proof && !proof.isCurrent() || !stamp.holds() || deps.editor() !== editor || !editable(path)
         || at.tag !== initial.tag || at.templatePath !== initial.templatePath || at.template !== initial.template || at.source !== expectedSource) {
         refuse(staleMessage);
         return;
@@ -2016,7 +1906,7 @@ export function createComponentTools(deps: ComponentDeps) {
     // The legacy token ranges must describe the browser's actual attributes.
     const attributeSourceSafe = (at: Located) => openingSourceSafe(at.source, at.range.tag);
     const openSession = (plan: (at: Located, value: string, part?: ComponentSlotPart) => RangeEdit | { error: string } | undefined, message: string) =>
-      read() ? sourceSession({ path, source: initial.source, editor, hostProof, revision, watch: initial.templatePath, read }, plan, message) : undefined;
+      read() ? sourceSession({ path, source: initial.source, editor, hostProof, stamp, watch: initial.templatePath, read }, plan, message) : undefined;
     // The edit a slot part's new value makes in the page: URLs checked, text only where the slot holds text.
     const slotPartEdit = (at: Located, name: string, part: ComponentSlotPart, value: string) => {
       const slot = at.slots.find(slot => slot.name === name);
@@ -2167,22 +2057,29 @@ export function createComponentTools(deps: ComponentDeps) {
     editModeTemplate() {
       if (!modeOpening) followRename();
       const mode = editMode?.active();
-      return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath && explicitTemplate.revision === deps.revision()
+      return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath && standing(explicitTemplate)
         ? { tag: mode.tag, path: mode.templatePath, page: mode.path, entry: explicitTemplate as object } : undefined;
+    },
+    /**
+     * The mode's opening as the guarded edit's stamps hold it (src/editor-workspace.ts): the entry
+     * while the mode is on over its template, the file open. Not proved here (a stamp proves the rest).
+     */
+    editModeEntry(): object | undefined {
+      const mode = editMode?.active();
+      return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath ? explicitTemplate : undefined;
     },
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
       if (!modeOpening) followRename();
-      if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || explicitTemplate.revision !== deps.revision())) explicitTemplate = undefined;
-      return explicitTemplate && explicitTemplate.path === deps.currentPath() && explicitTemplate.revision === deps.revision()
-        ? { ...explicitTemplate } : undefined;
+      if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || !standing(explicitTemplate))) explicitTemplate = undefined;
+      return explicitTemplate ? { path: explicitTemplate.path } : undefined;
     },
     /** Map a reported shadow child to its verified real page instance; never guess selectors. */
     instanceSelection(selection: NativePreviewSelection): NativePreviewSelection | undefined {
       const host = selection.host;
       if (!host) return selection;
       if (!modeOpening) followRename();
-      if (explicitTemplate && explicitTemplate.path === deps.currentPath() && explicitTemplate.revision === deps.revision()) return selection;
+      if (explicitTemplate && explicitTemplate.path === deps.currentPath() && standing(explicitTemplate)) return selection;
       if (!host.path || !host.node || deps.previewPage() !== host.path) return;
       const at = instanceAt(host.path, host.node);
       if (!at || at.tag !== host.tag || templateOf(at.tag)?.path !== selection.path) return;
@@ -2203,7 +2100,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const mode = editMode?.active(), node = selection.node;
       const source = deps.sources()[selection.path];
       if (!mode || mode.templatePath !== selection.path || deps.currentPath() !== selection.path
-        || explicitTemplate?.revision !== deps.revision() || source === undefined || selection.paintedSource !== source || !node) return [];
+        || !standing(explicitTemplate) || source === undefined || selection.paintedSource !== source || !node) return [];
       const offered = templateRemovalPlan(deps.edits.peek, selection.path, node, mode.tag, kind);
       if (!offered || "refuse" in offered) return [];
       const stamp = deps.edits.stamp();

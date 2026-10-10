@@ -205,7 +205,7 @@ test("a page edit while the loader bytes are held refuses the whole Make compone
       editor.replaceActiveRange({ path: "index.html", start, end: start + expected.length, text: "<h1>Changed meanwhile</h1>", expected });
     });
   } finally { release(); }
-  await expect(page.locator("#status")).toContainText("repository or source changed meanwhile");
+  await expect(page.locator("#status")).toContainText("The page, its styles or the repository changed meanwhile; no component was made.");
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(before.get("index.html")!.replace("<h1>Blank repo</h1>", "<h1>Changed meanwhile</h1>"));
   for (const path of [COMPONENT_LOADER_PATH, "components/section-blank-repo/section-blank-repo.html", "components/section-blank-repo/section-blank-repo.css"]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
   for (const path of ["other/index.html", "styles/site.css"]) expect((await storedDraft(page, path))?.content).toBe(before.get(path));

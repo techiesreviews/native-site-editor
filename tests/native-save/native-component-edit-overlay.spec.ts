@@ -49,14 +49,15 @@ test('light DOM and template children have no component edit affordance while th
 test('paragraph, wrapper and button identities in light DOM and template content only select the host',async({page})=>{
  const result=await page.evaluate(async()=>{
   const {createComponentTools}=await import('/src/page-builder/components.ts');
+  const editsPath='/src/guarded-edit.ts',memoryPath='/tests/fakes/memory-workspace.ts';const {createGuardedEdits}=await import(editsPath),{createMemoryWorkspace}=await import(memoryPath);
   const {parseMarked}=await import('/src/native-source-location.ts');
   const templatePath='components/project-card/project-card.html';
   const sources={'index.html':'<project-card><div slot="body"><button>Go</button><p>Text</p></div></project-card>',[templatePath]:'<article><div><button>Go</button><p>Body</p></div></article>'};
   let selection:any;const selected:any[]=[];const opened:string[]=[];
   const host=document.createElement('div');document.body.append(host);
-  const tools=createComponentTools({site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),revision:()=> 'scope',sources:()=>sources,
+  const tools=createComponentTools({site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),edits:createGuardedEdits(createMemoryWorkspace().workspace),sources:()=>sources,
    editor:()=>undefined,preview:()=>({selectNode:(point:any)=>selected.push(point),selectAfterUpdate:()=>{}}),currentPath:()=> 'index.html',selection:()=>selection,
-   openFile:async(path:string)=>{opened.push(path);return true;},announce:()=>{},error:()=>{},images:()=>[],upload:async()=>undefined,links:()=>[],pageLabel:(path:string)=>path,createFiles:async()=>({error:'Unavailable'}),panelHost:host,addStrip:(strip:HTMLElement)=>host.append(strip),codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
+   openFile:async(path:string)=>{opened.push(path);return true;},announce:()=>{},error:()=>{},images:()=>[],upload:async()=>undefined,links:()=>[],pageLabel:(path:string)=>path,panelHost:host,addStrip:(strip:HTMLElement)=>host.append(strip),codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
   const entries:any[]=[];
   try{
    for(const path of ['index.html',templatePath]) for(const node of [[0,0],[0,0,0],[0,0,1]]) {

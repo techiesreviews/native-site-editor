@@ -114,7 +114,7 @@ import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
 import { createFileOperationsController } from "./controllers/file-operations-controller";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
-import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
+import { writeNewDrafts } from "./new-drafts";
 import { createGuardedEdits, type Reads, type PlanResult, type Stamp, type Outcome } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
 import type {
@@ -677,13 +677,11 @@ function mountComponentTools() {
     files: () => nativeFiles(),
     index: ensureNativeTextIndex,
     loaderPlan: nativeComponentLoaderPlan,
-    operation: op => applyNativeOperation(op),
     edits: guardedEdits,
     editor: () => editorModule,
     preview: () => nativePreview,
     currentPath: () => appStore.openFile.value,
     selection: () => appStore.selection.value,
-    revision: () => `${generation}:${setupScope()}`,
     openFile: async (path) => {
       const epoch = generation, scope = draftScope();
       recordNativeSourceIntent(path);
@@ -701,31 +699,6 @@ function mountComponentTools() {
     },
     links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title) : []),
     pageLabel: nativePageLabelOf,
-    // New files as drafts (a component made from the page), as the Files tab's New file writes them.
-    createFiles: async (made) => {
-      /** `path` of `scope` is the stylesheet pane's file, beside another file in the code pane. */
-      const besidePage = (scope: DraftScope, path: string) => {
-        const now = draftScope();
-        return Boolean(now && draftKey(now, path) === draftKey(scope, path) && secondaryPath === path && appStore.openFile.value !== path);
-      };
-      const scope = draftScope(), epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
-      if (!scope || !appStore.snapshot.value) return { error: "Open a repository first." };
-      return createComponentFileDrafts(made, {
-        scope, store,
-        isCurrent: () => epoch === generation && key === setupScope(),
-        exists: path => Boolean(pathNow(path)),
-        checkPath: branchPathProblem,
-        // The new component's stylesheet beside the page (after Edit component mode) doesn't hold Undo
-        // back: taking the file back closes that pane.
-        isOpen: (scope, path) => !besidePage(scope, path) && Boolean(editor?.draftOpen(scope, path)),
-        drop: (scope, path) => {
-          if (besidePage(scope, path)) closeSecondary();
-          return editor?.dropDraft(scope, path) ?? store.remove(scope, path);
-        },
-        refresh: afterFileChanges,
-        announce,
-      });
-    },
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
     canvasComponent: (parts) => nativePreview?.setCanvasComponent(parts),
     codeTitle: element("primary-title").parentElement!,
@@ -897,7 +870,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   draftScope,
   versionView: () => Boolean(versionView),
   route: () => nativePreview?.route(),
-  editModeEntry: () => componentTools?.editModeTemplate()?.entry,
+  editModeEntry: () => componentTools?.editModeEntry(),
   site: () => nativeSite,
   source: path => nativeEffectiveSource(path),
   exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
@@ -3892,6 +3865,10 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
       createdPaths.add(file.path);
       if (!vacated.has(file.path) && (nativePathExists(file.path) || await findEntry(file.path))) return `${file.path} already exists. No files were changed.`;
       if (staleOperation()) return changedOperation;
+      // A folder of the path that is a file on GitHub (a listing the snapshot has not read yet).
+      const problem = vacated.has(file.path) ? undefined : await branchPathProblem(file.path);
+      if (staleOperation()) return changedOperation;
+      if (problem) return `${problem} No files were changed.`;
     }
     for (const path of [...moves.map((move) => move.from), ...deletes]) {
       const [found] = await targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true);
@@ -4889,8 +4866,8 @@ const agentSiteActions: AgentSiteActions = {
           drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
       };
       // Before a home page exists there is no mounted editor to anchor operation
-      // history. Reuse the guarded file-creation transaction, then resync the site.
-      const made = await createComponentFileDrafts([{ path, content }], {
+      // history: the file is a new draft, all or nothing, then the site resyncs.
+      const error = await writeNewDrafts([{ path, content }], {
         scope, store, isCurrent,
         exists: path => pathNow(path, treeState(scope)) !== undefined,
         checkPath: async path => {
@@ -4901,12 +4878,10 @@ const agentSiteActions: AgentSiteActions = {
           }
           return branchPathProblem(path);
         },
-        isOpen: (scope, path) => Boolean(editor?.draftOpen(scope, path)),
         drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
         refresh: afterFileChanges,
-        announce,
       });
-      if (made.error) return made.error;
+      if (error) return error;
       await awaitNativeResync();
       return undefined;
     }

@@ -6,6 +6,8 @@ test("slot seam rejects stale snapshots and fills duplicated outlets as one nati
   const result = await page.evaluate(async () => {
     const modulePath = "/src/page-builder/components.ts";
     const { createComponentTools } = await import(/* @vite-ignore */ modulePath);
+    const editsPath = "/src/guarded-edit.ts", memoryPath = "/tests/fakes/memory-workspace.ts";
+    const [{ createGuardedEdits }, { createMemoryWorkspace }] = await Promise.all([import(/* @vite-ignore */ editsPath), import(/* @vite-ignore */ memoryPath)]);
     const pagePath = "index.html", templatePath = "components/test-card/test-card.html";
     const original = '<test-card></test-card><test-card><span slot="title">Other host</span></test-card>';
     const template = '<slot name="link"><a href="/">Fallback</a></slot><slot name="link">Second outlet</slot>';
@@ -30,16 +32,18 @@ test("slot seam rejects stale snapshots and fills duplicated outlets as one nati
         mountedSource = sources[pagePath];
       },
     };
+    // The memory workspace's stamps, its scope the test's revision.
+    const edits = createGuardedEdits({ ...createMemoryWorkspace().workspace, scope: () => revision });
     const tools = createComponentTools({
-      site: () => site, revision: () => revision, sources: () => sources, editor: () => editor,
+      site: () => site, edits, sources: () => sources, editor: () => editor,
       currentPath: () => currentPath, selection: () => selection, previewPage: () => previewPage,
       preview: () => ({ selectAfterUpdate: (request: any) => requests.push(request), selectNode() {} }),
       openFile: async () => { opens++; return false; }, announce() {}, error(error: unknown) { throw error; },
       images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
-      createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {}, refreshBar() {},
+      panelHost, codeTitle, addStrip() {}, refreshBar() {},
     });
     tools.show(selection);
-    const target = { pagePath, pageNode: [0], tag: "test-card", templatePath, expectedRevision: revision,
+    const target = { pagePath, pageNode: [0], tag: "test-card", templatePath, stamp: edits.stamp(),
       expectedPageSource: original, expectedTemplateSource: template, expectedSelection: selection, isCurrent: () => proof };
     const rejected: boolean[] = [];
     const reject = (mutate: () => void, restore: () => void) => {
@@ -106,6 +110,8 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
   const results = await page.evaluate(async (cases) => {
     const modulePath = "/src/page-builder/components.ts";
     const { createComponentTools } = await import(/* @vite-ignore */ modulePath);
+    const editsPath = "/src/guarded-edit.ts", memoryPath = "/tests/fakes/memory-workspace.ts";
+    const [{ createGuardedEdits }, { createMemoryWorkspace }] = await Promise.all([import(/* @vite-ignore */ editsPath), import(/* @vite-ignore */ memoryPath)]);
     const pagePath = "index.html", templatePath = "components/test-card/test-card.html";
     const out: any[] = [];
     for (const entry of cases) {
@@ -128,19 +134,20 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
             }
           },
         };
+        const edits = createGuardedEdits(createMemoryWorkspace().workspace);
         const tools = createComponentTools({
           structureFields: via === "structure",
-          site: () => ({ components: { "test-card": templatePath }, routes: { "/": pagePath } }), revision: () => "one",
+          site: () => ({ components: { "test-card": templatePath }, routes: { "/": pagePath } }), edits,
           sources: () => sources, editor: () => editor, currentPath: () => pagePath, selection: () => selection, previewPage: () => pagePath,
           preview: () => ({ selectAfterUpdate() {}, selectNode() {} }), openFile: async () => false, announce() {}, error(error: unknown) { throw error; },
           images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
-          createFiles: async () => ({ error: "unused" }), panelHost, codeTitle, addStrip() {}, refreshBar() {},
+          panelHost, codeTitle, addStrip() {}, refreshBar() {},
         });
         const before = tools.structure(pagePath, [0])?.slots.find((slot: any) => slot.name === entry.name);
         let accepted: boolean;
         if (via === "canvas") {
           tools.show(selection);
-          accepted = tools.fillInstanceSlot({ pagePath, pageNode: [0], tag: "test-card", templatePath, expectedRevision: "one",
+          accepted = tools.fillInstanceSlot({ pagePath, pageNode: [0], tag: "test-card", templatePath, stamp: edits.stamp(),
             expectedPageSource: entry.page, expectedTemplateSource: entry.template, expectedSelection: selection, isCurrent: () => true }, entry.name);
         } else accepted = tools.structure(pagePath, [0])!.setVisible(entry.name, true);
         const filled = sources[pagePath];
