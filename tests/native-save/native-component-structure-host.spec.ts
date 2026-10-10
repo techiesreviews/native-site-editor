@@ -274,7 +274,7 @@ test("a delayed component mode keeps the template part selected while it loads",
     await expect.poll(() => source(page, path)).toContain("No description yet.");
     const body = frame(page).locator("project-card").first().locator(".project-card__body");
     await expect(body).toHaveText("No description yet.");
-    await body.click({ position: { x: 5, y: 5 } });
+    await body.dblclick({ position: { x: 5, y: 5 } });
     await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
     await expect(body).toBeFocused();
     release();
