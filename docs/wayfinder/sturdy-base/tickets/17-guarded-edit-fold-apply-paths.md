@@ -19,6 +19,8 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/guarded-edit-de
 
 - Restore the interim gaps earlier slices accepted: Undo/Redo of a range-path edit (block insert/move from slice 11, open-page settings from slice 15) reselects the "before" element and announces "Undid …" again.
 - Plain repositories (no `index.html`): Files-tab rename, move and delete work again with no file open, as before slice 15 (which made them refuse with "Open a page before changing these files."). The stamp works without an open anchor; keep the undo step and the refusal when the file changed.
+- Undo of Make component / New component (receipt path since slice 13b) closes the new component's stylesheet pane, as the old companion did; cover it in a browser spec.
+- `native-boot-requests.spec.ts` failed twice in slice 13b's full run and passed on rerun: find the flake while the full suite runs here.
 
 ## Done when
 

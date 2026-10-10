@@ -22,6 +22,8 @@ One module for "check that nothing changed since I read it, then apply one guard
 
 11 first (most proof bugs), then 12 and 13. Slices 11-16 all touch `src/main.ts` in different regions: at most two at once.
 
+**Decided by the lead (2026-10-10), after slice 13:** the module's `select.historyOnly` option (forces the receipt path for a one-file step so Undo/Redo reselect) stays part of the interface. Slice 17 restores what 11, 13 and 15 accepted for now: Undo reselect and "Undid …" on range edits, the component stylesheet pane closing on Undo of Make component, plain-repo file ops without an open file.
+
 ## 2. Typed editor↔preview protocol, the runtime's rules shared
 
 Rules the runtime (DOM) and the editor (source) both apply live once in `src/page-builder/rules/`, unit tested and bundled into the runtime; a rule that walks a tree takes a small view, with a DOM adapter in the runtime and source adapters in the editor. One preview link (`src/components/preview-link.ts`) types every message, matches replies to requests and renders, and drops stale messages; a fake frame adapter tests it. The wire format does not change. Design: `~/Projects/native-site-editor/.scratch/sturdy/frame-protocol-design.md`. None of these needs slice 10.
