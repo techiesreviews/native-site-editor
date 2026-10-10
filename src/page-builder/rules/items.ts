@@ -47,4 +47,3 @@ export function repeatedRun(kinds: (string | undefined)[]): { kind: string; inde
     if (indexes.length >= 2 && (!best || indexes.length > best.indexes.length)) best = { kind, indexes };
   return best;
 }
-
