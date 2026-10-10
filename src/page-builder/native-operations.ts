@@ -3,6 +3,8 @@ import { VOID_ELEMENTS, startTags, startTagAttribute } from "../../shared/html-s
 import { decodeHtmlEntities } from "./html-entities";
 import { HTML_PHRASING } from "./rules/text-level";
 import type { InsertPoint } from "../components/insert-controls";
+import { isCustomElementName, isInstance as isInstanceIn, movableBlock, sealed } from "./rules/movable";
+import type { MarkupView } from "./rules/tree";
 
 export interface SourceEdit { start: number; end: number; text: string }
 export interface GuardedSourceEdit extends SourceEdit { original: string; source: string }
@@ -15,8 +17,15 @@ const interactive = new Set(["a", "button", "input", "select", "textarea", "labe
 // Only actual HTML names; editor catalogue keys and foreign/custom names are not HTML.
 const htmlNames = new Set("a abbr address area article aside audio b base bdi bdo blockquote body br button canvas caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe img input ins kbd label legend li link main map mark menu meta meter nav noscript object ol optgroup option output p picture pre progress q rp rt ruby s samp script search section select slot small source span strong style sub summary sup table tbody td template textarea tfoot th thead time title tr track u ul var video wbr".split(" "));
 const foreignBreakouts = new Set("b big blockquote body br center code dd div dl dt em embed h1 h2 h3 h4 h5 h6 head hr i img li listing menu meta nobr ol p pre ruby s small span strong strike sub sup table tt u ul var".split(" "));
-const reservedCustom = new Set("annotation-xml color-profile font-face font-face-src font-face-uri font-face-format font-face-name missing-glyph".split(" "));
-const customName = (name: string) => /^[a-z][a-z0-9._-]*-[a-z0-9._-]*$/.test(name) && !reservedCustom.has(name);
+/** The strict tree as the shared rules read it (rules/): elements only, in their namespace. */
+const view: MarkupView<SourceNode> = {
+  kind: () => "element",
+  name: (node) => node.name,
+  children: (node) => node.children,
+  text: () => "",
+  parent: (node) => node.parent,
+  foreign: (node) => (node.namespace ?? "html") !== "html",
+};
 function namespaceFor(parent: SourceNode, name: string, source: string): "html" | "svg" | "math" {
   let namespace = parent.namespace ?? "html";
   if (namespace === "svg" && ["foreignobject", "desc", "title"].includes(parent.name)) namespace = "html";
@@ -103,14 +112,16 @@ function tree(source: string): SourceNode | undefined {
     // Shared scanners may split names on JS whitespace; HTML recognizes only ASCII spaces.
     if (!/[\t\n\f\r />]/.test(tail[tag.nameEnd] ?? "")) return undefined;
     const namespace = namespaceFor(parent, tag.name, source);
-    if (namespace === "html" && !htmlNames.has(tag.name) && !["svg", "math"].includes(tag.name) && !customName(tag.name)) return undefined;
+    if (namespace === "html" && !htmlNames.has(tag.name) && !["svg", "math"].includes(tag.name) && !isCustomElementName(tag.name)) return undefined;
     // HTML breakouts escape a foreign island and change the page's child paths.
     if (namespace !== "html" && (foreignBreakouts.has(tag.name) || tag.name === "font" && ["color", "face", "size"].some(name => !!startTagAttribute(tail, tag, name)))) return undefined;
     const parsedTail = startTagTail(tail.slice(tag.nameEnd, tag.end - 1));
     if (!parsedTail) return undefined;
     const { selfClosing } = parsedTail;
     if (namespace === "html" && selfClosing && !VOID_ELEMENTS.has(tag.name)) return undefined;
-    const child: SourceNode = { namespace, opaque: namespace !== "html" || customName(tag.name) || ["template", "noscript", "xmp", "noembed", "noframes"].includes(tag.name), name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], interactive: interactive.has(tag.name) || ["audio", "video"].includes(tag.name) && !!startTagAttribute(tail, tag, "controls"), parent };
+    const child: SourceNode = { namespace, name: tag.name, start: lt, openEnd: lt + tag.end, closeStart: lt + tag.end, end: lt + tag.end, children: [], interactive: interactive.has(tag.name) || ["audio", "video"].includes(tag.name) && !!startTagAttribute(tail, tag, "controls"), parent };
+    // Components, template and raw-text islands and foreign content are sealed (rules/movable.ts).
+    child.opaque = sealed(child, view);
     parent.children.push(child);
     if (!(namespace === "html" ? VOID_ELEMENTS.has(child.name) : selfClosing)) stack.push(child);
     at = child.openEnd;
@@ -152,7 +163,7 @@ function slotOf(source: string, node: SourceNode) {
   const open = source.slice(node.start, node.openEnd), tag = startTags(open)[0];
   return tag ? decodeHtmlEntities(startTagAttribute(open, tag, "slot")?.value ?? "", true) : "";
 }
-const isInstance = (node: SourceNode) => (node.namespace ?? "html") === "html" && customName(node.name);
+const isInstance = (node: SourceNode) => isInstanceIn(node, view);
 /** The node at `path`; components are sealed, except (with `items`) towards a child in an items slot. */
 function atPath(root: SourceNode, path: readonly number[], open?: (instance: SourceNode, child: SourceNode) => boolean) {
   let node: SourceNode | undefined = root;
@@ -177,7 +188,7 @@ function scopedDescendants(node: SourceNode): SourceNode[] {
   if (node.name === "template" || (node.namespace ?? "html") !== "html") return [node];
   return [node, ...node.children.flatMap(scopedDescendants)];
 }
-const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || HTML_PHRASING.has(node.name) || customName(node.name) || ["svg", "math", "template", "slot"].includes(node.name);
+const isPhrasing = (node: SourceNode) => (node.namespace ?? "html") !== "html" || HTML_PHRASING.has(node.name) || isCustomElementName(node.name) || ["svg", "math", "template", "slot"].includes(node.name);
 /** Whether `children` may go in `parent`; `instance`: an instance's items slot, the one opening in its seal. */
 const canContain = (parent: SourceNode, children: SourceNode[], instance = false) => !contentRefusal(parent, children, instance);
 // Elements whose content is text and inline elements only: a link goes in a paragraph, a Div doesn't.
@@ -524,17 +535,14 @@ export function nativeEditInside(before: string, after: string, path: readonly n
 }
 
 /**
- * Whether the element at `path` is a block a drag may move: inside <main>
- * (never <main> itself, the header or the footer), reached without passing
- * through a component instance except via its items slots with `items`,
- * and either no island or an instance itself.
+ * Whether the element at `path` is a block a drag may move (rules/movable.ts,
+ * as the preview decides a press): inside <main>, sealed elements crossed
+ * only through instances' items slots with `items`, an instance or no island.
  */
 export function nativeMovableBlock(source: string, path: readonly number[], items?: ItemsSlotRule): boolean {
-  const root = tree(source);
-  const node = root && atPath(root, path, itemsOpener(source, items));
-  if (!node || !path.length || (node.opaque && !isInstance(node))) return false;
-  for (let at = node.parent; at; at = at.parent) if (at.name === "main") return true;
-  return false;
+  const root = tree(source), open = itemsOpener(source, items);
+  const node = root && path.length ? atPath(root, path, open) : undefined;
+  return !!node && movableBlock(node, view, open || (() => false));
 }
 
 /**

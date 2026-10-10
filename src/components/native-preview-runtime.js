@@ -4,6 +4,7 @@
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
+import { isInstance, movableBlock, sealed } from "../page-builder/rules/movable.ts";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS, TEXT_TAGS } from "../page-builder/rules/text-level.ts";
 import { domView } from "../page-builder/rules/tree.ts";
 
@@ -1005,9 +1006,6 @@ import { domView } from "../page-builder/rules/tree.ts";
     });
     return out;
   }
-  function dropSealed(el) {
-    return el.localName.indexOf("-") >= 0 || ["template", "noscript", "xmp", "noembed", "noframes", "svg", "math"].indexOf(el.localName) >= 0;
-  }
   // A card component instance: a card-… element whose template (its shadow
   // root) has a heading slot (rules/cards.ts, as component-model.ts reads it).
   function isCardElement(el) {
@@ -1037,9 +1035,13 @@ import { domView } from "../page-builder/rules/tree.ts";
   function itemsSlot(slot) {
     return isItemsSlot(slot.name, ruleView.children(slot), ruleView, isCardElement);
   }
+  // Whether `child` fills one of the instance's items slots, the one way through its seal.
+  function opensInto(instance, child) {
+    return !!(instance.shadowRoot && child.assignedSlot && itemsSlot(child.assignedSlot));
+  }
   function dropItem(el) {
     var parent = el.parentElement;
-    return !!(parent && parent.localName.indexOf("-") >= 0 && parent.shadowRoot && el.assignedSlot && itemsSlot(el.assignedSlot));
+    return !!parent && isInstance(parent, ruleView) && opensInto(parent, el);
   }
   function dropSlots(el) {
     return Array.prototype.map.call(el.shadowRoot.querySelectorAll("slot"), function (slot) {
@@ -1110,13 +1112,13 @@ import { domView } from "../page-builder/rules/tree.ts";
       var r = dropRect(el);
       if (dropHit(r, x, y)) return true;
       if (r.width || r.height || el === moved) return false;
-      if (dropSealed(el)) return !!el.shadowRoot && dropSlots(el).some(function (slot) { return dropHit(slot.rect, x, y); });
+      if (sealed(el, ruleView)) return !!el.shadowRoot && dropSlots(el).some(function (slot) { return dropHit(slot.rect, x, y); });
       return dropKids(el).some(under);
     }
     function walk(el, depth) {
       if (el === moved || depth > 100) return [];
       var chain = [];
-      if (dropSealed(el)) {
+      if (sealed(el, ruleView)) {
         if (!el.shadowRoot) return chain;
         // A fixed template element refuses here (its edges pass the drop up, beside
         // the instance), even when an items slot's parent box overlaps it.
@@ -1169,9 +1171,9 @@ import { domView } from "../page-builder/rules/tree.ts";
       function hit(el) {
         if (el.localName === "slot") return dropHit(slotRect(el), x, y);
         if (getComputedStyle(el).display === "none") return false;
-        var r = dropSealed(el) ? bandRect(el, 0) : dropRect(el);
+        var r = sealed(el, ruleView) ? bandRect(el, 0) : dropRect(el);
         if (dropHit(r, x, y)) return true;
-        if (r.width || r.height || dropSealed(el)) return false;
+        if (r.width || r.height || sealed(el, ruleView)) return false;
         return dropKids(el).some(hit);
       }
       // A slot among a part's children: the box of what it shows, named by
@@ -1197,7 +1199,7 @@ import { domView } from "../page-builder/rules/tree.ts";
           if (info.items && !shown.length) { var near = dropAround(el); if (near) report.around = near; }
           chain.push(report);
           if (!info.items) return chain;
-        } else if (dropSealed(el)) {
+        } else if (sealed(el, ruleView)) {
           return [entry(el, "component", [], bandRect(el, 0), el, [])];
         } else if (["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0 || moved && dropHolds(el)) {
           var block = ["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0;
@@ -3070,11 +3072,10 @@ import { domView } from "../page-builder/rules/tree.ts";
     while (el.parentElement && el.parentElement !== pageEl && !holdsBlocks(el.parentElement) && !dropItem(el) && phrasing(el)) el = el.parentElement;
     el = pressSelected(el, inner);
     // A sealed ancestor takes the press, unless the way down from it goes through one of its items slots.
-    for (var child = el, at = el.parentElement; at && at !== pageEl; child = at, at = at.parentElement) if (dropSealed(at) && !dropItem(child)) el = at;
-    if (dropSealed(el) && el.localName.indexOf("-") < 0) return null;
-    var main = el.parentElement && el.parentElement.closest("main");
+    for (var child = el, at = el.parentElement; at && at !== pageEl; child = at, at = at.parentElement) if (sealed(at, ruleView) && !dropItem(child)) el = at;
+    // The page's own block that the editor moves too (rules/movable.ts).
     var page = state && state.pagePaths && state.pagePaths[state.route];
-    return main && pageEl.contains(main) && page && ownerPath(el) === page ? el : null;
+    return page && ownerPath(el) === page && movableBlock(el, ruleView, opensInto) ? el : null;
   }
   // In Edit component mode the template's parts drag instead (slice 82):
   // the part pressed (inline content gives its text block, as on the page,

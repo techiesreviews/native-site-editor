@@ -20,6 +20,12 @@ export interface RuleView<N> {
   parent(node: N): N | undefined;
 }
 
+/** A view that also reads an element's namespace: the browser's, so HTML inside an SVG `<foreignObject>` is HTML again. */
+export interface MarkupView<N> extends RuleView<N> {
+  /** Whether an element is SVG or MathML content, not HTML. */
+  foreign(node: N): boolean;
+}
+
 /** `nodes` without blank text: elements, and text holding a character other than ASCII white space (the browser's reading: U+00A0 is text). */
 export function meaningful<N>(nodes: readonly N[], view: RuleView<N>): N[] {
   return nodes.filter((node) => {
@@ -32,18 +38,20 @@ export function meaningful<N>(nodes: readonly N[], view: RuleView<N>): N[] {
 export interface DomLikeNode {
   nodeType: number;
   localName?: string;
+  namespaceURI?: string | null;
   data?: string;
   childNodes: ArrayLike<DomLikeNode>;
   parentElement: DomLikeNode | null;
 }
 
 /** A view of the preview's DOM; `hidden` drops elements the browser has but the source does not (the runtime's injected styles). */
-export function domView<N extends DomLikeNode>(hidden: (element: N) => boolean): RuleView<N> {
+export function domView<N extends DomLikeNode>(hidden: (element: N) => boolean): MarkupView<N> {
   return {
     kind: (node) => (node.nodeType === 1 ? "element" : node.nodeType === 3 ? "text" : "other"),
     name: (node) => node.localName ?? "",
     children: (node) => Array.prototype.filter.call(node.childNodes, (child: N) => child.nodeType !== 1 || !hidden(child)) as N[],
     text: (node) => node.data ?? "",
     parent: (node) => (node.parentElement as N | null) ?? undefined,
+    foreign: (node) => node.nodeType === 1 && node.namespaceURI != null && node.namespaceURI !== "http://www.w3.org/1999/xhtml",
   };
 }
