@@ -114,6 +114,8 @@ import { createSavePublishController } from "./controllers/save-publish-controll
 import { createFileOperationsController } from "./controllers/file-operations-controller";
 import { createComponentTools, type ComponentTools } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
+import { createGuardedEdits } from "./guarded-edit";
+import { createEditorWorkspace } from "./editor-workspace";
 import type {
   EditorContext,
   Directory,
@@ -873,6 +875,29 @@ const blockInsertPorts: BlockInsertPorts = {
     refuse(reason, { visible: document.querySelector<HTMLElement>(".pb-flash-label.is-refused") ?? undefined });
   },
 };
+// The guarded edit module (src/guarded-edit.ts) over this host: one way to
+// prove nothing changed since a plan read the files, then write one undo
+// step. Its writes are today's (applyNativeOperation, the editor's ranges);
+// callers move onto it in sturdy-base slices 11-16.
+const guardedEdits = createGuardedEdits(createEditorWorkspace({
+  generation: () => generation,
+  setupScope,
+  draftScope,
+  versionView: () => Boolean(versionView),
+  route: () => nativePreview?.route(),
+  editModeEntry: () => componentTools?.editModeTemplate()?.entry,
+  site: () => nativeSite,
+  source: path => nativeEffectiveSource(path),
+  exists: nativePathExists,
+  openFile: () => appStore.openFile.value,
+  restore: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
+  editor: editorModule,
+  select: request => nativePreview?.selectAfterUpdate(request),
+  flash: request => nativePreview?.flashInsert(request),
+  announce,
+  operation: op => applyNativeOperation(op),
+}));
+void guardedEdits;
 const loadBlockDrag = lazyModule(() => import("./page-builder/block-drag"));
 // Page Structure's side of a block's drag: its line, and its own targets
 // (in Edit component mode, the rows of the template edited).
