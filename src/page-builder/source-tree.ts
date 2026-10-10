@@ -94,9 +94,13 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
   return parseTree(html, from, to).nodes;
 }
 
-/** parseSource, recording whether the markup was balanced as written (`SourceTree.exact`). */
-function parseTree(html: string, from: number, to: number): { nodes: SourceNode[]; exact: boolean } {
-  // An element closed by an ancestor's end tag, one left open, or a dropped stray end tag.
+/**
+ * parseSource, recording whether the markup was balanced as written
+ * (`SourceTree.exact`). `openRawText`: raw text left open holds the rest as
+ * its text, as in the browser (parseSource leaves it empty).
+ */
+function parseTree(html: string, from: number, to: number, openRawText = false): { nodes: SourceNode[]; exact: boolean } {
+  // An element closed by an ancestor's end tag, one left open, a dropped stray end tag, or a tag cut off.
   let exact = true;
   const root: SourceNode[] = [];
   const stack: SourceElement[] = [];
@@ -124,7 +128,11 @@ function parseTree(html: string, from: number, to: number): { nodes: SourceNode[
     const next = html[lt + 1] ?? "";
     if (next === "/") {
       const match = /^<\/([a-zA-Z][^\t\n\f\r />]*)[^>]*>/.exec(html.slice(lt, to));
-      if (!match) { i = lt + 1; continue; }
+      if (!match) {
+        if (/[a-zA-Z]/.test(html[lt + 2] ?? "")) exact = false;
+        i = lt + 1;
+        continue;
+      }
       flush(lt);
       const name = asciiLower(match[1]);
       const at = stack.map((el) => el.name).lastIndexOf(name);
@@ -159,6 +167,7 @@ function parseTree(html: string, from: number, to: number): { nodes: SourceNode[
         j = close < 0 ? to : close + 1;
       } else j++;
     }
+    if (j >= to) exact = false;
     const end = Math.min(j + 1, to);
     const el: SourceElement = { type: "element", name, tag: { name, start: lt, nameEnd, end }, start: lt, end, children: [] };
     add(el);
@@ -171,6 +180,7 @@ function parseTree(html: string, from: number, to: number): { nodes: SourceNode[
       const gt = close < 0 ? -1 : html.indexOf(">", close);
       if (close < 0 || gt < 0 || gt >= to) {
         exact = false;
+        if (openRawText && to > end) el.children.push({ type: "text", start: end, end: to, parent: el });
         el.end = to;
         i = text = to;
       } else {
@@ -190,15 +200,15 @@ function parseTree(html: string, from: number, to: number): { nodes: SourceNode[
 }
 
 /**
- * A text node's text as the browser reads it: CR LF and lone CR as LF, the
- * newline right after `<pre>`/`<textarea>` dropped, character references
- * decoded except in raw text (a <style>'s `&amp;` stays).
+ * A text node's text as the browser reads it: CR LF and lone CR as LF,
+ * character references decoded except in raw text (a <style>'s `&amp;`
+ * stays), the newline right after `<pre>`/`<textarea>` dropped (`&#10;` too).
  */
 function textOf(html: string, node: SourceText): string {
   const parent = node.parent;
-  let text = newlines(html.slice(node.start, node.end));
-  if (parent && LEADING_NEWLINE.has(parent.name) && node.start === parent.tag.end && text.startsWith("\n")) text = text.slice(1);
-  return parent && UNDECODED.has(parent.name) ? text : decodeHtmlEntities(text);
+  const raw = newlines(html.slice(node.start, node.end));
+  const text = parent && UNDECODED.has(parent.name) ? raw : decodeHtmlEntities(raw);
+  return parent && LEADING_NEWLINE.has(parent.name) && node.start === parent.tag.end && text.startsWith("\n") ? text.slice(1) : text;
 }
 
 /**
@@ -246,7 +256,7 @@ function dropped(source: string, node: SourceNode) {
 export function readSource(source: string, options: { page?: true; from?: number; to?: number } = {}): SourceTree<SourceNode> {
   const part = options.page ? nativePageBody(source) : { start: 0, end: source.length };
   const end = options.to ?? part.end;
-  const { nodes, exact } = parseTree(source, options.from ?? part.start, end);
+  const { nodes, exact } = parseTree(source, options.from ?? part.start, end, true);
   const drop = (list: SourceNode[]): SourceNode[] => list.filter((node) => {
     if (dropped(source, node)) return false;
     if (node.type === "element" && node.name !== "template") node.children = drop(node.children);
@@ -271,10 +281,11 @@ export function readSource(source: string, options: { page?: true; from?: number
       }
       return element;
     },
+    // A node not in this tree (another tree's, a template's content) has no path.
     path(element) {
       const out: number[] = [];
       for (let node: SourceNode | undefined = element; node; node = node.parent) out.unshift(children(node.parent).indexOf(node));
-      return out;
+      return out.includes(-1) ? [] : out;
     },
     children,
     elements,
@@ -284,7 +295,9 @@ export function readSource(source: string, options: { page?: true; from?: number
       if (element.type !== "element") return undefined;
       order ??= { tags: startTags(source), all: elements() };
       const inside = (node: SourceNode) => { for (let up = node.parent; up; up = up.parent) if (up === element) return true; return false; };
-      const following = order.all.slice(order.all.indexOf(element) + 1).find((other) => !inside(other));
+      const index = order.all.indexOf(element);
+      if (index < 0) return undefined;
+      const following = order.all.slice(index + 1).find((other) => !inside(other));
       return elementEnd(source, order.tags, order.tags.findIndex((tag) => tag.start === element.start), following?.start ?? end);
     },
     attribute: (element, name) => (element.type === "element" ? tagAttribute(source, element.tag, name) : undefined),

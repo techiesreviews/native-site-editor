@@ -107,9 +107,9 @@ export const contractCases: ContractCase[] = [
   },
   {
     name: "CR LF and lone CR read as LF in text and attribute values; <pre>'s first newline is dropped",
-    source: "<p title=\"a\r\nb\rc\">x\r\ny\rz</p><pre>\r\nP\r\n</pre><textarea>\nT</textarea>",
-    read: (tree) => [tree.text(), tree.attribute(tree.at([0])!, "title")?.value, tree.text(tree.at([1])), tree.text(tree.at([2]))],
-    expected: ["x\ny\nzP\nT", "a\nb\nc", "P\n", "T"],
+    source: "<p title=\"a\r\nb\rc\">x\r\ny\rz</p><pre>\r\nP\r\n</pre><textarea>\nT</textarea><pre>&#10;R</pre><pre>&#13;S</pre><pre><!-- c -->\nU</pre>",
+    read: (tree) => [tree.text(), tree.attribute(tree.at([0])!, "title")?.value, tree.children().slice(1).map((el) => tree.text(el))],
+    expected: ["x\ny\nzP\nTR\rS\nU", "a\nb\nc", ["P\n", "T", "R", "\rS", "\nU"]],
   },
   {
     name: "a text-only fragment reads as text; U+00A0 is kept",
@@ -145,11 +145,26 @@ export const contractCases: ContractCase[] = [
     page: [true, "div(p)", undefined],
   },
   {
-    name: "raw text left open is not exact",
+    name: "raw text left open is not exact; it holds the rest as text",
     source: "<p>A</p><style>a{}",
-    read: (tree) => [tree.exact, outline(tree), tree.range(tree.at([1])!)],
-    expected: [false, "p,style", undefined],
-    page: [true, "p,style", undefined],
+    read: (tree) => [tree.exact, outline(tree), tree.range(tree.at([1])!), tree.text()],
+    expected: [false, "p,style", undefined, "Aa{}"],
+    page: [true, "p,style", undefined, "Aa{}"],
+  },
+  {
+    name: "a start tag cut off at the end is not exact",
+    source: "<p>A</p><img src=\"x",
+    read: (tree) => [tree.exact, tree.text()],
+    expected: [false, "A"],
+    page: [true, "A"],
+  },
+  {
+    // Not exact, so read as written: the browser drops the cut-off tag, the source adapter keeps it as text.
+    name: "an end tag cut off at the end is not exact",
+    source: "<p>A</p></div",
+    read: (tree) => [tree.exact, outline(tree), tree.text()],
+    expected: [false, "p", "A</div"],
+    page: [true, "p", "A"],
   },
   {
     name: "at and path round trip, counted as the preview counts",
@@ -200,11 +215,11 @@ export const contractCases: ContractCase[] = [
   },
 ];
 
-/** Markup the browser repairs while the source adapter reads it as written: the two trees must differ. */
+/** Markup the browser repairs while the source adapter reads it as written: the outlines differ, as listed. */
 export const repairedPages = [
-  "<table><tr><td>A</td></tr></table>",
-  "<p>A<div>B</div></p>",
-  "<ul><li>A<li>B</ul>",
+  { source: "<table><tr><td>A</td></tr></table>", page: "table(tbody(tr(td)))", written: "table(tr(td))" },
+  { source: "<p>A<div>B</div></p>", page: "p,div,p", written: "p(div)" },
+  { source: "<ul><li>A<li>B</ul>", page: "ul(li,li)", written: "ul(li(li))" },
 ];
 
 /** Every element of a page as both adapters must agree on it: path, name, range, attributes, text. */

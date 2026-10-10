@@ -33,6 +33,13 @@ test("from and to read a stretch, with offsets into the whole source", () => {
   assert.deepEqual(tree.path(tree.at([0, 1])!), [0, 1]);
 });
 
+test("a node from another tree has no path or range here; nothing throws", () => {
+  const tree = readSource("<div><p>A</p></div>");
+  const other = readSource("<section><p>B</p></section>").at([0, 0])!;
+  assert.deepEqual(tree.path(other), []);
+  assert.equal(tree.range(other), undefined);
+});
+
 test("a stretch cut inside an element is not exact", () => {
   const html = "<div><p>A</p><p>B</p></div>";
   assert.equal(readSource(html, { from: 0, to: html.indexOf("<p>B") }).exact, false);

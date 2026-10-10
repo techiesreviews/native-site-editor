@@ -125,7 +125,7 @@ export function elementPathAt(html: string, start: number): number[] | undefined
 
 function pathOf(element: Element) {
   const path: number[] = [];
-  for (let el: Element | null = element; el; el = el.parentElement)
+  for (let el: Element | null = element; el?.parentNode; el = el.parentElement)
     path.unshift([...(el.parentNode as ParentNode).children].indexOf(el));
   return path;
 }
@@ -152,7 +152,7 @@ export function readPage(source: string): SourceTree<PageNode> {
   const tree: SourceTree<PageNode> = Object.freeze({
     source,
     exact: true,
-    view: domView<PageNode>(() => false),
+    view: Object.freeze(domView<PageNode>(() => false)),
     at(path: readonly number[]) {
       let el: Element | undefined;
       for (const index of path) {

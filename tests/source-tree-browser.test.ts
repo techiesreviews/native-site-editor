@@ -18,6 +18,7 @@ declare global {
     readSource: typeof import("../src/page-builder/source-tree.ts").readSource;
     contractCases: typeof contractCases;
     dump: typeof import("./fakes/source-tree-contract.ts").dump;
+    outline: typeof import("./fakes/source-tree-contract.ts").outline;
   };
 }
 
@@ -46,8 +47,8 @@ test("the source tree contract and fixture parity in Chromium", async (t) => {
     stdin: { contents: `
       import { readPage } from './src/native-source-location';
       import { readSource } from './src/page-builder/source-tree';
-      import { contractCases, dump } from './tests/fakes/source-tree-contract';
-      globalThis.sourceTreeContract = { readPage, readSource, contractCases, dump };
+      import { contractCases, dump, outline } from './tests/fakes/source-tree-contract';
+      globalThis.sourceTreeContract = { readPage, readSource, contractCases, dump, outline };
     `, resolveDir: process.cwd() },
     bundle: true, write: false, format: "iife", platform: "browser",
   });
@@ -92,11 +93,22 @@ test("the source tree contract and fixture parity in Chromium", async (t) => {
     });
 
     await t.test("markup the browser repairs reads differently, as listed", async () => {
-      const differs = await page.evaluate((pages) => {
-        const { readPage, readSource, dump } = sourceTreeContract;
-        return pages.map((source) => JSON.stringify(dump(readPage(source), [])) !== JSON.stringify(dump(readSource(source, { page: true }), [])));
+      const read = await page.evaluate((pages) => {
+        const { readPage, readSource, outline } = sourceTreeContract;
+        return pages.map(({ source }) => ({ source, page: outline(readPage(source)), written: outline(readSource(source, { page: true })) }));
       }, repairedPages);
-      assert.deepEqual(differs, repairedPages.map(() => true));
+      assert.deepEqual(read, repairedPages);
+    });
+
+    await t.test("a node from elsewhere has no path and no range; nothing throws", async () => {
+      const result = await page.evaluate(() => {
+        const { readPage } = sourceTreeContract;
+        const tree = readPage("<div><p>A</p></div>");
+        const detached = document.createElement("p");
+        return [tree.path(detached), tree.range(detached), tree.attribute(detached, "class"), tree.text(detached), tree.children(detached).length,
+          tree.path(tree.at([0, 0])!), Object.isFrozen(tree), Object.isFrozen(tree.view), Object.isFrozen(tree.range(tree.at([0])!))];
+      });
+      assert.deepEqual(result, [[], undefined, undefined, "", 0, [0, 0], true, true, true]);
     });
   } finally {
     await browser.close();
