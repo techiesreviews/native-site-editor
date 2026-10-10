@@ -10,11 +10,12 @@ import type { InsertChoice, InsertControls, InsertPoint } from "../components/in
 import type { SelectionRect } from "../components/edit-bar";
 import { instanceMarkup } from "../native-insert";
 import { nativeChoiceMarkup } from "./native-elements";
-import type { AddPanelHandlers } from "./add-panel";
+import type { AddPanel, AddPanelHandlers } from "./add-panel";
 import { addCatalog, suggestedItems } from "./add-catalog";
-import { createAddPanel, insertPointKey } from "./add-panel";
 import { createCanvasLayer, createEmptyCanvas, createInsertFlash } from "./canvas-overlays";
-import { defaultInsertPoint } from "./insert-target";
+import { defaultInsertPoint, insertPointKey } from "./insert-target";
+import { handleChunkLoadFailure } from "../chunk-recovery";
+import "./add-panel.css";
 import { thumbnailDocument, type ThumbnailInputs } from "./thumbnail-doc";
 import type { BlockDragPorts, createBlockDrag } from "./block-drag";
 import type { DraggedBlock } from "./drop-target";
@@ -83,10 +84,10 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       const choice = allChoices().find((candidate) => candidate.tag === tag);
       if (choice) insert(point, choice);
     },
-    browse: () => panel.openDocked(),
+    browse: () => openPanel(),
   });
 
-  const panel = createAddPanel({
+  const panelHandlers: AddPanelHandlers = {
     choices: () => deps.choices(),
     pointFor: deps.pointFor,
     destinationText: deps.destinationText,
@@ -122,7 +123,33 @@ export function createPageBuilder(deps: PageBuilderDeps) {
         if (!open && !gap && restoreFocus) addButton.focus();
       }
     },
-  });
+  };
+  // The Add panel (add-panel.ts and its own styles) loads the first time it
+  // opens. Until then it is closed: nothing to refresh, retarget or close.
+  let panel: AddPanel | undefined;
+  let panelLoad: Promise<AddPanel | undefined> | undefined;
+  // The opening asked for while it loads (a gap's plus, or docked); closing meanwhile drops it.
+  let pendingOpen: { gap?: InsertPoint } | undefined;
+  let destroyed = false;
+  function openPanel(gap?: InsertPoint) {
+    if (panel) {
+      if (gap) panel.openFor(gap);
+      else panel.openDocked();
+      return;
+    }
+    pendingOpen = { gap };
+    panelLoad ??= import("./add-panel").then(({ createAddPanel }) => destroyed ? undefined : panel = createAddPanel(panelHandlers))
+      .catch((error) => { panelLoad = undefined; void handleChunkLoadFailure(error); return undefined; });
+    void panelLoad.then(() => {
+      const open = pendingOpen;
+      pendingOpen = undefined;
+      if (open && panel) openPanel(open.gap);
+    });
+  }
+  function closePanel(restoreFocus: boolean) {
+    pendingOpen = undefined;
+    panel?.close(restoreFocus);
+  }
 
   return {
     /** The runtime reported the page's insert points. */
@@ -130,7 +157,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       points = next;
       canvas.layout();
       empty.update(next);
-      panel.retarget();
+      panel?.retarget();
     },
     /**
      * The runtime selected an element (or nothing); for one inside a
@@ -148,7 +175,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
         const dy = below > 0 ? Math.min(below, rect.top - 24) : rect.top < 0 ? rect.top - 24 : 0;
         if (dy) deps.scroll(dy, true);
       }
-      panel.retarget();
+      panel?.retarget();
     },
     selectionRect(rect: SelectionRect) {
       selectedRect = rect;
@@ -166,7 +193,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     sourcesChanged() {
       clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
-        panel.refresh();
+        panel?.refresh();
         empty.refresh();
       }, 250);
     },
@@ -176,14 +203,15 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       selection = selectedRect = undefined;
       empty.clear();
       flash.clear();
-      panel.retarget();
+      panel?.retarget();
     },
     /** A plus between sections: the Add panel for its gap (again: closed). */
     openFor(point: InsertPoint) {
-      panel.openFor(point);
+      openPanel(point);
     },
     closeGap() {
-      if (panel.isOpen() && !panel.isDocked()) panel.close(true);
+      if (pendingOpen?.gap) pendingOpen = undefined;
+      if (panel?.isOpen() && !panel.isDocked()) panel.close(true);
     },
     /** The top bar's "+ Add": toggles the docked panel; shown while the preview is. */
     attachAddButton(next: HTMLButtonElement) {
@@ -191,15 +219,15 @@ export function createPageBuilder(deps: PageBuilderDeps) {
       next.setAttribute("aria-haspopup", "dialog");
       next.setAttribute("aria-expanded", "false");
       next.addEventListener("click", () => {
-        if (panel.isDocked()) panel.close(false);
-        else panel.openDocked();
+        if (panel?.isDocked() || (pendingOpen && !pendingOpen.gap)) closePanel(false);
+        else openPanel();
       });
     },
     /** History shows an earlier version (or no longer): "+ Add" is unavailable and the panel closes meanwhile. */
     setViewing(on: boolean) {
       viewing = on;
       if (on) {
-        panel.close(false);
+        closePanel(false);
         points = [];
         empty.clear();
         flash.clear();
@@ -212,7 +240,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     /** The preview is shown or hidden: so is "+ Add", and the panel closes with it. */
     setActive(active: boolean) {
       if (addButton) addButton.hidden = !active;
-      if (!active) panel.close(false);
+      if (!active) closePanel(false);
     },
     /**
      * A block dragged over the canvas (new from the rail, or moved): its
@@ -226,7 +254,9 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     insertPointKey,
     destroy() {
       clearTimeout(refreshTimer);
-      panel.destroy();
+      destroyed = true;
+      pendingOpen = undefined;
+      panel?.destroy();
       canvas.destroy();
       flashLayer.destroy();
     },

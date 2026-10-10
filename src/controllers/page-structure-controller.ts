@@ -9,7 +9,7 @@ import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEd
 import { blockLayout, blockLayoutEdit } from "../page-builder/block-fields";
 import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
-import { agentElement } from "../agent-site";
+import { handleChunkLoadFailure } from "../chunk-recovery";
 import { isSectionTemplate } from "../native-insert";
 import { nativeMovableBlock, type ItemsSlotRule } from "../page-builder/native-operations";
 import { templateMovePath } from "../page-builder/block-insert";
@@ -568,7 +568,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
         placeholder: "Ask the agent…",
         maxLength: REQUEST_TEXT_LIMIT,
         onSend: async (text) => {
-          const about = agentElement({ ...selection, route: preview.route() }, site, ports.nativeSources()[path]);
+          const route = preview.route(), source = ports.nativeSources()[path];
+          // Loaded on first use, with the editor's other agent code (lazy in main.ts).
+          let agentSite: typeof import("../agent-site");
+          try { agentSite = await import("../agent-site"); } catch (error) { void handleChunkLoadFailure(error); return (error as Error).message; }
+          const about = agentSite.agentElement({ ...selection, route }, site, source);
           if (!about) return "This element cannot be pointed out to an agent.";
           try {
             await menu.ask(text, about);

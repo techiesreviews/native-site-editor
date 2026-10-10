@@ -12,10 +12,10 @@ import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { addCatalog, matchesQuery, type AddItem } from "./add-catalog";
 import { normaliseComponentName, normaliseField, previewComponentTag } from "./component-names";
-import { pointAt, positionText } from "./insert-target";
+import { insertPointKey, pointAt, positionText } from "./insert-target";
 import { makeInsertDraggable, type InsertDragContext } from "./insert-drag";
 import { createThumbnail, type Thumbnail } from "./thumbnail";
-import "./add-panel.css";
+import "./add-panel-dialog.css";
 
 // A single HTML element (a heading, a button) shows small and cropped; a plain
 // HTML section shows whole at the canvas's width, like a component.
@@ -49,8 +49,6 @@ export interface AddPanelHandlers {
   onState(state: { open: boolean; gap?: string; restoreFocus: boolean }): void;
 }
 
-/** The key a plus between sections has for its point (insert-controls.ts). */
-export const insertPointKey = (point: InsertPoint) => `${point.path}|${point.parent.join(".")}|${point.index}`;
 const keyOf = insertPointKey;
 let panelId = 0;
 

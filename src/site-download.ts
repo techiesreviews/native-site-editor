@@ -2,7 +2,6 @@
 // drafts included, zipped as they are. The repository is the site, so the
 // archive is what any static host serves (docs/hosting.md). Also reads the
 // site's own address from `.editor/config.json` for "View live site".
-import { zipFiles } from "./zip";
 import { nativeSiteSettings } from "../shared/native-project";
 import { TEXT_PATH } from "../shared/agent";
 
@@ -49,7 +48,8 @@ export async function collectSiteFiles(site: SiteFiles): Promise<Record<string, 
 
 /** The site's files as a store-only .zip, and how many files it holds. */
 export async function buildSiteZip(site: SiteFiles): Promise<{ zip: Uint8Array; count: number }> {
-  const files = await collectSiteFiles(site);
+  // The zip writer loads with the first download.
+  const [files, { zipFiles }] = await Promise.all([collectSiteFiles(site), import("./zip")]);
   return { zip: zipFiles(files), count: Object.keys(files).length };
 }
 

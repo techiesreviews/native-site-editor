@@ -6,6 +6,9 @@
 
 import type { InsertPoint } from "../components/insert-controls";
 
+/** The key a plus between sections has for its point (insert-controls.ts). */
+export const insertPointKey = (point: InsertPoint) => `${point.path}|${point.parent.join(".")}|${point.index}`;
+
 const samePath = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((step, at) => step === b[at]);
 
 /**

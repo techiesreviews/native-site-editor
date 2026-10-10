@@ -33,9 +33,8 @@ import {
 } from "./workspace-state";
 import { createSetupEntryController } from "./controllers/setup-entry-controller";
 import { createAgentController } from "./controllers/agent-controller";
-import { setupPrompt } from "./agent-prompts";
 import { touchesGithubConfig, splitProtectedEdits, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
-import { agentAnswers, applySiteCommand, buildAgentContext, type AgentSiteActions, type SharedContext } from "./agent-site";
+import type { AgentSiteActions, SharedContext } from "./agent-site";
 import { type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
@@ -51,7 +50,7 @@ import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import type { DraggedBlock } from "./page-builder/drop-target";
 import type { DropContainer } from "./page-builder/drop-report";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
-import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
+import type { SiteSettingsValues, SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
@@ -91,8 +90,7 @@ import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize"
 import * as sourceEditor from "./components/source-editor";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
-import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "./page-builder/media-workspace";
-import { mediaDraftTransaction } from "./page-builder/media-draft-transaction";
+import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import { addGuardedUpload } from "./page-builder/guarded-upload";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
@@ -170,17 +168,27 @@ function lazyModule<T>(load: () => Promise<T>) {
   });
 }
 const loadHistory = lazyModule(() => import("./components/commit-history"));
+// The media picker and the media workspace behind it (its batches are staged by applyMediaBatch).
+const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction")]));
 const loadMedia = lazyModule(async () => {
-  const module = await import("./page-builder/media-picker");
+  const [module, [{ createMediaWorkspace }]] = await Promise.all([import("./page-builder/media-picker"), loadMediaWorkspace()]);
   module.configureMediaPicker(createMediaWorkspace(mediaController.workspaceContext));
   return module;
 });
 const loadChecklist = lazyModule(() => import("./components/setup-checklist"));
-const loadWizard = lazyModule(() => import("./components/setup-wizard"));
+// The prompt for a coding agent that sets the site up (src/agent-prompts.ts),
+// loaded with the wizard and the start panel that offer it.
+let agentPrompts: typeof import("./agent-prompts") | undefined;
+const loadAgentPrompts = lazyModule(async () => agentPrompts = await import("./agent-prompts"));
+const loadWizard = lazyModule(async () => (await Promise.all([import("./components/setup-wizard"), loadAgentPrompts()]))[0]);
 const loadGetStarted = lazyModule(() => import("./components/get-started"));
 const loadStartSite = lazyModule(() => import("./components/start-site"));
 const loadSpotlight = lazyModule(() => import("./components/spotlight"));
 const loadAgentMenu = lazyModule(() => import("./components/agent-menu"));
+// The Site, Page and Navigation settings dialogs, loaded when one first opens.
+const loadSiteSettings = lazyModule(() => import("./components/site-settings"));
+// What agents are shown and how their commands run (src/agent-site.ts), loaded when one asks.
+const loadAgentSite = lazyModule(() => import("./agent-site"));
 // The code panes' Monaco load gate and resize handles (src/controllers/code-panes-controller.ts).
 const codePanes = createCodePanesController({
   load: () => import("./components/code-editor"),
@@ -1852,7 +1860,7 @@ function nativeNavigationTarget(pagePath: string | undefined) {
 let siteLinkPreferenceScope = "";
 let siteLinkPreferences = new Map<string, SiteLinkPreference>();
 
-function nativeSettingsController() {
+function nativeSettingsController({ createSiteSettings }: typeof import("./components/site-settings")) {
   const scope = setupScope(), epoch = generation;
   if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
   // Pin page data (bytes or absence) with the pages.
@@ -1944,23 +1952,23 @@ function nativeSettingsController() {
 
 async function openNativePageSettings(path: string) {
   const epoch = generation, scope = setupScope();
-  const problem = await ensureNativeTextIndex();
+  const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem) { errorMessage(new Error(problem)); return; }
   const source = nativeEffectiveSource(path), route = nativeRouteForPath(path);
   if (source === undefined || !route) return;
-  try { nativeSettingsController().page({ path, source, route, images: nativeImagePaths() }); }
+  try { nativeSettingsController(settings).page({ path, source, route, images: nativeImagePaths() }); }
   catch (error) { errorMessage(error); }
 }
 
 async function openNativeSiteSettings() {
   const epoch = generation, scope = setupScope();
   if (!nativeSite) { refuse("Open a native site first."); return; }
-  const problem = await ensureNativeTextIndex();
+  const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
   try {
-    nativeSettingsController().site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
+    nativeSettingsController(settings).site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
   } catch (error) { errorMessage(error); }
 }
 
@@ -1985,12 +1993,12 @@ async function applyNativeSiteSettings(values: SiteSettingsValues, expectedSourc
 
 async function openNativeNavigation(pagePath: string) {
   const epoch = generation, scope = setupScope();
-  const problem = await ensureNativeTextIndex();
+  const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem) { errorMessage(new Error(problem)); return; }
   const target = nativeNavigationTarget(pagePath);
   if (!target) { refuse("No editable navigation found in this page's header. Navigation supports simple links, or a list of single-link items."); return; }
-  nativeSettingsController().navigation({ path: target.path, source: target.source, links: target.list.links, pages: nativeSitePageChoices(), shared: target.shared });
+  nativeSettingsController(settings).navigation({ path: target.path, source: target.source, links: target.list.links, pages: nativeSitePageChoices(), shared: target.shared });
 }
 
 // Pages and components are found from the files when the project loads. A
@@ -2499,6 +2507,7 @@ function chooseMediaForImage(target: { path: string; node: number[]; width?: num
 
 // Atomic staging, source receipts, upload rollback and one Undo remain host-owned.
 async function applyMediaBatch(scope: DraftScope, assertLive: () => void, batch: MediaWorkspaceBatch) {
+  const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }] = await loadMediaWorkspace();
   const editor = editorModule;
   if (!editor || !appStore.openFile.value) throw new Error("Open a page before changing images.");
   const historyPath = appStore.openFile.value, historyHost = editor.captureHistoryHost(appStore.openFile.value);
@@ -3237,7 +3246,7 @@ let startDialog: ReturnType<typeof createConfirmDialog> | undefined;
 async function startSitePanel() {
   const repo = appStore.repository.value!;
   const empty = Boolean(appStore.snapshot.value?.empty);
-  const { createStartSite } = await loadStartSite();
+  const [{ createStartSite }, { setupPrompt }] = await Promise.all([loadStartSite(), loadAgentPrompts()]);
   return createStartSite({
     repository: repo.name,
     empty,
@@ -4846,6 +4855,7 @@ function agentContext(): Promise<SharedContext | undefined> {
   return withSiteIndexed(nativeTextIndexGate, buildAgentSiteContext);
 }
 async function buildAgentSiteContext(): Promise<SharedContext | undefined> {
+  const { buildAgentContext } = await loadAgentSite();
   const scope = draftScope();
   if (!appStore.repository.value || !appStore.snapshot.value || !scope) return undefined;
   const site = nativeSite;
@@ -4868,6 +4878,7 @@ async function buildAgentSiteContext(): Promise<SharedContext | undefined> {
 }
 // A Files-tab action run for an agent: its confirmation is answered as asked.
 async function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
+  const { agentAnswers } = await loadAgentSite();
   const real = confirmDialog;
   confirmDialog = real && agentAnswers(real, answers);
   try {
@@ -5000,6 +5011,7 @@ const agentSiteActions: AgentSiteActions = {
   legacy: applyAgentCommand,
 };
 async function applyAgentSiteCommand(command: AgentCommand) {
+  const { applySiteCommand } = await loadAgentSite();
   if (!appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch || command.commit !== appStore.snapshot.value.commit)
     throw new Error("The editor changed branch or revision.");
   return agentActing(() => applySiteCommand(agentSiteActions, command));
@@ -5558,7 +5570,8 @@ const setupEntry = createSetupEntryController({
     create: createSiteInWizard,
     findRepository: findWizardRepository,
     loadPreview: wizardPreview,
-    agentPrompt: (choice, about) => setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }),
+    // Loaded with the wizard (loadWizard).
+    agentPrompt: (choice, about) => agentPrompts?.setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }) ?? "",
     finish: repo => void finishWizard(repo),
   },
   onExit: () => { if (info.user && !repositories.length) void showGetStarted().catch(errorMessage); },
