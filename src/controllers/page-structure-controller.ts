@@ -20,11 +20,14 @@ import { type createPageStructure } from "../components/page-structure";
 import { type NativeSite } from "../../shared/native-project";
 import type * as sourceEditor from "../components/source-editor";
 import type { PreviewSelectionController } from "./preview-selection-controller";
+import type { GuardedEdits, Planned, PlanResult, Reads, Stamp } from "../guarded-edit";
 
 /** Workspace values are live host getters; operations and parsers stay injected. */
 export interface PageStructurePorts {
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "selectNode" | "route" | "selectTextAfterUpdate" | "selectAfterUpdate" | "refresh" | "showEditBar" | "hideEditBar"> | undefined;
   readonly editorModule: Pick<typeof sourceEditor, "captureFileModelState" | "closeActiveEditGroup" | "isMounted" | "replaceActiveRange" | "replaceActiveRanges" | "runVisualHistory" | "forgetDraftModel">;
+  /** Guarded edits (src/guarded-edit.ts): section moves, field writes and text edits are its plans. */
+  readonly edits: GuardedEdits;
   readonly appStore: { openFile: { readonly value: string | undefined }; selection: { readonly value: NativePreviewSelection | undefined } };
   readonly componentTools: ComponentTools | undefined;
   readonly nativeEditableSource: (path: string) => string | undefined;
@@ -71,15 +74,40 @@ export interface PageStructurePorts {
   readonly moveBlock: (selection: NativePreviewSelection, direction: "up" | "down") => "moved" | "stayed";
 }
 
+/** What a section move was offered against: the bytes painted for it, the workspace then (`since`) and, from the bar, its selection and editor model (`guard`). */
+export interface SectionMoveOffer { painted: string; since?: Stamp; guard?: () => boolean }
+
+// A plan with nothing to write: no step, nothing said.
+const NOTHING: Planned = { done: "", undone: "" };
+const SECTION_MOVE_STALE = "The source or selection changed. Select the section again before moving it.";
+const SECTION_OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
+const FIELD_STALE = "The source or selection changed. Select the element again before editing its fields.";
+const TEXT_UNPLACED = "That text change could not be placed in the source. Change text within one formatting at a time.";
+
 export function createPageStructureController(ports: PageStructurePorts) {
   const refuse = (reason: string) => ports.refuse(reason);
+  // The selection is still `node` of `path`.
+  const stillSelected = (path: string, node: readonly number[]) => () =>
+    ports.appStore.selection.value?.path === path && ports.appStore.selection.value.node?.join(".") === node.join(".");
+  // The open file's editor model now (document, session, revision), for an offer kept past this moment.
+  const modelNow = (path: string) => {
+    const scope = ports.draftScope();
+    return scope && ports.editorModule.captureFileModelState(scope, path);
+  };
+  // The workspace as one load (account, repository, branch, generation, version view), not the page
+  // shown nor Edit component mode: opening a page from a component's template may leave both.
+  function loadStamp(): Stamp {
+    const held = ports.edits.stamp();
+    const changed = () => { const key = held.changed(); return key === "route" || key === "edit-mode" ? undefined : key; };
+    return { changed, holds: () => !changed() };
+  }
   // What B, I and Link do for the current selection, for the keyboard shortcuts.
   let nativeFormatActions: Partial<Record<NativeFormat, () => void>> = {};
 
   // The edit bar last shown, whose controls the command palette offers while it shows.
   let nativeEditBarModel: EditBarModel | undefined;
   // Delete on a Structure row: the row's element is selected, and the bar drawn for it runs its Remove (soon, or never).
-  let rowRemoval: { path: string; node: number[]; source: string; epoch: number; scope: string; until: number } | undefined;
+  let rowRemoval: { path: string; node: number[]; source: string; since: Stamp; until: number } | undefined;
 
   // A link just made from the bar around selected text (`node` is the text
   // element, `link` the new link's index path): its Address opens at once
@@ -89,9 +117,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   let nativeElementMoveAction: EditBarModel["onMove"];
 
-  // One native field keeps the snapshot captured when its popover opened. The
-  // edit bar may replace a live callback while retaining that same input node.
-  let nativeAttributeFieldSession: { key: string; path: string; source: string; model: { isCurrent(): boolean }; epoch: number; scope: string } | undefined;
+  // One native field keeps the bytes, the workspace (a stamp) and the editor
+  // model from when its popover opened, then the bytes and model it last wrote. The edit bar may replace a
+  // live callback while retaining that same input node.
+  let nativeAttributeFieldSession: { key: string; path: string; source: string; since: Stamp; model: { isCurrent(): boolean } } | undefined;
 
   // Ask agent's element description (src/agent-site.ts, lazy with the rest of
   // the editor's agent code) loads once an agent is connected and the bar
@@ -399,38 +428,40 @@ export function createPageStructureController(ports: PageStructurePorts) {
         });
       }
     }
-    // Native media and form attributes use the same guarded source controls.
+    // Native media and form attributes use the same guarded source controls:
+    // each write is a guarded edit from the bytes the field last read or wrote,
+    // while typing one undo step per field (`group`).
     if (range && node) {
       const fields = nativeElementFields(source, range.tag);
-      const scope = ports.draftScope(), epoch = ports.generation, scopeKey = ports.setupScope();
-      let expectedSource = source;
-      let model = scope && editor.captureFileModelState(scope, path);
+      const painted = { source, since: ports.edits.stamp(), model: modelNow(path) };
       const writeField = (property: string, value: string, grouped: boolean) => {
         const key = `${path}:${node.join(".")}:${property}`;
-        const state = grouped ? nativeAttributeFieldSession : model && { key, path, source: expectedSource, model, epoch, scope: scopeKey };
-        if (!scope || !state || state.key !== key || !state.model.isCurrent() || ports.generation !== state.epoch || ports.setupScope() !== state.scope || ports.versionView ||
-            ports.appStore.selection.value?.path !== path || ports.appStore.selection.value.node?.join(".") !== node.join(".") || ports.nativeEffectiveSource(path) !== state.source) {
-          refuse("The source or selection changed. Select the element again before editing its fields."); return;
+        const state = grouped ? nativeAttributeFieldSession : painted.model && { key, path, ...painted, model: painted.model };
+        if (!state || state.key !== key || ports.appStore.openFile.value !== path || !editor.isMounted(path)) { refuse(FIELD_STALE); return; }
+        const model = state.model;
+        let next: string | undefined;
+        const outcome = ports.edits.now(r => {
+          if (r.source(path) !== state.source) return { refuse: FIELD_STALE };
+          const tag = ports.locateNativeElementRange(state.source, node)?.tag;
+          if (!tag || tag.name !== range.tag.name) return { refuse: "The selected element changed." };
+          const located = locateNativeFieldElement(state.source, tag);
+          if ("error" in located) return { refuse: located.error };
+          const result = nativeElementAttributeEdits(state.source, located, { [property]: value });
+          if ("error" in result) return { refuse: result.error };
+          if (!result.edits.length) return NOTHING;
+          const edit = result.edits[0];
+          next = state.source.slice(0, edit.start) + edit.text + state.source.slice(edit.end);
+          const label = fields.find(field => field.property === property)?.label ?? property;
+          return { edits: new Map([[path, [edit]]]), select: { after: { path, node } }, done: `${label} changed`, undone: `Undid: ${label} changed` };
+        }, { since: state.since, guard: () => model.isCurrent() && stillSelected(path, node)(), anchor: path, ...grouped ? { group: key } : {} });
+        if (outcome.ok) {
+          // The field goes on from the bytes and the editor model it wrote.
+          if (outcome.status === "applied" && next !== undefined) { state.source = painted.source = next; state.model = painted.model = modelNow(path) ?? model; }
+          return;
         }
-        const tag = ports.locateNativeElementRange(state.source, node)?.tag;
-        if (!tag || tag.name !== range.tag.name) { refuse("The selected element changed."); return; }
-        const located = locateNativeFieldElement(state.source, tag);
-        if ("error" in located) { refuse(located.error); return; }
-        const result = nativeElementAttributeEdits(state.source, located, { [property]: value });
-        if ("error" in result) { refuse(result.error); return; }
-        if (!result.edits.length) return;
-        const edit = result.edits[0];
-        const next = state.source.slice(0, edit.start) + edit.text + state.source.slice(edit.end);
-        preview.selectAfterUpdate({ path, node });
-        try {
-          editor.replaceActiveRange({ path, ...edit, expected: state.source.slice(edit.start, edit.end) }, grouped);
-          if (ports.generation !== epoch || ports.setupScope() !== scopeKey || ports.nativeEffectiveSource(path) !== next) throw new Error("The source changed while applying this field.");
-          expectedSource = next;
-          model = editor.captureFileModelState(scope, path);
-          state.source = next;
-          state.model = model;
-          announce(`${fields.find(field => field.property === property)?.label ?? property} changed`);
-        } catch (error) { preview.selectAfterUpdate(undefined); ports.errorMessage(error); }
+        // The editor would not take the edit: an error, as any failed write.
+        if (outcome.reason === "refused" && next !== undefined) ports.errorMessage(new Error(outcome.message));
+        else refuse(outcome.reason === "stale" ? FIELD_STALE : outcome.message);
       };
       for (const field of fields) {
         if (field.kind === "choice") controls.push({ kind: "select", label: field.label, value: field.value,
@@ -440,7 +471,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
           warning: selection.tag === "button" && field.property === "aria-label" && !field.value.trim() && !selection.text.trim() && !attribute("aria-labelledby")?.value.trim()
             && !attribute("title")?.value.trim() && !(range && ports.nativeNamedDescendant(source, range)) ? "Needs a name" : undefined,
           placeholder: field.kind === "url" ? "Local path or web address" : field.label,
-          onOpen: () => { if (model) nativeAttributeFieldSession = { key: `${path}:${node.join(".")}:${field.property}`, path, source: expectedSource, model, epoch, scope: scopeKey }; },
+          onOpen: () => { if (painted.model) nativeAttributeFieldSession = { key: `${path}:${node.join(".")}:${field.property}`, path, source: painted.source, since: ports.edits.stamp(), model: painted.model }; },
           onInput: value => writeField(field.property, value, true), onClose: () => {
             editor.closeActiveEditGroup(nativeAttributeFieldSession?.path ?? path);
             nativeAttributeFieldSession = undefined;
@@ -529,8 +560,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
       const before = index > 0 ? ports.locateNativeElementRange(source, [...parent, index - 1]) : undefined;
       const after = ports.locateNativeElementRange(source, [...parent, index + 1]);
       // Only the source this selection was painted from moves; a newer one, or another selection, refuses.
-      const proof = selection.paintedSource === source ? sectionMoveProof(source, node, true) : undefined;
-      const move = (direction: "up" | "down") => proof ? moveNativeSection(selection, direction, proof) : (refuse(SECTION_MOVE_STALE), "stayed" as const);
+      const model = modelNow(path), selected = stillSelected(path, node);
+      const offer: SectionMoveOffer | undefined = selection.paintedSource === source
+        ? { painted: source, since: ports.edits.stamp(), guard: () => (!model || model.isCurrent()) && selected() } : undefined;
+      const move = (direction: "up" | "down") => offer ? moveNativeSection(selection, direction, offer) : (refuse(SECTION_MOVE_STALE), "stayed" as const);
       onMove = move;
       controls.push({
         kind: "button",
@@ -586,10 +619,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
           let module = agentSite;
           if (!module) {
             // Sent before it arrived: the element is told only if the page is still the one asked about.
-            const epoch = ports.generation, scope = ports.setupScope(), route = preview.route(), source = ports.nativeSources()[path];
+            const since = ports.edits.stamp(), source = ports.nativeSources()[path];
             module = await loadAgentSite(true);
             if (!module) return "The agent tools could not load. Try again.";
-            if (epoch !== ports.generation || scope !== ports.setupScope() || route !== preview.route() || source !== ports.nativeSources()[path]) return "The page changed meanwhile. Ask again.";
+            if (!since.holds() || source !== ports.nativeSources()[path]) return "The page changed meanwhile. Ask again.";
           }
           const about = module.agentElement({ ...selection, route: preview.route() }, site, ports.nativeSources()[path]);
           if (!about) return "This element cannot be pointed out to an agent.";
@@ -615,7 +648,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const pending = rowRemoval;
     rowRemoval = undefined;
     if (pending && pending.path === path && pending.node.join() === node?.join()
-      && pending.source === source && pending.epoch === ports.generation && pending.scope === ports.setupScope() && Date.now() < pending.until) {
+      && pending.source === source && pending.since.holds() && Date.now() < pending.until) {
       const remove = controls.find(control => control.kind === "button" && control.label === "Remove");
       if (remove?.kind === "button" && !remove.disabled) remove.onPress();
     }
@@ -662,59 +695,70 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
   }
 
-  // A whole section: a <section>, or a component whose template is one.
-  function isNativeSectionTag(tag: string) {
-    return tag === "section" || (tag.includes("-") && isSectionTemplate(ports.nativeSources()[ports.nativeSite?.components[tag] ?? ""] ?? ""));
+  // A whole section: a <section>, or a component whose template is one. A
+  // plan passes its `r`, so the template it reads is proved with the move.
+  function isNativeSectionTag(tag: string, reads: Reads = ports.edits.peek) {
+    return tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? ""));
+  }
+
+  // The plan of a section move one sibling position from the bytes painted
+  // for it: `verdict` says what came of it ("stayed" at the first or last
+  // position, undefined when the section cannot move this way).
+  function sectionMovePlan(r: Reads, target: { path: string; node: number[]; tag: string }, direction: "up" | "down", painted: string, stale: string) {
+    const outcome: { verdict?: "moved" | "stayed"; plan: Planned | { refuse: string } } = { plan: NOTHING };
+    if (r.source(target.path) !== painted) { outcome.verdict = "stayed"; outcome.plan = { refuse: stale }; return outcome; }
+    if (!isNativeSectionTag(target.tag, r)) return outcome;
+    // The editor's one move engine (nativeMoveEdit), as Alt+Up/Down on any block and drags use.
+    const plan = nativeElementSiblingMove(painted, target.node, direction, ports.itemsSlots());
+    if (plan.status !== "moved") { if (plan.status === "stayed") outcome.verdict = "stayed"; return outcome; }
+    const done = direction === "up" ? "Moved up" : "Moved down";
+    outcome.verdict = "moved";
+    outcome.plan = { edits: new Map([[target.path, [plan.edit]]]), select: { after: { path: target.path, node: plan.selection } }, done, undone: `Undid: ${done}` };
+    return outcome;
   }
 
   // Moves a whole section one sibling position, as one undo step, keeping it
   // selected: the Move up/down buttons and Alt+Up/Down from the bar, the
   // preview and the page structure all come here. "stayed" at the first or
-  // last position; nothing for anything but a section, when the page is not
-  // the mounted file, or when the edit could not be made.
-  // What a section move was offered against: the exact source painted for it,
-  // the setup it was painted in, and (from the bar) the selection it was for.
-  type SectionMoveProof = { source: string; epoch: number; scope: ReturnType<typeof ports.setupScope>; node: readonly number[]; model?: { isCurrent(): boolean }; selected: boolean };
-
-  const SECTION_MOVE_STALE = "The source or selection changed. Select the section again before moving it.";
-
-  function sectionMoveProof(source: string, node: readonly number[], selected: boolean): SectionMoveProof {
-    const scope = ports.draftScope();
-    return { source, epoch: ports.generation, scope: ports.setupScope(), node: [...node], selected,
-      model: scope && ports.editorModule ? ports.editorModule.captureFileModelState(scope, ports.appStore.openFile.value ?? "") : undefined };
-  }
-
-  function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down", proof: SectionMoveProof): "moved" | "stayed" | undefined {
+  // last position or when the offer is stale (said); nothing for anything but
+  // a section, when the page is not the mounted file, or when the edit could
+  // not be made.
+  function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down", offer: SectionMoveOffer): "moved" | "stayed" | undefined {
     const { path, node } = target;
     if (!path || !node?.length || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-    const selected = ports.appStore.selection.value;
-    if (proof.epoch !== ports.generation || proof.scope !== ports.setupScope() || ports.versionView || ports.nativeSources()[path] !== proof.source
-      || proof.node.join(".") !== node.join(".") || (proof.model && !proof.model.isCurrent())
-      || (proof.selected && (selected?.path !== path || selected.node?.join(".") !== node.join(".")))) {
-      refuse(SECTION_MOVE_STALE); return "stayed";
-    }
-    // The editor's one move engine (nativeMoveEdit), as Alt+Up/Down on any block and drags use.
-    const plan = nativeElementSiblingMove(proof.source, node, direction, ports.itemsSlots());
-    if (plan.status !== "moved") return plan.status === "stayed" ? "stayed" : undefined;
-    return applyNativeChange(path, proof.source, [plan.edit], plan.selection, direction === "up" ? "Moved up" : "Moved down") ? "moved" : undefined;
+    let move: ReturnType<typeof sectionMovePlan> | undefined;
+    const outcome = ports.edits.now(r => (move = sectionMovePlan(r, { path, node, tag: target.tag }, direction, offer.painted, SECTION_MOVE_STALE)).plan,
+      { since: offer.since, guard: offer.guard, anchor: path });
+    if (outcome.ok) return move?.verdict;
+    if (outcome.reason === "stale") { refuse(SECTION_MOVE_STALE); return "stayed"; }
+    // A refusal the plan made is said; one the editor made is an error, as any failed write.
+    if (move?.verdict === "moved") { ports.errorMessage(new Error(outcome.message)); return undefined; }
+    refuse(outcome.message);
+    return move?.verdict;
   }
 
   // Alt+Up/Down on a page structure row while another file is open (a
   // component chosen in the preview, a file from the explorer): the page
-  // file opens first, as an insert does, then the section moves. A move that
-  // still cannot be made is said so rather than passed off as the end of the
-  // list.
+  // file opens first (the guarded edit's anchor; it does not mount once the
+  // painted bytes changed), as an insert does, then the section moves. A move
+  // that still cannot be made is said so rather than passed off as the end of
+  // the list.
   async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
-    const epoch = ports.generation, scope = ports.setupScope(), draft = ports.draftScope();
+    const draft = ports.draftScope();
+    // A kept model of the page, forgotten when the open is refused: it holds bytes older than the draft's.
     const cachedModel = draft ? ports.editorModule?.captureFileModelState(draft, target.path, true) : undefined;
-    await ports.restoreFile(target.path, epoch, { linkDefaultStyle: false, beforeMount: () => epoch === ports.generation && scope === ports.setupScope() && ports.nativeEffectiveSource(target.path) === paintedSource });
-    if (epoch !== ports.generation || scope !== ports.setupScope() || ports.appStore.openFile.value !== target.path || ports.nativeEffectiveSource(target.path) !== paintedSource) {
-      if (epoch !== ports.generation || scope !== ports.setupScope()) return;
+    let move: ReturnType<typeof sectionMovePlan> | undefined;
+    const outcome = await ports.edits.run(r => (move = sectionMovePlan(r, target, direction, paintedSource, SECTION_OPEN_STALE)).plan,
+      { since: loadStamp(), anchor: target.path, guard: () => ports.nativeEffectiveSource(target.path) === paintedSource, openOnlyIfCurrent: true });
+    if (outcome.ok) { if (outcome.status === "applied" || move?.verdict === "stayed") return; refuse("The section could not be moved"); return; }
+    if (outcome.reason === "stale" && (outcome.changed === "scope" || outcome.changed === "generation")) return;
+    if (outcome.reason === "stale" || outcome.message === SECTION_OPEN_STALE) {
       if (draft && ports.nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !ports.editorModule?.isMounted(target.path)) ports.editorModule?.forgetDraftModel(draft, target.path);
       ports.updateNativePreviewSources();
-      refuse("The source changed while its editor opened. Select the section again before moving it."); return;
+      refuse(SECTION_OPEN_STALE); return;
     }
-    if (!moveNativeSection(target, direction, sectionMoveProof(paintedSource, target.node, false))) refuse("The section could not be moved");
+    if (move?.verdict === "moved") ports.errorMessage(new Error(outcome.message));
+    refuse("The section could not be moved");
   }
 
   // Moves a whole section to another gap among its siblings (`index` counted
@@ -728,14 +772,19 @@ export function createPageStructureController(ports: PageStructurePorts) {
   function moveNativeSectionTo(target: { path: string; node?: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined {
     const { path, node } = target;
     if (!path || !node?.length || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-    const source = ports.nativeSources()[path] ?? "";
-    const plan = nativeSectionMovePlan(source, node, parent, index, ports.itemsSlots());
-    if (plan.status === "stayed") {
-      ports.element("status").textContent = "Section stayed in place";
-      return "stayed";
-    }
-    if (plan.status !== "moved") return undefined;
-    return applyNativeChange(path, source, [plan.edit], plan.selection, "Section moved") ? "moved" : undefined;
+    let verdict: "moved" | "stayed" | undefined;
+    const outcome = ports.edits.now(r => {
+      const source = r.source(path) ?? "";
+      if (!isNativeSectionTag(target.tag, r)) return NOTHING;
+      const plan = nativeSectionMovePlan(source, node, parent, index, ports.itemsSlots());
+      if (plan.status === "stayed") { verdict = "stayed"; return { stayed: "Section stayed in place" }; }
+      if (plan.status !== "moved") return NOTHING;
+      verdict = "moved";
+      return { edits: new Map([[path, [plan.edit]]]), select: { after: { path, node: plan.selection } }, done: "Section moved", undone: "Undid moving the section" };
+    }, { anchor: path });
+    if (outcome.ok) return verdict;
+    ports.errorMessage(new Error(outcome.message));
+    return undefined;
   }
 
   // Writes text typed into a preview element into its source, as one undo
@@ -786,32 +835,37 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   function prepareNativeTextEdit({ path, node, before, after }: NativeTextEdit) {
     if (!ports.nativePreview) return undefined;
-    const openingEpoch = ports.generation, openingScope = ports.setupScope();
-    const allowed = () => openingEpoch === ports.generation && openingScope === ports.setupScope() && (path === ports.nativeSite?.routes[ports.nativePreview?.route() ?? ""] || path === ports.nativeEditableTemplatePath());
+    // The workspace when the text was committed: the same account, repository, branch and load.
+    const opening = loadStamp();
+    const sameLoad = () => { const moved = opening.changed(); return moved !== "scope" && moved !== "generation"; };
+    const allowed = () => sameLoad() && (path === ports.nativeSite?.routes[ports.nativePreview?.route() ?? ""] || path === ports.nativeEditableTemplatePath());
     if (!allowed()) {
       refuse("Edit the page instance in Structure, or choose Edit for its shared template.");
       ports.updateNativePreviewSources();
       return undefined;
     }
+    // The text change as one guarded edit of `path`'s bytes now; `select`: the element after it.
+    const textPlan = (done: string, undone: string, select: boolean) => (r: Reads): PlanResult => {
+      const source = r.source(path);
+      const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, before, after);
+      if (!edit) return { refuse: TEXT_UNPLACED };
+      return { edits: new Map([[path, [edit]]]), ...select ? { select: { after: { path, node } } } : {}, done, undone };
+    };
     // A page's text committed before its file was mounted, whose page was then
     // left (another page opened): it goes into that page's draft as one
     // operation rather than being lost. Same account, repository and branch
     // only.
     const page = Boolean(ports.nativeSite && Object.values(ports.nativeSite.routes).includes(path));
     const draftLeftPage = async () => {
-      if (!page || ports.versionView || openingEpoch !== ports.generation || openingScope !== ports.setupScope()) return;
+      if (!page || ports.versionView || !sameLoad()) return;
       // Back on the page meanwhile: the edit goes in there.
       if (ports.appStore.openFile.value === path && ports.editorModule.isMounted(path) && allowed()) { applyInEditor(); return; }
-      const source = ports.nativeEffectiveSource(path);
-      const edit = source === undefined ? undefined : nativeTextSourceEdit(source, node, before, after);
-      if (source === undefined || !edit) { ports.errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time.")); return; }
-      const problem = await ports.applyNativeOperation({
-        expectedSources: new Map([[path, source]]),
-        edits: new Map([[path, source.slice(0, edit.start) + edit.text + source.slice(edit.end)]]),
-        done: `Text changed on ${ports.nativePageLabelOf(path)}.`,
-        undone: `Undid the text change on ${ports.nativePageLabelOf(path)}.`,
-      });
-      if (problem) ports.errorMessage(new Error(problem));
+      // The step is the open file's, as it is mounted now; the left page is not opened again, nor selected.
+      const open = ports.appStore.openFile.value;
+      if (open === undefined || !ports.editorModule.isMounted(open)) { ports.errorMessage(new Error("Open a page before changing these files.")); return; }
+      const label = ports.nativePageLabelOf(path);
+      const outcome = await ports.edits.run(textPlan(`Text changed on ${label}.`, `Undid the text change on ${label}.`, false));
+      if (!outcome.ok) ports.errorMessage(new Error(outcome.message));
     };
     return async () => {
     // The click that selected the element may still be opening its file.
@@ -819,33 +873,19 @@ export function createPageStructureController(ports: PageStructurePorts) {
       await new Promise((done) => setTimeout(done, 50));
     if (!allowed()) { await draftLeftPage(); return; }
     if (ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path)) {
-      const epoch = ports.generation;
-      await ports.restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount: allowed });
-      if (epoch === ports.generation && !allowed()) { await draftLeftPage(); return; }
-      if (epoch !== ports.generation || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !allowed()) return;
+      await ports.restoreFile(path, ports.generation, { linkDefaultStyle: false, beforeMount: allowed });
+      if (sameLoad() && !allowed()) { await draftLeftPage(); return; }
+      if (!sameLoad() || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !allowed()) return;
     }
     applyInEditor();
     };
     function applyInEditor() {
-    const editor = ports.editorModule;
     const preview = ports.nativePreview;
-    if (!editor || !preview || !allowed()) return;
-    const source = ports.nativeSources()[path] ?? "";
-    const edit = nativeTextSourceEdit(source, node, before, after);
-    if (!edit) {
-      preview.refresh();
-      ports.errorMessage(new Error("That text change could not be placed in the source. Change text within one formatting at a time."));
-      return;
-    }
-    preview.selectAfterUpdate({ path, node });
-    try {
-      editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
-      ports.element("status").textContent = "Text changed";
-    } catch (error) {
-      preview.selectAfterUpdate(undefined);
-      preview.refresh();
-      ports.errorMessage(error);
-    }
+    if (!preview || !allowed() || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path)) return;
+    const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", true), { anchor: path });
+    if (outcome.ok) return;
+    preview.refresh();
+    ports.errorMessage(new Error(outcome.message));
     }
   }
 
@@ -857,7 +897,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     removeEmptyNewLink,
     applyNativeChange,
     isNativeSectionTag,
-    sectionMoveProof,
     moveNativeSection,
     moveNativeSectionAfterOpening,
     moveNativeSectionTo,
@@ -875,7 +914,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         if (!ports.componentTools?.removeControl(target, "Element").length) return false;
         // On a page the bar drawn for the row decides (a card's own Remove, an items slot's card included).
       } else if (!Object.values(ports.nativeSite?.routes ?? {}).includes(path)) return false;
-      rowRemoval = { path, node: [...node], source, epoch: ports.generation, scope: ports.setupScope(), until: Date.now() + 2000 };
+      rowRemoval = { path, node: [...node], source, since: ports.edits.stamp(), until: Date.now() + 2000 };
       ports.nativePreview?.selectNode({ path, node }, false);
       return true;
     },

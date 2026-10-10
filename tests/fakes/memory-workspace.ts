@@ -193,12 +193,14 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     exists,
     modelState: path => models.has(path) ? proof(path) : undefined,
     openFile: () => openFile,
-    async open(path) {
+    async open(path, beforeMount) {
       const hold = openHold;
       openHold = undefined;
       if (hold) { hold.arrive(); await hold.wait; } else await Promise.resolve();
       if (openFile && openFile !== path) models.delete(openFile);
       openFile = path;
+      // Refused before mounting: the file is chosen, its editor is not there.
+      if (beforeMount && !beforeMount()) return;
       if (!models.has(path)) mount(path);
     },
     anchor(path) {

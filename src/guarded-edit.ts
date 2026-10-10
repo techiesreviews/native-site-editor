@@ -48,6 +48,8 @@ export interface RunOptions {
   anchor?: string;
   /** `now` only: consecutive edits with this key (typing in a field) stay one undo step. */
   group?: string;
+  /** `run` only: the anchor mounts only while the stamp and guard still hold (a page whose action went stale meanwhile stays unopened). */
+  openOnlyIfCurrent?: boolean;
 }
 
 export interface Planned {
@@ -135,8 +137,8 @@ export interface EditorWorkspace {
   /** Proof of a mounted file's model (document, history session, revision); undefined when not mounted. */
   modelState(path: string): { isCurrent(): boolean } | undefined;
   openFile(): string | undefined;
-  /** Opens `path` in the editor (its history takes the step). */
-  open(path: string): Promise<void>;
+  /** Opens `path` in the editor (its history takes the step); with `beforeMount`, its editor mounts only while that holds. */
+  open(path: string, beforeMount?: () => boolean): Promise<void>;
   /** Proof that `path` is the open file, mounted in this editor and session, at this revision; undefined when it is not. */
   anchor(path: string): { isCurrent(): boolean } | undefined;
   /** Replaces ranges of the mounted file `path` as one editor step (`group`: joins the open typing group). Throws on failure. */
@@ -346,7 +348,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const anchor = options.anchor ?? ws.openFile();
     if (anchor === undefined) return refused("Open a page before changing these files.");
     if (ws.openFile() !== anchor || !ws.anchor(anchor)) {
-      await ws.open(anchor);
+      await ws.open(anchor, options.openOnlyIfCurrent ? () => !proved() : undefined);
       changed = proved();
       if (changed) return stale(changed);
     }

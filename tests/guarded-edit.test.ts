@@ -163,6 +163,22 @@ test("a change while the anchor page opens is stale and the plan never runs", as
   assert.deepEqual(m.steps(), []);
 });
 
+test("openOnlyIfCurrent: a guard lost while the anchor opens leaves it unmounted; without it the anchor mounts", async () => {
+  for (const openOnlyIfCurrent of [true, false]) {
+    const { m, edits } = setup({ open: "about.html" });
+    const hold = m.holdOpen();
+    let current = true;
+    const pending = edits.run(insertH2, { anchor: "index.html", guard: () => current, openOnlyIfCurrent });
+    await hold.reached;
+    current = false;
+    hold.release();
+    assert.deepEqual(await pending, staleOn("guard"));
+    assert.equal(m.openFile(), "index.html");
+    assert.equal(m.model("index.html") === undefined, openOnlyIfCurrent);
+    assert.deepEqual(m.steps(), []);
+  }
+});
+
 test("guard() false at commit is stale on the guard", async () => {
   const { m, edits } = setup();
   let selected = true;

@@ -83,7 +83,7 @@ import { positionText } from "./page-builder/insert-target";
 import { prepareNativeTextHistory } from "./page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "./page-builder/native-structural-history";
 import { itemsSlotRule, templateMoveRefusal, templateMovePath } from "./page-builder/block-insert";
-import { nativeElementKeyMove, nativeElementMoveMessage, templateKeyMove, type NativeMoveDirection } from "./page-builder/native-move-choices";
+import { nativeElementKeyMove, nativeElementMoveMessage, templateKeyMove, type NativeElementMoveResult, type NativeMoveDirection } from "./page-builder/native-move-choices";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
@@ -601,7 +601,7 @@ function mountWorkspace() {
       }
       if (direction === "out" || direction === "in" || !isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
       const target = { path, node: item.node, tag: item.tag };
-      if (appStore.openFile.value === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction, sectionMoveProof(paintedSource, item.node, false)) ?? "stayed";
+      if (appStore.openFile.value === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction, { painted: paintedSource }) ?? "stayed";
       void moveNativeSectionAfterOpening(target, direction, paintedSource);
       return "pending";
     },
@@ -875,7 +875,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   source: path => nativeEffectiveSource(path),
   exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   openFile: () => appStore.openFile.value,
-  restore: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
+  restore: (path, epoch, beforeMount) => restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount }),
   editor: editorModule,
   select: request => nativePreview?.selectAfterUpdate(request),
   flash: request => nativePreview?.flashInsert(request),
@@ -1655,36 +1655,54 @@ const pageStructureController = createPageStructureController({
   get wrapperAround() { return wrapperAround; },
   itemsSlots: nativeMoveItems,
   moveBlock: moveNativeCanvasBlock,
+  edits: guardedEdits,
 });
 function renderNativeEditBar(...args: Parameters<typeof pageStructureController.renderNativeEditBar>) {
   return pageStructureController.renderNativeEditBar(...args);
 }
 
+const NATIVE_MOVE_STALE = "The source changed or its editor is not open. Select the element again before moving it.";
+
+/**
+ * One guarded move of the open file `path` from the bytes `painted` (the
+ * guarded edit module, src/guarded-edit.ts): one history step, the moved
+ * element selected. `from` is the element's path the message names.
+ */
+function moveNativeOpenFile(path: string, painted: string, move: (source: string) => NativeElementMoveResult, from: number[], direction: NativeMoveDirection): number[] | "stayed" {
+  if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) { refuse(NATIVE_MOVE_STALE); return "stayed"; }
+  let moved: number[] | undefined;
+  const outcome = guardedEdits.now(r => {
+    if (r.source(path) !== painted) return { refuse: NATIVE_MOVE_STALE };
+    const result = move(painted);
+    if (result.status === "refused") return { refuse: result.error };
+    // Already at the end: nothing to write, nothing said.
+    if (result.status === "stayed") return { done: "", undone: "" };
+    moved = result.selection;
+    const message = nativeElementMoveMessage(painted, from, direction);
+    return { edits: new Map([[path, [result.edit]]]), select: { after: { path, node: result.selection } }, done: message, undone: `Undid: ${message}` };
+  }, { anchor: path });
+  if (outcome.ok) return outcome.status === "applied" && moved ? moved : "stayed";
+  // The editor would not take a move it was given: an error, as any failed write.
+  if (outcome.reason === "refused" && moved) errorMessage(new Error(outcome.message));
+  else refuse(outcome.reason === "stale" ? NATIVE_MOVE_STALE : outcome.message);
+  return "stayed";
+}
+
 /** One guarded move and one history step, shared by canvas and Structure. */
 function moveNativeBlock(path: string, source: string, node: number[], direction: NativeMoveDirection): number[] | "stayed" {
-  const result = nativeElementKeyMove(source, node, direction, nativeMoveItems());
-  if (result.status === "refused") { refuse(result.error); return "stayed"; }
-  if (result.status === "stayed") return "stayed";
-  return applyNativeChange(path, source, [result.edit], result.selection, nativeElementMoveMessage(source, node, direction)) ? result.selection : "stayed";
+  return moveNativeOpenFile(path, source, painted => nativeElementKeyMove(painted, node, direction, nativeMoveItems()), node, direction);
 }
 
 /** In Edit component mode, Alt+arrows on a template's part (slice 82): one guarded move and one step on the template. */
 function moveNativeTemplatePart(path: string, source: string, node: number[], direction: NativeMoveDirection): number[] | "stayed" {
-  const result = templateKeyMove(source, node, direction);
-  if (result.status === "refused") { refuse(result.error); return "stayed"; }
-  if (result.status === "stayed") return "stayed";
-  const from = templateMovePath(source, node) ?? node;
-  return applyNativeChange(path, source, [result.edit], result.selection, nativeElementMoveMessage(source, from, direction)) ? result.selection : "stayed";
+  return moveNativeOpenFile(path, source, painted => templateKeyMove(painted, node, direction), templateMovePath(source, node) ?? node, direction);
 }
 
 function moveNativeCanvasBlock(selection: NativePreviewSelection, direction: NativeMoveDirection): "moved" | "stayed" {
-  const source = nativeEffectiveSource(selection.path);
-  if (!selection.node || source === undefined || selection.paintedSource !== source || versionView || appStore.openFile.value !== selection.path || !editorModule?.isMounted(selection.path)) {
-    refuse("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
-  }
+  if (!selection.node || selection.paintedSource === undefined) { refuse(NATIVE_MOVE_STALE); return "stayed"; }
   // In Edit component mode the template's parts move in the template, by its drags' rules.
   const move = componentTools?.editModeTemplate()?.path === selection.path ? moveNativeTemplatePart : moveNativeBlock;
-  return move(selection.path, source, selection.node, direction) === "stayed" ? "stayed" : "moved";
+  return move(selection.path, selection.paintedSource, selection.node, direction) === "stayed" ? "stayed" : "moved";
 }
 
 function applyNativeChange(...args: Parameters<typeof pageStructureController.applyNativeChange>) {
@@ -1692,9 +1710,6 @@ function applyNativeChange(...args: Parameters<typeof pageStructureController.ap
 }
 function isNativeSectionTag(...args: Parameters<typeof pageStructureController.isNativeSectionTag>) {
   return pageStructureController.isNativeSectionTag(...args);
-}
-function sectionMoveProof(...args: Parameters<typeof pageStructureController.sectionMoveProof>) {
-  return pageStructureController.sectionMoveProof(...args);
 }
 function moveNativeSection(...args: Parameters<typeof pageStructureController.moveNativeSection>) {
   return pageStructureController.moveNativeSection(...args);

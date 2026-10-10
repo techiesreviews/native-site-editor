@@ -35,8 +35,8 @@ export interface WorkspaceHost {
   /** nativePathExists */
   exists(path: string): boolean;
   openFile(): string | undefined;
-  /** restoreFile for the page whose history takes a step. */
-  restore(path: string, epoch: number): Promise<void>;
+  /** restoreFile for the page whose history takes a step (`beforeMount`: its editor mounts only while that holds). */
+  restore(path: string, epoch: number, beforeMount?: () => boolean): Promise<void>;
   readonly editor: WorkspaceEditor;
   select(request: (NodeRef & { source?: string }) | undefined): void;
   flash(request: NodeRef): void;
@@ -62,7 +62,7 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     exists: path => host.exists(path),
     modelState: model,
     openFile: () => host.openFile(),
-    open: path => host.restore(path, host.generation()),
+    open: (path, beforeMount) => host.restore(path, host.generation(), beforeMount),
     // The open page in this very pane and history session (a pane mounted again over the same
     // kept document is another one: its history did not see the open), at this revision.
     anchor(path) {
