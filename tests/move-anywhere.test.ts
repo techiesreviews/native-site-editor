@@ -84,3 +84,14 @@ test("into a paragraph written over several lines, the link stays on the text's 
   const edit = nativeMoveEdit(source, [0, 1, 0], { parent: [0, 0], index: 0 })!;
   assert.equal(applyGuardedSourceEdit(source, edit), '<main>\n  <p>\n    Text <a href="/x">X</a>\n  </p>\n  <div>\n  </div>\n</main>');
 });
+
+test("a <picture> takes sources and images only; a <details> keeps its <summary> first; a named slot's own elements stay put", () => {
+  const source = '<main><picture><source srcset="a.webp"><img src="a.png" alt=""></picture><picture><img src="b.png" alt=""></picture><details><summary>S</summary><p>B</p></details><p>Move</p></main>';
+  assert.equal(nativeMoveRefusal(source, [0, 0, 0], [0, 1]), undefined);
+  assert.equal(nativeMoveRefusal(source, [0, 3], [0, 1]), "A <p> can't go inside a <picture>.");
+  assert.equal(nativeMoveEdit(source, [0, 3], { parent: [0, 2], index: 0 }), undefined);
+  assert.ok(nativeMoveEdit(source, [0, 3], { parent: [0, 2], index: 1 }));
+  const template = '<article><slot name="body"><p>A</p><p>B</p></slot><p>C</p></article>';
+  assert.deepEqual(templateKeyMove(template, [0, 0, 0], "down"), { status: "refused", error: templateSlotRefusal("body") });
+  assert.equal(templateKeyMove(template, [0, 1], "up").status, "moved");
+});

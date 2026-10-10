@@ -8,7 +8,7 @@ export interface GuardedSourceEdit extends SourceEdit { original: string; source
 interface SourceNode { name: string; start: number; openEnd: number; closeStart: number; end: number; children: SourceNode[]; namespace?: "html" | "svg" | "math"; opaque?: boolean; interactive?: boolean; parent?: SourceNode }
 const raw = new Set(["script", "style", "textarea", "title", "iframe", "xmp", "noembed", "noframes", "plaintext", "noscript"]);
 const textNodes = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]);
-const containers = new Set(["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "blockquote", "select", "optgroup", "td", "th", "details", "dialog", "address", "search"]);
+const containers = new Set(["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "blockquote", "select", "optgroup", "td", "th", "details", "dialog", "address", "search", "picture"]);
 const interactive = new Set(["a", "button", "input", "select", "textarea", "label", "details"]);
 
 // Only actual HTML names; editor catalogue keys and foreign/custom names are not HTML.
@@ -227,7 +227,7 @@ function contentRefusal(parent: SourceNode, children: SourceNode[], instance = f
     if (nested) return cannot(nested.name, ancestor.name);
   }
   const only = parent.name === "ul" || parent.name === "ol" ? ["li"] : parent.name === "dl" ? ["dt", "dd"]
-    : parent.name === "select" ? ["option", "optgroup"] : parent.name === "optgroup" ? ["option"] : undefined;
+    : parent.name === "select" ? ["option", "optgroup"] : parent.name === "optgroup" ? ["option"] : parent.name === "picture" ? ["source", "img"] : undefined;
   const wrong = names.find((name) => only ? !only.includes(name)
     : ["html", "head", "body", "title", "meta", "link", "base", "li", "dt", "dd", "option", "optgroup", "caption", "colgroup", "col", "tr", "td", "th", "tbody", "thead", "tfoot"].includes(name));
   return wrong === undefined ? undefined : cannot(wrong, parent.name);
@@ -485,6 +485,8 @@ function moveDestination(source: string, from: readonly number[], destination: P
   for (let node: SourceNode | undefined = parent; node; node = node.parent) if (node === moving) return { reason: "A block cannot go inside itself." };
   const instance = isInstance(parent);
   if (instance && !items?.(parent.name, slot)) return { reason: "Its parts belong to the component: open it to change them." };
+  // A <details> keeps its <summary> first.
+  if (parent.name === "details" && parent.children[0]?.name === "summary" && parent.children[0] !== moving && destination.index === 0) return { reason: "A <details> keeps its <summary> first." };
   const reason = contentRefusal(parent, [moving], instance);
   return reason ? { reason } : { moving, parent, instance };
 }

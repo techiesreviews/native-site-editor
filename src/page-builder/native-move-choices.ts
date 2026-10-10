@@ -114,6 +114,9 @@ export function templateKeyMove(template: string, at: readonly number[], directi
   if (!from) return refuse("The template's root stays where it is; a nested component's parts move in its own template.");
   const inside = at.slice(from.length);
   let result: NativeElementMoveResult;
+  // Among a named slot's own fallback elements, nothing moves: the page fills the slot.
+  const held = direction === "up" || direction === "down" ? templateMoveRefusal(template, from, from.slice(0, -1)) : undefined;
+  if (held) return refuse(held);
   if (direction === "up" || direction === "down") result = nativeElementSiblingMove(template, from, direction);
   else {
     let node = nativeOutline(template);
