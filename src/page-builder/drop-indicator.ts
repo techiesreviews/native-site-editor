@@ -33,7 +33,8 @@ export function dropIndicator(target: DropTarget, stays = false): DropIndicator 
     const r = container.rect, inset = Math.min(4, r.width / 4, r.height / 4);
     const name = container.kind === "main" ? "page" : dropContainerName(container);
     return { kind: "area", rect: { left: r.left + inset, top: r.top + inset, width: r.width - 2 * inset, height: r.height - 2 * inset },
-      text: container.empty ? `Drop into the empty ${name}` : `Drop at the end of the ${name}` };
+      // A line of text keeps its words readable under the tint: no label over them.
+      text: container.empty ? `Drop into the empty ${name}` : "" };
   }
   const next = items.find((child) => child.index >= index)?.rect;
   const prev = [...items].reverse().find((child) => child.index < index)?.rect;
