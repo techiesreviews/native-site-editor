@@ -1,11 +1,59 @@
-// One reader for "what is at this path in the HTML, and what does it say"
-// (sturdy-base card tree, design card-tree-design.md §4). The source tree:
-// elements and text with their offsets, as written. No DOM here, so it runs
-// in the unit tests as it does in the editor.
+// One reader for "what is at this path in the HTML, and what does it say".
+//
+// `SourceTree` is the one interface card code reads HTML source through: the
+// element at a path counted as the preview counts it, its exact range, its
+// attributes and text decoded as the browser reads them. Two adapters sit
+// behind it: the page adapter (`readPage` in native-source-location.ts, the
+// browser's parser) for every path from the preview, and the source adapter
+// here (`readSource`, pure, offsets kept) for markup as written: templates,
+// a card's markup, a sibling's <main>, and pages in Node tests. One contract
+// suite runs on both (tests/source-tree*.test.ts). No DOM in this file, so it
+// runs in the unit tests as it does in the editor.
 
-import { asciiLower, VOID_ELEMENTS, type StartTag } from "../../shared/html-source";
+import { asciiLower, elementEnd, startTagAttribute, startTags, VOID_ELEMENTS, type ElementRange, type StartTag, type TagAttribute } from "../../shared/html-source";
+import { nativePageBody } from "../../shared/native-project";
 import { decodeHtmlEntities } from "./html-entities";
 import type { RuleView } from "./rules/tree";
+
+export interface SourceTree<N> {
+  readonly source: string;
+  /** Source adapter: the markup is balanced as written: every element closed by its own end tag,
+   *  none closed by an ancestor's, no stray end tag. It says nothing about the browser: balanced
+   *  `<table><tr>` still gets a <tbody>. Page adapter: always true. */
+  readonly exact: boolean;
+  /** The shared rules' view (rules/tree.ts): elements and text, a <template>'s content not children. */
+  readonly view: RuleView<N>;
+  /** The element at element-child indexes `path` from the top, counted as the preview counts. */
+  at(path: readonly number[]): N | undefined;
+  path(element: N): number[];
+  /** Element children (the top level when omitted), as the preview counts them. */
+  children(element?: N): N[];
+  /** Every element under `element` (the whole tree when omitted), in document order; not into <template> content. */
+  elements(element?: N): N[];
+  /** Outer range with its start and end tag; undefined when its end tag is implied or ambiguous (elementEnd's rule). */
+  range(element: N): ElementRange | undefined;
+  /** The attribute on its start tag: its source span (leading white space included, for edits) and
+   *  its value decoded as the browser decodes attribute values (`tagAttribute`). */
+  attribute(element: N, name: string): TagAttribute | undefined;
+  /** textContent of `node` (the whole tree when omitted, so a text-only fragment reads too): character
+   *  references decoded outside raw text (a <style>'s `&amp;` stays), CR LF and lone CR read as LF,
+   *  other white space as written, comments and dropped nodes out. view.text reads the same way. */
+  text(node?: N): string;
+}
+
+/** Text as one line: white space runs to one space, ends trimmed (`/\s+/`, NBSP included). */
+export function plain(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The browser reads CR LF and a lone CR as LF everywhere (input stream preprocessing). */
+const newlines = (text: string) => text.replace(/\r\n?/g, "\n");
+
+/** `name` on `tag` as startTagAttribute finds it, its value decoded as the browser decodes attribute values. */
+export function tagAttribute(source: string, tag: StartTag, name: string): TagAttribute | undefined {
+  const found = startTagAttribute(source, tag, name);
+  return found && { ...found, value: decodeHtmlEntities(newlines(found.value), true) };
+}
 
 // ---- A small source tree: elements and text with their offsets. ----
 
@@ -30,6 +78,10 @@ export interface SourceText {
 export type SourceNode = SourceElement | SourceText;
 
 const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"]);
+// Raw text whose character references the browser keeps as written (textarea and title decode them).
+const UNDECODED = new Set(["script", "style", "xmp", "iframe", "noembed", "noframes"]);
+// The browser drops one newline right after these start tags.
+const LEADING_NEWLINE = new Set(["pre", "listing", "textarea"]);
 
 /**
  * The elements and text of `html` between `from` and `to`, as written: end
@@ -39,6 +91,13 @@ const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe
  * markup, and an edit that depends on a guess is not made.
  */
 export function parseSource(html: string, from = 0, to = html.length): SourceNode[] {
+  return parseTree(html, from, to).nodes;
+}
+
+/** parseSource, recording whether the markup was balanced as written (`SourceTree.exact`). */
+function parseTree(html: string, from: number, to: number): { nodes: SourceNode[]; exact: boolean } {
+  // An element closed by an ancestor's end tag, one left open, or a dropped stray end tag.
+  let exact = true;
   const root: SourceNode[] = [];
   const stack: SourceElement[] = [];
   const add = (node: SourceNode) => {
@@ -69,9 +128,11 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
       flush(lt);
       const name = asciiLower(match[1]);
       const at = stack.map((el) => el.name).lastIndexOf(name);
-      if (at >= 0) {
+      if (at < 0) exact = false;
+      else {
         // The element closed here gets its end tag; those opened in it end with it.
         const [closed, ...inside] = stack.splice(at);
+        if (inside.length) exact = false;
         for (const open of inside) open.end = lt;
         closed.close = { start: lt, end: lt + match[0].length };
         closed.end = lt + match[0].length;
@@ -109,6 +170,7 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
       while (close >= 0 && !/[\t\n\f\r />]/.test(html[close + name.length + 2] ?? "")) close = lower.indexOf(`</${name}`, close + 2);
       const gt = close < 0 ? -1 : html.indexOf(">", close);
       if (close < 0 || gt < 0 || gt >= to) {
+        exact = false;
         el.end = to;
         i = text = to;
       } else {
@@ -123,19 +185,33 @@ export function parseSource(html: string, from = 0, to = html.length): SourceNod
   }
   flush(to);
   for (const open of stack) open.end = to;
-  return root;
+  if (stack.length) exact = false;
+  return { nodes: root, exact };
+}
+
+/**
+ * A text node's text as the browser reads it: CR LF and lone CR as LF, the
+ * newline right after `<pre>`/`<textarea>` dropped, character references
+ * decoded except in raw text (a <style>'s `&amp;` stays).
+ */
+function textOf(html: string, node: SourceText): string {
+  const parent = node.parent;
+  let text = newlines(html.slice(node.start, node.end));
+  if (parent && LEADING_NEWLINE.has(parent.name) && node.start === parent.tag.end && text.startsWith("\n")) text = text.slice(1);
+  return parent && UNDECODED.has(parent.name) ? text : decodeHtmlEntities(text);
 }
 
 /**
  * `html`'s source tree as the shared rules read it (src/page-builder/rules/):
- * text decoded, a `<template>`'s content not its children, as in the DOM.
+ * text as the browser reads it (`textOf`), a `<template>`'s content not its
+ * children, as in the DOM.
  */
 export function sourceView(html: string): RuleView<SourceNode> {
   return {
     kind: (node) => node.type,
     name: (node) => (node.type === "element" ? node.name : ""),
     children: (node) => (node.type === "element" && node.name !== "template" ? node.children : []),
-    text: (node) => (node.type === "text" ? decodeHtmlEntities(html.slice(node.start, node.end)) : ""),
+    text: (node) => (node.type === "text" ? textOf(html, node) : ""),
     parent: (node) => node.parent,
   };
 }
@@ -146,4 +222,72 @@ export function* descendants(nodes: SourceNode[]): Generator<SourceElement> {
     yield node;
     yield* descendants(node.children);
   }
+}
+
+// ---- The source adapter ----
+
+/** What the preview's sanitizer drops before render (native-source-location.ts `parseMarked`). */
+function dropped(source: string, node: SourceNode) {
+  if (node.type !== "element") return false;
+  if (node.name === "script") return true;
+  return node.name === "meta" && asciiLower(tagAttribute(source, node.tag, "http-equiv")?.value ?? "") === "refresh";
+}
+
+/**
+ * Markup as written (pure), as a `SourceTree`. `page`: the page part (a
+ * document's <body> content, else what follows `</head>`, else the whole
+ * text, as `nativePageBody` reads it) with the preview's drops (`<script>`,
+ * refresh `<meta>`), for Node tests and reads by name. `from`/`to`: a
+ * stretch (an item's range, a <main>). Nodes keep their offsets into
+ * `source`. Where the browser repairs markup (`<p><div>`, `<li>` with no
+ * `</li>`, a table with no `<tbody>`) only the page adapter reads it as the
+ * preview does; `exact` is false for markup not balanced as written.
+ */
+export function readSource(source: string, options: { page?: true; from?: number; to?: number } = {}): SourceTree<SourceNode> {
+  const part = options.page ? nativePageBody(source) : { start: 0, end: source.length };
+  const end = options.to ?? part.end;
+  const { nodes, exact } = parseTree(source, options.from ?? part.start, end);
+  const drop = (list: SourceNode[]): SourceNode[] => list.filter((node) => {
+    if (dropped(source, node)) return false;
+    if (node.type === "element" && node.name !== "template") node.children = drop(node.children);
+    return true;
+  });
+  const top = options.page ? drop(nodes) : nodes;
+  const view = sourceView(source);
+  const nodesIn = (node?: SourceNode) => (node === undefined ? top : view.children(node));
+  const children = (node?: SourceNode): SourceNode[] => nodesIn(node).filter((child) => child.type === "element");
+  const elements = (node?: SourceNode): SourceNode[] => children(node).flatMap((child) => [child, ...elements(child)]);
+  const text = (node: SourceNode): string => (node.type === "text" ? textOf(source, node) : view.children(node).map(text).join(""));
+  let order: { tags: StartTag[]; all: SourceNode[] } | undefined;
+  return {
+    source,
+    exact,
+    view,
+    at(path) {
+      let element: SourceNode | undefined;
+      for (const index of path) {
+        element = children(element)[index];
+        if (!element) return undefined;
+      }
+      return element;
+    },
+    path(element) {
+      const out: number[] = [];
+      for (let node: SourceNode | undefined = element; node; node = node.parent) out.unshift(children(node.parent).indexOf(node));
+      return out;
+    },
+    children,
+    elements,
+    // elementEnd's rule, as the page adapter's (markedRange): the end tag lies before the next start
+    // tag outside the element, or the end of what was read.
+    range(element) {
+      if (element.type !== "element") return undefined;
+      order ??= { tags: startTags(source), all: elements() };
+      const inside = (node: SourceNode) => { for (let up = node.parent; up; up = up.parent) if (up === element) return true; return false; };
+      const following = order.all.slice(order.all.indexOf(element) + 1).find((other) => !inside(other));
+      return elementEnd(source, order.tags, order.tags.findIndex((tag) => tag.start === element.start), following?.start ?? end);
+    },
+    attribute: (element, name) => (element.type === "element" ? tagAttribute(source, element.tag, name) : undefined),
+    text: (node) => (node ? text(node) : top.map(text).join("")),
+  };
 }

@@ -1,7 +1,7 @@
 ---
 title: "Source tree module: one interface, a page adapter and a source adapter (no card callers)"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: claude ★
@@ -22,3 +22,9 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/card-tree-desig
 - `tests/source-tree.test.ts` (Node, source adapter) and `tests/source-tree-browser.test.ts` (Chromium in `npm test`, both adapters, the cards-controller harness) run one contract table: page part (with/without `<body>`, `</head>` only), dropped nodes, template content, comments, raw text, void/self-closing, CR LF and lone CR, text-only fragment, `exact` false for `<div><span>A</div>`/stray/unclosed, `<noscript>` and `<style>` text as the browser reads them, `at`/`path` round trip, `range` (implied end, same-named nesting), `attribute` (`&eacute;`, `&amp;`, numeric, legacy without `;`, unquoted, valueless, upper case), `view` under `hasHeadingSlot` and `itemKind`.
 - Parity: every page of `fixtures/native-starter`, `native-cards` and `actual-starter`, element by element, page adapter vs `readSource(page, { page: true })` equal, with a listed set of expected differences (`<table><tr>` without `<tbody>`, `<p><div>`, `<li>` without `</li>`) that must stay different.
 - `native-make-component*` specs green; `npm run check`, `npm test`, full `native-save` suite green; budget delta reported.
+
+## Done (2026-10-10)
+
+- `src/page-builder/source-tree.ts`: `SourceTree<N>`, `readSource` (source adapter), `plain`, `tagAttribute`; `parseSource`/`SourceNode`/`sourceView`/`descendants` moved from component-model.ts (re-exported). Named body changes: `parseSource` records `exact` (ancestor-closed, left open, stray end tag; nodes unchanged); `sourceView` text keeps raw text undecoded, reads CR LF/CR as LF and drops `<pre>`/`<textarea>`'s first newline. `readPage` (page adapter) in native-source-location.ts over the existing LRU, one frozen tree per cached parse. No card file changed.
+- Ranges in both adapters follow `elementEnd`'s rule (as `markedRange`), so a last child inside a same-named parent (`<div><div>…</div></div>`) has no range in either; the parity suite pins this.
+- Tests: `tests/source-tree.test.ts` (27: 21 contract cases + 6 Node-only), `tests/source-tree-browser.test.ts` (21 contract cases on both adapters, parity on all 31 fixture HTML files, 3 repaired pages that must differ). Smoke and `native-make-component*` green; budget +31 B gzip total.

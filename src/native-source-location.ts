@@ -11,6 +11,8 @@
 
 import { MARK, elementEnd, startTags, type ElementRange, type StartTag } from "../shared/html-source";
 import { nativePageBody } from "../shared/native-project";
+import { tagAttribute, type SourceTree } from "./page-builder/source-tree";
+import { domView } from "./page-builder/rules/tree";
 
 export * from "../shared/html-source";
 
@@ -117,14 +119,60 @@ export function locateNativeElementRange(html: string, path: number[]): ElementR
 export function elementPathAt(html: string, start: number): number[] | undefined {
   const { tags, root } = parsedSource(html);
   const index = tags.findIndex((tag) => tag.start === start);
-  let el = index < 0 ? null : root.querySelector(`[${MARK}="${index}"]`);
-  if (!el) return undefined;
+  const el = index < 0 ? null : root.querySelector(`[${MARK}="${index}"]`);
+  return el ? pathOf(el) : undefined;
+}
+
+function pathOf(element: Element) {
   const path: number[] = [];
-  while (el) {
+  for (let el: Element | null = element; el; el = el.parentElement)
     path.unshift([...(el.parentNode as ParentNode).children].indexOf(el));
-    el = el.parentElement;
-  }
   return path;
+}
+
+/** A node of `readPage`'s tree: the parsed page part's own nodes, opaque to callers and never mutated. */
+export type PageNode = Node;
+
+const pageTrees = new WeakMap<ParsedSource, SourceTree<PageNode>>();
+
+/**
+ * The page part of `source` (a document's <body> content, else the whole
+ * text) as the preview reads it: the browser's parser, scripts and refresh
+ * metas dropped (`parseMarked`), as a `SourceTree` (page-builder/source-tree.ts).
+ * Cached by bytes with the lookups above; the tree and its ranges are shared
+ * and frozen, so callers never mutate them.
+ */
+export function readPage(source: string): SourceTree<PageNode> {
+  const parsed = parsedSource(source);
+  const cached = pageTrees.get(parsed);
+  if (cached) return cached;
+  const { tags, root } = parsed;
+  const element = (node: PageNode | undefined): ParentNode | undefined =>
+    node === undefined ? root : node.nodeType === 1 ? (node as Element) : undefined;
+  const tree: SourceTree<PageNode> = Object.freeze({
+    source,
+    exact: true,
+    view: domView<PageNode>(() => false),
+    at(path: readonly number[]) {
+      let el: Element | undefined;
+      for (const index of path) {
+        el = (el ?? root).children[index];
+        if (!el) return undefined;
+      }
+      return el;
+    },
+    path: (node: PageNode) => pathOf(node as Element),
+    children: (node?: PageNode) => [...(element(node)?.children ?? [])],
+    elements: (node?: PageNode) => [...(element(node)?.querySelectorAll("*") ?? [])],
+    range: (node: PageNode) => (node.nodeType === 1 ? sourceRange(source, parsed, node as Element) : undefined),
+    attribute(node: PageNode, name: string) {
+      const tag = node.nodeType === 1 ? tagOf(tags, node as Element) : undefined;
+      return tag && tagAttribute(source, tag, name);
+    },
+    text: (node?: PageNode) => (node ?? root).textContent ?? "",
+  });
+  pageTrees.set(parsed, tree);
+  return tree;
 }
 
 // The outer range of a marked element in a parsed source whose page part ends at `limit`.
