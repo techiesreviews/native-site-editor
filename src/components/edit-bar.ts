@@ -1,3 +1,4 @@
+import type { Stamp } from "../guarded-edit";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
@@ -156,7 +157,7 @@ function icon(name: IconName) {
 
 export interface EditBarModel {
   /** Source and editor session used to construct the controls' edit closures. */
-  origin?: { path: string; source: string; revision: string; node?: number[] };
+  origin?: { path: string; source: string; stamp: Stamp; revision: string; node?: number[] };
   // Short kind label shown first: Heading, Paragraph, Link, Component…
   kind: string;
   controls: EditBarControl[];

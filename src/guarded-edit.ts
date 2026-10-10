@@ -94,8 +94,12 @@ export interface GuardedEdits {
   run(plan: (r: Reads) => PlanResult | Promise<PlanResult>, options?: RunOptions): Promise<Outcome>;
   /** The same, synchronously: the plan is sync, it writes only its anchor, and the anchor is open and mounted. */
   now(plan: (r: Reads) => PlanResult, options?: RunOptions): Outcome;
-  /** The workspace now: hold it across a click, a drag, a dialog; `holds()` until anything in it moved. */
-  stamp(): Stamp;
+  /**
+   * The workspace now: hold it across a click, a drag, a dialog; `holds()` until anything in it moved.
+   * `repository`: waits that outlive the page shown: a save, an agent's context, the Images session.
+   * That stamp checks only scope and generation.
+   */
+  stamp(over?: "repository"): Stamp;
   /** Untracked reads for painting and menus. Banned inside plans (guard test, slice 18). */
   readonly peek: Reads;
 }
@@ -168,10 +172,10 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   // The typing group `now` left open, by key and file.
   let group: { key: string; path: string } | undefined;
 
-  function stamp(): Stamp {
+  function stamp(over?: "repository"): Stamp {
     const scope = ws.scope(), generation = ws.generation(), route = ws.route(), entry = ws.editModeEntry();
     const changed = (): StaleKey | undefined =>
-      ws.scope() !== scope ? "scope" : ws.generation() !== generation ? "generation" : ws.versionView() ? "version-view"
+      ws.scope() !== scope ? "scope" : ws.generation() !== generation ? "generation" : over === "repository" ? undefined : ws.versionView() ? "version-view"
         : ws.route() !== route ? "route" : ws.editModeEntry() !== entry ? "edit-mode" : undefined;
     return { holds: () => !changed(), changed };
   }

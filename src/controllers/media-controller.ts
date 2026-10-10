@@ -1,3 +1,4 @@
+import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import type { NativeSite, NativeTextEdit } from "../../shared/native-project";
@@ -25,6 +26,7 @@ export interface MediaModule {
 export interface MediaControllerPorts {
   workspace(): MediaWorkspaceSnapshot | undefined;
   identity(): string;
+  stamp(): Stamp;
   generation(): number;
   source(path: string, scope?: DraftScope): string | undefined;
   listPaths(workspace: MediaWorkspaceSnapshot): Promise<string[]>;
@@ -34,7 +36,7 @@ export interface MediaControllerPorts {
   rememberSource(path: string, source: string): void;
   uploadedBlob(scope: DraftScope, sha: string): Promise<Blob | undefined>;
   readBlob(repo: string, sha: string, path: string): Promise<Blob>;
-  applyBatch(scope: DraftScope, assertLive: () => void, batch: MediaWorkspaceBatch): Promise<void>;
+  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch): Promise<void>;
   openPage(path: string): Promise<void>;
   load(): Promise<MediaModule>;
   openFile(): string | undefined;
@@ -60,8 +62,9 @@ export function createMediaController(ports: MediaControllerPorts) {
   async function workspaceContext(): Promise<MediaWorkspaceContext> {
     const workspace = ports.workspace();
     if (!workspace) throw new Error("Choose a repository before opening Images.");
-    const { repo, scope, drafts, site, identity } = workspace;
-    const assertLive = () => { if (identity !== ports.identity()) throw new Error("The repository changed. Close Images and open it again."); };
+    const { repo, scope, drafts, site } = workspace;
+    const stamp = ports.stamp();
+    const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
     const branchPaths = workspace.nativePaths ?? await ports.listPaths(workspace);
     assertLive();
     const gone = new Set(drafts.list(scope).filter((draft) => draft.deleted).map((draft) => draft.path));
@@ -104,7 +107,7 @@ export function createMediaController(ports: MediaControllerPorts) {
         const record = drafts.get(scope, path);
         return record ? JSON.stringify(record) : ports.entry(path)?.sha;
       },
-      applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, assertLive, batch); },
+      applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch); },
       write: async () => { throw new Error("Use the atomic image transaction."); },
       changed: () => {},
       rename: async () => { throw new Error("Use the atomic image transaction."); },
@@ -114,7 +117,7 @@ export function createMediaController(ports: MediaControllerPorts) {
   }
 
   async function chooseImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
-    const epoch = ports.generation(), identity = ports.identity();
+    const stamp = ports.stamp(), epoch = ports.generation();
     const source = ports.source(target.path);
     const locate = ports.locateElement ?? locateNativeElementRange;
     const initial = source === undefined ? undefined : locate(source, target.node);
@@ -122,13 +125,13 @@ export function createMediaController(ports: MediaControllerPorts) {
     const expected = source!.slice(initial.tag.start, initial.tag.end);
     const initialAlt = mediaExistingAlt(expected);
     const { openMediaPicker } = await load();
-    if (epoch !== ports.generation() || identity !== ports.identity() || ports.source(target.path) !== source) return;
+    if (!stamp.holds() || ports.source(target.path) !== source) return;
     await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
-      if (epoch !== ports.generation() || identity !== ports.identity()) throw new Error("The repository changed. Choose an image again.");
+      if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
       if (ports.openFile() !== target.path) await ports.restoreFile(target.path, epoch);
       const latest = ports.source(target.path);
       const range = latest === undefined ? undefined : locate(latest, target.node);
-      if (epoch !== ports.generation() || identity !== ports.identity() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
+      if (!stamp.holds() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
       const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
       if (!ports.change(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
     } }).catch((error: unknown) => ports.error(error));

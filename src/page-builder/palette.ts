@@ -10,6 +10,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 // Keys pressed in the preview frame never reach this document: the preview
 // runtime forwards the ones the editor answers as `shortcut` messages
 // (src/components/native-preview-runtime.js, "Editor shortcuts").
+import type { Stamp } from "../guarded-edit";
 import type { AddChoice } from "./add-catalog";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./native-operations";
 import { nativeChoiceMarkup } from "./native-elements";
@@ -52,8 +53,8 @@ export interface EditorPaletteDeps {
   nativeElements?: () => readonly AddChoice[];
   /** Optional synchronous host placement; the palette still validates source safety. */
   nativeInsertPoint?: (source: string, path: string, selection: PaletteSelection | undefined, choice: AddChoice) => { path?: string; parent: number[]; index: number } | undefined;
-  /** Site and mount revision, changed when an editor session is replaced. */
-  revision?: () => string;
+  /** The workspace held when a command is listed. */
+  stamp?: () => Stamp;
   /** Opens a file (a page in the preview and the code pane, any other file in the code pane). */
   open: (path: string) => void | Promise<void>;
   /** A file's text as drafted. */
@@ -154,12 +155,12 @@ function barButton(label: string): HTMLButtonElement | undefined {
     buttons.find((item) => item.title === label || item.title.startsWith(`${label}:`) || item.textContent === label);
 }
 
-/** Controls retain the source revision from their construction, even after a new search. */
+/** Controls retain the source proof from their construction, even after a new search. */
 function modelOriginCurrent(deps: EditorPaletteDeps, model: EditBarModel): boolean {
   const origin = model.origin;
   const selection = deps.selection();
   return Boolean(origin && selection && deps.currentPath() === origin.path && selection.path === origin.path &&
-    deps.revision?.() === origin.revision && deps.source(origin.path) === origin.source &&
+    origin.stamp.holds() && deps.source(origin.path) === origin.source &&
     JSON.stringify(selection.node) === JSON.stringify(origin.node));
 }
 
@@ -179,11 +180,11 @@ function selectionCommands(deps: EditorPaletteDeps): Command[] {
   const model = deps.editBar();
   const selection = deps.selection();
   if (!model || !selection) return [];
-  const revision = deps.revision?.();
+  const held = deps.stamp?.();
   const source = deps.source(selection.path);
   const identity = selectionIdentity(selection);
   const guard = (run: () => void | Promise<void>) => guardCommand(run,
-    () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && selectionIdentity(deps.selection()) === identity,
+    () => modelOriginCurrent(deps, model) && (held?.holds() ?? true) && deps.currentPath() === selection.path && deps.editBar() === model && deps.source(selection.path) === source && selectionIdentity(deps.selection()) === identity,
     () => announceRefusal(deps, "The selection changed. Reopen the command palette and try again."));
   const kind = model.kind;
   const out: Command[] = [];
@@ -339,7 +340,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
   // Components: add a section component where the selection is, or open any component's template.
   const selection = deps.selection();
   const pagePath = current && pageFiles.has(current) ? current : undefined;
-  const revision = deps.revision?.();
+  const held = deps.stamp?.();
   const listedSource = pagePath ? deps.source(pagePath) : undefined;
   const listedSelection = selectionIdentity(selection);
   for (const component of deps.components()) {
@@ -354,7 +355,7 @@ function siteCommands(deps: EditorPaletteDeps): Command[] {
         suggested: true,
         keywords: ["insert", "section", "component", component.tag],
         run: async () => {
-          if (deps.revision?.() !== revision || deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || selectionIdentity(deps.selection()) !== listedSelection) {
+          if (!(held?.holds() ?? true) || deps.currentPath() !== pagePath || deps.source(pagePath) !== listedSource || selectionIdentity(deps.selection()) !== listedSelection) {
             announceRefusal(deps, "The page changed. Reopen the command palette and try again.");
             return;
           }
@@ -422,14 +423,14 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
   const path = deps.currentPath();
   const source = path ? deps.source(path) : undefined;
   if (!path || source === undefined || !deps.pages().some((page) => page.file === path)) return [];
-  const revision = deps.revision?.();
+  const held = deps.stamp?.();
   const selection = deps.selection();
   const identity = selectionIdentity(selection);
   return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag))).map((choice) => ({
     id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", icon: "insert",
     hint: "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
     run: async () => {
-      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || selectionIdentity(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
+      if (deps.currentPath() !== path || deps.source(path) !== source || !(held?.holds() ?? true) || selectionIdentity(deps.selection()) !== identity || !(deps.nativeElements?.() ?? []).some((current) => current.kind === "native" && current.tag === choice.tag)) {
         announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
       const point: { path?: string; parent: number[]; index: number } | undefined = deps.nativeInsertPoint ? deps.nativeInsertPoint(source, path, selection, choice) : nativePaletteInsertPoint(source, path, selection, choice);
@@ -438,7 +439,7 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
         announceRefusal(deps, `Select a valid HTML container to add ${choice.label}.`); return;
       }
       // Host callbacks cannot silently replace the captured source or selection.
-      if (deps.currentPath() !== path || deps.source(path) !== source || deps.revision?.() !== revision || selectionIdentity(deps.selection()) !== identity) {
+      if (deps.currentPath() !== path || deps.source(path) !== source || !(held?.holds() ?? true) || selectionIdentity(deps.selection()) !== identity) {
         announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
       if (point.path !== undefined && point.path !== path) { announceRefusal(deps, "The insertion page changed. Reopen the command palette."); return; }
@@ -482,6 +483,14 @@ function listShortcuts() {
   return entries.map(registerShortcut);
 }
 
+/** Every listed action holds the workspace it was offered in, including navigation and New page. */
+export function editorPaletteCommands(deps: EditorPaletteDeps): Command[] {
+  const held = deps.stamp?.();
+  return availableCommands().map(command => ({ ...command,
+    run: () => { if (held?.holds() ?? true) return command.run(); },
+  }));
+}
+
 /**
  * Mounts the palette and the shortcuts sheet in `host`, registers the
  * editor's commands, and listens for the keys. Returns a function that
@@ -515,13 +524,13 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
   ]).then(([{ createCommandPalette }, { createShortcutSheet }]) => {
     if (disposed) return;
     palette = createCommandPalette({
-      commands: availableCommands,
+      commands: () => editorPaletteCommands(deps),
       fromQuery: (text) => {
         // Ask agent with what was typed, about the selected element.
         const model = deps.editBar();
         const prompt = model?.controls.find((control): control is Extract<EditBarControl, { kind: "prompt" }> => control.kind === "prompt");
         if (!model || !prompt || text.length < 3) return [];
-        const revision = deps.revision?.();
+        const held = deps.stamp?.();
         const selection = deps.selection();
         const source = selection && deps.source(selection.path);
         const identity = selectionIdentity(selection);
@@ -534,7 +543,7 @@ export function mountEditorPalette(host: HTMLElement, deps: EditorPaletteDeps) {
           run: guardCommand(async () => {
             const problem = await prompt.onSend(text);
             if (problem) deps.onError(new Error(problem));
-          }, () => modelOriginCurrent(deps, model) && deps.revision?.() === revision && deps.editBar() === model && selectionIdentity(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
+          }, () => modelOriginCurrent(deps, model) && (held?.holds() ?? true) && deps.editBar() === model && selectionIdentity(deps.selection()) === identity && (!selection || (deps.currentPath() === selection.path && deps.source(selection.path) === source)),
           () => announceRefusal(deps, "The selection changed. Reopen the command palette and try again.")),
         }];
       },

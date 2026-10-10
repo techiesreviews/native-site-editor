@@ -517,3 +517,22 @@ test("a step written and recorded whose page refresh then fails is applied, with
   assert.deepEqual(m.steps(), ["operation"]);
   assert.equal(m.workspace.source("new.html"), "<p>new</p>");
 });
+
+
+test("a repository stamp holds across route, edit-mode and version-view changes", () => {
+  const { m, edits } = setup();
+  const stamp = edits.stamp("repository");
+  for (const change of [() => m.setRoute("/about/"), () => m.enterEditMode(), () => m.leaveEditMode(), () => m.setVersionView(true)]) {
+    change();
+    assert.equal(stamp.holds(), true);
+    assert.equal(stamp.changed(), undefined);
+  }
+});
+
+for (const key of ["scope", "generation"] as const) test(`a repository stamp breaks on ${key}`, () => {
+  const { m, edits } = setup();
+  const stamp = edits.stamp("repository");
+  if (key === "scope") m.setScope("other/repo@dev"); else m.bumpGeneration();
+  assert.equal(stamp.holds(), false);
+  assert.equal(stamp.changed(), key);
+});

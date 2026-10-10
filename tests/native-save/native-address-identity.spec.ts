@@ -9,7 +9,7 @@ test('open fields keep their target and meaning while own typing preserves focus
   const bar=createEditBar(pane,frame),events:string[]=[];
   const rect={top:100,left:100,width:100,height:40,bottom:140,right:200};
   let writes=0;
-  const model=(kind='Input',path='index.html',revision='repo:1',node=[0],source='before',identity='nativeName',open=false)=>({kind,origin:{path,revision,node,source},controls:[{kind:'address' as const,label:'Name',identity,value:'',open,onOpen:()=>events.push(`open:${kind}`),onClose:()=>events.push(`close:${kind}`),onInput:()=>{writes++;events.push(`write:${kind}`);}}]});
+  const model=(kind='Input',path='index.html',revision='repo:1',node=[0],source='before',identity='nativeName',open=false)=>({kind,origin:{path,revision,node,source,stamp:{holds:()=>true,changed:()=>undefined}},controls:[{kind:'address' as const,label:'Name',identity,value:'',open,onOpen:()=>events.push(`open:${kind}`),onClose:()=>events.push(`close:${kind}`),onInput:()=>{writes++;events.push(`write:${kind}`);}}]});
   bar.show(model(),rect);(bar.element.querySelector('button') as HTMLButtonElement).click();
   const input=pane.querySelector('.edit-bar__field-input') as HTMLInputElement;input.value='typing';input.setSelectionRange(2,2);
   bar.show(model('Input','index.html','repo:1',[0],'after'),rect);

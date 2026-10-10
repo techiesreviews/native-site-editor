@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import { createMediaController, type MediaControllerPorts, type MediaModule } from "../src/controllers/media-controller.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { MediaPickerOptions } from "../src/page-builder/media-picker.ts";
+import { createGuardedEdits } from "../src/guarded-edit";
+import { createMemoryWorkspace } from "./fakes/memory-workspace";
 import { startTags } from "../shared/html-source.ts";
 
 function fixture(overrides: Partial<MediaControllerPorts> = {}) {
+  const workspace = createMemoryWorkspace();
+  const edits = createGuardedEdits(workspace.workspace);
   const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
   const records: SavedDraft[] = [];
   const store = { list: () => records, get: (_scope: typeof scope, path: string) => records.find((draft) => draft.path === path), save: () => true, remove: () => true };
@@ -21,7 +25,8 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
   };
   const ports: MediaControllerPorts = {
     workspace: () => ({ repo: scope.repo, scope, identity, site: { routes: { "/": "index.html" }, components: {} }, nativePaths: ["index.html", "images/old.png"], drafts: store }),
-    identity: () => identity, generation: () => 1, source: (path) => sources.get(path), listPaths: async () => [],
+    stamp: () => edits.stamp("repository"),
+    identity: () => identity, generation: () => workspace.workspace.generation(), source: (path) => sources.get(path), listPaths: async () => [],
     findEntry: async () => ({ sha: "sha", size: 12 }), entry: () => ({ sha: "sha", size: 12 }), readText: async () => "read text", rememberSource: (path, source) => { sources.set(path, source); },
     uploadedBlob: async () => undefined, readBlob: async () => new Blob(["image"], { type: "image/png" }), applyBatch: async () => {}, openPage: async () => {}, load: async () => module,
     openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
@@ -30,7 +35,9 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
     observeBusy: (_element, changed) => { observerCallback = changed; return { disconnect() {} }; }, announce: () => {}, error: (error) => errors.push(error), ...overrides,
   };
   return { ports, controller: createMediaController(ports), sources, records, scope, module, errors, changes,
-    navigate: () => { identity = "workspace:2"; }, signature: () => { signature = "version:2"; }, hide: () => { visible = false; }, show: () => { visible = true; },
+    navigate: () => { identity = "workspace:2"; workspace.setScope(identity); },
+    openAnotherPage: () => { workspace.setRoute("/other/"); workspace.enterEditMode(); },
+    bump: () => workspace.bumpGeneration(), signature: () => { signature = "version:2"; }, hide: () => { visible = false; }, show: () => { visible = true; },
     busy: () => { busy = true; }, settle: () => { busy = false; observerCallback?.(); }, pick: () => pick,
     counts: () => ({ mounts, refreshes, disposed, closes }),
   };
@@ -105,4 +112,31 @@ test("hidden and busy galleries refresh once after becoming ready; gallery dispo
   assert.equal(f.counts().closes, 0);
   f.controller.closePicker();
   assert.equal(f.counts().closes, 1);
+});
+
+
+test("Images holds its repository stamp across page changes and passes that same stamp to the batch", async () => {
+  const f = fixture();
+  let held: ReturnType<MediaControllerPorts["stamp"]> | undefined;
+  const stamp = f.ports.stamp.bind(f.ports);
+  f.ports.stamp = () => held = stamp();
+  const context = await f.controller.workspaceContext();
+  f.openAnotherPage();
+  assert.doesNotThrow(() => context.assertLive());
+  let applied = 0;
+  f.ports.applyBatch = async (scope, proof) => { assert.equal(scope, f.scope); assert.equal(proof, held); applied++; };
+  await context.applyBatch!({ label: "images", edits: new Map(), moves: [], deletes: [], uploads: [], expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map() });
+  assert.equal(applied, 1);
+  f.bump();
+  assert.throws(() => context.assertLive(), /repository changed/);
+});
+
+test("image picker survives page changes but refuses a new repository generation", async () => {
+  const f = fixture();
+  f.ports.load = async () => { f.openAnotherPage(); return f.module; };
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  assert.ok(f.pick());
+  f.bump();
+  await assert.rejects(async () => f.pick()!.onPick!({ path: "images/new.png", alt: "New" }), /repository changed/);
+  assert.equal(f.changes.length, 0);
 });

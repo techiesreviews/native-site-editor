@@ -1,3 +1,4 @@
+import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { keepAsNewFile, listChanges, pruneUnchanged, settleDeletedUpstream, type DraftAccess, type FileChange } from "../file-changes";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot, type TreeEntry } from "../../shared/types";
@@ -7,6 +8,7 @@ type Store = DraftAccess & { list(scope: DraftScope): SavedDraft[] };
 export interface SavePublishPorts {
   /** Live reads: never cached across an await. */
   generation(): number;
+  stamp(): Stamp;
   snapshot(): Snapshot | undefined;
   /** Account, repository and branch of the open workspace (src/main.ts scope). */
   scope(): DraftScope | undefined;
@@ -64,8 +66,7 @@ export interface Question {
 
 /** What a step began on; a late answer for another scope is dropped. */
 export interface SaveProof {
-  epoch: number;
-  scope?: DraftScope;
+  stamp: Stamp;
   snapshot?: Snapshot;
 }
 
@@ -89,16 +90,14 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // The boot's check, once per snapshot load (`epoch`).
   let deletedUpstreamCheck: { epoch: number; done: Promise<void> } | undefined;
 
-  const proof = (): SaveProof => ({ epoch: ports.generation(), scope: ports.scope(), snapshot: ports.snapshot() });
+  const proof = (): SaveProof => ({ stamp: ports.stamp(), snapshot: ports.snapshot() });
   /**
    * Whether `was` still holds: the generation, account, repository, branch
    * and (unless `same` is false, for a refreshed snapshot of the same
    * branch) the snapshot itself. A proof is never re-taken in its place.
    */
   function live(was: SaveProof, same = true) {
-    const now = ports.scope(), then = was.scope;
-    return was.epoch === ports.generation() && (!same || was.snapshot === ports.snapshot()) &&
-      now?.account === then?.account && now?.repoId === then?.repoId && now?.branch === then?.branch;
+    return was.stamp.holds() && (!same || was.snapshot === ports.snapshot());
   }
 
   function seeHead(commit: string) {
@@ -116,13 +115,13 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // every 15 seconds, and after a save was refused. A new head loads as
   // Refresh does, the open file opening again.
   async function checkHead(force = false) {
-    const was = proof(), seen = was.snapshot;
-    if (!was.scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return;
+    const was = proof(), seen = was.snapshot, scope = ports.scope();
+    if (!scope || !seen || !ports.visible() || (!force && Date.now() - headCheckedAt < 15_000)) return;
     headCheckedAt = Date.now();
     const token = ++headCheck, known = trustedHead();
     try {
       const { commit } = await ports.api<{ commit: string }>("head", {
-        repo: was.scope.repo, branch: seen.branch,
+        repo: scope.repo, branch: seen.branch,
         ...(known ? { commit: known } : {}),
       });
       if (token !== headCheck || !live(was) || commit === seen.commit) return;
@@ -143,7 +142,7 @@ export function createSavePublishController(ports: SavePublishPorts) {
   async function findDeletedUpstream(epoch: number) {
     if (epoch !== ports.generation()) return;
     deletedUpstream = new Set();
-    const was = proof(), scope = was.scope;
+    const was = proof(), scope = ports.scope();
     if (!scope) return;
     const store = ports.drafts();
     const all = store.list(scope);
@@ -273,15 +272,17 @@ export function createSavePublishController(ports: SavePublishPorts) {
     const was = proof(), token = ++refresh;
     try {
       const result = await ports.api<Snapshot>("snapshot", { repo: scope.repo, branch: scope.branch, commit });
-      if (token !== refresh || !live(was) || was.scope?.repo !== scope.repo || was.scope.branch !== scope.branch) return;
+      if (token !== refresh || !live(was)) return;
+      const now = ports.scope();
+      if (now?.repo !== scope.repo || now.branch !== scope.branch) return;
       ports.adopt(result);
       seeHead(result.commit);
-      await findDeletedUpstream(was.epoch);
+      await findDeletedUpstream(ports.generation());
       if (token !== refresh || !live({ ...was, snapshot: result })) return;
       ports.showSaved(result.commit);
       ports.status("Selected files saved to GitHub.");
     } catch (error) {
-      if (was.epoch === ports.generation()) ports.fail(error);
+      if (live(was, false)) ports.fail(error);
     }
   }
 

@@ -25,7 +25,7 @@ for (const change of ["mount affected source", "unmount history host"] as const)
         edits: new Map([["affected.html", "after"]]), moves: [], deletes: [], uploads: change === "unmount history host" ? [{ path: "images/new.png", blob: new Blob(["png"], { type: "image/png" }) }] : [] };
       let historyCalls = 0;
       const pending = applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
-        scope, store, bytes, assertLive() {}, paths: () => ["affected.html"], source: path => api.getMountedSource(path) ?? (path === "affected.html" ? "before" : undefined), assetVersion: () => undefined,
+        scope, store, bytes, stamp: { holds: () => true, changed: () => undefined }, paths: () => ["affected.html"], source: path => api.getMountedSource(path) ?? (path === "affected.html" ? "before" : undefined), assetVersion: () => undefined,
         entry: async path => { if (change === "mount affected source") await pause(); return path === "affected.html" ? { path, sha: "a".repeat(40), text: "before" } : undefined; },
         mounted: api.isMounted, modelState: path => api.captureFileModelState(scope, path), evictModel: (path, proof) => api.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
         prepareSources: api.prepareHistorySources,

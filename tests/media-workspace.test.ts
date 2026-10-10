@@ -22,13 +22,14 @@ function fixture() {
     bytes.clear(); state.bytes.forEach((value, key) => bytes.set(key, value));
     versions.clear(); state.versions.forEach((value, key) => versions.set(key, value));
   };
+  const stamp = { holds: () => live, changed: () => live ? undefined : "scope" as const };
   const context: MediaWorkspaceContext = {
     key: "owner/repo:main", scope: { account: "owner", repoId: 1, repo: "owner/repo", branch: "main" },
     drafts: { get() { return undefined; }, save() { throw new Error("Legacy draft mutation"); }, remove() { throw new Error("Legacy draft mutation"); } },
     get paths() { return [...paths]; },
     get items() { return [...bytes.keys()].map((path) => ({ path })); },
     pages: ["index.html"], components: {},
-    assertLive() { if (!live) throw new Error("Repository scope changed"); },
+    assertLive() { if (!stamp.holds()) throw new Error("Repository scope changed"); },
     async read(path) { const value = text.get(path); if (path === MEDIA_METADATA_PATH) afterRead?.(); return value; },
     async blob(path) { return bytes.get(path)!; },
     assetVersion(path) { return versions.get(path); },

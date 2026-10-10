@@ -1,4 +1,5 @@
 import { refuse as showRefusal } from "../components/refusal-note";
+import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { deleteFile, moveFile, type DraftAccess, type MovableFile } from "../file-changes";
 import { gitBlobSha, holdUploadKey, uploadKey, uploadKeyHeld, type UploadBytes } from "../uploads";
@@ -9,7 +10,7 @@ export interface MediaDraftHost {
   scope: DraftScope;
   store: DraftAccess & { list(scope: DraftScope): SavedDraft[]; error: string | null };
   bytes: UploadBytes;
-  assertLive(): void;
+  stamp: Stamp;
   paths(): string[];
   source(path: string): string | undefined;
   assetVersion(path: string): string | undefined;
@@ -38,6 +39,7 @@ interface State {
 
 /** Owns only the captured draft records, source steps, and newly staged bytes. */
 export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransaction<State> {
+  const assertLive = () => { if (!host.stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
   const refuse = (reason: string, history?: "undo" | "redo") => { host.announce(reason); showRefusal(reason, { history }); };
   const changedSince = "The images or pages of this change were edited since; edit them directly instead.";
   const scope = { ...host.scope };
@@ -75,7 +77,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
     for (const [path, record] of desired) if (host.store.get(scope, path) === expected.get(path)) write(path, record);
   };
   return {
-    assertLive: () => host.assertLive(), paths: () => host.paths(), source: (path) => host.source(path), assetVersion: (path) => host.assetVersion(path),
+    assertLive, paths: () => host.paths(), source: (path) => host.source(path), assetVersion: (path) => host.assetVersion(path),
     async snapshot(batch) {
       const before = new Map(pathsOf(batch).map(path => [path, host.store.get(scope, path)]));
       // Renamed drafts can carry a paired origin outside this batch's visible paths.
@@ -90,29 +92,29 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       if (!sources) throw new Error("The editor source changed while preparing image changes.");
       const state: State = { mountedStates: new Map([...before.keys()].map(path => [path, host.mounted(path)])), modelStates: new Map([...before.keys()].map(path => [path, host.modelState(path)])), before, after: new Map(), entries: new Map(), sources, staged: new Map(), ownedKeys: new Set(), releases: [], committed: false };
       for (const path of before.keys()) {
-        host.assertLive();
+        assertLive();
         state.entries.set(path, await host.entry(path));
-        host.assertLive();
+        assertLive();
         if (!unchanged(before) || !sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) throw new Error("The files changed while preparing image changes.");
       }
       return state;
     },
     async stage(batch, state) {
       for (const upload of batch.uploads) {
-        host.assertLive();
+        assertLive();
         const sha = await gitBlobSha(new Uint8Array(await upload.blob.arrayBuffer()));
-        host.assertLive();
+        assertLive();
         const key = uploadKey(scope, sha);
         state.releases.push(holdUploadKey(key));
         const existing = await host.bytes.get(key);
-        host.assertLive();
+        assertLive();
         if (!existing) { state.ownedKeys.add(key); await host.bytes.put(key, upload.blob); }
-        host.assertLive();
+        assertLive();
         state.staged.set(upload.path, { sha, blob: upload.blob });
       }
     },
     commit(batch, state) {
-      host.assertLive();
+      assertLive();
       if (!unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) throw new Error("The files changed before image changes could be applied.");
       const planned = new Map(state.before);
       const local: DraftAccess = { get: (_, path) => planned.get(path), save: record => { planned.set(record.path, record); return true; }, remove: (_, path) => { planned.set(path, undefined); return true; } };
@@ -150,7 +152,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       let applied = true;
       const moveHistory = (undo: boolean) => {
         try {
-          host.assertLive();
+          assertLive();
           const expected = applied ? state.after : state.before;
           if (undo !== applied || !unchanged(expected) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince, undo ? "undo" : "redo"); return false; }
           const desired = undo ? state.before : state.after;
@@ -180,16 +182,16 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       const registered = host.history(() => moveHistory(true), async () => {
         const restaged = { ...state, ownedKeys: new Set<string>(), releases: [] as (() => void)[] };
         try {
-          host.assertLive();
+          assertLive();
           if (applied || !unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince, "redo"); return false; }
           for (const upload of state.staged.values()) {
             const key = uploadKey(scope, upload.sha);
             restaged.releases.push(holdUploadKey(key));
             const existing = await host.bytes.get(key);
-            host.assertLive();
+            assertLive();
             if (!unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) throw new Error("The files changed while restoring image bytes.");
             if (!existing) { restaged.ownedKeys.add(key); await host.bytes.put(key, upload.blob); }
-            host.assertLive();
+            assertLive();
           }
           const restored = moveHistory(false);
           if (!restored) await cleanup(restaged);

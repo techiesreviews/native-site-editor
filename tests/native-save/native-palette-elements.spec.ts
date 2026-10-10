@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
     const deps = {
       pages: () => [{file:'index.html',route:'/',label:'Home'}], files: () => ['index.html','feature.html'],
       components: () => [{tag:'feature-block',file:'feature.html',label:'Feature block',section:true}],
-      nativeElements: () => nativeElementChoices, currentPath: () => state.path, revision: () => state.revision,
+      nativeElements: () => nativeElementChoices, currentPath: () => state.path, stamp: () => { const held = state.revision; return { holds: () => held === state.revision, changed: () => held === state.revision ? undefined : "scope" as const }; },
       source: () => state.source, selection: () => state.selection, isSectionTag: (name:string) => name==='section',
       insert: async (point:any,choice:any) => {state.calls.push({point,choice});}, open: (path:string) => {state.opened.push(path);},
       editBar: () => undefined, select: () => {}, textSelected: () => false, history: () => {}, editing: () => true,

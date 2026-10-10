@@ -30,6 +30,11 @@ function fixture() {
   const hooks: { get?: () => void } = {};
   let wake: (() => void) | undefined, unwoken = 0, loads = 0, resync = false, opened: string | undefined;
   const ports: SavePublishPorts = {
+    stamp: () => {
+      const epoch = state.generation, scope = JSON.stringify(ports.scope());
+      const changed = () => JSON.stringify(ports.scope()) !== scope ? "scope" as const : state.generation !== epoch ? "generation" as const : undefined;
+      return { holds: () => !changed(), changed };
+    },
     generation: () => state.generation,
     snapshot: () => state.snapshot,
     scope: () => state.snapshot ? { account: state.account, repoId: state.repoId, repo: `lex/site${state.repoId}`, branch: state.snapshot.branch } : undefined,

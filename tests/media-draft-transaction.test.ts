@@ -1,27 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { SavedDraft, DraftScope } from "../src/drafts";
-import { mediaDraftTransaction } from "../src/page-builder/media-draft-transaction";
+import { createGuardedEdits, type Stamp } from "../src/guarded-edit";
+import { createMemoryWorkspace } from "./fakes/memory-workspace";
+import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import { applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { memoryUploadBytes } from "../src/uploads";
 
-function harness() {
+function harness(stamp?: Stamp) {
   const scope: DraftScope = { account: "a", repoId: 1, repo: "a/r", branch: "main" };
   const records = new Map<string, SavedDraft>(), bytes = memoryUploadBytes();
-  let current = true, undo: () => boolean = () => false, redo: () => boolean | Promise<boolean> = () => false;
+  let current = true, steps = 0, undo: () => boolean = () => false, redo: () => boolean | Promise<boolean> = () => false;
   let fail = "", failAfterWrite = false;
   const store = { get: (_: DraftScope, path: string) => records.get(path), list: () => [...records.values()], error: "store failure",
     save: (record: SavedDraft) => { if (record.path === fail) { fail = ""; if (failAfterWrite) records.set(record.path, record); return false; } records.set(record.path, record); return true; },
     remove: (_: DraftScope, path: string) => { records.delete(path); return true; } };
-  const host = { scope, store, bytes, assertLive: () => { if (!current) throw new Error("scope changed"); },
+  const host: MediaDraftHost = { scope, store, bytes, stamp: stamp ?? { holds: () => current, changed: () => current ? undefined : "scope" as const },
     paths: () => [...records.values()].filter(record => !record.deleted).map(record => record.path),
     source: (path: string) => records.get(path)?.content, assetVersion: (path: string) => records.get(path)?.sourceSha,
     entry: async () => undefined, mounted: () => false,
     prepareSources: () => ({ apply: () => true, undo: () => true, redo: () => true, isCurrent: () => true }),
     modelState: () => ({ isCurrent: () => true }), evictModel: (_: string, proof: { isCurrent(): boolean }) => proof.isCurrent() ? proof : undefined, historyCurrent: () => true,
-    history: (u: typeof undo, r: typeof redo) => { undo = u; redo = r; return true; }, refresh: () => {}, announce: () => {} };
+    history: (u: typeof undo, r: typeof redo) => { steps++; undo = u; redo = r; return true; }, refresh: () => {}, announce: () => {} } satisfies MediaDraftHost;
   const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"images":{}}']]), moves: [], deletes: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
-  return { host, batch, records, bytes, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
+  return { host, batch, records, bytes, steps: () => steps, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
 }
 
 test("metadata and upload undo together; redo restages swept bytes", async () => {
@@ -32,7 +34,7 @@ test("metadata and upload undo together; redo restages swept bytes", async () =>
 test("scope change after byte staging removes only owned bytes without drafts", async () => {
   const h = harness(), put = h.bytes.put.bind(h.bytes);
   h.bytes.put = async (key, blob) => { await put(key, blob); h.stale(); };
-  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /scope changed/);
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /repository changed/);
   assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0);
 });
 test("synchronous store failure restores metadata and drops staged bytes", async () => {
@@ -67,7 +69,7 @@ test("rollback preserves a newer mounted source when its owned undo refuses", as
     apply: () => { source = "after"; return true; },
     undo: () => false, redo: () => false, isCurrent: () => true,
   });
-  const save = h.host.store.save;
+  const save = h.host.store.save.bind(h.host.store);
   h.host.store.save = record => {
     if (record.path === "images/a.png") {
       source = "external";
@@ -135,4 +137,17 @@ test("a verified own cached-model eviction advances only that path's proof", asy
   assert.equal(h.undo(), true); assert.equal(await h.redo(), true);
   models.set("images/a.png", {});
   assert.equal(h.undo(), false); assert.equal(h.records.size, 2);
+});
+
+
+test("a repository switch during the media workspace load writes nothing", async () => {
+  const workspace = createMemoryWorkspace();
+  const stamp = createGuardedEdits(workspace.workspace).stamp("repository");
+  const h = harness(stamp);
+  // The transaction receives the session's stamp after the lazy workspace load.
+  workspace.setScope("lex/another-site@main");
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /repository changed/);
+  assert.equal(h.records.size, 0);
+  assert.equal(h.bytes.map.size, 0);
+  assert.equal(h.steps(), 0);
 });

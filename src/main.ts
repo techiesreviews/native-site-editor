@@ -115,6 +115,7 @@ import { createSavePublishController } from "./controllers/save-publish-controll
 import { createFileOperationsController } from "./controllers/file-operations-controller";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { writeNewDrafts } from "./new-drafts";
+import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type Reads, type PlanResult, type Stamp, type Outcome } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
 import type {
@@ -632,7 +633,7 @@ const paletteController = createCommandPaletteController({
   effectiveSource: nativeEffectiveSource,
   indexed: () => nativeTextIndexed,
   index: ensureNativeTextIndex,
-  revision: () => `${setupScope()}:${generation}`,
+  stamp: () => guardedEdits.stamp("repository"),
   isMounted: path => Boolean(editorModule?.isMounted(path)),
   beginNewPage: () => { openExplorer(); selectExplorerTab("pages"); },
   startNewPage: () => pagesTree?.startNew("/"),
@@ -1612,6 +1613,7 @@ const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | 
 const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down" | "out" | "in") => number[] | "stayed" | undefined>();
 
 const pageStructureController = createPageStructureController({
+  stamp: () => guardedEdits.stamp("repository"),
   get nativePreview() { return nativePreview; },
   get editorModule() { return editorModule; },
   get appStore() { return appStore; },
@@ -2531,6 +2533,7 @@ const mediaController = createMediaController({
       nativePaths: nativeSite ? nativeFiles(scope) : undefined, drafts: draftStore() };
   },
   identity: mediaIdentity,
+  stamp: () => guardedEdits.stamp("repository"),
   generation: () => generation,
   source: nativeEffectiveSource,
   listPaths: async () => {
@@ -2564,14 +2567,16 @@ function chooseMediaForImage(target: { path: string; node: number[]; width?: num
 }
 
 // Atomic staging, source receipts, upload rollback and one Undo remain host-owned.
-async function applyMediaBatch(scope: DraftScope, assertLive: () => void, batch: MediaWorkspaceBatch) {
+async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch) {
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }] = await loadMediaWorkspace();
+  const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
+  assertLive();
   const editor = editorModule;
   if (!editor || !appStore.openFile.value) throw new Error("Open a page before changing images.");
   const historyPath = appStore.openFile.value, historyHost = editor.captureHistoryHost(appStore.openFile.value);
   if (!historyHost) throw new Error("Open an editable page before changing images.");
   await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
-    scope, store: draftStore(), bytes: uploadBytes(), assertLive,
+    scope, store: draftStore(), bytes: uploadBytes(), stamp,
     paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
     assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
     entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
@@ -4475,6 +4480,7 @@ function discardFileChange(change: FileChange) {
 }
 
 const savePublish = createSavePublishController({
+  stamp: () => guardedEdits.stamp("repository"),
   generation: () => generation,
   snapshot: () => appStore.snapshot.value,
   scope: draftScope, drafts: draftStore, api, findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce, status,
@@ -4795,38 +4801,39 @@ function updateAgentContext() {
 function agentContext(): Promise<SharedContext | undefined> {
   return withSiteIndexed(nativeTextIndexGate, buildAgentSiteContext);
 }
-async function buildAgentSiteContext(): Promise<SharedContext | undefined> {
-  const { buildAgentContext } = await loadAgentSite();
-  const scope = draftScope();
-  if (!appStore.repository.value || !appStore.snapshot.value || !scope) return undefined;
-  const site = nativeSite;
-  return buildAgentContext({
-    repository: { id: appStore.repository.value.id, fullName: appStore.repository.value.full_name },
-    branch: appStore.snapshot.value.branch,
-    commit: appStore.snapshot.value.commit,
-    file: activeFileContext,
-    drafts: draftStore().list(scope),
-    mountedSource: (path) => editorModule?.getMountedSource(path),
-    native: site && {
-      site,
-      routeInfo: (route) => nativeRouteInfo(route, site),
-      source: (path) => nativeEffectiveSource(path, scope),
-      exists: (path) => pathNow(path) === "file",
-      openFile: appStore.openFile.value,
-      selection: appStore.selection.value && { ...appStore.selection.value, route: nativePreview?.route() },
-    },
-  });
+const agentSiteHost = createAgentSiteHost({
+  stamp: () => guardedEdits.stamp("repository"),
+  load: loadAgentSite,
+  input: () => {
+    const scope = draftScope();
+    if (!appStore.repository.value || !appStore.snapshot.value || !scope) return undefined;
+    const site = nativeSite;
+    return {
+      repository: { id: appStore.repository.value.id, fullName: appStore.repository.value.full_name },
+      branch: appStore.snapshot.value.branch,
+      commit: appStore.snapshot.value.commit,
+      file: activeFileContext,
+      drafts: draftStore().list(scope),
+      mountedSource: (path) => editorModule?.getMountedSource(path),
+      native: site && {
+        site,
+        routeInfo: (route) => nativeRouteInfo(route, site),
+        source: (path) => nativeEffectiveSource(path, scope),
+        exists: (path) => pathNow(path) === "file",
+        openFile: appStore.openFile.value,
+        selection: appStore.selection.value && { ...appStore.selection.value, route: nativePreview?.route() },
+      },
+    };
+  },
+  dialog: () => confirmDialog,
+  setDialog: dialog => { confirmDialog = dialog; },
+});
+function buildAgentSiteContext(): Promise<SharedContext | undefined> {
+  return agentSiteHost.context();
 }
 // A Files-tab action run for an agent: its confirmation is answered as asked.
-async function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
-  const { agentAnswers } = await loadAgentSite();
-  const real = confirmDialog;
-  confirmDialog = real && agentAnswers(real, answers);
-  try {
-    return await run();
-  } finally {
-    confirmDialog = real;
-  }
+function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
+  return agentSiteHost.withAnswers(answers, run);
 }
 function agentFileTarget(path: string): FileRowTarget | undefined {
   const now = pathNow(path);

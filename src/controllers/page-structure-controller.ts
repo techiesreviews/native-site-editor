@@ -1,3 +1,4 @@
+import type { Stamp } from "../guarded-edit";
 import { pageRemovable, selectionAfterRemove } from "../page-builder/remove";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit } from "../native-structure";
@@ -24,6 +25,7 @@ import type { GuardedEdits, Planned, PlanResult, Reads, Stamp } from "../guarded
 
 /** Workspace values are live host getters; operations and parsers stay injected. */
 export interface PageStructurePorts {
+  stamp(): Stamp;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "selectNode" | "route" | "selectTextAfterUpdate" | "selectAfterUpdate" | "refresh" | "showEditBar" | "hideEditBar"> | undefined;
   readonly editorModule: Pick<typeof sourceEditor, "captureFileModelState" | "closeActiveEditGroup" | "isMounted" | "replaceActiveRange" | "replaceActiveRanges" | "runVisualHistory" | "forgetDraftModel">;
   /** Guarded edits (src/guarded-edit.ts): section moves, field writes and text edits are its plans. */
@@ -637,7 +639,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       });
     }
     const model: EditBarModel = {
-      origin: { path, source, revision: `${ports.setupScope()}:${ports.generation}`, node: node?.slice() },
+      origin: { path, source, stamp: ports.stamp(), revision: `${ports.setupScope()}:${ports.generation}`, node: node?.slice() },
       kind, controls, onFormat: (format) => nativeFormatActions[format]?.(),
       onMove, draggable,
       ...ports.componentTools?.identity(selection),
