@@ -1,7 +1,7 @@
 ---
 title: "Plain cards fill their text and image too; look swaps add the :host rule; cards spec after slice 78"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: sol
@@ -18,3 +18,9 @@ From slice 55 (see its Done note):
 ## Done when
 
 - Unit tests for the plain fill (text, image, kept when absent); nightly spec: plain grid, pick a page → title, link, text and image filled, one undo; the look-swap CSS case; native-cards.spec.ts passes.
+
+## Done (2026-10-10)
+
+- A plain grid's new card, linked to a page (picked or created), takes the meta description into its first paragraph after the title that holds no link and the og:image into its first image (srcset, sizes and picture sources dropped, alt kept); each stays as Add card left it when the page lacks it, and the strip lists "meta description" / "og:image", "kept" or "not used" (pure `itemPageFill` in `card-fill.ts`, sharing `cardImageEdits` with components). A look swap that links the title of a component without a link slot adds `:host { position: relative; }` to its CSS in the same undo step (`swapCard` through `hostCss`/`fillOperation`). native-cards' Alt+Up case now expects slice 78's move ("Moved up in Div (grid)") and its undo.
+- Commits "Plain cards fill their text and image from the page; look swaps add the :host rule (slice 99)" (built by Sol) and a follow-up (link paragraphs are not text; no import cycle) on `dev`.
+- Tests: 8 `itemPageFill` cases in `tests/card-fill.test.ts`; nightly in `native-add-card.spec.ts`: the plain grid case now checks text, image (picture source, srcset gone) and strip rows by picking and creating, a look swap with missing / positioned CSS (one undo, redo); `native-cards.spec.ts` move + undo.
