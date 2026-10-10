@@ -17,16 +17,17 @@ import { nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetai
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
-import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, itemFill, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
+import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, itemPageFill, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { cardFill, cardFillContent, cardFillMarkup, pageTitle } from "./card-fill";
+import { cardFill, cardRoles, cardFillContent, cardFillMarkup, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
 import type { CardContent } from "./card-swap";
 import { decodeHtmlEntities } from "./html-entities";
 import { startTagAttribute } from "../../shared/html-source";
+import { templateSlots } from "./component-model";
 import { nativeLinkTarget } from "../../shared/native-routes";
 
 interface RangeEdit {
@@ -351,17 +352,36 @@ export function createCards(deps: CardsDeps) {
     // The site and page as the swap was asked for: another site, or a change meanwhile, is not swapped over.
     const site = deps.site();
     const source = deps.source(card.path);
-    const { cardSwap } = await import("./card-swap");
-    if (deps.site() !== site || deps.source(card.path) !== source) { refuse("The page changed meanwhile; choose the look again."); return undefined; }
+    const editor = deps.editor();
     const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
     const before = range && source!.slice(range.start, range.end);
     const tag = before && tagOf(before);
     const own = tag ? template(tag) : undefined;
     const next = template(look.tag);
     if (!range || own === undefined || next === undefined) { refuse("That card or its look is not there any more."); return undefined; }
+    const expectedSources = new Map<string, string | undefined>([[card.path, source]]);
+    if (tag && site?.components[tag]) expectedSources.set(site.components[tag], own);
+    const templatePath = site?.components[look.tag];
+    if (templatePath) expectedSources.set(templatePath, next);
+    const { cardSwap } = await import("./card-swap");
+    if (deps.site() !== site || deps.editor() !== editor || !editor?.isMounted(card.path) || [...expectedSources].some(([path, text]) => deps.source(path) !== text)) {
+      refuse("The page changed meanwhile; choose the look again.");
+      return undefined;
+    }
     const swapped = cardSwap({ card: before!, template: own, look, lookTemplate: next, kept: from.kept, variants: from.variants });
     const edit = { start: range.start, end: range.end, text: swapped.markup };
-    if (swapped.markup !== before && !deps.change(card.path, source!, [edit], card.node, `${capital(itemNoun(look.tag))} is now ${look.label}`)) return undefined;
+    const noun = itemNoun(look.tag);
+    const message = `${capital(noun)} is now ${look.label}`;
+    const { titleSlot, linkSlot } = cardRoles(templateSlots(next));
+    const cssPath = !linkSlot && titleSlot && swapped.kept.title !== undefined && swapped.kept.link?.href ? templatePath?.replace(/\.html$/, ".css") : undefined;
+    const cssBefore = cssPath ? deps.source(cssPath) : undefined;
+    const host = cssPath && (cssBefore !== undefined || !deps.exists(cssPath)) ? { path: cssPath, before: cssBefore } : undefined;
+    const change: CardEdit = { source: source!, edit, noun, host, expectedSources };
+    const css = host ? await hostCss(card, change) : undefined;
+    if (css === null) return undefined;
+    if (css) {
+      if (!await fillOperation(card, change, css, [], message, `Undid changing the ${noun}'s look.`)) return undefined;
+    } else if (swapped.markup !== before && !deps.change(card.path, source!, [edit], card.node, message)) return undefined;
     let filled = from.filled && { ...from.filled, filled: swapped.markup };
     const file = filled && deps.site()?.routes[filled.route];
     const page = file === undefined ? undefined : deps.source(file);
@@ -390,10 +410,10 @@ export function createCards(deps: CardsDeps) {
     const before = source.slice(range.start, range.end);
     const from = base ?? before;
     const title = pageTitle(page, route).title;
-    // Plain collection items use the same facts, with Title and Link as their two roles.
-    let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
-    const plain = text === undefined ? itemFill(from, grid!.noun, title, route) : undefined;
-    if (plain?.added) rows = rows.map(row => row.role === "link" ? { ...row, status: "added", text: title } : row);
+    // Plain cards map the same facts onto their first body paragraph and image.
+    let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
+    const plain = text === undefined ? itemPageFill(from, grid!.noun, title, route, rows) : undefined;
+    if (plain) rows = plain.rows;
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;
     const expectedSources = new Map<string, string | undefined>([[card.path, source]]);
     const pagePath = deps.site()?.routes[route];
@@ -424,12 +444,14 @@ export function createCards(deps: CardsDeps) {
 
   type Fill = NonNullable<ReturnType<typeof fillFrom>>;
 
+  type CardEdit = Pick<Fill, "source" | "host" | "expectedSources" | "edit" | "noun">;
+
   /**
    * The component's CSS with `:host { position: relative; }` (card-link-css.ts,
    * loaded only here) when it lacks it; null, refused, when the site, the
-   * editor or any file the fill read changed while it loaded.
+   * editor or any file the action read changed while it loaded.
    */
-  async function hostCss(card: NewCard, fill: Fill): Promise<{ path: string; before?: string; after: string } | undefined | null> {
+  async function hostCss(card: NewCard, fill: CardEdit): Promise<{ path: string; before?: string; after: string } | undefined | null> {
     const site = deps.site();
     const editor = deps.editor();
     const { cardLinkCss } = await import("./card-link-css");
@@ -443,8 +465,8 @@ export function createCards(deps: CardsDeps) {
     return after === fill.host.before ? undefined : { ...fill.host, after };
   }
 
-  /** The fill and the component's CSS change as one undo step (with a new page's file in `creates`). */
-  async function fillOperation(card: NewCard, fill: Fill, css: { path: string; before?: string; after: string }, creates: { path: string; content: string }[], done: string): Promise<boolean> {
+  /** The card edit and its CSS change as one undo step (with a new page's file in `creates`). */
+  async function fillOperation(card: NewCard, fill: CardEdit, css: { path: string; before?: string; after: string }, creates: { path: string; content: string }[], done: string, undone = `Undid filling the ${fill.noun}.`): Promise<boolean> {
     const edits = new Map([[card.path, applyEdits(fill.source, [fill.edit])]]);
     const expectedSources = new Map(fill.expectedSources);
     expectedSources.set(css.path, css.before);
@@ -454,7 +476,7 @@ export function createCards(deps: CardsDeps) {
     const site = deps.site();
     const editor = deps.editor();
     const current = () => deps.site() === site && deps.editor() === editor && Boolean(editor?.isMounted(card.path));
-    const problem = await deps.operation({ creates, edits, expectedSources, done, undone: `Undid filling the ${fill.noun}.`, current, selection: { before: card, after: card } });
+    const problem = await deps.operation({ creates, edits, expectedSources, done, undone, current, selection: { before: card, after: card } });
     if (problem) refuse(problem);
     return !problem;
   }

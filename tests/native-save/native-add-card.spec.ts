@@ -433,6 +433,9 @@ test("the card's look chip swaps a filled card to a look without an image and ba
   await menu.getByRole("button", { name: "card-quote" }).click();
   const quoted = added.replace(freshWithImage, harbourQuote);
   await expect.poll(() => source(page)).toBe(quoted);
+  const cssPath = "components/card-quote/card-quote.css";
+  const cssBefore = ":host { display: block; }\narticle { padding: 24px; font-style: italic; }\n";
+  await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(cssBefore + ":host { position: relative; }\n");
   expect(quoted).not.toContain("harbour.svg");
   const card = frame(page).locator("section-work > :nth-child(3)");
   await expect(card.locator("h3 > a")).toHaveText("Harbour Lane Pottery");
@@ -460,6 +463,7 @@ test("the card's look chip swaps a filled card to a look without an image and ba
   await expect(strip).toHaveCount(0);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(filled);
+  await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(added);
 });
@@ -682,7 +686,12 @@ for (const create of [false, true]) {
     await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
     const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
     const home = (await source(page))!;
-    const made = home.replace(/<card-project>[\s\S]*?<\/card-project>/g, '<article class="quote"><h3>Quote</h3><p>Some words.</p></article>');
+    const made = home.replace(/<card-project>[\s\S]*?<\/card-project>/g, '<article class="quote"><h3>Quote</h3><p>Some words.</p><picture><source srcset="/old.webp"><img src="/old.jpg" srcset="/old-2.jpg 2x" sizes="100vw" alt="Quote"></picture></article>');
+    if (!create) {
+      const harbour = readFileSync(new URL("../../fixtures/native-cards/work/harbour-lane-pottery/index.html", import.meta.url), "utf8");
+      await edit("work/harbour-lane-pottery/index.html", harbour.replace("</head>", '<meta property="og:image" content="/images/harbour.svg"></head>'));
+      await edit("images/harbour.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80"><rect width="320" height="80" fill="#c9733a"/></svg>');
+    }
     await edit("index.html", made);
     await edit("styles/site.css", readFileSync(new URL("../../fixtures/native-cards/styles/site.css", import.meta.url), "utf8") + cardLinkRule + "\narticle.quote { padding: 24px; min-height: 180px; }\n");
     await page.reload();
@@ -711,9 +720,22 @@ for (const create of [false, true]) {
     } else await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
     await expect(cards.last().locator("h3 > a")).toHaveAttribute("href", route);
     await expect(cards.last().locator("h3 > a")).toHaveText(create ? "Oak & Ash" : "Harbour Lane Pottery");
-    await expect(cards.last().locator("p")).toHaveText("A sentence or two about this article.");
+    await expect(cards.last().locator("p")).toHaveText(create ? "A sentence or two about this article." : "A quiet portfolio for a working potter.");
+    if (create) await expect(cards.last().locator("img")).toHaveAttribute("src", "/old.jpg");
+    else {
+      await expect.poll(() => source(page)).toContain('<img src="/images/harbour.svg" alt="Quote">');
+      await expect.poll(() => cards.last().locator("img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(320);
+    }
+    await expect(cards.last().locator("img")).toHaveAttribute("alt", "Quote");
+    await expect(cards.last().locator("picture > source")).toHaveCount(create ? 1 : 0);
+    if (!create) {
+      await expect(cards.last().locator("img")).not.toHaveAttribute("srcset");
+      await expect(cards.last().locator("img")).not.toHaveAttribute("sizes");
+    }
     const strip = page.getByRole("group", { name: "Where the card's content came from" });
     await expect(strip.getByRole("listitem").filter({ hasText: /^Link/ })).toHaveText(`Linkaddressadded${route}the title links to the page`);
+    await expect(strip.getByRole("listitem").filter({ hasText: /^Body/ })).toHaveText(create ? "BodykeptA sentence or two about this article." : "Bodymeta descriptionA quiet portfolio for a working potter.");
+    await expect(strip.getByRole("listitem").filter({ hasText: /^Image/ })).toHaveText(create ? "Imagekept/old.jpg" : "Imageog:image/images/harbour.svg");
     await expect.poll(() => cornerLink(page, "#work .cards > article:last-child")).toBe(route);
     expect(await undo(page)).toBe(true);
     await expect.poll(() => source(page)).toBe(blank);
@@ -809,5 +831,36 @@ for (const theme of ["light", "dark"]) {
     await page.screenshot({ path: testInfo.outputPath(`strip-${theme}.png`) });
     await open.click();
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/harbour-lane-pottery/index.html");
+  });
+}
+
+for (const positioned of [false, true]) {
+  test(`swapping a filled card to a look with ${positioned ? "positioned" : "missing"} CSS: title link and CSS undo together`, async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+    await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+    const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+    const cssPath = "components/card-quote/card-quote.css";
+    await edit("components/card-quote/card-quote.html", quoteTemplate);
+    if (positioned) await edit(cssPath, ":host { position: relative; }\n");
+    const { added } = await openFillable(page, baseURL);
+    await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
+    const filled = added.replace(freshWithImage, harbourCard);
+    await expect.poll(() => source(page)).toBe(filled);
+    const strip = page.getByRole("group", { name: "Where the card's content came from" });
+    await strip.getByRole("button", { name: "Card: card-project" }).click();
+    await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+    const quoted = added.replace(freshWithImage, harbourQuote);
+    await expect.poll(() => source(page)).toBe(quoted);
+    await expect(frame(page).locator("section-work > card-quote h3 > a")).toHaveAttribute("href", "/work/harbour-lane-pottery/");
+    if (positioned) expect(await storedDraft(page, cssPath)).toBeUndefined();
+    else await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(":host { position: relative; }\n");
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(filled);
+    await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
+    if (!positioned) {
+      await page.locator(".code-editor__redo").click();
+      await expect.poll(() => source(page)).toBe(quoted);
+      await expect.poll(async () => (await storedDraft(page, cssPath))?.content).toBe(":host { position: relative; }\n");
+    }
   });
 }

@@ -16,6 +16,8 @@
 // collection of those pages, with no data file anywhere.
 
 import { startTags, VOID_ELEMENTS, startTagAttribute, type StartTag } from "../../shared/html-source";
+import { cardImageEdits, type CardFillRow } from "./card-fill";
+import { descendants, parseSource } from "./component-model";
 import { isFolderRoute } from "../../shared/native-routes";
 
 /** Tags that can be repeated items besides custom elements. */
@@ -233,6 +235,8 @@ const attribute = (source: string, element: SourceElement, name: string) => star
 
 /** What the copy of an item says. */
 export interface ItemCopyOptions {
+  /** Filling a placed card keeps its non-link text until a page fact replaces it. */
+  keepText?: boolean;
   /** What items are called ("card"). */
   noun: string;
   /** The title the copy gets; else its title's slot fallback, else "New card". */
@@ -338,6 +342,8 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
       // Only its words change, run by run between tags, so a link's address is left to the link pass below.
       edits.push(...textRunEdits(source, leaf.innerStart, leaf.innerEnd, (run) => withTitle(run, oldTitle, titleText)));
       continue;
+    } else if (options.keepText) {
+      continue;
     } else if (slot && options.fallbacks?.[slot]) {
       text = escapeText(options.fallbacks[slot]);
     } else {
@@ -370,7 +376,7 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
  */
 export function itemFill(card: string, noun: string, title: string, href: string): { markup: string; added: boolean } | undefined {
   const root = elementTree(card)?.[0];
-  const markup = root && itemCopy(card, root, { noun, title, href, isLinked: value => !value.trim() });
+  const markup = root && itemCopy(card, root, { noun, title, href, keepText: true, isLinked: value => !value.trim() });
   const item = markup === undefined ? undefined : elementTree(markup)?.[0];
   if (markup === undefined || !item) return undefined;
   const links = allElements([item]).filter(element => element.name === "a");
@@ -389,6 +395,36 @@ export function itemFill(card: string, noun: string, title: string, href: string
   // itemCopy already gave the heading (or its whole link) the page's title.
   const edits = link ? [pointed(link)] : [{ start: heading.innerStart, end: heading.innerEnd, text: `<a href="${escapeAttribute(href)}">${escapeText(title)}</a>` }];
   return { markup: applyEdits(markup, edits), added: true };
+}
+
+/** Fill a plain card's real body/image places and report the facts used by the strip. */
+export function itemPageFill(card: string, noun: string, title: string, href: string, facts: CardFillRow[]): { markup: string; rows: CardFillRow[] } | undefined {
+  const root = elementTree(card)?.[0];
+  if (!root) return undefined;
+  const source = card;
+  const leaves = textLeaves(source, [root]);
+  const heading = titleLeaf(source, root, leaves);
+  const body = heading && leaves.find(leaf => leaf.name === "p" && leaf.start >= heading.end);
+  const img = [...descendants(parseSource(source))].find(element => element.name === "img");
+  const edits: Edit[] = [];
+  const rows = facts.map((fact): CardFillRow => {
+    const row = { ...fact, slot: undefined };
+    if (row.role !== "body" && row.role !== "image") return row;
+    const target = row.role === "body" ? body : img;
+    if (!target) return { ...row, from: "not used", status: "not-used" };
+    if (row.status === "filled") {
+      if (row.role === "body" && body && row.text !== undefined) edits.push({ start: body.innerStart, end: body.innerEnd, text: escapeText(row.text) });
+      if (row.role === "image" && img && row.src !== undefined) edits.push(...cardImageEdits(source, img, row.src));
+      return row;
+    }
+    return row.role === "body" && body
+      ? { ...row, from: "kept", status: "kept", text: plainText(source.slice(body.innerStart, body.innerEnd)) }
+      : { ...row, from: "kept", status: "kept", src: img && startTagAttribute(source, img.tag, "src")?.value };
+  }).filter(row => row.status !== "not-used" || Boolean(row.text || row.src));
+  // A filled paragraph may have held the card's page link. Add/repoint the
+  // link after filling the facts, so the resulting card still links to the page.
+  const filled = itemFill(applyEdits(source, edits), noun, title, href);
+  return filled && { markup: filled.markup, rows: rows.map(row => row.role === "link" && filled.added ? { ...row, status: "added", text: title } : row) };
 }
 
 /** The whole `href` attribute rewritten, quoted, so an unquoted or empty value cannot run into the next attribute. */

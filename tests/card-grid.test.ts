@@ -1,3 +1,4 @@
+import { cardFill } from "../src/page-builder/card-fill";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -6,6 +7,7 @@ import {
   insertAfterEdit,
   itemCopy,
   itemFill,
+  itemPageFill,
   itemKind,
   itemNoun,
   itemTitle,
@@ -245,4 +247,50 @@ test("a link around the card's heading is pointed at the page, never nested; a b
   assert.deepEqual(itemFill('<article><h3><a href="#x">Old</a> and more</h3></article>', "card", "Oak", "/work/oak/"), {
     markup: '<article><h3><a href="/work/oak/">Oak</a></h3></article>', added: true,
   });
+});
+
+const plainFacts = (page: string) => cardFill({
+  template: '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>',
+  page: { route: "/oak/", source: page }, siteUrl: "https://example.org",
+}).rows;
+
+test("plain page fill uses the first paragraph leaf after its title and the first image, with real source rows", () => {
+  const card = '<article><p>Before</p><h3>New card</h3><div><p>Body <em>placeholder</em></p></div><p>After</p><picture><source srcset="old.webp"><img src="old.jpg" srcset="old-2.jpg 2x" sizes="100vw" alt="Keep me"></picture><img src="other.jpg"><video><source src="movie.mp4"></video></article>';
+  const facts = plainFacts('<meta name="description" content="Oak &amp; Ash"><meta property="og:image" content="https://example.org/images/oak.jpg"><h1>Oak</h1>');
+  const result = itemPageFill(card, "card", "Oak", "/oak/", facts)!;
+  assert.equal(result.markup, '<article><p>Before</p><h3><a href="/oak/">Oak</a></h3><div><p>Oak &amp; Ash</p></div><p>After</p><picture><img src="/images/oak.jpg" alt="Keep me"></picture><img src="other.jpg"><video><source src="movie.mp4"></video></article>');
+  assert.deepEqual(result.rows.filter(row => row.role === "body" || row.role === "image").map(row => [row.from, row.status]), [["meta description", "filled"], ["og:image", "filled"]]);
+});
+
+for (const description of [false, true]) for (const image of [false, true]) {
+  test(`plain fill keeps each missing page fact independently: description=${description}, image=${image}`, () => {
+    const facts = plainFacts(`<h1>Oak</h1>${description ? '<meta name="description" content="Description">' : ""}${image ? '<meta property="og:image" content="/new.jpg">' : ""}`);
+    const result = itemPageFill('<article><h3>New card</h3><p>Custom <em>body</em></p><picture><source srcset="old.webp"><img src="old.jpg" srcset="old-2.jpg 2x" sizes="100vw" alt="Old"></picture></article>', "card", "Oak", "/oak/", facts)!;
+    assert.ok(result.markup.includes(description ? '<p>Description</p>' : '<p>Custom <em>body</em></p>'));
+    assert.ok(result.markup.includes(image ? '<picture><img src="/new.jpg" alt="Old"></picture>' : '<picture><source srcset="old.webp"><img src="old.jpg" srcset="old-2.jpg 2x" sizes="100vw" alt="Old"></picture>'));
+    assert.equal(result.rows.find(row => row.role === "body")!.status, description ? "filled" : "kept");
+    assert.equal(result.rows.find(row => row.role === "image")!.status, image ? "filled" : "kept");
+  });
+}
+
+for (const card of ['<article><p>Before</p><h3>New card</h3></article>', '<li>New item</li>']) {
+  test(`plain fill without a body/image place reports not used: ${card}`, () => {
+    const result = itemPageFill(card, "item", "Oak", "/oak/", plainFacts('<h1>Oak</h1><meta name="description" content="Unused"><meta property="og:image" content="/unused.jpg">'))!;
+    assert.equal(result.rows.find(row => row.role === "body")!.status, "not-used");
+    assert.equal(result.rows.find(row => row.role === "image")!.status, "not-used");
+    assert.ok(!result.markup.includes("Unused"));
+    assert.ok(!result.markup.includes("unused.jpg"));
+  });
+}
+
+test("a description replacing the paragraph that held the page link leaves a working title link", () => {
+  const result = itemPageFill('<article><h3>New card</h3><p><a href="">Read about New card</a></p></article>', "card", "Oak", "/oak/", plainFacts('<h1>Oak</h1><meta name="description" content="Description">'))!;
+  assert.equal(result.markup, '<article><h3><a href="/oak/">Oak</a></h3><p>Description</p></article>');
+  assert.equal(result.rows.find(row => row.role === "link")!.status, "added");
+});
+
+test("text-only collection fills omit body/image rows when neither facts nor places exist", () => {
+  const result = itemPageFill("<li>New item</li>", "item", "Oak", "/oak/", plainFacts("<h1>Oak</h1>"))!;
+  assert.equal(result.markup, "<li>Oak</li>");
+  assert.deepEqual(result.rows.map(row => row.role), ["title", "link"]);
 });

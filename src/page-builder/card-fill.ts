@@ -216,14 +216,7 @@ function fillElementEdits(source: string, element: SourceElement, row: CardFillR
   if (row.role === "image") {
     const img = inside("img");
     if (!img || row.src === undefined) return [];
-    // Only the image's own picture: a video's sources beside it stay.
-    const picture = img.parent?.name === "picture" ? img.parent.children : [];
-    const sources = picture.filter((child): child is SourceElement => child.type === "element" && child.name === "source").map((child) => {
-      const lead = leadOf(source, child.start);
-      const start = lead === undefined ? child.start : Math.max(0, child.start - lead.length - (source[child.start - lead.length - 2] === "\r" ? 2 : 1));
-      return { start, end: child.end, text: "" };
-    });
-    return [attributeEdit(source, img.tag, "src", row.src), attributeEdit(source, img.tag, "srcset", undefined), attributeEdit(source, img.tag, "sizes", undefined), ...sources];
+    return cardImageEdits(source, img, row.src);
   }
   if (row.role === "link") return linkIn(element, row.href ?? "");
   // The text goes in the innermost element that holds the rest (`<div slot><p>…</p></div>`), not into an image or a line break.
@@ -231,6 +224,18 @@ function fillElementEdits(source: string, element: SourceElement, row: CardFillR
   for (let only = elementsOf(target); only.length === 1 && only[0].close && only[0].name !== "a" && blankText(source, target); only = elementsOf(target)) target = only[0];
   if (link !== undefined) return linkIn(target, link);
   return target.close ? [{ start: target.tag.end, end: target.close.start, text }] : [];
+}
+
+/** Replace an image's source, keeping alt and removing competing responsive sources. */
+export function cardImageEdits(source: string, img: SourceElement, src: string): RangeEdit[] {
+  // Only the image's own picture: a video's sources beside it stay.
+  const picture = img.parent?.name === "picture" ? img.parent.children : [];
+  const sources = picture.filter((child): child is SourceElement => child.type === "element" && child.name === "source").map((child) => {
+    const lead = leadOf(source, child.start);
+    const start = lead === undefined ? child.start : Math.max(0, child.start - lead.length - (source[child.start - lead.length - 2] === "\r" ? 2 : 1));
+    return { start, end: child.end, text: "" };
+  });
+  return [attributeEdit(source, img.tag, "src", src), attributeEdit(source, img.tag, "srcset", undefined), attributeEdit(source, img.tag, "sizes", undefined), ...sources];
 }
 
 /** A new element for a slot the card has none for: its fallback's shape (as Add card copies it, else its one element), else a plain one. */
