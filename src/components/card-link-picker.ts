@@ -1,6 +1,7 @@
 import { node } from "../ui/dom";
 import { createPageOffer, pageChoiceGroups, type CreatePageOffer, type PageChoice } from "../page-builder/page-choices";
 import type { CardLinkPages, FrameBox } from "./card-grid-controls";
+import { cardPopoverPlacement } from "./card-popover-placement";
 import "./card-link-picker.css";
 
 // "Link to a page…" at the foot of a card just added (wayfinder
@@ -167,7 +168,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
 
   let focused = false;
   // Where it was last placed: a search or focus that changes its height places it again.
-  let last: [FrameBox | undefined, FrameBox] | undefined;
+  let last: [FrameBox | undefined, FrameBox, FrameBox | undefined] | undefined;
   const again = () => { if (last && !box.hidden) place(...last); };
   input.addEventListener("input", again);
   box.addEventListener("focusin", again);
@@ -180,15 +181,15 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   };
 
   /**
-   * Hangs the combobox from the foot of `card` (pane pixels), over it when
-   * there is no room below in `view` (the frame's box in the pane); hidden
+   * Hangs the combobox below `card` and its edit bar (pane pixels), above
+   * both when there is no room below in `view` (the frame's box); hidden
    * while the card is out of view or unknown. The first time it shows it
    * takes focus; then, with `scroll`, when it does not fit below, it stays
    * hidden and returns how far the page should scroll up to make room
    * (keeping the card's top and the edit bar over it in view).
    */
-  function place(card: FrameBox | undefined, view: FrameBox, scroll = false): number {
-    last = [card, view];
+  function place(card: FrameBox | undefined, view: FrameBox, bar?: FrameBox, scroll = false): number {
+    last = [card, view, bar];
     const bottom = view.top + view.height;
     box.hidden = !card || card.top + card.height < view.top + 20 || card.top > bottom - 20;
     if (!card || box.hidden) return 0;
@@ -197,7 +198,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     const width = Math.min(Math.max(320, card.width), view.width - 16);
     box.style.width = `${width}px`;
     box.style.left = `${Math.max(view.left + 8, Math.min(card.left + (card.width - width) / 2, view.left + view.width - width - 8))}px`;
-    const below = card.top + card.height - 6;
+    const { below } = cardPopoverPlacement(card, view, box.offsetHeight, bar);
     list.style.maxHeight = "280px";
     const short = below + box.offsetHeight - (bottom - 8);
     const room = Math.min(short, card.top - view.top - 72);
@@ -208,8 +209,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     list.style.maxHeight = `${Math.max(120, Math.min(280, bottom - below - 96))}px`;
     reveal();
     const height = box.offsetHeight;
-    const above = card.top - height + 6;
-    box.style.top = `${below + height <= bottom - 8 || above < view.top + 8 ? Math.min(below, bottom - height - 8) : above}px`;
+    box.style.top = `${cardPopoverPlacement(card, view, height, bar).top}px`;
     if (!focused) {
       focused = true;
       (options.focusLook && options.look ? options.look : input).focus({ preventScroll: true });

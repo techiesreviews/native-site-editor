@@ -429,6 +429,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     bar.dataset.side = side;
     bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
     bar.style.top = `${frameTop + top}px`;
+    pane.dispatchEvent(new Event("edit-bar-layout"));
     if (!popover.hidden && popoverButton) placePopover(popoverButton);
   }
   // A wrapped flex box keeps the width of the line it wrapped from, so a

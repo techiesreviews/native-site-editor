@@ -317,3 +317,6 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
   margin-right: 6px;
 }
 .page-structure__row--outer > .page-structure__label { opacity: 0.6; }
+
+/* Keep the badge clear while its name is being typed. */
+.page-structure__row:has(> .slot-chip--renaming) > .row-action-overlay { display: none; }

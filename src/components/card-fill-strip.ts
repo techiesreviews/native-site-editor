@@ -2,6 +2,7 @@ import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import type { CardFillRow } from "../page-builder/card-fill";
 import type { CardFilled, FrameBox } from "./card-grid-controls";
+import { cardPopoverPlacement } from "./card-popover-placement";
 import "./card-fill-strip.css";
 
 // After "Link to a page…" fills a card (wayfinder components-and-builder
@@ -68,8 +69,8 @@ export function createCardFillStrip(pane: HTMLElement, options: CardFillStripOpt
 
   let focused = false;
   return {
-    /** Hung from the foot of `card` (pane pixels), over it when there is no room below in `view`; hidden while the card is out of view or unknown. */
-    place(card: FrameBox | undefined, view: FrameBox) {
+    /** Below `card` and its edit bar (pane pixels), above both when there is no room below in `view`; hidden while the card is out of view or unknown. */
+    place(card: FrameBox | undefined, view: FrameBox, bar?: FrameBox) {
       const bottom = view.top + view.height;
       box.hidden = !card || card.top + card.height < view.top + 20 || card.top > bottom - 20;
       if (!card || box.hidden) return;
@@ -77,9 +78,7 @@ export function createCardFillStrip(pane: HTMLElement, options: CardFillStripOpt
       box.style.width = `${width}px`;
       box.style.left = `${Math.max(view.left + 8, Math.min(card.left + (card.width - width) / 2, view.left + view.width - width - 8))}px`;
       const height = box.offsetHeight;
-      const below = card.top + card.height - 6;
-      const above = card.top - height + 6;
-      box.style.top = `${below + height <= bottom - 8 || above < view.top + 8 ? Math.max(view.top + 8, Math.min(below, bottom - height - 8)) : above}px`;
+      box.style.top = `${cardPopoverPlacement(card, view, height, bar).top}px`;
       // The combobox it replaces had focus: it moves here, once.
       if (!focused) {
         focused = true;

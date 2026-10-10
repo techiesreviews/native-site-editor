@@ -464,6 +464,8 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   // Hung from the card while the selection is the card (the runtime reports
   // its box); gone once the selection has been it and moved on (another
   // element, or Undo took the card away).
+  pane.addEventListener("edit-bar-layout", placeLinker);
+
   function placeLinker() {
     if (!linker) return;
     const grid = reports.selected;
@@ -474,12 +476,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     linker.seen ||= Boolean(mine);
     const { frameRect, left, top } = geometry();
     const view = { left, top, width: frameRect.width, height: frameRect.height };
+    const element = pane.querySelector<HTMLElement>(".edit-bar:not([hidden])");
+    const rect = element?.getBoundingClientRect();
+    const paneRect = pane.getBoundingClientRect();
+    const bar = rect && { left: rect.left - paneRect.left, top: rect.top - paneRect.top, width: rect.width, height: rect.height };
     if (linker.strip) {
-      linker.strip.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view);
+      linker.strip.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, bar);
       looksMenu?.view?.place();
       return;
     }
-    const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, !linker.scrolled) ?? 0;
+    const dy = linker.picker?.place(mine && { ...mine, left: left + mine.left, top: top + mine.top }, view, bar, !linker.scrolled) ?? 0;
     looksMenu?.view?.place();
     // Once, when it does not fit below the card: the page scrolls up to make room (its report places it again).
     if (dy > 0 && frame instanceof HTMLIFrameElement) {
@@ -619,6 +625,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     destroy() {
       clearTimeout(leaveTimer);
       trackGrid();
+      pane.removeEventListener("edit-bar-layout", placeLinker);
       resize.disconnect();
       document.removeEventListener("pointerdown", onPointerDown, true);
       closeLinker();

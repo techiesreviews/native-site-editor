@@ -175,3 +175,30 @@ test("roots, nested component contents and outer rows offer no slot menu; items 
   await outer.click({ button: "right" });
   await expect(menu(page)).toHaveCount(0);
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`Structure actions hide while a narrow slot badge is renamed (${theme})`, { tag: "@actual" }, async ({ page, baseURL }, testInfo) => {
+    await page.emulateMedia({ colorScheme: theme as "light" | "dark" });
+    await openMode(page, baseURL);
+    const row = outline(page).getByRole("treeitem", { name: "Heading Section title", exact: true });
+    const actions = row.locator(":scope > .row-action-overlay");
+    const button = actions.getByRole("button", { name: /^Actions for / });
+    for (const end of ["Escape", "blur", "Enter"]) {
+      await row.evaluate(el => (el as HTMLElement).style.width = "210px");
+      await row.hover();
+      await button.click();
+      await menu(page).getByRole("menuitem", { name: "Rename slot", exact: true }).click();
+      const name = row.locator(":scope > .slot-chip .slot-chip__name");
+      await expect(name).toBeFocused();
+      await page.keyboard.type("A very long heading slot name being typed");
+      await expect(actions).toBeHidden();
+      await expect(button).toBeHidden();
+      await page.screenshot({ path: testInfo.outputPath(`rename-${end}-${theme}.png`) });
+      if (end === "blur") await name.evaluate(el => (el as HTMLElement).blur());
+      else await page.keyboard.press(end);
+      await row.hover();
+      await expect(actions).toBeVisible();
+      await expect(button).toHaveCSS("opacity", "1");
+    }
+  });
+}

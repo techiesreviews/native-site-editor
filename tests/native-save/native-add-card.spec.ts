@@ -134,6 +134,7 @@ test("of two named card slots, the one whose part of the template is under the p
 });
 
 test("a fresh card shows Link to a page… at its foot: the cards' folder first, then Other pages; Esc leaves the card blank", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1440, height: 1200 });
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "about/index.html", content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>About · Larkspur Studio</title>\n</head>\n<body>\n  <main>\n    <h1>About us</h1>\n  </main>\n</body>\n</html>\n' } });
@@ -146,11 +147,14 @@ test("a fresh card shows Link to a page… at its foot: the cards' folder first,
   const picker = page.getByRole("group", { name: "Link the new card to a page" });
   const input = page.getByRole("combobox", { name: "Link to a page" });
   await expect(input).toBeFocused();
-  // Hung from the new card's foot, or over its top when the pane has no room below it.
+  // Hung below the card and bar, or above both when there is no room below.
   const boxes = () => Promise.all([frame(page).locator("section-work > card-project").nth(1).boundingBox(), picker.boundingBox()]);
   await expect.poll(async () => {
     const [card, box] = await boxes();
-    return Math.min(Math.abs(box!.y - (card!.y + card!.height - 6)), Math.abs(box!.y + box!.height - (card!.y + 6)));
+    const bar = (await page.getByRole("toolbar", { name: "Edit bar", exact: true }).boundingBox())!;
+    const below = Math.max(card!.y + card!.height - 6, bar.y + bar.height + 8);
+    const above = Math.min(card!.y + 6, bar.y - 8);
+    return Math.min(Math.abs(box!.y - below), Math.abs(box!.y + box!.height - above));
   }).toBeLessThan(3);
   const [card, box] = await boxes();
   expect(box!.x).toBeLessThan(card!.x + card!.width);
@@ -755,5 +759,52 @@ for (const create of [false, true]) {
     expect(await undo(page)).toBe(true);
     expect(await undo(page)).toBe(true);
     await expect.poll(() => source(page)).toBe(home);
+  });
+}
+
+for (const theme of ["light", "dark"]) {
+  test(`card picker and fill strip clear the edit bar below the card (${theme})`, async ({ page, baseURL }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await page.emulateMedia({ colorScheme: theme as "light" | "dark" });
+    await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+    const css = readFileSync(new URL("../../fixtures/native-cards/styles/site.css", import.meta.url), "utf8");
+    // A sticky header and room after the first row let it scroll to the frame's top.
+    await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "styles/site.css", content: `${css}\nsite-header { position: sticky; top: 0; z-index: 1; }\nsite-footer { display: block; min-height: 600px; }\n` } });
+    await openSectionWork(page, baseURL, 1);
+    await frame(page).locator("section-work > card-project").hover();
+    await addCard(page).click();
+    await expect(page.getByRole("combobox", { name: "Link to a page" })).toBeFocused();
+    const card = frame(page).locator("section-work > card-project").last();
+    const atTop = async () => card.evaluate(el => {
+      const header = document.querySelector("site-header")?.getBoundingClientRect();
+      window.scrollBy(0, el.getBoundingClientRect().top - (header?.height ?? 0) - 4);
+    });
+    await atTop();
+    const bar = page.getByRole("toolbar", { name: "Edit bar", exact: true });
+    await expect(bar).toHaveAttribute("data-side", "below");
+    const clear = async (popover: ReturnType<Page["locator"]>) => {
+      await expect(popover).toBeVisible();
+      await expect.poll(async () => {
+        const a = (await popover.boundingBox())!;
+        const b = (await bar.boundingBox())!;
+        return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      }).toBe(false);
+    };
+    await clear(page.locator(".card-link"));
+    await page.screenshot({ path: testInfo.outputPath(`picker-${theme}.png`) });
+    await page.getByRole("option", { name: /Harbour Lane Pottery/ }).click();
+    await expect(card.locator(":scope > h3")).toHaveText("Harbour Lane Pottery");
+    await atTop();
+    await expect(bar).toHaveAttribute("data-side", "below");
+    await clear(page.locator(".card-fill"));
+    const open = bar.getByRole("button", { name: /Open page/ });
+    await expect(open).toBeVisible();
+    await expect.poll(() => open.evaluate(el => {
+      const r = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    })).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`strip-${theme}.png`) });
+    await open.click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/harbour-lane-pottery/index.html");
   });
 }
