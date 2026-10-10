@@ -23,3 +23,5 @@ Reuse `nativeMoveEdit` / `nativeElementMovePlan` (they already follow HTML conte
 ## Done when
 
 - Unit tests for the widened target rule (content-model allows/refuses); nightly specs: drag a heading out of a section into `<main>`, a link into another paragraph, a refused `<div>` into a `<p>` with its reason, a component's inside refused on the page but movable in Edit component mode; Sections still snap.
+
+**Also (2026-10-10, from slice 43):** in Edit component mode, Page Structure takes drags too (rail blocks and moved template parts), with the same rules as the canvas in the mode.
