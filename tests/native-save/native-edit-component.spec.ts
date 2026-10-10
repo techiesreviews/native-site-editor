@@ -94,3 +94,34 @@ test("Edit component mode edits a fixed heading in place: every page shows it, o
   await page.locator("#editor-toolbar-host").getByRole("button", { name: "Redo" }).click();
   await expect(heading).toHaveText("Made with care");
 });
+
+test("a part chosen in the framed instance while the template opens stays selected", async ({ page, baseURL }) => {
+  // On a slow machine the template opens after the click on Edit component, and
+  // the user may click a part of the instance meanwhile (src/page-builder/components.ts).
+  await page.goto(baseURL!);
+  const asked = await page.evaluate(async () => {
+    const { createComponentTools } = await import("/src/page-builder/components.ts");
+    const templatePath = "components/promo-box/promo-box.html";
+    const sources: Record<string, string> = { "index.html": "<main><promo-box></promo-box></main>", [templatePath]: "<section><h2>Title</h2><p>Body</p></section>" };
+    const host = document.createElement("div");
+    document.body.append(host);
+    let selection: unknown = { path: "index.html", tag: "promo-box", selector: "promo-box", node: [0, 0], text: "", reason: "click", selectors: [] };
+    const part = { path: templatePath, tag: "p", selector: "", node: [0, 1], text: "", reason: "click", selectors: [],
+      host: { tag: "promo-box", selector: "promo-box", path: "index.html", node: [0, 0] } };
+    let current = "index.html";
+    const asked: number[][] = [];
+    const tools = createComponentTools({
+      site: () => ({ components: { "promo-box": templatePath }, routes: { "/": "index.html" } }) as never, revision: () => "r", sources: () => sources, scripts: () => [],
+      editor: () => undefined, preview: () => ({ selectNode: (request: { node: number[] }) => asked.push(request.node), selectAfterUpdate: () => {}, editComponent: () => {} }),
+      currentPath: () => current, selection: () => selection as never,
+      openFile: async (path: string) => { current = path; selection = part; return true; },
+      announce: () => {}, error: () => {}, images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
+      createFiles: async () => ({ error: "Unavailable" }) as never, panelHost: host, canvasComponent: () => {}, codeTitle: document.createElement("div"),
+      previewPage: () => "index.html", refreshBar: () => {},
+    });
+    try { await tools.editComponent("promo-box"); } finally { tools.destroy(); host.remove(); }
+    return asked;
+  });
+  // Neither the entry nor the mode, once loaded, replaces it with the template's root.
+  expect(asked).toEqual([]);
+});

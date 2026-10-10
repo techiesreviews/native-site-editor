@@ -710,8 +710,12 @@ export function createComponentTools(deps: ComponentDeps) {
       if (nodePath && !inFrame) deps.preview()?.selectNode({ path: template.path, node: nodePath });
       return true;
     }) : Promise.resolve(false);
-    if (nodePath) deps.preview()?.selectNode({ path: template.path, node: nodePath });
-    else if (target && deps.currentPath() === template.path) {
+    // A part of the framed instance chosen while the template opened (a click on a slow machine) stays selected.
+    const key = (value: NativePreviewSelection | undefined) => value && JSON.stringify([value.path, value.node, value.host?.path, value.host?.node]);
+    const opening = deps.selection();
+    const chosen = Boolean(framed) && key(opening) !== key(from) && nativeComponentFrameSelected(opening, framed!, template.path);
+    if (nodePath && !chosen) deps.preview()?.selectNode({ path: template.path, node: nodePath });
+    else if (!nodePath && target && deps.currentPath() === template.path) {
       deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
       return entered;
     }
