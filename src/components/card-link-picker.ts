@@ -1,19 +1,21 @@
 import { node } from "../ui/dom";
-import { pageChoiceGroups, type PageChoice } from "../page-builder/page-choices";
+import { createPageOffer, pageChoiceGroups, type CreatePageOffer, type PageChoice } from "../page-builder/page-choices";
 import type { CardLinkPages, FrameBox } from "./card-grid-controls";
 import "./card-link-picker.css";
 
 // "Link to a page…" at the foot of a card just added (wayfinder
-// components-and-builder ticket 09 §1–2): a combobox over the site's pages,
+// components-and-builder ticket 09 §1–3): a combobox over the site's pages,
 // those under the folder the grid's cards link into first, then "Other
-// pages" (src/page-builder/page-choices.ts). Pages a card of the grid links
-// to already are greyed, "In this grid", and can't be picked. Esc leaves the
+// pages" (src/page-builder/page-choices.ts); typed text that names no page
+// offers "+ Create page /work/…/". Pages a card of the grid links to
+// already are greyed, "In this grid", and can't be picked. Esc leaves the
 // card blank. Loaded on the first Add card that places a fresh card
 // (src/components/card-grid-controls.ts places and closes it).
 
 export interface CardLinkPickerOptions {
   pages: CardLinkPages;
   onPick(page: PageChoice): void;
+  onCreate(offer: CreatePageOffer): void;
   /** Esc: the card stays as it is. */
   onEscape(): void;
 }
@@ -43,7 +45,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
   box.hidden = true;
   pane.append(box);
 
-  let entries: { option: HTMLElement; page: PageChoice }[] = [];
+  let entries: { option: HTMLElement; disabled: boolean; pick(): void }[] = [];
   let active = -1;
   const setActive = (index: number) => {
     active = index;
@@ -87,7 +89,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
           option.setAttribute("aria-disabled", "true");
           option.append(node("span", "card-link__present", "In this grid"));
         }
-        const entry = { option, page };
+        const entry = { option, disabled: page.inGrid, pick: () => pick(page) };
         option.addEventListener("pointerdown", (event) => event.preventDefault());
         option.addEventListener("pointerenter", () => { if (!page.inGrid) setActive(entries.indexOf(entry)); });
         option.addEventListener("click", () => pick(page));
@@ -96,8 +98,30 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
       }
       list.append(section);
     }
-    if (!groups.length) list.append(node("p", "card-link__empty", "No page matches."));
-    setActive(entries.findIndex((entry) => !entry.page.inGrid));
+    const offer = createPageOffer({ ...options.pages, query: input.value });
+    if (offer) {
+      const section = node("div", "card-link__group");
+      section.setAttribute("role", "group");
+      section.setAttribute("aria-label", "New page");
+      section.append(node("div", "card-link__group-label", "New page"));
+      const option = node("div", "card-link__option");
+      option.id = `${id}-option-${entries.length}`;
+      option.setAttribute("role", "option");
+      const main = node("span", "card-link__main");
+      main.append(node("span", "card-link__title", `+ Create page ${offer.route}`),
+        node("span", "card-link__sub", offer.error ?? `“${offer.title}”, from a sibling page's structure`));
+      option.append(main);
+      if (offer.error) option.setAttribute("aria-disabled", "true");
+      const entry = { option, disabled: Boolean(offer.error), pick: () => { if (!offer.error) options.onCreate(offer); } };
+      option.addEventListener("pointerdown", event => event.preventDefault());
+      option.addEventListener("pointerenter", () => { if (!entry.disabled) setActive(entries.indexOf(entry)); });
+      option.addEventListener("click", entry.pick);
+      entries.push(entry);
+      section.append(option);
+      list.append(section);
+    }
+    if (!groups.length && !offer) list.append(node("p", "card-link__empty", "No page matches."));
+    setActive(entries.findIndex(entry => !entry.disabled));
   }
 
   // Up and down skip the pages that can't be picked.
@@ -105,7 +129,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     const count = entries.length;
     for (let n = 1; n <= count; n++) {
       const at = ((active < 0 ? (by > 0 ? -1 : 0) : active) + by * n + count) % count;
-      if (!entries[at].page.inGrid) { setActive(at); return; }
+      if (!entries[at].disabled) { setActive(at); return; }
     }
   };
   input.addEventListener("input", render);
@@ -116,7 +140,7 @@ export function createCardLinkPicker(pane: HTMLElement, options: CardLinkPickerO
     } else if (event.key === "Enter") {
       event.preventDefault();
       const hit = entries[active];
-      if (hit) pick(hit.page);
+      if (hit && !hit.disabled) hit.pick();
     } else if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();

@@ -1,5 +1,6 @@
 // A card's fill plan, read from source without a DOM. Writing it is a
 // separate operation: these rows also supply the fill strip's provenance.
+// An empty unnamed fallback has no row; text or image fallbacks still do.
 import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
 import { slotMarkup } from "../native-insert";
 
@@ -125,7 +126,7 @@ export function cardFill(input: { template: string; page: { route: string; sourc
       }
     }
     return row;
-  });
+  }).filter(row => row.slot !== "" || row.text?.trim() || row.src);
   if (!linkSlot) rows.push({
     label: "Link", role: "link", from: titleSlot ? "address" : "not used",
     status: titleSlot ? "added" : "not-used", href: route, text: title,

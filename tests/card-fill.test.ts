@@ -23,16 +23,15 @@ const source = `<!doctype html><html lang="en-GB"><head>
 const route = "/work/fern-and-kettle/";
 const fill = (html = source, card = template, siteUrl?: string) => cardFill({ template: card, page: { route, source: html }, siteUrl }).rows;
 
-test("a full starter card maps facts, matches its note and keeps the default slot", () => {
+test("a full starter card maps facts, matches its note and omits the empty default slot", () => {
   assert.deepEqual(fill(), [
     { slot: "note", label: "Note", role: "other", from: "matched", status: "filled", text: "Cafe · Identity and site · 2025", matched: "<card-note>" },
     { slot: "title", label: "Title", role: "title", from: "h1", status: "filled", text: "Fern & Kettle" },
     { slot: "body", label: "Body", role: "body", from: "meta description", status: "filled", text: description },
-    { slot: "", label: "Content", role: "other", from: "kept", status: "kept", text: "" },
     { slot: "link", label: "Link", role: "link", from: "address", status: "filled", href: route, text: "Read about Fern & Kettle" },
     { label: "Image", role: "image", from: "not used", status: "not-used", src: "https://example.test/images/social-card.png" },
   ]);
-  assert.deepEqual(fill().map(row => row.from), ["matched", "h1", "meta description", "kept", "address", "not used"]);
+  assert.deepEqual(fill().map(row => row.from), ["matched", "h1", "meta description", "address", "not used"]);
 });
 
 test("image slots strip only the site's origin, retaining query and fragment", () => {
@@ -119,10 +118,9 @@ test("a card without a link slot requests a link around its title", () => {
   assert.deepEqual(rows.map(row => row.from), ["h1", "address", "not used", "not used"]);
   assert.equal(rows[2].text, description);
   const noTitle = fill(source, `<slot></slot>`);
-  assert.equal(noTitle[0].from, "kept");
-  assert.equal(noTitle[1].role, "link");
-  assert.equal(noTitle[1].from, "not used");
-  assert.equal(noTitle[1].status, "not-used");
+  assert.equal(noTitle[0].role, "link");
+  assert.equal(noTitle[0].from, "not used");
+  assert.equal(noTitle[0].status, "not-used");
 });
 
 test("roles use the first eligible slot, heading before title name, and named title as fallback", () => {
@@ -280,4 +278,10 @@ test("an image's fill leaves a video's sources beside it, and a fallback's own s
   const forwarded = `<article><slot name="title"><h3>Title</h3></slot><slot name="badge"><card-badge slot="inner">Old badge</card-badge></slot></article>`;
   const page = source.replace("<h1>", "<card-badge>New badge</card-badge><h1>");
   assert.match(write("<card-x></card-x>", page, forwarded), /<card-badge slot="badge">New badge<\/card-badge>/);
+});
+
+test("an empty unnamed slot has no row; text or image fallbacks keep their row", () => {
+  assert.ok(!fill(source, '<slot>  </slot>').some(row => row.slot === ""));
+  assert.equal(fill(source, '<slot><p>Extra content</p></slot>')[0].text, "Extra content");
+  assert.equal(fill(source, '<slot><img src="/kept.png"></slot>')[0].src, "/kept.png");
 });

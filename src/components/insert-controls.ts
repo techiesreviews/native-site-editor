@@ -69,7 +69,7 @@ export function createInsertControls(pane: HTMLElement, frame: HTMLElement, hand
     collisionFrame = requestAnimationFrame(() => {
       collisionFrame = 0;
       const bounds = layer.getBoundingClientRect();
-      const blockers = [...pane.querySelectorAll<HTMLElement>(".card-ghost__add, .card-add:not([hidden])")]
+      const blockers = [...pane.querySelectorAll<HTMLElement>(".card-ghost__add")]
         .filter(el => el.getClientRects().length).map(el => el.getBoundingClientRect());
       const overlaps = (rect: DOMRect, left = rect.left) => blockers.some(other =>
         left < other.right + 4 && left + rect.width > other.left - 4 && rect.top < other.bottom + 4 && rect.bottom > other.top - 4);

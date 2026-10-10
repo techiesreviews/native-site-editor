@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { editorMounted } from "./drafts";
+import { editorMounted, storedDraft } from "./drafts";
 
 // Add card on an instance's card slot (src/page-builder/card-slot.ts): an
 // items slot whose fallback is a card component adds a fresh instance of
@@ -75,7 +75,11 @@ test("with one card, Add card adds a fresh card from the fallback beside it, not
   await expect(addCard(page)).toBeVisible();
   // The grid's columns put the second card beside the first.
   const [first, ghost] = await Promise.all([frame(page).locator("section-work > card-project").boundingBox(), page.locator(".card-ghost").boundingBox()]);
-  expect(Math.abs(ghost!.y - first!.y)).toBeLessThan(2);
+  await expect.poll(async () => {
+    const first = (await frame(page).locator("section-work > card-project").boundingBox())!;
+    const ghost = (await page.locator(".card-ghost").boundingBox())!;
+    return Math.abs(ghost.y - first.y);
+  }).toBeLessThan(2);
   expect(ghost!.x).toBeGreaterThan(first!.x + first!.width);
   await addCard(page).click();
   await expect.poll(() => source(page)).toBe(made.replace("</card-project>\n    </section-work>", `</card-project>\n      ${fresh}\n    </section-work>`));
@@ -173,12 +177,12 @@ test("a fresh card shows Link to a page… at its foot: the cards' folder first,
   await expect(under.getByRole("option", { name: /Harbour Lane Pottery/ })).toHaveAttribute("aria-selected", "true");
   // Search covers every page, by title or address.
   await input.fill("abo");
-  await expect(list.getByRole("group")).toHaveCount(1);
+  await expect(list.getByRole("group")).toHaveCount(2);
   await expect(other.getByRole("option")).toHaveText([/^About us/]);
   await input.fill("harbour-lane");
-  await expect(list.getByRole("option")).toHaveText([/^Harbour Lane Pottery/]);
+  await expect(list.getByRole("option")).toHaveText([/^Harbour Lane Pottery/, /^\+ Create page/]);
   await input.fill("nothing like it");
-  await expect(list).toHaveText("No page matches.");
+  await expect(list.getByRole("option")).toHaveText(/Create page \/work\/nothing-like-it\//);
 
   // Esc closes it and leaves the card blank, still selected.
   await input.press("Escape");
@@ -259,7 +263,6 @@ test("picking a page fills the new card from it and a strip lists each part's so
     "Note<card-note>Ceramics studio · Portfolio · 2025",
     "Titleh1Harbour Lane Pottery",
     "Bodymeta descriptionA quiet portfolio for a working potter.",
-    "Contentkept",
     "Linkaddress/work/harbour-lane-pottery/",
   ]);
   await expect(strip.getByRole("button", { name: "Change page" })).toBeFocused();
@@ -400,4 +403,82 @@ test("Add card ▾ dismissed while its gallery loads opens nothing", async ({ pa
   // Opened again, it shows.
   await looks.click();
   await expect(page.getByRole("dialog", { name: "Add card as…" })).toBeVisible();
+});
+
+test("a card slot creates a page from the combobox; one undo removes page and fill, another removes the card", async ({ page, baseURL }) => {
+  const made = await openSectionWork(page, baseURL, 1);
+  await frame(page).locator("section-work > card-project").hover();
+  await addCard(page).click();
+  const input = page.getByRole("combobox", { name: "Link to a page" });
+  await expect(input).toBeFocused();
+  const blank = await source(page);
+  await input.fill("Oak & Ash");
+  await page.getByRole("option", { name: /Create page \/work\/oak-ash\// }).click();
+  await expect.poll(async () => (await storedDraft(page, "work/oak-ash/index.html"))?.content).toContain("<h1>Oak &amp; Ash</h1>");
+  await expect(frame(page).locator("section-work > card-project").last().locator("a")).toHaveAttribute("href", "/work/oak-ash/");
+  const strip = page.getByRole("group", { name: "Where the card's content came from" });
+  await expect(strip).toBeVisible();
+  await strip.getByRole("button", { name: "Change page" }).click();
+  await expect(page.getByRole("option", { name: /Oak & Ash/ })).toBeVisible();
+  await input.press("Escape");
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(blank);
+  await expect.poll(() => storedDraft(page, "work/oak-ash/index.html")).toBeUndefined();
+  await expect(strip).toHaveCount(0);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(made);
+});
+
+test("a plain div.cards grid with unlinked component items places a card then opens Link to a page", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  const home = readFileSync(new URL("../../fixtures/native-cards/index.html", import.meta.url), "utf8");
+  const unlinked = home.replace(/href="\/work\/[^"]+"/g, 'href=""');
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "index.html", content: unlinked } });
+  await page.reload();
+  const cards = frame(page).locator("div.cards > card-project");
+  await expect(cards).toHaveCount(2);
+  await cards.last().hover();
+  await addCard(page).click();
+  await expect(cards).toHaveCount(3);
+  await expect(page.getByRole("combobox", { name: "Link to a page" })).toBeFocused();
+  await expect(cards.last().locator("h3[slot=title]")).toHaveText("Untitled project");
+});
+
+test("Create page without linked siblings uses Home with an empty main; redo refuses a conflicting draft whole", async ({ page, baseURL }) => {
+  const made = await openSectionWork(page, baseURL, 0);
+  await frame(page).locator("section-work > h2").hover();
+  await addCard(page).click();
+  const input = page.getByRole("combobox", { name: "Link to a page" });
+  await expect(input).toBeFocused();
+  const blank = await source(page);
+  await input.fill("First page");
+  await input.press("Enter");
+  const file = "first-page/index.html";
+  await expect.poll(() => storedDraft(page, file)).toBeTruthy();
+  const content = (await storedDraft(page, file))!.content;
+  expect(content).toMatch(/<main[^>]*>\s*<\/main>/);
+  expect(content).toContain("<site-header>");
+  await expect(frame(page).locator("section-work > card-project > h3")).toHaveText("First page");
+  await expect(frame(page).locator("section-work > card-project > a")).toHaveAttribute("href", "/first-page/");
+  const filled = await source(page);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(blank);
+  const store = (action: "save" | "remove") => page.evaluate(async ({ action, file }) => {
+    const drafts = (await import("/src/drafts.ts")).draftStore();
+    const scope = { account: "native-demo-user", repoId: 540, repo: "native-demo-user/native-cards", branch: "main" };
+    if (action === "save") drafts.save({ ...scope, version: 1, path: file, baseSha: null, original: "", content: "<p>Theirs</p>", updatedAt: Date.now() });
+    else drafts.remove(scope, file);
+  }, { action, file });
+  await store("save");
+  await page.locator(".code-editor__redo").click();
+  await expect(page.locator("#status")).toContainText(`${file} already exists.`);
+  expect(await source(page)).toBe(blank);
+  expect((await storedDraft(page, file))!.content).toBe("<p>Theirs</p>");
+  await store("remove");
+  await page.locator(".code-editor__redo").click();
+  await expect.poll(() => source(page)).toBe(filled);
+  await expect.poll(async () => (await storedDraft(page, file))?.content).toBe(content);
+  expect(await undo(page)).toBe(true);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(made);
 });

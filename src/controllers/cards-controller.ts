@@ -1,6 +1,7 @@
 // Card grids' lifecycle and host-facing adapters (docs/page-builder/cards.md).
 // The card operations themselves stay in src/page-builder/cards.ts; the host
 // supplies live ports and keeps edit bar assembly and the preview mount.
+// Add card places the card first; its picker can fill it or create its page.
 import { createCards, type Cards, type CardsDeps } from "../page-builder/cards";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { CardGridHandlers } from "../components/card-grid-controls";
@@ -8,7 +9,6 @@ import type { CardGridHandlers } from "../components/card-grid-controls";
 /** The host's ports are exactly the card operations' dependencies, read live. */
 export type CardsControllerPorts = CardsDeps;
 
-const NO_SITE = "Open a native site first.";
 const MOVE_ICONS = new Set(["up", "down", "left", "right"]);
 
 // Only a whole section moves from the bar or the keyboard, so a card's own
@@ -27,12 +27,11 @@ export function createCardsController(ports: CardsControllerPorts) {
     /** The preview's card grid callbacks; before mounting they refuse. */
     preview: {
       describe: (grid) => cards?.describe(grid),
-      plan: (grid, title) => cards?.plan(grid, title) ?? { ok: false, error: NO_SITE },
       addCard: (grid, look) => cards?.addCard(grid, look) ?? Promise.resolve(undefined),
       linkPages: (card) => cards?.linkPages(card),
       fillCard: (card, route, base) => cards?.fillCard(card, route, base),
       cardText: (card) => cards?.cardText(card),
-      addPage: (grid, title) => cards?.addPage(grid, title) ?? Promise.resolve(NO_SITE),
+      createPage: (card, request, base) => cards?.createPage(card, request, base),
     } satisfies CardGridHandlers as CardGridHandlers,
     controls(selection: NativePreviewSelection, source: string) {
       return cards ? withoutCardMoves(cards.controls(selection, source)) : [];

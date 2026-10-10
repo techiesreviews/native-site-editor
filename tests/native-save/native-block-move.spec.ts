@@ -100,7 +100,8 @@ test("a card dragged over the third card's title reorders in the grid, one undo 
   // Add the third card in this test; the shared fixture keeps its two cards.
   await frame(page).locator("#work card-project").first().hover();
   await page.locator(".card-ghost__add").click();
-  await page.getByRole("dialog", { name: "New card with its own page" }).getByRole("button", { name: "Card only" }).click();
+  await expect(page.getByRole("combobox", { name: "Link to a page" })).toBeFocused();
+  await page.keyboard.press("Escape");
   const titles = frame(page).locator("#work card-project > h3[slot=title]");
   await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "Untitled project"]);
   const original = await source(page);

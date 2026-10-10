@@ -25,7 +25,7 @@ function ports(overrides: Partial<CardsControllerPorts> = {}): CardsControllerPo
     pageLabel: () => "Home",
     announce: () => {},
     ...overrides,
-  };
+  } satisfies CardsControllerPorts;
 }
 
 const selection = (node: number[]): NativePreviewSelection => ({ path: "index.html", tag: "article", text: "", reason: "click", selectors: [], node });
@@ -33,9 +33,8 @@ const selection = (node: number[]): NativePreviewSelection => ({ path: "index.ht
 test("before mounting, card adapters refuse or offer nothing", async () => {
   const controller = createCardsController(ports());
   assert.equal(controller.mounted(), false);
+  assert.equal(controller.preview.createPage({ path: "index.html", node: [] }, { title: "Oak", parent: "/" }), undefined);
   assert.equal(controller.preview.describe({} as never), undefined);
-  assert.deepEqual(controller.preview.plan({} as never, { title: "x" } as never), { ok: false, error: "Open a native site first." });
-  assert.equal(await controller.preview.addPage({} as never, { title: "x" } as never), "Open a native site first.");
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 0]), page), []);
   assert.equal(controller.cardOffer("/"), undefined);
   assert.equal(controller.cardsLinkingTo("/", new Set()), undefined);

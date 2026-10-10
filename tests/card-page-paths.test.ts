@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFolderChoices, cardPageFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
+import { cardPageFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
 
 // The new page a card grid's "Add card" makes: its existing folder or a
 // new folder there (src/page-builder/cards.ts).
@@ -20,7 +20,6 @@ const plan = (request: { title: string; parent: string; newFolder?: string }) =>
 
 test("the site's folders are every folder a page is in, and those above it", () => {
   assert.deepEqual(folders, ["/", "/work/", "/work/a/", "/work/b/", "/work/studio/", "/work/studio/x/", "/works/", "/works/old/"]);
-  assert.deepEqual(cardFolderChoices(folders, "/work/").slice(0, 2), ["/work/", "/"]);
 });
 
 test("a page goes in the chosen existing folder or subfolder", () => {
@@ -66,7 +65,7 @@ test("after a page from another folder joins a grid, its default folder stays ex
 });
 
 test("typed prefixes use existing folders or one new segment under the longest allowed parent", () => {
-  const allowed = cardFolderChoices(folders, "/work/");
+  const allowed = folders;
   assert.deepEqual(cardPrefixRequest("Oak", "/work/studio/", allowed, true), { ok: true, value: { title: "Oak", parent: "/work/studio/" } });
   const fresh = cardPrefixRequest("Oak", "/work/studio/chairs/", allowed, true);
   assert.deepEqual(fresh, { ok: true, value: { title: "Oak", parent: "/work/studio/", newFolder: "chairs" } });

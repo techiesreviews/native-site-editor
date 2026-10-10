@@ -14,25 +14,28 @@ ordinary editable markup.
   (beside it when there is room in the row, else at the start of the next row,
   or below it in a list), with **+ Add card** (Add item, Add link…) in it.
   The ghost also shows while an item, or anything in one, is selected.
-- For a plain grid, Add card adds a copy of the last item with its text reset
-  (see below), selected, as one undo step.
-- For a grid whose items link to pages under one URL (`/work/fern-and-kettle/`,
-  `/work/harbour-lane-pottery/`), Add card opens a small popover: the new
-  page's **title**, the URL it gets (`/work/oak-ash/`, checked live: a taken
-  URL says so), **Create page and card** (Enter) and **Card only**. Creating
-  writes `work/oak-ash/index.html` and a card linking to it, titled, after the
-  last card; the card is selected. **One ⌘Z takes both back**, redo brings
-  both: the card is an edit in the page's editor and the page's draft goes
-  and comes back with it (a history companion, `replaceActiveRange(…, companion)`).
-- The URL prefix is an editable autocomplete input. It starts with the folder
-  inferred from this section's cards, and keeps an
-  intentionally cleared value while the title changes. Typing filters eligible
-  prefixes; Arrow keys and Enter or a pointer choose a suggestion. There is no
-  dropdown arrow. A canonical existing prefix is accepted, and a single new
-  folder below an eligible parent uses the existing folder-creation checks.
-  Empty, invalid or uncovered destinations cannot create a page.
-- A selected item's edit bar: **Move left / Move right** (Move up / down in a
-  list; Alt+↑/↓ too), **Duplicate** (an exact copy), **Remove**, **Add card**
+- Add card places a card immediately, selected, as one undo step: a card
+  slot's fresh component with template fallbacks, or a plain grid's last
+  item copied with its text reset.
+- A component item with a template, or an item in a collection grid, then
+  opens **Link to a page…**. All site pages except the current page and 404
+  are listed, the cards' folder first. Siblings' pages say **In this grid**
+  and cannot be picked. Esc leaves the new card blank.
+- Type an unknown title or address to get **+ Create page /work/oak-ash/**.
+  Titles go under the folder inferred from sibling links, then the collection
+  folder, then `/`. Addresses keep their lowercased slug. One new folder
+  level inside an existing folder is allowed; invalid offers show their reason
+  and cannot be picked. Existing titles and taken addresses have no create offer.
+- Picking a page fills a component's slots from its content: title, description,
+  image, address and matching text. Plain collection items get their title and
+  link filled. The information strip lists sources, with **Change page** and
+  close; empty unnamed slots have no row.
+- Create page copies a sibling's structure and fills the already placed card.
+  **One undo removes the page draft and fill**, restoring the blank card byte
+  for byte; **a second undo removes the card**. Redo restores both steps and
+  refuses if a file now exists at the new page's path. The fill uses the new
+  document directly, before the site's page index has refreshed.
+- A selected item's edit bar: **Duplicate** (an exact copy), **Remove**, **Add card**
   (the same as the ghost's button, so it is reachable by keyboard) and, for an
   item that links to a page of the site, **Open page**.
 - Anything inside an item (its heading, a paragraph, or the card's own
@@ -71,7 +74,7 @@ below the top level. When at least two items link to different pages right
 under one parent URL other than `/`, and no linked item points elsewhere,
 the grid lists pages under that parent.
 
-**A new card** is a copy of the last item, as written (attributes,
+**A new card in a plain grid** is a copy of the last item, as written (attributes,
 indentation, line breaks), put on its own lines after it:
 
 - its title (the `slot="title"` element, else the first heading, else the
@@ -83,7 +86,7 @@ indentation, line breaks), put on its own lines after it:
   "No description yet."), else a placeholder for its kind ("A sentence or two
   about this card.", "Heading", "New item", "Text");
 - its link to the copied item's page goes to the new page, or is emptied
-  (`href=""`, which the edit bar flags as "No address") for Card only;
+  (`href=""`, which the edit bar flags as "No address") until a page is picked;
 - images and other attributes stay as they are.
 
 If the item's markup is not a clean tree (an implied end tag), the copy is
@@ -117,14 +120,12 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
 - `src/page-builder/cards.ts`: the editor side (edit bar controls, adding,
   the Pages tab offer, delete) behind a small dependency object.
 - `src/components/card-grid-controls.ts` (+ `.css`): the ghost, its button and
-  the popover over the preview frame; created by `native-preview.ts`, fed by
+  the combobox and source strip over the preview frame; created by `native-preview.ts`, fed by
   the runtime's `item-grids` message. Only the Add button accepts pointer
   events over the canvas; it sits above overlapping section insertion buttons.
-  The popup prefers available space beside its anchor and scrolls internally
-  when the frame cannot fit its height.
 - `src/components/native-preview-runtime.js`, block "Repeated items": reports the grid
   under the pointer and around the selection, with where the ghost goes.
-  `item-grid-track` keeps the open popup's grid live while the pointer is in
+  `item-grid-track` keeps the looks gallery's grid live while the pointer is in
   host controls. Scroll, resize, and layout changes refresh its viewport
   geometry; canvas pointerdown releases tracking so selection still reaches
   the clicked element. Closing or destroying the controls releases it too.
@@ -139,16 +140,14 @@ With no sibling page to copy, the new page is made as the Pages tab makes one
   tree, text parts, card copies (fallbacks, placeholders, optional slots,
   title swap, links), insertion and indentation, page copies (shared vs reset,
   self links), a card link following a URL change.
-- `tests/native-save/native-cards.spec.ts` on the `native-cards` fixture
-  (`fixtures/native-cards`, id 540: a home page whose cards link to two pages
-  under `/work/`, and a plain list): Add item on a list and its undo; New page
-  and card (the popover, a taken URL, the card and page written, selected,
-  Open page, one undo and redo for both); Select card, Move left/right,
-  Duplicate, Remove, Card only; the Pages tab checkbox, delete with the card,
-  and Change URL rewriting the card's link. Regressions cover overlapping
-  section controls with `elementFromPoint`, popup and ghost geometry after
-  iframe scroll, outside selection and dismissal, Escape focus, and rejected
-  reports from an earlier source context.
+- `tests/card-page-offer.test.ts`: titles, typed addresses, bounded new folders,
+  taken addresses and disabled reasons.
+- `tests/card-fill.test.ts`: fill mapping and markup, including empty unnamed slots.
+- `tests/native-save/native-cards.spec.ts`, `native-card-paths.spec.ts`,
+  `native-card-paths-starter.spec.ts` and `native-add-card.spec.ts`: card-first
+  linking and creation, sibling structure, draft existence, Open page,
+  byte-for-byte undo of fill and then card, page addresses, and the ghost's
+  geometry and collision controls.
 
 `fixtures/native-starter` was not changed: its cards link to no subpages, and
 adding pages to it would change page counts other suites assert. The new
@@ -161,10 +160,11 @@ fixture repository is additive.
 - Items are found in the page's own markup only; a grid inside a component
   template is the template's and is not offered.
 - Duplicate copies an item exactly, including its link; Add card is the clean copy.
-- Drag to reorder items is not done (Move and Alt+↑/↓ are).
+- Cards can be reordered by dragging them; only whole sections move with the
+  edit bar's arrows or Alt+↑/↓.
 
-Section insertion controls measure the actual Add-card button and open popover
-rectangles after layout. Only a colliding section plus moves to the nearest
+Section insertion controls measure the actual Add-card button
+rectangle after layout. Only a colliding section plus moves to the nearest
 available horizontal position; other gaps keep their normal placement. If no
 position fits, that plus stays out of pointer interaction until keyboard focus
 or its panel opens, when it is shown above the obstruction. Section drag targets

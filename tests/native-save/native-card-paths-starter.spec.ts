@@ -7,8 +7,7 @@ import { storedDraft } from "./drafts";
 requireActualFixture();
 
 // Against the real starter (read-only checkout given by ASE_NATIVE_SAVE_FIXTURE;
-// the fake GitHub holds every change in memory): the card popover's folder
-// chooser, and how editor panels' text fields look (src/ui/inline-field.css).
+// the fake GitHub holds every change in memory): the card combobox's create offers, and how editor panels' text fields look (src/ui/inline-field.css).
 
 
 const pageErrors: string[] = [];
@@ -21,14 +20,8 @@ test.afterEach(() => expect(pageErrors).toEqual([]));
 
 const shots = ".scratch/inline-paths/starter";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
-const popover = (page: Page) => page.getByRole("dialog", { name: "New card with its own page" });
-const folders = (page: Page) => page.getByRole("listbox", { name: "Folder for the new page" });
-const url = (page: Page) => popover(page).locator(".card-add__url");
-const shownUrl = (page: Page) => url(page).evaluate((row) => {
-  const walk = (node: Node): string => node instanceof HTMLInputElement ? node.value
-    : node instanceof HTMLElement ? (node.hidden ? "" : [...node.childNodes].map(walk).join("")) : node.textContent ?? "";
-  return walk(row).replace(/\s+/g, " ").trim();
-});
+const input = (page: Page) => page.getByRole("combobox", { name: "Link to a page" });
+const create = (page: Page) => page.getByRole("option", { name: /Create page/ });
 
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -36,51 +29,53 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(frame(page).locator("card-project").first()).toBeVisible();
 }
-async function openPopover(page: Page) {
+async function openPicker(page: Page) {
   await frame(page).locator("card-project").last().scrollIntoViewIfNeeded();
   await frame(page).locator("card-project").last().hover();
   await page.locator(".card-ghost__add").click();
-  await expect(popover(page).getByRole("textbox", { name: "Page title" })).toBeFocused();
+  await expect(input(page)).toBeFocused();
 }
 
 for (const scheme of ["light", "dark"] as const) for (const narrow of [false, true]) {
   const name = `${scheme}${narrow ? "-narrow" : ""}`;
-  test(`starter popover, folders and new folder (${name})`, { tag: "@actual" }, async ({ page, baseURL }) => {
+  test(`starter combobox offers addresses and one new folder (${name})`, { tag: "@actual" }, async ({ page, baseURL }) => {
     await page.emulateMedia({ colorScheme: scheme });
     if (narrow) await page.setViewportSize({ width: 820, height: 800 });
     await open(page, baseURL);
-    await openPopover(page);
-    await page.keyboard.type("Oak & Ash");
-    await expect.poll(() => shownUrl(page)).toBe("URL /work/oak-ash/");
-    await page.screenshot({ path: `${shots}/popover-${name}.png` });
-    await popover(page).locator(".card-add__path").click();
-    await expect(folders(page).getByRole("option").first()).toHaveText("/work/");
-    await popover(page).getByRole("combobox", { name: "URL prefix" }).fill("");
-    await expect(folders(page).getByRole("option", { name: "/about/", exact: true })).toBeVisible();
-    await page.screenshot({ path: `${shots}/folders-${name}.png` });
-    await popover(page).getByRole("combobox", { name: "URL prefix" }).fill("/work/chairs/");
-    await expect.poll(() => shownUrl(page)).toBe("URL /work/chairs/oak-ash/");
-    await page.screenshot({ path: `${shots}/new-folder-${name}.png` });
+    await openPicker(page);
+    await input(page).fill("Oak & Ash");
+    await expect(create(page)).toContainText("+ Create page /work/oak-ash/");
+    await input(page).fill("/about/oak");
+    await expect(create(page)).toContainText("+ Create page /about/oak/");
+    await input(page).fill("/work/chairs/oak-ash");
+    await expect(create(page)).toContainText("+ Create page /work/chairs/oak-ash/");
+    await expect(create(page)).not.toHaveAttribute("aria-disabled", "true");
+    await input(page).fill("/work/chairs/tall/oak");
+    await expect(create(page)).toHaveAttribute("aria-disabled", "true");
+    await expect(create(page)).toContainText("Choose an existing folder or add one folder inside it.");
+    await input(page).fill("/work/harbour-lane-pottery/");
+    await expect(create(page)).toHaveCount(0);
   });
 }
 
-test("starter: a page in a new folder and its card, then one Undo restores the home page exactly", { tag: "@actual" }, async ({ page, baseURL }) => {
+test("starter: a page in a new folder and its fill undo together, then undo restores the home page exactly", { tag: "@actual" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await openPopover(page);
-  await page.keyboard.type("Oak");
-  await popover(page).locator(".card-add__path").click();
-  await popover(page).getByRole("combobox", { name: "URL prefix" }).fill("/work/chairs/");
-  await popover(page).getByRole("textbox", { name: "Page title" }).focus();
-  const home = page.locator("#content .view-lines");
-  const before = await home.textContent();
-  await page.keyboard.press("Enter");
+  const original = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
+  await openPicker(page);
+  const blank = (await storedDraft(page, "index.html"))!.content;
+  await input(page).fill("/work/chairs/oak");
+  await input(page).press("Enter");
   await expect(page.locator("#status")).toContainText("Created the page Oak at /work/chairs/oak/");
   await expect(frame(page).locator("card-project")).toHaveCount(4);
-  expect((await storedDraft(page, "work/chairs/oak/index.html"))?.content).toContain("Oak");
+  await expect.poll(async () => (await storedDraft(page, "work/chairs/oak/index.html"))?.content).toContain("<h1>Oak</h1>");
+  await expect(frame(page).locator("card-project").last().locator("a")).toHaveAttribute("href", "/work/chairs/oak/");
+  await page.locator(".code-editor__undo").click();
+  await expect(frame(page).locator("card-project")).toHaveCount(4);
+  await expect.poll(() => storedDraft(page, "work/chairs/oak/index.html")).toBeUndefined();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toBe(blank);
   await page.locator(".code-editor__undo").click();
   await expect(frame(page).locator("card-project")).toHaveCount(3);
-  await expect.poll(async () => (await storedDraft(page, "work/chairs/oak/index.html"))?.content).toBeUndefined();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content ?? before).not.toContain("/work/chairs/oak/");
+  await expect.poll(() => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(original);
 });
 
 // Every text-like field shown in `root`: its class and the box it draws.

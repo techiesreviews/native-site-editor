@@ -1,7 +1,5 @@
 import { node, button } from "../ui/dom";
 import { icon } from "../icons";
-import type { Checked } from "../native-create";
-import { cardPrefixRequest } from "../page-builder/cards";
 import { aOr } from "../page-builder/card-grid";
 import type { SitePage } from "../page-builder/page-choices";
 import type { CardFillRow } from "../page-builder/card-fill";
@@ -12,21 +10,9 @@ import type { ThumbnailInputs } from "../page-builder/thumbnail-doc";
 import type { CardLookGallery } from "./card-look-gallery";
 import "./card-grid-controls.css";
 
-// "Add card" over the native preview: a dashed ghost where one more item of
-// a grid would go (after its last item), with a "+ Add card" button in it,
-// shown while the pointer is on an item of the grid or an item of it is
-// selected (docs/page-builder/cards.md). For a grid that is a list of
-// pages (its items link to pages under one URL) the button opens a small
-// popover, Framer-like: the new page's title, the URL it gets, "Create page
-// and card" (Enter) and "Card only"; for any other grid it adds the card at
-// once. The preview runtime reports the grids (`item-grids`); the editor
-// says what each is and does the adding. A fresh card of an instance's card
-// slot gets "Link to a page…" at its foot (card-link-picker.ts, loaded then);
-// picking a page fills the card and swaps the combobox for an information
-// strip of where each slot's content came from (card-fill-strip.ts).
-// A card slot's button is split, "+ │ ▾": the ▾ opens "Add card as…", a
-// gallery of card looks (card-look-gallery.ts, loaded then), and places a
-// blank card of the one picked.
+// Add card places and selects a card immediately. Component cards and collection
+// items then open Link to a page, including Create page; filling replaces the
+// picker with its source strip. Card slots also offer the looks gallery.
 
 export interface FrameBox {
   top: number;
@@ -75,10 +61,6 @@ export interface GridDescription {
   label: string;
   /** The URL its items' pages are under (`/work/`), when it is a list of pages. */
   collection?: string;
-  /** The folders a new page can go in, the default first. */
-  folders?: string[];
-  /** Whether a new folder can be made for it. */
-  newFolders?: boolean;
   /** A card slot's own card component, whose ▾ offers the looks. */
   card?: string;
 }
@@ -88,6 +70,8 @@ export interface CardPageRequest {
   title: string;
   parent: string;
   newFolder?: string;
+  /** An address typed verbatim, rather than a slug made from the title. */
+  slug?: string;
 }
 
 /** A card just added that a page can be linked to: its page file and body path. */
@@ -101,6 +85,10 @@ export interface CardLinkPages {
   pages: SitePage[];
   own: string;
   inGrid: string[];
+  routes: Record<string, string>;
+  folders: string[];
+  folder?: string;
+  exists(path: string): boolean;
 }
 
 /** A card filled from a page: the rows of where its slots' content came from, the card before and after the fill. */
@@ -115,17 +103,15 @@ export interface CardFilled {
 
 export interface CardGridHandlers {
   describe(grid: ItemGridReport): GridDescription | undefined;
-  /** The URL the new page gets, or why it cannot be made. */
-  plan(grid: ItemGridReport, request: CardPageRequest): Checked<{ route: string }>;
-  /** Adds a card after the last one, a card slot's in `look` when given; resolves to it when a page can be linked to it (a card slot's fresh card). */
+  /** Places a card immediately; resolves to it when it can be filled from a page. A card slot accepts `look`. */
   addCard(grid: ItemGridReport, look?: CardLook): Promise<NewCard | undefined>;
   linkPages(card: NewCard): CardLinkPages | undefined;
   /** Fills the card from the page at `route`, from `base` when given (one undo step); undefined when it could not. */
   fillCard(card: NewCard, route: string, base?: string): CardFilled | undefined;
   /** The card's markup now; undefined once it is gone. */
   cardText(card: NewCard): string | undefined;
-  /** Creates the page and its card; resolves to an error to show, or nothing. */
-  addPage(grid: ItemGridReport, request: CardPageRequest): Promise<string | undefined>;
+  /** Creates a page and fills the placed card as one undo step. */
+  createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined;
 }
 
 /** The least height of a ghost below a grid: its button, and a little more. */
@@ -147,7 +133,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   const ghost = node("div", "card-ghost");
   ghost.hidden = true;
   const add = button("", () => activate(), "card-ghost__add");
-  add.setAttribute("aria-haspopup", "dialog");
   const addLabel = node("span", "card-ghost__label", "Add card");
   add.append(icon("plus", 14), addLabel);
   // A card slot's ▾: "Add card as…".
@@ -168,27 +153,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   ghost.append(buttons);
   layer.append(ghost);
 
-  const popover = node("form", "card-add");
-  popover.setAttribute("role", "dialog");
-  popover.hidden = true;
-  popover.noValidate = true;
-  pane.append(layer, popover);
+  pane.append(layer);
 
   let reports: ItemGridsReport = { hover: null, selected: null };
   // The grid on show and what the editor says it is.
   let shown: { grid: ItemGridReport; about: GridDescription } | undefined;
-  // The grid the popover is open for.
-  let open: { grid: ItemGridReport; about: GridDescription; tracking: number } | undefined;
   let trackingRequest = 0;
   let pointerOnAdd = false;
   let leaveTimer = 0;
   let hoverGone = false;
   let lastHover: ItemGridReport | undefined;
-  // Places the open popover's folder list again, after the popover moves.
-  let menuPlacer: (() => void) | undefined;
-  // The open popover's folder list.
-  let folderMenu: HTMLElement | undefined;
-
   buttons.addEventListener("pointerenter", () => {
     pointerOnAdd = true;
     clearTimeout(leaveTimer);
@@ -205,7 +179,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   }
 
   function current(): ItemGridReport | undefined {
-    if (open) return open.grid;
     if (gallery) return gallery.grid;
     // Just after the pointer left the grid (on its way to the button), the grid it left;
     // the selection's report of that grid is newer (the card just added is selected in it).
@@ -219,7 +192,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const { frameRect, left, top } = geometry();
     Object.assign(layer.style, { left: `${left}px`, top: `${top}px`, width: `${frameRect.width}px`, height: `${frameRect.height}px` });
     const grid = current();
-    const about = grid ? (open && gridKey(open.grid) === gridKey(grid) ? open.about : handlers.describe(grid)) : undefined;
+    const about = grid ? handlers.describe(grid) : undefined;
     if (!grid || !about) {
       shown = undefined;
       ghost.hidden = true;
@@ -245,12 +218,13 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     buttons.classList.toggle("is-split", split);
     looks.setAttribute("aria-label", `Add ${aOr(name)}${where} as…`);
     looks.title = `Choose the ${name}'s look`;
-    add.setAttribute("aria-label", about.collection ? `Add ${aOr(name)} with its own page${where}` : `Add ${aOr(name)}${where}`);
-    add.title = about.collection ? `New page and ${name}${where}` : grid.slot !== undefined ? `Add ${aOr(name)}${where}` : `Add ${aOr(name)}${where}, a copy with placeholder text`;
+    add.setAttribute("aria-label", `Add ${aOr(name)}${where}`);
+    add.title = `Add ${aOr(name)}${where}`;
+    if (about.card || about.collection) add.setAttribute("aria-haspopup", "listbox");
+    else add.removeAttribute("aria-haspopup");
     ghost.classList.toggle("is-compact", box.width < 120 || (!column && !strip && box.height < 40));
     // Below the last item, the button sits near the top, a short way from the items.
     ghost.classList.toggle("is-below", !grid.beside && !strip && box.height > 96);
-    if (open) placePopover();
     gallery?.view?.place();
   }
   const resize = new ResizeObserver(() => layout());
@@ -260,25 +234,16 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
   function scheduleLeave() {
     clearTimeout(leaveTimer);
     leaveTimer = window.setTimeout(() => {
-      if (pointerOnAdd || open || gallery) return;
+      if (pointerOnAdd || gallery) return;
       hoverGone = false;
       layout();
     }, 300);
   }
 
-  function activate(grid = shown?.grid, about = shown?.about) {
-    if (!grid || !about) return;
+  function activate(grid = shown?.grid) {
+    if (!grid) return;
     closeGallery(false);
-    if (!about.collection) {
-      close(false);
-      addCard(grid);
-      return;
-    }
-    if (open && gridKey(open.grid) === gridKey(grid)) {
-      close(true);
-      return;
-    }
-    openPopover(grid, about);
+    addCard(grid);
   }
 
   // "Link to a page…" on the card just added, while it stays selected; after
@@ -306,6 +271,15 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       entry.picker = createCardLinkPicker(pane, {
         pages,
         onPick: (page) => fill(entry, page.route),
+        onCreate: (offer) => {
+          entry.filling = true;
+          const filled = handlers.createPage(entry.card, offer.request, entry.filled?.base);
+          entry.filling = false;
+          if (!filled || linker !== entry) return;
+          entry.filled = filled;
+          entry.seen = false;
+          showStrip(entry, filled);
+        },
         onEscape: () => {
           // From Change page, Esc goes back to the strip; on a blank card it closes.
           if (entry.filled) { showStrip(entry, entry.filled); return; }
@@ -390,7 +364,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     const card = shown?.about.card;
     if (gallery) { closeGallery(true); return; }
     if (!grid || !card || !lookSupport) return;
-    close(false);
     closeLinker();
     const entry: GalleryEntry = { grid, tracking: trackGrid(grid) };
     gallery = entry;
@@ -434,277 +407,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     return tracking;
   }
 
-  function openPopover(grid: ItemGridReport, about: GridDescription) {
-    closeLinker();
-    closeGallery(false);
-    open = { grid, about, tracking: trackGrid(grid) };
-    add.setAttribute("aria-expanded", "true");
-    ghost.classList.add("is-open");
-    const titleId = "card-add-title";
-    const heading = node("h2", "card-add__title", `New ${about.noun} with its own page`);
-    heading.id = titleId;
-    popover.setAttribute("aria-labelledby", titleId);
-    const where = node("p", "card-add__where", `In “${about.label}”, linking to a new page under ${about.collection}.`);
-    const field = node("label", "card-add__field");
-    const fieldName = node("span", "card-add__label", "Page title");
-    const input = node("input", "card-add__input inline-field");
-    input.type = "text";
-    input.autocomplete = "off";
-    input.placeholder = "What is it called?";
-    input.setAttribute("aria-describedby", "card-add-url card-add-message");
-    field.append(fieldName, input);
-    const url = node("div", "card-add__url");
-    url.id = "card-add-url";
-    const prefixInput = node("input", "card-add__path inline-field");
-    prefixInput.type = "text";
-    prefixInput.value = about.collection!;
-    prefixInput.autocomplete = "off";
-    prefixInput.setAttribute("role", "combobox");
-    prefixInput.setAttribute("aria-label", "URL prefix");
-    prefixInput.setAttribute("aria-autocomplete", "list");
-    prefixInput.setAttribute("aria-expanded", "false");
-    prefixInput.setAttribute("aria-controls", "card-add-folders");
-    prefixInput.setAttribute("aria-describedby", "card-add-message");
-    const slugText = node("code", "card-add__slug");
-    url.append(node("span", "card-add__url-label", "URL "), prefixInput, slugText);
-    const menu = node("div", "card-add__folders");
-    menu.id = "card-add-folders-menu";
-    menu.hidden = true;
-    const list = node("div", "card-add__folder-list");
-    list.id = "card-add-folders";
-    list.setAttribute("role", "listbox");
-    list.setAttribute("aria-label", "Folder for the new page");
-    menu.append(list);
-    const message = node("p", "card-add__message");
-    message.id = "card-add-message";
-    message.setAttribute("aria-live", "polite");
-    const create = node("button", "card-add__create", "Create page and card");
-    create.type = "submit";
-    const only = button(`${about.noun[0].toUpperCase()}${about.noun.slice(1)} only`, () => {
-      const target = open?.grid;
-      close(false);
-      if (target) addCard(target);
-    }, "card-add__only");
-    only.title = `Add ${aOr(about.noun)} with placeholder text and no page`;
-    const actions = node("div", "card-add__actions");
-    actions.append(only, create);
-    popover.replaceChildren(heading, where, field, url, message, actions);
-    // Beside the popover in the pane, not in it: the popover's opening
-    // animation moves it, and that would carry a fixed list with it.
-    folderMenu?.remove();
-    folderMenu = menu;
-    pane.append(menu);
-    let pending = false;
-    const allowed = about.folders?.length ? about.folders : [about.collection!];
-    const request = () => cardPrefixRequest(input.value.trim(), prefixInput.value, allowed, Boolean(about.newFolders));
-    const check = (showEmpty = false) => {
-      const title = input.value.trim();
-      prefixInput.style.width = `${Math.max(4, prefixInput.value.length + 1)}ch`;
-      const parsed = request();
-      const planned = !parsed.ok ? parsed : title ? handlers.plan(grid, parsed.value) : undefined;
-      slugText.textContent = planned?.ok ? planned.value.route.slice(prefixInput.value.length) : "…";
-      const error = planned && !planned.ok ? planned.error : !title && showEmpty ? "Enter the page's title." : "";
-      message.textContent = error;
-      message.hidden = !error;
-      input.setAttribute("aria-invalid", String(Boolean(error) && parsed.ok));
-      prefixInput.setAttribute("aria-invalid", String(!parsed.ok));
-      create.disabled = !planned?.ok || pending;
-      return planned;
-    };
-    const options = () => [...list.querySelectorAll<HTMLElement>("[role=option]")];
-    let active = -1;
-    const setActive = (index: number) => {
-      active = index;
-      const items = options();
-      items.forEach((option, at) => option.setAttribute("aria-selected", String(at === active)));
-      if (items[active]) {
-        prefixInput.setAttribute("aria-activedescendant", items[active].id);
-        items[active].scrollIntoView({ block: "nearest" });
-      } else prefixInput.removeAttribute("aria-activedescendant");
-    };
-    const renderMenu = () => {
-      const query = prefixInput.value.toLowerCase();
-      list.replaceChildren(...allowed.filter((folder) => folder.toLowerCase().includes(query)).map((folder, index) => {
-        const option = node("div", "card-add__folder", folder);
-        option.id = `card-add-folder-${index}`;
-        option.setAttribute("role", "option");
-        option.dataset.folder = folder;
-        return option;
-      }));
-      setActive(-1);
-    };
-    // Under the URL's folder (above it only when not even a row fits below),
-    // in the pane, never over the popover's own Add button.
-    const placeMenu = () => {
-      if (menu.hidden) return;
-      const anchor = prefixInput.getBoundingClientRect();
-      const form = popover.getBoundingClientRect();
-      const paneRect = pane.getBoundingClientRect();
-      const button = add.getBoundingClientRect();
-      const left = form.left + 8;
-      const width = form.width - 16;
-      let limit = Math.min(paneRect.bottom, window.innerHeight) - 8;
-      if (!ghost.hidden && button.left < left + width && button.right > left && button.top >= anchor.bottom) limit = Math.min(limit, button.top - 6);
-      menu.style.left = `${left}px`;
-      menu.style.width = `${width}px`;
-      menu.style.maxHeight = "";
-      const wanted = menu.scrollHeight;
-      const below = limit - anchor.bottom - 4;
-      const above = anchor.top - Math.max(paneRect.top, 0) - 12;
-      // Below it, scrolling, while a row fits there: above it, it would cover the title being typed.
-      const up = below < 40 && above > below;
-      const room = Math.max(56, up ? above : below);
-      menu.style.maxHeight = `${room}px`;
-      menu.classList.toggle("is-above", up);
-      menu.style.top = `${up ? anchor.top - 4 - Math.min(wanted, room) : anchor.bottom + 4}px`;
-    };
-    menuPlacer = placeMenu;
-    const showMenu = () => {
-      renderMenu();
-      menu.hidden = options().length === 0;
-      prefixInput.setAttribute("aria-expanded", String(!menu.hidden));
-      if (!menu.hidden) {
-        popover.setAttribute("aria-owns", menu.id);
-        placeMenu();
-      } else popover.removeAttribute("aria-owns");
-    };
-    const closeList = () => {
-      menu.hidden = true;
-      prefixInput.setAttribute("aria-expanded", "false");
-      prefixInput.removeAttribute("aria-activedescendant");
-      popover.removeAttribute("aria-owns");
-      active = -1;
-    };
-    const choose = (option: HTMLElement) => {
-      prefixInput.value = option.dataset.folder!;
-      closeList();
-      check();
-      prefixInput.focus();
-    };
-    prefixInput.addEventListener("focus", showMenu);
-    prefixInput.addEventListener("click", showMenu);
-    prefixInput.addEventListener("input", () => { check(); showMenu(); });
-    prefixInput.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        if (menu.hidden) showMenu();
-        const count = options().length;
-        if (count) setActive(active < 0 ? (event.key === "ArrowDown" ? 0 : count - 1) : (active + (event.key === "ArrowDown" ? 1 : -1) + count) % count);
-      } else if (event.key === "Enter" && !menu.hidden && active >= 0) {
-        event.preventDefault();
-        choose(options()[active]);
-      } else if (event.key === "Escape" && !menu.hidden) {
-        event.preventDefault();
-        event.stopPropagation();
-        closeList();
-      } else if (event.key === "Tab") closeList();
-    });
-    list.addEventListener("pointerdown", (event) => event.preventDefault());
-    list.addEventListener("click", (event) => {
-      const option = (event.target as HTMLElement).closest<HTMLElement>("[role=option]");
-      if (option) choose(option);
-    });
-    prefixInput.addEventListener("blur", closeList);
-    input.addEventListener("input", () => check());
-    popover.onsubmit = async (event) => {
-      event.preventDefault();
-      if (pending) return;
-      const planned = check(true);
-      if (!planned?.ok) { input.focus(); return; }
-      pending = true;
-      create.disabled = true;
-      let error: string | undefined;
-      try {
-        const parsed = request();
-        if (!parsed.ok) return;
-        error = await handlers.addPage(grid, parsed.value);
-      } catch (thrown) {
-        error = thrown instanceof Error ? thrown.message : "The page could not be created.";
-      } finally {
-        pending = false;
-      }
-      if (!error) { close(false); return; }
-      // The failure stays shown until the title changes; the button can try again.
-      if (!open) return;
-      check();
-      message.textContent = error;
-      message.hidden = false;
-      input.setAttribute("aria-invalid", "true");
-      input.focus();
-    };
-    check();
-    popover.hidden = false;
-    placePopover();
-    input.focus();
-  }
-
-  function placePopover() {
-    const { frameRect, paneRect, left, top } = geometry();
-    const anchor = add.getBoundingClientRect();
-    const width = Math.min(320, frameRect.width - 24);
-    popover.style.width = `${width}px`;
-    popover.style.maxHeight = `${Math.max(120, frameRect.height - 24)}px`;
-    const height = popover.offsetHeight;
-    const below = anchor.bottom - paneRect.top + 8;
-    const above = anchor.top - paneRect.top - 8 - height;
-    const bottom = top + frameRect.height - 12;
-    const y = below + height <= bottom || above < top + 12 ? Math.min(below, bottom - height) : above;
-    const right = anchor.right - paneRect.left + 12;
-    const before = anchor.left - paneRect.left - width - 12;
-    const side = right + width <= left + frameRect.width - 12 ? right : before >= left + 12 ? before : undefined;
-    const x = side ?? anchor.left - paneRect.left + anchor.width / 2 - width / 2;
-    // For a ghost below the grid the popover grows up over the grid it adds
-    // to, so the page's content after the grid stays clear and clickable:
-    // beside the button it ends level with the button's bottom, else it ends
-    // 8px above the button. When that does not fit under the pane's top (a
-    // grid near the top, a short pane), it goes below the button as for any
-    // other grid, never over the button itself; there, the next content is
-    // covered while it is open.
-    const up = side === undefined ? anchor.top - paneRect.top - 8 - height : anchor.bottom - paneRect.top - height;
-    const upward = open && !open.grid.beside && up >= top + 12;
-    const placedY = upward ? up
-      : side === undefined ? (y === above ? above : below)
-      : Math.min(anchor.top - paneRect.top, bottom - height);
-    // Kept within the pane, except that below the button it keeps off the
-    // button (a short pane scrolls the popover, which caps its height).
-    const finalY = side === undefined && !upward && placedY === below ? below : Math.max(top + 12, placedY);
-    if (finalY === below && side === undefined) popover.style.maxHeight = `${Math.max(120, bottom - below)}px`;
-    popover.style.top = `${finalY}px`;
-    popover.style.left = `${Math.max(left + 12, Math.min(x, left + frameRect.width - 12 - width))}px`;
-    menuPlacer?.();
-    pane.dispatchEvent(new Event("card-controls-layout"));
-  }
-
-  function close(restoreFocus: boolean) {
-    if (!open) return;
-    open = undefined;
-    menuPlacer = undefined;
-    folderMenu?.remove();
-    folderMenu = undefined;
-    popover.removeAttribute("aria-owns");
-    trackGrid();
-    popover.hidden = true;
-    popover.replaceChildren();
-    add.setAttribute("aria-expanded", "false");
-    ghost.classList.remove("is-open");
-    layout();
-    if (restoreFocus && !ghost.hidden) add.focus();
-  }
-
-  // A short pane scrolls the popover: the list follows its folder.
-  popover.addEventListener("scroll", () => menuPlacer?.(), { passive: true });
-  popover.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || event.defaultPrevented) return;
-    event.preventDefault();
-    event.stopPropagation();
-    close(true);
-  });
   function onPointerDown(event: PointerEvent) {
     const target = event.target as Node;
     // A press elsewhere while the gallery is still loading: it does not open (once open, it closes itself).
     if (gallery && !gallery.view && !looks.contains(target)) closeGallery(false);
-    if (!open || popover.contains(target) || add.contains(target) || folderMenu?.contains(target)) return;
-    close(false);
   }
   document.addEventListener("pointerdown", onPointerDown, true);
 
@@ -712,18 +418,13 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     /** The runtime reported the grids under the pointer and around the selection. */
     update(next: ItemGridsReport) {
       const hoverLeft = Boolean(reports.hover) && !next.hover;
-      const latest = open ? [next.hover, next.selected].find((grid) => grid && gridKey(grid) === gridKey(open!.grid)) : undefined;
-      if (open && latest) {
-        open.grid = latest;
-      }
       const looking = gallery ? [next.hover, next.selected].find((grid) => grid && gridKey(grid) === gridKey(gallery!.grid)) : undefined;
       if (gallery && looking) gallery.grid = looking;
       const unchanged = sameReport(reports.hover, next.hover) && sameReport(reports.selected, next.selected);
       if (hoverLeft) lastHover = reports.hover ?? undefined;
       reports = next;
       // A queued pointer-leave report predates tracking this opening. Only
-      // its own tracking response can say the open grid has disappeared.
-      if (open && next.tracking === open.tracking && !latest) close(false);
+      // its own tracking response can say the gallery's grid has disappeared.
       if (gallery && next.tracking === gallery.tracking && !looking) closeGallery(false);
       if (unchanged) return;
       if (next.hover) {
@@ -753,14 +454,9 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       const grid = reports.selected;
       const about = grid ? handlers.describe(grid) : undefined;
       if (!grid || !about) return;
-      if (!about.collection) { addCard(grid); return; }
-      reports = { ...reports, hover: null };
-      layout();
-      openPopover(grid, about);
-      layout();
+      addCard(grid);
     },
     clear() {
-      close(false);
       closeGallery(false);
       closeLinker();
       clearTimeout(leaveTimer);
@@ -777,8 +473,6 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
       gallery?.view?.destroy();
       gallery = undefined;
       layer.remove();
-      popover.remove();
-      folderMenu?.remove();
       pane.dispatchEvent(new Event("card-controls-layout"));
     },
   };

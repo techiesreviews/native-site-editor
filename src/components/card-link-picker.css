@@ -125,3 +125,8 @@
     animation: none;
   }
 }
+
+.card-link__sub {
+  color: var(--muted);
+  font-size: var(--type-small);
+}
