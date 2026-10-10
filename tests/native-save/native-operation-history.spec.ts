@@ -76,10 +76,12 @@ test("a failed primary save retries after another file clears the storage error"
   expect(result.warned).toBe(true);
 });
 
+// Another page's settings are one operation over the drafts (the open page's own are an editor
+// step, as typing is): its receipt never writes over a draft a save listener put there.
 test("a synchronous source-save listener cannot replace owned draft metadata", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(frame(page).locator(".hero h1")).toBeVisible();
-  const before = await source(page);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=about/index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  await editorMounted(page, "about/index.html");
   await page.evaluate(async () => {
     const store = (await import("/src/drafts.ts")).draftStore();
     const save = store.save.bind(store);
@@ -97,11 +99,11 @@ test("a synchronous source-save listener cannot replace owned draft metadata", a
   });
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
-  await openPageSettingsFromPages(page);
+  await openPageSettingsFromPages(page, "index.html");
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("Collision history title");
   await settings.getByRole("button", { name: "Apply page settings" }).click();
-  await expect.poll(() => source(page)).toBe(before);
+  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { collisionDraft?: unknown }).collisionDraft))).toBe(true);
   const foreign = await page.evaluate(async () => {
     const store = (await import("/src/drafts.ts")).draftStore();
     const injected = (window as unknown as { collisionDraft: Parameters<typeof store.save>[0] }).collisionDraft;

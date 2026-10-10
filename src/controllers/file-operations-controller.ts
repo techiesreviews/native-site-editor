@@ -152,7 +152,9 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   // Renames or moves a file or folder to `to`: the pages among them that other
   // pages link to are named in a confirmation first.
   async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move"): Promise<string | undefined> {
-    const since = ports.edits.stamp();
+    // The stamp, the file list and the target's drafts as the action began: held through the
+    // index, the branch reads and the dialog (the guard is proved before the plan and at the write).
+    const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source);
     const problem = moveProblem(source, to, operation);
     if (problem) return problem;
     if (to === source.path) return undefined;
@@ -169,7 +171,6 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     if (!found.length) return `${source.path} has no files to ${operation}.`;
     const ops = found.map(file => ({ file, to: movedPath(file.path, source.path, to) }));
-    const key = ports.nativeFiles().sort().join("\n");
     const cancel = `Cancelled ${operation === "rename" ? "renaming" : "moving"} ${source.path}`;
     let cancelled = false, urlDialog = false;
     const outcome = await ports.edits.run(async r => {
@@ -199,7 +200,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       return { moves, ...references,
         done: operation === "rename" ? `Renamed ${what} to ${to}.` : `Moved ${what} to ${ports.parentOf(to) || "the top of the repository"}.`,
         undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${what} to ${to}.` };
-    }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key });
+    }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key && targetDrafts(source) === drafts });
     if (cancelled) { if (!outcome.ok) ports.announce(cancel); return undefined; }
     if (!outcome.ok) return outcome.reason === "stale"
       ? urlDialog ? `The site changed while the ${operation === "rename" ? "Rename" : "Move"} dialog was open, so nothing was ${operation === "rename" ? "renamed" : "moved"}. Try again to see the latest links.` : "The repository changed meanwhile. Try again."

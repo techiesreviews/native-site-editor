@@ -57,6 +57,21 @@ for (const stage of ["branchPathProblem", "findEntry"] as const) {
   });
 }
 
+test("rename refuses a target edit while the index loads", async () => {
+  const h = fixture();
+  h.ports.ensureNativeTextIndex = async () => { h.memory.writeDraft(target.path, "newer"); return undefined; };
+  assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename"), "The repository changed meanwhile. Try again.");
+  assert.deepEqual(h.memory.steps(), []); assert.equal(h.memory.workspace.source(target.path), "newer");
+});
+
+test("folder rename refuses a file added to it while its files are listed", async () => {
+  const h = fixture(false, { "folder/a.txt": "a" });
+  const list = h.ports.branchFilesUnder.bind(h.ports);
+  h.ports.branchFilesUnder = async folder => { h.memory.writeDraft("folder/new.txt", "new"); return list(folder); };
+  assert.equal(await h.controller.moveFileTarget({ path: "folder", name: "folder", folder: true }, "renamed", "rename"), "The repository changed meanwhile. Try again.");
+  assert.deepEqual(h.memory.steps(), []); assert.equal(h.memory.draft("renamed/a.txt"), undefined);
+});
+
 test("plain rename records one receipt; undo refuses an edit to the moved file", async () => {
   const h = fixture();
   assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename"), undefined);
