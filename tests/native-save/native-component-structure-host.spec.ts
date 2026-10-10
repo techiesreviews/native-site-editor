@@ -278,7 +278,7 @@ test("a delayed component mode keeps the template part selected while it loads",
     await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
     await expect(body).toBeFocused();
     release();
-    await expect(page.getByRole("group", { name: "Slot content", exact: true })).toBeVisible();
+    await expect(page.locator(".canvas-bar--component").getByRole("button", { name: "Done editing component", exact: true })).toBeVisible();
     await expect(frame(page).locator('[data-native-selection-box="edit-frame"]')).toBeVisible();
     await expect(body).toBeFocused();
     await body.fill("Typing after delayed mode entry");
