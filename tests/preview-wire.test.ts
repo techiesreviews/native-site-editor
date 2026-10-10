@@ -20,10 +20,17 @@ function emittedTypes(source: string) {
   const literals = [...calls.matchAll(/\bemit\s*\(\s*(["'])([^"']+)\1\s*[,)]/g)];
   assert.equal([...calls.matchAll(/\bemit\s*\(/g)].length, literals.length, "emit calls must have a literal type");
   const direct = [...calls.matchAll(/\bparent\.postMessage\s*\(\s*\{\s*source:\s*FRAME_SOURCE,\s*type:\s*(["'])([^"']+)\1/g)];
+  // Besides `emit`'s own post, every post must be in the one shape read above.
+  assert.equal([...calls.matchAll(/\bpostMessage\s*\(/g)].length, direct.length + 1, "posts must go through emit or name their type first");
   return new Set([...literals, ...direct].map(match => match[2]));
 }
 
 function handledTypes(source: string) {
+  // Every read of a host message's type must be a comparison with a literal, so none escapes the guard.
+  const reads = [...source.matchAll(/\bmsg\.type\b/g)].length;
+  const compared = [...source.matchAll(/\bmsg\.type\s*(?:===|!==)\s*(["'])([^"']+)\1/g)].length;
+  assert.equal(reads, compared, "msg.type is read only in comparisons with a literal");
+  assert.doesNotMatch(source, /\bswitch\s*\(\s*msg\b/, "no switch over host messages");
   return new Set([...source.matchAll(/\bmsg\.type\s*(?:===|!==)\s*(["'])([^"']+)\1/g)].map(match => match[2]));
 }
 
@@ -43,10 +50,14 @@ test("runtime emits every frame type and handles every host type, with no unknow
 });
 
 test("wire extractor rejects unknown and non-literal emit types", () => {
-  assert.deepEqual(unknownTypes(emittedTypes('function emit(type) {} emit("bogus");'), FRAME_TYPES), ["bogus"]);
-  assert.throws(() => assertTypes(emittedTypes('emit("bogus");'), FRAME_TYPES), /unknown wire message types/);
-  assert.throws(() => emittedTypes("function emit(type) {} emit(variable);"), /literal type/);
+  const emit = 'function emit(type) { parent.postMessage({ source: FRAME_SOURCE, type }, "*"); } ';
+  assert.deepEqual(unknownTypes(emittedTypes(emit + 'emit("bogus");'), FRAME_TYPES), ["bogus"]);
+  assert.throws(() => assertTypes(emittedTypes(emit + 'emit("bogus");'), FRAME_TYPES), /unknown wire message types/);
+  assert.throws(() => emittedTypes(emit + "emit(variable);"), /literal type/);
   assert.deepEqual(unknownTypes(handledTypes('if (msg.type !== "bogus") return;'), HOST_TYPES), ["bogus"]);
+  assert.throws(() => handledTypes('var kind = msg.type; if (kind === "bogus") return;'), /only in comparisons/);
+  assert.throws(() => handledTypes('switch (msg.type) { case "bogus": }'), /only in comparisons/);
+  assert.throws(() => emittedTypes(emit + 'parent.postMessage({ type: "bogus", source: FRAME_SOURCE }, "*");'), /name their type first/);
 });
 
 test("runtime shares wire sources and receives host messages through one listener", () => {
