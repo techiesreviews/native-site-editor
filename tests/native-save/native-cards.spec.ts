@@ -276,8 +276,9 @@ test("review: a card holding a grid of its own is its grid's card; Alt+Up moves 
   await pasteInto(page, nestedHome);
   const cards = frame(page).locator("article.card");
   await expect(cards).toHaveCount(2);
-  // Select the second card: Add card uses the outer collection grid and opens its picker.
-  await cards.nth(1).locator(".fact").first().click();
+  // Select the second card: Add card uses the outer collection grid and opens its picker. (Its
+  // facts are a grid of their own, as the first card's are, so a fact selects as a fact.)
+  await cards.nth(1).locator("h3 a").click();
   await bar(page).getByRole("button", { name: "Select card" }).click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Article");
   await bar(page).getByRole("button", { name: "Add card" }).click();
