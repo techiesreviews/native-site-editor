@@ -482,3 +482,41 @@ test("Create page without linked siblings uses Home with an empty main; redo ref
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(made);
 });
+
+test("Create page in one of two named card slots copies a page its own list links to, not the other list's", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  const edit = (path: string, content: string) => page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path, content } });
+  await edit("components/section-pair/section-pair.html", '<section>\n  <slot name="title"><h2>Pair</h2></slot>\n  <div class="first"><slot name="first"><card-project></card-project></slot></div>\n  <div class="second"><slot name="second"><card-project></card-project></slot></div>\n</section>\n');
+  await edit("components/section-pair/section-pair.css", ":host { display: block; }\n.first, .second { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 32px 0 48px; }\n");
+  const home = (await source(page))!;
+  await edit("team/alex/index.html", home.replace(/<main([^>]*)>[\s\S]*<\/main>/, '<main$1>\n    <h1>Alex</h1>\n    <h2>On the team since</h2>\n  </main>'));
+  const made = home.replace(/<section class="flow" id="work">[\s\S]*?<\/div>\n {4}<\/section>/, [
+    '<section-pair id="work">',
+    '      <h2 slot="title">Pair</h2>',
+    '      <card-project slot="first">',
+    '        <h3 slot="title">Harbour Lane Pottery</h3>',
+    '        <a slot="link" href="/work/harbour-lane-pottery/">Read about Harbour Lane Pottery</a>',
+    "      </card-project>",
+    '      <card-project slot="second">',
+    '        <h3 slot="title">Alex</h3>',
+    '        <a slot="link" href="/team/alex/">Read about Alex</a>',
+    "      </card-project>",
+    "    </section-pair>",
+  ].join("\n"));
+  await edit("index.html", made);
+  await page.reload();
+  await expect(frame(page).locator("section-pair > h2")).toBeVisible({ timeout: 30_000 });
+  await editorMounted(page);
+  await expect.poll(() => source(page)).toBe(made);
+  await frame(page).locator("section-pair > card-project[slot=first]").hover();
+  await addCard(page).click();
+  await expect(frame(page).locator("section-pair > card-project[slot=first]")).toHaveCount(2);
+  const input = page.getByRole("combobox", { name: "Link to a page" });
+  await expect(input).toBeFocused();
+  await input.fill("Oak");
+  await page.getByRole("option", { name: /Create page \/work\/oak\// }).click();
+  const draft = async () => (await storedDraft(page, "work/oak/index.html"))?.content;
+  await expect.poll(draft).toContain("<h2>The brief</h2>");
+  expect(await draft()).not.toContain("On the team since");
+});

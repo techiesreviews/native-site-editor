@@ -379,14 +379,18 @@ export function createCards(deps: CardsDeps) {
       const element = itemElement(source, range);
       return element && itemTitle(source, element);
     };
+    const parentRange = locateNativeElementRange(source, card.node.slice(0, -1));
+    const children = (parentRange && itemElement(source, parentRange))?.children ?? [];
+    const own = card.node.at(-1)!;
+    // Only the card's own slot counts: an instance's two card slots are two lists.
+    const slotOf = (element: (typeof children)[number] | undefined) => element && decodeHtmlEntities(startTagAttribute(source, element.tag, "slot")?.value ?? "", true);
+    const sameSlot = (at: number) => at !== own && slotOf(children[at]) === slotOf(children[own]);
     const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
-    const own = card.node.at(-1);
-    if (grid?.items.some((item) => item.route)) return grid.items.filter((item) => item.index !== own).map((item) => ({ route: item.route, title: titled(item.range) }));
+    const items = grid?.items.filter((item) => sameSlot(item.index));
+    if (items?.some((item) => item.route)) return items.map((item) => ({ route: item.route, title: titled(item.range) }));
     const links = slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, routes));
     const folder = cardFolder(links);
-    const parentRange = locateNativeElementRange(source, card.node.slice(0, -1));
-    const parent = parentRange && itemElement(source, parentRange);
-    const peers = (parent?.children ?? []).filter((_, at) => at !== own);
+    const peers = children.filter((_, at) => sameSlot(at));
     return links.filter((link) => !folder || (link !== folder && link.startsWith(folder))).map((link) => {
       const item = [...peers].reverse().find((child) => allElements([child]).some((element) => {
         const href = element.name === "a" && startTagAttribute(source, element.tag, "href")?.value;
