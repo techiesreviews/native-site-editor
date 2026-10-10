@@ -65,8 +65,9 @@
 }
 .card-looks__label {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
   min-width: 0;
   padding: 0 2px;
 }
