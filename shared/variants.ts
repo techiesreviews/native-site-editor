@@ -17,8 +17,8 @@ export function scriptImports(source: string): string[] {
   for (let index = 1; index < tokens.length; index++) {
     const token = tokens[index], before = tokens[index - 1];
     if (!/^(["'])[^]*\1$/.test(token)) continue;
-    const dynamic = before === "(" && tokens[index - 2] === "import" && tokens[index - 3] !== "." && tokens[index + 1] === ")";
-    if (before === "from" || (before === "import" && tokens[index - 2] !== ".") || dynamic) out.push(token.slice(1, -1));
+    const dynamic = before === "(" && tokens[index - 2] === "import" && tokens[index - 3] !== "." && tokens[index - 3] !== "?." && tokens[index + 1] === ")";
+    if (before === "from" || (before === "import" && tokens[index - 2] !== "." && tokens[index - 2] !== "?.") || dynamic) out.push(token.slice(1, -1));
   }
   return out;
 }

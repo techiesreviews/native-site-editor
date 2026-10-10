@@ -1,7 +1,7 @@
 ---
 title: "One Variant lookup for the editor and the Worker"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: claude ★
@@ -21,3 +21,9 @@ The tag→Variants lookup is built four times, from three different sets of styl
 
 - `npm run check`, `npm test`, the full `native-save` suite and the `@actual` group are green.
 - Preview deployed from `dev`.
+
+## Done (2026-10-10)
+
+- `shared/variant-lookup.ts`: `variantLookup(files)` → `{ forTag(tag, { page }?), forClass(name, { page }?), global({ page }?), isComponentCss(path) }` over the seam `VariantFiles { site(), read(path) }`, cached by the texts each answer read; `readVariants(site, load, ask, likely)` for batched async reads. Adapters: `nativeVariantFiles` in `src/main.ts` (drafts, late files read in the background, then panes, card looks and edit bar refresh) and `worker/site-variants.ts` (SiteFiles in rounds, seeded with the tab's sheets). Deleted: `createVariantLookup` (code pane), the gallery's `pageSheets`, the edit bar's sheet assembly, the Worker's own rounds, `scriptsSetAttributes`, `nativeVariantSources`/`nativeVariants`, the `scripts` ports.
+- Same answers as before for the starter and every fixture (all four former callers compared per page and component). Changes: scripts count only when a page loads them (or they import them); orphan sheets no page links no longer count in the code pane; the edit bar and card looks expand imports in a component's own CSS; `get_site` reads pages itself (2–3 batched rounds instead of 1) and sees exactly the code pane's Variants; the edit bar and card looks keep the page shown's sheets (`{ page }`).
+- Tests: `tests/variant-lookup.test.ts` (13) over `tests/variant-files-fake.ts`; variant-fields, tone-band, block-fields, card-looks, native-starter, variant-intelligence and mcp-runtime moved onto the lookup. Full `native-save` (864 passed) and `@actual` (54) green. Boot chunk −69 B gzip.

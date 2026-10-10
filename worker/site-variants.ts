@@ -19,7 +19,12 @@ export async function componentVariantsOf(files: SiteFiles, context: EditorConte
   const budget = { singles: 16 };
   // The stylesheets the tab says the pages link are read with the pages.
   const likely = (context.site?.stylesheets ?? []).flatMap(({ file, imports }) => [file, ...imports]);
-  return readVariants(site, (paths) => files.texts(paths, budget), (lookup) => new Map(components.map(({ tag }) => {
+  // A read that fails gives its singles back, so a retry without the likely sheets has the plain path's budget.
+  const load = async (paths: string[]) => {
+    const singles = budget.singles;
+    try { return await files.texts(paths, budget); } catch (error) { budget.singles = singles; throw error; }
+  };
+  return readVariants(site, load, (lookup) => new Map(components.map(({ tag }) => {
     const { variants, warnings } = lookup.forTag(tag) ?? { variants: [], warnings: [] };
     return [tag, { variants, ...(warnings.length ? { variantWarnings: warnings } : {}) }];
   })), likely);

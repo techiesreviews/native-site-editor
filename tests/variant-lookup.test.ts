@@ -130,7 +130,7 @@ test("the same site object with other pages or components is another site", () =
 
 test("script imports are read from code, not comments or strings; JavaScript types count", () => {
   const files = site();
-  files.files["scripts/tips.js"] = '// import "./unused.js";\nconst text = "import \'./unused.js\'";\nimport/* open */"./open.js";\nexport { x } from "./more.mjs";\nimport("./late.js");\nimport "lit";';
+  files.files["scripts/tips.js"] = '// import "./unused.js";\nconst text = "import \'./unused.js\'";\nimport/* open */"./open.js";\nexport { x } from "./more.mjs";\nimport("./late.js");\nimport "lit";\nnot?.import("./unused.js");';
   files.files["scripts/more.mjs"] = 'tip.dataset.ready = "";';
   files.files["scripts/late.js"] = '';
   files.files["index.html"] = page(["/styles/site.css"]).replace("</head>", '<script type="text/javascript" src="/scripts/tips.js"></script></head>');
