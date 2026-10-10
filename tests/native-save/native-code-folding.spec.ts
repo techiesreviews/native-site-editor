@@ -26,7 +26,9 @@ test("the head and every section open collapsed in the code editor", async ({ pa
 test("a cursor placed before the folding ranges load stays put, and its section stays open", async ({ page, baseURL }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
-  await page.route((url) => /html\.worker/.test(url.pathname) && url.search !== "?worker", async (route) => {
+  // The worker's script and its language service, which it imports (the
+  // worker may fetch its first script before the route reaches it).
+  await page.route((url) => (/html\.worker/.test(url.pathname) && url.search !== "?worker") || url.pathname.includes("/vscode-html-languageservice/"), async (route) => {
     await held;
     await route.continue();
   });
