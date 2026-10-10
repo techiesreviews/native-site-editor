@@ -350,3 +350,132 @@ test("items paths open at every items boundary while non-items, card parts and t
   const outside = '<header><section-work><p>Outside</p></section-work></header><main></main>';
   assert.equal(nativeMovableBlock(outside, [0, 0, 0], workItems), false);
 });
+
+function assertNoNewBlankLines(source: string, output: string) {
+  const blanks = (text: string) => text.split(/\r?\n/).filter(line => /^[ \t]*$/.test(line)).length;
+  assert.equal(blanks(output), blanks(source), "moving preserves existing blank lines without adding any");
+}
+
+function exactMove(source: string, from: number[], parent: number[], index: number, expected: string, newBlanks = 0) {
+  const edit = nativeMoveEdit(source, from, { parent, index });
+  assert.ok(edit);
+  assert.equal(edit.source, source);
+  assert.equal(edit.original, source.slice(edit.start, edit.end));
+  const output = applyGuardedSourceEdit(source, edit)!;
+  assert.equal(output, expected);
+  if (!newBlanks) assertNoNewBlankLines(source, output);
+  assert.equal(applyGuardedSourceEdit(source + " ", edit), undefined);
+}
+
+const moveBlockLines = (name: string, depth: number) => {
+  const indent = "  ".repeat(depth);
+  return [`${indent}<div id="${name}">`, `${indent}  <p>${name}</p>`, `${indent}</div>`];
+};
+const moveContainerLines = (names: string[], nested: boolean) => [
+  "  <section>",
+  ...(nested ? ["    <div>"] : []),
+  ...names.flatMap(name => moveBlockLines(name, nested ? 3 : 2)),
+  ...(nested ? ["    </div>"] : []),
+  "  </section>",
+];
+
+test("first, middle and last multiline children move both directions at deeper and shallower depths without blank lines", () => {
+  for (const nestedSource of [false, true]) for (const destinationFirst of [false, true]) {
+    for (const child of [0, 1, 2]) for (const destinationIndex of [0, 1, 2]) {
+      const sourceNames = ["A", "B", "C"];
+      const destinationNames = ["D", "E"];
+      const render = () => {
+        const origin = moveContainerLines(sourceNames, nestedSource);
+        const target = moveContainerLines(destinationNames, !nestedSource);
+        return ["<main>", ...(destinationFirst ? [...target, ...origin] : [...origin, ...target]), "</main>"].join("\n");
+      };
+      const source = render();
+      const sourceParent = [0, destinationFirst ? 1 : 0, ...(nestedSource ? [0] : [])];
+      const destinationParent = [0, destinationFirst ? 0 : 1, ...(!nestedSource ? [0] : [])];
+      destinationNames.splice(destinationIndex, 0, sourceNames.splice(child, 1)[0]);
+      exactMove(source, [...sourceParent, child], destinationParent, destinationIndex, render());
+    }
+  }
+});
+
+test("standalone children reorder within one parent in both directions", () => {
+  const render = (names: string[]) => ["<main>", ...moveContainerLines(names, false), "</main>"].join("\n");
+  for (const [child, index, names] of [[0, 3, ["B", "C", "A"]], [2, 0, ["C", "A", "B"]]] as const) {
+    exactMove(render(["A", "B", "C"]), [0, 0, child], [0, 0], index, render([...names]));
+  }
+});
+
+test("moving the only child into empty inline and multiline parents leaves no blank lines", () => {
+  for (const target of ["  <section></section>", "  <section>\n  </section>"]) {
+    const source = ['<main>', '  <section>', ...moveBlockLines("A", 2), '  </section>', target, '</main>'].join("\n");
+    const expected = ['<main>', '  <section>', '  </section>', ...moveContainerLines(["A"], false), '</main>'].join("\n");
+    exactMove(source, [0, 0, 0], [0, 1], 0, expected);
+  }
+});
+
+test("standalone removal takes tabs and trailing spaces while retaining CRLF and existing blank lines", () => {
+  const source = '<main>\r\n\t<section>\r\n\t\t<div>\r\n\t\t\t<p>A</p>\r\n\t\t</div> \t\r\n\t\t<p>B</p>\r\n\t</section>\r\n\r\n\t<section>\r\n\t\t\t<div>\r\n\t\t\t\t<p>C</p>\r\n\t\t\t</div>\r\n\t</section>\r\n</main>';
+  const expected = '<main>\r\n\t<section>\r\n\t\t<p>B</p>\r\n\t</section>\r\n\r\n\t<section>\r\n\t\t\t<div>\r\n\t\t\t\t<p>A</p>\r\n\t\t\t</div>\r\n\t\t\t<div>\r\n\t\t\t\t<p>C</p>\r\n\t\t\t</div>\r\n\t</section>\r\n</main>';
+  exactMove(source, [0, 0, 0], [0, 1], 0, expected);
+  assert.equal(/(?<!\r)\n/.test(expected), false);
+});
+
+test("first-line and final-line standalone elements remove their own line cleanly", () => {
+  exactMove('  <div>A</div> \t\n<main>\n  <div>B</div>\n</main>', [0], [1], 0,
+    '<main>\n  <div>A</div>\n  <div>B</div>\n</main>');
+  exactMove('<main>\n  <div>B</div>\n</main>\n  <div>A</div> \t', [1], [0], 1,
+    '<main>\n  <div>B</div>\n  <div>A</div>\n</main>');
+});
+
+test("text and adjacent elements on the moving line keep the exact element-only removal", () => {
+  exactMove('<main>\n  <div><p>A</p> <p>B</p></div>\n  <div><p>C</p></div>\n</main>', [0, 0, 0], [0, 1], 1,
+    '<main>\n  <div> <p>B</p></div>\n  <div><p>C</p>\n<p>A</p></div>\n</main>');
+  exactMove('<main>\n  <div>Lead <p>A</p> tail</div>\n  <div><p>C</p></div>\n</main>', [0, 0, 0], [0, 1], 0,
+    '<main>\n  <div>Lead  tail</div>\n  <div><p>A</p>\n<p>C</p></div>\n</main>');
+});
+
+test("beside itself into another items slot rewrites only element bytes at the same indentation", () => {
+  const source = '<main>\n  <section-work>\n    <div slot="items">\n      <p>A</p>\n    </div> \t\n    <p slot="more">B</p>\n  </section-work>\n</main>';
+  const expected = source.replace('slot="items"', 'slot="more"');
+  for (const index of [0, 1]) {
+    const edit = nativeMoveEdit(source, [0, 0, 0], { parent: [0, 0], index }, workItems, "more");
+    assert.ok(edit);
+    assert.equal(edit.start, source.indexOf('<div'));
+    assert.equal(edit.end, source.indexOf('</div>') + '</div>'.length);
+    assert.equal(applyGuardedSourceEdit(source, edit), expected);
+    assertNoNewBlankLines(source, expected);
+  }
+});
+
+test("moving out of and back into the same container preserves exact indentation", () => {
+  const source = '<main>\n  <section>\n    <div>\n      <p>A</p>\n      <p>B</p>\n      <p>C</p>\n    </div>\n  </section>\n</main>';
+  for (const child of [0, 1, 2]) for (const before of [true, false]) {
+    const names = ["A", "B", "C"];
+    const moved = names.splice(child, 1)[0];
+    const inner = ['    <div>', ...names.map(name => `      <p>${name}</p>`), '    </div>'];
+    const outer = `    <p>${moved}</p>`;
+    const expected = ['<main>', '  <section>', ...(before ? [outer, ...inner] : [...inner, outer]), '  </section>', '</main>'].join("\n");
+    exactMove(source, [0, 0, 0, child], [0, 0], before ? 0 : 1, expected);
+    exactMove(expected, [0, 0, before ? 0 : 1], [0, 0, before ? 1 : 0], child, source);
+  }
+});
+
+test("structural lines change depth while pre, textarea, script, style and opaque content keeps every byte", () => {
+  const protectedMarkup = [
+    '<pre>raw\n  keep\r\n\tbytes</pre>',
+    '<textarea>raw\n  keep\r\n\tbytes</textarea>',
+    '<script>raw\n  keep\r\n\tbytes</script>',
+    '<style>raw\n  keep\r\n\tbytes</style>',
+    '<x-card>\n  <p>Keep</p>\n</x-card>',
+    '<svg>\n  <text>Keep</text>\n</svg>',
+    '<template>\n  <p>Keep</p>\n</template>',
+  ];
+  const source = ['<main>', '  <section>', '    <div>', ...protectedMarkup.map(markup => `      ${markup}`), '    </div>', '  </section>', '  <section>', '    <div>', '      <p>Neighbour</p>', '    </div>', '  </section>', '</main>'].join("\r\n");
+  const expected = ['<main>', '  <section>', '  </section>', '  <section>', '    <div>', '      <p>Neighbour</p>', '      <div>', ...protectedMarkup.map(markup => `        ${markup}`), '      </div>', '    </div>', '  </section>', '</main>'].join("\r\n");
+  exactMove(source, [0, 0, 0], [0, 1, 0], 1, expected);
+});
+
+test("inside a pre the moved element's line breaks stay as content", () => {
+  exactMove('<main>\n  <pre>\n  <b>A</b>\n</pre>\n  <div>\n    <p>B</p>\n  </div>\n</main>', [0, 0, 0], [0, 1], 1,
+    '<main>\n  <pre>\n  \n</pre>\n  <div>\n    <p>B</p>\n    <b>A</b>\n  </div>\n</main>', 1);
+});

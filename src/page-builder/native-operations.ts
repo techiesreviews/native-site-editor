@@ -486,8 +486,8 @@ export function nativeMovableBlock(source: string, path: readonly number[], item
 }
 
 /**
- * One replacement, guarded against stale source; removal never takes
- * neighbours. Across containers the block takes the destination slot
+ * One replacement, guarded against stale source; standalone removal takes
+ * its line, never neighbours. Across containers the block takes the destination slot
  * (`items`, `slot`), or loses its slot attribute in a plain container.
  */
 export function nativeMoveEdit(source: string, from: readonly number[], destination: Pick<InsertPoint, "parent" | "index">, items?: ItemsSlotRule, slot = ""): GuardedSourceEdit | undefined {
@@ -510,14 +510,35 @@ export function nativeMoveEdit(source: string, from: readonly number[], destinat
     if (attribute) assigned = assigned.slice(0, attribute.start) + assigned.slice(attribute.end);
     if (valid.instance && slot) assigned = withSlot(assigned, { ...moving, start: 0 }, slot);
   }
+  if (moving.parent === parent && [index, index + 1].includes(destination.index)) {
+    return { start: moving.start, end: moving.end, text: assigned, original: element, source };
+  }
+  const nextLine = source.indexOf("\n", moving.end);
+  const lineEnd = nextLine < 0 ? source.length : nextLine > 0 && source[nextLine - 1] === "\r" ? nextLine - 1 : nextLine;
+  // Inside a <pre> the line breaks are content: only the element's bytes go, and nothing is re-laid.
+  const inPre = (node: SourceNode | undefined) => { for (let at = node; at; at = at.parent) if (at.name === "pre") return true; return false; };
+  const alone = !inPre(moving.parent) && /^[ \t]*$/.test(lead) && /^[ \t]*$/.test(source.slice(moving.end, lineEnd));
+  let removeStart = moving.start;
+  let removeEnd = moving.end;
+  if (alone) {
+    // Prefer the preceding newline; a first-line element takes the following one.
+    removeStart = lineStart > 0 ? lineStart - (source[lineStart - 2] === "\r" ? 2 : 1) : 0;
+    removeEnd = lineStart > 0 || nextLine < 0 ? lineEnd : nextLine + 1;
+  }
   const markup = structuralIndent(assigned, source.includes("\r\n") ? "\r\n" : "\n", "", indent);
   const insert = insertion(source, parent, destination.index, markup);
-  const start = Math.min(moving.start, insert.start);
-  const end = Math.max(moving.end, insert.end);
+  // An empty parent already on separate lines supplies the insertion's first newline.
+  const closeLine = source.lastIndexOf("\n", parent.closeStart - 1) + 1;
+  if (!parent.children.length && !inPre(parent) && closeLine > parent.openEnd && /^[ \t]*$/.test(source.slice(closeLine, parent.closeStart))) {
+    insert.start = closeLine;
+    insert.text = insert.text.replace(/^\r?\n/, "");
+  }
+  const start = Math.min(removeStart, insert.start);
+  const end = Math.max(removeEnd, insert.end);
   const original = source.slice(start, end);
-  const text = insert.start <= moving.start
-    ? insert.text + source.slice(insert.start, moving.start) + source.slice(moving.end, end)
-    : source.slice(start, moving.start) + source.slice(moving.end, insert.start) + insert.text;
+  const text = insert.start <= removeStart
+    ? insert.text + source.slice(insert.end, removeStart) + source.slice(removeEnd, end)
+    : source.slice(start, removeStart) + source.slice(removeEnd, insert.start) + insert.text;
   return { start, end, text, original, source };
 }
 export function applyGuardedSourceEdit(source: string, edit: GuardedSourceEdit) {
