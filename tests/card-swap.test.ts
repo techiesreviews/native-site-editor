@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { cardSwap, readCardContent } from "../src/page-builder/card-swap.ts";
+import { readSource } from "../src/page-builder/source-tree.ts";
 
 const project = [
   "<article>",
@@ -143,4 +144,26 @@ test("content carried to a slot of its name stays that slot's, by name, when its
   const edited = away.markup.replace("Ceramics studio · 2025", "Stoneware · 2026");
   const back = cardSwap({ card: edited, template: feature, look: { tag: "card-project", label: "card-project" }, lookTemplate: project, kept: away.kept });
   assert.equal(back.markup, filled.replace("Ceramics studio · 2025", "Stoneware · 2026"));
+});
+
+test("changing look carries decoded image and link attributes while keeping inner HTML", () => {
+  const card = '<card-project><img slot="image" src="/caf&eacute;.jpg" alt="Caf&eacute; front"><h3 slot="title">Caf&eacute; <em>Rio</em></h3><a slot="link" href="/caf&eacute;/">Visit Caf&eacute;</a></card-project>';
+  assert.deepEqual(readCardContent(card, project).image, { src: "/café.jpg", alt: "Café front" });
+  const swap = cardSwap({ card, template: project, look: { tag: "card-feature", label: "card-feature" }, lookTemplate: feature });
+  const tree = readSource(swap.markup);
+  const image = tree.elements().find(node => node.type === "element" && node.name === "img")!;
+  const link = tree.elements().find(node => node.type === "element" && node.name === "a")!;
+  assert.equal(tree.attribute(image, "alt")?.value, "Café front");
+  assert.equal(tree.attribute(image, "src")?.value, "/café.jpg");
+  assert.equal(tree.attribute(link, "href")?.value, "/café/");
+  assert.ok(!swap.markup.includes("&amp;eacute;"));
+  assert.ok(swap.markup.includes("Caf&eacute; <em>Rio</em>"));
+  assert.ok(swap.markup.includes(">Visit Caf&eacute;</a>"));
+});
+
+test("changing look decodes carried attributes once", () => {
+  const card = '<card-project><img slot="image" src="/caf&amp;eacute;.jpg" alt="Caf&amp;eacute; front"><a slot="link" href="/caf&amp;eacute;/">Visit</a></card-project>';
+  const swap = cardSwap({ card, template: project, look: { tag: "card-feature", label: "card-feature" }, lookTemplate: feature });
+  assert.deepEqual(readCardContent(swap.markup, feature).image, { src: "/caf&eacute;.jpg", alt: "Caf&eacute; front" });
+  assert.equal(readCardContent(swap.markup, feature).link?.href, "/caf&eacute;/");
 });

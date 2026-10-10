@@ -1,7 +1,8 @@
 // A card's fill plan, read from source without a DOM. Writing it is a
 // separate operation: these rows describe each slot's source and mapping.
 // An empty unnamed fallback has no row; text or image fallbacks still do.
-import { attributeEdit, descendants, parseSource, plainText, slotLabel, startTagAttributes, templateSlots, type SourceElement, type TemplateSlot } from "./component-model";
+import { attributeEdit, descendants, parseSource, slotLabel, startTagAttributes, templateSlots, type TemplateSlot } from "./component-model";
+import { readSource, plain, type SourceTree, type SourceNode, type SourceElement } from "./source-tree";
 import { slotMarkup } from "../native-insert";
 import { allElements, elementTree, itemFill, plainText as itemPlainText, textLeaves, titleLeaf } from "./card-grid";
 
@@ -26,12 +27,8 @@ export interface CardFill {
   rows: CardFillRow[];
 }
 
-const squash = (text: string) => text.replace(/\s+/g, " ").trim();
-const attribute = (source: string, element: SourceElement, name: string) =>
-  startTagAttributes(source, element.tag).find(attr => attr.name === name)?.value;
 const firstElement = (slot: TemplateSlot) => slot.element.children.find(node => node.type === "element");
 const heading = (slot: TemplateSlot) => /^h[1-6]$/.test(firstElement(slot)?.name ?? "");
-const elementText = (source: string, element: SourceElement) => plainText(source.slice(element.tag.end, element.close?.start ?? element.end));
 
 function siteImage(image: string, siteUrl?: string): string {
   if (!siteUrl) return image;
@@ -44,7 +41,7 @@ function siteImage(image: string, siteUrl?: string): string {
 }
 
 /** Other slots match their component first, then their fallback's classes; an empty match keeps the fallback. */
-function matchSlot(slot: TemplateSlot, template: string, source: string, page: SourceElement[]) {
+function matchSlot(slot: TemplateSlot, template: SourceTree<SourceNode>, tree: SourceTree<SourceNode>, page: SourceElement[]) {
   const fallback = firstElement(slot);
   const parent = slot.element.parent;
   const component = fallback?.name.includes("-") ? fallback : parent?.name.includes("-") ? parent : undefined;
@@ -53,28 +50,29 @@ function matchSlot(slot: TemplateSlot, template: string, source: string, page: S
     if (found) {
       // A slot directly in a component can forward to just one of its slots.
       const forward = component === parent ? slot.forward : undefined;
-      const fills = forward ? found.children.filter(node => node.type === "element" && attribute(source, node, "slot") === forward) : undefined;
-      const text = squash(fills ? fills.map(node => plainText(source.slice(node.start, node.end))).join(" ") : elementText(source, found));
+      const fills = forward ? tree.children(found).filter(node => tree.attribute(node, "slot")?.value === forward) : undefined;
+      const text = plain(fills ? fills.map(node => tree.text(node)).join(" ") : tree.text(found));
       if (text) return { text, matched: `<${component.name}>` };
     }
   }
   // Each of the fallback's classes in turn, its first class first.
-  for (const className of (fallback && attribute(template, fallback, "class")?.split(/\s+/).filter(Boolean)) ?? []) {
-    const found = page.find(element => attribute(source, element, "class")?.split(/\s+/).includes(className));
-    const text = found && elementText(source, found);
+  for (const className of (fallback && template.attribute(fallback, "class")?.value.split(/\s+/).filter(Boolean)) ?? []) {
+    const found = page.find(element => tree.attribute(element, "class")?.value.split(/\s+/).includes(className));
+    const text = found && plain(tree.text(found));
     if (text) return { text, matched: `.${className}` };
   }
   return undefined;
 }
 
 /** A page's title as a card takes it: its h1 (main's first), else its `<title>` without the site's name, else its address's last part. */
-export function pageTitle(source: string, route: string, document = [...descendants(parseSource(source))]): { title: string; from: "h1" | "<title>" | "address" } {
+export function pageTitle(source: string, route: string, tree: SourceTree<SourceNode> = readSource(source)): { title: string; from: "h1" | "<title>" | "address" } {
+  const document = tree.elements() as SourceElement[];
   const main = document.find(element => element.name === "main");
-  const h1 = (main && [...descendants(main.children)].find(element => element.name === "h1")) || document.find(element => element.name === "h1");
-  const h1Text = h1 ? elementText(source, h1) : "";
+  const h1 = (main && (tree.elements(main) as SourceElement[]).find(element => element.name === "h1")) || document.find(element => element.name === "h1");
+  const h1Text = h1 ? plain(tree.text(h1)) : "";
   const titleTag = document.find(element => element.name === "title");
-  const titleText = titleTag ? elementText(source, titleTag).split(/ [·|–—-] /)[0].trim() : "";
-  const title = h1Text || titleText || plainText(route.split("/").filter(Boolean).at(-1) || route);
+  const titleText = titleTag ? plain(tree.text(titleTag)).split(/ [·|–—-] /)[0].trim() : "";
+  const title = h1Text || titleText || plain(readSource(route.split("/").filter(Boolean).at(-1) || route).text());
   return { title, from: h1Text ? "h1" : titleText ? "<title>" : "address" };
 }
 
@@ -101,15 +99,17 @@ export function cardRoles(slots: TemplateSlot[]) {
 /** Map a chosen page's facts to a card's slots; missing facts keep fallbacks. */
 export function cardFill(input: { template: string; page: { route: string; source: string }; siteUrl?: string }): CardFill {
   const { template, page: { source, route }, siteUrl } = input;
-  const document = [...descendants(parseSource(source))];
+  const tree = readSource(source);
+  const document = tree.elements() as SourceElement[];
+  const templateTree = readSource(template);
   const main = document.find(element => element.name === "main");
   const body = document.find(element => element.name === "body");
   const scope = main ?? body;
-  const content = scope ? [...descendants(scope.children)] : document;
-  const { title, from: titleFrom } = pageTitle(source, route, document);
+  const content = scope ? (tree.elements(scope) as SourceElement[]) : document;
+  const { title, from: titleFrom } = pageTitle(source, route, tree);
   const meta = (name: string, value: string) => {
-    const found = document.find(element => element.name === "meta" && attribute(source, element, name)?.toLowerCase() === value);
-    return found ? squash(attribute(source, found, "content") ?? "") : "";
+    const found = document.find(element => element.name === "meta" && tree.attribute(element, name)?.value.toLowerCase() === value);
+    return found ? plain(tree.attribute(found, "content")?.value ?? "") : "";
   };
   const description = meta("name", "description");
   const image = siteImage(meta("property", "og:image"), siteUrl);
@@ -125,18 +125,19 @@ export function cardFill(input: { template: string; page: { route: string; sourc
     if (role === "image" && image) return fill("og:image", { src: image });
     if (role === "link") return fill("address", { href: route, text: `Read about ${title}` });
     if (role === "other" && slot.name) {
-      const match = matchSlot(slot, template, source, content);
+      const match = matchSlot(slot, templateTree, tree, content);
       if (match) return fill("matched", match);
     }
-    const fallback = [...descendants(slot.element.children)];
+    const fallbackTree = readSource(slot.fallback);
+    const fallback = fallbackTree.elements() as SourceElement[];
     if (slot.kind === "image") {
       const img = fallback.find(element => element.name === "img");
-      if (img) row.src = attribute(template, img, "src");
+      if (img) row.src = fallbackTree.attribute(img, "src")?.value;
     } else {
-      row.text = plainText(slot.fallback);
+      row.text = plain(fallbackTree.text());
       if (slot.kind === "link") {
         const link = fallback.find(element => element.name === "a");
-        if (link) row.href = attribute(template, link, "href");
+        if (link) row.href = fallbackTree.attribute(link, "href")?.value;
       }
     }
     return row;
@@ -158,9 +159,6 @@ interface RangeEdit {
 
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeAttribute = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-const elementsOf = (element: SourceElement) => element.children.filter((node): node is SourceElement => node.type === "element");
-const blankText = (source: string, element: SourceElement) =>
-  element.children.every((node) => node.type === "element" || !/[^\t\n\f\r ]/.test(source.slice(node.start, node.end)));
 
 /** Non-overlapping edits; insertions at one place land in the order given. */
 function applyEdits(source: string, edits: RangeEdit[]) {
@@ -183,8 +181,9 @@ function leadOf(source: string, at: number): string | undefined {
  * of its innermost element, as a link to `link` when the title takes the
  * card's link (decision 3).
  */
-function fillElementEdits(source: string, element: SourceElement, row: CardFillRow, link?: string): RangeEdit[] {
-  const inside = (name: string) => (element.name === name ? element : [...descendants(element.children)].find((child) => child.name === name));
+function fillElementEdits(tree: SourceTree<SourceNode>, element: SourceElement, row: CardFillRow, link?: string): RangeEdit[] {
+  const source = tree.source;
+  const inside = (name: string) => (element.name === name ? element : (tree.elements(element) as SourceElement[]).find((child) => child.name === name));
   const text = escapeText(row.text ?? "");
   // All of `holder` becomes one link to `href` with the row's text, keeping the attributes of the link it held.
   const linkIn = (holder: SourceElement, href: string): RangeEdit[] => {
@@ -204,7 +203,7 @@ function fillElementEdits(source: string, element: SourceElement, row: CardFillR
   if (row.role === "link") return linkIn(element, row.href ?? "");
   // The text goes in the innermost element that holds the rest (`<div slot><p>…</p></div>`), not into an image or a line break.
   let target = element;
-  for (let only = elementsOf(target); only.length === 1 && only[0].close && only[0].name !== "a" && blankText(source, target); only = elementsOf(target)) target = only[0];
+  for (let only = tree.children(target) as SourceElement[]; only.length === 1 && only[0].close && only[0].name !== "a" && tree.view.children(target).every(node => node.type === "element" || !/[^\t\n\f\r ]/.test(tree.text(node))); only = tree.children(target) as SourceElement[]) target = only[0];
   if (link !== undefined) return linkIn(target, link);
   return target.close ? [{ start: target.tag.end, end: target.close.start, text }] : [];
 }
@@ -225,18 +224,20 @@ export function cardImageEdits(source: string, img: SourceElement, src: string):
 function newSlotElement(template: string, row: CardFillRow, link?: string): string {
   const name = row.slot ?? "";
   const filled = (markup: string) => {
-    const [first] = parseSource(markup) as SourceElement[];
-    return applyEdits(markup, fillElementEdits(markup, first, row, link));
+    const tree = readSource(markup);
+    const [first] = tree.children() as SourceElement[];
+    return applyEdits(markup, fillElementEdits(tree, first, row, link));
   };
   const copy = slotMarkup(template).find((line) => {
-    const [first] = parseSource(line);
-    return first?.type === "element" && attribute(line, first, "slot") === name;
+    const tree = readSource(line);
+    const [first] = tree.children();
+    return first && tree.attribute(first, "slot")?.value === name;
   });
   if (copy) return filled(copy);
   const fallback = templateSlots(template).find((entry) => entry.name === name)?.fallback ?? "";
-  const nodes = parseSource(fallback);
-  const [only, ...more] = nodes.filter((node): node is SourceElement => node.type === "element");
-  if (only && !more.length && nodes.every((node) => node === only || !/[^\t\n\f\r ]/.test(fallback.slice(node.start, node.end))))
+  const tree = readSource(fallback);
+  const [only, ...more] = tree.children() as SourceElement[];
+  if (only && !more.length && !/[^\t\n\f\r ]/.test(readSource(fallback.slice(0, only.start) + fallback.slice(only.end)).text()))
     return filled(applyEdits(fallback.slice(only.start, only.end), [attributeEdit(fallback, only.tag, "slot", name)].map((edit) => ({ ...edit, start: edit.start - only.start, end: edit.end - only.start }))));
   const slot = `slot="${escapeAttribute(name)}"`;
   if (row.role === "image") return `<img ${slot} src="${escapeAttribute(row.src ?? "")}" alt="">`;
@@ -254,10 +255,11 @@ function newSlotElement(template: string, row: CardFillRow, link?: string): stri
  * content and anything else stay as they are.
  */
 export function cardFillMarkup(card: string, template: string, rows: CardFillRow[]): string {
-  const root = parseSource(card).find((node): node is SourceElement => node.type === "element");
+  const tree = readSource(card);
+  const [root] = tree.children() as SourceElement[];
   if (!root?.close) return card;
-  const kids = elementsOf(root);
-  const slotted = (name: string) => kids.find((kid) => (attribute(card, kid, "slot") ?? "") === name);
+  const kids = tree.children(root) as SourceElement[];
+  const slotted = (name: string) => kids.find((kid) => (tree.attribute(kid, "slot")?.value ?? "") === name);
   const added = rows.find((row) => row.status === "added")?.href;
   const order = templateSlots(template).map((slot) => slot.name);
   const newline = card.includes("\r\n") ? "\r\n" : "\n";
@@ -266,7 +268,7 @@ export function cardFillMarkup(card: string, template: string, rows: CardFillRow
     if (row.status !== "filled" || !row.slot) continue;
     const link = row.role === "title" ? added : undefined;
     const own = slotted(row.slot);
-    if (own) { edits.push(...fillElementEdits(card, own, row, link)); continue; }
+    if (own) { edits.push(...fillElementEdits(tree, own, row, link)); continue; }
     const markup = newSlotElement(template, row, link);
     // Before the next slot's element in template order, else after the one before, else at the end.
     const at = order.indexOf(row.slot);

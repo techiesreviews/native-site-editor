@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFill, cardFillMarkup, itemPageFill } from "../src/page-builder/card-fill.ts";
+import { cardFill, cardFillMarkup, itemPageFill, pageTitle } from "../src/page-builder/card-fill.ts";
 
 const template = `<article>
   <card-note><slot name="note" slot="text"><p>Project</p></slot></card-note>
@@ -340,4 +340,26 @@ test("an empty paragraph after the title is the plain card's text place too", ()
   const result = itemPageFill('<article><h3>New card</h3><p></p><p>Second</p></article>', "card", "Oak", "/oak/", plainFacts('<h1>Oak</h1><meta name="description" content="Description">'))!;
   assert.equal(result.markup, '<article><h3><a href="/oak/">Oak</a></h3><p>Description</p><p>Second</p></article>');
   assert.equal(result.rows.find(row => row.role === "body")!.status, "filled");
+});
+
+for (const heading of ["<h1>Caf&eacute; Rio</h1>", "<title>Caf&eacute; Rio · Site</title>"]) {
+  test(`page titles and fill text decode character references from ${heading}`, () => {
+    const page = `<html><head><meta name="description" content="Caf&eacute; by the river."></head><body>${heading}<card-note><p slot="text">Caf&eacute; note</p></card-note></body></html>`;
+    assert.equal(pageTitle(page, route).title, "Café Rio");
+    const rows = fill(page);
+    assert.equal(rows.find(row => row.role === "title")?.text, "Café Rio");
+    assert.equal(rows.find(row => row.role === "link")?.text, "Read about Café Rio");
+    assert.equal(rows.find(row => row.role === "body")?.text, "Café by the river.");
+    assert.equal(rows.find(row => row.slot === "note")?.text, "Café note");
+    const markup = cardFillMarkup('<card-project></card-project>', template, rows);
+    assert.ok(markup.includes("Café Rio"));
+    assert.ok(markup.includes("Café by the river."));
+    assert.ok(!markup.includes("&amp;eacute;"));
+  });
+}
+
+test("kept fallback text decodes character references", () => {
+  const rows = fill('<h1>Page</h1>', template.replace("Project", "Caf&eacute; note").replace("No description yet.", "Caf&eacute; body"));
+  assert.equal(rows.find(row => row.slot === "note")?.text, "Café note");
+  assert.equal(rows.find(row => row.role === "body")?.text, "Café body");
 });
