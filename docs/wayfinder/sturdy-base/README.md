@@ -44,6 +44,20 @@ Rules the runtime (DOM) and the editor (source) both apply live once in `src/pag
 
 **Decided by the lead (2026-10-10), for slices 21–24:** the browser's reading wins for blank text around slots and for slot names (slice 21); the single inline-formatting list is `card-grid.ts`'s, including `data var del ins` (slice 24; paragraphs with those tags become typeable on the canvas); shared rules live in `src/page-builder/rules/`; the runtime stays plain JS this week, checked by slice 27's message-name test.
 
+## 3. One Block move
+
+One module (`src/page-builder/block-move.ts`) answers "what does this press move, where may it go, and move it" for every way in: drags (canvas, edit bar name, Page Structure rows), Alt+arrows (canvas, bar, rows), the Section Move buttons and their palette commands, and MCP `move_section`. Inside: one engine (`nativeMoveEdit`), page and template rules as two adapters (`block-move-rules.ts`, replacing `native-move-choices.ts`), one guarded edit per move with items-slot templates read through `r`, Undo/Redo selection, and the moved path after. Pointer geometry (drop-target, tree-drop, section-snap, block-drag) stays out. Design: `~/Projects/native-site-editor/.scratch/sturdy/block-move-design.md`.
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [30 Module and its page/template rules (no callers)](tickets/30-block-move-module.md) | M | claude ★ | 17 |
+| [31 Alt+arrows, the bar's Section buttons and Page Structure rows](tickets/31-block-move-keys-bar-structure.md) | M-L | claude ★ | 30 |
+| [32 Drags: canvas, edit bar name, Page Structure rows](tickets/32-block-move-drags.md) | M | sol | 30 |
+| [33 MCP move_section; dead card Move buttons and swapEdits go](tickets/33-block-move-mcp-and-dead-card-moves.md) | S | sol | 31 |
+| [34 Guard test: one move engine, one page/template choice](tickets/34-block-move-guard-test.md) | S | sol | 31-33 |
+
+31 and 32 may run together (main.ts regions 520-614/1612-1722 vs 923-958). No file of 26/27 is edited (native-preview.ts keeps its `onMove`/`onBlockPress` handlers; the palette runs the bar's buttons as before); only main.ts is shared, in other regions. Run 31 before 18, or 18 allowlists the `itemsSlots()` peeks in page-structure-controller (712, 779) and main.ts (1693). Lead decides before 31-33 (design section 8, each recommended): B1 template Sections move by the template rules from the canvas and bar too; B2 a non-Section Structure row opens its page and moves, as Sections do; B3 Undo of every move reselects the block where it was; B4 Structure focus follows the real path after a Section or pending move; B5 Section Move buttons disabled at a slot's edge; B6 a row press on a Block that does not move starts no drag.
+
 ## 5. One Variant lookup
 
 One module in `shared/` answers which Variants a tag (or `.btn`) has on the site, from the stylesheets and scripts the pages actually link, for the edit bar, the card looks, the code pane and `get_site` alike, behind a small files adapter (editor drafts, Worker `SiteFiles`).
