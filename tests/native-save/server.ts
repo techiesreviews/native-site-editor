@@ -1290,8 +1290,9 @@ function workerMiddleware(): Connect.NextHandleFunction {
         // Simulate an external commit that advances the branch, so the next save
         // of that file with a now-stale baseSha conflicts.
         // `delete: true` removes the file instead; `repo` names a fixture
-        // repository (such as "native-cards") to commit to instead of the demo's.
-        const { path: filePath, content, delete: remove, repo } = JSON.parse(bodyBuffer.toString() || "{}");
+        // repository (such as "native-cards") to commit to instead of the demo's;
+        // `base64` gives the file's bytes instead of `content` (bytes that are not UTF-8 text).
+        const { path: filePath, content, base64, delete: remove, repo } = JSON.parse(bodyBuffer.toString() || "{}");
         const slot = sessions.get(id)!;
         const fixture = repo === undefined ? undefined : FIXTURE_REPOS.find((item) => item.repo.name === repo);
         if (repo !== undefined && !fixture) {
@@ -1303,10 +1304,18 @@ function workerMiddleware(): Connect.NextHandleFunction {
           slot.fixtureGits.set(fixture.repo.name, cloneGit(initialFixtureGits.get(fixture.repo.name)!));
         }
         const git = fixture ? slot.fixtureGits!.get(fixture.repo.name)! : slot.git!;
+        let bytesSha: string | undefined;
+        if (!remove && typeof base64 === "string") {
+          const bytes = Buffer.from(base64, "base64");
+          bytesSha = blobSha(bytes);
+          git.blobs.set(bytesSha, bytes);
+        }
         const tree = writeTree(git, git.commits.get(git.head)!.tree, [
           remove
             ? { segments: String(filePath).split("/"), mode: "100644", sha: null }
-            : { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
+            : bytesSha
+              ? { segments: String(filePath).split("/"), mode: "100644", sha: bytesSha }
+              : { segments: String(filePath).split("/"), mode: "100644", content: String(content) },
         ]);
         const commit = commitSha(tree + ":external:" + Date.now());
         git.commits.set(commit, { tree, parents: [git.head], message: `Edit ${filePath} on GitHub`, date: new Date().toISOString() });

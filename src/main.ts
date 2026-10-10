@@ -37,7 +37,7 @@ import { createAgentController } from "./controllers/agent-controller";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
 import { type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, withSiteIndexed, type SiteIndexGate } from "./native-boot";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -1809,6 +1809,12 @@ const nativeComponentStyleRequests = new Set<string>();
 const nativeStyleFiles = new Set<string>();
 const nativeMissingStyleFiles = new Set<string>();
 const nativeStyleFileRequests = new Set<string>();
+// Files GitHub cannot give as text (not UTF-8, binary, over 1 MB), with why.
+// Every read of the site skips them: a stylesheet among them is left out of
+// the preview with a warning, never shown as a preview error.
+const nativeUnreadableFiles = new Map<string, string>();
+// The project's own warnings (shared/native-project.ts), shown with the unreadable stylesheets'.
+let nativeProjectWarnings: string[] = [];
 let nativeSourcesRequest = 0;
 let nativeTextIndexing: Promise<boolean> | undefined;
 let nativeTextIndexScope = "";
@@ -2077,7 +2083,7 @@ function refreshNativeRoutes() {
   const parsed = resolveNativeProject(nativeFiles());
   if (!parsed.ok) { errorMessage(new Error(parsed.error)); return; }
   nativeSite = parsed.site;
-  nativePreview?.setWarnings(parsed.warnings);
+  showNativeWarnings(parsed.warnings);
   nativePreview?.activate(parsed.site);
   updateNativePreviewSources();
   updateAgentContext();
@@ -2202,7 +2208,7 @@ async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => 
     const sources = nativeSources(site);
     const linked = nativeLinkedSheets(site, sources);
     const wanted = [...new Set([...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path]).imported])].filter((path) =>
-      !Object.hasOwn(sources, path) && !nativeMissingStyleFiles.has(path) && !nativeStyleFileRequests.has(path));
+      !Object.hasOwn(sources, path) && !nativeMissingStyleFiles.has(path) && !nativeUnreadableFiles.has(path) && !nativeStyleFileRequests.has(path));
     if (!wanted.length) break;
     wanted.forEach((path) => nativeStyleFileRequests.add(path));
     try {
@@ -2222,10 +2228,14 @@ async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => 
         else if (entry) found.push({ path, sha: entry.sha });
         else nativeMissingStyleFiles.add(path);
       });
-      const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
+      const { texts, unreadable } = await readNativeTexts(repo, found);
       if (!live()) return false;
+      // One that cannot be read as text is left out (with a warning), not reported as missing.
+      if (unreadable.length) { noteNativeUnreadable(unreadable); loaded = true; }
       for (const file of found) {
-        nativeBaseSources.set(file.path, contents[file.sha]);
+        const text = texts.get(file.path);
+        if (text === undefined) continue;
+        nativeBaseSources.set(file.path, text);
         nativeStyleFiles.add(file.path);
         loaded = true;
       }
@@ -2257,7 +2267,7 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
       if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
     for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
     const wanted = [...new Set([...shown.files, ...(first ? extra : [])])].filter((path) =>
-      !held(path) && !nativeMissingStyleFiles.has(path) && !nativeShownRequests.has(path));
+      !held(path) && !nativeMissingStyleFiles.has(path) && !nativeUnreadableFiles.has(path) && !nativeShownRequests.has(path));
     // Predicted files (the site's own stylesheets) come in the same wave but
     // apart: one that cannot be read (not UTF-8) fails only its own batch,
     // and a sheet a page links is then read in a later round as usual.
@@ -2278,11 +2288,17 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
       const found = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
       // A linked stylesheet that is not in the branch is reported by the preview.
       wanted.forEach((path, index) => { if (!entries[index] && /\.css$/i.test(path)) nativeMissingStyleFiles.add(path); });
-      const contents = found.length ? await readFiles(repo, found.map((file) => file.sha)) : {};
+      const { texts, unreadable } = await readNativeTexts(repo, found);
       if (!live()) return false;
+      // A stylesheet that cannot be read as text is left out of the page; a
+      // page or template the page needs cannot be, so it fails the read.
+      const page = unreadable.find((file) => !/\.css$/i.test(file.path));
+      if (page) throw new Error(`${page.path}: ${page.message}`);
+      if (unreadable.length) { noteNativeUnreadable(unreadable); loaded = true; }
       for (const file of found) {
-        if (nativeBaseSources.has(file.path) || contents[file.sha] === undefined) continue;
-        nativeBaseSources.set(file.path, contents[file.sha]);
+        const text = texts.get(file.path);
+        if (nativeBaseSources.has(file.path) || text === undefined) continue;
+        nativeBaseSources.set(file.path, text);
         loaded = true;
       }
       if (await guessing) loaded = true;
@@ -2306,12 +2322,14 @@ async function readNativePredicted(repo: string, paths: string[], live: () => bo
     if (!live()) return false;
     const found = paths.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
     if (!found.length) return false;
-    const contents = await readFiles(repo, found.map((file) => file.sha));
+    const { texts, unreadable } = await readNativeTexts(repo, found);
     if (!live()) return false;
+    noteNativeUnreadable(unreadable);
     let read = false;
     for (const file of found) {
-      if (nativeBaseSources.has(file.path) || contents[file.sha] === undefined) continue;
-      nativeBaseSources.set(file.path, contents[file.sha]);
+      const text = texts.get(file.path);
+      if (nativeBaseSources.has(file.path) || text === undefined) continue;
+      nativeBaseSources.set(file.path, text);
       read = true;
     }
     return read;
@@ -2644,6 +2662,7 @@ function deactivateNative() {
   nativeStyleFiles.clear();
   nativeMissingStyleFiles.clear();
   nativeStyleFileRequests.clear();
+  nativeUnreadableFiles.clear();
   nativeShownRequests.clear();
   nativeTextIndexing = undefined;
   nativeTextIndexed = false;
@@ -2793,6 +2812,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   nativeStyleFiles.clear();
   nativeMissingStyleFiles.clear();
   nativeStyleFileRequests.clear();
+  noteNativeUnreadable(undefined);
   nativeShownRequests.clear();
   nativeAssets.clear();
   nativeMissingAssets.clear();
@@ -2848,7 +2868,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   pageStructure?.refreshMeta();
   updateCurrentPageLabel();
   nativePreview?.setError(undefined);
-  nativePreview?.setWarnings(parsed.warnings);
+  showNativeWarnings(parsed.warnings);
   nativePreview?.activate(site);
   nativePreview?.update({
     sources: nativeSources(),
@@ -2996,17 +3016,21 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
   const files = nativeFiles(scope).filter((path) => isNativeTextFile(path)).slice(0, 2000);
   const wanted = files.filter((path) => {
     const draft = scope ? draftStore().get(scope, path) : undefined;
-    return !nativeBaseSources.has(path) && draft?.baseSha !== null && !draft?.deleted;
+    return !nativeBaseSources.has(path) && !nativeUnreadableFiles.has(path) && draft?.baseSha !== null && !draft?.deleted;
   });
   const entries = await Promise.all(wanted.map((path) => findEntry(path)));
   if (!live() || nativeSite !== site) return false;
   const sources = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
-  const contents = sources.length ? await readFiles(repo.full_name, sources.map((source) => source.sha)) : {};
+  // A file GitHub cannot give as text is skipped: the index is complete
+  // without it, and whatever needs its text says so where it is used.
+  const { texts, unreadable } = await readNativeTexts(repo.full_name, sources);
   if (!live() || nativeSite !== site) return false;
+  if (unreadable.length) { noteNativeUnreadable(unreadable); nativePreviewBehind = true; }
   const loaded: string[] = [];
   for (const source of sources) {
-    if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path)) continue;
-    nativeBaseSources.set(source.path, contents[source.sha]);
+    const text = texts.get(source.path);
+    if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path) || text === undefined) continue;
+    nativeBaseSources.set(source.path, text);
     loaded.push(source.path);
   }
   if (loaded.length) {
@@ -3198,6 +3222,25 @@ function readFile(repo: string, sha: string): Promise<string> {
 // reused rather than fetched twice.
 async function readFiles(repo: string, shas: string[]): Promise<Record<string, string>> {
   return readFileTexts(api, fileContents, fileContentsLimit, repo, shas);
+}
+// The native site's reads: files GitHub cannot give as text are named, not thrown.
+function readNativeTexts(repo: string, files: { path: string; sha: string }[]) {
+  return readSiteTexts(files, (shas) => readFiles(repo, shas));
+}
+// Remembers files that cannot be read as text (none: forgets them all): the
+// preview leaves them out quietly, and a stylesheet among them is a warning.
+function noteNativeUnreadable(files: UnreadableFile[] | undefined) {
+  if (!files) nativeUnreadableFiles.clear();
+  else if (!files.length) return;
+  for (const file of files ?? []) nativeUnreadableFiles.set(file.path, file.message);
+  nativePreview?.setUnreadable([...nativeUnreadableFiles.keys()]);
+  showNativeWarnings();
+}
+function showNativeWarnings(projectWarnings = nativeProjectWarnings) {
+  nativeProjectWarnings = projectWarnings;
+  const sheets = [...nativeUnreadableFiles].filter(([path]) => /\.css$/i.test(path))
+    .map(([path, message]) => `${path}: ${message} The preview shows the site without it.`);
+  nativePreview?.setWarnings([...projectWarnings, ...sheets]);
 }
 
 function options(

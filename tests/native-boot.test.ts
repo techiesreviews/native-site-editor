@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 
 const site: NativeSite = {
@@ -138,4 +138,55 @@ test("a context built while the repository changed is built again, and given up 
   assert.equal(value, "repo-b");
   assert.equal(builds, 2);
   await assert.rejects(withSiteIndexed(gate, async () => { state.key += "!"; }), /changed meanwhile/);
+});
+
+// The text index's read (and the boot's): GitHub refuses a whole batch when
+// one file in it is not UTF-8 text (415) or over the text limit (413).
+class Refused extends Error { constructor(public status: number, message: string) { super(message); } }
+function fakeBatches(texts: Record<string, string>, refuse: Record<string, Refused>) {
+  const asked: string[][] = [];
+  const read = async (shas: string[]) => {
+    asked.push([...shas]);
+    const bad = shas.find((sha) => refuse[sha]);
+    if (bad) throw refuse[bad];
+    return Object.fromEntries(shas.map((sha) => [sha, texts[sha]]));
+  };
+  return { asked, read };
+}
+
+test("the text index skips a file GitHub cannot give as text and reads the rest", async () => {
+  const files = ["index.html", "about/index.html", "styles/site.css", "styles/latin1.css", "styles/tokens.css"].map((path, index) => ({ path, sha: `sha${index}` }));
+  const texts = Object.fromEntries(files.map((file) => [file.sha, `text of ${file.path}`]));
+  const { asked, read } = fakeBatches(texts, { sha3: new Refused(415, "This file is not UTF-8 text.") });
+  const result = await readSiteTexts(files, read);
+  assert.deepEqual([...result.texts.keys()].sort(), ["about/index.html", "index.html", "styles/site.css", "styles/tokens.css"]);
+  assert.equal(result.texts.get("styles/site.css"), "text of styles/site.css");
+  assert.deepEqual(result.unreadable, [{ path: "styles/latin1.css", message: "This file is not UTF-8 text." }]);
+  // Halved until the refused file is alone: a few batches, not one read per file.
+  assert.ok(asked.length < files.length + 2, `${asked.length} reads`);
+  assert.ok(asked.some((shas) => shas.length === 1 && shas[0] === "sha3"));
+});
+
+test("the text index reads files that share a blob once, and skips every path of a refused one", async () => {
+  const files = [{ path: "a.css", sha: "same" }, { path: "b.css", sha: "same" }, { path: "c.css", sha: "big" }, { path: "d.css", sha: "ok" }];
+  const { read } = fakeBatches({ same: "x", ok: "y" }, { big: new Refused(413, "Text files open up to 1 MB.") });
+  const result = await readSiteTexts(files, read);
+  assert.deepEqual(Object.fromEntries(result.texts), { "a.css": "x", "b.css": "x", "d.css": "y" });
+  assert.deepEqual(result.unreadable.map((file) => file.path), ["c.css"]);
+});
+
+test("any other failed read still fails the text index", async () => {
+  const files = [{ path: "a.css", sha: "a" }, { path: "b.css", sha: "b" }];
+  const { read } = fakeBatches({ a: "x" }, { b: new Refused(500, "GitHub did not answer.") });
+  await assert.rejects(readSiteTexts(files, read), /GitHub did not answer/);
+  await assert.rejects(readSiteTexts(files, async () => { throw new Error("Failed to fetch"); }), /Failed to fetch/);
+  assert.equal(unreadableAsText(new Refused(415, "Binary file. Text preview is unavailable.")), true);
+  assert.equal(unreadableAsText(new Refused(401, "Sign in again.")), false);
+  assert.equal(unreadableAsText(new Error("Could not read this file.")), false);
+});
+
+test("nothing to read asks for nothing", async () => {
+  const { asked, read } = fakeBatches({}, {});
+  assert.deepEqual(await readSiteTexts([], read), { texts: new Map(), unreadable: [] });
+  assert.deepEqual(asked, []);
 });

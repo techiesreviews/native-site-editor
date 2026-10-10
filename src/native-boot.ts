@@ -166,3 +166,50 @@ export function nativeBootStyleExtras(
   }
   return out;
 }
+
+/**
+ * Whether a read failed because of the file itself: GitHub cannot give it as
+ * text (not UTF-8, binary: 415) or it is over the text limit (413). Anything
+ * else (the network, sign-in, rate limits) is a failed read.
+ */
+export function unreadableAsText(error: unknown): boolean {
+  const status = typeof error === "object" && error !== null ? (error as { status?: unknown }).status : undefined;
+  return status === 413 || status === 415;
+}
+
+/** A file whose text the site's reads leave out, with why. */
+export interface UnreadableFile { path: string; message: string }
+
+/**
+ * The texts of `files` (path and blob SHA), read in batches (`read`). One
+ * file GitHub cannot give as text fails its whole batch, so a refused batch
+ * is halved until that file is alone: it is then left out and named in
+ * `unreadable`, and the rest is read. Any other failure throws.
+ */
+export async function readSiteTexts(
+  files: readonly { path: string; sha: string }[],
+  read: (shas: string[]) => Promise<Record<string, string>>,
+): Promise<{ texts: Map<string, string>; unreadable: UnreadableFile[] }> {
+  const bySha = new Map<string, string>();
+  const refused = new Map<string, string>();
+  async function attempt(shas: string[]): Promise<void> {
+    try {
+      for (const [sha, text] of Object.entries(await read(shas))) bySha.set(sha, text);
+    } catch (error) {
+      if (!unreadableAsText(error)) throw error;
+      if (shas.length === 1) { refused.set(shas[0], error instanceof Error ? error.message : "This file cannot be read as text."); return; }
+      const half = Math.ceil(shas.length / 2);
+      await Promise.all([attempt(shas.slice(0, half)), attempt(shas.slice(half))]);
+    }
+  }
+  const shas = [...new Set(files.map((file) => file.sha))];
+  if (shas.length) await attempt(shas);
+  const texts = new Map<string, string>();
+  const unreadable: UnreadableFile[] = [];
+  for (const file of files) {
+    const text = bySha.get(file.sha);
+    if (text !== undefined) texts.set(file.path, text);
+    else if (refused.has(file.sha)) unreadable.push({ path: file.path, message: refused.get(file.sha)! });
+  }
+  return { texts, unreadable };
+}

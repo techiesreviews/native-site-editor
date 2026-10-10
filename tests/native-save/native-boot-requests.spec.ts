@@ -172,9 +172,8 @@ test('an unreadable stylesheet no page links does not hold the preview back', as
   await page.route(/\/api\/files?\?/, async (route) => {
     const params = new URL(route.request().url()).searchParams;
     const asked = [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])];
-    // The boot's predicted read only: the text index reads every sheet after the paint, and a
-    // refusal then fails the index (its alert would race the check below).
-    if (asked.includes(unused) && !refused) { refused++; await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'This file is not UTF-8 text.' }) }); return; }
+    // As GitHub's text read refuses it (415), the boot's predicted read and the text index's alike.
+    if (asked.includes(unused)) { refused++; await route.fulfill({ status: 415, contentType: 'application/json', body: JSON.stringify({ error: 'This file is not UTF-8 text.' }) }); return; }
     await route.continue();
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);

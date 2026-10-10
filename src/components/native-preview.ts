@@ -303,6 +303,7 @@ function composeStyles(
   assets: Record<string, string>,
   route: string,
   alone: string | undefined,
+  unreadable: ReadonlySet<string> = new Set(),
 ) {
   // Each component rule also styles what a page slots in (shared/slotted-css.ts).
   const stylesByComponent: Record<string, { path: string; source: string }> = {};
@@ -318,7 +319,8 @@ function composeStyles(
   const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets), wrappers, importer, kind }));
   const page = site.routes[alone ? "/" : route] ?? "";
   const styleErrors = [
-    ...linked.filter((path) => sources[path] === undefined).map((path) => `${page} links ${path}, which is missing from this branch.`),
+    // A sheet the host could not read as text is not missing: it warns about it itself.
+    ...linked.filter((path) => sources[path] === undefined && !unreadable.has(path)).map((path) => `${page} links ${path}, which is missing from this branch.`),
     ...expanded.errors,
   ];
   return { styles, styleErrors, componentStyles: stylesByComponent };
@@ -343,6 +345,7 @@ function composePayload(
   selectText: { start: number; end: number } | undefined,
   hash?: string,
   editableTemplatePath?: string,
+  unreadable?: ReadonlySet<string>,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -363,7 +366,7 @@ function composePayload(
     componentPaths[tag] = filePath;
     components[tag] = sources[filePath] ?? "";
   }
-  const { styles, styleErrors, componentStyles: stylesByComponent } = composeStyles(site, sources, componentStyles, assets, route, alone);
+  const { styles, styleErrors, componentStyles: stylesByComponent } = composeStyles(site, sources, componentStyles, assets, route, alone, unreadable);
   // Section components count as sections when the runtime looks for places to insert one.
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
   // Relative image paths resolve against the page's URL, as on the live site.
@@ -514,6 +517,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
   let editableTemplatePath: string | undefined;
+  let unreadable: ReadonlySet<string> = new Set();
   /**
    * Measure nested containers at a frame-viewport point, or all page bands in <main>:
    * the report on `path` (the page, or in Edit component mode the template edited)
@@ -622,7 +626,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!site || !frameState.ready || !frameState.active) return;
     if (livePatch && (sources[livePatch.path] !== livePatch.base || othersChanged(livePatch.others, livePatch.path))) dropPatch();
     const held = selectNode?.source !== undefined && sources[selectNode.path] !== selectNode.source ? selectNode : undefined;
-    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, link.context(), held ? undefined : selectNode, selectText, scrollHash, editableTemplatePath);
+    const payload = composePayload(site, sources, componentStyles, assets, assetChanges(), route, alone, link.context(), held ? undefined : selectNode, selectText, scrollHash, editableTemplatePath, unreadable);
     selectNode = held;
     selectText = undefined;
     scrollHash = undefined;
@@ -1229,6 +1233,10 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** Clear the runtime outline and every host selection surface together. */
     clearSelection() { clearSelection(); },
+    /** Files the host could not read as text: a page linking one of them is drawn without it, with no error. */
+    setUnreadable(paths: readonly string[]) {
+      unreadable = new Set(paths);
+    },
     setError(message: string | undefined) {
       loadError = Boolean(message);
       showBanner(message, true);
@@ -1280,6 +1288,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       site = undefined;
       shownRoute = undefined;
       editableTemplatePath = undefined;
+      unreadable = new Set();
       pageBuilder.setViewing(Boolean(viewing));
       componentStyles = {};
       loadError = false;
