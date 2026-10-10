@@ -172,8 +172,9 @@ test("a selected link inside a paragraph gets Address and Remove link", async ({
   await bar(page).getByRole("button", { name: "Bold" }).focus();
   await page.keyboard.press("ControlOrMeta+Z");
   await expect.poll(() => editorText(page)).toBe(linked("/"));
-  await frame.locator(".hero h1").click();
-  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
+  // (The image, whose bar leaves the paragraph's first line uncovered.)
+  await frame.locator(".hero img").click();
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
   await frame.locator(".hero p.lead a").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Link");
   await expect(bar(page).getByRole("button", { name: "Address" })).toBeVisible();

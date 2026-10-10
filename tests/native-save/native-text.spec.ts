@@ -107,6 +107,10 @@ test("text inside a component template is typed into that template", async ({ pa
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
   await expect.poll(async () => typeof (await mounted(footerPath))).toBe("string");
   expect(await mounted(footerPath)).toBe(footerSource);
+  // A click selects the paragraph once the mode has settled; a double-click types in it.
+  await footer.click();
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(footer).not.toHaveAttribute("contenteditable", /.+/);
   await footer.dblclick();
   await expect(footer).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("Home");
