@@ -266,6 +266,20 @@ test("two edits, a create and a delete are one undo step; Undo restores all and 
   assert.deepEqual(m.selected.at(-1), { path: "index.html", node: [0, 1] });
 });
 
+test("select.historyOnly: even one file takes the receipt, the step leaves the selection alone, Undo and Redo select", async () => {
+  const { m, edits } = setup();
+  const select = { before: { path: "index.html", node: [0, 0] }, after: { path: "index.html", node: [0, 1] }, historyOnly: true };
+  const outcome = await edits.run(r => ({ edits: new Map([["index.html", r.source("index.html")!.replace("Hello", "Hi")]]), select, done: "d", undone: "u" }));
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.deepEqual(m.steps(), ["operation"]);
+  assert.deepEqual(m.selected, []);
+  assert.equal(m.undo(), true);
+  assert.deepEqual(m.selected.at(-1), { path: "index.html", node: [0, 0] });
+  assert.equal(m.redo(), true);
+  assert.deepEqual(m.selected.at(-1), { path: "index.html", node: [0, 1] });
+  assert.throws(() => edits.now(r => ({ edits: new Map([["index.html", r.source("index.html") + "!"]]), select, done: "d", undone: "u" })), /historyOnly/);
+});
+
 test("Undo refuses, with the receipt's message, once a file of the step moved since", async () => {
   const { m, edits } = setup();
   await edits.run(r => ({ edits: new Map([["index.html", r.source("index.html") + "!"], ["about.html", r.source("about.html") + "!"]]), done: "d", undone: "u" }));

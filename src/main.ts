@@ -677,6 +677,7 @@ function mountComponentTools() {
     index: ensureNativeTextIndex,
     loaderPlan: nativeComponentLoaderPlan,
     operation: op => applyNativeOperation(op),
+    edits: guardedEdits,
     editor: () => editorModule,
     preview: () => nativePreview,
     currentPath: () => appStore.openFile.value,

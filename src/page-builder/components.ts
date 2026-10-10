@@ -1,5 +1,6 @@
-import { templateRemoval } from "./remove";
 import type { ComponentLoaderPlan } from "./component-loader";
+import { componentRenameStep, slotChipPlan, templateRemovalPlan, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
+import { STALE_MESSAGE, type GuardedEdits, type Outcome } from "../guarded-edit";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
 // Components, first class (docs/page-builder/components.md): what the page
@@ -71,8 +72,6 @@ import {
   templateStructure,
   templateRoot,
   type TemplateStructureItem,
-  slotChange,
-  slotChangePages,
   slotStates,
   slotTextEdit,
   slotValue,
@@ -179,6 +178,8 @@ export interface ComponentDeps {
   /** Applies template edits (and moves) as one history step; page edits can join the same map. */
   operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; moves?: { from: string; to: string }[]; creates?: { path: string; content: string }[]; done: string; undone: string;
     current?: () => boolean; selection?: { before?: { path: string; node: number[] }; after: { path: string; node: number[] } } }) => Promise<string | undefined>;
+  /** Guarded edits (src/guarded-edit.ts): the slot chip, template removals and renames are its plans. */
+  edits: GuardedEdits;
 }
 
 /** An instance found for a selection: where it is written and what it holds. */
@@ -529,13 +530,13 @@ export function createComponentTools(deps: ComponentDeps) {
 
   function slotMenu(target: ElementMenuTarget): MenuItem[] {
     const mode = editMode?.active();
-    const source = deps.sources()[target.path], revision = deps.revision(), entry = explicitTemplate;
+    const source = deps.sources()[target.path], stamp = deps.edits.stamp();
     // The node path must have been read against the template's current bytes.
     if (!mode || target.path !== mode.templatePath || !target.node?.length || source === undefined || target.paintedSource !== source) return [];
     const state = templateChip(target.node);
     return slotMenuItems(state).map(label => ({ label, run: () => {
-      if (editMode?.active()?.templatePath !== mode.templatePath || explicitTemplate !== entry
-        || deps.revision() !== revision || deps.sources()[target.path] !== source) {
+      // The mode's opening, the repository and the page shown are the menu's (the stamp), and so are the template's bytes.
+      if (editMode?.active()?.templatePath !== mode.templatePath || !stamp.holds() || deps.sources()[target.path] !== source) {
         deps.announce("The template changed meanwhile; select the part again.");
         return;
       }
@@ -825,49 +826,36 @@ export function createComponentTools(deps: ComponentDeps) {
       } };
   }
 
+  /** A step that went stale because the action's context went (the repository, the page shown, the mode): nothing to say. */
+  const quiet = (outcome: Outcome) => !outcome.ok && outcome.reason === "stale"
+    && ["scope", "generation", "version-view", "route", "edit-mode", "guard"].includes(outcome.changed as string);
+
   function applyChip(event: Event) {
     const report = (event as CustomEvent<SlotChipReport>).detail;
     const mode = editMode?.active();
     const refuseChip = (reason: string) => { event.preventDefault(); refuse(reason); };
     if (!mode || report.template !== mode.templatePath || deps.currentPath() !== mode.templatePath
       || explicitTemplate?.revision !== deps.revision()) { refuseChip("Select a part in Edit component mode before changing its slot."); return; }
-    const source = deps.sources()[report.template];
-    if (source === undefined || !deps.operation) { refuseChip("The template is not available for editing."); return; }
-    const plan = slotChange(source, report, tag => templateOf(tag)?.source);
-    if ("error" in plan) { refuseChip(plan.error); return; }
-    const revision = deps.revision(), entry = explicitTemplate, selected = deps.selection();
-    const current = () => deps.revision() === revision && explicitTemplate === entry
-      && deps.currentPath() === report.template && editMode?.active()?.templatePath === report.template;
-    const change = plan.change;
-    // Every page (and other template) using the component follows in the same step (decided at handoff 6).
-    const now = site(), sources = deps.sources(), tag = tagOfFile(report.template);
-    const files = Object.fromEntries([...Object.values(now?.routes ?? {}), ...Object.values(now?.components ?? {})]
-      .filter((path) => path !== report.template && sources[path] !== undefined).map((path) => [path, sources[path]]));
-    const pages = tag ? slotChangePages(files, tag, plan.source, change) : new Map<string, string>();
-    const name = change.kind === "renamed" ? undefined : change.name || "items";
-    const pageCount = [...pages.keys()].filter((path) => Object.values(now?.routes ?? {}).includes(path)).length;
-    const counted = [[pageCount, "page"], [pages.size - pageCount, "component"]].filter(([count]) => count)
-      .map(([count, what]) => `${count} ${what}${count === 1 ? "" : "s"}`);
-    const followed = counted.length ? ` ${counted.join(" and ")} using it ${pages.size === 1 ? "follows" : "follow"}.` : "";
-    const done = (change.kind === "made-slot" ? `Made “${name}” a slot.` : change.kind === "made-fixed" ? `Made “${name}” fixed.`
-      : `Renamed slot “${change.from || "items"}” to “${change.to}”.`) + followed;
-    const undone = change.kind === "made-slot" ? `Undid making “${name}” a slot.` : change.kind === "made-fixed" ? `Undid making “${name}” fixed.`
-      : `Undid renaming slot “${change.from || "items"}” to “${change.to}”.`;
-    // Let every listener refuse a cancelable rename before the operation starts.
-    void Promise.resolve().then(async () => {
-      if (event.defaultPrevented || !current()) return;
-      // Every file the plan read is proven, the unchanged ones too (one that gained an instance or a fill meanwhile refuses).
-      const read = Object.entries(files).filter(([, text]) => text);
-      const error = await deps.operation!({ expectedSources: new Map([[report.template, source], ...read]),
-        edits: new Map([[report.template, plan.source], ...pages]), done, undone, current,
-        selection: { before: { path: report.template, node: [...report.node] }, after: { path: report.template, node: plan.select } } });
-      if (!current()) return;
-      if (error) { refuse(error); editMode?.resetChip(); }
-      else if (report.action === "toggle") {
-        if (change.kind === "made-fixed" && change.name) keptNames.set(keptKey(report.template, plan.source, plan.select), change.name);
+    // A rename refused is told now, so the chip shows its old name again.
+    const peeked = slotChipPlan(deps.edits.peek, report);
+    if ("refuse" in peeked) { refuseChip(peeked.refuse); return; }
+    const stamp = deps.edits.stamp(), selected = deps.selection();
+    let planned: SlotChipPlanned | undefined;
+    // Every listener may refuse a cancelable rename before the step is written (the guard, after the plan's wait).
+    void deps.edits.run(r => {
+      const plan = slotChipPlan(r, report);
+      if (!("refuse" in plan)) planned = plan;
+      return plan;
+    }, { since: stamp, anchor: report.template, guard: () => !event.defaultPrevented && editMode?.active()?.templatePath === report.template }).then((outcome) => {
+      if (quiet(outcome)) return;
+      if (!outcome.ok) { refuse(outcome.message); editMode?.resetChip(); }
+      else if (outcome.message) refuse(outcome.message);
+      else if (report.action === "toggle" && planned) {
+        const { change, source, node } = planned;
+        if (change.kind === "made-fixed" && change.name) keptNames.set(keptKey(report.template, source, node), change.name);
         const now = deps.selection();
         if (now === selected || now?.path === report.template && JSON.stringify(now.node) === JSON.stringify(report.node)) {
-          const preview = deps.preview(), target = { path: report.template, node: plan.select };
+          const preview = deps.preview(), target = { path: report.template, node };
           preview?.selectAfterUpdate(target);
           preview?.flushPendingUpdate?.();
           preview?.selectNode(target);
@@ -876,7 +864,7 @@ export function createComponentTools(deps: ComponentDeps) {
       deps.refreshBar();
       deps.refreshStructure?.();
     }).catch((error: unknown) => {
-      if (!current()) return;
+      if (!stamp.holds()) return;
       refuse(error instanceof Error ? error.message : "The slot could not be changed.");
       editMode?.resetChip();
       deps.refreshBar();
@@ -913,57 +901,52 @@ export function createComponentTools(deps: ComponentDeps) {
    */
   async function renameComponent(name: string): Promise<string | undefined> {
     const mode = editMode?.active();
-    if (!mode || !deps.operation || !deps.files || deps.currentPath() !== mode.templatePath || explicitTemplate?.revision !== deps.revision())
+    if (!mode || !deps.files || deps.currentPath() !== mode.templatePath || explicitTemplate?.revision !== deps.revision())
       return "Open the component in Edit component mode before renaming it.";
-    const revision = deps.revision(), entry = explicitTemplate, proof = JSON.stringify(mode);
-    const current = () => deps.revision() === revision && explicitTemplate === entry && deps.currentPath() === mode.templatePath
-      && JSON.stringify(editMode?.active()) === proof;
+    const stamp = deps.edits.stamp(), revision = deps.revision(), proof = JSON.stringify(mode);
+    const sameMode = () => JSON.stringify(editMode?.active()) === proof;
     const changed = "The component or the repository changed meanwhile; it was not renamed.";
-    let plan: typeof import("./component-rename");
+    let rename: typeof import("./component-rename");
     try {
       const [loaded, problem] = await Promise.all([import("./component-rename"), deps.index?.()]);
       if (problem) return problem;
-      plan = loaded;
+      rename = loaded;
     } catch (error) {
       void handleChunkLoadFailure(error);
       return "Renaming could not load. Try again.";
     }
-    const now = site();
-    if (!current() || !now) return changed;
-    const files = deps.files(), present = new Set(files), all = deps.sources(), listed = [...files].sort().join("\n");
+    if (!stamp.holds() || !sameMode()) return changed;
     // The files are proven too: one added to the folder meanwhile would stay behind.
-    const proven = () => current() && [...deps.files!()].sort().join("\n") === listed;
-    // Only files that are there: a component's stylesheet it doesn't have is not read.
-    const sources = Object.fromEntries(Object.entries(all).filter(([path]) => present.has(path)));
-    const from = mode.tag;
-    const renamed = plan.componentRenamePlan({ from, typed: name, components: now.components, files, sources, pages: Object.values(now.routes) });
-    if ("unchanged" in renamed) return undefined;
-    if ("error" in renamed) return renamed.error;
-    const { tag, template } = renamed, { done, undone, notes } = plan.renameMessages(from, renamed);
+    const files = deps.files(), listed = [...files].sort().join("\n");
     const selected = deps.selection();
     const part = selected?.path === mode.templatePath && selected.node ? [...selected.node] : [0];
-    const fromLevel = { tag: from, templatePath: mode.templatePath }, toLevel = { tag, templatePath: template };
+    let planned: RenamePlanned | undefined;
     // The template moves from under the mode: it stays on until told where it went.
     modeOpening = true;
-    let error: string | undefined;
+    let outcome: Outcome;
     try {
-      error = await deps.operation({ expectedSources: new Map(Object.entries(sources)), moves: renamed.moves, edits: renamed.edits,
-        done, undone, current: proven,
-        selection: { before: { path: mode.templatePath, node: part }, after: { path: template, node: part } } });
+      outcome = await deps.edits.run(r => {
+        const plan = componentRenameStep(r, rename, { from: mode.tag, typed: name, files, part });
+        if (!("refuse" in plan)) planned = plan;
+        return plan;
+      }, { since: stamp, anchor: mode.templatePath, guard: () => sameMode() && [...deps.files!()].sort().join("\n") === listed });
     } finally {
       modeOpening = false;
     }
-    if (error) { barKey = ""; renderBar(); return error; }
-    if (deps.revision() !== revision || deps.currentPath() !== template || JSON.stringify(editMode?.active()) !== proof) { barKey = ""; renderBar(); return undefined; }
+    if (!outcome.ok) { barKey = ""; renderBar(); return outcome.reason === "stale" ? changed : outcome.message; }
+    if (outcome.status !== "applied" || !planned) return undefined;
+    const { tag, template, notes } = planned;
+    // The mode's own entry moved with its template; the rest of the stamp still holds.
+    if (![undefined, "edit-mode"].includes(stamp.changed() as string) || deps.currentPath() !== template || !sameMode()) { barKey = ""; renderBar(); return undefined; }
     explicitTemplate = { path: template, revision };
-    modeRenames.push({ from: fromLevel, to: toLevel, notes, release: deps.shareHistory?.(template, mode.path) });
-    editMode!.retag(fromLevel.templatePath, toLevel, notes);
+    modeRenames.push({ from: { tag: mode.tag, templatePath: mode.templatePath }, to: { tag, templatePath: template }, notes, release: deps.shareHistory?.(template, mode.path) });
+    editMode!.retag(mode.templatePath, { tag, templatePath: template }, notes);
     // The part selected before stays selected in the renamed template.
     const preview = deps.preview(), target = { path: template, node: part };
     preview?.selectAfterUpdate(target);
     preview?.flushPendingUpdate?.();
     preview?.selectNode(target);
-    return undefined;
+    return outcome.message;
   }
 
   /** The mode's template went elsewhere by a rename's Undo or Redo (the file now open): the mode follows it. */
@@ -2220,39 +2203,29 @@ export function createComponentTools(deps: ComponentDeps) {
       const mode = editMode?.active(), node = selection.node;
       const source = deps.sources()[selection.path];
       if (!mode || mode.templatePath !== selection.path || deps.currentPath() !== selection.path
-        || explicitTemplate?.revision !== deps.revision() || source === undefined || selection.paintedSource !== source || !node || !deps.operation) return [];
-      const now = site(), sources = deps.sources();
-      const files = Object.fromEntries([...Object.values(now?.routes ?? {}), ...Object.values(now?.components ?? {})]
-        .filter(path => path !== selection.path && sources[path] !== undefined).map(path => [path, sources[path]]));
-      const plan = templateRemoval(source, node, files, mode.tag);
-      if (!plan) return [];
-      const revision = deps.revision(), entry = explicitTemplate;
-      const current = () => deps.revision() === revision && explicitTemplate === entry
-        && deps.currentPath() === selection.path && editMode?.active()?.templatePath === mode.templatePath;
-      const pageCount = [...plan.pages.keys()].filter(path => Object.values(now?.routes ?? {}).includes(path)).length;
-      const componentCount = plan.pages.size - pageCount;
-      const counted = [[pageCount, "page"], [componentCount, "component"]].filter(([count]) => count)
-        .map(([count, what]) => `${count} ${what}${count === 1 ? "" : "s"}`);
-      const followed = counted.length ? ` ${counted.join(" and ")} using it ${plan.pages.size === 1 ? "follows" : "follow"}.` : "";
-      const done = `${kind} removed` + (plan.slots.length ? `; ${plan.slots.map(name => `slot “${name || "items"}” removed`).join("; ")}.` : "") + followed;
+        || explicitTemplate?.revision !== deps.revision() || source === undefined || selection.paintedSource !== source || !node) return [];
+      const offered = templateRemovalPlan(deps.edits.peek, selection.path, node, mode.tag, kind);
+      if (!offered || "refuse" in offered) return [];
+      const stamp = deps.edits.stamp();
       return [{ kind: "button", icon: "remove", label: "Remove", onPress: () => {
         const selected = deps.selection();
-        void (async () => {
-          if (!current() || deps.sources()[selection.path] !== source) return;
-          const error = await deps.operation!({ expectedSources: new Map([[selection.path, source], ...Object.entries(files)]),
-            edits: new Map([[selection.path, plan.source], ...plan.pages]), done, undone: `Undid removing ${kind.toLowerCase()}.`, current,
-            selection: { before: { path: selection.path, node: [...node] }, after: { path: selection.path, node: plan.select } } });
-          if (!current()) return;
-          if (error) refuse(error);
+        if (!stamp.holds() || deps.edits.peek.source(selection.path) !== source) return;
+        void deps.edits.run(r => {
+          // The part was read against the bytes painted.
+          if (r.source(selection.path) !== source) return { refuse: STALE_MESSAGE };
+          return templateRemovalPlan(r, selection.path, node, mode.tag, kind) ?? { refuse: "This part can no longer be removed." };
+        }, { since: stamp, anchor: selection.path, guard: () => editMode?.active()?.templatePath === mode.templatePath }).then(outcome => {
+          if (quiet(outcome)) return;
+          if (!outcome.ok || outcome.message) refuse(outcome.message!);
           else if (deps.selection() === selected || deps.selection()?.path === selection.path && deps.selection()?.node?.join() === node.join()) {
-            const preview = deps.preview(), target = { path: selection.path, node: plan.select };
+            const preview = deps.preview(), target = { path: selection.path, node: offered.node };
             preview?.selectAfterUpdate(target);
             preview?.flushPendingUpdate?.();
             preview?.selectNode(target);
           }
           deps.refreshBar();
           deps.refreshStructure?.();
-        })().catch((error: unknown) => { if (current()) refuse(error instanceof Error ? error.message : "The part could not be removed."); });
+        }).catch((error: unknown) => { if (stamp.holds()) refuse(error instanceof Error ? error.message : "The part could not be removed."); });
       } }];
     },
     controls,

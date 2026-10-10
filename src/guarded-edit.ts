@@ -59,8 +59,12 @@ export interface Planned {
   deletes?: string[];
   /** `from` read through `r`; `to` must not exist. */
   moves?: { from: string; to: string }[];
-  /** Selected once the preview renders the new bytes (`after`, flashed with `flash`); Undo selects `before`, Redo `after`. */
-  select?: { before?: NodeRef; after?: NodeRef; flash?: string };
+  /**
+   * Selected once the preview renders the new bytes (`after`, flashed with `flash`); Undo selects `before`, Redo `after`.
+   * `historyOnly`: the step itself leaves the selection where the user has it by then (the caller decides), and
+   * Undo and Redo select: the step takes the receipt even for one file (`run` only).
+   */
+  select?: { before?: NodeRef; after?: NodeRef; flash?: string; historyOnly?: boolean };
   done: string;
   undone: string;
   /** The file to open after. */
@@ -362,9 +366,9 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     if (writes!.unchanged) return { ok: true, status: "unchanged" };
     const places = existence(writes!), missing = places.refusal();
     if (missing) return refused(missing);
-    if (rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
-    const after = result.select?.after;
-    if (after) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
+    if (!result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
+    const after = result.select?.after, selects = after && !result.select?.historyOnly;
+    if (selects) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
     let recorded = false;
     const error = await ws.operation({
       expectedSources: new Map(reads.sources), edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves,
@@ -373,7 +377,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     });
     if (error === undefined) return { ok: true, status: "applied" };
     if (recorded) return { ok: true, status: "applied", message: error };
-    if (after) ws.select(undefined);
+    if (selects) ws.select(undefined);
     changed = current() ?? places.changed();
     return changed ? stale(changed) : refused(error);
   }
@@ -399,6 +403,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const writes = "done" in result ? prepare(result, reads) : undefined;
     if ("done" in result && (writes!.creates.length || writes!.moves.length || writes!.deletes.length || result.open !== undefined))
       misuse("now() cannot create, delete, move or open files (they need async reads); use run().");
+    if ("done" in result && result.select?.historyOnly) misuse("now() takes the editor's own step, which selects nothing on Undo; use run() for `historyOnly`.");
     if (writes && [...writes.edits.keys()].some(path => path !== anchor))
       misuse(`now() writes only its anchor ${anchor} (until slice 17); use run().`);
     changed = proved() ?? (opened.isCurrent() ? undefined : "anchor") ?? reads.changed();
