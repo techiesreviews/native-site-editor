@@ -37,7 +37,8 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
   let scopeKey = "lex/site@main", generation = 0, versionView = false, route: string | undefined = "/";
   let editEntry: object | undefined;
   let site: NativeSite | undefined = init.site;
-  let clock = 0, sessions = 0, escaped = 0;
+  // Revisions only grow, except that Undo and Redo put a model back at the revision its step saw.
+  let clock = 0, sessions = 0, escaped = 0, revisions = 0;
   const branch = new Map(Object.entries(init.branch ?? {}).map(([path, text], index) => [path, { sha: `sha-${index}`, text }]));
   const records = new Map<string, SavedDraft>();
   const store: DraftAccess & { error: string | null } = {
@@ -76,7 +77,7 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     else records.set(path, { ...scope, version: 1, path, baseSha: base?.sha ?? null, original: base?.text ?? "", content, updatedAt });
   }
   for (const [path, content] of Object.entries(init.drafts ?? {})) saveText(path, content);
-  const mount = (path: string) => { models.set(path, { text: text(path) ?? "", version: 0, session: ++sessions }); };
+  const mount = (path: string) => { models.set(path, { text: text(path) ?? "", version: ++revisions, session: ++sessions }); };
   for (const path of new Set([...init.mounted ?? [], ...init.open ? [init.open] : []])) mount(path);
 
   const proof = (path: string) => {
@@ -98,13 +99,19 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     hold.arrive();
     await hold.wait;
   }
-  // The models a receipt moves, as the source editor's prepareHistorySources does.
+  // The models a receipt moves, as the source editor's prepareHistorySources does: each model
+  // goes back and forth between its text and revision before the step and after it.
   function prepareSources(edits: { path: string; expectedSource: string; text: string }[]) {
+    const steps = edits.map(edit => ({ ...edit, model: models.get(edit.path)!, before: models.get(edit.path)?.version ?? -1, after: -1 }));
+    if (steps.some(step => !step.model || step.model.text !== step.expectedSource)) return undefined;
     let after = false;
-    const current = () => edits.every(edit => models.get(edit.path)?.text === (after ? edit.text : edit.expectedSource));
+    const current = () => steps.every(step => models.get(step.path) === step.model && step.model.text === (after ? step.text : step.expectedSource) && step.model.version === (after ? step.after : step.before));
     const move = (next: boolean) => {
       if (!current()) return false;
-      for (const edit of edits) { const model = models.get(edit.path)!; model.text = next ? edit.text : edit.expectedSource; model.version++; }
+      for (const step of steps) {
+        if (next && step.after < 0) step.after = ++revisions;
+        step.model.text = next ? step.text : step.expectedSource; step.model.version = next ? step.after : step.before;
+      }
       after = next;
       return true;
     };
@@ -145,8 +152,11 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     const touched = new Set([anchor, ...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...edits.keys()]);
     const before = new Map([...touched].map(path => [path, records.get(path)] as const));
     const after = planNativeStructuralDrafts({ scope, before, movable, bases, moves, deletes, creates, edits, now: ++clock });
-    const beforeSources = new Map([...after.keys()].map(path => [path, text(path)] as const));
-    const afterSources = new Map([...after].map(([path, record]) => [path, record ? record.deleted || record.opaque ? undefined : record.content : branch.get(path)?.text] as const));
+    // Every source the caller read stays in the step's proof, unchanged inputs (templates) too.
+    const beforeSources = new Map(expected);
+    for (const path of after.keys()) beforeSources.set(path, text(path));
+    const afterSources = new Map(beforeSources);
+    for (const [path, record] of after) afterSources.set(path, record ? record.deleted || record.opaque ? undefined : record.content : branch.get(path)?.text);
     const receipt = prepareNativeTextHistory({
       scope, store, isLive: () => epoch === generation && key === scopeKey && !versionView,
       source: text, mounted: path => models.has(path), modelState: proof,
@@ -199,23 +209,23 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
         if (next.slice(edit.start, edit.end) !== edit.expected) throw new Error("The source changed.");
         next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
       }
-      const top = done.at(-1), before = model.text;
-      model.text = next; model.version++;
+      const top = done.at(-1), before = model.text, revision = model.version;
+      model.text = next; model.version = ++revisions;
       saveText(path, next);
       // A typing group goes on while nothing else moved its file since its last keystroke.
-      if (group && top?.kind === "range" && top.path === path && top.group?.open && top.group.revision === model.version - 1) {
+      if (group && top?.kind === "range" && top.path === path && top.group?.open && top.group.revision === revision) {
         top.group.revision = model.version; top.group.after = next;
         return;
       }
       const step: Step = {
         kind: "range", path, group: { open: group, revision: model.version, after: next },
-        undo: () => move(step.group!.after, before),
-        redo: () => move(before, step.group!.after),
+        undo: () => move(step.group!.after, step.group!.revision, before, revision),
+        redo: () => move(before, revision, step.group!.after, step.group!.revision),
       };
-      const move = (from: string, to: string) => {
+      const move = (from: string, fromRevision: number, to: string, toRevision: number) => {
         const current = models.get(path);
-        if (current?.text !== from) { refusals.push("The source changed."); return false; }
-        current.text = to; current.version++; saveText(path, to);
+        if (current?.text !== from || current.version !== fromRevision) { refusals.push("The source changed."); return false; }
+        current.text = to; current.version = toRevision; saveText(path, to);
         step.group!.open = false;
         return true;
       };
@@ -250,11 +260,17 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     /** Typing into a file: its model when mounted (a new revision), and its draft. */
     typeInto(path: string, content = `${text(path) ?? ""}<!-- typed -->`) {
       const model = models.get(path);
-      if (model) { model.text = content; model.version++; }
+      if (model) { model.text = content; model.version = ++revisions; }
       saveText(path, content);
     },
     /** Another tab or an agent wrote a draft: the bytes change, no model revision. */
     writeDraft(path: string, content: string) { saveText(path, content); },
+    /** Another tab or an agent deleted a file. */
+    deleteFile(path: string) {
+      const base = branch.get(path);
+      if (base) records.set(path, { ...scope, version: 1, path, baseSha: base.sha, original: base.text, content: text(path) ?? "", updatedAt: ++clock, deleted: true });
+      else records.delete(path);
+    },
     mount, unmount: (path: string) => { models.delete(path); },
     remount: (path: string) => { mount(path); },
     close() { if (openFile) models.delete(openFile); openFile = undefined; },

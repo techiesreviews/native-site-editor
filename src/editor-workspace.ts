@@ -15,6 +15,8 @@ type Range = { path: string; start: number; end: number; expected: string; text:
 export interface WorkspaceEditor {
   isMounted(path: string): boolean;
   captureFileModelState(scope: DraftScope, path: string, persistent?: boolean): { isCurrent(): boolean };
+  /** The exact mounted pane, document and history session of `path`. */
+  captureHistoryHost(path: string): { isCurrent(): boolean } | undefined;
   replaceActiveRanges(edits: Range[]): void;
   replaceActiveRange(edit: Range, group?: boolean): void;
   closeActiveEditGroup(path: string): void;
@@ -61,9 +63,11 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     modelState: model,
     openFile: () => host.openFile(),
     open: path => host.restore(path, host.generation()),
+    // The open page in this very pane and history session (a pane mounted again over the same
+    // kept document is another one: its history did not see the open), at this revision.
     anchor(path) {
-      const epoch = host.generation(), state = host.openFile() === path ? model(path) : undefined;
-      return state && { isCurrent: () => epoch === host.generation() && host.openFile() === path && editor.isMounted(path) && state.isCurrent() };
+      const epoch = host.generation(), state = host.openFile() === path ? model(path) : undefined, pane = state && editor.captureHistoryHost(path);
+      return pane && { isCurrent: () => epoch === host.generation() && host.openFile() === path && pane.isCurrent() && state.isCurrent() };
     },
     change(path, edits, group) {
       const ranges = edits.map(edit => ({ path, ...edit }));

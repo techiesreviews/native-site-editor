@@ -181,6 +181,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   function track() {
     const sources = new Map<string, string | undefined>();
     const checks = new Map<string, () => StaleKey | undefined>();
+    const existing = new Map<string, boolean>();
     const seen = new Set<string>();
     let sealed = false;
     const open = () => { if (sealed) misuse("`r` was used after the plan returned."); };
@@ -199,10 +200,14 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       source,
       exists(path) {
         open();
-        const value = ws.exists(path), key = `exists:${path}`;
-        if (!checks.has(key)) checks.set(key, () => ws.exists(path) !== value ? { exists: path } : undefined);
+        const key = `exists:${path}`;
+        if (!checks.has(key)) {
+          const value = ws.exists(path);
+          existing.set(path, value);
+          checks.set(key, () => ws.exists(path) !== value ? { exists: path } : undefined);
+        }
         seen.add(path);
-        return value;
+        return existing.get(path)!;
       },
       template(tag) {
         open();
@@ -263,13 +268,21 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   const stale = (changed: StaleKey): Outcome => ({ ok: false, reason: "stale", changed, message: STALE_MESSAGE });
   const refused = (message: string): Outcome => ({ ok: false, reason: "refused", message });
 
-  /** Existence the writes need, proved now: the first refusal, or nothing. */
+  /**
+   * Existence the writes need: sources still there, destinations still free. `refusal` says
+   * why not now; `changed` proves it again after each of the commit's waits.
+   */
   function existence(writes: Prepared) {
-    const vacated = new Set([...writes.moves.map(move => move.from), ...writes.deletes]);
-    for (const path of [...writes.moves.map(move => move.from), ...writes.deletes]) if (!ws.exists(path)) return `${path} is not there any more.`;
-    for (const path of [...writes.moves.map(move => move.to), ...writes.creates.map(file => file.path)])
-      if (!vacated.has(path) && ws.exists(path)) return `${path} already exists. No files were changed.`;
-    return undefined;
+    const present = [...writes.moves.map(move => move.from), ...writes.deletes], vacated = new Set(present);
+    const absent = [...writes.moves.map(move => move.to), ...writes.creates.map(file => file.path)].filter(path => !vacated.has(path));
+    const gone = () => present.find(path => !ws.exists(path)), taken = () => absent.find(path => ws.exists(path));
+    return {
+      refusal() {
+        const missing = gone(), there = taken();
+        return missing !== undefined ? `${missing} is not there any more.` : there !== undefined ? `${there} already exists. No files were changed.` : undefined;
+      },
+      changed(): StaleKey | undefined { const path = gone() ?? taken(); return path === undefined ? undefined : { exists: path }; },
+    };
   }
 
   /** The range path: one mounted file, its anchor, ranges only; the editor's own step. */
@@ -298,7 +311,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   }
 
   function writeRanges(path: string, writes: Prepared, reads: Tracked, planned: Planned, key?: string): Outcome {
-    if (group && (group.key !== key || group.path !== path)) closeGroup();
+    // A new typing group never joins one the editor holds open for another action.
+    if (key !== undefined && !group) ws.closeGroup(path);
     const after = planned.select?.after;
     ws.select(after && { path: after.path, node: after.node }, planned.select?.flash);
     try {
@@ -343,7 +357,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     if ("refuse" in result) return refused(result.refuse);
     if ("stayed" in result) { ws.announce(result.stayed); return { ok: true, status: "stayed" }; }
     if (writes!.unchanged) return { ok: true, status: "unchanged" };
-    const missing = existence(writes!);
+    const places = existence(writes!), missing = places.refusal();
     if (missing) return refused(missing);
     if (rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
     const after = result.select?.after;
@@ -351,11 +365,11 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const error = await ws.operation({
       expectedSources: new Map(reads.sources), edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves,
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
-      current: () => !current(), selection: { before: result.select?.before, after },
+      current: () => !(current() ?? places.changed()), selection: { before: result.select?.before, after },
     });
     if (error === undefined) return { ok: true, status: "applied" };
     if (after) ws.select(undefined);
-    changed = current();
+    changed = current() ?? places.changed();
     return changed ? stale(changed) : refused(error);
   }
 
@@ -364,6 +378,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const guard = options.guard ?? (() => true);
     const proved = (): StaleKey | undefined => held.changed() ?? (guard() ? undefined : "guard");
     const fail = (changed: StaleKey) => { closeGroup(); return stale(changed); };
+    // Another key, another file or no key: the open group ends here, whatever this edit comes to.
+    if (group && (group.key !== options.group || group.path !== (options.anchor ?? ws.openFile()))) closeGroup();
     let changed = proved();
     if (changed) return fail(changed);
     const anchor = options.anchor ?? ws.openFile();

@@ -399,3 +399,82 @@ test("another group key, a run, or a stale read closes the group", async () => {
   edits.now(typed("f"), { group: "text" });
   assert.deepEqual(m.steps(), ["range", "range", "range", "range", "range"]);
 });
+
+// ---- Review follow-ups (slice 10) ----
+
+test("a route removed after r.site() is stale on the site; a file read as there and deleted meanwhile is stale on its existence", async () => {
+  const { m, edits } = setup();
+  assert.deepEqual(await racing(m, edits, r => { r.site(); return insertH2(r); }, () => m.setSite({ ...site, routes: { "/": "index.html" } })), staleOn("site"));
+  assert.deepEqual(await racing(m, edits, r => { assert.equal(r.exists("old.html"), true); return insertH2(r); }, () => m.deleteFile("old.html")), staleOn({ exists: "old.html" }));
+});
+
+test("a move with an edit at its new path: ranges against the moved file's bytes, one step, undone whole", async () => {
+  const { m, edits } = setup();
+  const before = state(m);
+  const outcome = await edits.run(r => {
+    const old = r.source("old.html")!, at = old.indexOf("old");
+    return { moves: [{ from: "old.html", to: "archive/old.html" }], edits: new Map([["archive/old.html", [{ start: at, end: at + 3, text: "archived", expected: "old" }]]]), done: "Moved.", undone: "Undid the move." };
+  });
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.equal(m.workspace.exists("old.html"), false);
+  assert.equal(m.workspace.source("archive/old.html"), "<p>archived</p>");
+  assert.deepEqual(m.steps(), ["operation"]);
+  assert.equal(m.undo(), true);
+  assert.equal(state(m).replace(/"steps":\[[^\]]*\]/, ""), before.replace(/"steps":\[[^\]]*\]/, ""));
+});
+
+test("a destination taken during the commit's waits (a folder there now) is stale, nothing moved", async () => {
+  const { m, edits } = setup();
+  const hold = m.holdBranchRead();
+  const pending = edits.run(r => { r.source("old.html"); return { moves: [{ from: "old.html", to: "new.html" }], done: "d", undone: "u" }; });
+  await hold.reached;
+  m.writeDraft("new.html/child.txt", "x");
+  hold.release();
+  assert.deepEqual(await pending, staleOn({ exists: "new.html" }));
+  assert.equal(m.workspace.exists("old.html"), true);
+  assert.deepEqual(m.steps(), []);
+});
+
+test("two operations over one file undo one after the other", async () => {
+  const { m, edits } = setup();
+  const both = (mark: string) => (r: Reads): PlanResult => ({ edits: new Map([["index.html", r.source("index.html") + mark], ["about.html", r.source("about.html") + mark]]), done: "d", undone: "u" });
+  await edits.run(both("1"));
+  await edits.run(both("2"));
+  assert.equal(m.undo(), true, m.refusals.join(" "));
+  assert.equal(m.undo(), true, m.refusals.join(" "));
+  assert.equal(m.workspace.source("index.html"), PAGE);
+  assert.equal(m.workspace.source("about.html"), ABOUT);
+  assert.equal(m.redo(), true);
+  assert.equal(m.redo(), true);
+  assert.equal(m.workspace.source("about.html"), `${ABOUT}12`);
+});
+
+test("Undo refuses once a template the step read (and did not write) changed", async () => {
+  const { m, edits } = setup();
+  await edits.run(r => { r.template("site-card"); return { edits: new Map([["index.html", r.source("index.html") + "!"], ["about.html", r.source("about.html") + "!"]]), done: "d", undone: "u" }; });
+  m.writeDraft("components/site-card.html", "<template><div></div></template>");
+  assert.equal(m.undo(), false);
+  assert.match(m.refusals.at(-1)!, /site-card/);
+});
+
+test("a stale read inside a grouped now() closes the group", () => {
+  const { m, edits } = setup();
+  edits.now(typed("a"), { group: "title" });
+  const outcome = edits.now(r => { r.source("about.html"); m.writeDraft("about.html", "x"); return typed("b")(r); }, { group: "title" });
+  assert.deepEqual(outcome, staleOn({ file: "about.html" }));
+  edits.now(typed("c"), { group: "title" });
+  assert.deepEqual(m.steps(), ["range", "range"]);
+});
+
+test("another key that writes nothing still ends the group; a first group never joins the editor's open one", () => {
+  const { m, edits } = setup();
+  edits.now(typed("a"), { group: "title" });
+  assert.deepEqual(edits.now(r => ({ edits: new Map([["index.html", r.source("index.html")!]]), done: "d", undone: "u" }), { group: "text" }), { ok: true, status: "unchanged" });
+  edits.now(typed("b"), { group: "title" });
+  assert.deepEqual(m.steps(), ["range", "range"]);
+
+  const other = setup();
+  other.m.workspace.change("index.html", [{ start: 0, end: 0, text: "x", expected: "" }], true);
+  other.edits.now(typed("a"), { group: "title" });
+  assert.deepEqual(other.m.steps(), ["range", "range"]);
+});
