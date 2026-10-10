@@ -1,7 +1,7 @@
 ---
 title: "Cards (add, fill, swap look, create page) through the guarded edit"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [10-guarded-edit-module]
 builder: sol
@@ -22,3 +22,10 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/guarded-edit-de
 
 - `tests/cards-controller.test.ts` on the memory workspace, plus: a look template edited during the `card-swap` import refuses; a CSS file created during `card-link-css` import refuses; create page + fill is one undo step that removes the page draft.
 - `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-10)
+
+- Every card write in `src/page-builder/cards.ts` is a guarded-edit plan reading through `r` (page, own and look templates, linked page, CSS host and its absence, `.editor/config.json`, sibling and home pages, the target's existence, section-ness of component tags); the hand-built `expectedSources`, the re-checks after the `card-swap`/`card-link-css` imports and the `deps.site()`/`deps.editor()` identity proofs are gone. Create page puts the new page in `creates` of the fill's step (`createWithCompanion`, `saveNewDraft`/`dropNewDraft` gone); `createWithCard` is a plan (gap fixed). Move/Duplicate/Remove use `edits.now` with a stamp held from the bar and re-read the grid through `r`. `CardsDeps` is now `edits`, `siteRead`, `editable`, `preview`, `openPage`, `pageLabel`, `variantFiles`, `announce`.
+- Built by Sol, review fixes (createWithCard keeps returning a failed refresh's message; Duplicate/Remove refuse when a template behind the grid changed) on `dev`.
+- Tests: `tests/cards-controller.test.ts` on the memory workspace (`tests/fakes/cards-fixture.ts`), 27 cases incl. the swap-import and CSS-import races and create page + fill + CSS as one undo/redo step; full `native-save` suite, smoke and `@actual` green.
+

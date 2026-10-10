@@ -543,7 +543,9 @@ export function createCards(deps: CardsDeps) {
     const change = (edits: RangeEdit[], next: number[] | undefined, done: string, undone: string) => {
       if (!deps.editable(path)) return false;
       const outcome = deps.edits.now(reads => {
-        if (reads.source(path) !== source) return { refuse: "The source changed. Select the element again and try again." };
+        // The item is still one of this grid's (section-ness comes from templates, read through `r`).
+        if (reads.source(path) !== source || gridOfItem(source, node, context(reads, route))?.grid.parent.join(".") !== grid.parent.join("."))
+          return { refuse: "The source changed. Select the element again and try again." };
         return { edits: new Map([[path, edits]]), select: { before: { path, node }, after: next ? { path, node: next } : undefined }, done, undone };
       }, { anchor: path, since });
       return accepted(outcome, "The source changed. Select the element again and try again.");
@@ -649,9 +651,8 @@ export function createCards(deps: CardsDeps) {
           focus: { file: target.value.file },
         };
       });
-      if (!outcome.ok) return outcome.message;
-      if (outcome.message) refuse(outcome.message);
-      return undefined;
+      // Written, but opening the new page failed: the Pages tab shows that message, as before.
+      return outcome.message;
     },
 
     /**

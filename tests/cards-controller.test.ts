@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createCardsController, withoutCardMoves, type CardsControllerPorts } from "../src/controllers/cards-controller.ts";
-import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
-import { createGuardedEdits } from "../src/guarded-edit.ts";
+import { withoutCardMoves } from "../src/controllers/cards-controller.ts";
+import { cardsFixture } from "./fakes/cards-fixture.ts";
 import { createCards } from "../src/page-builder/cards.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
@@ -11,22 +10,8 @@ const page = "<!doctype html><html><head><title>Home</title></head><body><main><
   + ["One", "Two", "Three"].map((name) => `<article class="card"><h3>${name}</h3><p>About ${name}.</p></article>`).join("")
   + "</div></section></main></body></html>";
 
-function fixture(branch: Record<string, string> = { "index.html": page }, site: NativeSite | undefined = { routes: { "/": "index.html" }, components: {} }) {
-  const m = createMemoryWorkspace({ branch, open: "index.html", site });
-  const edits = createGuardedEdits(m.workspace);
-  const ports = {
-    edits,
-    editable: p => m.openFile() === p && Boolean(m.model(p)),
-    siteRead: async () => undefined,
-    preview: () => ({ selectedItemGrid: () => undefined }) as never,
-    openPage: () => {},
-    pageLabel: () => "Home",
-    variantFiles: { site: () => undefined, read: () => undefined },
-    announce: text => m.announced.push(text),
-  } satisfies CardsControllerPorts;
-  const controller = createCardsController(ports);
-  return { m, edits, ports, controller };
-}
+const plain: NativeSite = { routes: { "/": "index.html" }, components: {} };
+const fixture = (site: NativeSite | undefined = plain) => cardsFixture({ "index.html": page }, site, false);
 
 const selection = (node: number[]): NativePreviewSelection => ({ path: "index.html", tag: "article", text: "", reason: "click", selectors: [], node });
 
@@ -42,8 +27,7 @@ test("before mounting, card adapters refuse or offer nothing", async () => {
 });
 
 test("mounting creates the card operations once the workspace mounts", () => {
-  const { controller, m } = fixture();
-  m.setSite(undefined);
+  const { controller } = cardsFixture({ "index.html": page }, undefined, false);
   controller.mount();
   assert.equal(controller.mounted(), true);
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 1]), page), []);
@@ -59,7 +43,7 @@ test("a card's edit bar keeps its actions but leaves out every move arrow", () =
 // Card source locations use the browser's HTML parser. Bundle the real memory
 // workspace and controller into Chromium, without a preview server or proof ports.
 declare global {
-  var cardsFixture: typeof fixture;
+  var cardsFixture: typeof import("./fakes/cards-fixture.ts").cardsFixture;
   var cardsCreate: typeof createCards;
 }
 
@@ -68,25 +52,10 @@ test("guarded card actions on the memory workspace with the browser parser", asy
   const { chromium } = await import("@playwright/test");
   const bundle = await build({
     stdin: { contents: `
-      import { createMemoryWorkspace } from './tests/fakes/memory-workspace';
-      import { createGuardedEdits } from './src/guarded-edit';
-      import { createCardsController } from './src/controllers/cards-controller';
+      import { cardsFixture } from './tests/fakes/cards-fixture';
       import { createCards } from './src/page-builder/cards';
       globalThis.cardsCreate = createCards;
-      globalThis.cardsFixture = (branch, site) => {
-        const m = createMemoryWorkspace({ branch, open: 'index.html', site });
-        const edits = createGuardedEdits(m.workspace);
-        const ports = {
-          edits, editable: p => m.openFile() === p && Boolean(m.model(p)),
-          siteRead: async () => undefined,
-          preview: () => ({ selectedItemGrid: () => undefined }), openPage: () => {},
-          pageLabel: () => 'Home', variantFiles: { site: () => undefined, read: () => undefined },
-          announce: text => m.announced.push(text),
-        };
-        const controller = createCardsController(ports);
-        controller.mount();
-        return { m, edits, ports, controller };
-      };
+      globalThis.cardsFixture = cardsFixture;
     `, resolveDir: process.cwd() },
     bundle: true, write: false, format: "iife", platform: "browser",
   });
@@ -185,11 +154,18 @@ test("guarded card actions on the memory workspace with the browser parser", asy
         const { controller, m } = cardsFixture(branch, site);
         const fill = await controller.preview.createPage(card, { parent: "/work/", title: "Birch" });
         const created = m.draft("work/birch/index.html")?.content, after = m.source(card.path), steps = m.steps();
+        const css = m.draft("_components/card-quote.css")?.content;
         const undone = m.undo();
-        return { fill, created, after, steps, undone, restored: m.source(card.path), files: m.files() };
+        const restored = m.source(card.path), files = m.files();
+        const redone = m.redo();
+        return { fill, created, css, after, steps, undone, restored, files, redone, again: m.source(card.path), filesAgain: m.files() };
       }, data);
       assert.deepEqual(result.fill, { title: "Birch", route: "/work/birch/" });
       assert.match(result.created!, /Birch/);
+      assert.match(result.css!, /:host\s*\{\s*position: relative;/);
+      assert.equal(result.redone, true);
+      assert.equal(result.again, result.after);
+      assert.ok(result.filesAgain.includes("work/birch/index.html") && result.filesAgain.includes("_components/card-quote.css"));
       assert.match(result.after!, /href="\/work\/birch\/"/);
       assert.deepEqual(result.steps, ["operation"]);
       assert.equal(result.undone, true);
@@ -264,6 +240,22 @@ test("guarded card actions on the memory workspace with the browser parser", asy
         });
       }
     }
+
+    await t.test("Duplicate refuses when a template read for the grid changed since the bar was painted", async () => {
+      const result = await browserPage.evaluate(({ branch, site, card }) => {
+        const { controller, m } = cardsFixture(branch, site);
+        const source = m.source(card.path)!;
+        const controls = controller.controls({ ...card, tag: "card-quote", text: "", reason: "click", selectors: [] }, source);
+        m.writeDraft("_components/card-quote.html", "<section><slot></slot></section>");
+        const button = controls.find(control => control.kind === "button" && control.label === "Duplicate");
+        if (button?.kind === "button") button.onPress();
+        return { found: Boolean(button), steps: m.steps(), after: m.source(card.path), said: m.announced };
+      }, data);
+      assert.equal(result.found, true);
+      assert.deepEqual(result.steps, []);
+      assert.equal(result.after, cardPage);
+      assert.deepEqual(result.said, ["The source changed. Select the element again and try again."]);
+    });
 
     await t.test("move uses now, preserves selection and undoes", async () => {
       const result = await browserPage.evaluate(({ page, site }) => {
@@ -377,17 +369,16 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.match(result.said.at(-1)!, /The files changed, but the editor changed while opening them/);
     });
 
-    await t.test("Pages tab reports a failed refresh while retaining its successful result", async () => {
+    await t.test("Pages tab returns a failed refresh's message with the step written", async () => {
       const result = await browserPage.evaluate(async ({ branch, site }) => {
         const { controller, m } = cardsFixture(branch, site);
         m.failRefresh();
         const error = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
         return { error, steps: m.steps(), created: m.draft("work/birch/index.html")?.content, said: m.announced };
       }, collectionData);
-      assert.equal(result.error, undefined);
+      assert.match(result.error!, /The files changed, but the editor changed while opening them/);
       assert.deepEqual(result.steps, ["operation"]);
       assert.match(result.created!, /Birch/);
-      assert.match(result.said.at(-1)!, /The files changed, but the editor changed while opening them/);
     });
 
     await t.test("painted move controls refuse a changed source", async () => {
