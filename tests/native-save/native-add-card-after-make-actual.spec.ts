@@ -24,10 +24,12 @@ test("Add card works immediately after Make component on Recent work", { tag: "@
   await cards.last().hover();
   const add = page.locator(".card-ghost__add");
   await expect(add).toBeVisible();
+  // Wholly inside the preview frame, and not under the code pane.
   await expect.poll(() => add.evaluate(button => {
     const box = button.getBoundingClientRect();
+    const view = document.querySelector(".native-preview-frame")!.getBoundingClientRect();
     const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
-    return hit === button || button.contains(hit);
+    return box.top >= view.top && box.bottom <= view.bottom && (hit === button || button.contains(hit));
   })).toBe(true);
   await add.click();
   await expect(cards).toHaveCount(4);
