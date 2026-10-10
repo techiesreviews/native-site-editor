@@ -6,12 +6,10 @@ import {
   insertAfterEdit,
   itemCopy,
   itemFill,
-  itemKind,
   itemNoun,
   itemTitle,
   leafSummary,
   pageBodyCopy,
-  repeatedRun,
   slotFallbacks,
   textLeaves,
 } from "../src/page-builder/card-grid.ts";
@@ -35,24 +33,6 @@ const template = `<article>
   <slot name="body"><p class="body">No description yet.</p></slot>
   <p class="actions"><slot name="link"></slot></p>
 </article>`;
-
-test("an item's kind is its custom element, or its tag and sorted classes for an item tag", () => {
-  assert.equal(itemKind("card-project", undefined), "card-project");
-  assert.equal(itemKind("li", ""), "li");
-  assert.equal(itemKind("div", "card  featured"), "div.card.featured");
-  assert.equal(itemKind("div", "featured card"), "div.card.featured");
-  assert.equal(itemKind("p", "lead"), undefined);
-  assert.equal(itemKind("section", ""), undefined);
-  assert.equal(itemKind("section-feature", "", true), undefined);
-});
-
-test("a grid is two or more children of one kind, the largest group winning", () => {
-  assert.deepEqual(repeatedRun(["card-project", "card-project"]), { kind: "card-project", indexes: [0, 1] });
-  assert.deepEqual(repeatedRun([undefined, "li", "li", "li"]), { kind: "li", indexes: [1, 2, 3] });
-  assert.deepEqual(repeatedRun(["div.a", "div.b", "div.b", "div.a", "div.a"]), { kind: "div.a", indexes: [0, 3, 4] });
-  assert.equal(repeatedRun(["div.a", "div.b", undefined]), undefined);
-  assert.equal(repeatedRun([]), undefined);
-});
 
 test("items are named by a word of their tag or classes", () => {
   assert.equal(itemNoun("card-project"), "card");

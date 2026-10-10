@@ -4,12 +4,8 @@
 // (tests/card-grid.test.ts); src/page-builder/card-source.ts applies them
 // to a page's parsed source and src/page-builder/cards.ts to the editor.
 //
-// A grid (or list) is an element whose element children include at least
-// two of the same kind: the same custom element, or the same tag and
-// classes for an element that can be an item (article, li, div, figure, a,
-// blockquote, dd). Sections are never items; they have their own insert
-// points. The preview runtime applies the same rule to the rendered page
-// (src/components/native-preview-runtime.js, "Repeated items").
+// The shared item kinds and repeated-run rule live in rules/items.ts;
+// card-source.ts applies them to source and the preview runtime to the DOM.
 //
 // The source is the collection: a grid whose items link to pages under one
 // parent URL (`/work/fern-and-kettle/`, `/work/harbour-lane-pottery/`) is a
@@ -17,44 +13,6 @@
 
 import { startTags, VOID_ELEMENTS, startTagAttribute, type StartTag } from "../../shared/html-source";
 import { isFolderRoute } from "../../shared/native-routes";
-
-/** Tags that can be repeated items besides custom elements. */
-export const ITEM_TAGS = new Set(["article", "li", "div", "figure", "a", "blockquote", "dd"]);
-
-/** Containers whose children are never items: the page itself and its <main>. */
-export const NOT_GRIDS = new Set(["html", "head", "body", "main"]);
-
-/**
- * The kind of a would-be item: a custom element's tag, or `tag.class.class`
- * (classes sorted) for an item tag; none for anything else or a section.
- */
-export function itemKind(tag: string, className: string | undefined, section = false): string | undefined {
-  const name = tag.toLowerCase();
-  if (section || name === "section") return undefined;
-  if (name.includes("-")) return name;
-  if (!ITEM_TAGS.has(name)) return undefined;
-  const classes = (className ?? "").trim().split(/\s+/).filter(Boolean).sort();
-  return classes.length ? `${name}.${classes.join(".")}` : name;
-}
-
-/**
- * The repeated items among a container's element children, by their kinds
- * (`itemKind`): the indexes of the kind with the most members, at least
- * two (the first such kind on a tie). None when no kind repeats.
- */
-export function repeatedRun(kinds: (string | undefined)[]): { kind: string; indexes: number[] } | undefined {
-  const groups = new Map<string, number[]>();
-  kinds.forEach((kind, index) => {
-    if (!kind) return;
-    const group = groups.get(kind);
-    if (group) group.push(index);
-    else groups.set(kind, [index]);
-  });
-  let best: { kind: string; indexes: number[] } | undefined;
-  for (const [kind, indexes] of groups)
-    if (indexes.length >= 2 && (!best || indexes.length > best.indexes.length)) best = { kind, indexes };
-  return best;
-}
 
 // Words that name an item, preferred in this order when a tag or class has several.
 const NOUNS = ["card", "tile", "post", "article", "project", "member", "person", "testimonial", "quote", "feature", "plan", "product", "step", "slide", "logo", "column", "entry", "item", "link"];

@@ -18,7 +18,7 @@
 // page's own markup inside the instance tag, or the instance's attributes.
 
 import { asciiLower, VOID_ELEMENTS, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
-import { itemKind } from "./card-grid";
+import { CARD_ITEM_TAGS, itemKind } from "./rules/items";
 import { decodeHtmlEntities } from "./html-entities";
 import type { NativeStructureItem } from "../components/native-preview";
 
@@ -1629,8 +1629,9 @@ function planComponent(source: string, range: InstanceRange, tag: string, choice
   const kindOf = (el: SourceElement) => contentKind(html, [el]) ?? "content";
   const isText = (el: SourceElement) => Boolean(TEXT_BLOCKS.has(el.name) && el.close && textOnly(el.children) && plainText(html.slice(el.tag.end, el.close.start)));
   const isLink = (el: SourceElement) => Boolean(el.name === "a" && el.close && textOnly(el.children));
-  // What a would-be item is (`itemKind`: a custom element's tag, else its tag and first class); none for a
-  // part that is a slot of its own (a line of text, a standalone link), except a list's items.
+  // Make component groups items written alike by their first class, so
+  // div.card and div.card.featured group together, unlike the shared kind.
+  // Lines of text and standalone links are slots of their own, except li.
   const itemOf = (el: SourceElement) => (el.name === "li" || !(isText(el) || isLink(el)) ? itemKind(el.name, (attribute(html, el, "class") ?? "").trim().split(/\s+/)[0]) : undefined);
   /** Runs of two or more consecutive siblings of one item kind, nothing but white space and comments between them. */
   const runs = (children: SourceElement[]) => {
@@ -1861,9 +1862,6 @@ export function cardTagFor(slot: string, tag: string, taken: Iterable<string>) {
   return name;
 }
 
-// Plain elements that can be made cards: not list items, which only work in their list.
-const CARD_ITEMS = new Set(["article", "div", "figure", "a", "blockquote"]);
-
 /** A template with each slot's fallback gone: two items written alike have one. */
 function skeleton(template: string) {
   const slots = [...descendants(parseSource(template))].filter((el) => el.name === "slot" && el.close);
@@ -1885,7 +1883,7 @@ function skeleton(template: string) {
  * instance. None when the items are instances already or cannot be cards.
  */
 function cardFrom(html: string, items: { el: SourceElement; path: number[] }[], slot: string, tag: string, taken: Set<string>) {
-  if (!items.every(({ el }) => CARD_ITEMS.has(el.name) && el.close)) return undefined;
+  if (!items.every(({ el }) => CARD_ITEM_TAGS.has(el.name) && el.close)) return undefined;
   const cardTag = cardTagFor(slot, tag, taken);
   const planned = items.map((item) => ({ item, plan: planComponent(html, { tag: item.el.tag, start: item.el.start, end: item.el.end, close: item.el.close }, cardTag, {}) }));
   const alike = new Map<string, { item: (typeof items)[number]; plan: MakeComponentPlan }[]>();

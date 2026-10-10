@@ -2,13 +2,14 @@
 // whether they are a collection of subpages. The page is parsed by the
 // browser's own HTML parser (src/native-source-location.ts `parseMarked`),
 // as the preview renders it, so element-child index paths are the
-// preview's; the rules are src/page-builder/card-grid.ts.
+// preview's; the rules are src/page-builder/rules/items.ts and card-grid.ts.
 
 import { MARK, markedRange, parseMarked, type ElementRange } from "../native-source-location";
 import { nativeLinkTarget, isFolderRoute } from "../../shared/native-routes";
 import { normalizeRoute } from "../native-create";
 import { componentLabel } from "../native-insert";
-import { collectionParent, elementTree, itemKind, itemNoun, NOT_GRIDS, repeatedRun, type SourceElement } from "./card-grid";
+import { collectionParent, elementTree, itemNoun, type SourceElement } from "./card-grid";
+import { itemKind, NOT_GRIDS, repeatedRun } from "./rules/items";
 
 /** A grid (or list) of repeated items in a page's source. */
 export interface SourceGrid {

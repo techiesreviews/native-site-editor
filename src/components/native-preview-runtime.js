@@ -2,6 +2,7 @@
 // Vite bundles it with the rules it imports into one IIFE
 // (vite-preview-runtime.ts): in dev, in the test server and in the build.
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
+import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
 
 (function () {
   var state = null;
@@ -1339,38 +1340,21 @@ import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
   // <main> or <body>) whose element children include at least two of one
   // kind: the same custom element, or the same tag and classes for an
   // article, li, div, figure, a, blockquote or dd. Sections are never items.
-  // The same rule as src/page-builder/card-grid.ts. For the item under the
+  // The same rule as src/page-builder/rules/items.ts. For the item under the
   // pointer and the one around the selection (through shadow roots to the
   // page's own item), the editor gets the grid (`item-grids`): the
   // container's index path, the item's index, its place and the count,
   // whether the items run in a row, and the frame-viewport box where one
   // more item would go, after the last one (beside it when there is room in
   // its row, else at the start of the next row, or below it in a column).
-  var ITEM_TAGS = ["article", "li", "div", "figure", "a", "blockquote", "dd"];
-  var NOT_GRIDS = ["html", "head", "body", "main"];
-  function itemKindOf(el) {
-    var tag = el.localName;
-    if (sectionLike(el)) return null;
-    if (tag.indexOf("-") > 0) return tag;
-    if (ITEM_TAGS.indexOf(tag) < 0) return null;
-    var classes = (el.getAttribute("class") || "").trim().split(/\s+/).filter(Boolean).sort();
-    return classes.length ? tag + "." + classes.join(".") : tag;
-  }
   function repeatedItems(container) {
-    if (!container || container === pageEl || NOT_GRIDS.indexOf(container.localName) >= 0) return null;
-    var groups = {};
-    var order = [];
-    Array.prototype.forEach.call(container.children, function (child) {
-      var kind = injectedStyle(child) ? null : itemKindOf(child);
-      if (!kind) return;
-      if (!groups[kind]) { groups[kind] = []; order.push(kind); }
-      groups[kind].push(child);
+    if (!container || container === pageEl || NOT_GRIDS.has(container.localName)) return null;
+    var children = Array.prototype.slice.call(container.children);
+    var kinds = children.map(function (child) {
+      return injectedStyle(child) ? undefined : itemKind(child.localName, child.getAttribute("class") || undefined, sectionLike(child));
     });
-    var best = null;
-    order.forEach(function (kind) {
-      if (groups[kind].length >= 2 && (!best || groups[kind].length > best.length)) best = groups[kind];
-    });
-    return best;
+    var run = repeatedRun(kinds);
+    return run ? run.indexes.map(function (i) { return children[i]; }) : null;
   }
   // An instance's card slot (src/page-builder/card-slot.ts): an items slot
   // whose fallback is card components only. Its items are a grid however
