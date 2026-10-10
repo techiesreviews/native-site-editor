@@ -270,7 +270,7 @@ export function readSource(source: string, options: { page?: true; from?: number
   const children = (node?: SourceNode): SourceNode[] => nodesIn(node).filter((child) => child.type === "element");
   const elements = (node?: SourceNode): SourceNode[] => children(node).flatMap((child) => [child, ...elements(child)]);
   const text = (node: SourceNode): string => (node.type === "text" ? textOf(source, node) : view.children(node).map(text).join(""));
-  let order: { tags: StartTag[]; all: SourceNode[] } | undefined;
+  let order: { tags: StartTag[]; all: SourceNode[]; ranges: Map<SourceNode, ElementRange | undefined> } | undefined;
   return {
     source,
     exact,
@@ -292,15 +292,21 @@ export function readSource(source: string, options: { page?: true; from?: number
     children,
     elements,
     // elementEnd's rule, as the page adapter's (markedRange): the end tag lies before the next start
-    // tag outside the element, or the end of what was read.
+    // tag outside the element, the end of what was read, and its parent's end tag when that has one.
     range(element) {
       if (element.type !== "element") return undefined;
-      order ??= { tags: startTags(source), all: elements() };
-      const inside = (node: SourceNode) => { for (let up = node.parent; up; up = up.parent) if (up === element) return true; return false; };
-      const index = order.all.indexOf(element);
-      if (index < 0) return undefined;
-      const following = order.all.slice(index + 1).find((other) => !inside(other));
-      return elementEnd(source, order.tags, order.tags.findIndex((tag) => tag.start === element.start), following?.start ?? end);
+      order ??= { tags: startTags(source), all: elements(), ranges: new Map() };
+      const { tags, all, ranges } = order;
+      const rangeOf = (element: SourceElement): ElementRange | undefined => {
+        if (ranges.has(element)) return ranges.get(element);
+        const inside = (node: SourceNode) => { for (let up = node.parent; up; up = up.parent) if (up === element) return true; return false; };
+        const following = all.slice(all.indexOf(element) + 1).find((other) => !inside(other));
+        const parentEnd = element.parent && rangeOf(element.parent)?.close?.start;
+        const range = elementEnd(source, tags, tags.findIndex((tag) => tag.start === element.start), Math.min(following?.start ?? end, parentEnd ?? end));
+        ranges.set(element, range);
+        return range;
+      };
+      return order.all.includes(element) ? rangeOf(element) : undefined;
     },
     attribute: (element, name) => (element.type === "element" ? tagAttribute(source, element.tag, name) : undefined),
     text: (node) => (node ? text(node) : top.map(text).join("")),

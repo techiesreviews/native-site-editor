@@ -94,7 +94,8 @@ export interface ElementRange {
 
 // The outer range of the element whose start tag is `tags[tagIndex]`.
 // `boundary` is where the first later start tag that is not a descendant
-// begins (or the end of the source), so the end tag lies before it. Fails
+// begins (or the end of the source), or the parent's end tag when that comes
+// first, so the end tag lies before it. Fails
 // closed (undefined) when the end tag is implied or cannot be told apart from
 // a same-named descendant's, since a guessed range would edit the wrong HTML.
 export function elementEnd(html: string, tags: StartTag[], tagIndex: number, boundary: number): ElementRange | undefined {

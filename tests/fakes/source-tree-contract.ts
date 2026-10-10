@@ -32,6 +32,12 @@ const ranges = <N>(tree: SourceTree<N>) => tree.elements().map((el) => {
   return range ? [tree.view.name(el), range.start, range.end, range.close?.start ?? null, range.tag.start, range.tag.end] : [tree.view.name(el), null];
 });
 
+/** Each element's name and its range's source text, null without a range. */
+const spans = <N>(tree: SourceTree<N>) => tree.elements().map((el) => {
+  const range = tree.range(el);
+  return [tree.view.name(el), range ? tree.source.slice(range.start, range.end) : null];
+});
+
 const VOID_PAGE = "<div>A<br>B<br/>C<img src=\"x.png\" alt=\"\"/><span/>D</span>E</div>";
 const voidAt = (text: string, from = 0) => VOID_PAGE.indexOf(text, from);
 
@@ -184,12 +190,46 @@ export const contractCases: ContractCase[] = [
   },
   {
     // elementEnd's rule: the end tag is the one past every same-named descendant's, before the next
-    // start tag outside the element, so a last child inside a same-named parent fails closed.
+    // start tag outside the element and before its parent's end tag (slice 45).
     name: "range: exact with same-named nesting, undefined for an implied or ambiguous end tag",
     source: "<div><div>A</div><div><div>B</div></div></div><p>.</p><ul><li>X<li>Y</ul>",
     read: (tree) => ranges(tree),
-    expected: [["div", 0, 46, 40, 0, 5], ["div", 5, 17, 11, 5, 10], ["div", null], ["div", null],
+    expected: [["div", 0, 46, 40, 0, 5], ["div", 5, 17, 11, 5, 10], ["div", 17, 40, 34, 17, 22], ["div", 22, 34, 28, 22, 27],
       ["p", 46, 54, 50, 46, 49], ["ul", 54, 73, 68, 54, 58], ["li", null], ["li", null]],
+  },
+  {
+    name: "range: the last div card in a div grid has its own range, as the one before it",
+    source: "<div class=\"grid\">\n  <div class=\"card\"><h3>A</h3><div>a</div></div>\n  <div class=\"card\"><h3>B</h3><div>b</div></div>\n</div>\n<p>after</p>",
+    read: (tree) => spans(tree),
+    expected: [
+      ["div", "<div class=\"grid\">\n  <div class=\"card\"><h3>A</h3><div>a</div></div>\n  <div class=\"card\"><h3>B</h3><div>b</div></div>\n</div>"],
+      ["div", "<div class=\"card\"><h3>A</h3><div>a</div></div>"], ["h3", "<h3>A</h3>"], ["div", "<div>a</div>"],
+      ["div", "<div class=\"card\"><h3>B</h3><div>b</div></div>"], ["h3", "<h3>B</h3>"], ["div", "<div>b</div>"],
+      ["p", "<p>after</p>"]],
+  },
+  {
+    name: "range: section in section, last and not-last child, at the end of the page",
+    source: "<section><section>A</section><section>B</section></section>",
+    read: (tree) => spans(tree),
+    expected: [["section", "<section><section>A</section><section>B</section></section>"],
+      ["section", "<section>A</section>"], ["section", "<section>B</section>"]],
+  },
+  {
+    name: "range: three deep, only children and a last child after a sibling",
+    source: "<div><div><div>A</div></div></div><div><div><div>B</div><div>C</div></div></div>",
+    read: (tree) => spans(tree),
+    expected: [["div", "<div><div><div>A</div></div></div>"], ["div", "<div><div>A</div></div>"], ["div", "<div>A</div>"],
+      ["div", "<div><div><div>B</div><div>C</div></div></div>"], ["div", "<div><div>B</div><div>C</div></div>"],
+      ["div", "<div>B</div>"], ["div", "<div>C</div>"]],
+  },
+  {
+    // A parent's end tag bounds its children, also below a parent whose own end is implied; an
+    // implied end tag never borrows a later one of the same name (the inner li once read to </li>).
+    name: "range: a parent's end tag bounds its children; an implied end stays undefined",
+    source: "<ul><li><div><div>A</div></div><li>B</ul><li><ul><li>X</ul></li>",
+    read: (tree) => spans(tree),
+    expected: [["ul", "<ul><li><div><div>A</div></div><li>B</ul>"], ["li", null], ["div", "<div><div>A</div></div>"], ["div", "<div>A</div>"],
+      ["li", null], ["li", null], ["ul", "<ul><li>X</ul>"], ["li", null]],
   },
   {
     name: "attribute: values decoded as the browser decodes attribute values, with their spans",

@@ -68,10 +68,7 @@ function frozenRange(range: ElementRange | undefined): ElementRange | undefined 
 }
 
 function sourceRange(html: string, parsed: ParsedSource, el: Element): ElementRange | undefined {
-  if (parsed.ranges.has(el)) return parsed.ranges.get(el);
-  const range = frozenRange(markedRange(html, parsed.tags, parsed.root, el, parsed.end));
-  parsed.ranges.set(el, range);
-  return range;
+  return markedRange(html, parsed.tags, parsed.root, el, parsed.end, parsed.ranges);
 }
 
 function tagOf(tags: StartTag[], el: Element | null | undefined) {
@@ -175,15 +172,26 @@ export function readPage(source: string): SourceTree<PageNode> {
   return tree;
 }
 
-// The outer range of a marked element in a parsed source whose page part ends at `limit`.
-export function markedRange(html: string, tags: StartTag[], root: ParentNode, el: Element, limit = html.length): ElementRange | undefined {
+// The outer range of a marked element in a parsed source whose page part ends
+// at `limit` (frozen; `ranges` keeps the ranges read, its ancestors' too).
+export function markedRange(html: string, tags: StartTag[], root: ParentNode, el: Element, limit = html.length,
+  ranges = new Map<Element, ElementRange | undefined>()): ElementRange | undefined {
+  if (ranges.has(el)) return ranges.get(el);
   const tag = tagOf(tags, el);
-  if (!tag) return undefined;
-  // The element's end tag precedes the next start tag outside its subtree.
-  const marked = [...root.querySelectorAll(`[${MARK}]`)];
-  const following = marked.slice(marked.indexOf(el) + 1).find((other) => !el.contains(other));
-  const boundary = tagOf(tags, following)?.start ?? limit;
-  return elementEnd(html, tags, tags.indexOf(tag), boundary);
+  let range: ElementRange | undefined;
+  if (tag) {
+    // The element's end tag precedes the next start tag outside its subtree,
+    // and its parent's end tag (walking up the parse), so the last child of a
+    // same-named parent (`<div><div>…</div></div>`) has its own end tag.
+    const marked = [...root.querySelectorAll(`[${MARK}]`)];
+    const following = marked.slice(marked.indexOf(el) + 1).find((other) => !el.contains(other));
+    let parent = el.parentElement;
+    while (parent && !parent.hasAttribute(MARK)) parent = parent.parentElement;
+    const parentEnd = parent ? markedRange(html, tags, root, parent, limit, ranges)?.close?.start : undefined;
+    range = frozenRange(elementEnd(html, tags, tags.indexOf(tag), Math.min(tagOf(tags, following)?.start ?? limit, parentEnd ?? limit)));
+  }
+  ranges.set(el, range);
+  return range;
 }
 
 // The innermost element named in `names` around the text offset `at` of the
