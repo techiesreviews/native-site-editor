@@ -20,6 +20,7 @@ import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, ite
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
 import { cardFill, cardFillMarkup, pageTitle } from "./card-fill";
+import { cardFolder } from "./page-choices";
 import { locateNativeElementRange } from "../native-source-location";
 import type { CardLook } from "./card-looks";
 import { decodeHtmlEntities } from "./html-entities";
@@ -350,7 +351,8 @@ export function createCards(deps: CardsDeps) {
     // Plain collection items use the same facts, with Title and Link as their two roles.
     const rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: deps.siteUrl() }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
     const root = elementTree(from)?.[0];
-    const filled = text !== undefined ? cardFillMarkup(from, text, rows) : root && itemCopy(from, root, { noun: grid!.noun, title, href: route });
+    // Only the copy's own page link, emptied when it was added; its other links keep their addresses.
+    const filled = text !== undefined ? cardFillMarkup(from, text, rows) : root && itemCopy(from, root, { noun: grid!.noun, title, href: route, isLinked: (href) => !href.trim() });
     if (filled === undefined) return undefined;
     return { source, edit: { start: range.start, end: range.end, text: filled }, noun: grid?.noun ?? itemNoun(tag), result: { rows, title, route, base: from, filled } };
   }
@@ -366,6 +368,34 @@ export function createCards(deps: CardsDeps) {
     return fill.result;
   }
 
+  /**
+   * The pages a new page for `card` copies its structure from, last one
+   * first in line: a grid's items' own pages (each item's title too), else,
+   * in an instance's card slot, the other cards' links under the folder most
+   * of them go to (a card's second link, to About, is not a sibling).
+   */
+  function siblingPages(source: string, card: NewCard, route: string, routes: Record<string, string>): { route?: string; title?: string }[] {
+    const titled = (range: SourceGrid["items"][number]["range"]) => {
+      const element = itemElement(source, range);
+      return element && itemTitle(source, element);
+    };
+    const grid = gridFor(card.path, card.node.slice(0, -1))?.grid;
+    const own = card.node.at(-1);
+    if (grid?.items.some((item) => item.route)) return grid.items.filter((item) => item.index !== own).map((item) => ({ route: item.route, title: titled(item.range) }));
+    const links = slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, routes));
+    const folder = cardFolder(links);
+    const parentRange = locateNativeElementRange(source, card.node.slice(0, -1));
+    const parent = parentRange && itemElement(source, parentRange);
+    const peers = (parent?.children ?? []).filter((_, at) => at !== own);
+    return links.filter((link) => !folder || (link !== folder && link.startsWith(folder))).map((link) => {
+      const item = [...peers].reverse().find((child) => allElements([child]).some((element) => {
+        const href = element.name === "a" && startTagAttribute(source, element.tag, "href")?.value;
+        return href && nativeLinkTarget(decodeHtmlEntities(href, true), route, routes) === link;
+      }));
+      return { route: link, title: item && itemTitle(source, item) };
+    });
+  }
+
   /** Create a page and fill the placed card together, with the draft as its history companion. */
   function createPage(card: NewCard, request: CardPageRequest, base?: string): CardFilled | undefined {
     const source = deps.source(card.path);
@@ -376,22 +406,11 @@ export function createCards(deps: CardsDeps) {
     if (source === undefined || !route || !site || !editor?.isMounted(card.path) || !preview) return undefined;
     const target = planPage(request);
     if (!target.ok) { refuse(target.error); return undefined; }
-    const parentRange = locateNativeElementRange(source, card.node.slice(0, -1));
-    const parent = parentRange && itemElement(source, parentRange);
-    const children = parent?.children ?? [];
-    const own = children[card.node.at(-1)!];
-    const slot = (element: (typeof children)[number]) => decodeHtmlEntities(startTagAttribute(source, element.tag, "slot")?.value ?? "", true);
-    const peers = own ? children.filter(child => child !== own && slot(child) === slot(own)) : [];
-    const siblings = slotCardLinks(source, card.node, href => nativeLinkTarget(href, route, site.routes)).map(link => {
-      const item = [...peers].reverse().find(child => allElements([child]).some(element => {
-        const href = element.name === "a" && startTagAttribute(source, element.tag, "href")?.value;
-        return href && nativeLinkTarget(decodeHtmlEntities(href, true), route, site.routes) === link;
-      }));
-      return { route: link, title: item && itemTitle(source, item) };
-    });
-    const content = subpageDocument(siblings, request.title.trim(), target.value.route);
+    const content = subpageDocument(siblingPages(source, card, route, site.routes), request.title.trim(), target.value.route);
     const fill = fillFrom(card, target.value.route, content, base);
     if (!fill) { refuse("That card is not there any more."); return undefined; }
+    // A fill that changes nothing has no edit to carry the page with it: one undo could not take the page back.
+    if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) { refuse(`Nothing on this ${fill.noun} takes a page's title or address.`); return undefined; }
     const file = target.value.file;
     const failed = deps.saveNewDraft(file, content);
     if (failed) { refuse(failed); return undefined; }

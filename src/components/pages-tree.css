@@ -214,3 +214,28 @@
 .pages-item:focus-visible > .pages-row > .row-action-overlay::before,
 .pages-item:focus-visible > .pages-row > .row-action-overlay::after,
 .pages-item:focus-visible > .pages-row > .row-action-overlay > * > * { opacity: 1; transform: none; transition: none; }
+
+/* The new page row's "Add a card to “Recent work” on Home". */
+.pages-edit__card {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding-left: 20px;
+  color: var(--text);
+  font-size: var(--type-small);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.pages-edit__card-box {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+}
+
+.pages-edit__card-box:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}

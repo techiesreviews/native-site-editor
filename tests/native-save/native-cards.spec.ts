@@ -834,3 +834,22 @@ test("a plain collection card fills its title and link from Create page and undo
   await page.locator(".code-editor__undo").click();
   await expect.poll(() => homeDraft(page)).toBe(nestedHome);
 });
+
+test("Create page on a plain collection card copies a sibling work page, not a card's second link, and keeps that link's address", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const twoLinks = nestedHome.replace(/(<div class="fact">\d{4}<\/div>)/g, `$1\n          <p class="more"><a href="/">All our work</a></p>`);
+  await pasteInto(page, twoLinks);
+  await expect.poll(() => homeDraft(page)).toBe(twoLinks);
+  const cards = frame(page).locator("article.card");
+  // On the card's heading: its facts are a grid of their own.
+  await cards.last().locator("h3").hover();
+  await addCard(page).click();
+  await expect(picker(page)).toBeFocused();
+  await picker(page).fill("Oak");
+  await picker(page).press("Enter");
+  await expect(cards.last().locator("h3 a")).toHaveAttribute("href", "/work/oak/");
+  // The card's other link is not its page link: it keeps its address.
+  await expect(cards.last().locator(".more a")).toHaveAttribute("href", "/");
+  // The page is made from the last work page's structure, not from the home page the second links go to.
+  await expect.poll(async () => (await storedDraft(page, "work/oak/index.html"))?.content).toContain("<h2>The brief</h2>");
+});
