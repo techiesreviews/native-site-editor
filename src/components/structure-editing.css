@@ -133,6 +133,7 @@
 .page-structure__row.is-editing > .page-structure__label { align-items: flex-start; }
 .page-structure__row.is-editing > .page-structure__label > .page-structure__kind { min-height: 1.2em; }
 .page-structure__row.is-editing > .page-structure__slot-badge,
+.page-structure__row.is-editing > .slot-chip,
 .page-structure__row.is-editing > .row-action-overlay { display: none; }
 .page-structure__edit-field {
   flex: 1 1 auto;
