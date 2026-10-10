@@ -134,7 +134,7 @@ test("a stale Structure row refuses its menu action without creating a component
 });
 
 test("typing and History viewing keep the browser context menu", async ({ page, baseURL }) => {
-  await frame(page).locator(".hero h1").click();
+  await frame(page).locator(".hero h1").dblclick();
   await expect(frame(page).locator(".hero h1")).toHaveAttribute("contenteditable", /^(true|plaintext-only)$/);
   const browserMenuAllowed = () => frame(page).locator(".hero h1").evaluate(el =>
     el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, composed: true, cancelable: true })));
