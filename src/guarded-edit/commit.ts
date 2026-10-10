@@ -233,7 +233,7 @@ export function createCommit(ws: EditorWorkspace) {
     // With no page open, the page the step opens takes its history: what it says to open, else the
     // first text file it moves. Its Undo opens that file where it was.
     const next = op.open ?? (anchor === undefined
-      ? moves.find(move => expected.get(move.from) !== undefined)?.to
+      ? (moves.find(move => expected.get(move.from) !== undefined || movable.get(move.from)?.text !== undefined) ?? moves[0])?.to
       : moved.get(anchor) ?? (deletes.includes(anchor) ? undefined : anchor));
     const home = anchor ?? moves.find(move => move.to === next)?.from;
     let refreshPending = false;
