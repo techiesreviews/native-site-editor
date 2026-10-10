@@ -1,7 +1,7 @@
 ---
 title: "Creating a component adds the component loader when the site lacks it"
 type: task (AFK)
-status: open
+status: closed
 assignee: sol (runner: claude)
 blocked_by: []
 builder: sol
@@ -23,3 +23,9 @@ Nothing is added when the site already has them. The status message says what wa
 
 - Unit tests: which files and pages get what; nothing added when present; a page with an unusual head still gets the script in the right place.
 - Nightly spec: a Blank page site (no loader) → Make component on a section → `components/components.js` exists, every page has the script, the rule is in site.css, the component renders in the preview; one undo removes everything. Same through + New component and `make_component`.
+
+## Done (2026-10-10)
+
+- `componentLoaderPlan` (`src/page-builder/component-loader.ts`): `components/components.js` with the vendored starter's bytes (fetched same-origin from `public/native-static-starter/<NATIVE_STARTER_VERSION>/`, now in `shared/native-starter-version.ts`) when no file is there, the module script after the head's own last stylesheet on every page without one, and the starter's `:not(:defined)` rule appended to `styles/site.css` (else the stylesheet every page links). Make component, `make_component`, + New component, the Add panel's section components and `add_section` run the step as one native operation with it when needed (status: "Added the component loader to 2 pages, and its :not(:defined) rule to styles/site.css (components/components.js created)."); otherwise their paths are unchanged. Decision: the rule goes in only with the loader file or a script, so a site that already loads its loader everywhere gets nothing. The old "No page loads components/components.js" note is gone.
+- Commits "Creating a component adds the component loader when the site lacks it (slice 103)" (Sol built) and "Component loader: only the head's own module script counts…" (review fixes).
+- Tests: `tests/component-loader.test.ts` (files and pages, nothing when present, srcs, classic/noscript/template scripts, unusual heads, main stylesheet, rule detection, the vendored bytes); nightly `native-component-loader.spec.ts` (Blank page site with two pages: Make component with one Undo in Edit component mode, + New component, `make_component`, Add panel, `add_section`; nothing added on the default fixture).
