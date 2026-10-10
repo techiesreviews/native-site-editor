@@ -237,3 +237,25 @@ test("a ready forgets posted renders", () => {
   frame.emit("ack", { id: update });
   assert.deepEqual(drawn, []);
 });
+
+test("close ends pending asks; an ask the frame cannot take leaves nothing waiting", async () => {
+  const frame = createFakeFrame();
+  const link = createPreviewLink({
+    ...frame.port,
+    post(message) { if (message.type === "inspect") throw new DOMException("could not be cloned", "DataCloneError"); frame.port.post(message); },
+  });
+  await assert.rejects(link.ask({ type: "inspect", request: {} }, 8000), /cloned/);
+  const typing = link.ask({ type: "finish-typing" }, 1000);
+  link.close();
+  assert.equal(await typing, undefined);
+  assert.equal(frame.listening(), false);
+});
+
+test("updates and asks are numbered by one counter", () => {
+  const { frame, link, render } = setup();
+  void link.ask({ type: "finish-typing" }, 1000);
+  render();
+  const ids = frame.posted.flatMap((message) => "id" in message ? [message.id] : []);
+  assert.deepEqual(ids, [1, 2, 3]);
+  link.close();
+});

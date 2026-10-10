@@ -130,7 +130,8 @@ export function createPreviewLink(port: FramePort) {
       };
       const timer = setTimeout(done, ms);
       pending.set(id, { type, token: type === "drop-probe" ? token : undefined, done });
-      send({ ...message, id });
+      // A message the frame cannot take (not cloneable) rejects the ask and leaves nothing waiting.
+      try { send({ ...message, id }); } catch (error) { clearTimeout(timer); pending.delete(id); throw error; }
     });
   }
 
