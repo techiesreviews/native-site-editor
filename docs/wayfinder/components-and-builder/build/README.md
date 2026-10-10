@@ -130,6 +130,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [96 Small overlaps: the card combobox and strip over Open page; the ⋯ button over a badge being renamed](tickets/96-overlay-overlaps.md) | sol | – |
 | [54 Create page from the card's combobox](tickets/54-create-page-from-combobox.md) | sol | 53 |
 | [55 Card links follow the card](tickets/55-stretched-link-on-non-link-grids.md) | sol | 53, 09 |
+| [99 Plain cards fill their text and image too; look swaps add the :host rule; cards spec after slice 78](tickets/99-plain-card-fill-and-fixes.md) | sol | – |
 | [56 Add card ▾: choose the card's look](tickets/56-add-card-look-gallery.md) | claude ★ | 50, 12 |
 | [57 Swap a card's look and keep its content](tickets/57-look-chip-swap.md) | claude ★ | 56, 53 |
 | [58 Starter: a second card look](tickets/58-starter-card-looks.md) | sol | – |
