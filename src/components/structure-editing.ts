@@ -23,6 +23,29 @@ type FieldControl = HTMLInputElement | HTMLTextAreaElement;
 type Slot = ComponentStructureModel["slots"][number];
 export type FocusRequest = { prefix: string; row: string | undefined; caret?: number };
 
+/**
+ * The text a row edits in place and the session it writes through: a slot's
+ * (with its card's fields), or an element's own text (slice 102), which edits
+ * the same way.
+ */
+export interface RowText {
+  path: string;
+  /** The slot's name; "" for an element's own text. */
+  name: string;
+  /** Who the row is, for the field's name and what is said ("Title", "Heading"). */
+  label: string;
+  /** What the field holds, after the label in its name ("Text", "Button text"). */
+  field: string;
+  /** The text as the field shows it. */
+  text: string;
+  /** Whether a line break can be typed. */
+  breaks: boolean;
+  /** Its fields' ids start with this (a focus request names it). */
+  prefix: string;
+  /** The edit's session, opened with its first change. */
+  open: () => ComponentSlotEditSession | undefined;
+}
+
 export interface StructureEditingHost {
   tree: HTMLElement;
   componentSlots: (path: string, node: readonly number[]) => ComponentStructureModel | undefined;
@@ -79,12 +102,12 @@ export function createStructureEditing(host: StructureEditingHost) {
   interface Mode {
     owner: string;
     path: string;
-    hostNode: readonly number[];
     name: string;
     label: string;
     breaks: boolean;
     // Its fields' ids start with this (a focus request names it).
     prefix: string;
+    open: () => ComponentSlotEditSession | undefined;
     session?: ComponentSlotEditSession;
     fields: Map<ComponentSlotPart, FieldControl>;
     pending: Map<ComponentSlotPart, ReturnType<typeof setTimeout>>;
@@ -95,17 +118,23 @@ export function createStructureEditing(host: StructureEditingHost) {
   let mode: Mode | undefined;
   let typingHeld = false;
 
-  function startMode(model: ComponentStructureModel, slot: Slot, owner: string) {
-    if (mode?.owner === owner && mode.name === slot.name && mode.path === model.host.path) return mode;
+  // A slot's row text: its session opens on the instance as it is then.
+  function slotText(model: ComponentStructureModel, slot: Slot): RowText {
+    const { path } = model.host, node = [...model.host.node];
+    return { path, name: slot.name, label: slot.label, field: slot.kind === "link" ? "Button text" : "Text", text: slot.value.lines ?? slot.value.text,
+      breaks: Boolean(slot.value.breaks), prefix: host.fieldPrefix(model, slot.name), open: () => host.componentSlots(path, node)?.openSlotEdit(slot.name) };
+  }
+  function startMode(target: RowText, owner: string) {
+    if (mode?.owner === owner && mode.name === target.name && mode.path === target.path) return mode;
     if (mode) finish("commit", false, true);
     suggestionsFailed = false;
-    mode = { owner, path: model.host.path, hostNode: [...model.host.node], name: slot.name, label: slot.label, breaks: Boolean(slot.value.breaks),
-      prefix: host.fieldPrefix(model, slot.name), fields: new Map(), pending: new Map(), parts: [] };
+    mode = { owner, path: target.path, name: target.name, label: target.label, breaks: target.breaks, prefix: target.prefix, open: target.open,
+      fields: new Map(), pending: new Map(), parts: [] };
     return mode;
   }
   // The session opens with the first change (so an upload in between, its own step, starts a new one).
   function session(current: Mode) {
-    current.session ??= host.componentSlots(current.path, current.hostNode)?.openSlotEdit(current.name);
+    current.session ??= current.open();
     return current.session;
   }
   function writeNow(current: Mode, part: ComponentSlotPart) {
@@ -207,15 +236,19 @@ export function createStructureEditing(host: StructureEditingHost) {
     });
   }
 
-  /** Turns `row` into the editing row: its text the field, in its own place, Done at its end. */
+  /** Turns a slot's `row` into the editing row: its text the field (`inPlace`), in its own place, Done at its end. */
   function editRow(row: HTMLElement, label: HTMLElement, model: ComponentStructureModel, slot: Slot, owner: string, inPlace: boolean) {
-    const current = startMode(model, slot, owner);
+    editTextRow(row, label, slotText(model, slot), owner, inPlace);
+    row.dataset.slotEditor = slot.name;
+  }
+  /** Turns `row` into the editing row of `target`: its text the field (`inPlace`), in its own place, Done at its end. */
+  function editTextRow(row: HTMLElement, label: HTMLElement, target: RowText, owner: string, inPlace = true) {
+    const current = startMode(target, owner);
     current.parts = [row];
     row.classList.add("is-editing");
-    row.dataset.editNode = owner; row.dataset.slotEditor = slot.name;
+    row.dataset.editNode = owner;
     if (inPlace) {
-      const name = slot.kind === "link" ? "Button text" : "Text";
-      const field = modeField(current, "text", `${slot.label}: ${name}`, slot.value.lines ?? slot.value.text, true);
+      const field = modeField(current, "text", `${target.label}: ${target.field}`, target.text, true);
       field.classList.add("page-structure__edit-field");
       const text = label.querySelector(":scope > .page-structure__text");
       if (text) text.replaceWith(field); else label.append(field);
@@ -232,7 +265,7 @@ export function createStructureEditing(host: StructureEditingHost) {
   /** The card under an editing row: the slot's fields other than the row's own text (a link's URL, an image and its alt). */
   function card(model: ComponentStructureModel, slot: Slot, owner: string, level: number) {
     if (slot.kind !== "image" && slot.kind !== "link") return undefined;
-    const current = startMode(model, slot, owner);
+    const current = startMode(slotText(model, slot), owner);
     const inline = node("div", "page-structure__inline"); inline.dataset.editNode = owner; inline.dataset.slotEditor = slot.name;
     // --depth is the owning row's, so the card lines up with it.
     inline.style.setProperty("--depth", String(level - 1));
@@ -392,6 +425,7 @@ export function createStructureEditing(host: StructureEditingHost) {
 
   return {
     editRow,
+    editTextRow,
     card,
     attributesPanel,
     finish,

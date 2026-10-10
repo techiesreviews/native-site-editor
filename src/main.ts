@@ -569,6 +569,7 @@ function mountWorkspace() {
     onSelect: (path, node, edit) => nativePreview?.selectNode({ path, node }, edit),
     onRemove: (path, node, source) => pageStructureController.removeRow(path, node, source),
     componentSlots: (path, node) => componentTools?.structure(path, node),
+    textRow: (path, node, tag) => nativeTextTags.has(tag) ? componentTools?.textRow(path, node) : undefined,
     templateRows: (path, node) => componentTools?.templateRows(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,
     pageMeta: nativePageMeta,

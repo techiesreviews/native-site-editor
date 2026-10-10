@@ -81,13 +81,13 @@ test("a row selects its element in the preview, brings it into view and opens it
     const box = (await filler.boundingBox())!;
     return box.y < frameBox.y + frameBox.height && box.y + box.height > frameBox.y;
   }).toBe(true);
-  // Arrow keys walk the visible rows (Right unfolds); Enter selects.
+  // Arrow keys walk the visible rows (Right unfolds); Space selects (Enter on a text row edits its text, slice 102).
   await expect(row(page, "Section Scroll to verify")).toBeFocused();
   await expect(row(page, "Section Scroll to verify")).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowDown");
   await expect(row(page, "Heading Scroll to verify")).toBeFocused();
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(row(page, "Heading Scroll to verify")).toHaveAttribute("aria-selected", "true");
   // Left goes to the parent; Left again folds it, Right unfolds.

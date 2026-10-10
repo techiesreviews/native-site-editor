@@ -910,18 +910,82 @@ export function slotTextEdit(source: string, template: string, instance: Instanc
   const value = slotValue(source, template, instance, slot);
   if (!value.editable) return { error: "This slot holds more than a line of text. Select it in the preview to edit it." };
   const only = value.element;
-  const from = only ? only.tag.end : fill[0].start;
-  const to = only ? only.close!.start : fill.at(-1)!.end;
-  if (value.breaks) {
+  return contentTextEdit(source, only ? only.tag.end : fill[0].start, only ? only.close!.start : fill.at(-1)!.end, text, Boolean(value.breaks));
+}
+
+/**
+ * The edit that makes the content between `from` and `to` read `text`, as a
+ * row's field types it: with `breaks`, each line break a `<br>`, else line
+ * breaks become spaces. Only the stretch that changed is replaced, so
+ * formatting (a link, bold) around it stays; a change that would cut through
+ * it says why. An unchanged text is an empty edit.
+ */
+function contentTextEdit(source: string, from: number, to: number, text: string, breaks: boolean): RangeEdit | { error: string } {
+  const unplaced = { error: "That change could not be placed in the source. Change text within one formatting at a time." };
+  if (breaks) {
     // Typed line breaks are the element's `<br>`s; everything else stays text.
     if (breakText(source.slice(from, to)) === text) return { start: from, end: from, text: "" };
-    const edit = breakTextEdit(source, from, to, text);
-    return edit ?? { error: "That change could not be placed in the source. Change text within one formatting at a time." };
+    return breakTextEdit(source, from, to, text) ?? unplaced;
   }
   text = text.replace(/\r\n|[\r\n]/g, " ");
   if (plainText(source.slice(from, to)) === text) return { start: from, end: from, text: "" };
-  const edit = textChangeEdit(source, from, to, text);
-  return edit ?? { error: "That change could not be placed in the source. Change text within one formatting at a time." };
+  return textChangeEdit(source, from, to, text) ?? unplaced;
+}
+
+/** An element's own text as a Structure row edits it in place (as a slot's text row does). */
+export interface ElementText {
+  /** The text as a field shows it: each of the element's own `<br>`s a line break when `breaks`. */
+  lines: string;
+  /** Whether a line break can be typed: the element takes `<br>` and none sits inside its formatting. */
+  breaks: boolean;
+  /** The element holds text and breaks alone: typing can show in the page ahead of its write. */
+  plain: boolean;
+}
+
+/**
+ * The text of `element` (parsed from `source`) when a field can edit it: an
+ * element with an end tag holding text and inline formatting only (a link,
+ * bold, …), the slot editor's rule. Undefined for anything else (an image, a
+ * block inside, a component).
+ */
+export function elementText(source: string, element: SourceElement): ElementText | undefined {
+  if (!element.close || !textOnly(element.children)) return undefined;
+  const inner = source.slice(element.tag.end, element.close.start);
+  const breaks = takesBreaks(element.name) && breaksAllowed(inner);
+  return {
+    lines: breaks ? breakText(inner) : plainText(inner),
+    breaks,
+    plain: element.children.every(child => child.type === "text" || child.name === "br"),
+  };
+}
+
+/** The edit that makes `element`'s text read `text` (elementText's rules), or why it cannot. */
+export function elementTextEdit(source: string, element: SourceElement, text: string): RangeEdit | { error: string } {
+  const value = elementText(source, element);
+  if (!value) return { error: "This element holds more than text. Select it in the preview to edit it." };
+  return contentTextEdit(source, element.tag.end, element.close!.start, text, value.breaks);
+}
+
+/**
+ * A field's write of `element`'s text, worked out from the source it opened
+ * on (`opening`, where `element` was parsed) rather than from its last write:
+ * `current` is `opening` with the field's earlier writes in it. So a step on
+ * the way (a word taken out beside a link before the next is typed) never has
+ * to be placed by itself; only what the text becomes does.
+ */
+export function elementTextWrite(opening: string, element: SourceElement, current: string, text: string): RangeEdit | { error: string } {
+  const edit = elementTextEdit(opening, element, text);
+  if ("error" in edit) return edit;
+  return sourceChange(current, opening.slice(0, edit.start) + edit.text + opening.slice(edit.end));
+}
+
+/** The one range edit that turns `before` into `after`, keeping what they start and end with alike. */
+export function sourceChange(before: string, after: string): RangeEdit {
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let end = before.length, endAfter = after.length;
+  while (end > start && endAfter > start && before[end - 1] === after[endAfter - 1]) { end--; endAfter--; }
+  return { start, end, text: after.slice(start, endAfter) };
 }
 
 /** Sets (or, with `undefined`, removes) an attribute on the start tag at `tag`; `true` writes it bare (`data-featured`). */

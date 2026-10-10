@@ -10,10 +10,10 @@ import eyeClosed from "@phosphor-icons/core/regular/eye-closed.svg?raw";
 import { rowActions } from "./row-actions";
 import { blockIcon } from "./element-icons";
 import { handleChunkLoadFailure } from "../chunk-recovery";
-import type { FocusRequest, StructureEditing } from "./structure-editing";
+import type { FocusRequest, RowText, StructureEditing } from "./structure-editing";
 import "./page-structure.css";
 import type { TemplateStructureItem } from "../page-builder/component-model";
-import type { ComponentStructureModel } from "../page-builder/components";
+import type { ComponentStructureModel, ElementTextModel } from "../page-builder/components";
 import type { DragPress } from "../page-builder/insert-drag";
 import { foldRows, type StructureDropView, type TreeRow } from "../page-builder/tree-drop";
 
@@ -60,6 +60,12 @@ export interface PageStructureHandlers {
   /** Include source/template/revision/model changes; enables unchanged-update caching. */
   componentFieldsRevision?: () => string;
   componentSlots?: (path: string, node: readonly number[]) => ComponentStructureModel | undefined;
+  /**
+   * The own text of the element at `node` in `path` (a page's, or a template
+   * part's in Edit component mode) when its row can edit it in place, as a
+   * slot's text row does; nothing for an element holding more than text.
+   */
+  textRow?: (path: string, node: readonly number[], tag: string) => ElementTextModel | undefined;
   /** Open page details; the sidebar retains a compact summary. */
   onPageSettings?: (path: string) => void;
   onNavigation?: (path: string) => void;
@@ -232,6 +238,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const movable = new Set<string>();
   type SlotRowContext = { model: ComponentStructureModel; slot: ComponentStructureModel["slots"][number]; anchor: readonly number[] };
   let openSlot: { host: string; name: string; anchor: string } | undefined;
+  // The row whose element's own text is edited in place (slice 102), by its id.
+  let openText: string | undefined;
   let openAttributes: string | undefined;
   const hostKey = (model: ComponentStructureModel) => `${model.host.path}:${key([...model.host.node])}`;
   // Field ids live in separate namespaces so a slot named "attributes" never meets the Attributes panel.
@@ -280,7 +288,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (anchor) choose({ node: [...anchor] } as NativeStructureItem);
       return;
     }
-    openAttributes = undefined;
+    openAttributes = undefined; openText = undefined;
     const owner = anchor ? key([...anchor]) : slotRowKey(model, slot.name);
     openSlot = { host: hostKey(model), name: slot.name, anchor: owner };
     foldState.set(key([...model.host.node]), false);
@@ -295,6 +303,34 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // The part a slot's row edits in place: its text (a text slot's, a link's
   // label). Everything else (URL, image, alt) is in the card under the row.
   const inPlace = (slot: SlotRowContext["slot"]) => (slot.kind === "text" || slot.kind === "link") && slot.value.editable;
+  // An element's own text, edited from its row as a slot's text is (slice 102):
+  // a page row's, or in Edit component mode a part's of the template edited.
+  // Rows that stand for something else (an instance, a template's root or
+  // empty slot, an outer level) have none.
+  function rowText(item: NativeStructureItem): RowText | undefined {
+    if (!structure?.path || outerRows.has(item) || framedRows.has(item) || templateRoots.has(item) || templatePaths.has(item) && item.tag === "slot" || handlers.label(item).component) return;
+    const { path, node } = rowTarget(item, structure.path);
+    const model = handlers.textRow?.(path, node, item.tag);
+    if (!model) return;
+    return { path, name: "", label: handlers.label(item).kind, field: "Text", text: model.lines, breaks: model.breaks, prefix: `${path}:text:${key(node)}:`,
+      open: () => handlers.textRow?.(path, node, item.tag)?.open() };
+  }
+  /** Opens the row's text in place (everything selected, or the caret at `caret`) and selects its element; false when it has none. */
+  function requestTextEdit(item: NativeStructureItem, caret?: number) {
+    const target = rowText(item);
+    if (!target || !structure?.path) return false;
+    const id = itemKey(item);
+    openSlot = undefined; openAttributes = undefined;
+    openText = id;
+    selected = id;
+    const { path, node } = rowTarget(item, structure.path);
+    handlers.onSelect(path, node);
+    focusSlotField = { prefix: target.prefix, row: id, caret };
+    editStarted = performance.now();
+    if (!editingModule) void loadEditing(true);
+    render();
+    return true;
+  }
   // When the open editor began: a double-click's second click then selects all.
   let editStarted = 0;
   // The row whose editing just ended, so its first paint eases back.
@@ -374,7 +410,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
   // A row edit ended: forget it, redraw, and (asked) give its row focus.
   function editEnded(owner: string, focus: boolean) {
-    openSlot = undefined;
+    openSlot = undefined; openText = undefined;
     focusSlotField = undefined;
     leftEditing = owner;
     if (focus) rowElement(owner)?.focus();
@@ -566,6 +602,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (focusSlotField && focusSlotField.row === undefined) focusSlotField.row = openSlot.anchor;
     }
     const editing = !!slotContext && editable(slotContext.slot) && openSlot?.host === hostKey(slotContext.model) && openSlot.name === slotContext.slot.name && openSlot.anchor === id;
+    // A row edits its element's own text unless it is a slot's that edits in its own way (a content slot's parts do).
+    const ownText = !slotContext || !editable(slotContext.slot);
+    const textEditing = ownText && openText === id;
     const attributes = !!slotModel && openAttributes === id;
     const children = modeRows?.items ?? item.children;
     const hasChildren = children.length > 0 || !!slotModel;
@@ -596,7 +635,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     }
     if (slotModel) {
       const attributesAction = iconAction("Attributes", "content", () => {
-          openSlot = undefined;
+          openSlot = undefined; openText = undefined;
           openAttributes = openAttributes === id ? undefined : id;
           if (openAttributes && !editingModule) void loadEditing(true);
           if (openAttributes) { foldState.set(id, false); focusInline = id; }
@@ -685,11 +724,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       }
       choose(item);
     });
-    // A double-click on a row's name edits its text on the page (the runtime
-    // starts typing only in text), unless the row's text edits in place here.
+    // A double-click on a row's name edits its text in place here, as a slot's
+    // text row does (slice 102); an element with more than text in it (no
+    // field) types on the page instead (the runtime starts typing only in text).
     el.addEventListener("dblclick", (event) => {
       if (!structure?.path || inEditor(event.target) || !(event.target instanceof Node && label.contains(event.target))) return;
-      if ((slotContext && inPlace(slotContext.slot)) || outerRows.has(item)) return;
+      if ((slotContext && inPlace(slotContext.slot)) || outerRows.has(item) || textEditing) return;
+      if (ownText && requestTextEdit(item)) return;
       const at = rowTarget(item, structure.path);
       handlers.onSelect(at.path, at.node, true);
     });
@@ -703,11 +744,19 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (event.key === "F2" && slotContext) { event.preventDefault(); requestSlotEdit(slotContext); return; }
       // Enter on a row whose text edits in place starts editing it (everything selected).
       if (event.key === "Enter" && slotContext && inPlace(slotContext.slot) && !editing) { event.preventDefault(); event.stopPropagation(); requestSlotEdit(slotContext); return; }
+      // An element's own text, likewise (slice 102); F2 too, as on a slot's row.
+      if ((event.key === "Enter" || event.key === "F2") && ownText && !textEditing && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && requestTextEdit(item)) {
+        event.preventDefault(); event.stopPropagation(); return;
+      }
       onKey(event, item, el);
     });
     rows.set(id, el);
     const editor = editing && slotContext ? editingNow() : undefined;
+    // The row's own text being edited: drawn from the source as it is now.
+    const typed = textEditing ? rowText(item) : undefined;
+    const textEditor = typed ? editingNow() : undefined;
     if (editor && slotContext) editor.editRow(el, label, slotContext.model, slotContext.slot, id, inPlace(slotContext.slot));
+    else if (textEditor && typed) { textEditor.editTextRow(el, label, typed, id); el.dataset.textEditor = ""; }
     else if (leftEditing === id) el.classList.add("was-editing");
     const inline = editor && slotContext ? editor.card(slotContext.model, slotContext.slot, id, level) : undefined;
     if (inline) inline.id = `structure-inline-${id}`;
@@ -1004,6 +1053,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // nothing to anchor to is forgotten, so no later render reopens it.
     // A paint proven stale proves nothing, and a pending Show waits for a fresh one.
     if (openSlot && !editorWaiting && !keepPending && paintFresh !== false && !tree.querySelector("[data-slot-editor]")) { openSlot = undefined; }
+    // A row text edit whose row went, or whose element no longer holds text alone, ends (what was typed kept).
+    if (openText !== undefined && !editorWaiting && paintFresh !== false && !tree.querySelector("[data-text-editor]")) {
+      if (editingModule?.editing() === openText) editingModule.finish("commit", false, true);
+      openText = undefined;
+    }
     leftEditing = undefined;
     const currentSelection = setSelected(selected);
     if (focusRemoval && currentSelection) {
@@ -1173,12 +1227,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         // Another page: a row edit is kept (what waits is written) and ends.
         if (editingModule?.editing()) editingModule.finish("commit", false, true);
         foldState.clear();
-        selected = undefined; openSlot = undefined; openAttributes = undefined;
+        selected = undefined; openSlot = undefined; openText = undefined; openAttributes = undefined;
       } else if (editingModule?.editing() && editingModule.stale()) {
         // The source moved on without the row edit (Undo, Redo, another edit): it ends, said so.
         const owner = editingModule.editing()!;
         editingModule.finish("stale", false, true);
-        openSlot = undefined; focusSlotField = undefined; leftEditing = owner;
+        openSlot = undefined; openText = undefined; focusSlotField = undefined; leftEditing = owner;
         // Drawn even when the page reads as before the typing (its paints were held).
         rendered = "";
       }
@@ -1195,7 +1249,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       // typing made (text alone changed) is kept but not drawn: the tree stays
       // as it is, field, caret and all; it is drawn when editing ends. Any other
       // change (Undo, another edit, a new page) is drawn as ever.
-      if (next && previousStructure && openSlot && path === previousStructure.path && editingModule?.holdsPaint(next, previousStructure)) {
+      if (next && previousStructure && (openSlot || openText !== undefined) && path === previousStructure.path && editingModule?.holdsPaint(next, previousStructure)) {
         structure = next;
         return;
       }
@@ -1246,3 +1300,4 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 }
 
 export type PageStructure = ReturnType<typeof createPageStructure>;
+

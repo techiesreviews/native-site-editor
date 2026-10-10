@@ -236,7 +236,7 @@ test("a link is selected by a click and typed into on a double-click; Enter type
   await expect(kind).toHaveText("Link");
 });
 
-test("a click on a Structure row selects; a double-click types into its text on the page", async ({ page }) => {
+test("a click on a Structure row selects; a double-click edits its text in the row, not on the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const heading = frame.locator(".hero h1");
   // The hero section's row is named by its heading; the heading's row is its first child.
@@ -246,10 +246,12 @@ test("a click on a Structure row selects; a double-click types into its text on 
   await row.locator(".page-structure__label").click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
+  // Slice 102: the double-click opens the row's text as its field (native-structure-text.spec.ts).
   await row.locator(".page-structure__label").dblclick();
-  await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
-  await expect(heading).toBeFocused();
-  // The caret is at the end.
+  const field = page.getByRole("textbox", { name: "Heading: Text", exact: true });
+  await expect(field).toBeFocused();
+  await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
+  await field.press("End");
   await page.keyboard.type(" today");
   await page.keyboard.press("Enter");
   await expect(heading).toHaveText("A native browser preview today");

@@ -51,6 +51,8 @@ import {
   startTagAttributes,
   parseSource,
   descendants,
+  elementText,
+  elementTextWrite,
   attributeNameProblem,
   componentUsage,
   detachMarkup,
@@ -226,6 +228,14 @@ export interface ComponentSlotEditSession {
   close(): void;
   /** Takes back everything it wrote and shows the first text again: false when it could not (said so). */
   cancel(): boolean;
+}
+/** An element's own text (not a slot's), edited from its Structure row as a slot's text row is. */
+export interface ElementTextModel {
+  /** The text as the row's field shows it (line breaks for the element's own `<br>`s when `breaks`). */
+  lines: string;
+  breaks: boolean;
+  /** One session for the row's text, as `openSlotEdit`'s: its writes one undo step. */
+  open(): ComponentSlotEditSession | undefined;
 }
 export interface ComponentStructureModel {
   host: { path: string; node: readonly number[]; tag: string };
@@ -1781,6 +1791,182 @@ export function createComponentTools(deps: ComponentDeps) {
     return true;
   }
 
+  // ---- Edit sessions: a field's (or a Structure row's) typing as one undo step. ----
+
+  type SessionAt = { source: string; node: number[] };
+  interface SessionScope<At extends SessionAt> {
+    path: string;
+    /** The source the session opens on. */
+    source: string;
+    editor: CodeEditor;
+    hostProof: { isCurrent(): boolean };
+    revision: string;
+    /** Another file whose change ends the session too (an instance's template). */
+    watch?: string;
+    /** What the edit acts on, found again in `expected` (refused, said so, when it moved on). */
+    read: (expected?: string, proof?: { isCurrent(): boolean }) => At | undefined;
+  }
+  /**
+   * Every write of the session is one undo step, which `close` keeps and
+   * `cancel` takes back; a source that moves on without it makes it stale.
+   */
+  function sourceSession<At extends SessionAt>(scope: SessionScope<At>, plan: (at: At, value: string, part?: ComponentSlotPart) => RangeEdit | { error: string } | undefined, message: string) {
+    const { path, editor, hostProof, revision, read } = scope;
+    const initialProof = editor.prepareHistorySources([{ path, expectedSource: scope.source, text: scope.source }]);
+    if (!initialProof) return;
+    let expected = scope.source, closed = false, wrote = false, writing = false, lastNode: number[] | undefined;
+    // The watched file as it was: an edit to it (an agent, the code pane) ends the session too.
+    const watchedAtOpen = scope.watch === undefined ? undefined : deps.sources()[scope.watch];
+    // Closes this session's undo group in its own scope, even after a branch switch mounted another.
+    const closeOwnGroup = typeof editor.editGroupCloser === "function" ? editor.editGroupCloser(path) : undefined;
+    let proof = initialProof;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+      proof.dispose?.();
+      if (ownsGroup) editor.closeActiveEditGroup(path);
+      else if (wrote) closeOwnGroup?.();
+    };
+    const reject = () => { close(); return false; };
+    const cancel = () => {
+      if (closed) return false;
+      const owns = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
+      closed = true;
+      proof.dispose?.();
+      if (!wrote) return true;
+      if (!owns) { closeOwnGroup?.(); return false; }
+      if (lastNode) deps.preview()?.selectAfterUpdate({ path, node: lastNode });
+      const discarded = typeof editor.discardActiveEditGroup === "function" && editor.discardActiveEditGroup(path);
+      if (!discarded) editor.closeActiveEditGroup(path);
+      return discarded;
+    };
+    return {
+      cancel,
+      /** The source this session last wrote (else the one it opened on), and whether it has ended. */
+      state: () => ({ expected, closed, wrote }),
+      /** The source moved on without this session, or its file or scope did. */
+      // (Its own write, still under way, is not "moved on": what it starts may look in here before it returns.)
+      stale: () => !writing && (closed || deps.sources()[path] !== expected || (scope.watch !== undefined && deps.sources()[scope.watch] !== watchedAtOpen)
+        || !hostProof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor),
+      write(value: string, part?: ComponentSlotPart) {
+        if (closed) return reject();
+        const at = read(expected, proof);
+        if (!at) return reject();
+        const edit = plan(at, value, part);
+        if (!edit) return reject();
+        if ("error" in edit) { refuse(edit.error); return false; }
+        const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
+        if (next === at.source) return true;
+        // A session's first write starts an undo step of its own, never one left open before it.
+        if (!wrote && typeof editor.hasOpenEditGroup === "function" && editor.hasOpenEditGroup(path)) editor.closeActiveEditGroup(path);
+        writing = true;
+        try { live(path, edit, message, at.node); } finally { writing = false; }
+        lastNode = at.node;
+        if (deps.sources()[path] !== next) return reject();
+        if (!hostProof.isCurrent()) return reject();
+        const nextProof = editor.prepareHistorySources([{ path, expectedSource: next, text: next }]);
+        if (!nextProof) return reject();
+        proof.dispose?.(); proof = nextProof;
+        expected = next;
+        wrote = true;
+        return true;
+      },
+      close,
+    };
+  }
+
+  /**
+   * A Structure row's edit (a slot's, or an element's own text) on a source
+   * session: a part still holding its `first` value is left as written, and
+   * the text (at `node`, when it holds text and breaks alone) shows in the
+   * page ahead of its write.
+   */
+  function rowSession(session: NonNullable<ReturnType<typeof sourceSession>>, path: string, first: Record<ComponentSlotPart, string>, node: number[] | undefined): ComponentSlotEditSession {
+    const touched = new Set<ComponentSlotPart>();
+    const patcher = () => { const preview = deps.preview(); return preview?.patchText && preview.vouchPatch && preview.endPatch ? preview as PreviewTextPatch : undefined; };
+    let textRefused = false, patching = false, shown = first.text;
+    return {
+      patchable: Boolean(node && patcher()),
+      stale: session.stale,
+      write(part, value) {
+        if (session.state().closed) return false;
+        // A part still holding its first value is left as written (byte for byte).
+        if (!touched.has(part) && value === first[part]) return true;
+        touched.add(part);
+        const ok = session.write(value, part);
+        if (part === "text") textRefused = !ok;
+        // Text the source refused never stays on the page: the patch ends and the page is drawn from its source.
+        if (part === "text" && !ok && patching) { patcher()?.endPatch(path); patching = false; }
+        if (ok && patching) patcher()?.vouchPatch(path, session.state().expected);
+        return ok;
+      },
+      patch(text, miss) {
+        const preview = patcher();
+        if (!node || !preview || textRefused || session.stale()) return false;
+        patching = true;
+        shown = text;
+        preview.patchText({ path, node: [...node] }, text, session.state().expected, miss);
+        return true;
+      },
+      close() {
+        // The page keeps the last patch only when its text is what was written; else the next render settles it.
+        const kept = patching && !textRefused && !session.stale();
+        session.close();
+        if (patching) patcher()?.endPatch(path, kept ? { text: shown } : undefined);
+        patching = false;
+      },
+      cancel() {
+        const done = session.cancel();
+        if (patching) patcher()?.endPatch(path, done ? { text: first.text } : undefined);
+        patching = false;
+        if (!done) refuse("The edit couldn't be undone; use Undo.");
+        return done;
+      },
+    };
+  }
+
+  /**
+   * The own text of the element at `nodePath` in `path` (a page's element, or
+   * in Edit component mode a template part), when its row can edit it: the
+   * file open in the editor, and the element holding text and inline
+   * formatting alone (component-model.ts `elementText`).
+   */
+  function textRow(path: string, nodePath: readonly number[]): ElementTextModel | undefined {
+    const editor = deps.editor();
+    if (!editor || !editable(path)) return;
+    const locate = (source: string) => {
+      const range = locateNativeElementRange(source, [...nodePath]);
+      const element = range && [...descendants(parseSource(source))].find(el => el.tag.start === range.tag.start);
+      const value = element && elementText(source, element);
+      return element && value ? { source, element, value, node: [...nodePath] } : undefined;
+    };
+    const opened = locate(deps.sources()[path] ?? "");
+    if (!opened) return;
+    return {
+      lines: opened.value.lines,
+      breaks: opened.value.breaks,
+      open() {
+        const revision = deps.revision();
+        const hostProof = editor.captureHistoryHost(path);
+        const initial = locate(deps.sources()[path] ?? "");
+        if (!hostProof || !initial || deps.editor() !== editor || !editable(path)) return;
+        const read = (expected = initial.source, proof?: { isCurrent(): boolean }) => {
+          const at = deps.sources()[path] === expected && hostProof.isCurrent() && (!proof || proof.isCurrent()) && deps.revision() === revision && deps.editor() === editor && editable(path)
+            ? locate(expected) : undefined;
+          if (!at || at.element.name !== initial.element.name) { refuse("The text changed meanwhile; edit it again."); return; }
+          return at;
+        };
+        const session = sourceSession({ path, source: initial.source, editor, hostProof, revision, read },
+          (at, value, part) => part === "text" ? elementTextWrite(initial.source, initial.element, at.source, value) : undefined, "Text changed");
+        if (!session) return;
+        // Typing shows in the page ahead of its write where the page on show holds the element (not a template's part).
+        const node = initial.value.plain && deps.previewPage() === path ? initial.node : undefined;
+        return rowSession(session, path, { text: initial.value.lines, href: "", src: "", alt: "" }, node);
+      },
+    };
+  }
+
   /** A true instance target, independent of the current canvas selection. */
   function structure(path: string, nodePath: readonly number[]): ComponentStructureModel | undefined {
     const initial = instanceAt(path, [...nodePath]);
@@ -1805,71 +1991,8 @@ export function createComponentTools(deps: ComponentDeps) {
     };
     // The legacy token ranges must describe the browser's actual attributes.
     const attributeSourceSafe = (at: Located) => openingSourceSafe(at.source, at.range.tag);
-    const openSession = (plan: (at: Located, value: string, part?: ComponentSlotPart) => RangeEdit | { error: string } | undefined, message: string) => {
-      if (!read()) return;
-      const initialProof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
-      if (!initialProof) return;
-      let expected = initial.source, closed = false, wrote = false, writing = false, lastNode: number[] | undefined;
-      // The instance's template as it was: an edit to it (an agent, the code pane) ends the session too.
-      const templateAtOpen = deps.sources()[initial.templatePath];
-      // Closes this session's undo group in its own scope, even after a branch switch mounted another.
-      const closeOwnGroup = typeof editor.editGroupCloser === "function" ? editor.editGroupCloser(path) : undefined;
-      let proof = initialProof;
-      const close = () => {
-        if (closed) return;
-        closed = true;
-        const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
-        proof.dispose?.();
-        if (ownsGroup) editor.closeActiveEditGroup(path);
-        else if (wrote) closeOwnGroup?.();
-      };
-      const reject = () => { close(); return false; };
-      const cancel = () => {
-        if (closed) return false;
-        const owns = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && deps.revision() === revision && deps.editor() === editor;
-        closed = true;
-        proof.dispose?.();
-        if (!wrote) return true;
-        if (!owns) { closeOwnGroup?.(); return false; }
-        if (lastNode) deps.preview()?.selectAfterUpdate({ path, node: lastNode });
-        const discarded = typeof editor.discardActiveEditGroup === "function" && editor.discardActiveEditGroup(path);
-        if (!discarded) editor.closeActiveEditGroup(path);
-        return discarded;
-      };
-      return {
-        cancel,
-        /** The source this session last wrote (else the one it opened on), and whether it has ended. */
-        state: () => ({ expected, closed, wrote }),
-        /** The source moved on without this session, or its file or scope did. */
-        // (Its own write, still under way, is not "moved on": what it starts may look in here before it returns.)
-        stale: () => !writing && (closed || deps.sources()[path] !== expected || deps.sources()[initial.templatePath] !== templateAtOpen
-          || !hostProof.isCurrent() || deps.revision() !== revision || deps.editor() !== editor),
-        write(value: string, part?: ComponentSlotPart) {
-          if (closed) return reject();
-          const at = read(expected, proof);
-          if (!at) return reject();
-          const edit = plan(at, value, part);
-          if (!edit) return reject();
-          if ("error" in edit) { refuse(edit.error); return false; }
-          const next = at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
-          if (next === at.source) return true;
-          // A session's first write starts an undo step of its own, never one left open before it.
-          if (!wrote && typeof editor.hasOpenEditGroup === "function" && editor.hasOpenEditGroup(path)) editor.closeActiveEditGroup(path);
-          writing = true;
-          try { live(path, edit, message, at.node); } finally { writing = false; }
-          lastNode = at.node;
-          if (deps.sources()[path] !== next) return reject();
-          if (!hostProof.isCurrent()) return reject();
-          const nextProof = editor.prepareHistorySources([{ path, expectedSource: next, text: next }]);
-          if (!nextProof) return reject();
-          proof.dispose?.(); proof = nextProof;
-          expected = next;
-          wrote = true;
-          return true;
-        },
-        close,
-      };
-    };
+    const openSession = (plan: (at: Located, value: string, part?: ComponentSlotPart) => RangeEdit | { error: string } | undefined, message: string) =>
+      read() ? sourceSession({ path, source: initial.source, editor, hostProof, revision, watch: initial.templatePath, read }, plan, message) : undefined;
     // The edit a slot part's new value makes in the page: URLs checked, text only where the slot holds text.
     const slotPartEdit = (at: Located, name: string, part: ComponentSlotPart, value: string) => {
       const slot = at.slots.find(slot => slot.name === name);
@@ -1976,52 +2099,12 @@ export function createComponentTools(deps: ComponentDeps) {
         if (!session) return;
         const opened = slotValue(at.source, at.template, at.instance, slot);
         const first: Record<ComponentSlotPart, string> = { text: opened.lines ?? opened.text, href: opened.href ?? "", src: opened.src ?? "", alt: opened.alt ?? "" };
-        const touched = new Set<ComponentSlotPart>();
         // The text's element in the page, when it holds text and breaks alone: typing can show there at once.
         const fill = at.instance.fills.get(name);
         const only = fill?.length === 1 && fill[0].type === "element" ? fill[0] : undefined;
         const node = opened.editable && only?.close && only.children.every(child => child.type === "text" || child.type === "element" && child.name === "br")
           ? elementPathAt(at.source, only.start) : undefined;
-        const patcher = () => { const preview = deps.preview(); return preview?.patchText && preview.vouchPatch && preview.endPatch ? preview as PreviewTextPatch : undefined; };
-        let textRefused = false, patching = false, shown = first.text;
-        return {
-          patchable: Boolean(node && patcher()),
-          stale: session.stale,
-          write(part, value) {
-            if (session.state().closed) return false;
-            // A part still holding its first value is left as written (byte for byte).
-            if (!touched.has(part) && value === first[part]) return true;
-            touched.add(part);
-            const ok = session.write(value, part);
-            if (part === "text") textRefused = !ok;
-            // Text the source refused never stays on the page: the patch ends and the page is drawn from its source.
-            if (part === "text" && !ok && patching) { patcher()?.endPatch(path); patching = false; }
-            if (ok && patching) patcher()?.vouchPatch(path, session.state().expected);
-            return ok;
-          },
-          patch(text, miss) {
-            const preview = patcher();
-            if (!node || !preview || textRefused || session.stale()) return false;
-            patching = true;
-            shown = text;
-            preview.patchText({ path, node: [...node] }, text, session.state().expected, miss);
-            return true;
-          },
-          close() {
-            // The page keeps the last patch only when its text is what was written; else the next render settles it.
-            const kept = patching && !textRefused && !session.stale();
-            session.close();
-            if (patching) patcher()?.endPatch(path, kept ? { text: shown } : undefined);
-            patching = false;
-          },
-          cancel() {
-            const done = session.cancel();
-            if (patching) patcher()?.endPatch(path, done ? { text: first.text } : undefined);
-            patching = false;
-            if (!done) refuse("The edit couldn't be undone; use Undo.");
-            return done;
-          },
-        };
+        return rowSession(session, path, first, node);
       },
       setVisible(name, on) {
         const at = read(), slot = at?.slots.find(slot => slot.name === name);
@@ -2082,6 +2165,7 @@ export function createComponentTools(deps: ComponentDeps) {
       return { ...selection, path: at.path, node: [...at.node], tag: at.tag, host: undefined, selector: host.selector };
     },
     structure,
+    textRow,
     templateRows,
     /** The root of the template currently edited cannot move, duplicate or be removed. */
     isTemplateRoot(selection: NativePreviewSelection): boolean {
