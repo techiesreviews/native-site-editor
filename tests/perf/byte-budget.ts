@@ -11,7 +11,7 @@
 // ASE_BUDGET_PORT (default 5294), and runs tests/perf/cold-start.ts against it.
 // ASE_BUDGET_RUNS (default 3) sets the number of cold/warm runs.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,19 +42,30 @@ const median = (values: number[]) => {
   return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
 };
 
-// The preview runtime is a classic script Vite must emit as-is under a hashed
-// /assets/ name (native-preview.ts); a bundled or transformed copy fails here.
-function assertRuntimeVerbatim() {
+// The build minifies the classic runtime under an immutable /assets/ URL,
+// with an external map containing the readable source (slice 100).
+function assertRuntimeMinified() {
   const emitted = readdirSync("dist/assets").filter((name) => /^native-preview-runtime-[\w-]+\.js$/.test(name));
   if (emitted.length !== 1) throw new Error(`Expected one dist/assets/native-preview-runtime-<hash>.js, found ${emitted.length}.`);
-  if (!readFileSync(join("dist/assets", emitted[0])).equals(readFileSync("src/components/native-preview-runtime.js")))
-    throw new Error(`dist/assets/${emitted[0]} differs from src/components/native-preview-runtime.js: Vite transformed the runtime.`);
-  console.log(`Preview runtime emitted verbatim as dist/assets/${emitted[0]}.`);
+  const runtime = readFileSync(join("dist/assets", emitted[0]), "utf8");
+  const source = readFileSync("src/components/native-preview-runtime.js", "utf8");
+  if (Buffer.byteLength(runtime) >= Buffer.byteLength(source))
+    throw new Error(`dist/assets/${emitted[0]} must be smaller than the runtime source.`);
+  if (!runtime.endsWith(`//# sourceMappingURL=${emitted[0]}.map\n`))
+    throw new Error(`dist/assets/${emitted[0]} must end with its external sourceMappingURL comment.`);
+  const mapPath = join("dist/assets", `${emitted[0]}.map`);
+  if (!existsSync(mapPath)) throw new Error(`Preview runtime source map is missing: ${mapPath}.`);
+  const map = JSON.parse(readFileSync(mapPath, "utf8")) as { sources: string[]; sourcesContent: string[] };
+  if (map.sources?.length !== 1 || map.sources[0] !== "native-preview-runtime.js")
+    throw new Error(`${mapPath} must name native-preview-runtime.js as its only source.`);
+  if (map.sourcesContent?.length !== 1 || map.sourcesContent[0] !== source)
+    throw new Error(`${mapPath} sourcesContent must equal the readable runtime source.`);
+  console.log(`Preview runtime minified with source map as dist/assets/${emitted[0]}.`);
 }
 
 async function main() {
   if (!args.has("--no-build")) run("npx", ["vite", "build"]);
-  assertRuntimeVerbatim();
+  assertRuntimeMinified();
   const dir = mkdtempSync(join(tmpdir(), "ase-budget-"));
   const json = join(dir, "cold.json");
   const server = spawn("npx", ["tsx", "tests/native-save/server.ts"], {

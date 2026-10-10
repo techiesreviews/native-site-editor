@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import { monacoTrim } from "./vite-monaco-trim.ts";
+import { previewRuntime } from "./vite-preview-runtime.ts";
 
 const monaco = monacoTrim();
 
 export default defineConfig({
-  plugins: [monaco.plugin],
+  plugins: [monaco.plugin, previewRuntime()],
   optimizeDeps: monaco.optimizeDeps,
   server: {
     proxy: {

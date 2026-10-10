@@ -147,9 +147,10 @@ preview runtime.
 
 Lex approved long-term caching. The runtime moved to
 `src/components/native-preview-runtime.js` and is referenced as
-`new URL(..., import.meta.url)`, so Vite emits it verbatim (the budget step
-asserts byte identity) under a hashed `/assets/` URL, covered by the immutable
-rule. `/native-preview-runtime.js` is gone. A tab opened before a deploy that
+`new URL(..., import.meta.url)`. Since [slice 100](../../components-and-builder/build/tickets/100-minify-preview-runtime.md),
+Vite minifies it with an external source map (the budget step checks
+minification and the embedded source) under a hashed `/assets/` URL, covered
+by the immutable rule. `/native-preview-runtime.js` is gone. A tab opened before a deploy that
 asks for an old hash gets no `ready`: an 8 s watchdog hands that to chunk
 recovery (spec `native-runtime-recovery`). Timing (median of 5, 100 ms /
 20 Mbps): warm paint 779 → 671 ms, cold 1199 → 1210 ms (noise). Gates on
