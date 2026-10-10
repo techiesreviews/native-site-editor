@@ -363,3 +363,16 @@ test("kept fallback text decodes character references", () => {
   assert.equal(rows.find(row => row.slot === "note")?.text, "Café note");
   assert.equal(rows.find(row => row.role === "body")?.text, "Café body");
 });
+
+test("an og:image address written with a reference reads as the browser reads it", () => {
+  const card = `${template}<slot name="image"><img src="/placeholder.svg" alt=""></slot>`;
+  const page = source.replace("social-card.png", "caf&eacute;.png");
+  assert.equal(fill(page, card).find(row => row.role === "image")?.src, "https://example.test/images/café.png");
+});
+
+test("a slot named with a character reference is filled in the card's element of that name, not added again", () => {
+  const card = '<article><slot name="caf&eacute;"><h3>Fallback</h3></slot></article>';
+  const rows = cardFill({ template: card, page: { route, source: '<main><h1>Page</h1></main>' } }).rows;
+  assert.equal(rows[0].slot, "café");
+  assert.equal(cardFillMarkup('<card-x><h3 slot="caf&eacute;">Old</h3></card-x>', card, rows), `<card-x><h3 slot="caf&eacute;"><a href="${route}">Page</a></h3></card-x>`);
+});

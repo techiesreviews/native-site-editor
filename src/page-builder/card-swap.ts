@@ -8,9 +8,9 @@
 // back on a swap to a look with a place for it. Pure: src/page-builder/cards.ts
 // writes the result as one undo step.
 
-import { attributeEdit, slotLabel, templateSlots, type TemplateSlot } from "./component-model";
+import { attributeEdit, slotLabel, type TemplateSlot } from "./component-model";
 import { readSource, plain, type SourceTree, type SourceNode, type SourceElement } from "./source-tree";
-import { cardRoles } from "./card-fill";
+import { cardRoles, cardSlots } from "./card-fill";
 import { slotMarkup } from "../native-insert";
 import { TEXT_LEVEL } from "./rules/text-level";
 import type { CardLook } from "./card-looks";
@@ -86,7 +86,7 @@ export function readCardContent(card: string, template: string, byName: Readonly
   const tree = readSource(card);
   const [root] = tree.children() as SourceElement[];
   if (!root?.close) return out;
-  const slots = templateSlots(template);
+  const slots = cardSlots(template);
   const { roleOf, linkSlot } = cardRoles(slots);
   const fills = new Map<string, SourceNode[]>();
   for (const node of tree.view.children(root)) {
@@ -198,7 +198,7 @@ export function cardSwap(input: { card: string; template: string; look: CardLook
   const tree = readSource(card);
   const [root] = tree.children() as SourceElement[];
   if (!root?.close) return { markup: card, kept, notShown: [], titleLinked: false };
-  const slots = templateSlots(lookTemplate);
+  const slots = cardSlots(lookTemplate);
   const { roleOf, titleSlot, linkSlot } = cardRoles(slots);
   const placed = new Set<string>();
   const fresh = slotMarkup(lookTemplate);

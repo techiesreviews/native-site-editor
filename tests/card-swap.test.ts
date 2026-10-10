@@ -167,3 +167,11 @@ test("changing look decodes carried attributes once", () => {
   assert.deepEqual(readCardContent(swap.markup, feature).image, { src: "/caf&eacute;.jpg", alt: "Caf&eacute; front" });
   assert.equal(readCardContent(swap.markup, feature).link?.href, "/caf&eacute;/");
 });
+
+test("a slot named with a character reference carries its content to a look with a slot of that name", () => {
+  const own = '<article><slot name="caf&eacute;"><p>Fallback</p></slot></article>';
+  const look = '<article><slot name="café"><p>Other</p></slot></article>';
+  const swap = cardSwap({ card: '<card-x><p slot="caf&eacute;">Old</p></card-x>', template: own, look: { tag: "card-y", label: "card-y" }, lookTemplate: look });
+  assert.equal(swap.markup, '<card-y><p slot="café">Old</p></card-y>');
+  assert.deepEqual(swap.notShown, []);
+});

@@ -77,7 +77,16 @@ export function pageTitle(source: string, route: string, tree: SourceTree<Source
 }
 
 /**
- * Which of a card template's slots (templateSlots) take its title (the first
+ * A card template's slots (templateSlots) with their names and forwards read
+ * as the browser reads attribute values, as a card's `slot` attributes are
+ * read here: `<slot name="caf&eacute;">` is filled by `slot="café"`.
+ */
+export function cardSlots(template: string, tree = readSource(template)): TemplateSlot[] {
+  return templateSlots(template).map((slot) => ({ ...slot, name: tree.attribute(slot.element, "name")?.value ?? "", forward: tree.attribute(slot.element, "slot")?.value }));
+}
+
+/**
+ * Which of a card template's slots (cardSlots) take its title (the first
  * heading slot, else one named "title"), body (the first text slot after the
  * title, else the last before it), image and link; any other is "other". The
  * unnamed slot is content, never one of these. A page fills a card by these
@@ -113,7 +122,7 @@ export function cardFill(input: { template: string; page: { route: string; sourc
   };
   const description = meta("name", "description");
   const image = siteImage(meta("property", "og:image"), siteUrl);
-  const slots = templateSlots(template);
+  const slots = cardSlots(template, templateTree);
   const { roleOf, titleSlot, bodySlot, imageSlot, linkSlot } = cardRoles(slots);
   const rows = slots.map((slot): CardFillRow => {
     const role = roleOf(slot);
@@ -234,7 +243,7 @@ function newSlotElement(template: string, row: CardFillRow, link?: string): stri
     return first && tree.attribute(first, "slot")?.value === name;
   });
   if (copy) return filled(copy);
-  const fallback = templateSlots(template).find((entry) => entry.name === name)?.fallback ?? "";
+  const fallback = cardSlots(template).find((entry) => entry.name === name)?.fallback ?? "";
   const tree = readSource(fallback);
   const [only, ...more] = tree.children() as SourceElement[];
   if (only && !more.length && !/[^\t\n\f\r ]/.test(readSource(fallback.slice(0, only.start) + fallback.slice(only.end)).text()))
@@ -261,7 +270,7 @@ export function cardFillMarkup(card: string, template: string, rows: CardFillRow
   const kids = tree.children(root) as SourceElement[];
   const slotted = (name: string) => kids.find((kid) => (tree.attribute(kid, "slot")?.value ?? "") === name);
   const added = rows.find((row) => row.status === "added")?.href;
-  const order = templateSlots(template).map((slot) => slot.name);
+  const order = cardSlots(template).map((slot) => slot.name);
   const newline = card.includes("\r\n") ? "\r\n" : "\n";
   const edits: RangeEdit[] = [];
   for (const row of rows) {
