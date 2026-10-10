@@ -398,10 +398,7 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
           entry.filling = true;
           const filled = handlers.createPage(entry.card, offer.request, entry.filled?.base);
           entry.filling = false;
-          if (!filled || linker !== entry) return;
-          entry.filled = filled;
-          entry.seen = false;
-          showStrip(entry, filled);
+          if (filled && linker === entry) filledWith(entry, filled);
         },
         onEscape: () => {
           // From Change page, Esc goes back to the strip; on a blank card it closes.
@@ -419,7 +416,10 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     entry.filling = true;
     const filled = handlers.fillCard(entry.card, route, entry.filled?.base);
     entry.filling = false;
-    if (!filled || linker !== entry) return;
+    if (filled && linker === entry) filledWith(entry, filled);
+  }
+
+  function filledWith(entry: Linker, filled: CardFilled) {
     entry.filled = filled;
     // The page's content, what the look does not show too, for a swap; the strip lists those rows "not used".
     entry.kept = filled.content;
