@@ -95,6 +95,7 @@ The build plan for the [components-and-builder map](../map.md). Requirements, fl
 | [38 Folded Structure rows spring open](tickets/38-spring-open-rows.md) | sol | 37 |
 | [39 Alt+←/→ move out of and into containers](tickets/39-alt-arrow-depth-keys.md) | sol | – |
 | [78 Alt+↑/↓ moves any block among its siblings on the canvas](tickets/78-alt-up-down-siblings-on-canvas.md) | sol | 39 |
+| [98 Moving a block leaves no blank lines in the source](tickets/98-move-leaves-no-blank-lines.md) | sol | – |
 | [40 Drops into an instance's items slots](tickets/40-items-slot-drops.md) | claude ★ | 30, 33 |
 
 ### Phase 5: Edit component mode, in place
