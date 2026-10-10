@@ -15,3 +15,5 @@ Lex (2026-10-10): remove the "Filled from …" info strip that opens after a new
 ## Done when
 
 - Specs updated (no strip; fill, one undo, look chip on the combobox before filling); screenshots light and dark. Blocked by 100 only to avoid a clash in the build.
+
+**Also (Lex, 2026-10-10, annotation):** in the "Link to a page…" list, remove the group headings ("Under /work/", "Other pages"); keep the order (the cards' folder first, then the rest) as one plain list. Lex on the strip: "a user can remove and add a new one if needed" — no Change page anywhere.
