@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { editorMounted } from "./drafts";
 
@@ -109,4 +110,37 @@ test("an image in a selected Div drags itself, and the selection box follows the
   expect(flat(await source(page))).toContain('<div class="flow"><a class="btn" href="#">Button</a></div>');
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
+});
+
+test("a press drags the innermost block: formatting gives its text, a Button or image straight in a Div is its own", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const about = readFileSync(`${process.env.ASE_NATIVE_SAVE_FIXTURE}/${ABOUT}`, "utf8").replace("  </main>", `    <section class="flow" id="press">
+      <div id="fmt"><strong>Only formatting</strong></div>
+      <p id="para">Text with <a class="btn" href="#">a button</a> inside.</p>
+      <div id="mixed">Some text and <em>emphasis</em></div>
+      <div class="flow" id="blocks"><p>First</p><a class="btn" href="#">Go</a><img src="/images/studio-desk.svg" alt="" width="160" height="100"></div>
+    </section>
+  </main>`);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ABOUT, content: about } })).status()).toBe(204);
+  await open(page, baseURL);
+  const pressed = async (selector: string, name: string) => {
+    const from = await pointIn(page, selector);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x, from.y + 12, { steps: 3 });
+    await expect(ghost(page), selector).toHaveText(name);
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(ghost(page)).toHaveCount(0);
+  };
+  await pressed("#fmt strong", "Div");
+  await pressed("#para a.btn", "Paragraph");
+  await pressed("#mixed em", "Div");
+  await pressed("#blocks a.btn", "Button");
+  await pressed("#blocks img", "Image");
+  // The selected Div moves only from its own area: its blocks drag themselves.
+  await frame(page).locator("#blocks").evaluate(el => (el as HTMLElement).click());
+  await expect(kind(page)).toHaveText("Block");
+  await pressed("#blocks p", "Paragraph");
+  await pressed("#blocks img", "Image");
 });

@@ -3007,16 +3007,28 @@
     while (el && el.getRootNode() instanceof ShadowRoot) el = el.getRootNode().host;
     return el;
   }
-  // A Section or Div holding blocks, not a run of text with inline formatting.
+  // Content of a line of text: anything laid out inline, and links and
+  // formatting styled inline-block (a Button inside a paragraph).
+  function phrasing(el) {
+    var display = getComputedStyle(el).display;
+    return display === "inline" || (INLINE_TAGS.test(el.localName) && display.indexOf("inline") === 0);
+  }
+  // A Section or Div holding blocks, not a run of text: no text of its own
+  // and not only inline formatting (a Div of just <strong>Hi</strong> is
+  // text; an image or a Button straight in it is a block).
   function holdsBlocks(el) {
-    return (el.localName === "section" || el.localName === "div") && !Array.prototype.some.call(el.childNodes, function (n) {
-      return n.nodeType === 3 && /[^\t\n\f\r ]/.test(n.textContent);
+    if (el.localName !== "section" && el.localName !== "div") return false;
+    var text = Array.prototype.some.call(el.childNodes, function (n) { return n.nodeType === 3 && /[^\t\n\f\r ]/.test(n.textContent); });
+    return !text && Array.prototype.some.call(el.children, function (child) {
+      return !(INLINE_TAGS.test(child.localName) && !child.classList.contains("btn") && phrasing(child));
     });
   }
   function pressBlock(target) {
     var el = lightElement(target);
     if (!el || !pageEl || el === pageEl || !pageEl.contains(el)) return null;
-    while (el.parentElement && el.parentElement !== pageEl && !holdsBlocks(el.parentElement) && getComputedStyle(el).display === "inline") el = el.parentElement;
+    // Inline content gives its text block; straight in a Section or Div
+    // holding blocks, or in an items slot, it is a block of its own.
+    while (el.parentElement && el.parentElement !== pageEl && !holdsBlocks(el.parentElement) && !dropItem(el) && phrasing(el)) el = el.parentElement;
     // A sealed ancestor takes the press, unless the way down from it goes through one of its items slots.
     for (var child = el, at = el.parentElement; at && at !== pageEl; child = at, at = at.parentElement) if (dropSealed(at) && !dropItem(child)) el = at;
     if (dropSealed(el) && el.localName.indexOf("-") < 0) return null;
