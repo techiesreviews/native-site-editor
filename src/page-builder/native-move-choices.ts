@@ -27,6 +27,21 @@ export function nativeElementMovePlan(source: string, from: readonly number[], d
   return { status: "moved", edit, selection: [...parent, index] };
 }
 
+/**
+ * A whole section to the gap `index` among its own siblings (`parent` its
+ * parent's path; gaps counted as insert points are, the sibling count the
+ * end): the page structure's move_section for agents, by the editor's one
+ * move engine. Another parent is refused; in an instance's items slot it
+ * stays in its own slot.
+ */
+export function nativeSectionMovePlan(source: string, from: readonly number[], parent: readonly number[], index: number, items?: ItemsSlotRule): NativeElementMoveResult {
+  if (!from.length || !same(from.slice(0, -1), parent)) return { status: "refused", error: "A section moves among its own siblings only." };
+  let node = nativeOutline(source);
+  for (const step of from) node = node?.children[step];
+  const slot = node?.parent?.opaque && node.parent.name.includes("-") ? node.slot : undefined;
+  return nativeElementMovePlan(source, from, { parent: [...parent], index, slot }, items);
+}
+
 /** Up/down moves use pre-removal gap indexes, including the down-side skip. */
 export function nativeElementSiblingMove(source: string, from: readonly number[], direction: "up" | "down", items?: ItemsSlotRule): NativeElementMoveResult {
   if (!from.length) return { status: "refused", error: "Select an element to move." };

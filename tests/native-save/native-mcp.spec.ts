@@ -194,12 +194,18 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     await expect(frame(page).locator("main > feature-block")).toHaveCount(1);
     await expect(frame(page).locator("main > feature-block:nth-child(2)")).toHaveCount(1);
     const withSection = await call("get_page", { page: "/", source: false });
+    const beforeMove = (await call("read_file", { path: "index.html" })).content;
     expect(withSection.sections.map((section: { tag: string }) => section.tag)).toEqual(["section", "feature-block", "section", "section"]);
     // Moved to the end, then removed.
     const moved = await call("move_section", { page: "/", section: "1.1", after: "1.3", expectedHash: withSection.hash });
     expect(moved.state).toBe("applied");
     await expect(frame(page).locator("main > feature-block:last-child")).toHaveCount(1);
     const movedPage = await call("get_page", { page: "/", source: false });
+    const afterMove = (await call("read_file", { path: "index.html" })).content;
+    // By the editor's move engine: the section's own lines move, no blank line is added or left behind.
+    const blankLines = (source: string) => source.match(/\n[ \t]*(?=\r?\n)/g)?.length ?? 0;
+    expect(blankLines(afterMove)).toBe(blankLines(beforeMove));
+    expect(afterMove).toMatch(/\n([ \t]*)<feature-block[^\n]*(?:\n[^\n]*)*?\n\1<\/feature-block>\n[ \t]*<\/main>/);
     const removed = await call("remove_section", { page: "/", section: "1.3", expectedHash: movedPage.hash });
     expect(removed.state).toBe("applied");
     await expect(frame(page).locator("main > feature-block")).toHaveCount(0);

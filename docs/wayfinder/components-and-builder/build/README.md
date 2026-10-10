@@ -170,3 +170,8 @@ Then keep the open, unclaimed tickets whose `blocked_by` names only closed ones.
 At the start the frontier is: [01](tickets/01-remove-masters-and-save-shared.md), [03](tickets/03-conventions-header-footer-wording.md), [04](tickets/04-six-block-catalogue.md), [05](tickets/05-starter-skip-link.md), [06](tickets/06-starter-btn-class.md), [07](tickets/07-slot-plan-whole-elements.md), [11](tickets/11-variant-parser-component-css.md), [15](tickets/15-starter-variant-examples.md), [21](tickets/21-name-normalising.md), [32](tickets/32-nested-container-geometry.md), [39](tickets/39-alt-arrow-depth-keys.md), [51](tickets/51-card-fill-mapping.md), [58](tickets/58-starter-card-looks.md), [59](tickets/59-tone-formula-sweep-test.md), [65](tickets/65-starter-card-link-rule.md).
 
 The decisions Lex took at handoff are listed in the [spec](spec.md#decided-at-handoff-lex-2026-10-09); tickets cite them as "decided at handoff, N".
+
+## After the build
+
+- Agents' items-slot rule (2026-10-10): the Components chapter now says an items slot holds card components, `card-…` components whose template has a heading slot, as the editor reads it (`isCardComponent`, `hasHeadingSlot`); copied to the starter's `AGENTS.md` (`dev` 3c3cce5) and `fixtures/actual-starter` refreshed from it.
+- One move engine (2026-10-10): MCP `move_section` and the sections' Move up/down (bar, Alt+Up/Down) move through `nativeMoveEdit` (`nativeSectionMovePlan`, `nativeElementSiblingMove`), one undo step each; the old `moveEdit` is gone. Card grids' Move still swaps (`swapEdits` in `cards.ts`).

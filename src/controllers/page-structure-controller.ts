@@ -1,6 +1,6 @@
 import { pageRemovable, selectionAfterRemove } from "../page-builder/remove";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
-import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit, swapEdits, moveEdit } from "../native-structure";
+import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
 import { textSizeScale, currentTextSize, textSizeEdit } from "../native-text-size";
 import { type StartTag, type ElementRange } from "../native-source-location";
@@ -13,6 +13,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { isSectionTemplate } from "../native-insert";
 import { nativeMovableBlock, type ItemsSlotRule } from "../page-builder/native-operations";
 import { templateMovePath } from "../page-builder/block-insert";
+import { nativeElementSiblingMove, nativeSectionMovePlan } from "../page-builder/native-move-choices";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
@@ -692,15 +693,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
       || (proof.selected && (selected?.path !== path || selected.node?.join(".") !== node.join(".")))) {
       refuse(SECTION_MOVE_STALE); return "stayed";
     }
-    const source = proof.source;
-    const range = ports.locateNativeElementRange(source, node);
-    if (!range) return undefined;
-    const parent = node.slice(0, -1);
-    const index = node[node.length - 1] + (direction === "up" ? -1 : 1);
-    const other = index >= 0 ? ports.locateNativeElementRange(source, [...parent, index]) : undefined;
-    if (!other) return "stayed";
-    const edits = direction === "up" ? swapEdits(source, other, range) : swapEdits(source, range, other);
-    return applyNativeChange(path, source, edits, [...parent, index], direction === "up" ? "Moved up" : "Moved down") ? "moved" : undefined;
+    // The editor's one move engine (nativeMoveEdit), as Alt+Up/Down on any block and drags use.
+    const plan = nativeElementSiblingMove(proof.source, node, direction, ports.itemsSlots());
+    if (plan.status !== "moved") return plan.status === "stayed" ? "stayed" : undefined;
+    return applyNativeChange(path, proof.source, [plan.edit], plan.selection, direction === "up" ? "Moved up" : "Moved down") ? "moved" : undefined;
   }
 
   // Alt+Up/Down on a page structure row while another file is open (a
@@ -726,23 +722,20 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // for the end), as one undo step, keeping it selected: a drag in the page
   // structure or the canvas ends here. "stayed" when the gap is the one the
   // section already fills (announced, nothing recorded); nothing for another
-  // parent, for anything but a section, or when the ranges cannot be told.
+  // parent, for anything but a section, or when the move cannot be made. MCP
+  // move_section comes here; it moves by the editor's one move engine
+  // (nativeMoveEdit), as drags and Alt+Up/Down do.
   function moveNativeSectionTo(target: { path: string; node?: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined {
     const { path, node } = target;
     if (!path || !node?.length || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-    const own = node.slice(0, -1);
-    if (own.length !== parent.length || own.some((step, at) => step !== parent[at])) return undefined;
     const source = ports.nativeSources()[path] ?? "";
-    const range = ports.locateNativeElementRange(source, node);
-    if (!range) return undefined;
-    const from = node[node.length - 1];
-    if (index === from || index === from + 1) {
+    const plan = nativeSectionMovePlan(source, node, parent, index, ports.itemsSlots());
+    if (plan.status === "stayed") {
       ports.element("status").textContent = "Section stayed in place";
       return "stayed";
     }
-    const edits = moveEdit(source, range, from, index, (at) => ports.locateNativeElementRange(source, [...parent, at]));
-    if (!edits.length) return undefined;
-    return applyNativeChange(path, source, edits, [...parent, index > from ? index - 1 : index], "Section moved") ? "moved" : undefined;
+    if (plan.status !== "moved") return undefined;
+    return applyNativeChange(path, source, [plan.edit], plan.selection, "Section moved") ? "moved" : undefined;
   }
 
   // Writes text typed into a preview element into its source, as one undo

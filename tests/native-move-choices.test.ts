@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
-import { nativeElementDepthMove, nativeElementMovePlan, nativeElementSiblingMove, nativeElementKeyMove, nativeElementMoveMessage } from "../src/page-builder/native-move-choices";
+import { nativeElementDepthMove, nativeElementMovePlan, nativeElementSiblingMove, nativeElementKeyMove, nativeElementMoveMessage, nativeSectionMovePlan } from "../src/page-builder/native-move-choices";
 import { applyGuardedSourceEdit } from "../src/page-builder/native-operations";
 
 test("sibling paths remain exact with repeated identical nodes and distinguish edges from refusals", () => {
@@ -18,6 +18,38 @@ test("sibling paths remain exact with repeated identical nodes and distinguish e
   for (const invalid of [[0, 8], [0, -1], [0, 0.5], []]) assert.equal(nativeElementSiblingMove(identical, invalid, "up").status, "refused");
   assert.equal(nativeElementSiblingMove('<main><p>broken</main>', [0, 0], "up").status, "refused");
   assert.deepEqual(nativeElementSiblingMove('<main><x-card></x-card></main>', [0, 0], "up"), { status: "stayed", reason: "edge" });
+});
+
+test("a section moves among its siblings by the editor's engine (MCP move_section): whole lines, no blank lines, CRLF kept", () => {
+  const moved = (source: string, from: number[], parent: number[], index: number) => {
+    const plan = nativeSectionMovePlan(source, from, parent, index);
+    assert.equal(plan.status, "moved");
+    return plan.status === "moved" ? { html: applyGuardedSourceEdit(source, plan.edit)!, selection: plan.selection } : undefined;
+  };
+  const page = `<main>\n  <section class="a">\n    <h2>A</h2>\n  </section>\n  <section class="b"><p>B</p></section>\n  <img src="x.png" alt="">\n</main>`;
+  // To the end, to the front, and one gap down; the selection follows the section.
+  assert.deepEqual(moved(page, [0, 0], [0], 3), { html: `<main>\n  <section class="b"><p>B</p></section>\n  <img src="x.png" alt="">\n  <section class="a">\n    <h2>A</h2>\n  </section>\n</main>`, selection: [0, 2] });
+  assert.deepEqual(moved(page, [0, 2], [0], 0), { html: `<main>\n  <img src="x.png" alt="">\n  <section class="a">\n    <h2>A</h2>\n  </section>\n  <section class="b"><p>B</p></section>\n</main>`, selection: [0, 0] });
+  assert.deepEqual(moved(page, [0, 0], [0], 2)?.selection, [0, 1]);
+  // Its own gaps stay; a gap that is not there, another parent and an empty path are refused.
+  assert.deepEqual(nativeSectionMovePlan(page, [0, 0], [0], 0), { status: "stayed", reason: "already-position" });
+  assert.deepEqual(nativeSectionMovePlan(page, [0, 0], [0], 1), { status: "stayed", reason: "already-position" });
+  for (const [from, parent, index] of [[[0, 0], [0], 4], [[0, 0], [0], -1], [[0, 0], [], 0], [[0, 0], [0, 1], 0], [[], [], 0]] as const)
+    assert.equal(nativeSectionMovePlan(page, [...from], [...parent], index).status, "refused");
+  // Sections of a whole document's <body>, one blank line between two: it stays where it was, and none is added.
+  const doc = `<!doctype html>\n<html>\n<body>\n  <section>A</section>\n\n  <section>\n    <p>B</p>\n  </section>\n  <section>C</section>\n</body>\n</html>\n`;
+  const down = moved(doc, [0], [], 3)!;
+  assert.equal(down.html, `<!doctype html>\n<html>\n<body>\n\n  <section>\n    <p>B</p>\n  </section>\n  <section>C</section>\n  <section>A</section>\n</body>\n</html>\n`);
+  assert.deepEqual(down.selection, [2]);
+  assert.doesNotMatch(moved(doc, [2], [], 0)!.html, /\n[ \t]*\n[ \t]*\n/);
+  // CRLF sources keep CRLF and gain no bare LF.
+  const crlf = `<main>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n  <section>B</section>\r\n  <section>C</section>\r\n</main>\r\n`;
+  assert.equal(moved(crlf, [0, 0], [0], 3)!.html, `<main>\r\n  <section>B</section>\r\n  <section>C</section>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n</main>\r\n`);
+  assert.equal(moved(crlf, [0, 2], [0], 0)!.html, `<main>\r\n  <section>C</section>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n  <section>B</section>\r\n</main>\r\n`);
+  // Move up/down on a section (the edit bar, Alt+Up/Down) is the same engine, one edit.
+  const up = nativeElementSiblingMove(crlf, [0, 1], "up");
+  assert.equal(up.status, "moved");
+  if (up.status === "moved") assert.equal(applyGuardedSourceEdit(crlf, up.edit), `<main>\r\n  <section>B</section>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n  <section>C</section>\r\n</main>\r\n`);
 });
 
 test("cross-parent paths account for earlier sibling removal and nested destination shifts", () => {

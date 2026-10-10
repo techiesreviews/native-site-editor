@@ -92,51 +92,6 @@ export function swapEdits(source: string, a: ElementRange, b: ElementRange): Ran
   ];
 }
 
-/**
- * Moves the element at `index` among its siblings to the gap `target`, where
- * the gaps are numbered as the insert points are: `target` = before the
- * sibling at that index, the sibling count = after the last one. `sibling`
- * gives the exact range of the sibling at an index (nothing when it cannot
- * be told, in which case nothing moves). The element travels with its own
- * lines, so its indentation is kept; the two edits do not overlap. The gap
- * the element already fills, before or after itself, moves nothing.
- */
-export function moveEdit(
-  source: string,
-  range: ElementRange,
-  index: number,
-  target: number,
-  sibling: (at: number) => ElementRange | undefined,
-): RangeEdit[] {
-  if (target === index || target === index + 1 || target < 0) return [];
-  const lines = wholeLines(source, range);
-  const block = source.slice(lines.start, lines.end);
-  const neighbour = sibling(target < index ? target : target - 1);
-  if (!neighbour || (neighbour.start < range.end && neighbour.end > range.start)) return [];
-  const at = target < index ? wholeLines(source, neighbour).start : wholeLines(source, neighbour).end;
-  if (at > lines.start && at < lines.end) return [];
-  const newline = source.includes("\r\n") ? "\r\n" : "\n";
-  const lineStart = at === 0 || source[at - 1] === "\n";
-  let text = block;
-  let removeStart = lines.start;
-  if (block.endsWith("\n") && !lineStart) {
-    // The block ends with its newline; after a neighbour that ends its line
-    // without one (the last child before the parent's end tag) the newline
-    // goes first instead.
-    text = `${newline}${block.slice(0, -newline.length)}`;
-  } else if (!block.endsWith("\n") && lineStart) {
-    // The block ends its line without a newline (the last child before the
-    // parent's end tag, or the end of the file): it takes one along to keep
-    // its own line at the new place, and the newline that led to it goes
-    // with it, so its old neighbour ends the line as the block did.
-    text = `${block}${newline}`;
-    if (source.slice(lines.start - newline.length, lines.start) === newline) removeStart = lines.start - newline.length;
-  }
-  const remove = { start: removeStart, end: lines.end, text: "" };
-  const insert = { start: at, end: at, text };
-  return at < lines.start ? [insert, remove] : [remove, insert];
-}
-
 /** Sets (or, with `value` undefined, removes) an attribute on a start tag. */
 export function setAttributeEdit(source: string, tag: StartTag, name: string, value: string | undefined): RangeEdit {
   const current = startTagAttribute(source, tag, name);

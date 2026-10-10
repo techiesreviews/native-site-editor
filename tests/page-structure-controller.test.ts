@@ -24,7 +24,7 @@ function fixture() {
     nativeEditableSource: () => state.source, nativeSources: () => ({ [PAGE]: state.source }),
     locateNativeElementRange: (_source: string, node: number[]) => ranges[node[1]] as ElementRange | undefined,
     announce: (message: string) => notices.push(message), refuse: (message: string) => notices.push(message), element: () => ({ textContent: "" }),
-    errorMessage: (error: unknown) => notices.push(String(error)),
+    errorMessage: (error: unknown) => notices.push(String(error)), itemsSlots: () => () => false,
   } as unknown as PageStructurePorts;
   const controller = createPageStructureController(ports);
   const target = { path: PAGE, node: [0, 0], tag: "section" };
@@ -60,11 +60,29 @@ for (const guard of ["generation", "scope", "source", "model", "selection", "ver
   });
 }
 
-test("section move writes the swap in one call and retains selection", () => {
+test("section move writes one edit by the editor's move engine and retains selection", () => {
   const f = fixture(); const proof = f.controller.sectionMoveProof(SOURCE, f.target.node, true);
   assert.equal(f.controller.moveNativeSection(f.target, "down", proof), "moved");
   assert.equal(f.writes.length, 1);
+  const [edit] = f.writes[0] as { start: number; end: number; text: string; expected: string }[];
+  assert.equal(SOURCE.slice(0, edit.start) + edit.text + SOURCE.slice(edit.end), "<main><section>B</section>\n<section>A</section></main>");
   assert.deepEqual(f.selections, [{ path: PAGE, node: [0, 1] }]);
+});
+
+test("MCP move_section (moveNativeSectionTo) moves by the editor's engine as one write, keeping CRLF and leaving no blank line", () => {
+  const f = fixture();
+  f.state.source = "<main>\r\n  <section>A</section>\r\n  <section>B</section>\r\n  <section>C</section>\r\n</main>\r\n";
+  const before = f.state.source;
+  assert.equal(f.controller.moveNativeSectionTo(f.target, [0], 3), "moved");
+  assert.equal(f.writes.length, 1);
+  const edits = f.writes[0] as { start: number; end: number; text: string }[];
+  assert.equal(edits.length, 1);
+  assert.equal(before.slice(0, edits[0].start) + edits[0].text + before.slice(edits[0].end), "<main>\r\n  <section>B</section>\r\n  <section>C</section>\r\n  <section>A</section>\r\n</main>\r\n");
+  assert.deepEqual(f.selections, [{ path: PAGE, node: [0, 2] }]);
+  // Its own gaps stay without a write; another parent is refused.
+  assert.equal(f.controller.moveNativeSectionTo(f.target, [0], 1), "stayed");
+  assert.equal(f.controller.moveNativeSectionTo(f.target, [], 0), undefined);
+  assert.equal(f.writes.length, 1);
 });
 
 test("section move at the first sibling records no history", () => {
