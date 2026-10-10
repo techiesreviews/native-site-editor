@@ -163,11 +163,28 @@ test("asset in use refuses deletion", async () => {
   assert.ok(h.refused.length); assert.deepEqual(h.memory.steps(), []);
 });
 
-test("without a mounted open file plain file operations refuse", async () => {
+test("with no file open a plain rename opens the file where it went, whose Undo takes it back; a delete has no step", async () => {
   const h = fixture(); h.memory.close();
-  assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename"), "Open a page before changing these files.");
-  assert.equal(await h.controller.deleteFileTarget(target), "Open a page before changing these files.");
-  assert.deepEqual(h.memory.steps(), []);
+  assert.equal(await h.controller.moveFileTarget(target, "b.txt", "rename"), undefined);
+  assert.deepEqual([h.memory.workspace.exists("a.txt"), h.memory.workspace.source("b.txt")], [false, "source"]);
+  assert.equal(h.memory.openFile(), "b.txt");
+  assert.deepEqual(h.memory.steps(), ["operation"]);
+  assert.equal(h.memory.undo(), true, h.memory.refusals.join(" "));
+  assert.deepEqual([h.memory.workspace.source("a.txt"), h.memory.workspace.exists("b.txt")], ["source", false]);
+  assert.equal(h.memory.announced.at(-1), "Undid renaming a.txt to b.txt.");
+
+  const plain = fixture(); plain.memory.close();
+  assert.equal(await plain.controller.deleteFileTarget(target), undefined);
+  assert.equal(plain.memory.workspace.exists("a.txt"), false);
+  assert.deepEqual(plain.memory.steps(), []);
+});
+
+test("with no file open, Undo of a plain rename refuses once the file changed", async () => {
+  const h = fixture(); h.memory.close();
+  await h.controller.moveFileTarget(target, "b.txt", "rename");
+  h.memory.typeInto("b.txt", "edited");
+  assert.equal(h.memory.undo(), false);
+  assert.equal(h.memory.workspace.source("b.txt"), "edited");
 });
 
 test("restore expands current folder deletions and focuses the row", () => {

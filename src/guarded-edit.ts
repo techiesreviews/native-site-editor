@@ -16,12 +16,16 @@
 // production one (src/editor-workspace.ts) and the memory one
 // (tests/fakes/memory-workspace.ts), which this module's suite runs on.
 //
-// Slice 10: the port's `change` and `operation` are today's write paths
-// (applyNativeChange's editor calls and applyNativeOperation), handed the
-// tracked reads as `expectedSources` and the stamp, guard and anchor as
-// `current`. Slice 17 moves those bodies behind the seam and narrows it.
+// One mounted file with ranges only takes the editor's own step (Undo and
+// Redo select and announce through its hooks); anything else is the commit's
+// (src/guarded-edit/commit.ts): one step through the draft receipt. The
+// workspace port below is the editor's primitives; the commit's rules (branch
+// reads, drafts each side, history, the page reopened) live in this module.
 
 import type { NativeSite } from "../shared/native-project";
+import type { DraftScope } from "./drafts";
+import type { DraftAccess, MovableFile } from "./file-changes";
+import { createCommit } from "./guarded-edit/commit";
 
 /** A preview element: a body path in a file. */
 export interface NodeRef { path: string; node: number[] }
@@ -104,56 +108,91 @@ export interface GuardedEdits {
   readonly peek: Reads;
 }
 
-/** One operation over several files, as one undo step (today's `applyNativeOperation`). */
-export interface OperationRequest {
-  expectedSources: Map<string, string | undefined>;
-  edits: Map<string, string>;
-  creates: { path: string; content: string }[];
-  deletes: string[];
-  moves: { from: string; to: string }[];
-  open?: string;
-  focus?: { file?: string; route?: string };
-  done: string;
-  undone: string;
-  /** The stamp, guard, anchor and every read still hold: checked after each of its waits. */
-  current: () => boolean;
-  /** Called once the step is written and recorded: an error after it is the page's refresh, not staleness. */
-  recorded: () => void;
-  selection: { before?: NodeRef; after?: NodeRef };
-}
+interface Proof { isCurrent(): boolean }
+/** A history step's own Undo and Redo, beside the editor's text step (selection, announcement). */
+export interface HistoryHooks { undo(): void; redo(): void }
 
 /**
- * The seam below the module: the editor's state and its two write paths.
+ * The seam below the module: the editor's state, its drafts and the branch, and the editor's
+ * primitives the commit (src/guarded-edit/commit.ts) writes through.
  * Wide on purpose; it is the module's private dependency, not its interface.
  */
 export interface EditorWorkspace {
   /** The account, repository and branch, as one key. */
   scope(): string;
+  /** The draft store's scope; undefined with no repository open. */
+  draftScope(): DraftScope | undefined;
   generation(): number;
   versionView(): boolean;
   /** The route the preview shows. */
   route(): string | undefined;
   /** Edit component mode's entry: undefined outside it, a new object each time it is entered. */
   editModeEntry(): object | undefined;
+  /** An agent's command is running: its steps leave .github alone. */
+  agentActing(): boolean;
   site(): NativeSite | undefined;
+  /** Every file now: the branch's and the drafts'. */
+  files(): string[];
+  readonly store: DraftAccess & { error: string | null };
+  /** The bytes as edited now (mounted model, draft, branch). */
   source(path: string): string | undefined;
   exists(path: string): boolean;
+  /** The branch's text of `path` as read so far (no request). */
+  base(path: string): string | undefined;
+  /** The branch file's blob and text, read when needed. */
+  branchText(path: string): Promise<{ sha: string; text: string } | undefined>;
+  /** A file a move or delete takes, with its blob and text. */
+  entry(path: string): Promise<MovableFile | undefined>;
+  /** Why `path` cannot be created on the branch (there already, a folder of it a file), or nothing. */
+  createProblem(path: string): Promise<string | undefined>;
   /** Proof of a mounted file's model (document, history session, revision); undefined when not mounted. */
-  modelState(path: string): { isCurrent(): boolean } | undefined;
+  modelState(path: string): Proof | undefined;
+  /** Proof of the file as the editor holds it, mounted or kept (or not at all). */
+  model(path: string): Proof;
+  mounted(path: string): boolean;
+  mountedSource(path: string): string | undefined;
   openFile(): string | undefined;
   /** Opens `path` in the editor (its history takes the step); with `beforeMount`, its editor mounts only while that holds. */
   open(path: string, beforeMount?: () => boolean): Promise<void>;
   /** Proof that `path` is the open file, mounted in this editor and session, at this revision; undefined when it is not. */
-  anchor(path: string): { isCurrent(): boolean } | undefined;
-  /** Replaces ranges of the mounted file `path` as one editor step (`group`: joins the open typing group). Throws on failure. */
-  change(path: string, edits: Required<RangeEdit>[], group: boolean): void;
+  anchor(path: string): Proof | undefined;
+  /** Keeps the editor's model of `path` until the returned release. */
+  retainModel(path: string): () => void;
+  /** Forgets the unmounted model of `path` held by `proof`; the proof of its absence. */
+  evictModel(path: string, proof: Proof): Proof | undefined;
+  /** The mounted files' own text steps for a receipt (src/components/source-editor.ts prepareHistorySources). */
+  prepareSources(edits: { path: string; expectedSource: string; text: string }[]): (Proof & { dispose?(): void; apply(): boolean; undo(): boolean; redo(): boolean }) | undefined;
+  /** Replaces ranges of the mounted file `path` as one editor step (`group`: joins the open typing group), with `hooks` on its Undo and Redo. Throws on failure. */
+  replaceRanges(path: string, edits: Required<RangeEdit>[], group: boolean, hooks?: HistoryHooks): void;
   /** Ends the open typing group of `path`. */
   closeGroup(path: string): void;
-  /** Writes several files as one undo step: an error message, or nothing. */
-  operation(request: OperationRequest): Promise<string | undefined>;
-  /** Selects `request` once the preview renders it (flashed with `flash`); undefined cancels. */
-  select(request: (NodeRef & { source?: string }) | undefined, flash?: string): void;
+  /** Records a step in the history of the mounted `path`: false when it cannot. */
+  recordHistory(path: string, undo: () => boolean, redo: () => boolean, dispose: () => void): boolean;
+  /** Holds the history of `path` while a step's page reopens. */
+  holdRefresh(path: string): () => void;
+  /** The files `paths` share `anchor`'s history until the returned release. */
+  shareHistory(paths: string[], anchor: string): () => void;
+  /** Tells `listener` of each file an editor pane mounts (`pane`: the stylesheet pane). Called once. */
+  onMount(listener: (path: string, pane: boolean) => void): void;
+  /** The stylesheet pane's file. */
+  paneFile(): string | undefined;
+  closePane(): void;
+  /** The trees, routes and agent context drawn again after the files changed. */
+  afterFileChanges(): void;
+  /** Opens `path` after a step (the home page, else the folder, when it is gone); may be done at once. */
+  openAfter(path: string | undefined, keepExplorer: boolean): void | Promise<void>;
+  /** Shows the Pages tab's row and focuses it, when the tab is open. */
+  showRow(focus: { file?: string; route?: string } | undefined): void;
+  /** Runs `task` once the history move under way is accepted. */
+  later(task: () => void): void;
+  /** The status line's text. */
+  status(): string;
+  /** Selects `request` once the preview renders it (flashed with `flash`, revealed centred with `reveal`); undefined cancels. */
+  select(request: (NodeRef & { source?: string }) | undefined, flash?: string, reveal?: boolean): void;
   announce(message: string): void;
+  /** A refusal said on screen (`history`: an Undo or Redo refused). */
+  refuse(message: string, history?: "undo" | "redo"): void;
+  error(error: unknown): void;
 }
 
 /** What stale outcomes say; callers that need other words switch on `changed`. */
@@ -171,6 +210,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   const ws = workspace;
   // The typing group `now` left open, by key and file.
   let group: { key: string; path: string } | undefined;
+  const commit = createCommit(ws);
 
   function stamp(over?: "repository"): Stamp {
     const scope = ws.scope(), generation = ws.generation(), route = ws.route(), entry = ws.editModeEntry();
@@ -326,10 +366,15 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   function writeRanges(path: string, writes: Prepared, reads: Tracked, planned: Planned, key?: string): Outcome {
     // A new typing group never joins one the editor holds open for another action.
     if (key !== undefined && !group) ws.closeGroup(path);
-    const after = planned.select?.after;
-    ws.select(after && { path: after.path, node: after.node }, planned.select?.flash);
+    const { before, after, flash } = planned.select ?? {};
+    // The step's own Undo and Redo select and say what moved (a typing group: from its first keystroke).
+    const hooks = key !== undefined && group?.key === key ? undefined : {
+      undo: () => { if (before) ws.select(before); if (planned.undone) ws.announce(planned.undone); },
+      redo: () => { if (after) ws.select(after, undefined, true); if (planned.done) ws.announce(planned.done); },
+    };
+    ws.select(after && { path: after.path, node: after.node }, flash);
     try {
-      ws.change(path, rangesFor(path, writes, reads, key !== undefined), key !== undefined);
+      ws.replaceRanges(path, rangesFor(path, writes, reads, key !== undefined), key !== undefined, hooks);
     } catch (error) {
       ws.select(undefined);
       group = undefined;
@@ -349,22 +394,22 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const proved = (): StaleKey | undefined => held.changed() ?? (guard() ? undefined : "guard");
     let changed = proved();
     if (changed) return stale(changed);
+    // No page open and none asked for: the step's files go without an anchor (the commit opens the page after).
     const anchor = options.anchor ?? ws.openFile();
-    if (anchor === undefined) return refused("Open a page before changing these files.");
-    if (ws.openFile() !== anchor || !ws.anchor(anchor)) {
+    if (anchor !== undefined && (ws.openFile() !== anchor || !ws.anchor(anchor))) {
       await ws.open(anchor, options.openOnlyIfCurrent ? () => !proved() : undefined);
       changed = proved();
       if (changed) return stale(changed);
     }
     // The anchor's editor and model, proved from here to the record.
-    const opened = ws.anchor(anchor);
-    if (!opened) return stale("anchor");
+    const opened = anchor === undefined ? undefined : ws.anchor(anchor);
+    if (anchor !== undefined && !opened) return stale("anchor");
     const reads = track();
     let result: PlanResult;
     try { result = await plan(reads.r); }
     finally { reads.seal(); }
     const writes = "done" in result ? prepare(result, reads) : undefined;
-    const current = (): StaleKey | undefined => proved() ?? (opened.isCurrent() ? undefined : "anchor") ?? reads.changed();
+    const current = (): StaleKey | undefined => proved() ?? (!opened || opened.isCurrent() ? undefined : "anchor") ?? reads.changed();
     changed = current();
     if (changed) return stale(changed);
     if ("refuse" in result) return refused(result.refuse);
@@ -372,12 +417,12 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     if (writes!.unchanged) return { ok: true, status: "unchanged" };
     const places = existence(writes!), missing = places.refusal();
     if (missing) return refused(missing);
-    if (!result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
+    if (anchor !== undefined && !result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
     const after = result.select?.after, selects = after && !result.select?.historyOnly;
     if (selects) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
     let recorded = false;
-    const error = await ws.operation({
-      expectedSources: new Map(reads.sources), edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves,
+    const error = await commit({
+      reads: reads.sources, edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves, anchor,
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
       current: () => !(current() ?? places.changed()), recorded: () => { recorded = true; }, selection: { before: result.select?.before, after },
     });
@@ -411,7 +456,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       misuse("now() cannot create, delete, move or open files (they need async reads); use run().");
     if ("done" in result && result.select?.historyOnly) misuse("now() takes the editor's own step, which selects nothing on Undo; use run() for `historyOnly`.");
     if (writes && [...writes.edits.keys()].some(path => path !== anchor))
-      misuse(`now() writes only its anchor ${anchor} (until slice 17); use run().`);
+      misuse(`now() writes only its anchor ${anchor}; use run().`);
     changed = proved() ?? (opened.isCurrent() ? undefined : "anchor") ?? reads.changed();
     if (changed) return fail(changed);
     if ("refuse" in result) return refused(result.refuse);

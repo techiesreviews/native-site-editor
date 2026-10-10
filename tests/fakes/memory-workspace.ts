@@ -1,21 +1,20 @@
 // The memory adapter of the guarded edit module's seam (src/guarded-edit.ts):
-// a whole editor workspace in maps, so the module's suite (and, from slice 11,
-// the caller suites) run without a browser. Files are a branch plus drafts;
-// mounted files have a model (text, revision, session); the history is one
-// stack whose operation steps run the real receipt (prepareNativeTextHistory)
-// over planNativeStructuralDrafts, as applyNativeOperation does, and whose
-// range steps follow the source editor's own steps and typing groups.
+// a whole editor workspace in maps, so the module's suite (and the caller
+// suites) run without a browser. Files are a branch plus drafts; mounted files
+// have a model (text, revision, session); the history is one stack whose
+// receipt steps are the module's own commit (src/guarded-edit/commit.ts) over
+// these primitives, and whose range steps follow the source editor's own steps
+// and typing groups (with their Undo/Redo hooks).
 //
-// Limits (as the tests need them): one history stack for every file; an
-// operation never deletes or moves a mounted file (production retains its
-// model; this adapter has no leases); `open` after an operation is recorded,
-// not mounted.
+// Limits (as the tests need them): one history stack for every file; models
+// are never leased; a page opened after a step is recorded in `opened`, and
+// mounted only when no page was open (else the open page stays mounted);
+// the page refresh after Undo and Redo runs at once, not after the history
+// accepts the move.
 
-import { prepareNativeTextHistory } from "../../src/page-builder/native-operation-history";
-import { planNativeStructuralDrafts } from "../../src/page-builder/native-structural-history";
 import type { DraftScope, SavedDraft } from "../../src/drafts";
-import type { DraftAccess, MovableFile } from "../../src/file-changes";
-import type { EditorWorkspace, NodeRef, OperationRequest } from "../../src/guarded-edit";
+import type { DraftAccess } from "../../src/file-changes";
+import type { EditorWorkspace, HistoryHooks, NodeRef } from "../../src/guarded-edit";
 import type { NativeSite } from "../../shared/native-project";
 
 export interface Deferred<T = void> { promise: Promise<T>; resolve(value: T): void }
@@ -25,12 +24,10 @@ export function deferred<T = void>(): Deferred<T> {
   return { promise, resolve };
 }
 
-type Step = { kind: "range" | "operation"; path: string; undo(): boolean; redo(): boolean; dispose?(): void; group?: { open: boolean; revision: number; after: string } };
+type Step = { kind: "range" | "operation"; path: string; undo(): boolean; redo(): boolean; dispose?(): void; group?: { open: boolean; revision: number; after: string }; hooks?: HistoryHooks };
 type Model = { text: string; version: number; session: number };
 /** A wait the test holds open: `reached` once the code under test waits on it, then `release()`. */
 export interface Hold { reached: Promise<void>; release(): void }
-
-const STALE_OPERATION = "The repository or source changed meanwhile. Review the latest files and try again.";
 
 export function createMemoryWorkspace(init: { branch?: Record<string, string>; drafts?: Record<string, string>; open?: string; mounted?: string[]; site?: NativeSite } = {}) {
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
@@ -119,79 +116,78 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     return { isCurrent: current, apply: () => move(true), undo: () => move(false), redo: () => move(true) };
   }
 
-  // applyNativeOperation, over these maps.
-  async function operation(op: OperationRequest): Promise<string | undefined> {
-    const epoch = generation, key = scopeKey;
-    const { moves, deletes, creates, edits } = op;
-    const expected = new Map(op.expectedSources);
-    for (const path of [...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...edits.keys()])
-      if (!expected.has(path)) expected.set(path, text(path));
-    const stale = () => epoch !== generation || key !== scopeKey || [...expected].some(([path, source]) => text(path) !== source) || !op.current();
-    if (stale()) return STALE_OPERATION;
-    const vacated = new Set([...moves.map(move => move.from), ...deletes]);
-    for (const file of creates) {
-      if (!vacated.has(file.path) && exists(file.path)) return `${file.path} already exists. No files were changed.`;
-      await branchRead();
-      if (stale()) return STALE_OPERATION;
+  // The module's commit tells this listener of every file a pane mounts.
+  let mountListener: ((path: string, pane: boolean) => void) | undefined;
+  const mountOpen = (path: string) => {
+    if (openFile && openFile !== path) models.delete(openFile);
+    openFile = path;
+    if (!models.has(path)) mount(path);
+    mountListener?.(path, false);
+  };
+  const branchFile = (path: string) => {
+    const base = branch.get(path);
+    return base && !records.get(path)?.deleted ? base : undefined;
+  };
+
+  // The editor's range step (replaceActiveRanges): a typing group goes on while nothing else
+  // moved its file since its last keystroke; `hooks` run once the step's Undo or Redo moved it.
+  function replaceRanges(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean, hooks?: HistoryHooks) {
+    const model = models.get(path);
+    if (!model) throw new Error("The active file changed or is read only.");
+    let next = model.text;
+    for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+      if (next.slice(edit.start, edit.end) !== edit.expected) throw new Error("The source changed.");
+      next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
     }
-    const movable = new Map<string, MovableFile>();
-    for (const path of vacated) {
-      await branchRead();
-      if (stale()) return STALE_OPERATION;
-      if (!exists(path)) return `${path} is not there any more.`;
-      movable.set(path, { path, sha: branch.get(path)?.sha, text: branch.get(path)?.text });
+    const top = done.at(-1), before = model.text, revision = model.version;
+    model.text = next; model.version = ++revisions;
+    saveText(path, next);
+    if (group && top?.kind === "range" && top.path === path && top.group?.open && top.group.revision === revision) {
+      top.group.revision = model.version; top.group.after = next;
+      return;
     }
-    const arriving = new Set([...moves.map(move => move.to), ...creates.map(file => file.path)]);
-    const bases = new Map<string, { sha: string; text: string } | undefined>();
-    for (const path of edits.keys()) {
-      if (!arriving.has(path) && !records.get(path)) bases.set(path, branch.get(path));
-      await branchRead();
-      if (stale()) return STALE_OPERATION;
-    }
-    const anchor = openFile;
-    if (!anchor || !models.has(anchor)) return "Open a page before changing these files.";
-    const touched = new Set([anchor, ...moves.flatMap(move => [move.from, move.to]), ...deletes, ...creates.map(file => file.path), ...edits.keys()]);
-    const before = new Map([...touched].map(path => [path, records.get(path)] as const));
-    const after = planNativeStructuralDrafts({ scope, before, movable, bases, moves, deletes, creates, edits, now: ++clock });
-    // Every source the caller read stays in the step's proof, unchanged inputs (templates) too.
-    const beforeSources = new Map(expected);
-    for (const path of after.keys()) beforeSources.set(path, text(path));
-    const afterSources = new Map(beforeSources);
-    for (const [path, record] of after) afterSources.set(path, record ? record.deleted || record.opaque ? undefined : record.content : branch.get(path)?.text);
-    const receipt = prepareNativeTextHistory({
-      scope, store, isLive: () => epoch === generation && key === scopeKey && !versionView,
-      source: text, mounted: path => models.has(path), modelState: proof,
-      evictModel: (_path, held) => held.isCurrent() ? held : undefined, prepareSources,
-    }, { before, after, beforeSources, afterSources });
-    if (!receipt?.apply()) { const error = receipt?.error() ?? STALE_OPERATION; receipt?.dispose(); return error; }
-    const transition = (direction: "undo" | "redo") => {
-      const select = direction === "undo" ? op.selection.before : op.selection.after;
-      if (select) selected.push(select);
-      if (!receipt[direction]()) { if (select) selected.push(undefined); refusals.push(receipt.error() ?? STALE_OPERATION); return false; }
-      announced.push(direction === "undo" ? op.undone : op.done);
+    const step: Step = {
+      kind: "range", path, group: { open: group, revision: model.version, after: next }, hooks,
+      undo: () => move(step.group!.after, step.group!.revision, before, revision) && (step.hooks?.undo(), true),
+      redo: () => move(before, revision, step.group!.after, step.group!.revision) && (step.hooks?.redo(), true),
+    };
+    const move = (from: string, fromRevision: number, to: string, toRevision: number) => {
+      const current = models.get(path);
+      if (current?.text !== from || current.version !== fromRevision) { refusals.push("The source changed."); return false; }
+      current.text = to; current.version = toRevision; saveText(path, to);
+      step.group!.open = false;
       return true;
     };
-    push({ kind: "operation", path: anchor, undo: () => transition("undo"), redo: () => transition("redo"), dispose: () => receipt.dispose() });
-    op.recorded();
-    // The structural branch opens the next page after the step; that can fail with the step kept.
-    if (refreshFails && (moves.length || deletes.length || creates.length || op.open)) return "The files changed, but the editor changed while opening them. Review the current drafts.";
-    announced.push(op.done);
-    if (op.open) opened.push(op.open);
-    return undefined;
+    push(step);
   }
 
   // The port the module is built on. Its `source` is the module's own read; the
-  // test's direct `source` below counts as an escaped read.
-  const workspace: EditorWorkspace = {
+  // test's direct `source` below counts as an escaped read. `change` is the
+  // editor's own range step with no hooks, as another action makes it.
+  const workspace: EditorWorkspace & { change(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean): void } = {
     scope: () => scopeKey,
+    draftScope: () => scope,
     generation: () => generation,
     versionView: () => versionView,
     route: () => route,
     editModeEntry: () => editEntry,
+    agentActing: () => false,
     site: () => site,
+    files: () => [...files()],
+    store,
     source: text,
     exists,
+    base: path => branchFile(path)?.text,
+    async branchText(path) { await branchRead(); return branch.get(path); },
+    async entry(path) {
+      await branchRead();
+      return exists(path) ? { path, sha: branch.get(path)?.sha, text: branch.get(path)?.text } : undefined;
+    },
+    async createProblem() { await branchRead(); return undefined; },
     modelState: path => models.has(path) ? proof(path) : undefined,
+    model: proof,
+    mounted: path => models.has(path),
+    mountedSource: path => models.get(path)?.text,
     openFile: () => openFile,
     async open(path, beforeMount) {
       const hold = openHold;
@@ -202,51 +198,49 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
       // Refused before mounting: the file is chosen, its editor is not there.
       if (beforeMount && !beforeMount()) return;
       if (!models.has(path)) mount(path);
+      mountListener?.(path, false);
     },
     anchor(path) {
       const model = models.get(path), version = model?.version;
       return openFile === path && model ? { isCurrent: () => openFile === path && models.get(path) === model && model.version === version } : undefined;
     },
-    change(path, edits, group) {
-      const model = models.get(path);
-      if (!model) throw new Error("The active file changed or is read only.");
-      let next = model.text;
-      for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
-        if (next.slice(edit.start, edit.end) !== edit.expected) throw new Error("The source changed.");
-        next = next.slice(0, edit.start) + edit.text + next.slice(edit.end);
-      }
-      const top = done.at(-1), before = model.text, revision = model.version;
-      model.text = next; model.version = ++revisions;
-      saveText(path, next);
-      // A typing group goes on while nothing else moved its file since its last keystroke.
-      if (group && top?.kind === "range" && top.path === path && top.group?.open && top.group.revision === revision) {
-        top.group.revision = model.version; top.group.after = next;
-        return;
-      }
-      const step: Step = {
-        kind: "range", path, group: { open: group, revision: model.version, after: next },
-        undo: () => move(step.group!.after, step.group!.revision, before, revision),
-        redo: () => move(before, revision, step.group!.after, step.group!.revision),
-      };
-      const move = (from: string, fromRevision: number, to: string, toRevision: number) => {
-        const current = models.get(path);
-        if (current?.text !== from || current.version !== fromRevision) { refusals.push("The source changed."); return false; }
-        current.text = to; current.version = toRevision; saveText(path, to);
-        step.group!.open = false;
-        return true;
-      };
-      push(step);
-    },
+    retainModel: () => () => {},
+    evictModel: (_path, held) => held.isCurrent() ? held : undefined,
+    prepareSources,
+    replaceRanges,
+    change: (path, edits, group) => replaceRanges(path, edits, group),
     closeGroup(path) {
       const top = done.at(-1);
       if (top?.kind === "range" && top.path === path && top.group) top.group.open = false;
     },
-    operation,
+    recordHistory(path, undo, redo, dispose) {
+      if (!models.has(path)) return false;
+      push({ kind: "operation", path, undo, redo, dispose });
+      return true;
+    },
+    holdRefresh: () => () => {},
+    shareHistory: () => () => {},
+    onMount(listener) { mountListener = listener; },
+    paneFile: () => undefined,
+    closePane() {},
+    afterFileChanges() {},
+    openAfter(path) {
+      // The editor changed while the page opened: the step stays written.
+      if (refreshFails) { generation++; return; }
+      if (path === undefined || path === openFile) return;
+      opened.push(path);
+      if (!openFile) mountOpen(path);
+    },
+    showRow() {},
+    later: task => task(),
+    status: () => announced.at(-1) ?? "",
     select(request, flash) {
       selected.push(request);
       if (request && flash) flashed.push(flash);
     },
     announce: message => { announced.push(message); },
+    refuse: message => { refusals.push(message); },
+    error: error => { refusals.push(error instanceof Error ? error.message : String(error)); },
   };
 
   return {
@@ -289,7 +283,7 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     setSite(next: NativeSite | undefined) { site = next; },
     /** Holds the next branch read the commit makes (a blob, an entry). */
     holdBranchRead(): Hold { branchHold = holdable(); return branchHold; },
-    /** Opening the page after a structural operation fails from now on (the step stays written). */
+    /** Opening the page after a step that opens one fails from now on (the editor changes meanwhile; the step stays written). */
     failRefresh() { refreshFails = true; },
     /** Holds the next `open` (the anchor page opening). */
     holdOpen(): Hold { openHold = holdable(); return openHold; },

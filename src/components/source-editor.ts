@@ -214,7 +214,7 @@ const docRevision = (doc: Doc) => doc.stored ? sourceStore().get(doc.scope, doc.
 type RangeApi = {
   select(edit: Omit<RangeEdit, "text">): boolean;
   replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion): void;
-  replaceMany(edits: RangeEdit[]): void;
+  replaceMany(edits: RangeEdit[], companion?: HistoryCompanion): void;
   closeGroup(): void;
   hasOpenGroup(): boolean;
   discardGroup(): boolean;
@@ -510,16 +510,16 @@ export function selectActiveRange(edit: Omit<RangeEdit, "text">) {
 }
 // Inline edits stream keystrokes; `group` keeps them in one undo step until
 // `closeActiveEditGroup` is called.
-// A `companion` (another file changed with it) is undone and redone with the edit.
+// A `companion` (another file changed with it, or the selection and what is said) is undone and redone with the edit.
 export function replaceActiveRange(edit: RangeEdit, group = false, companion?: HistoryCompanion) {
   editorFor(edit.path).range.replace(edit, group, companion);
 }
-export function replaceActiveRanges(edits: RangeEdit[]) {
+export function replaceActiveRanges(edits: RangeEdit[], companion?: HistoryCompanion) {
   if (!edits.length) return;
   const path = edits[0].path;
   if (edits.some((edit) => edit.path !== path))
     throw new Error("A source change cannot span multiple files.");
-  editorFor(path).range.replaceMany(edits);
+  editorFor(path).range.replaceMany(edits, companion);
 }
 export function closeActiveEditGroup(path: string) {
   mounted.get(path)?.range.closeGroup();
@@ -723,12 +723,12 @@ export function mountSourceEditor(
       if (!result.ok) throw new Error(result.error);
       view?.selectEdited(edit.start, edit.start + edit.text.length);
     },
-    replaceMany(edits) {
+    replaceMany(edits, companion) {
       for (const edit of edits) verify(edit);
       const changes = edits.filter((edit) => edit.text !== edit.expected);
       if (!changes.length) return;
       const result = store.edit({ scope, path: file.path, history: session, label: "Edit",
-        changes: changes.map(({ start, end, expected, text }) => ({ start, end, expected, text })) });
+        changes: changes.map(({ start, end, expected, text }) => ({ start, end, expected, text })), companion });
       if (!result.ok) throw new Error(result.error);
     },
   };

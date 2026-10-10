@@ -14,6 +14,8 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
 import { locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
+import type { GuardedEdits, Outcome } from "./guarded-edit";
+import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 
 // ---- Page outlines ----
@@ -328,8 +330,10 @@ export interface AgentSiteActions {
   /** The file's text as the editor has it (open editor, draft, GitHub); undefined when there is no such file. */
   text(path: string): Promise<string | undefined>;
   isMounted(path: string): boolean;
-  /** Edits the open file `path` as one undo step. Throws when it cannot. */
-  replaceMounted(path: string, source: string, edit: { start: number; end: number; text: string }): void;
+  /** Guarded edits (src/guarded-edit.ts): the agent's edits of open files and sections are its plans. */
+  edits: GuardedEdits;
+  /** Plans the component loader a page needs once it holds `next` (a section added). */
+  loaderPlan?: LoaderPlanner;
   /** Writes `path` as a draft (a new file when `create`), as one operation Undo takes back; an error message, or nothing. */
   writeDraft(path: string, content: string, create: boolean): Promise<string | undefined>;
   /** Opens the file (a page shows in the preview); whether it is open now. */
@@ -343,8 +347,6 @@ export interface AgentSiteActions {
   setPageDetail(path: string, field: "title" | "description", value: string): Promise<string | undefined>;
   sectionTags(): ReadonlySet<string>;
   template(tag: string): string | undefined;
-  /** The page builder's edit of the open page (applyNativeChange): whether it was made. */
-  change(path: string, source: string, edits: { start: number; end: number; text: string }[], select: number[] | undefined, message: string, loader?: boolean): boolean | Promise<boolean | { added: string }>;
   /** The page structure's drag (moveNativeSectionTo). */
   moveSection(target: { path: string; node: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined;
   /** The Files tab's rename or move, with its confirmation answered. */
@@ -431,6 +433,14 @@ const hashOf = async (actions: AgentSiteActions, path: string) => {
   return text === undefined ? null : await textHash(text);
 };
 
+const CHANGED = (path: string) => `${path} changed in the editor since it was read. Read it again.`;
+/** A guarded edit's outcome as the agent hears it: a refusal or a stale read is a conflict. */
+async function guarded(pending: Promise<Outcome>) {
+  const outcome = await pending;
+  if (!outcome.ok) throw new Conflict(outcome.reason === "stale" ? "The page changed in the editor meanwhile. Read it again." : outcome.message);
+  if (outcome.message) throw new Error(outcome.message);
+}
+
 /**
  * Applies one queued change. Resolves to what the agent is told; throws with
  * the reason when the change no longer fits (the file changed, the section
@@ -452,7 +462,8 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       const before = await expectHash(actions, path, command.expectedHash);
       if (before !== undefined && actions.isMounted(path)) {
         const edit = minimalTextEdit(before, command.content);
-        if (edit) actions.replaceMounted(path, before, edit);
+        if (edit) await guarded(actions.edits.run(r => r.source(path) !== before ? { refuse: CHANGED(path) }
+          : { edits: new Map([[path, [edit]]]), done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` }));
       } else {
         const error = await actions.writeDraft(path, command.content, before === undefined);
         if (error) throw new Error(error);
@@ -506,9 +517,14 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
         const index = Math.min(Math.max(0, args.index ?? container.children), container.children);
         const edit = nativeInsertEdit(source, parent, index, tag, actions.template(tag) ?? "");
         if (!edit) throw new Conflict(`${componentLabel(tag)} could not be placed exactly in ${path}.`);
-        const applied = await actions.change(path, source, [edit], [...parent, index], `${componentLabel(tag)} added`, true);
-        if (!applied) throw new Error("The section could not be added.");
-        return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${typeof applied === "object" ? ` ${applied.added}` : ""}`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
+        let planned: SectionPlanned | undefined;
+        await guarded(actions.edits.run(async r => {
+          const plan = await addSectionStep(r, { path, select: [...parent, index], message: `${componentLabel(tag)} added`, loader: actions.loaderPlan,
+            edit: page => page === source ? [edit] : CHANGED(path) });
+          if (!("refuse" in plan)) planned = plan;
+          return plan;
+        }, { anchor: path, guard: () => !planned?.loader || planned.loader.current() }));
+        return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${planned?.added ? ` ${planned.added}` : ""}`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
       }
       const node = parseOutlineId(String(args.section ?? ""));
       const section = outline.sections.find((item) => item.id === args.section);
@@ -516,7 +532,9 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       if (command.operation === "remove_section") {
         const range = locateNativeElementRange(source, node);
         if (!range) throw new Conflict("The section's HTML could not be located exactly.");
-        if (!await actions.change(path, source, [removeEdit(source, range)], undefined, `${componentLabel(section.tag)} removed`)) throw new Error("The section could not be removed.");
+        const label = componentLabel(section.tag);
+        await guarded(actions.edits.run(r => r.source(path) !== source ? { refuse: CHANGED(path) }
+          : { edits: new Map([[path, [removeEdit(source, range)]]]), done: `${label} removed`, undone: `Undid removing the ${label}.` }, { anchor: path }));
         return { message: `Section ${section.id} removed from ${path}, unsaved.`, result: { hash: await hashOf(actions, path) } };
       }
       const parent = parseOutlineId(args.container ?? "") ?? (args.container === "" ? [] : undefined);

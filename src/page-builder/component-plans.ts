@@ -205,3 +205,35 @@ export async function newComponentStep(r: Reads, input: {
     undone: loader?.added ? `Undid making <${tag}> and adding the component loader.` : `Undid making <${tag}>.`,
   };
 }
+
+export type SectionPlanned = Planned & { loader?: PreparedComponentLoader; added: string };
+
+/**
+ * A section's instance put into the page `path` (Add section, the agent's add_section): the page's
+ * edits planned from its bytes read now (`edit`, or why not), with the component loader in the same
+ * step when the site lacks it (`loader`): one undo step whose Undo selects `before` and says so.
+ */
+export async function addSectionStep(r: Reads, input: {
+  path: string; select: number[]; message: string; before?: { path: string; node: number[] };
+  edit(page: string, r: Reads): RangeEdit[] | string; loader?: LoaderPlanner;
+}): Promise<SectionPlanned | { refuse: string }> {
+  const { path, message } = input;
+  const page = r.source(path);
+  if (page === undefined) return { refuse: `${path} is not there any more.` };
+  const edits = input.edit(page, r);
+  if (typeof edits === "string") return { refuse: edits };
+  const next = [...edits].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), page);
+  const loader = await input.loader?.(path, next);
+  if (typeof loader === "string") return { refuse: loader };
+  const stale = loader && loaderReads(r, loader, "The repository or source changed meanwhile. Review the latest files and try again.");
+  if (stale) return { refuse: stale };
+  return {
+    // Without the loader the page's own ranges: the editor's step.
+    edits: new Map([[path, loader ? next : edits.map(edit => ({ ...edit, expected: page.slice(edit.start, edit.end) }))], ...loader?.edits ?? []]),
+    creates: loader?.creates, loader,
+    select: { before: input.before, after: { path, node: [...input.select] } },
+    added: loader ? [loader.added, ...loader.notes].filter(Boolean).join(" ") : "",
+    done: loader ? [loader.added ? `${message}.` : message, loader.added, ...loader.notes].filter(Boolean).join(" ") : message,
+    undone: loader?.added ? "Undid adding the section and the component loader." : "Undid adding the section.",
+  };
+}

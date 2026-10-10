@@ -25,7 +25,7 @@ import type { GuardedEdits, Planned, PlanResult, Reads, Stamp } from "../guarded
 /** Workspace values are live host getters; operations and parsers stay injected. */
 export interface PageStructurePorts {
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "selectNode" | "route" | "selectTextAfterUpdate" | "selectAfterUpdate" | "refresh" | "showEditBar" | "hideEditBar"> | undefined;
-  readonly editorModule: Pick<typeof sourceEditor, "captureFileModelState" | "closeActiveEditGroup" | "isMounted" | "replaceActiveRange" | "replaceActiveRanges" | "runVisualHistory" | "forgetDraftModel">;
+  readonly editorModule: Pick<typeof sourceEditor, "captureFileModelState" | "captureHistoryHost" | "closeActiveEditGroup" | "isMounted" | "replaceActiveRange" | "replaceActiveRanges" | "runVisualHistory" | "forgetDraftModel">;
   /** Guarded edits (src/guarded-edit.ts): section moves, field writes and text edits are its plans. */
   readonly edits: GuardedEdits;
   readonly appStore: { openFile: { readonly value: string | undefined }; selection: { readonly value: NativePreviewSelection | undefined } };
@@ -60,7 +60,6 @@ export interface PageStructurePorts {
   readonly restoreFile: (path: string, epoch: number, options?: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; }) => Promise<void>;
   readonly updateNativePreviewSources: () => void;
   readonly nativeEditableTemplatePath: () => string | undefined;
-  readonly applyNativeOperation: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; done: string; undone: string }) => Promise<string | undefined>;
   readonly nativePageLabelOf: (file: string) => string;
   readonly pageStructure: Pick<ReturnType<typeof createPageStructure>, "update"> | undefined;
   readonly locateNativeElementRange: (html: string, path: number[]) => ElementRange | undefined;
@@ -165,7 +164,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     const announce = (text: string) => { ports.element("status").textContent = text; };
     const change = (edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) => {
-      return applyNativeChange(path, source, edits, next, message);
+      return editOpenPage(path, source, edits, next, message);
     };
     const controls: EditBarControl[] = [];
     if (range && node && ports.nativeSite) {
@@ -673,26 +672,25 @@ export function createPageStructureController(ports: PageStructurePorts) {
     });
   }
 
-  // `next` is the element to select once the preview has rendered it.
-  function applyNativeChange(path: string, source: string, edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) {
-    const preview = ports.nativePreview;
-    const editor = ports.editorModule;
-    if (!preview || !editor) return false;
-
-    if (ports.nativeEditableSource(path) !== source) {
-      refuse("The source changed. Select the element again and try again.");
+  /**
+   * The edit bar's change of the open page `path`, whose text must still be `source`: one editor
+   * step (a guarded edit), `next` selected once the preview renders it. Whether it was made.
+   */
+  function editOpenPage(path: string, source: string, edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) {
+    if (ports.appStore.openFile.value !== path || !ports.editorModule.captureHistoryHost(path)) {
+      ports.errorMessage(new Error("The active file changed or is read only."));
       return false;
     }
-    preview.selectAfterUpdate(next ? { path, node: next } : undefined);
-    try {
-      editor.replaceActiveRanges(edits.map((edit) => ({ path, ...edit, expected: source.slice(edit.start, edit.end) })));
-      ports.element("status").textContent = message;
-      return true;
-    } catch (error) {
-      preview.selectAfterUpdate(undefined);
-      ports.errorMessage(error);
-      return false;
-    }
+    const outcome = ports.edits.now(r => r.source(path) !== source ? { refuse: "The source changed. Select the element again and try again." } : {
+      edits: new Map([[path, edits.map(edit => ({ ...edit, expected: source.slice(edit.start, edit.end) }))]]),
+      ...next ? { select: { after: { path, node: next } } } : {},
+      done: message, undone: "",
+    }, { anchor: path });
+    if (outcome.ok) return true;
+    if (outcome.reason === "stale") refuse("The source changed. Select the element again and try again.");
+    else if (outcome.message.startsWith("The source changed.")) refuse(outcome.message);
+    else ports.errorMessage(new Error(outcome.message));
+    return false;
   }
 
   // A whole section: a <section>, or a component whose template is one. A
@@ -895,7 +893,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     moveSectionTo: moveNativeSectionTo,
     renderNativeEditBar,
     removeEmptyNewLink,
-    applyNativeChange,
+    editOpenPage,
     isNativeSectionTag,
     moveNativeSection,
     moveNativeSectionAfterOpening,
