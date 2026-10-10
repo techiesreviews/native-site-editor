@@ -53,8 +53,10 @@ import "./native-preview.css";
 // not block it, but loads its runtime from a same-origin external script.
 // Production CSP keeps `script-src` free of `unsafe-inline`.
 //
-// Vite minifies the runtime (native-preview-runtime.js, a classic script) with
-// a source map under a content-hashed /assets/ URL, cached as immutable.
+// The runtime (native-preview-runtime.js) is bundled with the rules it imports
+// into one classic script (vite-preview-runtime.ts): served readable in dev
+// and the test server, minified with a source map under a content-hashed
+// /assets/ URL in the build, cached as immutable.
 // The URL is absolute so the about:srcdoc frame needs no base URL.
 const RUNTIME_URL = new URL("./native-preview-runtime.js", import.meta.url).href;
 // A tab opened before a deploy asks for the previous hash, which is gone: the

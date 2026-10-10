@@ -164,6 +164,7 @@ import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
 import { NATIVE_STARTER_VERSION } from "../../worker/starter.ts";
 import { monacoTrim } from "../../vite-monaco-trim.ts";
+import { previewRuntime } from "../../vite-preview-runtime.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
@@ -1424,7 +1425,8 @@ async function main() {
     console.log(`native-save server (${distDir}) listening on http://127.0.0.1:${appPort}`);
     return;
   }
-  // Production's Monaco contribution set (vite.config.ts is not loaded here).
+  // Production's Monaco contribution set and the bundled preview runtime
+  // (vite.config.ts is not loaded here).
   const monaco = monacoTrim();
   const app = await createServer({
     configFile: false,
@@ -1432,6 +1434,7 @@ async function main() {
     cacheDir: resolve(projectRoot, `.scratch/native-save/vite-cache-${appPort}`),
     plugins: [
       monaco.plugin,
+      previewRuntime(),
       { name: "ase-native-save-worker", apply: "serve", configureServer(server) {
         server.middlewares.use(workerMiddleware());
       } },

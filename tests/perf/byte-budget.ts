@@ -14,6 +14,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Script } from "node:vm";
 
 const BUDGET = 355 * 1024;
 const args = new Set(process.argv.slice(2));
@@ -42,8 +43,9 @@ const median = (values: number[]) => {
   return v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
 };
 
-// The build minifies the classic runtime under an immutable /assets/ URL,
-// with an external map containing the readable source (slice 100).
+// The build bundles and minifies the runtime (a classic script, with the
+// rules it imports) under an immutable /assets/ URL, with an external map
+// containing the readable sources (slices 100 and sturdy 20).
 function assertRuntimeMinified() {
   const emitted = readdirSync("dist/assets").filter((name) => /^native-preview-runtime-[\w-]+\.js$/.test(name));
   if (emitted.length !== 1) throw new Error(`Expected one dist/assets/native-preview-runtime-<hash>.js, found ${emitted.length}.`);
@@ -53,14 +55,15 @@ function assertRuntimeMinified() {
     throw new Error(`dist/assets/${emitted[0]} must be smaller than the runtime source.`);
   if (!runtime.endsWith(`//# sourceMappingURL=${emitted[0]}.map\n`))
     throw new Error(`dist/assets/${emitted[0]} must end with its external sourceMappingURL comment.`);
+  try { new Script(runtime); } catch (error) { throw new Error(`dist/assets/${emitted[0]} is not a classic script: ${String(error)}`); }
   const mapPath = join("dist/assets", `${emitted[0]}.map`);
   if (!existsSync(mapPath)) throw new Error(`Preview runtime source map is missing: ${mapPath}.`);
   const map = JSON.parse(readFileSync(mapPath, "utf8")) as { sources: string[]; sourcesContent: string[] };
-  if (map.sources?.length !== 1 || map.sources[0] !== "native-preview-runtime.js")
-    throw new Error(`${mapPath} must name native-preview-runtime.js as its only source.`);
-  if (map.sourcesContent?.length !== 1 || map.sourcesContent[0] !== source)
-    throw new Error(`${mapPath} sourcesContent must equal the readable runtime source.`);
-  console.log(`Preview runtime minified with source map as dist/assets/${emitted[0]}.`);
+  const at = map.sources?.indexOf("native-preview-runtime.js") ?? -1;
+  if (at < 0) throw new Error(`${mapPath} must name native-preview-runtime.js among its sources.`);
+  if (map.sourcesContent?.[at] !== source)
+    throw new Error(`${mapPath} sourcesContent must hold the readable runtime source.`);
+  console.log(`Preview runtime bundled and minified with source map as dist/assets/${emitted[0]} (${Buffer.byteLength(runtime)} bytes, ${map.sources.length} sources).`);
 }
 
 async function main() {

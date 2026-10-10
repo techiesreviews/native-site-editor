@@ -1,3 +1,8 @@
+// The editing preview's runtime: a classic script the srcdoc frame loads.
+// Vite bundles it with the rules it imports into one IIFE
+// (vite-preview-runtime.ts): in dev, in the test server and in the build.
+import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
+
 (function () {
   var state = null;
   var defined = {};
@@ -2830,26 +2835,7 @@
     emit("format", { format: key === "b" ? "strong" : key === "i" ? "em" : "link" });
   });
 
-  // ---- Click and edit rules (pure: tests/canvas-gesture.test.ts reads this block) ----
-  // One rule for the whole page (ticket 79): a click selects any element and
-  // never puts a caret in text; a double-click edits (the caret at the point
-  // in text, the image chooser for an image); Enter on selected text edits it;
-  // while typing, Enter or Escape leaves typing (what was typed kept) with the
-  // element still selected, and otherwise Escape selects the parent. Presses and clicks inside the text being typed in
-  // stay the browser's own: they move the caret. `at` says whether `inside`
-  // the text being typed in, whether anything is being typed in (`editing`),
-  // whether anything is `selected`, and whether the target (for keys, the
-  // selection) is editable `text` or an editable `image`.
-  function canvasGesture(gesture, at) {
-    if (gesture === "escape") return at.editing ? "leave" : at.selected ? "parent" : "none";
-    if (gesture === "enter") return at.editing ? "leave" : at.selected && at.text ? "edit" : "none";
-    if (at.inside) return "caret";
-    if (gesture === "press") return at.editing ? "stop" : "none";
-    if (gesture === "click") return "select";
-    if (gesture === "double") return at.text ? "edit" : at.image ? "image" : "none";
-    return "none";
-  }
-  // ---- End of click and edit rules ----
+  // The click and edit rules (canvasGesture) are src/page-builder/rules/canvas-gesture.ts.
 
   // Typing into a text element: a text element whose content is only text
   // and inline formatting becomes editable on a double-click (the caret where
