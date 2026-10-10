@@ -2,7 +2,7 @@
 title: "Creating a component adds the component loader when the site lacks it"
 type: task (AFK)
 status: open
-assignee:
+assignee: sol (runner: claude)
 blocked_by: []
 builder: sol
 phase: 3

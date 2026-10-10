@@ -112,7 +112,7 @@ import { createCommandPaletteController } from "./controllers/command-palette-co
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
 import { createFileOperationsController } from "./controllers/file-operations-controller";
-import { createComponentTools, type ComponentTools } from "./page-builder/components";
+import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { createComponentFileDrafts } from "./page-builder/component-draft-transaction";
 import { createGuardedEdits } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
@@ -675,6 +675,7 @@ function mountComponentTools() {
     structureFields: true,
     files: () => nativeFiles(),
     index: ensureNativeTextIndex,
+    loaderPlan: nativeComponentLoaderPlan,
     operation: op => applyNativeOperation(op),
     editor: () => editorModule,
     preview: () => nativePreview,
@@ -782,6 +783,57 @@ function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | und
   nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description });
   return point;
 }
+/** Plans from every indexed page and stylesheet, retaining the proof across lazy reads. */
+async function nativeComponentLoaderPlan(path: string, nextPageText: string): Promise<PreparedComponentLoader | string | undefined> {
+  const epoch = generation, scope = setupScope(), source = nativeEffectiveSource(path);
+  const initial = () => generation === epoch && setupScope() === scope && nativeEffectiveSource(path) === source && !versionView;
+  const error = await ensureNativeTextIndex();
+  if (!initial()) return "The repository or source changed meanwhile. Review the latest files and try again.";
+  if (error) return error;
+  const sources = nativeSources(), files = nativeFiles().sort().join("\n");
+  const expectedSources = new Map<string, string | undefined>(Object.entries(sources));
+  const current = () => initial() && nativeFiles().sort().join("\n") === files &&
+    [...expectedSources].every(([file, text]) => nativeEffectiveSource(file) === text);
+  try {
+    const { componentLoaderPlan } = await import("./page-builder/component-loader");
+    if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
+    const pages = Object.values(nativeSite?.routes ?? {});
+    // The first pass avoids loading the vendored bytes when the site already has its loader.
+    const input = { pages, sources: { ...sources, [path]: nextPageText }, exists: nativePathExists, loader: "" };
+    const needed = componentLoaderPlan(input);
+    if (!needed) return;
+    if (!needed.creates.length) return { ...needed, expectedSources, current };
+    const { starterLoader } = await import("./page-builder/starter-loader");
+    if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
+    const loader = await starterLoader();
+    if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
+    const plan = componentLoaderPlan({ ...input, loader });
+    return plan && { ...plan, expectedSources, current };
+  } catch (error) {
+    void handleChunkLoadFailure(error);
+    return "The component loader could not load. Try again.";
+  }
+}
+
+/** Add section's ordinary page edit, with the loader in the same operation when needed. */
+async function applyNativeComponentChange(path: string, source: string, edits: { start: number; end: number; text: string }[], select: number[], message: string, apply?: () => boolean): Promise<boolean | { added: string }> {
+  const editor = editorModule, proof = editor?.captureHistoryHost(path), before = appStore.selection.value;
+  const next = [...edits].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+  const plan = await nativeComponentLoaderPlan(path, next);
+  if (typeof plan === "string") { errorMessage(new Error(plan)); return false; }
+  if (nativeEffectiveSource(path) !== source || editorModule !== editor || !proof?.isCurrent()) return false;
+  if (!plan) return apply ? apply() : applyNativeChange(path, source, edits, select, message);
+  nativePreview?.selectAfterUpdate({ path, node: select });
+  const error = await applyNativeOperation({ expectedSources: plan.expectedSources, creates: plan.creates,
+    edits: new Map([[path, next], ...plan.edits]),
+    current: () => plan.current() && editorModule === editor && Boolean(proof.isCurrent()),
+    selection: { before: before?.node ? { path: before.path, node: [...before.node] } : undefined, after: { path, node: select } },
+    done: plan.added ? `${message}. ${plan.added}` : message,
+    undone: plan.added ? "Undid adding the section and the component loader." : "Undid adding the section." });
+  if (error) { nativePreview?.selectAfterUpdate(undefined); errorMessage(new Error(error)); return false; }
+  return { added: [plan.added, ...plan.notes].filter(Boolean).join(" ") };
+}
+
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
   const native = nativeChoiceMarkup(choice.tag);
@@ -807,14 +859,20 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     errorMessage(new Error(`${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`));
     return;
   }
-  preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
-  try {
-    editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
-    element("status").textContent = `${choice.label} added`;
-  } catch (error) {
-    preview.selectAfterUpdate(undefined);
-    errorMessage(error);
-  }
+  const apply = () => {
+    preview.selectAfterUpdate({ path, node: [...point.parent, point.index] });
+    try {
+      editor.replaceActiveRanges([{ path, ...edit, expected: source.slice(edit.start, edit.end) }]);
+      element("status").textContent = `${choice.label} added`;
+      return true;
+    } catch (error) {
+      preview.selectAfterUpdate(undefined);
+      errorMessage(error);
+      return false;
+    }
+  };
+  if (!native) await applyNativeComponentChange(path, source, [edit], [...point.parent, point.index], `${choice.label} added`, apply);
+  else apply();
 }
 
 // A rail click or drop ends typing first, as Escape does: the runtime's
@@ -4056,7 +4114,7 @@ async function applyNativeOperation(op: NativeOperation): Promise<string | undef
     try {
       // A removed stylesheet must not remain editable over its deleted marker.
       // Its leased model remains available to this exact receipt for Undo.
-      if (secondaryPath && changing.includes(secondaryPath) && store.get(scope, secondaryPath)?.deleted) {
+      if (secondaryPath && changing.includes(secondaryPath) && storedSource(secondaryPath) === undefined && !nativePathExists(secondaryPath)) {
         const removed = secondaryPath;
         closeSecondary();
         capture(removed);
@@ -5024,7 +5082,9 @@ const agentSiteActions: AgentSiteActions = {
   },
   sectionTags: () => new Set(nativeSectionChoices().map((choice) => choice.tag)),
   template: (tag) => (nativeSite?.components[tag] ? nativeSources()[nativeSite.components[tag]] : undefined),
-  change: applyNativeChange,
+  change: (path, source, edits, select, message, loader) => loader && select
+    ? applyNativeComponentChange(path, source, edits, select, message)
+    : applyNativeChange(path, source, edits, select, message),
   moveSection: moveNativeSectionTo,
   moveFile: (path, to, keepOldUrl) =>
     withAgentAnswers({ option: keepOldUrl }, async () => {

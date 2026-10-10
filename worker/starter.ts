@@ -3,6 +3,8 @@
 // token, so neither the GitHub App's access nor the account's API budget
 // matters), then prepared for the user's site (shared/starting-point.ts).
 // The browser writes them as drafts.
+import { NATIVE_STARTER_VERSION } from "../shared/native-starter-version";
+export { NATIVE_STARTER_VERSION } from "../shared/native-starter-version";
 import { STARTER_TEMPLATE, prepareStarterFiles } from "../shared/starting-point";
 import type { StarterFile } from "../shared/types";
 import { HttpError } from "./github";
@@ -129,7 +131,6 @@ export async function starterFiles(siteName: string, fetcher: typeof fetch = fet
  * and small dot files (`.editor/config.json`) inline, so serving them does
  * not depend on dot paths.
  */
-export const NATIVE_STARTER_VERSION = "v6a20035";
 const NATIVE_STARTER_BASE = `/native-static-starter/${NATIVE_STARTER_VERSION}/`;
 const NATIVE_MAX_FILES = 100;
 const NATIVE_MAX_FILE_BYTES = 2 * 1024 * 1024;

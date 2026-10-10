@@ -1,4 +1,5 @@
 import { templateRemoval } from "./remove";
+import type { ComponentLoaderPlan } from "./component-loader";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
 // Components, first class (docs/page-builder/components.md): what the page
@@ -90,6 +91,11 @@ import type { EditComponentFrameMode } from "../components/native-preview";
 import type { EditComponentMode, SlotChipReport } from "./edit-component-mode";
 import "../components/create-dialog.css";
 
+export interface PreparedComponentLoader extends ComponentLoaderPlan {
+  expectedSources: Map<string, string | undefined>;
+  current(): boolean;
+}
+
 type CodeEditor = typeof import("../components/source-editor");
 
 /** File operations stay bound to their original scope and exact created drafts. */
@@ -169,9 +175,10 @@ export interface ComponentDeps {
   files?: () => string[];
   /** Reads every page, template and stylesheet: resolves to why it could not. */
   index?: () => Promise<string | undefined>;
+  loaderPlan?: (path: string, nextPageText: string) => Promise<PreparedComponentLoader | string | undefined>;
   /** Applies template edits (and moves) as one history step; page edits can join the same map. */
-  operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; moves?: { from: string; to: string }[]; done: string; undone: string;
-    current?: () => boolean; selection?: { before: { path: string; node: number[] }; after: { path: string; node: number[] } } }) => Promise<string | undefined>;
+  operation?: (op: { expectedSources: Map<string, string | undefined>; edits: Map<string, string>; moves?: { from: string; to: string }[]; creates?: { path: string; content: string }[]; done: string; undone: string;
+    current?: () => boolean; selection?: { before?: { path: string; node: number[] }; after: { path: string; node: number[] } } }) => Promise<string | undefined>;
 }
 
 /** An instance found for a selection: where it is written and what it holds. */
@@ -1626,12 +1633,9 @@ export function createComponentTools(deps: ComponentDeps) {
     if ("error" in bare) { refuse(bare.error); return; }
     const { sheets, unchanged } = pageStyles(path, source, revision);
     const made = carry.withPageCss(bare, source, range, tag, sheets);
-    const loader = Object.values(current.routes).some((file) => /components\/components\.js/.test(deps.sources()[file] ?? ""));
-    const notes = [
-      ...made.notes, ...made.cards.flatMap((card) => card.notes),
-      ...(loader ? [] : ["No page loads components/components.js, so the live site will not show components until it does."]),
-    ];
-    if (await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged })) return;
+    const result = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged });
+    if (typeof result === "string") return;
+    const notes = [...made.notes, ...made.cards.flatMap(card => card.notes), ...(result?.loader.notes ?? [])];
     const madeRevision = deps.revision();
     // A mode that hasn't opened in a few seconds (its module held) counts as the code pane.
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1640,7 +1644,7 @@ export function createComponentTools(deps: ComponentDeps) {
       new Promise<boolean>((done) => { timer = setTimeout(() => done(false), 8000); }),
     ]).finally(() => clearTimeout(timer));
     // Where the code pane opens instead of the mode, the notes go to the status line.
-    if (deps.revision() === madeRevision) deps.announce([madeMessage(tag, made), ...(inMode ? [] : notes)].join(" "));
+    if (deps.revision() === madeRevision) deps.announce([madeMessage(tag, made), ...(result?.loader.added ? [result.loader.added] : []), ...(inMode ? [] : notes)].join(" "));
   }
 
   /**
@@ -1690,12 +1694,12 @@ export function createComponentTools(deps: ComponentDeps) {
     if ("error" in bare) return bare.error;
     const { sheets, unchanged } = pageStyles(path, source, revision);
     const made = carry.withPageCss(bare, source, range, tag, sheets);
-    const error = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged });
-    if (error) return error;
+    const done = await makeComponent({ path, nodePath: [...nodePath], tag, source, range, made, unchanged });
+    if (typeof done === "string") return done;
     return {
-      tag, files: madeFiles(tag, made).map((file) => file.path),
+      tag, files: [...new Set([...madeFiles(tag, made).map(file => file.path), ...(done?.loader.creates.map(file => file.path) ?? []), ...(done?.loader.edits.keys() ?? [])])],
       slots: made.slots.filter((slot) => !slot.fixed).map((slot) => slot.name),
-      cards: made.cards.map((card) => card.tag), notes: [...made.notes, ...made.cards.flatMap((card) => card.notes)],
+      cards: made.cards.map((card) => card.tag), notes: [...made.notes, ...made.cards.flatMap((card) => card.notes), ...(done ? [done.loader.added, ...done.loader.notes].filter(Boolean) : [])],
     };
   }
 
@@ -1722,6 +1726,25 @@ export function createComponentTools(deps: ComponentDeps) {
     const stop = (message: string) => { refuse(message); return message; };
     const changed = "The page, its styles or the repository changed meanwhile; no component was made.";
     if (!unchanged()) return stop(changed);
+    const editorBefore = deps.editor();
+    if (!editorBefore || !editable(path)) return stop("Open the page first.");
+    const proof = editorBefore.captureHistoryHost(path);
+    const next = source.slice(0, range.start) + made.instance + source.slice(range.end);
+    const loader = await deps.loaderPlan?.(path, next);
+    if (typeof loader === "string") return stop(loader);
+    if (!unchanged() || deps.editor() !== editorBefore || !proof?.isCurrent()) return stop(changed);
+    if (loader && deps.operation) {
+      const edits = new Map([[path, next], ...loader.edits]);
+      deps.preview()?.selectAfterUpdate({ path, node: nodePath });
+      const error = await deps.operation({ expectedSources: loader.expectedSources, edits,
+        creates: [...madeFiles(tag, made), ...loader.creates],
+        current: () => unchanged() && loader.current() && deps.editor() === editorBefore && Boolean(proof.isCurrent()) && editable(path),
+        selection: { before: { path, node: nodePath }, after: { path, node: nodePath } },
+        done: loader.added ? `${madeMessage(tag, made)}. ${loader.added}` : madeMessage(tag, made),
+        undone: loader.added ? `Undid making <${tag}> and adding the component loader.` : `Undid making <${tag}>.` });
+      if (error) { deps.preview()?.selectAfterUpdate(undefined); return stop(error); }
+      return { loader };
+    }
     const result = await deps.createFiles(madeFiles(tag, made));
     if ("error" in result) { deps.error(new Error(result.error)); return result.error; }
     const receipt = result.receipt;
@@ -1767,6 +1790,25 @@ export function createComponentTools(deps: ComponentDeps) {
     const files = blankComponentFiles(tag);
     const edit = nativeInsertEdit(source, parent, index, tag, files[0].content);
     if (!edit) { refuse("The insertion point changed; choose the destination again."); return false; }
+    const selectedBefore = deps.selection();
+    const before = selectedBefore?.node ? { path: selectedBefore.path, node: [...selectedBefore.node] } : undefined;
+    const next = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
+    const loader = await deps.loaderPlan?.(path, next);
+    if (typeof loader === "string") { refuse(loader); return false; }
+    if (!current()) { refuse("The page or repository changed meanwhile; no component was made."); return false; }
+    if (loader && deps.operation) {
+      deps.preview()?.selectAfterUpdate({ path, node: [...parent, index] });
+      const error = await deps.operation({ expectedSources: loader.expectedSources,
+        creates: [...files, ...loader.creates], edits: new Map([[path, next], ...loader.edits]),
+        current: () => current() && loader.current(),
+        selection: { before, after: { path, node: [...parent, index] } },
+        done: `Made the component <${tag}>: components/${tag}/${tag}.html${loader.added ? `. ${loader.added}` : ""}`,
+        undone: loader.added ? `Undid making <${tag}> and adding the component loader.` : `Undid making <${tag}>.` });
+      if (error) { deps.preview()?.selectAfterUpdate(undefined); refuse(error); return false; }
+      await editComponent(tag, undefined, { path, node: [...parent, index] }, loader.notes);
+      if (deps.revision() === revision) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${loader.added ? `. ${loader.added}` : ""}`);
+      return true;
+    }
     const result = await deps.createFiles(files);
     if ("error" in result) { deps.error(new Error(result.error)); return false; }
     const { receipt } = result;

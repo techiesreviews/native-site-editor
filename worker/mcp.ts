@@ -713,7 +713,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "make_component",
     {
       description:
-        "Turn one container of one page into a new component (section, div, article, aside, figure, nav, or header/footer inside article, aside, main, nav or section): writes components/<tag>/<tag>.html and .css (and a card component's files, when it makes one), then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses other elements, head content, the page's own header/footer, components, and anything inside a component instance. Needs the page hash from get_page; how slots are chosen: the Components chapter of the native-site://conventions resource.",
+        "Turn one container of one page into a new component (section, div, article, aside, figure, nav, or header/footer inside article, aside, main, nav or section): writes components/<tag>/<tag>.html and .css (and a card component's files, when it makes one), then replaces the element on that page only, as one undo step, unsaved. Other pages keep their copies. Refuses other elements, head content, the page's own header/footer, components, and anything inside a component instance. The editor adds the site's component loader (components/components.js, the script on every page, and the :not(:defined) rule) when the site lacks it. Needs the page hash from get_page; how slots are chosen: the Components chapter of the native-site://conventions resource.",
       inputSchema: z.object({
         page: pageRef,
         element: z.string().max(300).describe("An element id from get_page or get_selection."),
@@ -751,7 +751,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "add_section",
     {
       description:
-        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance, which you can then change with edit_file (what it puts in the page: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page.",
+        "Add a section component to a page's <body> between its sections, as the page builder's + does: a new instance, which you can then change with edit_file (what it puts in the page: the Components chapter of the native-site://conventions resource). Without before/after it goes at the end. Needs the page hash from get_page. The editor adds the site's component loader (components/components.js, the script on every page, and the :not(:defined) rule) when the site lacks it.",
       inputSchema: z.object({
         page: pageRef,
         component: z.string().min(1).max(100).describe("A component tag get_site marks as a section component."),

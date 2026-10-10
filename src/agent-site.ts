@@ -344,7 +344,7 @@ export interface AgentSiteActions {
   sectionTags(): ReadonlySet<string>;
   template(tag: string): string | undefined;
   /** The page builder's edit of the open page (applyNativeChange): whether it was made. */
-  change(path: string, source: string, edits: { start: number; end: number; text: string }[], select: number[] | undefined, message: string): boolean;
+  change(path: string, source: string, edits: { start: number; end: number; text: string }[], select: number[] | undefined, message: string, loader?: boolean): boolean | Promise<boolean | { added: string }>;
   /** The page structure's drag (moveNativeSectionTo). */
   moveSection(target: { path: string; node: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined;
   /** The Files tab's rename or move, with its confirmation answered. */
@@ -506,8 +506,9 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
         const index = Math.min(Math.max(0, args.index ?? container.children), container.children);
         const edit = nativeInsertEdit(source, parent, index, tag, actions.template(tag) ?? "");
         if (!edit) throw new Conflict(`${componentLabel(tag)} could not be placed exactly in ${path}.`);
-        if (!actions.change(path, source, [edit], [...parent, index], `${componentLabel(tag)} added`)) throw new Error("The section could not be added.");
-        return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
+        const applied = await actions.change(path, source, [edit], [...parent, index], `${componentLabel(tag)} added`, true);
+        if (!applied) throw new Error("The section could not be added.");
+        return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${typeof applied === "object" ? ` ${applied.added}` : ""}`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
       }
       const node = parseOutlineId(String(args.section ?? ""));
       const section = outline.sections.find((item) => item.id === args.section);
@@ -515,7 +516,7 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       if (command.operation === "remove_section") {
         const range = locateNativeElementRange(source, node);
         if (!range) throw new Conflict("The section's HTML could not be located exactly.");
-        if (!actions.change(path, source, [removeEdit(source, range)], undefined, `${componentLabel(section.tag)} removed`)) throw new Error("The section could not be removed.");
+        if (!await actions.change(path, source, [removeEdit(source, range)], undefined, `${componentLabel(section.tag)} removed`)) throw new Error("The section could not be removed.");
         return { message: `Section ${section.id} removed from ${path}, unsaved.`, result: { hash: await hashOf(actions, path) } };
       }
       const parent = parseOutlineId(args.container ?? "") ?? (args.container === "" ? [] : undefined);
