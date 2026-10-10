@@ -61,7 +61,7 @@ export interface CardsDeps {
   /** Takes a draft made by `saveNewDraft` back. */
   dropNewDraft(path: string): void;
   /** Creates and edits files as one operation (src/main.ts `applyNativeOperation`); resolves to an error. */
-  operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string }; selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } } }): Promise<string | undefined>;
+  operation(op: { expectedSources?: Map<string, string | undefined>; creates: { path: string; content: string }[]; edits: Map<string, string>; open?: string; done: string; undone: string; focus?: { file?: string }; current?: () => boolean; selection?: { before?: { path: string; node: number[] }; after?: { path: string; node: number[] } } }): Promise<string | undefined>;
   /** What the Pages tab calls a page file ("Home"). */
   pageLabel(file: string): string;
   /** The site's scripts, drafts applied (read lazily), for the attributes they set: those are no card looks. */
@@ -449,7 +449,11 @@ export function createCards(deps: CardsDeps) {
     expectedSources.set(css.path, css.before);
     if (css.before === undefined) creates.push({ path: css.path, content: css.after });
     else edits.set(css.path, css.after);
-    const problem = await deps.operation({ creates, edits, expectedSources, done, undone: `Undid filling the ${fill.noun}.`, selection: { before: card, after: card } });
+    // The page stays the open one throughout: its history takes the step.
+    const site = deps.site();
+    const editor = deps.editor();
+    const current = () => deps.site() === site && deps.editor() === editor && Boolean(editor?.isMounted(card.path));
+    const problem = await deps.operation({ creates, edits, expectedSources, done, undone: `Undid filling the ${fill.noun}.`, current, selection: { before: card, after: card } });
     if (problem) refuse(problem);
     return !problem;
   }

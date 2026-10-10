@@ -20,8 +20,8 @@ ordinary editable markup.
 - Add card places a card immediately, selected, as one undo step: a card
   slot's fresh component with template fallbacks, or a plain grid's last
   item copied with its text reset.
-- A component item with a template, or an item in a collection grid, then
-  opens **Link to a page…**. All site pages except the current page and 404
+- A component item with a template, an item in a collection grid, or a plain
+  item whose title is a heading then opens **Link to a page…**. All site pages except the current page and 404
   are listed, the cards' folder first. Siblings' pages say **In this grid**
   and cannot be picked. Esc leaves the new card blank.
 - Type an unknown title or address to get **+ Create page /work/oak-ash/**.
@@ -31,7 +31,11 @@ ordinary editable markup.
   and cannot be picked. Existing titles and taken addresses have no create offer.
 - Picking a page fills a component's slots from its content: title, description,
   image, address and matching text. Plain collection items get their title and
-  link filled. The information strip lists sources, with **Change page** and
+  link filled. A card with no link for its page (no link slot, no page link of
+  its own) gets its title's text wrapped in a link to it, marked **added** in
+  the strip (no class: the site's shared card link rule stretches it over the
+  card); a card component whose CSS has no positioned `:host` gets
+  `:host { position: relative; }` in the same undo step. The information strip lists sources, with **Change page** and
   close; empty unnamed slots have no row.
 - Create page copies a sibling's structure and fills the already placed card.
   **One undo removes the page draft and fill**, restoring the blank card byte
