@@ -1,7 +1,7 @@
 ---
 title: "One rule for card components, card slots and items slots, in the editor and the runtime"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [20-runtime-bundle]
 builder: claude ★
@@ -24,3 +24,9 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/frame-protocol-
 - `tests/rules-cards.test.ts`: heading slot inside/around a heading, text and entities around it (both disagreements above as cases), nested instances, unnamed vs named items slot, a card slot with text between cards, run on a source view and on a plain-object view shaped like the DOM view.
 - `rg "function dropCard|function dropItemsSlot|function cardSlot\(|function cardsOnly"` finds nothing; card-slot.ts has no blank-text loop.
 - `native-drop-containers`, `native-cards`, `native-add-card*`, `native-card-paths*` specs green; `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-10)
+
+- `rules/tree.ts` (`RuleView`, `meaningful`, `domView`) and `rules/cards.ts` (`hasHeadingSlot`, `isCardTag`, `isCardSlot`, `isItemsSlot`) are the one rule; component-model reads it through `sourceView`, card-slot.ts lost its loop, the runtime's `dropCard`/`dropHeading`/`dropMeaningful`/`dropItemsSlot`/`cardSlot` went. Behaviour: U+00A0 beside a heading slot is text and `&#32;` is blank in the editor too; a heading slot in another slot's fallback counts in the editor; slot names are untrimmed across the editor and the runtime (incl. its section fallback hiding), so `<slot name=" ">` is a named slot.
+- Commits 9d6990f8, 5d629fea (review: whole-name fallback hiding, helper renamed).
+- Tests: `tests/rules-cards.test.ts` (31, each case on a source view and a DOM-shaped view); remove.test.ts keeps a spaced name. Unit 1,624/1,624; full native-save 872 passed, 56 skipped; smoke 42/42; @actual 54/54. Runtime 80,163 bytes minified.
