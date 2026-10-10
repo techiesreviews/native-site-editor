@@ -142,10 +142,13 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /In a section component that the page fills at all, each slot the page leaves out is hidden/,
       // A repeated item is its own card component, in an items slot.
       /A repeated item [^\n]* is a component of its own, `card-…`/,
-      /\*\*items slot\*\*: the unnamed slot, or a slot whose fallback is `card-…` instances/,
+      // A card component is the editor's (component-model.ts isCardComponent, hasHeadingSlot): `card-…` with a heading slot.
+      /A \*\*card component\*\* is a `card-…` component whose template has a heading slot: a slot whose fallback is one heading \(`<slot name="title"><h3>Title<\/h3><\/slot>`\), or a slot that is a heading's only content/,
+      /\*\*items slot\*\*: the unnamed slot, or a slot whose fallback is card components only \(one or more, with only white space between them\)/,
+      /A slot whose fallback is card components is an items slot instead/,
       /<slot><card-project><\/card-project><\/slot>/,
       /Add card adds a fresh instance of the items slot's card component/,
-      /A named slot is an items slot only when its fallback is `card-…` instances/,
+      /A named slot is an items slot only when its fallback is card components, so name only cards `card-…` and give each a heading slot: a `card-…` component without one is no card component, and a slot holding it is an ordinary slot/,
       /a named items slot [^\n]* its items carry that name: `<card-service slot="services">`/,
       // Card links: a link slot, or the title's link stretched by the shared card link rule.
       /through a link slot/,
@@ -181,6 +184,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       /add_section writes the tag with a copy of each named slot's fallback that is one element holding only text and inline markup/,
       /is copied inside a `<span slot="…">`\. It copies nothing for the unnamed slot or for any other fallback/,
     ]) assert.match(chapter, rule);
+    assert.doesNotMatch(chapter, /`card-…` instances/, "a `card-…` tag alone does not make an items slot; the card needs a heading slot");
     assert.match(chapter, /<section-work>[\s\S]*<card-project>\s*<h3 slot="title">[^\n]*<\/h3>\s*<p slot="body" class="body">A one-page site/, "the card-project example uses its real body slot and fallback class");
     assert.match(chapter, /a component rule beats a shared rule on the template's own elements\. On an element a page slots in, the page's CSS beats the component's `::slotted\(\)` rules whatever the layers[^\n]*`:not\(\[slot\]\)`[^\n]*Both hold for declarations without `!important`, which reverses them/, "shadow-root layers do not override document styles on slotted elements");
     // The tool descriptions and the server's instructions point to the

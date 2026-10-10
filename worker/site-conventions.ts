@@ -68,7 +68,7 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
   - **Links:** a link is a slot of its own only when it stands alone (a button link), not when it sits in a text element.
   - **Images:** every \`<img>\` and \`<picture>\`, whatever its alt text. Inline \`<svg>\` icons and CSS backgrounds stay fixed.
   - **Lists:** a \`<ul>\` or \`<ol>\` is one slot, \`list\`, edited as a rich list.
-  - **A component inside it:** a nested instance is one whole slot (\`<slot name="quote"><block-quote></block-quote></slot>\`), so each page owns that instance and fills its slots. A slot holding \`card-…\` instances is an items slot instead (below).
+  - **A component inside it:** a nested instance is one whole slot (\`<slot name="quote"><block-quote></block-quote></slot>\`), so each page owns that instance and fills its slots. A slot whose fallback is card components is an items slot instead (below).
   - **Repeated items** go in an items slot (below).
   - **Fixed:** what is the same on every page stays in the template around the slots: wrappers (\`<div class="actions">\`), icons, decoration.
 - Names come from the role: the first heading is \`title\`, a paragraph \`text\`, then \`image\`, \`link\` and \`list\`, numbered on repeats (\`text-2\`). When parts share a role, each one's own class tells them apart (\`<p class="eyebrow">\` and \`<p class="lead">\` give \`eyebrow\` and \`lead\`).
@@ -76,7 +76,7 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
 - Optional parts need no marker. In a section component that the page fills at all, each slot the page leaves out is hidden with its fallback; a bare tag (\`<section-hero></section-hero>\`) shows every fallback. Other components show a missing slot's fallback. An element that holds slots, has no text of its own and whose slots all show nothing (a row of buttons) is hidden too.
 
 ### Cards and repeated items
-- A repeated item (a card in a grid, a step, a quote in a row) is a component of its own, \`card-…\`, so every item has the same slots. The section holds the items in an **items slot**: the unnamed slot, or a slot whose fallback is \`card-…\` instances. Its fallback is one instance of the card, and the page's items are instances of it, each filling its own slots:
+- A repeated item (a card in a grid, a step, a quote in a row) is a component of its own, \`card-…\`, so every item has the same slots. A **card component** is a \`card-…\` component whose template has a heading slot: a slot whose fallback is one heading (\`<slot name="title"><h3>Title</h3></slot>\`), or a slot that is a heading's only content. The section holds the items in an **items slot**: the unnamed slot, or a slot whose fallback is card components only (one or more, with only white space between them). The items slot's fallback is one instance of the card, and the page's items are instances of it, each filling its own slots:
   \`\`\`html
   <section>
     <slot name="title"><h2>Recent work</h2></slot>
@@ -95,7 +95,7 @@ The template is shadow DOM markup; each \`<slot name="…">\` marks a part the p
     <card-project>…</card-project>
   </section-work>
   \`\`\`
-- The editor's Add card adds a fresh instance of the items slot's card component, from no items up, and other blocks can be dropped into an items slot too. A named slot is an items slot only when its fallback is \`card-…\` instances, so name only cards \`card-…\`.
+- The editor's Add card adds a fresh instance of the items slot's card component, from no items up, and other blocks can be dropped into an items slot too. A named slot is an items slot only when its fallback is card components, so name only cards \`card-…\` and give each a heading slot: a \`card-…\` component without one is no card component, and a slot holding it is an ordinary slot (a nested instance, above).
 - A second group of items in one component gets a named items slot (\`items-2\`, or a name for what it holds, \`services\`), and its items carry that name: \`<card-service slot="services">\`.
 - **Card links.** A card links to its page through a link slot (\`<slot name="link"><a href="/work/">Read more</a></slot>\`), or through its title: the title's whole content is one link (\`<h3 slot="title"><a href="/work/fern-and-kettle/">Fern &amp; Kettle</a></h3>\`), and the site's shared card link rule stretches that link over the whole card, in a \`.cards\` grid and in a component's items slot. It lives in the shared CSS because component CSS cannot reach a link inside slotted content (\`::slotted()\` reaches only the slotted element). Card components set \`:host { position: relative; }\` to bound it; other links in a card take \`position: relative; z-index: 1\` to stay clickable. There is no \`stretched\` class. The starter's rules in \`styles/layout.css\`:
   \`\`\`css
