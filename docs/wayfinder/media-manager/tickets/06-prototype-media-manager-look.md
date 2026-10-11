@@ -19,6 +19,36 @@ Three candidate directions are ready for Lex: **Gallery** (large previews), **De
 
 Published with `html_render` in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-e30cff01-bc01-4603-8d4c-d836e5d8f39d-html`. [Validation and review](../prototype/validation.md) record local browser checks at 360, 728 and 768 px and the independent design review. T3's `html_preview` browser was blocked by the host's AppArmor configuration; local Playwright supplied rendered checks before publication.
 
-**Awaiting Lex's choice. This is not a resolution.** The ticket stays open. Replacing Images, the relationship with Files, views, finding and organising media, usage labels, picker and small-screen behaviour still need explicit decisions with Lex before refinement and closure. Candidate upload and clean-up policies do not settle their separate tickets.
+This comparison preceded Lex's choices below. Candidate upload and clean-up policies do not settle their separate tickets.
 
 The claim was committed and pushed under the tracker convention. That started the existing CI workflow; its run ended cancelled with the Deploy step skipped. Further prototype work is committed locally on `dev`, without a push, to respect the instruction not to deploy.
+
+
+### Choices settled with Lex (2026-10-11)
+
+- **Direction:** Lex chose Collections as the basis for refinement, with collections as the starting view.
+- **Place in the editor:** Media replaces Images and becomes the place to manage all images, videos, audio, PDFs and other downloads. Files remains for the site's other files.
+
+- **Collection view:** Lex chose a picture grid first, with a switch to a list showing file size and usage.
+
+- **Group name:** Lex chose **Collections**, browsed like folders. A media file may belong to several collections without extra copies. Collection membership is separate from a file's storage location. The term **Media collection** is recorded in `CONTEXT.md`.
+
+- **Finding files:** Lex chose always-visible search and kind buttons for Images, Video, Audio and Documents, with extra filters under **Filters**.
+
+- **Usage badge:** Lex chose a small number with the image. Hover expands the badge to **Used on X pages**.
+
+- **Usage on touch screens:** Lex chose tapping the numbered badge to show the usage text and page names.
+
+- **Files with no uses found:** Lex chose a **0** badge expanding to **No uses found**, plus a filter to find them. A file with other uses, such as a social sharing image, is not included merely because it has zero page uses.
+
+- **Picker:** Lex chose the same collections, search and views in a smaller window, full-screen on phones. The term **Media picker** is recorded in `CONTEXT.md`.
+
+### Refined Collections mockup (2026-10-11)
+
+The [refined mockup](../prototype/refined.html) incorporates the choices above and keeps all five screens available: library, adding files with optimise, details, the page picker and clean-up. Published with `html_render` in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-28a968f2-73cb-462c-bc2b-39e9929c3c71-html`.
+
+[Refinement validation](../prototype/refined-validation.md) records phone, tablet and desktop browser checks, the independent source review, and corrections to picker scrolling, cancellation and partly completed uploads. Downloaded Mobbin references remain embedded from local prototype assets.
+
+The proposed small-screen layout has two pictures across on phones and three on tablets, with details on their own screen and the confirmed full-screen phone picker. **Awaiting Lex's reaction to this layout; the ticket remains open.**
+
+Organisation rules and existing file renames have graduated into [Decide how collections and file names behave](15-collections-and-file-names.md). This follow-up does not reopen the name Collections or the decision to allow several memberships.

@@ -46,7 +46,6 @@ A decided plan, ready to hand off, for a new **media manager** covering every me
 
 ## Not yet specified
 
-- **Folders, names and tags.** Today there is no folder management in the Images tab. How Lex wants to organise media (folders made in the manager, tags, automatic grouping by page or kind) will be clearer after the look prototype.
 - **Replacing a file everywhere.** Swapping one image in one place versus replacing the file behind every use (same address, new picture). This may become its own ticket once the manager's look and the responsive output are settled.
 - **Images from other websites in the manager.** Whether they are listed, counted and previewed before the fix-all brings them in. The editor's security policy blocks showing them today (ticket 05), so this depends on the fix-all decision.
 - **Alt text.** The edit bar warns about missing alt text today, but 490 of 533 images on techies-reviews have empty alt, which counts as decorative, so the warning finds nothing (ticket 05). Whether the manager shows gaps per file or per use, and how agents' alt text is reviewed, comes after the agents ticket.

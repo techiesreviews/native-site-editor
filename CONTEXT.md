@@ -33,6 +33,14 @@ _Avoid_: asset (in user-facing text)
 The one place in the editor where a site's media files are found, added, optimised, placed, replaced and tidied up.
 _Avoid_: Images tab, image library
 
+**Media collection**:
+A named group of media files, browsed like a folder. A media file can belong to several collections without making extra copies.
+_Avoid_: folder, tag (when naming these groups in user-facing text)
+
+**Media picker**:
+The media manager opened to choose a media file for one place on a page. It shows files that fit that place.
+_Avoid_: image chooser, separate image library
+
 **Optimise**:
 Making a media file smaller in the user's own browser while it is being added, before it reaches the site.
 
