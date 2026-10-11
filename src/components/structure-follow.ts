@@ -8,7 +8,13 @@
 type Item = { tag: string; className?: string; text: string; heading: string; slot: string; node: readonly number[]; children: readonly Item[] };
 
 const key = (node: readonly number[]) => node.join(".");
-const sameAs = (item: Item) => JSON.stringify([item.tag, item.className ?? "", item.slot, item.heading, item.text]);
+// What an element reads as, with everything in it: sections alike in name but holding other blocks differ.
+const read = new WeakMap<Item, string>();
+const sameAs = (item: Item): string => {
+  let text = read.get(item);
+  if (text === undefined) read.set(item, text = `${JSON.stringify([item.tag, item.className ?? "", item.slot, item.heading, item.text])}{${item.children.map(sameAs).join("")}}`);
+  return text;
+};
 
 // Pairs of indexes, `before` to `after`, for one list of siblings: the longest run of elements
 // that read the same, then, between two of those, equal counts in order (an edited element),

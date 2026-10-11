@@ -41,3 +41,9 @@ test("a row replaced by a different element of another count is not followed", (
   const follow = followRows(page([section("A"), section("B")]), page([section("X"), section("Y"), section("Z")]));
   assert.equal(pairs(follow, ["0", "0.0", "0.1"]), "0>0 0.0>- 0.1>-");
 });
+
+test("sections that read the same but hold different blocks are told apart by what they hold", () => {
+  const plain = (child: string) => ({ tag: "section", children: [{ tag: child }] });
+  const follow = followRows(page([plain("img"), plain("video")]), page([plain("input"), plain("img"), plain("video")]));
+  assert.equal(pairs(follow, ["0.0", "0.1", "0.1.0"]), "0.0>0.1 0.1>0.2 0.1.0>0.2.0");
+});

@@ -168,6 +168,20 @@ function detect(source: string, file: string): Finding[] {
     const value = ts.isIdentifier(node) ? initializer(node) : undefined;
     return !!value && port(value, depth + 1);
   }
+  // The module's createComponentMode: imported (renamed, namespaced or aliased), or unresolved in
+  // a fixture; a local function of that name is not it.
+  function creator(node: TS.Node, depth = 0): boolean {
+    node = strip(node);
+    if (depth > 12) return false;
+    const access = member(node);
+    if (access) return access.name === "createComponentMode";
+    if (!ts.isIdentifier(node)) return false;
+    const decl = declaration(node);
+    if (!decl) return node.text === "createComponentMode";
+    if (ts.isImportSpecifier(decl)) return (decl.propertyName ?? decl.name).text === "createComponentMode";
+    const value = initializer(node);
+    return !!value && creator(value, depth + 1);
+  }
   function adapter(node: TS.Node): boolean {
     for (let parent: TS.Node | undefined = node.parent; parent; parent = parent.parent) {
       if (!ts.isObjectLiteralExpression(parent)) continue;
@@ -175,7 +189,7 @@ function detect(source: string, file: string): Finding[] {
       while (argument.parent && strip(argument.parent) === parent) argument = argument.parent;
       const call = argument.parent;
       if (call && ts.isCallExpression(call) && call.arguments.includes(argument as TS.Expression)
-        && named(call.expression, new Set(["createComponentMode"]))) return true;
+        && creator(call.expression)) return true;
     }
     return false;
   }
@@ -255,6 +269,14 @@ function detect(source: string, file: string): Finding[] {
       if (decl && ts.isFunctionLike(decl) && typeNamed(decl.type, storedTypes)) return true;
       if (checker.getTypeAtLocation(node.expression).getCallSignatures().some(signature =>
         typeNamed(signature.getDeclaration()?.type, storedTypes))) return true;
+    }
+    // A field read off a typed holder (`holder.stamp`, `held["release"]`): the field's declared type.
+    const access = member(node);
+    if (access) {
+      const field = ts.isPropertyAccessExpression(node) ? checker.getSymbolAtLocation(node.name) : checker.getTypeAtLocation(access.receiver).getProperty(access.name);
+      const decl = field?.valueDeclaration ?? field?.declarations?.[0];
+      if (decl && "type" in decl && (typeNamed(decl.type as TS.TypeNode | undefined, storedTypes) || shareType(decl.type as TS.TypeNode | undefined, access.name))) return true;
+      if (decl && ts.isPropertyAssignment(decl) && stores(decl.initializer, depth + 1)) return true;
     }
     if (ts.isIdentifier(node)) {
       const decl = declaration(node);
@@ -370,6 +392,8 @@ test("component share and frame ports are called only in the createComponentMode
   passes("ports", `function f(deps: ComponentDeps) { function g(deps: EditorWorkspace) { deps.shareHistory(['a'], 'b'); } }`);
   passes("ports", `import { createComponentMode as create } from './component-mode'; function f(deps: ComponentDeps) { create({ share: () => deps.shareHistory('a', 'b') }); }`);
   flags("ports", `function f(deps: ComponentDeps) { const adapter = { share: () => deps.shareHistory('a', 'b') }; createComponentMode(adapter); }`);
+  flags("ports", `function createComponentMode<T>(ports: T) { return ports; } function f(deps: ComponentDeps) { createComponentMode({ share: () => deps.shareHistory('a', 'b') }); }`);
+  passes("ports", `import * as modes from './component-mode'; function f(deps: ComponentDeps) { const create = modes.createComponentMode; create({ share: () => deps.shareHistory('a', 'b') }); }`);
 });
 
 test("mode JSON comparisons follow aliases of the read and of its serialised result", () => {
@@ -401,6 +425,9 @@ test("mutable state catches protected annotations, containers, factories and sha
     `const proof = (): Stamp => edits.stamp(); let since = proof();`,
     `let opening = undefined as Opening | undefined;`,
     `const since = edits.stamp(); let opening = { since };`,
+    `const holder: { stamp: Stamp } = x; let since = holder.stamp;`,
+    `const held: { release: () => void } = x; let release = held["release"];`,
+    `const opening = { since: edits.stamp() }; let since = opening.since;`,
   ]) {
     flags("mutable-state", declaration);
     const imports = declaration.match(/import[^;]+;/g)?.join("\n") ?? "";
@@ -419,6 +446,7 @@ test("mutable state catches protected annotations, containers, factories and sha
   passes("mutable-state", `function createComponentTools() { let { stamp: since }: { stamp: Stamp } = opening; return () => unknown; }`, TOOLS);
   passes("mutable-state", `let releaseNativeTextIndex: (() => void) | undefined; let done = false; let factory: () => Stamp;`);
   passes("mutable-state", `class Cache { method() { let since: Stamp; return () => since; } }`);
+  passes("mutable-state", `const holder: { count: number; stamp: Stamp } = x; let count = holder.count; const held: { done: () => void } = x; let done = held.done;`);
 });
 
 function sourceFiles(directory = "src"): string[] {
