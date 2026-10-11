@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { editorMounted } from "./drafts";
 
@@ -172,7 +173,7 @@ test("a Section dragged in Structure snaps between page bands", async ({ page, b
 test("a row press on a Block that does not move starts no drag (an <svg> island); its siblings still drag", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
   await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
-  const fixture = await (await page.request.get(`${baseURL}/__demo/file?repo=native-cards&path=index.html`)).text();
+  const fixture = readFileSync("fixtures/native-cards/index.html", "utf8");
   const mark = '<svg class="mark" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"></circle></svg>';
   const withMark = fixture.replace("<h2>What we do</h2>", `<h2>What we do</h2>\n      ${mark}`);
   expect(withMark).not.toBe(fixture);
