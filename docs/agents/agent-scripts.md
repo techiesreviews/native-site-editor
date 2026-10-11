@@ -2,6 +2,8 @@
 
 Run from the worktree root; dependencies must already be installed.
 
+Claude tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
+
 - `scripts/agents/port.sh <cmd...>` waits for at least 4 GiB available memory, locks the first available port in `5226 5236 5246 5256`, and sets `ASE_TEST_PORT`; override with `ASE_PORTS`.
 - `scripts/agents/timing.sh <cmd...>` holds all four focused port locks, then `5216`, for an exclusive timing run.
 - `scripts/agents/cold.sh <worktree> <outprefix>` serves existing `dist` on `5216`, records the served index asset, measures five cold/warm runs with `ASE_COLD_NET=100/20`, waterfall and JSON; run through `timing.sh`.

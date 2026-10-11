@@ -2,6 +2,18 @@
 
 Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one is mechanical and gives the same result on every run.
 
+## Hooks
+
+Claude Code loads `.claude/settings.json`; scripts in `scripts/agents/hooks/` enforce:
+
+- **Stash**: commit work in progress on your own branch. Bash rejects `git stash` except `list`/`show`; worktrees share stashes, risking another runner’s work.
+- **Timeout**: run `port.sh` directly; use `run_in_background` for long runs. Bash rejects `timeout`/`gtimeout` around `port.sh` or `full-suite.sh`; releasing the lock can leave a server holding the port.
+- **Processes**: kill your own PID or process group (`kill -- -PGID`). Bash rejects `pkill`, `killall` and `pgrep -f` pipelines into `xargs kill`; patterns hit other runners and the caller’s shell. Start servers through `scripts/agents/port.sh`; `setsid` with `server`, `vite`, `http.server` or `playwright` is blocked.
+- **Subagents**: wait at five live agents to avoid account session exhaustion. Set `CLAUDE_AGENT_CAP` in the session environment to override. Start/stop events track IDs per session under `${XDG_RUNTIME_DIR:-/tmp}/claude-agent-cap/`; entries expire after six hours. Concurrent launches before start events can exceed the cap.
+- **Node**: SessionStart sets PATH for later Bash calls via `CLAUDE_ENV_FILE`: the highest installed Node ≥24 from npm’s npx cache or nvm, when the current Node is older.
+
+**Human bypass**: run the command in a terminal. Hooks fail open on errors. Bash handles compound commands, common wrappers and shell `-c`; literal commit messages and common heredoc bodies are skipped. Limits: aliases, variable-built commands, complex expansions and multiple heredocs can evade matching. Tests isolate state/discovery with `CLAUDE_AGENT_CAP_STATE_DIR` and `CLAUDE_NODE_SEARCH_ROOT`.
+
 ## `npm run check` (about 2 s on an idle machine)
 
 - **Types and unused code** (`scripts/check-types.mjs`): runs TypeScript 7 (`node_modules/typescript/bin/tsc`, by path) with `--noUnusedLocals --noUnusedParameters` over `src` and `shared` (`tsconfig.json`), `worker` and `tests` (`tests/tsconfig.json`) in parallel. Every error fails in `src`, `shared` and `worker`. In the tests program only unused declarations fail for files in `tests/` (other type errors there are not fixed yet) and `worker/` (that program uses the DOM lib; the worker project checks those files); any error it finds in `src/` or `shared/` fails. `src/prototype/` is exempt from the unused checks. Anything else fails, including a missing project, no inputs, or output on stderr. To keep a parameter or loop variable that is not used, start its name with `_`.

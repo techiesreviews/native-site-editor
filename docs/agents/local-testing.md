@@ -5,7 +5,7 @@ the automated checks in [guardrails.md](guardrails.md).
 
 ## Setup
 
-- Node 24 is not on the default PATH:
+- Node 24: Claude sets PATH through [Hooks](guardrails.md#hooks); in other shells use
   `export PATH=/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin:$PATH`.
 - One branch, one worktree: `scripts/agents/worktree.sh <branch>` (shared
   `node_modules` and the native-static fixture are linked in).
@@ -23,7 +23,7 @@ holds its port's lock: through `port.sh`, or
 `flock /tmp/ase-5216.lock env ASE_TEST_PORT=5216 <cmd>` for 5216.
 
 Stop only processes you started, by PID or process group: other agents'
-servers share these ports, and a pattern kill takes theirs down too.
+servers share these ports.
 
 ## Which tests
 
