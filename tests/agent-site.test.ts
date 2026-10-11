@@ -181,6 +181,10 @@ test("move_section reports the module's moved id and stayed reply; Undo reselect
   assert.ok(m.undo());
   assert.equal(m.workspace.source(path), source);
   assert.deepEqual(m.selected.at(-1), { path, node: [0, 0] });
+  // The id is the module's node, not one worked out from the gap.
+  const elsewhere = await applySiteCommand({ ...actions, moveSection: () => ({ status: "moved", node: [0, 1] }) } as AgentSiteActions, command);
+  assert.equal(elsewhere.message, "Section moved to 0.1, unsaved.");
+  assert.equal(elsewhere.result!.section, "0.1");
 
   for (const [returned, errorType] of [
     [{ status: "stale", message: "Read the page again." }, "Conflict"],
