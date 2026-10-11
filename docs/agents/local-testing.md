@@ -65,12 +65,14 @@ builds: runs from different sittings differ by about 30 ms.
 read-only). The reviewer applies `CODING_STANDARDS.md`. Sol builders run with
 `codex exec -s workspace-write` and cannot commit: the lead commits their work.
 
-## After pushing to dev
+## Landing and preview
 
-1. Watch the CI run: `gh run watch $(gh run list --workflow deploy-preview.yml -L 1 --json databaseId -q '.[0].databaseId') --exit-status`.
-   It tests but does not deploy (no Cloudflare token yet,
+1. Land finished work with `scripts/agents/land.sh`, then run
+   `scripts/agents/ci-status.sh dev --wait`. CI failures on dev are the
+   landing agent's to fix. Script options and logs: [agent-scripts.md](agent-scripts.md).
+2. Deploy the preview with `scripts/agents/deploy-preview.sh` when needed
+   (CI deployment needs the token in
    [tech debt 05](../work/tech-debt/issues/05-ci-preview-deploy-token.md)).
-2. Deploy the preview: `npm run deploy:preview` from the dev worktree.
 3. Confirm the live build: `curl -s "https://preview-editor.techies.tools/?v=$(date +%s)"`
    names the same `index-*.js` as `dist/assets` (the cache buster skips an
    edge copy that has not revalidated yet).
