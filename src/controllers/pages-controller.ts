@@ -46,7 +46,7 @@ export interface PagesPorts {
   readRedirects(): Promise<string | undefined>;
   withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[], reader: Reads): void;
   pageLinks(paths: string[], moves: Map<string, string>, action: "deleted", reader: Reads): string | undefined;
-  cardsLinkingTo(route: string, excluding: Set<string>): { label: string; edits: Map<string, string> } | undefined;
+  cardsLinkingTo(route: string, excluding: Set<string>, r: Reads): { label: string; edits: Map<string, string> } | undefined;
   confirmation(): PagesConfirmation | undefined;
   picker(): { pick(question: { title: string; items: PagePickerItem[] }): Promise<string | undefined> } | undefined;
   refreshMeta(): void;
@@ -182,7 +182,7 @@ export function createPagesController(ports: PagesPorts) {
         : "It is not on GitHub yet, so this discards it.";
       let paths = [file];
       // Its card in a grid listing pages (src/page-builder/cards.ts) can go with it.
-      const card = ports.cardsLinkingTo(target.route, new Set(everything));
+      const card = ports.cardsLinkingTo(target.route, new Set(everything), r);
       const cardOption = card ? { label: card.label, checked: true } : undefined;
       // The card's edits and the deletes were computed from these sources: an
       // agent or resync write while the dialog is open refuses, never overwritten.

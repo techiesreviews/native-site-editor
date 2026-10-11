@@ -658,10 +658,10 @@ export function createCards(deps: CardsDeps) {
     /**
      * The items that link to the page at `route` in grids listing pages, on
      * pages other than `except`: the checkbox's label for deleting them with
-     * the page, and each page's text without them.
+     * the page, and each page's text without them. Read through the delete's
+     * plan (`reads`): every page and the templates behind section-ness.
      */
-    cardsLinkingTo(route: string, except: Set<string>): { label: string; edits: Map<string, string> } | undefined {
-      const reads = deps.edits.peek;
+    cardsLinkingTo(route: string, except: Set<string>, reads: Reads): { label: string; edits: Map<string, string> } | undefined {
       const site = reads.site();
       if (!site) return undefined;
       const edits = new Map<string, string>();

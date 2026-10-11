@@ -191,7 +191,7 @@ test("the component loader a site lacks joins Make component's step", async () =
   const withScript = HOME.replace("</head>", '<script type="module" src="/components/components.js"></script></head>');
   const loader: PreparedComponentLoader = {
     creates: [{ path: "components/components.js", content: "// loader" }], edits: new Map([["index.html", withScript]]), pages: ["index.html"],
-    added: "Added the component loader.", notes: [], expectedSources: new Map([["index.html", HOME]]), current: () => true,
+    added: "Added the component loader.", notes: [],
   };
   const { m, edits, plan } = making(loader);
   const outcome = await edits.run(plan, { anchor: "index.html" });
@@ -202,6 +202,23 @@ test("the component loader a site lacks joins Make component's step", async () =
   assert.equal(m.announced.at(-1), "Made the component <section-promo>: components/section-promo/section-promo.html. Added the component loader.");
   assert.ok(m.undo());
   assert.equal(m.workspace.exists("components/components.js"), false);
+});
+
+test("the loader planner reads through the step's r: a file it read changing during its wait refuses", async () => {
+  const m = createMemoryWorkspace({ branch: { "index.html": HOME, "styles/site.css": SITE_CSS }, open: "index.html", site: { routes: { "/": "index.html" }, components: {} } });
+  const tags = startTags(HOME), range = elementEnd(HOME, tags, tags.findIndex(tag => tag.name === "section"), HOME.length)!;
+  const bare = makeComponentPlan(HOME, range, "section-promo", {}, []) as MakeComponentPlan;
+  // The planner reads that the site has no loader file; one appears during its wait.
+  const loader = async (_path: string, _next: string, r: Reads) => {
+    r.exists("components/components.js");
+    await Promise.resolve();
+    m.writeDraft("components/components.js", "");
+    return undefined;
+  };
+  const outcome = await createGuardedEdits(m.workspace).run(r => makeComponentStep(r, { path: "index.html", source: HOME, range, node: [0, 0], tag: "section-promo", bare, carry, loader }), { anchor: "index.html" });
+  assert.equal(outcome.ok, false);
+  assert.deepEqual(!outcome.ok && outcome.reason === "stale" && outcome.changed, { exists: "components/components.js" });
+  assert.deepEqual(m.steps(), []);
 });
 
 test("a new component is the page's insert and the blank component's files, one undo step; a taken name refuses", async () => {

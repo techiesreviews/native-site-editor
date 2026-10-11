@@ -109,7 +109,7 @@ import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
 import { createFileOperationsController } from "./controllers/file-operations-controller";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
-import { addSectionStep, type SectionPlanned } from "./page-builder/component-plans";
+import { addSectionStep } from "./page-builder/component-plans";
 import { writeNewDrafts } from "./new-drafts";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type Reads, type PlanResult, type Stamp, type Outcome } from "./guarded-edit";
@@ -741,32 +741,24 @@ function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | und
   nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description });
   return point;
 }
-/** Plans from every indexed page and stylesheet, retaining the proof across lazy reads. */
-async function nativeComponentLoaderPlan(path: string, nextPageText: string): Promise<PreparedComponentLoader | string | undefined> {
-  const epoch = generation, scope = setupScope(), source = nativeEffectiveSource(path);
-  const initial = () => generation === epoch && setupScope() === scope && nativeEffectiveSource(path) === source && !versionView;
+/**
+ * Plans from every indexed page and stylesheet, read through the step's `r` once the index has
+ * loaded: the module proves them, the loader's existence and the route graph at the write.
+ */
+async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: Reads): Promise<PreparedComponentLoader | string | undefined> {
   const error = await ensureNativeTextIndex();
-  if (!initial()) return "The repository or source changed meanwhile. Review the latest files and try again.";
   if (error) return error;
-  const sources = nativeSources(), files = nativeFiles().sort().join("\n");
-  const expectedSources = new Map<string, string | undefined>(Object.entries(sources));
-  const current = () => initial() && nativeFiles().sort().join("\n") === files &&
-    [...expectedSources].every(([file, text]) => nativeEffectiveSource(file) === text);
+  const site = r.site();
+  if (!site) return "The repository or source changed meanwhile. Review the latest files and try again.";
+  const sources = nativeSiteSources(site, file => r.source(file));
   try {
     const { componentLoaderPlan } = await import("./page-builder/component-loader");
-    if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
-    const pages = Object.values(nativeSite?.routes ?? {});
     // The first pass avoids loading the vendored bytes when the site already has its loader.
-    const input = { pages, sources: { ...sources, [path]: nextPageText }, exists: nativePathExists, loader: "" };
+    const input = { pages: Object.values(site.routes), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
     const needed = componentLoaderPlan(input);
-    if (!needed) return;
-    if (!needed.creates.length) return { ...needed, expectedSources, current };
+    if (!needed?.creates.length) return needed;
     const { starterLoader } = await import("./page-builder/starter-loader");
-    if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
-    const loader = await starterLoader();
-    if (!current()) return "The repository or source changed meanwhile. Review the latest files and try again.";
-    const plan = componentLoaderPlan({ ...input, loader });
-    return plan && { ...plan, expectedSources, current };
+    return componentLoaderPlan({ ...input, loader: await starterLoader() });
   } catch (error) {
     void handleChunkLoadFailure(error);
     return "The component loader could not load. Try again.";
@@ -786,22 +778,17 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
-  let planned: SectionPlanned | undefined;
   // The page opens first when another file is in the editor (Edit component mode on a template it
   // uses ends then): the repository and branch hold, as the page's bytes do.
   const since = guardedEdits.stamp("repository");
-  const outcome = await guardedEdits.run(async r => {
-    const plan = await addSectionStep(r, { path, select: [...point.parent, point.index], message: `${choice.label} added`, before,
-      loader: native ? undefined : nativeComponentLoaderPlan,
-      edit(page) {
-        if (native && captured && page !== captured.source) return moved;
-        const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, native)
-          : nativeInsertEdit(page, point.parent, point.index, choice.tag, r.template(choice.tag)?.source ?? "");
-        return edit ? [edit] : `${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`;
-      } });
-    if (!("refuse" in plan)) planned = plan;
-    return plan;
-  }, { since, anchor: path, guard: () => !versionView && (!planned?.loader || planned.loader.current()) });
+  const outcome = await guardedEdits.run(r => addSectionStep(r, { path, select: [...point.parent, point.index], message: `${choice.label} added`, before,
+    loader: native ? undefined : nativeComponentLoaderPlan,
+    edit(page) {
+      if (native && captured && page !== captured.source) return moved;
+      const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, native)
+        : nativeInsertEdit(page, point.parent, point.index, choice.tag, r.template(choice.tag)?.source ?? "");
+      return edit ? [edit] : `${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`;
+    } }), { since, anchor: path, guard: () => !versionView });
   if (!outcome.ok || outcome.message) errorMessage(new Error(!outcome.ok && outcome.reason === "stale" ? moved : outcome.message));
 }
 
@@ -2033,11 +2020,13 @@ function refreshNativeRoutes() {
 // editor model wins, then a saved/new browser draft, then the clean snapshot
 // baseline.
 function nativeSources(site = nativeSite): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!site) return out;
-  const paths = new Set([...nativeSitePaths(site), ...nativeComponentStyles.values()]);
   const scope = draftScope();
-  const effective = (path: string) => nativeEffectiveSource(path, scope);
+  return site ? nativeSiteSources(site, path => nativeEffectiveSource(path, scope)) : {};
+}
+/** The site's pages, templates and stylesheets as `effective` reads them (a plan passes its `r`). */
+function nativeSiteSources(site: NativeSite, effective: (path: string) => string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  const paths = new Set([...nativeSitePaths(site), ...nativeComponentStyles.values()]);
   for (const path of paths) out[path] = effective(path) ?? "";
   // A style file that is neither in the branch nor a draft stays out, so
   // the preview reports the link or import as missing.

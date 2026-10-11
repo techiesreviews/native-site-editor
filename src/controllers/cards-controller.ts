@@ -5,6 +5,7 @@
 import { createCards, type Cards, type CardsDeps } from "../page-builder/cards";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { CardGridHandlers } from "../components/card-grid-controls";
+import type { Reads } from "../guarded-edit";
 
 /** The host's ports are exactly the card operations' dependencies, read live. */
 export type CardsControllerPorts = CardsDeps;
@@ -39,7 +40,7 @@ export function createCardsController(ports: CardsControllerPorts) {
       return cards ? withoutCardMoves(cards.controls(selection, source)) : [];
     },
     cardOffer: (parent: string) => cards?.cardOffer(parent),
-    cardsLinkingTo: (route: string, excluding: Set<string>) => cards?.cardsLinkingTo(route, excluding),
+    cardsLinkingTo: (route: string, excluding: Set<string>, reads: Reads) => cards?.cardsLinkingTo(route, excluding, reads),
     createWithCard: (request: Parameters<Cards["createWithCard"]>[0]) => cards?.createWithCard(request),
   };
 }

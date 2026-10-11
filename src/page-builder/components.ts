@@ -1673,7 +1673,7 @@ export function createComponentTools(deps: ComponentDeps) {
       const plan = await makeComponentStep(r, { ...request, loader: deps.loaderPlan });
       if (!("refuse" in plan)) planned = plan;
       return plan;
-    }, { since: stamp, anchor: path, guard: () => !planned?.loader || planned.loader.current() });
+    }, { since: stamp, anchor: path });
     if (!outcome.ok) return stop(outcome.reason === "stale" ? "The page, its styles or the repository changed meanwhile; no component was made." : outcome.message);
     if (outcome.message) refuse(outcome.message);
     return planned!;
@@ -1694,7 +1694,7 @@ export function createComponentTools(deps: ComponentDeps) {
         insert: (page, template) => nativeInsertEdit(page, parent, index, tag, template) });
       if (!("refuse" in plan)) planned = plan;
       return plan;
-    }, { since: stamp, anchor: path, guard: () => !planned?.loader || planned.loader.current() });
+    }, { since: stamp, anchor: path });
     if (!outcome.ok) { refuse(outcome.reason === "stale" ? "The page or repository changed meanwhile; no component was made." : outcome.message); return false; }
     if (outcome.message) refuse(outcome.message);
     const madeStamp = deps.edits.stamp();

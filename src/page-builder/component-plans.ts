@@ -112,13 +112,10 @@ export function componentRenameStep(r: Reads, rename: typeof Rename, request: { 
   };
 }
 
-/** A component loader plan (slice 103) with the proof its host read it under. */
-export interface PreparedComponentLoader extends ComponentLoaderPlan {
-  expectedSources: Map<string, string | undefined>;
-  current(): boolean;
-}
-/** Plans the component loader for the page `path` reading `next` (src/main.ts): why not, nothing needed, or the plan. */
-export type LoaderPlanner = (path: string, next: string) => Promise<PreparedComponentLoader | string | undefined>;
+/** A component loader plan (slice 103), planned from pages and stylesheets read through the step's `r`. */
+export type PreparedComponentLoader = ComponentLoaderPlan;
+/** Plans the component loader for the page `path` reading `next`, reading the site through `r` (src/main.ts): why not, nothing needed, or the plan. */
+export type LoaderPlanner = (path: string, next: string, r: Reads) => Promise<PreparedComponentLoader | string | undefined>;
 
 /** The files Make component writes: the component's template and CSS, then each card component's. */
 export function madeFiles(tag: string, made: MakeComponentPlan) {
@@ -129,15 +126,6 @@ export function madeFiles(tag: string, made: MakeComponentPlan) {
 }
 export const madeMessage = (tag: string, made: MakeComponentPlan) =>
   `Made the component <${tag}>: components/${tag}/${tag}.html${made.cards.map((card) => `, and <${card.tag}>`).join("")}`;
-
-/**
- * The loader's part of the step, its pages read through `r`: still the bytes it was planned from, or the refusal.
- * (Its own proof, `current`, guards the whole site and file list from the plan to the write.)
- */
-function loaderReads(r: Reads, loader: PreparedComponentLoader, changed: string): string | undefined {
-  for (const path of loader.edits.keys()) if (r.source(path) !== loader.expectedSources.get(path)) return changed;
-  return undefined;
-}
 
 export type MadePlanned = Planned & { made: MakeComponentPlan; loader?: PreparedComponentLoader };
 
@@ -161,10 +149,8 @@ export async function makeComponentStep(r: Reads, input: {
   const sheets = expandStyleImports(linked, file => r.source(file)).sheets;
   const made = input.carry.withPageCss(input.bare, source, range, tag, sheets);
   const next = source.slice(0, range.start) + made.instance + source.slice(range.end);
-  const loader = await input.loader?.(path, next);
+  const loader = await input.loader?.(path, next, r);
   if (typeof loader === "string") return { refuse: loader };
-  const problem = loader && loaderReads(r, loader, changed);
-  if (problem) return { refuse: problem };
   const at = { path, node: [...input.node] };
   return {
     edits: new Map([[path, next], ...loader?.edits ?? []]), creates: [...madeFiles(tag, made), ...loader?.creates ?? []],
@@ -194,10 +180,8 @@ export async function newComponentStep(r: Reads, input: {
   const edit = input.insert(source, files[0].content);
   if (!edit) return { refuse: "The insertion point changed; choose the destination again." };
   const next = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
-  const loader = await input.loader?.(path, next);
+  const loader = await input.loader?.(path, next, r);
   if (typeof loader === "string") return { refuse: loader };
-  const stale = loader && loaderReads(r, loader, changed);
-  if (stale) return { refuse: stale };
   return {
     edits: new Map([[path, next], ...loader?.edits ?? []]), creates: [...files, ...loader?.creates ?? []], loader,
     select: { before: input.before, after: { path, node: [...input.node] } },
@@ -223,10 +207,8 @@ export async function addSectionStep(r: Reads, input: {
   const edits = input.edit(page, r);
   if (typeof edits === "string") return { refuse: edits };
   const next = [...edits].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), page);
-  const loader = await input.loader?.(path, next);
+  const loader = await input.loader?.(path, next, r);
   if (typeof loader === "string") return { refuse: loader };
-  const stale = loader && loaderReads(r, loader, "The repository or source changed meanwhile. Review the latest files and try again.");
-  if (stale) return { refuse: stale };
   return {
     // Without the loader the page's own ranges: the editor's step.
     edits: new Map([[path, loader ? next : edits.map(edit => ({ ...edit, expected: page.slice(edit.start, edit.end) }))], ...loader?.edits ?? []]),

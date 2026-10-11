@@ -526,7 +526,7 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
             } });
           if (!("refuse" in plan)) planned = plan;
           return plan;
-        }, { anchor: path, guard: () => !planned?.loader || planned.loader.current() }));
+        }, { anchor: path }));
         return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${planned?.added ? ` ${planned.added}` : ""}`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
       }
       const node = parseOutlineId(String(args.section ?? ""));

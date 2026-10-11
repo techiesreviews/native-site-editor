@@ -87,8 +87,6 @@ function inPeekDefault(node: TS.Node) {
   }
   return false;
 }
-// nativePictureSources parses supplied bytes only; these readers reach host file bytes.
-const nativeReaders = new Set(["nativeEffectiveSource", "nativeEditableSource", "nativeSources", "nativeBaseSources", "nativePreviewSources", "nativePageShownSources", "nativeRouteShownSources", "nativeAssetSources", "nativeLinkSources"]);
 // `reads !== peek` compares readers; it reads no bytes.
 function identityCompare(node: TS.Node) {
   let operand = node;
@@ -96,8 +94,44 @@ function identityCompare(node: TS.Node) {
   const parent = operand.parent;
   return !!parent && ts.isBinaryExpression(parent) && [ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(parent.operatorToken.kind);
 }
-function untracked(node: TS.Node): boolean {
-  if (inPeekDefault(node) || identityCompare(node)) return false;
+// One file at a time, without imports or lib: the checker binds the file's own names, shadowing
+// included, so plans, helpers and aliases resolve as the code reads; imported names stay unresolved.
+type Analysis = { tree: TS.SourceFile; checker: TS.TypeChecker };
+const analysed = new Map<string, Analysis>();
+function analyse(source: string, file: string): Analysis {
+  const key = `${file}\0${source}`;
+  let analysis = analysed.get(key);
+  if (!analysis) {
+    const tree = parse(source, file);
+    const host: TS.CompilerHost = {
+      getSourceFile: name => name === file ? tree : undefined, fileExists: name => name === file, readFile: () => undefined, writeFile: () => {},
+      getDefaultLibFileName: () => "lib.d.ts", getCurrentDirectory: () => "", getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true, getNewLine: () => "\n",
+    };
+    analysis = { tree, checker: ts.createProgram([file], { noLib: true, noResolve: true, allowJs: true, types: [] }, host).getTypeChecker() };
+    analysed.set(key, analysis);
+  }
+  return analysis;
+}
+function declarationOf(checker: TS.TypeChecker, node: TS.Node): TS.Declaration | undefined {
+  const symbol = checker.getSymbolAtLocation(node);
+  return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+}
+function declaredName(node: TS.Identifier) {
+  const parent = node.parent;
+  return (ts.isPropertyAccessExpression(parent) && parent.name === node) || ts.isPropertyAssignment(parent) && parent.name === node
+    || ((ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent) || ts.isBindingElement(parent)) && (parent.name === node || parent.propertyName === node));
+}
+// `const { source } = ports`, `const { peek } = edits`: the destructured name is the untracked reader.
+function destructuredReader(declaration: TS.Declaration) {
+  if (!ts.isBindingElement(declaration) || !ts.isVariableDeclaration(declaration.parent.parent) || !declaration.parent.parent.initializer) return false;
+  const name = (declaration.propertyName ?? declaration.name).getText(), from = strip(declaration.parent.parent.initializer).getText();
+  return name === "peek" || nativeReaders.has(name) || (name === "source" && (from === "ports" || from === "deps"));
+}
+// nativePictureSources parses supplied bytes only; these readers reach host file bytes.
+const nativeReaders = new Set(["nativeEffectiveSource", "nativeEditableSource", "nativeSources", "nativeBaseSources", "nativePreviewSources", "nativePageShownSources", "nativeRouteShownSources", "nativeAssetSources", "nativeLinkSources"]);
+function untracked(checker: TS.TypeChecker, node: TS.Node, seen = new Set<TS.Node>()): boolean {
+  if (inPeekDefault(node) || identityCompare(node) || seen.has(node)) return false;
+  seen.add(node);
   const access = member(node);
   if (access) {
     if (access.name === "peek" || nativeReaders.has(access.name)) return true;
@@ -105,56 +139,89 @@ function untracked(node: TS.Node): boolean {
     if (access.name === "source" && (receiver.getText() === "deps" || receiver.getText() === "ports")) return true;
     if (access.name === "get" && ts.isCallExpression(receiver) && strip(receiver.expression).getText() === "draftStore") return true;
   }
-  if (!ts.isIdentifier(node) || !nativeReaders.has(node.text)) return false;
-  // A member is reported once, at its access, not again at its property name.
-  const parent = node.parent;
-  return !(ts.isPropertyAccessExpression(parent) && parent.name === node)
-    && !((ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent) || ts.isPropertyAssignment(parent)) && parent.name === node);
+  if (!ts.isIdentifier(node) || declaredName(node)) return false;
+  if (nativeReaders.has(node.text)) return true;
+  // An alias: `const reads = deps.edits.peek`, `const read = ports.source`, or destructured.
+  const declaration = declarationOf(checker, node);
+  if (!declaration) return false;
+  if (destructuredReader(declaration)) return true;
+  return ts.isVariableDeclaration(declaration) && !!declaration.initializer && untracked(checker, strip(declaration.initializer), seen);
 }
-// Resolve same-file names in the nearest lexical scope, including plan factories.
-function functions(tree: TS.SourceFile) {
-  const declarations: { name: string; scope: TS.Node; body: FunctionBody }[] = [];
-  walk(tree, node => {
-    if (!isFunction(node)) return;
-    const name = boundName(node) ?? functionName(node);
-    if (!name) return;
-    let scope = node.parent;
-    while (!ts.isSourceFile(scope) && !ts.isBlock(scope) && !isFunction(scope)) scope = scope.parent;
-    declarations.push({ name, scope, body: node });
-  });
-  return (expression: TS.Node): FunctionBody | undefined => {
-    expression = strip(expression);
-    if (isFunction(expression)) return expression;
-    if (ts.isCallExpression(expression)) expression = strip(expression.expression);
-    if (!ts.isIdentifier(expression)) return undefined;
-    for (let scope: TS.Node | undefined = expression.parent; scope; scope = scope.parent) {
-      const declaration = declarations.find(item => item.name === expression.getText() && item.scope === scope);
-      if (declaration) return declaration.body;
-    }
-    return undefined;
+function functionOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0): FunctionBody | undefined {
+  expression = strip(expression);
+  if (isFunction(expression)) return expression;
+  if (!ts.isIdentifier(expression) || depth > 8) return undefined;
+  const declaration = declarationOf(checker, expression);
+  if (declaration && isFunction(declaration)) return declaration;
+  return declaration && ts.isVariableDeclaration(declaration) && declaration.initializer ? functionOf(checker, declaration.initializer, depth + 1) : undefined;
+}
+function returnsOf(factory: FunctionBody): TS.Expression[] {
+  if (!ts.isBlock(factory.body)) return [factory.body];
+  const returned: TS.Expression[] = [];
+  const visit = (node: TS.Node): void => {
+    if (isFunction(node)) return;
+    if (ts.isReturnStatement(node) && node.expression) returned.push(node.expression);
+    ts.forEachChild(node, visit);
   };
+  ts.forEachChild(factory.body, visit);
+  return returned;
+}
+// The plan functions an argument stands for: inline, a same-file name, either branch of a
+// conditional, or what a same-file factory returns (its setup runs before the plan, so it is not one).
+function plansOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0): FunctionBody[] | undefined {
+  expression = strip(expression);
+  if (depth > 8) return undefined;
+  if (ts.isConditionalExpression(expression)) {
+    const branches = [plansOf(checker, expression.whenTrue, depth + 1), plansOf(checker, expression.whenFalse, depth + 1)];
+    return branches.every(Boolean) ? branches.flat() as FunctionBody[] : undefined;
+  }
+  if (ts.isCallExpression(expression)) {
+    const factory = functionOf(checker, expression.expression);
+    const returned = factory ? returnsOf(factory).map(value => plansOf(checker, value, depth + 1)) : [];
+    return returned.length && returned.every(Boolean) ? returned.flat() as FunctionBody[] : undefined;
+  }
+  if (isFunction(expression)) return [expression];
+  const declaration = ts.isIdentifier(expression) ? declarationOf(checker, expression) : undefined;
+  if (declaration && isFunction(declaration)) return [declaration];
+  return declaration && ts.isVariableDeclaration(declaration) && declaration.initializer ? plansOf(checker, declaration.initializer, depth + 1) : undefined;
+}
+// `edits.run(...)`, `guardedEdits.now(...)`, and the same through `const { run } = edits` or `const run = edits.run`.
+function isPlanCall(checker: TS.TypeChecker, call: TS.CallExpression, depth = 0): boolean {
+  const callee = strip(call.expression);
+  const access = member(callee);
+  if (access) return ["run", "now"].includes(access.name) && /edits$/i.test(strip(access.receiver).getText());
+  if (!ts.isIdentifier(callee) || depth > 8) return false;
+  const declaration = declarationOf(checker, callee);
+  if (declaration && ts.isBindingElement(declaration) && ts.isVariableDeclaration(declaration.parent.parent) && declaration.parent.parent.initializer) {
+    return ["run", "now"].includes((declaration.propertyName ?? declaration.name).getText()) && /edits$/i.test(strip(declaration.parent.parent.initializer).getText());
+  }
+  if (!declaration || !ts.isVariableDeclaration(declaration) || !declaration.initializer) return false;
+  let value = strip(declaration.initializer);
+  // `edits.run.bind(edits)` is the method itself.
+  if (ts.isCallExpression(value) && member(strip(value.expression))?.name === "bind") value = strip(member(strip(value.expression))!.receiver);
+  const method = member(value);
+  return !!method && ["run", "now"].includes(method.name) && /edits$/i.test(strip(method.receiver).getText());
 }
 const planReads: Detector = (source, file) => {
-  const tree = parse(source, file), resolve = functions(tree), hits: Finding[] = [];
+  const { tree, checker } = analyse(source, file), hits: Finding[] = [];
   const seen = new Set<string>();
   const report = (node: TS.Node, rule: Rule, name?: string) => {
     const key = `${rule}:${name ?? node.pos}`;
     if (!seen.has(key)) { seen.add(key); hits.push({ ...finding(tree, node, rule), ...name ? { function: name } : {} }); }
   };
   walk(tree, node => {
-    if (!ts.isCallExpression(node)) return;
-    const access = member(strip(node.expression));
-    if (!access || !["run", "now"].includes(access.name) || !/edits$/i.test(strip(access.receiver).getText()) || !node.arguments[0]) return;
-    const plan = resolve(node.arguments[0]);
-    if (!plan) return report(node.arguments[0], "plan-unresolved");
-    const bodies = [plan], scanned = new Set<TS.Node>();
+    if (!ts.isCallExpression(node) || !node.arguments[0] || !isPlanCall(checker, node)) return;
+    const plans = plansOf(checker, node.arguments[0]);
+    if (!plans) return report(node.arguments[0], "plan-unresolved");
+    // Same-file helpers the plan calls run inside it: scanned too, transitively.
+    const bodies = [...plans], scanned = new Set<TS.Node>();
     for (let body = bodies.pop(); body; body = bodies.pop()) {
       if (scanned.has(body)) continue;
       scanned.add(body);
       walk(body.body, read => {
-        if (untracked(read)) report(read, "plan-read");
+        if (untracked(checker, read)) report(read, "plan-read");
         if (!ts.isCallExpression(read)) return;
-        const helper = resolve(read.expression), name = helper && functionName(helper);
+        const helper = functionOf(checker, read.expression), name = helper && functionName(helper);
         if (name && waits.some(wait => wait.file === file && wait.function === name)) report(read, "plan-wait", name);
         else if (helper) bodies.push(helper);
         helper?.parameters.forEach((parameter, index) => {
@@ -166,11 +233,11 @@ const planReads: Detector = (source, file) => {
   return hits;
 };
 const readsHelpers: Detector = (source, file) => {
-  const tree = parse(source, file), hits: Finding[] = [], seen = new Set<number>();
+  const { tree, checker } = analyse(source, file), hits: Finding[] = [], seen = new Set<number>();
   walk(tree, node => {
     if (!isFunction(node) || !node.parameters.some(readsParameter)) return;
     walk(node.body, read => {
-      if (untracked(read) && !seen.has(read.pos)) { seen.add(read.pos); hits.push(finding(tree, read, "reads-helper")); }
+      if (untracked(checker, read) && !seen.has(read.pos)) { seen.add(read.pos); hits.push(finding(tree, read, "reads-helper")); }
     });
   });
   return hits;
@@ -230,6 +297,27 @@ test("plans reject untracked readers in same-file helpers they call and plans th
   const wait = "async function ensureNativeTextIndex() { return nativeBaseSources.get(path); } edits.run(async r => { await ensureNativeTextIndex(); await ensureNativeTextIndex(); return r.source(path); });";
   assert.deepEqual(planReads(wait, "src/main.ts").map(hit => [hit.rule, hit.function]), [["plan-wait", "ensureNativeTextIndex"]]);
   flags(planReads, wait, "plan-read");
+});
+
+test("plans reject aliased and destructured readers and plan calls, and resolve names as the code binds them", () => {
+  for (const source of [
+    "const reads = deps.edits.peek; edits.run(r => reads.source(path));",
+    "const read = ports.source; edits.run(r => read(path));",
+    "const { source } = ports; edits.run(r => source(path));",
+    "const { peek: shown } = ports.edits; edits.run(r => shown.source(path));",
+    "const { run } = ports.edits; run(r => ports.source(path));",
+    "const now = guardedEdits.now.bind(guardedEdits); now(r => nativeSources());",
+    "const plan = ready ? r => r.source(path) : r => ports.source(path); edits.run(plan);",
+  ]) flags(planReads, source, "plan-read");
+  for (const source of [
+    'import { importedPlan } from "./plans"; function factory() { return importedPlan; } edits.run(factory());',
+    "function plan(r) { return ports.source(path); } function act(plan) { edits.run(plan); }",
+  ]) flags(planReads, source, "plan-unresolved");
+  for (const source of [
+    "const reads = deps.edits.peek; edits.run(reads => reads.source(path));",
+    "function textPlan() { const shown = ports.source(path); return r => r.source(path) === shown ? { stayed: \"\" } : { refuse: \"\" }; } edits.run(textPlan());",
+    "function plan(r) { return r.source(path); } function act() { const ports = { source: () => \"\" }; edits.run(plan); }",
+  ]) assert.deepEqual(planReads(source, FAKE), [], source);
 });
 
 test("findings use the innermost named function and count shared plans once", () => {

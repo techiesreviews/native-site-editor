@@ -16,13 +16,13 @@ const fixture = (site: NativeSite | undefined = plain) => cardsFixture({ "index.
 const selection = (node: number[]): NativePreviewSelection => ({ path: "index.html", tag: "article", text: "", reason: "click", selectors: [], node });
 
 test("before mounting, card adapters refuse or offer nothing", async () => {
-  const controller = fixture().controller;
+  const { controller, edits } = fixture();
   assert.equal(controller.mounted(), false);
   assert.equal(controller.preview.createPage({ path: "index.html", node: [] }, { title: "Oak", parent: "/" }), undefined);
   assert.equal(controller.preview.describe({} as never), undefined);
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 0]), page), []);
   assert.equal(controller.cardOffer("/"), undefined);
-  assert.equal(controller.cardsLinkingTo("/", new Set()), undefined);
+  assert.equal(controller.cardsLinkingTo("/", new Set(), edits.peek), undefined);
   assert.equal(controller.createWithCard({ parent: "/", title: "x", slug: "x" }), undefined);
 });
 
@@ -194,6 +194,25 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.equal(result.undone, true);
       assert.equal(result.restored, collectionPage);
       assert.equal(result.files.includes("work/birch/index.html"), false);
+    });
+
+    await t.test("a page delete's card removal reads every page through the delete's plan", async () => {
+      const result = await browserPage.evaluate(async ({ branch, site }) => {
+        const { controller, m, edits } = cardsFixture(branch, site);
+        const outcome = await edits.run(async r => {
+          const card = controller.cardsLinkingTo("/work/pine/", new Set(["work/pine/index.html"]), r);
+          if (!card) return { refuse: "no card" };
+          for (const path of card.edits.keys()) r.source(path);
+          // A page with no card, read only to find cards, changes while the dialog is open.
+          m.writeDraft("work/index.html", "changed");
+          await Promise.resolve();
+          return { edits: card.edits, done: "Removed.", undone: "Undid." };
+        });
+        return { outcome, after: m.source("index.html"), steps: m.steps() };
+      }, collectionData);
+      assert.deepEqual(result.outcome, { ok: false, reason: "stale", changed: { file: "work/index.html" }, message: "The page changed meanwhile. Try again." });
+      assert.equal(result.after, collectionPage);
+      assert.deepEqual(result.steps, []);
     });
 
     await t.test("Pages tab refuses a grid page edited meanwhile", async () => {
