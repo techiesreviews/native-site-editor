@@ -13,7 +13,7 @@ type Finding = { file: string; line: number; rule: Rule; function: string; text:
 type AllowlistEntry = { file: string; match: string; reason: string; count?: number };
 type Detector = (source: string, file: string) => Finding[];
 type FunctionBody = TS.FunctionLikeDeclaration & { body: TS.ConciseBody };
-const READERS = new Set(["parseMarked", "markedRange", "elementPathAt", "parseSource", "nativeOutline", "startTags", "startTagAttribute", "startTagAttributes", "decodedText", "decodeEntities", "decodeEntity", "plainText", "elementTree", "elementText", "breakText"]);
+const READERS = new Set(["parseMarked", "markedRange", "elementPathAt", "parseSource", "nativeOutline", "startTags", "startTagAttribute", "startTagAttributes", "decodedText", "decodeEntities", "decodeEntity", "plainText", "elementTree", "elementText", "breakText", "breaksAllowed", "breakSpelling"]);
 const DOM = new Set(["innerHTML", "outerHTML", "innerText", "textContent", "DOMParser", "createContextualFragment"]);
 const MODULES = new Set(["shared/html-source", "src/native-source-location", "src/page-builder/native-operations", "src/page-builder/html-entities"]);
 function readerName(name: string) {
@@ -125,7 +125,10 @@ function standsForReader(checker: TS.TypeChecker, node: TS.Node, depth = 0): boo
   if (ts.isImportSpecifier(declaration)) return !inType(declaration) && readerName((declaration.propertyName ?? declaration.name).text);
   if (ts.isBindingElement(declaration)) return readerName(bindingKey(declaration) ?? "");
   if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) return false;
-  const value = strip(declaration.initializer);
+  let value = strip(declaration.initializer);
+  // `reader.bind(null)` is the reader.
+  const bound = ts.isCallExpression(value) ? member(strip(value.expression)) : undefined;
+  if (bound?.name === "bind") value = strip(bound.receiver);
   return readerName(referenceName(value) ?? "") || standsForReader(checker, value, depth + 1);
 }
 // Reader declarations also catch a hand-written low-level reader returning to a card file; type positions read nothing.
@@ -144,13 +147,13 @@ const domReads: Detector = (source, file) => {
   const tree = parse(source, file), hits: Finding[] = [];
   walk(tree, node => {
     const name = referenceName(node);
-    if (name && domName(name)) hits.push(finding(tree, node, "dom-read"));
+    if (name && domName(name) && !inType(node)) hits.push(finding(tree, node, "dom-read"));
   });
   return hits;
 };
 function readerModule(specifier: TS.Node | undefined, file: string) {
   return !!specifier && (ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier)) && specifier.text.startsWith(".")
-    && MODULES.has(posix.normalize(posix.join(posix.dirname(file), specifier.text)).replace(/\.ts$/, ""));
+    && MODULES.has(posix.normalize(posix.join(posix.dirname(file), specifier.text)).replace(/\.[cm]?[jt]s$/, ""));
 }
 const readerModules: Detector = (source, file) => {
   const tree = parse(source, file), hits: Finding[] = [];
@@ -223,6 +226,7 @@ test("reader-name counts every use of a renamed import, destructured name or ali
   assert.equal(uses('const { plainText: decode } = model; decode(a); decode(b);'), 2);
   assert.equal(uses('import { decodeHtmlEntities } from "./html-entities"; const first = decodeHtmlEntities; const decode = first; decode(a); decode(b);'), 2);
   assert.equal(uses('import * as model from "./component-model"; const decode = model.elementText; decode(a);'), 1);
+  assert.equal(uses('import { decodeHtmlEntities } from "./html-entities"; const decode = decodeHtmlEntities.bind(null); decode(a); decode(b);'), 2);
   // A value a reader returned is text, not a reader; a shadowing parameter is not the import.
   assert.equal(uses('import { decodeHtmlEntities } from "./html-entities"; const decode = decodeHtmlEntities(raw); use(decode);'), 0);
   assert.equal(uses('import { decodeHtmlEntities as decode } from "./html-entities"; function f(decode) { return decode(a); }'), 0);
@@ -252,12 +256,13 @@ test("dom-read rejects every DOM reader through members, optional calls and dest
 test("dom-read ignores tree reads, object keys, strings and comments", () => {
   for (const source of [
     'tree.text(node); tree.attribute(node, "title");', 'const value = { textContent: x };',
+    'type Parser = typeof DOMParser; let read: Element["textContent"]; import type { querySelector } from "./dom";',
     '// el.querySelector("a");\nconst text = "innerHTML DOMParser";', 'const text = `textContent getAttribute`;',
   ]) assert.deepEqual(domReads(source, FAKE), [], source);
 });
 
 const specifiers = ["../../shared/html-source", "../native-source-location", "./native-operations", "./html-entities"]
-  .flatMap(module => [module, `${module}.ts`]);
+  .flatMap(module => [module, `${module}.ts`, `${module}.js`]);
 test("reader-module rejects value imports, re-exports and dynamic imports from each reading module", () => {
   for (const module of specifiers) {
     for (const source of [
