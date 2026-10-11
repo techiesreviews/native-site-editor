@@ -61,4 +61,12 @@ The refined mockup now opens directly on Images. Collections opens from the grid
 
 Published with `html_render`, title **Media manager: compact, pictures first**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-2db4ce96-bec3-486d-93f7-07b9bd338f18-html`. The [validation record](../prototype/refined-validation.md) covers the compact screens, independent review and corrections to search scope, collection counts and returning to the latest file view.
 
-**Awaiting Lex's reaction to this compact version, including phone and tablet presentation. The ticket remains open.**
+Lex requested another design iteration and chose **the overall look and feel** as its focus. The compact, pictures-first version is the working baseline; the next comparison explores **Quiet** (a flat file browser) and **Canvas** (an image-led contact sheet). The final look and phone/tablet presentation remain open.
+
+### Overall look comparison (2026-10-11)
+
+[Quiet and Canvas](../prototype/look-directions.html) carry the confirmed compact behaviour through the library, details, adding files, picker and clean-up. **Quiet** uses lighter controls and puts filenames below the pictures; **Canvas** uses larger picture frames with names on a dark strip over the picture, taking more vertical space. Both open on Images and offer Collections when needed.
+
+Published with `html_render`, title **Media manager looks: Quiet and Canvas**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-5a3e5a8c-5694-4e1d-9972-36b0e53d2ea1-html`. The [look validation](../prototype/look-validation.md) records checks at 360, 728 and 768 px, independent visual review, and corrections to the phone picker footer and selected-file tick.
+
+**Awaiting Lex's choice of the final look, including phone and tablet presentation. The ticket remains open.**
