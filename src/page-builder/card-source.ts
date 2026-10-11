@@ -1,14 +1,15 @@
 // Card grids in a page's source: where they are, what their items are, and
-// whether they are a collection of subpages. The page is parsed by the
-// browser's own HTML parser (src/native-source-location.ts `parseMarked`),
-// as the preview renders it, so element-child index paths are the
-// preview's; the rules are src/page-builder/rules/items.ts and card-grid.ts.
+// whether they are a collection of subpages. Every read goes through a
+// `SourceTree` (source-tree.ts): in the editor the page adapter (`readPage`,
+// the browser's parser, so element-child index paths are the preview's), in
+// Node tests the source adapter. The rules are rules/items.ts and card-grid.ts.
 
-import { MARK, markedRange, parseMarked, type ElementRange } from "../native-source-location";
+import { readPage, type ElementRange } from "../native-source-location";
 import { nativeLinkTarget, isFolderRoute } from "../../shared/native-routes";
 import { normalizeRoute } from "../native-create";
 import { componentLabel } from "../native-insert";
 import { collectionParent, elementTree, itemNoun, type SourceElement } from "./card-grid";
+import { plain, type SourceTree } from "./source-tree";
 import { itemKind, NOT_GRIDS, repeatedRun } from "./rules/items";
 
 /** A grid (or list) of repeated items in a page's source. */
@@ -35,25 +36,6 @@ export interface GridContext {
   isSection: (tag: string) => boolean;
 }
 
-type Parsed = ReturnType<typeof parseMarked>;
-// The ranges read from one parse, so items share their ancestors' (markedRange walks up to them).
-const parsedRanges = new WeakMap<Parsed, Map<Element, ElementRange | undefined>>();
-const rangeIn = (source: string, parsed: Parsed, el: Element) => {
-  let ranges = parsedRanges.get(parsed);
-  if (!ranges) parsedRanges.set(parsed, ranges = new Map());
-  return markedRange(source, parsed.tags, parsed.root, el, parsed.end, ranges);
-};
-
-function childAt(root: ParentNode, path: number[]): Element | ParentNode | undefined {
-  let at: ParentNode = root;
-  for (const index of path) {
-    const child = at.children[index];
-    if (!child) return undefined;
-    at = child;
-  }
-  return at;
-}
-
 /** Where a link goes as a route: a page of the site, else a root folder path (`/work/new/`), else none. */
 export function linkRoute(href: string, context: GridContext): string | undefined {
   const known = nativeLinkTarget(href, context.route, context.routes);
@@ -75,93 +57,100 @@ export function linkRoute(href: string, context: GridContext): string | undefine
 }
 
 /** The route an item links to: its first link to a page below the top level. */
-function itemRoute(item: Element, context: GridContext): string | undefined {
-  for (const link of item.matches("a[href]") ? [item, ...item.querySelectorAll("a[href]")] : [...item.querySelectorAll("a[href]")]) {
-    const route = linkRoute(link.getAttribute("href") ?? "", context);
+function itemRoute<N>(tree: SourceTree<N>, item: N, context: GridContext): string | undefined {
+  for (const link of [item, ...tree.elements(item)]) {
+    if (tree.view.name(link) !== "a") continue;
+    const route = linkRoute(tree.attribute(link, "href")?.value ?? "", context);
     if (route && route !== "/" && route.split("/").filter(Boolean).length >= 2) return route;
   }
   return undefined;
 }
 
-const HEADING = "h1,h2,h3,h4,h5,h6";
+const heading = <N>(tree: SourceTree<N>, node: N) => /^h[1-6]$/.test(tree.view.name(node));
 
 /** A grid's name: a heading just before it, else the first heading of the section around it, else its label or id. */
-function gridLabel(container: Element, noun: string): string {
-  const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, " ").trim() || undefined;
-  for (let sibling = container.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
-    if (sibling.matches(HEADING)) return text(sibling)!;
-    const inner = sibling.querySelector(HEADING);
-    if (inner) return text(inner)!;
+function gridLabel<N>(tree: SourceTree<N>, container: N, noun: string): string {
+  const text = (node: N) => plain(tree.text(node)) || undefined;
+  const siblings = tree.children(tree.view.parent(container));
+  for (let index = siblings.indexOf(container) - 1; index >= 0; index--) {
+    const sibling = siblings[index];
+    const found = heading(tree, sibling) ? sibling : tree.elements(sibling).find(node => heading(tree, node));
+    if (found !== undefined) return text(found)!;
   }
-  for (let at = container.parentElement; at && !NOT_GRIDS.has(at.localName); at = at.parentElement) {
-    const heading = [...at.querySelectorAll(HEADING)].find((el) => !container.contains(el));
-    if (heading && text(heading)) return text(heading)!;
-    const named = at.getAttribute("aria-label") ?? at.getAttribute("id");
+  const contains = (node: N) => {
+    for (let at: N | undefined = node; at !== undefined; at = tree.view.parent(at)) {
+      if (at === container) return true;
+    }
+    return false;
+  };
+  for (let at = tree.view.parent(container); at !== undefined && !NOT_GRIDS.has(tree.view.name(at)); at = tree.view.parent(at)) {
+    const found = tree.elements(at).find(node => heading(tree, node) && !contains(node));
+    if (found !== undefined && text(found)) return text(found)!;
+    const named = tree.attribute(at, "aria-label")?.value ?? tree.attribute(at, "id")?.value;
     if (named?.trim()) return named.trim();
   }
   return `${noun[0].toUpperCase()}${noun.slice(1)}s`;
 }
 
-function gridIn(source: string, parsed: Parsed, container: Element | ParentNode, parent: number[], context: GridContext): SourceGrid | undefined {
-  if (!(container instanceof Element) || NOT_GRIDS.has(container.localName) || !parent.length) return undefined;
-  const children = [...container.children];
-  const run = repeatedRun(children.map((child) => itemKind(child.localName, child.getAttribute("class") ?? undefined, context.isSection(child.localName))));
+function gridIn<N>(tree: SourceTree<N>, container: N, parent: number[], context: GridContext): SourceGrid | undefined {
+  if (NOT_GRIDS.has(tree.view.name(container)) || !parent.length) return undefined;
+  const children = tree.children(container);
+  const run = repeatedRun(children.map(child => itemKind(tree.view.name(child), tree.attribute(child, "class")?.value, context.isSection(tree.view.name(child)))));
   if (!run) return undefined;
   const items: SourceGrid["items"] = [];
   for (const index of run.indexes) {
-    const range = rangeIn(source, parsed, children[index]);
+    const range = tree.range(children[index]);
     if (!range) return undefined;
-    items.push({ index, range, route: itemRoute(children[index], context) });
+    items.push({ index, range, route: itemRoute(tree, children[index], context) });
   }
   const noun = itemNoun(run.kind);
-  return { parent, kind: run.kind, noun, label: gridLabel(container, noun), items, collection: collectionParent(items.map((item) => item.route)) };
+  return { parent, kind: run.kind, noun, label: gridLabel(tree, container, noun), items, collection: collectionParent(items.map(item => item.route)) };
 }
 
-/** What an instance with a card slot (at `parent`) is called: its own first heading ("Recent work"), else its tag ("Section work"). */
-export function instanceLabel(source: string, parent: number[]): string | undefined {
-  const el = childAt(parseMarked(source).root, parent);
-  if (!(el instanceof Element)) return undefined;
-  return el.querySelector(HEADING)?.textContent?.replace(/\s+/g, " ").trim() || componentLabel(el.localName);
+/** What an instance with a card slot is called: its own first heading, else its tag. */
+export function instanceLabel<N>(tree: SourceTree<N>, parent: number[]): string | undefined {
+  const el = tree.at(parent);
+  if (el === undefined) return undefined;
+  const found = tree.elements(el).find(node => heading(tree, node));
+  return (found !== undefined && plain(tree.text(found))) || componentLabel(tree.view.name(el));
 }
 
 /** The grid whose container is at `parent`, if it is one. */
-export function gridAt(source: string, parent: number[], context: GridContext): SourceGrid | undefined {
-  const parsed = parseMarked(source);
-  const container = childAt(parsed.root, parent);
-  return container ? gridIn(source, parsed, container, parent, context) : undefined;
+export function gridAt<N>(tree: SourceTree<N>, parent: number[], context: GridContext): SourceGrid | undefined {
+  const container = tree.at(parent);
+  return container === undefined ? undefined : gridIn(tree, container, parent, context);
 }
 
 /** The grid the element at `node` is an item of, with its place among the items. */
-export function gridOfItem(source: string, node: number[], context: GridContext): { grid: SourceGrid; position: number } | undefined {
+export function gridOfItem(source: string, node: number[], context: GridContext): { grid: SourceGrid; position: number } | undefined;
+export function gridOfItem<N>(tree: SourceTree<N>, node: number[], context: GridContext): { grid: SourceGrid; position: number } | undefined;
+export function gridOfItem<N>(source: string | SourceTree<N>, node: number[], context: GridContext): { grid: SourceGrid; position: number } | undefined {
+  if (typeof source === "string") return gridOfItem(readPage(source), node, context);
   if (node.length < 2) return undefined;
   const grid = gridAt(source, node.slice(0, -1), context);
-  const position = grid ? grid.items.findIndex((item) => item.index === node[node.length - 1]) : -1;
+  const position = grid ? grid.items.findIndex(item => item.index === node[node.length - 1]) : -1;
   return grid && position >= 0 ? { grid, position } : undefined;
 }
 
 /** The nearest item around the element at `node` (not the element itself): its path and grid. */
-export function itemAround(source: string, node: number[], context: GridContext): { node: number[]; grid: SourceGrid } | undefined {
-  const parsed = parseMarked(source);
+export function itemAround<N>(tree: SourceTree<N>, node: number[], context: GridContext): { node: number[]; grid: SourceGrid } | undefined {
   for (let length = node.length - 1; length >= 2; length--) {
     const item = node.slice(0, length);
-    const parent = item.slice(0, -1);
-    const container = childAt(parsed.root, parent);
-    const grid = container ? gridIn(source, parsed, container, parent, context) : undefined;
-    if (grid?.items.some((entry) => entry.index === item[item.length - 1])) return { node: item, grid };
+    const grid = gridAt(tree, item.slice(0, -1), context);
+    if (grid?.items.some(entry => entry.index === item[item.length - 1])) return { node: item, grid };
   }
   return undefined;
 }
 
 /** Every grid of a page, outermost first. */
-export function pageGrids(source: string, context: GridContext): SourceGrid[] {
-  const parsed = parseMarked(source);
+export function pageGrids<N>(tree: SourceTree<N>, context: GridContext): SourceGrid[] {
   const out: SourceGrid[] = [];
-  const visit = (el: Element, path: number[]) => {
-    const grid = gridIn(source, parsed, el, path, context);
+  const visit = (el: N, path: number[]) => {
+    const grid = gridIn(tree, el, path, context);
     if (grid) out.push(grid);
-    [...el.children].forEach((child, index) => visit(child, [...path, index]));
+    tree.children(el).forEach((child, index) => visit(child, [...path, index]));
   };
-  [...parsed.root.children].forEach((child, index) => visit(child, [index]));
+  tree.children().forEach((child, index) => visit(child, [index]));
   return out;
 }
 
@@ -171,13 +160,9 @@ export function itemElement(source: string, range: ElementRange): SourceElement 
   return tree?.length === 1 ? tree[0] : undefined;
 }
 
-/** The `<main>` of a page document (else its body content) as a source range. */
-export function mainRange(source: string): { start: number; end: number } | undefined {
-  const parsed = parseMarked(source);
-  const main = parsed.root.querySelector("main");
-  if (main?.hasAttribute(MARK)) {
-    const range = rangeIn(source, parsed, main);
-    if (range?.close) return { start: range.tag.end, end: range.close.start };
-  }
-  return undefined;
+/** The content of an explicitly closed `<main>` in the page. */
+export function mainRange<N>(tree: SourceTree<N>): { start: number; end: number } | undefined {
+  const main = tree.elements().find(node => tree.view.name(node) === "main");
+  const range = main === undefined ? undefined : tree.range(main);
+  return range?.close ? { start: range.tag.end, end: range.close.start } : undefined;
 }

@@ -9,12 +9,13 @@
 // (card-grid.ts `itemCopy`). Pure: src/page-builder/cards.ts writes the edit
 // as one undo step.
 
-import { descendants, isCardComponent, isCardNode, parseSource, sourceView, startTagAttributes, templateSlots, type SourceElement, type TemplateOf } from "./component-model";
+import { isCardComponent, isCardNode, sourceView, templateSlots, type SourceElement, type TemplateOf } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { isCardSlot } from "./rules/cards";
 import { itemsSlotRule } from "./block-insert";
 import { slotMarkup } from "../native-insert";
-import { nativeInstanceInsertEdit, nativeOutline, type GuardedSourceEdit } from "./native-operations";
+import { nativeInstanceInsertEdit, type GuardedSourceEdit } from "./native-operations";
+import type { SourceTree } from "./source-tree";
 import type { CardLook } from "./card-looks";
 
 /** An items slot of a component whose fallback is a card component: its name ("" the unnamed one) and that card's tag. */
@@ -51,21 +52,22 @@ export function freshCardMarkup(tag: string, templateOf: TemplateOf, attribute?:
  * its tag and slot; undefined when the element there has no such slot, the
  * look is no card component, or the page's HTML cannot be read exactly.
  */
-export function cardSlotAddEdit(source: string, parent: readonly number[], templateOf: TemplateOf, slot?: string, look?: Pick<CardLook, "tag" | "attribute">): { edit: GuardedSourceEdit; index: number; card: string; slot: string } | undefined {
-  let node = nativeOutline(source);
-  for (const step of parent) node = node?.children[step];
-  if (!node || !node.name.includes("-")) return undefined;
-  const slots = cardSlotOf(node.name, templateOf);
+export function cardSlotAddEdit<N>(tree: SourceTree<N>, parent: readonly number[], templateOf: TemplateOf, slot?: string, look?: Pick<CardLook, "tag" | "attribute">): { edit: GuardedSourceEdit; index: number; card: string; slot: string } | undefined {
+  const node = tree.at(parent);
+  if (node === undefined || !tree.view.name(node).includes("-")) return undefined;
+  const slots = cardSlotOf(tree.view.name(node), templateOf);
   const named = (name: string | undefined) => slots.find((entry) => entry.slot === name);
-  const kids = node.children;
-  const chosen = slot !== undefined ? named(slot) : named([...kids].reverse().find((child) => named(child.slot))?.slot) ?? slots[0];
+  const kids = tree.children(node);
+  const slotOf = (child: N) => tree.attribute(child, "slot")?.value ?? "";
+  const lastNamed = [...kids].reverse().find(child => named(slotOf(child)));
+  const chosen = slot !== undefined ? named(slot) : named(lastNamed === undefined ? undefined : slotOf(lastNamed)) ?? slots[0];
   const card = look?.tag ?? chosen?.card;
   if (!chosen || !card || (look && !isCardComponent(card, templateOf))) return undefined;
   const markup = freshCardMarkup(card, templateOf, look?.attribute);
   if (!markup) return undefined;
-  const last = kids.map((child) => child.slot).lastIndexOf(chosen.slot);
+  const last = kids.map(slotOf).lastIndexOf(chosen.slot);
   const index = last < 0 ? kids.length : last + 1;
-  const edit = nativeInstanceInsertEdit(source, parent, index, markup, itemsSlotRule(templateOf), chosen.slot);
+  const edit = nativeInstanceInsertEdit(tree.source, parent, index, markup, itemsSlotRule(templateOf), chosen.slot);
   return edit ? { edit, index, card, slot: chosen.slot } : undefined;
 }
 
@@ -75,21 +77,16 @@ export function cardSlotAddEdit(source: string, parent: readonly number[], templ
  * order. Only the card's own slot counts, so two lists of one instance stay
  * apart (ticket 09 §2, "In this grid").
  */
-export function slotCardLinks(source: string, card: readonly number[], route: (href: string) => string | undefined): string[] {
-  const kids = (element: SourceElement) => element.children.filter((node): node is SourceElement => node.type === "element");
-  const attribute = (element: SourceElement, name: string) => {
-    const value = startTagAttributes(source, element.tag).find((entry) => entry.name === name)?.value;
-    return value === undefined ? undefined : decodeHtmlEntities(value, true);
-  };
-  let parent = [...descendants(parseSource(source))].find((element) => element.name === "body");
-  for (const step of card.slice(0, -1)) parent = parent && kids(parent)[step];
-  const siblings = parent ? kids(parent) : [];
+export function slotCardLinks<N>(tree: SourceTree<N>, card: readonly number[], route: (href: string) => string | undefined): string[] {
+  const parent = tree.at(card.slice(0, -1));
+  if (card.length > 1 && parent === undefined) return [];
+  const siblings = tree.children(parent);
   const own = siblings[card[card.length - 1]];
-  if (!own) return [];
-  const slot = attribute(own, "slot") ?? "";
-  return siblings.flatMap((sibling) => sibling === own || (attribute(sibling, "slot") ?? "") !== slot ? [] :
-    [sibling, ...descendants(sibling.children)].flatMap((element) => {
-      const href = element.name === "a" ? attribute(element, "href") : undefined;
+  if (own === undefined) return [];
+  const slotOf = (node: N) => tree.attribute(node, "slot")?.value ?? "";
+  return siblings.flatMap(sibling => sibling === own || slotOf(sibling) !== slotOf(own) ? [] :
+    [sibling, ...tree.elements(sibling)].flatMap(element => {
+      const href = tree.view.name(element) === "a" ? tree.attribute(element, "href")?.value : undefined;
       const page = href === undefined ? undefined : route(href);
       return page ? [page] : [];
     }));

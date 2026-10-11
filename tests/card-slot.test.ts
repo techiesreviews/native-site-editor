@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { cardSlotAddEdit, cardSlotOf, freshCardMarkup, slotCardLinks } from "../src/page-builder/card-slot.ts";
 import { applyGuardedSourceEdit, nativeInstanceInsertEdit } from "../src/page-builder/native-operations.ts";
 
+import { readSource } from "../src/page-builder/source-tree.ts";
+
+const tree = (source: string) => readSource(source, { page: true });
+
 const templates: Record<string, string> = {
   "card-project": '<article>\n  <card-note><slot name="note" slot="text"><p>Project</p></slot></card-note>\n  <slot name="title"><h3>Untitled project</h3></slot>\n  <slot name="body"><p class="body">No description yet.</p></slot>\n  <slot></slot>\n  <p class="actions"><slot name="link"></slot></p>\n</article>\n',
   "card-note": '<p class="note"><slot name="text">Note</slot></p>',
@@ -42,7 +46,7 @@ test("a card slot is an items slot whose fallback is a card component; plain and
 
 test("Add card takes the card from the slot's fallback, after the last item, with 0, 1 and many items", () => {
   const added = (source: string) => {
-    const result = cardSlotAddEdit(source, [0, 0], templateOf);
+    const result = cardSlotAddEdit(tree(source), [0, 0], templateOf);
     assert.ok(result);
     return { next: applyGuardedSourceEdit(source, result.edit)!, index: result.index, card: result.card };
   };
@@ -67,18 +71,18 @@ test("Add card takes the card from the slot's fallback, after the last item, wit
 
 test("a named card slot gets the card with its slot attribute, after that slot's last item, not other slots' children", () => {
   const source = page('<section-pair><h2 slot="title">Pair</h2><card-quote slot="quotes"></card-quote><p slot="notes">x</p></section-pair>');
-  const result = cardSlotAddEdit(source, [0, 0], templateOf);
+  const result = cardSlotAddEdit(tree(source), [0, 0], templateOf);
   assert.ok(result);
   assert.equal(result.index, 2);
   assert.match(applyGuardedSourceEdit(source, result.edit)!, /<card-quote slot="quotes"><\/card-quote><card-quote slot="quotes">\s*<p slot="quote">A kind word\.<\/p>\s*<span slot="who">Someone<\/span>\s*<\/card-quote>\s*<p slot="notes">/);
-  assert.equal(cardSlotAddEdit(source, [0, 0], templateOf, "notes"), undefined);
-  assert.equal(cardSlotAddEdit(source, [0, 0], templateOf, "quotes")?.index, 2);
+  assert.equal(cardSlotAddEdit(tree(source), [0, 0], templateOf, "notes"), undefined);
+  assert.equal(cardSlotAddEdit(tree(source), [0, 0], templateOf, "quotes")?.index, 2);
 });
 
 test("Add card as… a look: another card component or a variant, in the same slot, after its last item", () => {
   const source = work(card("A"));
   const as = (look: Parameters<typeof cardSlotAddEdit>[4]) => {
-    const result = cardSlotAddEdit(source, [0, 0], templateOf, undefined, look);
+    const result = cardSlotAddEdit(tree(source), [0, 0], templateOf, undefined, look);
     return result && { next: applyGuardedSourceEdit(source, result.edit), card: result.card, index: result.index };
   };
   const quote = as({ tag: "card-quote" });
@@ -88,7 +92,7 @@ test("Add card as… a look: another card component or a variant, in the same sl
   assert.match(as({ tag: "card-project", attribute: { name: "data-layout", value: "centered" } })?.next ?? "", /<card-project data-layout="centered">\n {8}<p slot="note">Project<\/p>/);
   // A named slot keeps its slot attribute after the variant.
   const pair = page('<section-pair><card-quote slot="quotes"></card-quote></section-pair>');
-  const named = cardSlotAddEdit(pair, [0, 0], templateOf, "quotes", { tag: "card-project", attribute: { name: "data-layout", value: "wide" } });
+  const named = cardSlotAddEdit(tree(pair), [0, 0], templateOf, "quotes", { tag: "card-project", attribute: { name: "data-layout", value: "wide" } });
   assert.match(applyGuardedSourceEdit(pair, named!.edit)!, /<card-project data-layout="wide" slot="quotes">/);
   // Not a card component (no heading slot, not card-…, unknown): nothing.
   assert.equal(as({ tag: "card-note" }), undefined);
@@ -101,14 +105,14 @@ test("a fresh card's variant: bare, or its value quoted and escaped", () => {
   assert.match(freshCardMarkup("card-quote", templateOf, { name: "data-tilt", value: 'a"b' })!, /^<card-quote data-tilt="a&quot;b">\n/);
   // Angle brackets too, so the instance insert takes it.
   const source = work();
-  const result = cardSlotAddEdit(source, [0, 0], templateOf, undefined, { tag: "card-project", attribute: { name: "data-label", value: "a<b>&c" } });
+  const result = cardSlotAddEdit(tree(source), [0, 0], templateOf, undefined, { tag: "card-project", attribute: { name: "data-label", value: "a<b>&c" } });
   assert.match(applyGuardedSourceEdit(source, result!.edit)!, /<card-project data-label="a&lt;b&gt;&amp;c">/);
 });
 
 test("no card slot, no card: plain grids and other elements keep today's copy", () => {
-  assert.equal(cardSlotAddEdit(page('<section-plain><article class="card"><h3>A</h3></article><article class="card"><h3>B</h3></article></section-plain>'), [0, 0], templateOf), undefined);
-  assert.equal(cardSlotAddEdit(page('<div class="cards">' + card("A") + card("B") + "</div>"), [0, 0], templateOf), undefined);
-  assert.equal(cardSlotAddEdit(work(), [0, 5], templateOf), undefined);
+  assert.equal(cardSlotAddEdit(tree(page('<section-plain><article class="card"><h3>A</h3></article><article class="card"><h3>B</h3></article></section-plain>')), [0, 0], templateOf), undefined);
+  assert.equal(cardSlotAddEdit(tree(page('<div class="cards">' + card("A") + card("B") + "</div>")), [0, 0], templateOf), undefined);
+  assert.equal(cardSlotAddEdit(tree(work()), [0, 5], templateOf), undefined);
 });
 
 test("an instance insert takes one bare instance of plain markup, and opens an instance only at an items slot", () => {
@@ -128,7 +132,7 @@ test("an instance insert takes one bare instance of plain markup, and opens an i
 
 test("an image fallback is copied as written, a srcset included", () => {
   const source = page("<section-photos></section-photos>");
-  const result = cardSlotAddEdit(source, [0, 0], templateOf);
+  const result = cardSlotAddEdit(tree(source), [0, 0], templateOf);
   assert.ok(result);
   assert.equal(applyGuardedSourceEdit(source, result.edit), page('<section-photos>\n      <card-photo slot="photos">\n        <img slot="image" src="/a.jpg" srcset="/a.jpg 1x, /a@2x.jpg 2x" alt="">\n        <h3 slot="title">Photo</h3>\n      </card-photo>\n    </section-photos>'));
 });
@@ -139,8 +143,39 @@ test("the pages a fresh card's slot already links to: its own slot's other cards
   const linked = (title: string, href: string, slot = "") => `<card-project${slot ? ` slot="${slot}"` : ""}>\n        <h3 slot="title">${title}</h3>\n        <a slot="link" href="${href}">Read</a>\n      </card-project>`;
   const source = page(`<section-pair>\n      <h2 slot="title"><a href="/work/b/">Two</a></h2>\n      ${linked("A", "/work/a/")}\n      ${linked("About", "/about/")}\n      ${linked("B", "/work/b/", "quotes")}\n      ${linked("Off", "https://example.com/")}\n      ${linked("New", "/work/a/")}\n    </section-pair>`);
   // The unnamed slot's cards: a top-level page counts too, other slots and links off the site do not.
-  assert.deepEqual(slotCardLinks(source, [0, 0, 5], route), ["/work/a/", "/about/"]);
+  assert.deepEqual(slotCardLinks(tree(source), [0, 0, 5], route), ["/work/a/", "/about/"]);
   // In the named slot, only its own (here none but the card).
-  assert.deepEqual(slotCardLinks(source, [0, 0, 3], route), []);
-  assert.deepEqual(slotCardLinks(source, [0, 0, 9], route), []);
+  assert.deepEqual(slotCardLinks(tree(source), [0, 0, 3], route), []);
+  assert.deepEqual(slotCardLinks(tree(source), [0, 0, 9], route), []);
+});
+
+test("slot links use preview indexes when scripts sit among cards", () => {
+  const linked = (slot: string, href: string) => `<card-project slot="${slot}"><a href="${href}">Read</a></card-project>`;
+  const source = page(`<section-pair>${linked("quotes", "/quotes/a/")}<script>ignored()</script>${linked("notes", "/notes/a/")}${linked("quotes", "/quotes/b/")}${linked("notes", "/notes/b/")}</section-pair>`);
+  assert.deepEqual(slotCardLinks(tree(source), [0, 0, 1], href => href), ["/notes/b/"]);
+  assert.deepEqual(slotCardLinks(tree(source), [0, 0, 0], href => href), ["/quotes/b/"]);
+});
+
+test("slot links decode a link address exactly once", () => {
+  const source = work('<a href="/caf&amp;eacute;/">Read</a>', card("New"));
+  assert.deepEqual(slotCardLinks(tree(source), [0, 0, 2], href => href), ["/caf&eacute;/"]);
+});
+
+test("card insertion and slot links work without an explicit body tag, including top-level siblings", () => {
+  const source = '<section-work><card-project><a href="/work/a/">A</a></card-project><card-project></card-project></section-work>';
+  const added = cardSlotAddEdit(tree(source), [0], templateOf);
+  assert.ok(added);
+  assert.equal(added.index, 2);
+  assert.match(applyGuardedSourceEdit(source, added.edit)!, /<h3 slot="title">Untitled project<\/h3>/);
+  assert.deepEqual(slotCardLinks(tree(source), [0, 1], href => href), ["/work/a/"]);
+  assert.deepEqual(slotCardLinks(tree('<a href="/work/a/">A</a><card-project></card-project>'), [1], href => href), ["/work/a/"]);
+});
+
+test("card insertion keeps the strict writer's refusal on implied end tags", () => {
+  const source = work('<p>Unclosed', card("A"));
+  assert.equal(cardSlotAddEdit(tree(source), [0, 0], templateOf), undefined);
+});
+
+test("a missing parent path does not fall back to top-level slot links", () => {
+  assert.deepEqual(slotCardLinks(tree('<a href="/work/a/">A</a><card-project></card-project>'), [9, 1], href => href), []);
 });

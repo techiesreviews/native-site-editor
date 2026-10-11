@@ -17,19 +17,25 @@ import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead,
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit } from "../native-structure";
-import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
+import { elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
 import { cardFill, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
-import { locateNativeElementRange } from "../native-source-location";
+import { readPage } from "../native-source-location";
 import type { CardLook } from "./card-looks";
 import type { CardContent } from "./card-swap";
 import type { VariantFiles } from "../../shared/variant-lookup";
-import { decodeHtmlEntities } from "./html-entities";
 import type { GuardedEdits, Outcome, Planned, Reads } from "../guarded-edit";
-import { isSectionTemplate, startTagAttribute } from "../../shared/html-source";
+import { isSectionTemplate } from "../../shared/html-source";
+import type { SourceTree } from "./source-tree";
 import { nativeLinkTarget } from "../../shared/native-routes";
+
+/** The range at a preview path, if the element has an exact source range. */
+function rangeAt<N>(tree: SourceTree<N>, path: readonly number[]) {
+  const node = tree.at(path);
+  return node === undefined ? undefined : tree.range(node);
+}
 
 interface RangeEdit {
   start: number;
@@ -149,13 +155,13 @@ export function createCards(deps: CardsDeps) {
     const source = reads.source(path), route = routeOf(reads, path);
     if (source === undefined || !route) return undefined;
     if (reads !== deps.edits.peek) {
-      const grid = gridAt(source, parent, context(reads, route));
+      const grid = gridAt(readPage(source), parent, context(reads, route));
       return grid ? { source, grid } : undefined;
     }
     const key = `${path}|${parent.join(".")}`;
     let entry = cache.get(key);
     if (!entry || entry.source !== source) {
-      entry = { source, grid: gridAt(source, parent, context(reads, route)) };
+      entry = { source, grid: gridAt(readPage(source), parent, context(reads, route)) };
       cache.set(key, entry);
       if (cache.size > 40) cache.delete(cache.keys().next().value!);
     }
@@ -211,7 +217,7 @@ export function createCards(deps: CardsDeps) {
     const sibling = reads.source(site.routes[from.route])!;
     const other = linked.slice(0, -1).at(-1);
     const otherSource = other?.route ? reads.source(site.routes[other.route]) : undefined;
-    const range = (text: string) => mainRange(text) ?? nativePageBody(text);
+    const range = (text: string) => mainRange(readPage(text)) ?? nativePageBody(text);
     const otherLeaves = otherSource ? leafSummary(otherSource, range(otherSource)) : undefined;
     const oldTitle = from.title || firstHeadingText(sibling);
     const body = pageBodyCopy(sibling, range(sibling), otherLeaves, {
@@ -233,8 +239,9 @@ export function createCards(deps: CardsDeps) {
   /** Add card on an instance's card slot (card-slot.ts): the fresh card's edit, and what the slot is called, while its page's text and the templates read are the same. */
   let slotCache: { key: string; source: string; templates: Map<string, string | undefined>; add: ReturnType<typeof slotAdd> } | undefined;
   function slotAdd(source: string, parent: number[], slot: string, templateOf: (tag: string) => string | undefined, look?: CardLook) {
-    const add = cardSlotAddEdit(source, parent, templateOf, slot, look);
-    return add && { ...add, noun: itemNoun(add.card), label: instanceLabel(source, parent) ?? "" };
+    const tree = readPage(source);
+    const add = cardSlotAddEdit(tree, parent, templateOf, slot, look);
+    return add && { ...add, noun: itemNoun(add.card), label: instanceLabel(tree, parent) ?? "" };
   }
   function slotAddFor(path: string, parent: number[], slot: string) {
     const reads = deps.edits.peek;
@@ -283,8 +290,10 @@ export function createCards(deps: CardsDeps) {
       const found = gridFor(reads, path, parent);
       const route = routeOf(reads, path);
       const last = found?.grid.items.at(-1);
-      const lastSlot = last && startTagAttribute(found!.source, last.range.tag, "slot")?.value;
-      const slotName = slot ?? decodeHtmlEntities(lastSlot ?? "", true);
+      const tree = before === undefined ? undefined : readPage(before);
+      const lastNode = last && tree?.at([...parent, last.index]);
+      const lastSlot = tree && lastNode !== undefined ? tree.attribute(lastNode, "slot")?.value : undefined;
+      const slotName = slot ?? lastSlot ?? "";
       const fresh = route && before !== undefined && slotAdd(before, parent, slotName, tag => template(reads, tag), look);
       if (fresh) {
         result = { path, node: [...parent, fresh.index] };
@@ -327,7 +336,7 @@ export function createCards(deps: CardsDeps) {
       folder: grid && pageParent(reads, grid),
       exists: path => reads.exists(path),
       own: card.path,
-      inGrid: slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, site.routes)),
+      inGrid: slotCardLinks(readPage(source), card.node, (href) => nativeLinkTarget(href, route, site.routes)),
       pages: Object.entries(site.routes).map(([route, file]) => ({ route, file, title: pageTitle(reads.source(file) ?? "", route).title })),
     };
   }
@@ -336,7 +345,7 @@ export function createCards(deps: CardsDeps) {
   function cardText(card: NewCard): string | undefined {
     const reads = deps.edits.peek;
     const source = reads.source(card.path);
-    const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+    const range = source === undefined ? undefined : rangeAt(readPage(source), card.node);
     return range && source!.slice(range.start, range.end);
   }
 
@@ -349,7 +358,7 @@ export function createCards(deps: CardsDeps) {
     let result: CardSwapped | undefined;
     const outcome = await deps.edits.run(async reads => {
       const source = reads.source(card.path);
-      const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+      const range = source === undefined ? undefined : rangeAt(readPage(source), card.node);
       const before = range && source!.slice(range.start, range.end);
       const tag = before && tagOf(before);
       const own = tag ? template(reads, tag) : undefined;
@@ -369,7 +378,7 @@ export function createCards(deps: CardsDeps) {
   /** Build both existing-page and new-page fills directly from the page's text. */
   function fillFrom(reads: Reads, card: NewCard, route: string, page: string) {
     const source = reads.source(card.path);
-    const range = source === undefined ? undefined : locateNativeElementRange(source, card.node);
+    const range = source === undefined ? undefined : rangeAt(readPage(source), card.node);
     const element = range && itemElement(source!, range);
     if (!element || !range || source === undefined) return undefined;
     const tag = element.name;
@@ -436,24 +445,27 @@ export function createCards(deps: CardsDeps) {
       const element = itemElement(source, range);
       return element && itemTitle(source, element);
     };
-    const parentRange = locateNativeElementRange(source, card.node.slice(0, -1));
-    const children = (parentRange && itemElement(source, parentRange))?.children ?? [];
+    const tree = readPage(source);
+    const parent = tree.at(card.node.slice(0, -1));
+    // `at` is undefined for the top level and for a path not there.
+    const children = card.node.length > 1 && parent === undefined ? [] : tree.children(parent);
     const own = card.node.at(-1)!;
     // Only the card's own slot counts: an instance's two card slots are two lists.
-    const slotOf = (element: (typeof children)[number] | undefined) => element && decodeHtmlEntities(startTagAttribute(source, element.tag, "slot")?.value ?? "", true);
+    const slotOf = (element: (typeof children)[number] | undefined) => element === undefined ? undefined : tree.attribute(element, "slot")?.value ?? "";
     const sameSlot = (at: number) => at !== own && slotOf(children[at]) === slotOf(children[own]);
     const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
     const items = grid?.items.filter((item) => sameSlot(item.index));
     if (items?.some((item) => item.route)) return items.map((item) => ({ route: item.route, title: titled(item.range) }));
-    const links = slotCardLinks(source, card.node, (href) => nativeLinkTarget(href, route, routes));
+    const links = slotCardLinks(tree, card.node, (href) => nativeLinkTarget(href, route, routes));
     const folder = cardFolder(links);
     const peers = children.filter((_, at) => sameSlot(at));
     return links.filter((link) => !folder || (link !== folder && link.startsWith(folder))).map((link) => {
-      const item = [...peers].reverse().find((child) => allElements([child]).some((element) => {
-        const href = element.name === "a" && startTagAttribute(source, element.tag, "href")?.value;
-        return href && nativeLinkTarget(decodeHtmlEntities(href, true), route, routes) === link;
+      const item = [...peers].reverse().find(child => [child, ...tree.elements(child)].some(element => {
+        const href = tree.view.name(element) === "a" ? tree.attribute(element, "href")?.value : undefined;
+        return href !== undefined && nativeLinkTarget(href, route, routes) === link;
       }));
-      return { route: link, title: item && itemTitle(source, item) };
+      const range = item === undefined ? undefined : tree.range(item);
+      return { route: link, title: range && titled(range) };
     });
   }
 
@@ -503,9 +515,10 @@ export function createCards(deps: CardsDeps) {
       return [selectItem(about.noun, grid.path, [...grid.parent, grid.index])];
     }
     if (!node) return [];
-    const own = gridOfItem(source, node, context(reads, route));
+    const tree = readPage(source);
+    const own = gridOfItem(tree, node, context(reads, route));
     if (!own) {
-      const around = itemAround(source, node, context(reads, route));
+      const around = itemAround(tree, node, context(reads, route));
       return around ? [selectItem(around.grid.noun, selection.path, around.node)] : [];
     }
     const { grid, position } = own;
@@ -517,7 +530,7 @@ export function createCards(deps: CardsDeps) {
       if (!deps.editable(path)) return false;
       const outcome = deps.edits.now(reads => {
         // The item is still one of this grid's (section-ness comes from templates, read through `r`).
-        if (reads.source(path) !== source || gridOfItem(source, node, context(reads, route))?.grid.parent.join(".") !== grid.parent.join("."))
+        if (reads.source(path) !== source || gridOfItem(tree, node, context(reads, route))?.grid.parent.join(".") !== grid.parent.join("."))
           return { refuse: "The source changed. Select the element again and try again." };
         return { edits: new Map([[path, edits]]), select: { before: { path, node }, after: next ? { path, node: next } : undefined }, done, undone };
       }, { anchor: path, since });
@@ -531,7 +544,7 @@ export function createCards(deps: CardsDeps) {
         label: "Remove",
         // Every Remove uses the same sibling/parent selection rule.
         onPress: () => change([removeEdit(source, item.range)],
-          selectionAfterRemove(node, Boolean(locateNativeElementRange(source, [...node.slice(0, -1), node.at(-1)! + 1]))), `${noun} removed`, `Undid removing the ${grid.noun}.`),
+          selectionAfterRemove(node, Boolean(rangeAt(tree, [...node.slice(0, -1), node.at(-1)! + 1]))), `${noun} removed`, `Undid removing the ${grid.noun}.`),
       },
       {
         kind: "button",
@@ -568,7 +581,7 @@ export function createCards(deps: CardsDeps) {
     for (const [route, file] of Object.entries(site.routes)) {
       const source = reads.source(file);
       if (source === undefined) continue;
-      const grid = pageGrids(source, context(reads, route)).find((item) => item.collection === parent);
+      const grid = pageGrids(readPage(source), context(reads, route)).find((item) => item.collection === parent);
       if (grid) return { file, route, source, grid };
     }
     return undefined;
@@ -642,7 +655,7 @@ export function createCards(deps: CardsDeps) {
         const source = reads.source(file);
         if (source === undefined) continue;
         const removals: RangeEdit[] = [];
-        for (const grid of pageGrids(source, context(reads, pageRoute))) {
+        for (const grid of pageGrids(readPage(source), context(reads, pageRoute))) {
           if (!grid.collection) continue;
           for (const item of grid.items) {
             if (item.route !== route) continue;
