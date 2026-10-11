@@ -41,8 +41,6 @@ export interface SourceFile {
   scope?: DraftScope;
   baseSha?: string | null;
   onPublished?: (result: PublishResult, submitted: SavedDraft[]) => void;
-  /** Native save UI shows "Saving…" progress instead of "Publishing…" in the publish menu. */
-  saveLabels?: boolean;
   onDiscardNew?: () => void;
   onContextChange?: (
     file: EditorContext["file"],
@@ -790,7 +788,6 @@ export function mountSourceEditor(
       ? createPublishMenu({
           scope: file.scope,
           currentPath: file.path,
-          saveLabels: file.saveLabels,
           onDiscardAll: file.onDiscardAll,
           onDiscardChange: file.onDiscardChange,
           deletedUpstream: file.deletedUpstream,

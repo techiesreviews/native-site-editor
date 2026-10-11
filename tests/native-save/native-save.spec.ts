@@ -257,9 +257,9 @@ test("typing while a slow save is in flight keeps the newer draft", async ({ pag
   await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "In-flight base"));
   await openSaveMenu(page);
   await saveSubmit(page).click();
-  await expect(page.locator(".publish-menu__message")).toContainText("Saving to GitHub", { timeout: 5_000 });
-  // The disabled button names the progress, then that it saved.
-  await expect(page.locator(".publish-menu__trigger")).toContainText("Saving…");
+  await expect(page.locator(".publish-menu__message")).toContainText("Publishing to GitHub", { timeout: 5_000 });
+  // The disabled button names the progress, then that it published.
+  await expect(page.locator(".publish-menu__trigger")).toContainText("Publishing…");
   await expect(page.locator(".publish-menu__trigger")).toBeDisabled();
   await expect(page.locator("#publish-files").getByRole("button", { name: "Discard changes", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "More publish actions", exact: true })).toBeEnabled();

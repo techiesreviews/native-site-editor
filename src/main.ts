@@ -4376,7 +4376,6 @@ async function mountSource(
     key: draftKey(scope, path),
     scope,
     baseSha: baseSha,
-    saveLabels: nativeEngaged,
     onPublished: (result, submitted) => savePublish.published(saveProof, scope, result, submitted),
     onDiscardNew: () => {
       // A discarded page no longer routes; the site shows the page's parent

@@ -43,8 +43,6 @@ export function createPublishMenu(options: {
   currentPath: string;
   onPublished: (result: PublishResult, submitted: SavedDraft[]) => void;
   onExpired: () => void;
-  /** Native projects word the progress as saving to GitHub. */
-  saveLabels?: boolean;
   /** Asks to discard every draft of the branch. */
   onDiscardAll?: () => void;
   /** Restores a deletion or moves a renamed file back (the caller also puts back what went with it). */
@@ -62,7 +60,7 @@ export function createPublishMenu(options: {
 }) {
   const drafts = options.drafts ?? (() => draftStore().list(options.scope));
   // Publish commits the selected changes to the branch in one go; hovering it shows them.
-  const pendingText = options.saveLabels ? "Saving to GitHub…" : "Publishing to GitHub…";
+  const pendingText = "Publishing to GitHub…";
   const root = node("div", "publish-menu");
   const panel = node("div", "publish-menu__panel");
   panel.id = "publish-files";
@@ -358,12 +356,12 @@ export function createPublishMenu(options: {
     list.querySelectorAll("input").forEach(input => input.disabled = true);
     message.textContent = pendingText;
     showingDeploy = false;
-    showProgress(options.saveLabels ? "Saving…" : "Publishing…");
+    showProgress("Publishing…");
     // Uploaded files go up first; the button says so, then goes back to saving.
     const upload = async (blob: Blob, sha: string) => {
       showProgress("Uploading…");
       try { return await postUpload(options.scope.repo, blob, sha); }
-      finally { showProgress(options.saveLabels ? "Saving…" : "Publishing…"); }
+      finally { showProgress("Publishing…"); }
     };
     // One commit of `files` on top of `base`; resolves to nothing when the
     // session expired or GitHub changed files (said in the menu).
