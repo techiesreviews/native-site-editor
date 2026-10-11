@@ -25,6 +25,23 @@ The colouring of a page band (a section, the header or the footer): light, dark,
 **Block**:
 A plain HTML element the user adds to a page by dragging it in: a section, a div, an image, a heading, a paragraph or a button. Blocks are styled by the site's own classes; turning built blocks into a component is done with Make component.
 
+**Media file**:
+A file a page shows or links to that is not a page, style or script: an image, a video, an audio file, a PDF or another download.
+_Avoid_: asset (in user-facing text)
+
+**Media manager**:
+The one place in the editor where a site's media files are found, added, optimised, placed, replaced and tidied up.
+_Avoid_: Images tab, image library
+
+**Optimise**:
+Making a media file smaller in the user's own browser while it is being added, before it reaches the site.
+
+**Responsive copy**:
+A smaller copy of an image, made when it is added, so each visitor's browser can load the size that fits their screen.
+
+**Focus point**:
+The spot in an image that must stay visible when the image is trimmed to fit its place. It is set for each place the image is used, not for the file.
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
