@@ -317,3 +317,16 @@ test("a title matched inside a reference keeps what the rest of that reference s
   const tree = readSource("<article><h3>\u2242</h3><a>&NotEqualTilde; here</a></article>");
   assert.equal(itemCopy(tree, tree.at([0])!, { noun: "card", title: "X" }), "<article><h3>X</h3><a>X\u0338 here</a></article>");
 });
+
+test("slots named like object properties are names, not inherited values", () => {
+  const { fallbacks } = slotFallbacks('<slot name="constructor">Heading</slot><slot name="__proto__">Proto</slot>');
+  assert.equal(Object.getPrototypeOf(fallbacks), Object.prototype);
+  assert.deepEqual(Object.entries(fallbacks), [["constructor", "Heading"], ["__proto__", "Proto"]]);
+  const tree = readSource('<card-x><h3 slot="constructor">Old</h3><p slot="toString">Old</p></card-x>');
+  assert.equal(itemCopy(tree, tree.at([0])!, { noun: "card", fallbacks }), '<card-x><h3 slot="constructor">Heading</h3><p slot="toString">A sentence or two about this card.</p></card-x>');
+});
+
+test("two title matches inside one reference are not edited twice", () => {
+  const tree = readSource("<article><h3>jf</h3><a>j&fjlig;f tail</a></article>");
+  assert.equal(itemCopy(tree, tree.at([0])!, { noun: "card", title: "X" }), "<article><h3>X</h3><a>Xjf tail</a></article>");
+});

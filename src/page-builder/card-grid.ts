@@ -160,9 +160,12 @@ function withTitle(tree: SourceTree<SourceNode>, leaf: SourceElement, from: stri
     const source = tree.source.slice(node.start, node.end);
     // The tree drops a pre/listing's first newline; the mapper reads the whole source run.
     const omitted = decoded(source).length - text.length;
+    let done = 0;
     for (let at = text.indexOf(from); at >= 0; at = text.indexOf(from, at + from.length)) {
       const span = textRangeInSource(source, at + omitted, at + omitted + from.length, from, decodeHtmlEntity);
-      if (!span) continue;
+      // A match sharing a reference with the one before it (`j&fjlig;f`) stays as written.
+      if (!span || span.start < done) continue;
+      done = span.end;
       // A reference that decodes to more than the match (`&NotEqualTilde;`) keeps the rest of what it says.
       const written = decoded(source.slice(span.start, span.end));
       const head = at + omitted - decoded(source.slice(0, span.start)).length;
@@ -200,7 +203,7 @@ export function itemCopy(tree: SourceTree<SourceNode>, item: SourceNode, options
   const oldTitle = titleAt ? plain(tree.text(titleAt)) : undefined;
   const slotOf = (leaf: SourceNode) => tree.attribute(leaf, "slot")?.value;
   const titleText = options.title?.trim()
-    || (titleAt && slotOf(titleAt) && options.fallbacks?.[slotOf(titleAt)!])
+    || (titleAt && fallbackFor(options.fallbacks, slotOf(titleAt)))
     || `New ${options.noun}`;
   const edits: Edit[] = [];
   for (const leaf of leaves) {
@@ -217,8 +220,8 @@ export function itemCopy(tree: SourceTree<SourceNode>, item: SourceNode, options
       continue;
     } else if (options.keepText) {
       continue;
-    } else if (slot && options.fallbacks?.[slot]) {
-      text = escapeText(options.fallbacks[slot]);
+    } else if (fallbackFor(options.fallbacks, slot)) {
+      text = escapeText(fallbackFor(options.fallbacks, slot)!);
     } else {
       text = escapeText(placeholderFor(tree.view.name(leaf), options.noun));
     }
@@ -391,14 +394,20 @@ export function leafSummary<N>(tree: SourceTree<N>): { name: string; text: strin
  * slot's fallback included), the first non-empty one per name.
  */
 export function slotFallbacks(template: string): { fallbacks: Record<string, string> } {
-  const fallbacks: Record<string, string> = {};
+  const fallbacks = new Map<string, string>();
   const tree = readSource(template);
   for (const slot of tree.elements()) {
     if (tree.view.name(slot) !== "slot") continue;
     const name = tree.attribute(slot, "name")?.value;
-    if (!name || name in fallbacks) continue;
+    if (!name || fallbacks.has(name)) continue;
     const text = plain(tree.text(slot));
-    if (text) fallbacks[name] = text;
+    if (text) fallbacks.set(name, text);
   }
-  return { fallbacks };
+  // Own properties only (fromEntries), so a slot named `__proto__` or `constructor` is just a name.
+  return { fallbacks: Object.fromEntries(fallbacks) };
+}
+
+/** A slot's fallback text, never an inherited property (`constructor`). */
+export function fallbackFor(fallbacks: Record<string, string> | undefined, slot: string | undefined): string | undefined {
+  return fallbacks && slot && Object.hasOwn(fallbacks, slot) ? fallbacks[slot] : undefined;
 }
