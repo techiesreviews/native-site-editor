@@ -86,3 +86,4 @@ One module in `shared/` answers which Variants a tag (or `.btn`) has on the site
 | Slice | Size | Builder | Blocked by |
 | --- | --- | --- | --- |
 | [50 One Variant lookup for the editor and the Worker](tickets/50-one-variant-lookup.md) | M | claude ★ | – |
+| [51 Page-band tags and reserved custom-element names live once in rules/](tickets/51-band-and-reserved-name-rules.md) | S | sol | 28 |
