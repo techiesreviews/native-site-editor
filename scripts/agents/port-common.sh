@@ -21,6 +21,11 @@ for p in "${ports[@]}"; do
   [[ " ${pool[*]} " == *" $p "* ]] || { echo "port: ASE_PORTS port $p is outside pool (${pool[*]})" >&2; exit 2; }
 done
 next_status=0
+# Test-only overrides keep isolated allocation tests independent of host resources.
+min_mem=${ASE_MIN_MEM_KB:-4194304}
+port_poll=${ASE_PORT_POLL:-15}
+[[ $min_mem =~ ^[0-9]+$ ]] || { echo "Invalid ASE_MIN_MEM_KB: $min_mem" >&2; exit 2; }
+[[ $port_poll =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "Invalid ASE_PORT_POLL: $port_poll" >&2; exit 2; }
 
 slot_listeners() {
   slot_busy=
@@ -61,7 +66,9 @@ resource_wait() {
   avail=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
   read -r load _ < /proc/loadavg
   wait_reason=
-  if (( avail < 4194304 )); then wait_reason="memory ${avail} KiB < 4194304 KiB"; fi
+  if awk -v avail="$avail" -v min="$min_mem" 'BEGIN {exit !(avail < min)}'; then
+    wait_reason="memory ${avail} KiB < $min_mem KiB"
+  fi
   if awk -v load="$load" -v max="$max_load" 'BEGIN {exit !(load > max)}'; then
     wait_reason+="${wait_reason:+; }load $load > $max_load"
   fi

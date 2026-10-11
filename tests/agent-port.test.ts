@@ -37,7 +37,7 @@ async function fixture(t: TestContext) {
     } catch { /* Try another ephemeral port if its neighbour is occupied. */ }
     await close(first.server);
   }
-  const env = { ...process.env, ASE_POOL: slots.join(" "), ASE_PORTS: slots.join(" "), ASE_LOCK_DIR: dir, ASE_MAX_LOAD: "1000000" };
+  const env = { ...process.env, ASE_POOL: slots.join(" "), ASE_PORTS: slots.join(" "), ASE_LOCK_DIR: dir, ASE_MAX_LOAD: "1000000", ASE_MIN_MEM_KB: "0", ASE_PORT_POLL: "0.01" };
   const run = (...args: string[]) => exec("bash", [script, ...args], { env, timeout: 3_000 });
   return { dir, slots, env, run };
 }
@@ -71,6 +71,52 @@ test("port rejects ASE_PORTS outside the pool", async (t) => {
     return true;
   });
 });
+
+for (const gate of ["memory", "load"]) {
+  test(`port waits for ${gate}, then retries with the test-only poll delay`, async (t) => {
+    const { dir, slots, env } = await fixture(t);
+    const memory = join(dir, "memory");
+    const load = join(dir, "load");
+    await writeFile(memory, gate === "memory" ? "99\n" : "100\n");
+    await writeFile(load, gate === "load" ? "2\n" : "0\n");
+    // Stub only resource readings; comparisons and allocation use the real tools.
+    await writeFile(join(dir, "awk"), `#!/usr/bin/env bash
+if [[ \${!#} == /proc/meminfo ]]; then cat "$ASE_MEMORY_FILE"; exit; fi
+args=("$@")
+for (( i=0; i<\${#args[@]}; i++ )); do
+  if [[ \${args[i]} == load=* ]]; then args[i]="load=$(cat "$ASE_LOAD_FILE")"; fi
+done
+exec /usr/bin/awk "\${args[@]}"
+`, { mode: 0o755 });
+    const runner = spawn("bash", [script, process.execPath, "-e", "console.log(process.env.ASE_TEST_PORT)"], {
+      env: { ...env, PATH: `${dir}:${process.env.PATH}`, ASE_MIN_MEM_KB: "100", ASE_MAX_LOAD: "1", ASE_MEMORY_FILE: memory, ASE_LOAD_FILE: load },
+      detached: true,
+    });
+    const exited = once(runner, "close");
+    t.after(async () => {
+      if (runner.exitCode === null && runner.pid) process.kill(-runner.pid, "SIGTERM");
+      await exited;
+    });
+    let stdout = "";
+    runner.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
+    const [status] = await once(runner.stderr, "data", { signal: AbortSignal.timeout(3_000) });
+    assert.match(String(status), new RegExp(`waiting: ${gate} `));
+    assert.equal(stdout, "");
+    await writeFile(memory, "100\n");
+    await writeFile(load, "0\n");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const [code] = await Promise.race([
+        exited,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("resource retry did not finish")), 3_000);
+        }),
+      ]);
+      assert.equal(code, 0);
+    } finally { clearTimeout(timer); }
+    assert.equal(stdout.trim(), String(slots[0]));
+  });
+}
 
 test("port writes PID, cwd and command while the slot lock remains held", async (t) => {
   const { dir, slots, env, run } = await fixture(t);
@@ -123,22 +169,44 @@ test("full suite caps requested shards to free slots without starting Playwright
   t.after(() => rm(run, { recursive: true, force: true }));
   assert.match(result.stderr, /using 1 shard\(s\), 1 free slot/);
   const launch = await readFile(join(dir, "launch"), "utf8");
-  assert.ok(launch.startsWith(`${slots[1]}\n`));
+  assert.ok(launch.startsWith(`${slots.join(" ")}\n`));
   assert.ok(launch.includes("--shard=1/1"));
+});
+
+test("full suite acquires another eligible slot when an observed free slot is taken before launch", async (t) => {
+  const { dir, slots, env } = await fixture(t);
+  // Take the first slot after the suite inspects it, then run the real allocator.
+  await writeFile(join(dir, "setsid"), `#!/usr/bin/env bash
+exec 8>>"$ASE_LOCK_DIR/ase-$ASE_RACED_PORT.lock"
+flock -n 8
+"$1" "$ASE_NODE" -e 'const fs = require("node:fs"); fs.writeFileSync(process.env.ASE_LAUNCH_LOG, process.env.ASE_TEST_PORT); fs.writeFileSync(process.env.PLAYWRIGHT_JSON_OUTPUT_FILE, JSON.stringify({suites: []}));'
+`, { mode: 0o755 });
+  const result = await exec("bash", [new URL("../scripts/agents/full-suite.sh", import.meta.url).pathname, "1"], {
+    env: { ...env, PATH: `${dir}:${process.env.PATH}`, ASE_RACED_PORT: String(slots[0]), ASE_NODE: process.execPath, ASE_LAUNCH_LOG: join(dir, "launch") }, timeout: 3_000,
+  });
+  const run = /Results: (.+)/.exec(result.stderr)?.[1];
+  assert.ok(run);
+  t.after(() => rm(run, { recursive: true, force: true }));
+  assert.match(result.stderr, /using 1 shard\(s\), 2 free slot/);
+  assert.equal(await readFile(join(dir, "launch"), "utf8"), String(slots[1]));
 });
 
 test("reap defaults to signalling orphans, dry-run lists, and protects outside listeners", async (t) => {
   const { dir, env } = await fixture(t);
   const rows = join(dir, "listeners");
   const signals = join(dir, "signals");
+  const processes = join(dir, "processes");
   const startup = join(dir, "bash-env");
   // Synthetic process table and a recorded signal keep reaper tests harmless.
   await writeFile(join(dir, "ss"), '#!/usr/bin/env bash\ncat "$ASE_LISTENERS"\n', { mode: 0o755 });
-  await writeFile(join(dir, "ps"), '#!/usr/bin/env bash\nif [[ $2 == 12345 ]]; then if [[ $4 == args= ]]; then echo "node test-server"; else echo 23456; fi; else echo 34567; fi\n', { mode: 0o755 });
+  await writeFile(join(dir, "ps"), '#!/usr/bin/env bash\nif [[ $1 == -eo ]]; then cat "$ASE_PROCESSES"; else echo 34567; fi\n', { mode: 0o755 });
   await writeFile(startup, 'kill() { printf "%s\\n" "$*" >> "$ASE_SIGNALS"; }\n');
   const reap = (dry = false) => exec("bash", [new URL("../scripts/agents/reap.sh", import.meta.url).pathname, ...(dry ? ["--dry-run"] : [])], {
-    env: { ...env, PATH: `${dir}:${process.env.PATH}`, BASH_ENV: startup, ASE_LISTENERS: rows, ASE_SIGNALS: signals }, timeout: 3_000,
+    env: { ...env, PATH: `${dir}:${process.env.PATH}`, BASH_ENV: startup, ASE_LISTENERS: rows, ASE_SIGNALS: signals, ASE_PROCESSES: processes }, timeout: 3_000,
   });
+  const server = "12345 12344 23456 node tests/native-save/server.ts\n";
+  const launcher = "12344 1 23456 node /repo/node_modules/tsx/dist/cli.mjs tests/native-save/server.ts\n";
+  await writeFile(processes, server + launcher);
   const row = (port: number) => `LISTEN 0 10 127.0.0.1:${port} 0.0.0.0:* users:(("node",pid=12345,fd=20))\n`;
   await writeFile(rows, row(5227));
   assert.match((await reap(true)).stdout, /would kill group 23456, port 5227/);
@@ -146,6 +214,36 @@ test("reap defaults to signalling orphans, dry-run lists, and protects outside l
   assert.match((await reap()).stdout, /killed group 23456, port 5227/);
   assert.equal(await readFile(signals, "utf8"), "-TERM -- -23456\n");
   await rm(signals);
+
+  for (const command of [
+    "tsx tests/native-save/server.ts",
+    "npm exec tsx tests/native-save/server.ts",
+    "npx tsx tests/native-save/server.ts",
+    "sh -c 'node tests/native-save/server.ts'",
+  ]) {
+    await writeFile(processes, server + `12344 1 23456 ${command}\n`);
+    assert.match((await reap()).stdout, /killed group 23456/);
+    assert.equal(await readFile(signals, "utf8"), "-TERM -- -23456\n");
+    await rm(signals);
+  }
+
+  // No unrelated process needs a listener to make whole-group signalling unsafe.
+  for (const members of [
+    launcher + "45678 1 23456 bash\n",
+    launcher + "45678 1 23456 node /repo/agent.js\n",
+    launcher + "45678 12344 23456 node /repo/build.js\n",
+    "12344 1 23456 node /repo/agent.js tests/native-save/server.ts\n",
+  ]) {
+    await writeFile(processes, server + members);
+    assert.match((await reap(true)).stdout, /would kill pid 12345, group 23456/);
+    await assert.rejects(readFile(signals), { code: "ENOENT" });
+    const result = await reap();
+    assert.match(result.stdout, /unrelated members; signalling only orphan listener PIDs/);
+    assert.match(result.stdout, /killed pid 12345, group 23456/);
+    assert.equal(await readFile(signals, "utf8"), "-TERM -- 12345\n");
+    await rm(signals);
+  }
+  await writeFile(processes, server + launcher);
   await writeFile(rows, row(5226) + row(5410));
   assert.match((await reap()).stdout, /skipped group 23456/);
   await assert.rejects(readFile(signals), { code: "ENOENT" });

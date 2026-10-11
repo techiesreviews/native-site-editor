@@ -7,8 +7,8 @@ Claude tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
 - `scripts/agents/port.sh <cmd...>` waits for resources, locks a free slot, and sets `ASE_TEST_PORT`. Port rules below.
 - `scripts/agents/timing.sh <cmd...>` holds all eight focused slot locks, then `5216`, for an exclusive timing run.
 - `scripts/agents/cold.sh <worktree> <outprefix>` serves existing `dist` on `5216`, records the served index asset, measures five cold/warm runs with `ASE_COLD_NET=100/20`, waterfall and JSON; run through `timing.sh`.
-- `scripts/agents/full-suite.sh [shards=3]` runs native-save shards in parallel with one worker each, separate artifacts, line logs and JSON; caps shards to currently free slots (at least one), prints the count, waits, summarizes, and fails if any shard fails. `ASE_SHARDS` sets the default. Allow 25–50 minutes with 3 shards on a busy machine.
-- `scripts/agents/reap.sh [--dry-run]` kills orphan test server process groups on unlocked slots; `--dry-run` lists them.
+- `scripts/agents/full-suite.sh [shards=3]` runs native-save shards in parallel with one worker each, separate artifacts, line logs and JSON; caps shards to currently free slots (at least one), prints the count, waits, summarizes, and fails if any shard fails. Each shard acquires any eligible slot through `port.sh`. `ASE_SHARDS` sets the default. Allow 25–50 minutes with 3 shards on a busy machine.
+- `scripts/agents/reap.sh [--dry-run]` kills orphan test servers on unlocked slots; `--dry-run` lists them.
 - `scripts/agents/worktree.sh <branch> [base=origin/dev]` creates a sibling worktree with shared dev `node_modules` and native-static fixture symlinks; records UTC time, `${ASE_OWNER:-unknown}`, branch and base in `.scratch/owner`, then prints its path. Set `ASE_OWNER` to the agent/thread identifier.
 - `scripts/agents/worktrees.sh [--prune] [--older-than DAYS=3]` lists registered paths, branches, owners, dirtiness, commit age, merge state against local `origin/dev` or `origin/main`, and live cwd state from `/proc`. Listing is the default. Prune removes only clean, merged, inactive worktrees whose commit and creation ages exceed DAYS; unknown state is kept. Root, dev and locked worktrees are kept. It runs `git worktree prune` and keeps branches.
 - `scripts/agents/tickets.mjs frontier [map]` prints open wayfinder tickets with all blockers closed, including builder and title; `check` validates statuses and same-map blocker slugs in both `tickets/` and `build/tickets/`, and fails with `file:line`. Lint runs the check.
@@ -27,9 +27,9 @@ Gate: at least 4 GiB available memory and 1-minute load at most `nproc`; `ASE_MA
 
 Ownership: lock files are `/tmp/ase-<base>.lock`, containing `pid cwd command`. `exec` keeps the lock and owner PID; the caller's process group owns its servers. Start a separate group (for example `setsid`) when you need to kill the whole run. Stop only your own processes. Test servers poll `ASE_TEST_OWNER_PID` every second and exit when the owner dies; demos without this variable retain their normal lifetime.
 
-Reap: inspect `scripts/agents/reap.sh --dry-run` before cleaning leftovers. Default sends SIGTERM only to listener groups whose slot lock is free, holding those locks during cleanup. It covers pool base/+1 ports and `5216`/`5217`, skips its own group and groups with listeners outside unlocked slots, and always leaves `5410` alone. It never expands the pool via `ASE_POOL`.
+Reap: inspect `scripts/agents/reap.sh --dry-run` before cleaning leftovers. Default sends SIGTERM to orphan listeners whose slot lock is free, holding those locks during cleanup. It kills a whole group only when every member is an orphan listener or its explicit test-server launcher chain; unrelated members trigger listener-only signalling with a message. It covers pool base/+1 ports and `5216`/`5217`, skips its own group and groups with listeners outside unlocked slots, and always leaves `5410` alone. It never expands the pool via `ASE_POOL`.
 
-Tests: `ASE_LOCK_DIR` overrides `/tmp`; `ASE_POOL` is a test-only pool override for isolated high ports. Production runs use the fixed pool.
+Tests: `ASE_LOCK_DIR` overrides `/tmp`; `ASE_POOL` is a test-only pool override for isolated high ports. Test-only `ASE_MIN_MEM_KB` overrides the 4194304 KiB memory threshold (`0` bypasses it); `ASE_PORT_POLL` overrides the 15-second resource/slot poll delay. Production runs use the fixed pool and default resource gates.
 
 ## Results
 

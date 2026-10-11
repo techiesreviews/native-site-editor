@@ -37,7 +37,7 @@ for (( k=1; k<=shards; k++ )); do
   result="$run/results-shard-$k.json"
   rm -f "$result"
   results+=("$result")
-  ASE_PORTS="${free_ports[k-1]:-${ports[*]}}" PLAYWRIGHT_JSON_OUTPUT_FILE="$root/$result" setsid scripts/agents/port.sh \
+  ASE_PORTS="${ports[*]}" PLAYWRIGHT_JSON_OUTPUT_FILE="$root/$result" setsid scripts/agents/port.sh \
     ./node_modules/.bin/playwright test --project=native-save --shard="$k/$shards" \
     --workers=1 --reporter=line,json --output="$run/artifacts-shard-$k" \
     > "$run/shard-$k.log" 2>&1 &

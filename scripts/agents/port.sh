@@ -30,5 +30,5 @@ while true; do
     done
     report_wait "all slots busy; $busy"
   fi
-  sleep 15
+  sleep "$port_poll"
 done

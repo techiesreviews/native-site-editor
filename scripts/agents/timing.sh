@@ -15,10 +15,10 @@ for p in "${pool[@]}" 5216; do
       slot_holder "$p"
     fi
     report_wait "$slot_busy"
-    sleep 15
+    sleep "$port_poll"
   done
   write_holder "$@"
 done
-while resource_wait; do report_wait "$wait_reason"; sleep 15; done
+while resource_wait; do report_wait "$wait_reason"; sleep "$port_poll"; done
 export ASE_TEST_OWNER_PID=$$ ASE_TEST_PORT=5216
 exec "$@"
