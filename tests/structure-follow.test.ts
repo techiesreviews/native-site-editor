@@ -37,9 +37,16 @@ test("a key below a row (formatting in a line of text) follows its row", () => {
   assert.equal(follow("0.0.4"), undefined);
 });
 
-test("a row replaced by a different element of another count is not followed", () => {
-  const follow = followRows(page([section("A"), section("B")]), page([section("X"), section("Y"), section("Z")]));
+test("a row replaced by elements of another kind is not followed", () => {
+  const follow = followRows(page([section("A"), section("B")]), page([{ tag: "div", text: "X" }, { tag: "div", text: "Y" }, { tag: "div", text: "Z" }]));
   assert.equal(pairs(follow, ["0", "0.0", "0.1"]), "0>0 0.0>- 0.1>-");
+});
+
+test("a block moved out of its container keeps the container, whose text changed, on its element", () => {
+  const card = (text: string) => ({ tag: "card-project", text });
+  const before = page([{ tag: "section", text: "Work Harbour Fern", children: [{ tag: "h2", text: "Work" }, { tag: "div", text: "Harbour Fern", children: [card("Harbour"), card("Fern")] }] }]);
+  const after = page([{ tag: "section", text: "Work Fern Harbour", children: [{ tag: "h2", text: "Work" }, { tag: "div", text: "Fern", children: [card("Fern")] }, card("Harbour")] }]);
+  assert.equal(pairs(followRows(before, after), ["0.0", "0.0.0", "0.0.1", "0.0.1.1"]), "0.0>0.0 0.0.0>0.0.0 0.0.1>0.0.1 0.0.1.1>0.0.1.0");
 });
 
 test("sections that read the same but hold different blocks are told apart by what they hold", () => {
