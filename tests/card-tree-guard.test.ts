@@ -13,7 +13,7 @@ type Finding = { file: string; line: number; rule: Rule; function: string; text:
 type AllowlistEntry = { file: string; match: string; reason: string; count?: number };
 type Detector = (source: string, file: string) => Finding[];
 type FunctionBody = TS.FunctionLikeDeclaration & { body: TS.ConciseBody };
-const READERS = new Set(["parseMarked", "markedRange", "elementPathAt", "parseSource", "nativeOutline", "startTags", "startTagAttribute", "startTagAttributes", "decodedText", "decodeEntities", "decodeEntity", "plainText", "elementTree"]);
+const READERS = new Set(["parseMarked", "markedRange", "elementPathAt", "parseSource", "nativeOutline", "startTags", "startTagAttribute", "startTagAttributes", "decodedText", "decodeEntities", "decodeEntity", "plainText", "elementTree", "elementText", "breakText"]);
 const DOM = new Set(["innerHTML", "outerHTML", "innerText", "textContent", "DOMParser", "createContextualFragment"]);
 const MODULES = new Set(["shared/html-source", "src/native-source-location", "src/page-builder/native-operations", "src/page-builder/html-entities"]);
 function readerName(name: string) {
@@ -99,13 +99,44 @@ function referenceName(node: TS.Node): string | undefined {
   return node.text;
 }
 
-// Reader declarations also catch a hand-written low-level reader returning to a card file.
+// One file at a time, without imports or lib: the checker binds the file's own names, so a
+// renamed import or an alias resolves to the reader it stands for.
+function checkerFor(tree: TS.SourceFile): TS.TypeChecker {
+  const file = tree.fileName;
+  const host: TS.CompilerHost = {
+    getSourceFile: name => name === file ? tree : undefined, fileExists: name => name === file, readFile: () => undefined, writeFile: () => {},
+    getDefaultLibFileName: () => "lib.d.ts", getCurrentDirectory: () => "", getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true, getNewLine: () => "\n",
+  };
+  return ts.createProgram([file], { noLib: true, noResolve: true, types: [] }, host).getTypeChecker();
+}
+function inType(node: TS.Node) {
+  for (let parent: TS.Node | undefined = node; parent; parent = parent.parent) {
+    if (ts.isTypeNode(parent) || ts.isImportTypeNode(parent)) return true;
+    if ((ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) && parent.isTypeOnly) return true;
+    if (ts.isImportClause(parent) && parent.isTypeOnly || ts.isExportDeclaration(parent) && parent.isTypeOnly) return true;
+  }
+  return false;
+}
+// A same-file name standing for a reader: a renamed import, a destructured key, or a const bound to one.
+function standsForReader(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
+  const symbol = ts.isIdentifier(node) && depth <= 8 ? checker.getSymbolAtLocation(node) : undefined;
+  const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+  if (!declaration) return false;
+  if (ts.isImportSpecifier(declaration)) return !inType(declaration) && readerName((declaration.propertyName ?? declaration.name).text);
+  if (ts.isBindingElement(declaration)) return readerName(bindingKey(declaration) ?? "");
+  if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) return false;
+  const value = strip(declaration.initializer);
+  return readerName(referenceName(value) ?? "") || standsForReader(checker, value, depth + 1);
+}
+// Reader declarations also catch a hand-written low-level reader returning to a card file; type positions read nothing.
 const readerNames: Detector = (source, file) => {
   const tree = parse(source, file), hits: Finding[] = [];
+  let checker: TS.TypeChecker | undefined;
   walk(tree, node => {
     const declaration = (ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node)) && node.name && ts.isIdentifier(node.name) ? node.name : undefined;
     const name = declaration?.text ?? referenceName(node);
-    if (name && readerName(name)) hits.push(finding(tree, declaration ?? node, "reader-name"));
+    if (!name || inType(node)) return;
+    if (readerName(name) || !declaration && ts.isIdentifier(node) && standsForReader(checker ??= checkerFor(tree), node)) hits.push(finding(tree, declaration ?? node, "reader-name"));
   });
   return hits;
 };
@@ -118,7 +149,7 @@ const domReads: Detector = (source, file) => {
   return hits;
 };
 function readerModule(specifier: TS.Node | undefined, file: string) {
-  return !!specifier && ts.isStringLiteral(specifier) && specifier.text.startsWith(".")
+  return !!specifier && (ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier)) && specifier.text.startsWith(".")
     && MODULES.has(posix.normalize(posix.join(posix.dirname(file), specifier.text)).replace(/\.ts$/, ""));
 }
 const readerModules: Detector = (source, file) => {
@@ -186,11 +217,24 @@ test("reader-name rejects every low-level reader reference and declaration", () 
   }
 });
 
-test("reader-name ignores text, object keys and the tree's public readers", () => {
+test("reader-name counts every use of a renamed import, destructured name or alias", () => {
+  const uses = (source: string) => readerNames(source, FAKE).filter(hit => hit.text === "decode").length;
+  assert.equal(uses('import { decodeHtmlEntities as decode } from "./html-entities"; decode(a); decode(b);'), 2);
+  assert.equal(uses('const { plainText: decode } = model; decode(a); decode(b);'), 2);
+  assert.equal(uses('import { decodeHtmlEntities } from "./html-entities"; const first = decodeHtmlEntities; const decode = first; decode(a); decode(b);'), 2);
+  assert.equal(uses('import * as model from "./component-model"; const decode = model.elementText; decode(a);'), 1);
+  // A value a reader returned is text, not a reader; a shadowing parameter is not the import.
+  assert.equal(uses('import { decodeHtmlEntities } from "./html-entities"; const decode = decodeHtmlEntities(raw); use(decode);'), 0);
+  assert.equal(uses('import { decodeHtmlEntities as decode } from "./html-entities"; function f(decode) { return decode(a); }'), 0);
+});
+
+test("reader-name ignores text, object keys, type positions and the tree's public readers", () => {
   for (const source of [
     '// parseMarked();\nconst text = "plainText";', 'const text = `elementTree parseSource`;',
     'plain(tree.text()); readSource(source); readPage(source); plainTextual();',
     'const value = { plainText: 1, parseSource: 2 };',
+    'import type { parseSource } from "./source-tree"; type Parser = typeof parseSource;',
+    'import { type plainText as text } from "./component-model"; export type { elementText } from "./component-model"; let read: typeof text;',
   ]) assert.deepEqual(readerNames(source, FAKE), [], source);
 });
 
@@ -220,7 +264,7 @@ test("reader-module rejects value imports, re-exports and dynamic imports from e
       `import { x } from "${module}";`, `import { x as read } from "${module}";`,
       `import * as h from "${module}";`, `import h from "${module}";`, `import "${module}";`,
       `export * from "${module}";`, `export * as h from "${module}";`,
-      `export { x } from "${module}";`, `export { x as read } from "${module}";`, `import("${module}");`,
+      `export { x } from "${module}";`, `export { x as read } from "${module}";`, `import("${module}");`, `import(\`${module}\`);`,
     ]) flags(readerModules, source, "reader-module");
   }
 });
