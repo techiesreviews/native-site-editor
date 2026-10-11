@@ -1,6 +1,7 @@
 # Agents
 
 Finding code: read `docs/agents/code-map.md`.
+Running a build slice: follow `docs/agents/runner.md`.
 
 ## Agent skills
 

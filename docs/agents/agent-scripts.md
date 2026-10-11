@@ -13,11 +13,44 @@ Claude tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
 - `scripts/agents/worktrees.sh [--prune] [--older-than DAYS=3]` lists registered paths, branches, owners, dirtiness, commit age, merge state against local `origin/dev` or `origin/main`, and live cwd state from `/proc`. Listing is the default. Prune removes only clean, merged, inactive worktrees whose commit and creation ages exceed DAYS; unknown state is kept. Root, dev and locked worktrees are kept. It runs `git worktree prune` and keeps branches.
 - `scripts/agents/tickets.mjs frontier [map]` prints open wayfinder tickets with all blockers closed, including builder and title; `check` validates statuses and same-map blocker slugs in both `tickets/` and `build/tickets/`, and fails with `file:line`. Lint runs the check.
 - `scripts/agents/review.sh <worktree> <brief-file> <out-dir>` sends the brief through stdin to read-only `gpt-6.1-sol` at `medium`; verifies `REVIEW_STATUS: complete` and the logged model.
+- `scripts/agents/review-brief.sh <ticket-file> [base=origin/dev]` prints the standard slice brief: diff scope, ticket/linked spec, standards, finding format and the author's validation contract. Review completion accepts the first non-blank line, stripping a leading BOM or markdown fence.
+- `scripts/agents/sol.sh <worktree> <brief-file> [effort=medium]` builds with `gpt-6.1-sol` in workspace-write, adds the shared Git directory, appends the build contract and verifies the logged model. Runs in the foreground; Claude uses `run_in_background: true` and waits for completion. `SOL_TIMEOUT` defaults to `90m` (positive integer seconds or `s/m/h/d`); expiry kills the process group. Prints the final report and Git status; logs/report: `<worktree>/.scratch/sol/`.
+- `scripts/agents/unit.sh [files...]` runs all unit tests via `npm test`, or selected files via `tsx --test`; prints pass/fail counts and each failure's name and first four error lines. Preserves the command's exit status; full log: `.scratch/unit/<time>-<pid>.log`.
+- `scripts/agents/shots.sh <out-dir> <scratch-spec.spec.ts>` runs only that `.scratch/` scenario through a dedicated Playwright config on a `port.sh` slot. Serves the real starter over fake GitHub, stops its server on completion/failure, and prints PNG paths. Fixture: `${ASE_NATIVE_SAVE_FIXTURE:-$HOME/Projects/native-site-editor-starter}`; screenshot destination: `ASE_SHOTS_OUT_DIR`. Example below.
 - `scripts/agents/suite-summary.mjs <results.json> [...]` merges shard counts and prints each failure's file, line, title and first error line; labels and separately counts matches in [tests/known-failures.json](../../tests/known-failures.json) as known flaky or known failing on dev. It exits non-zero for every failure, report error or unreadable input. Registry titles match exactly and survive line moves; line-only entries cover parameterized tests, and spec-only entries cover the file.
 - `scripts/agents/ci-fonts.conf` is a fontconfig with only DejaVu Sans, as on the CI runners; `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` before a browser run uses it (cache in `~/.cache/fontconfig-ci`).
 - `scripts/agents/land.sh [--branch dev]` locks the target branch, fetches and rebases, runs check, test and lint, then pushes; a non-fast-forward rejection retries up to three attempts. UI/build/package changes also run the byte budget through `port.sh`. Conflicts abort the rebase. Logs: `.scratch/land/<time>-<pid>/`. `--dry-run` stops before pushing and skips the budget unless `--budget` is added; start on a clean branch.
 - `scripts/agents/deploy-preview.sh` locks preview deploys, refuses uncommitted changes, fetches and detaches at `origin/dev`, then deploys preview only. Prints `preview <version-id> <sha>`; full output: `.scratch/deploy/<time>-<pid>.log`.
 - `scripts/agents/ci-status.sh [branch=dev] [--wait]` prints the latest run per workflow and fails for unsuccessful completed runs, with failed steps and the last 20 log lines. `--wait` checks only the current `origin/<branch>` head every 30 seconds, prints changes, and times out after 20 minutes; requires authenticated `gh`.
+
+## Screenshots
+
+Write `.scratch/shots.spec.ts`; `shots.sh` supplies `baseURL` and `ASE_SHOTS_OUT_DIR`.
+Run `scripts/agents/shots.sh .scratch/shots/example .scratch/shots.spec.ts`.
+This 20-line scenario saves the editor and its Add panel:
+
+```ts
+import { expect, test } from "@playwright/test";
+import { join } from "node:path";
+
+test("starter screenshots", { tag: "@actual" }, async ({ page }) => {
+  const out = process.env.ASE_SHOTS_OUT_DIR;
+  if (!out) throw new Error("Run through shots.sh");
+  await page.goto("/#repo=501&branch=main&file=index.html");
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  const preview = page.frameLocator(".native-preview-frame");
+  await expect(preview.locator("body")).toBeVisible();
+  await page.screenshot({ path: join(out, "editor.png"), fullPage: true });
+
+  const structure = page.getByRole("complementary", { name: "Page structure" });
+  await expect(structure).toBeVisible();
+  await structure.getByRole("button", { name: "Add", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add to the page", exact: true });
+  await expect(dialog).toBeVisible();
+  await page.screenshot({ path: join(out, "add-panel.png"), fullPage: true });
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+});
+```
 
 ## Ports
 
