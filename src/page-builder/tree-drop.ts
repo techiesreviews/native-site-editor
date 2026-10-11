@@ -20,6 +20,7 @@ import type { DropContainer, DropRect } from "./drop-report";
 import { dropEndIndex, dropRefusal, dropStays, isBand, type DraggedBlock, type DropTarget } from "./drop-target";
 import { snapIndex } from "./section-snap";
 import { nativeOutline, type NativeOutline } from "./native-operations";
+import { TEMPLATE_BLOCK_TAGS } from "./rules/template-blocks";
 import { VOID_ELEMENTS } from "../../shared/html-source";
 
 /** An element's visible row in viewport coordinates; `folded` hides children, `end` includes its open subtree. */
@@ -80,8 +81,6 @@ const outlineAt = (template: string) => {
     return node;
   };
 };
-/** Blocks take these template elements as a Section or a Div on a page (block-insert.ts `templateTakes`). */
-const TEMPLATE_BLOCKS = new Set(["div", "article", "aside", "header", "footer", "nav", "figure"]);
 /**
  * Edit component mode's containers, from the template edited (`tag` its
  * component): a row's element, or the items slot a `near` row is in; a named
@@ -96,7 +95,7 @@ export function templateContainers(template: string, tag: string): TreeContainer
     if (slot?.slotName === "") { path = [...path, near!.node[path.length]]; node = slot; }
     if (!node || node.name === "" || VOID_ELEMENTS.has(node.name)) return undefined;
     const kind: DropContainer["kind"] = node.opaque ? "component" : node.slotName !== undefined ? node.slotName ? "slot" : "items"
-      : node.name === "section" ? "section" : TEMPLATE_BLOCKS.has(node.name) ? "div" : "element";
+      : node.name === "section" ? "section" : TEMPLATE_BLOCK_TAGS.has(node.name) ? "div" : "element";
     const children = node.children.map((child, index) => ({ index, rect: NO_RECT, tag: child.name, cls: child.slotName ?? child.className }));
     return { path: [...path], kind, tag: kind === "items" || kind === "slot" ? tag : node.name, cls: node.className, rect: NO_RECT,
       ...(node.slotName !== undefined ? { slot: node.slotName } : {}), count: children.length, children, empty: !children.length,

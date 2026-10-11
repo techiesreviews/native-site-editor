@@ -5,7 +5,7 @@ import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } f
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveRefusal } from "./page-builder/native-operations";
-import { INLINE_FORMATTING, TEXT_TAGS } from "./page-builder/rules/text-level";
+import { INLINE_FORMATTING, TEXT_LINE_TAGS, TEXT_TAGS } from "./page-builder/rules/text-level";
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
 import { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
@@ -570,7 +570,7 @@ function mountWorkspace() {
     onSelect: (path, node, edit) => nativePreview?.selectNode({ path, node }, edit),
     onRemove: (path, node, source) => pageStructureController.removeRow(path, node, source),
     componentSlots: (path, node) => componentTools?.structure(path, node),
-    textRow: (path, node, tag) => nativeTextTags.has(tag) ? componentTools?.textRow(path, node) : undefined,
+    textRow: (path, node, tag) => TEXT_LINE_TAGS.has(tag) ? componentTools?.textRow(path, node) : undefined,
     templateRows: (path, node) => componentTools?.templateRows(path, node),
     componentFieldsRevision: nativeComponentFieldsRevision,
     pageMeta: nativePageMeta,
@@ -1593,11 +1593,6 @@ function nearestLink(source: string, node: number[], range: ElementRange | undef
   return undefined;
 }
 
-// Elements whose whole content the bar can make bold or italic.
-const nativeTextTags = new Set([
-  "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "a", "li", "button", "blockquote", "figcaption",
-  "small", "label", "td", "th", "dt", "dd", "div", "summary", "legend", "caption",
-]);
 
 // Whether `inner` is exactly one `tags` element (plus whitespace), the bar's
 // notion of "the whole element is bold/italic"; returns that wrapper's range.
@@ -1615,7 +1610,7 @@ function wholeWrapper(inner: string, tags: string[]) {
   return { open, openEnd: openEnd + 1, closeAt, closeEnd: closeEnd + 1 };
 }
 // Elements a link inside can be removed from, keeping its text.
-const nativeLinkParents = new Set([...nativeTextTags].filter((tag) => tag !== "a" && tag !== "button"));
+const nativeLinkParents = new Set([...TEXT_LINE_TAGS].filter((tag) => tag !== "a" && tag !== "button"));
 const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | undefined>();
 const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down" | "out" | "in") => number[] | "stayed" | undefined>();
 
@@ -1633,7 +1628,7 @@ const pageStructureController = createPageStructureController({
   get openNativeNavigation() { return openNativeNavigation; },
   get nativeSources() { return nativeSources; },
   get nativePageStyles() { return nativePageStyles; },
-  get nativeTextTags() { return nativeTextTags; },
+  get nativeTextTags() { return TEXT_LINE_TAGS; },
   get previewSelection() { return previewSelection; },
   get wholeWrapper() { return wholeWrapper; },
   get nativeLinkParents() { return nativeLinkParents; },

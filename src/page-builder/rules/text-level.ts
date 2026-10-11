@@ -16,15 +16,21 @@ export const INLINE_FORMATTING = new Set([
 ]);
 
 /**
- * Elements the canvas types into when they hold text and inline formatting
- * only: text blocks, table cells, and formatting that is text on its own
- * (a selected <strong>).
+ * Elements that hold a line of text: text blocks, table cells, and the
+ * span, link and small a line is often written in. The edit bar makes their
+ * whole content bold or italic.
  */
-export const TEXT_TAGS = new Set([
+export const TEXT_LINE_TAGS = new Set([
   "h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "a", "li", "button", "blockquote", "figcaption",
   "small", "label", "td", "th", "dt", "dd", "div", "summary", "legend", "caption",
-  "strong", "em", "b", "i", "cite", "q", "mark", "code",
 ]);
+
+/**
+ * Elements the canvas types into when they hold text and inline formatting
+ * only: the text lines above, and formatting that is text on its own
+ * (a selected <strong>).
+ */
+export const TEXT_TAGS = new Set([...TEXT_LINE_TAGS, "strong", "em", "b", "i", "cite", "q", "mark", "code"]);
 
 /**
  * Elements that are one Page structure row when they hold a line of text

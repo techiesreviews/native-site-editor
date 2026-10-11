@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HTML_PHRASING, INLINE_FORMATTING, TEXT_LEVEL, TEXT_RUN_TAGS, TEXT_TAGS } from "../src/page-builder/rules/text-level.ts";
+import { HTML_PHRASING, INLINE_FORMATTING, TEXT_LEVEL, TEXT_LINE_TAGS, TEXT_RUN_TAGS, TEXT_TAGS } from "../src/page-builder/rules/text-level.ts";
 
 const sorted = (set: Set<string>) => [...set].sort();
 
@@ -17,6 +17,8 @@ test("text tags: text blocks, cells and formatting that is text on its own", () 
     "a", "b", "blockquote", "button", "caption", "cite", "code", "dd", "div", "dt", "em", "figcaption", "h1", "h2", "h3",
     "h4", "h5", "h6", "i", "label", "legend", "li", "mark", "p", "q", "small", "span", "strong", "summary", "td", "th",
   ]);
+  // The lines the edit bar formats whole are the text tags but the formatting typed into on its own.
+  assert.deepEqual(sorted(TEXT_LINE_TAGS), sorted(TEXT_TAGS).filter((tag) => !["strong", "em", "b", "i", "cite", "q", "mark", "code"].includes(tag)));
 });
 
 test("text runs: elements that are one Page structure row for a line with formatting in it", () => {

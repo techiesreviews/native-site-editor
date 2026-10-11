@@ -15,6 +15,7 @@ import { templateSlots, type TemplateOf } from "./component-model";
 import { decodeHtmlEntities } from "./html-entities";
 import { nativeElementMarkup, templateSectionRefusal, templateSlotRefusal, type NativeElementKind } from "./native-elements";
 import { nativeHeadingLevel, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
+import { TEMPLATE_BLOCK_TAGS } from "./rules/template-blocks";
 
 export const blockNames: Record<NativeElementKind, string> = { section: "Section", div: "Div", heading: "Heading", paragraph: "Paragraph", image: "Image", button: "Button" };
 
@@ -144,8 +145,6 @@ export function clickTarget(source: string, kind: NativeElementKind, selection?:
 
 // ---- In a component's template (Edit component mode, build slice 43). ----
 
-/** The template's own elements that take blocks, as a Section or a Div does on a page. */
-const templateBlocks = new Set(["section", "div", "article", "aside", "header", "footer", "nav", "figure"]);
 const isNamedSlot = (node: NativeOutline) => Boolean(node.slotName);
 const inNamedSlot = (node: NativeOutline) => {
   for (let at = node.parent; at; at = at.parent) if (isNamedSlot(at)) return true;
@@ -163,9 +162,9 @@ function templateTakes(node: NativeOutline) {
   if (node.slotName === "") {
     let around = node.parent;
     while (around?.slotName === "") around = around.parent;
-    return !around?.parent || templateBlocks.has(around.name);
+    return !around?.parent || TEMPLATE_BLOCK_TAGS.has(around.name);
   }
-  return node.slotName === undefined && templateBlocks.has(node.name);
+  return node.slotName === undefined && TEMPLATE_BLOCK_TAGS.has(node.name);
 }
 
 /**

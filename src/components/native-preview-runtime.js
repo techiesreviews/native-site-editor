@@ -6,6 +6,7 @@ import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
 import { isInstance, movableBlock, sealed } from "../page-builder/rules/movable.ts";
+import { TEMPLATE_BLOCK_TAGS } from "../page-builder/rules/template-blocks.ts";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS, TEXT_TAGS } from "../page-builder/rules/text-level.ts";
 import { domView } from "../page-builder/rules/tree.ts";
 
@@ -1202,8 +1203,8 @@ import { domView } from "../page-builder/rules/tree.ts";
           if (!info.items) return chain;
         } else if (sealed(el, ruleView)) {
           return [entry(el, "component", [], bandRect(el, 0), el, [])];
-        } else if (["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0 || moved && dropHolds(el)) {
-          var block = ["section", "div", "article", "aside", "header", "footer", "nav", "figure"].indexOf(el.localName) >= 0;
+        } else if (TEMPLATE_BLOCK_TAGS.has(el.localName) || moved && dropHolds(el)) {
+          var block = TEMPLATE_BLOCK_TAGS.has(el.localName);
           chain.push(part(entry(el, el.localName === "section" ? "section" : block ? "div" : "element", dropKids(el), dropRect(el), el, Array.prototype.slice.call(el.childNodes)), el));
         }
         // Parts and named slots win over an items slot's larger area; the moved part is left out.
