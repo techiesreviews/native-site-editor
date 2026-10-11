@@ -542,6 +542,32 @@ test("leave (Done) during an entry's load ends it too: it is stale, nothing fram
   assert.deepEqual(s.live(), []);
 });
 
+test("leave (Done) during a level's open releases its share at once", async () => {
+  const s = setup();
+  await card(s);
+  const hold = s.m.holdOpen();
+  const pending = s.mode.open({ step: badgeStep });
+  await hold.reached;
+  s.mode.leave();
+  assert.deepEqual(s.live(), []);
+  hold.release();
+  assert.equal(await pending, false);
+  assert.deepEqual(s.live(), []);
+  assert.equal(s.frames.at(-1), undefined);
+});
+
+test("a rename's Undo is not followed onto a page that left the preview: no frame for it, the mode leaves", async () => {
+  const s = setup();
+  await card(s);
+  await s.mode.rename(() => renameCard(s.m));
+  await undoRename(s.m);
+  s.m.setRoute("/about/");
+  const frames = s.frames.length;
+  s.mode.sync();
+  assert.deepEqual(s.frames.slice(frames), [undefined]);
+  assert.deepEqual(s.live(), []);
+});
+
 test("an entry of a missing template still supersedes the one loading", async () => {
   const s = setup(), ready = deferred(), mounted = deferred();
   const first = card(s, [0, 0], { ready: ready.promise }, () => mounted.resolve());
@@ -586,14 +612,17 @@ test("notes dismissed during a level's open or a rename: the transition still la
   assert.equal(await pending, true);
   assert.deepEqual(s.mode.now()?.notes, []);
   assert.equal(s.live().length, 2);
-  await s.mode.open({ back: 0 });
+  const r = setup();
+  await card(r, [0, 0], { notes: ["Carried over: 2 classes."] });
   const wait = deferred();
-  const renamed = s.mode.rename(async () => { await wait.promise; return renameCard(s.m); });
-  s.mode.dismissNotes();
+  const renamed = r.mode.rename(async () => { await wait.promise; return renameCard(r.m); });
+  r.mode.dismissNotes();
+  assert.deepEqual(r.mode.now()?.notes, []);
   wait.resolve();
   await renamed;
-  assert.equal(s.mode.now()?.template, TILE_PATH);
-  assert.equal(s.live().length, 2, "the mode's and the rename's");
+  assert.equal(r.mode.now()?.template, TILE_PATH);
+  assert.deepEqual(r.mode.now()?.notes, ["Renamed on 1 page."]);
+  assert.equal(r.live().length, 2, "the mode's and the rename's");
 });
 
 test("a rename whose page left the preview meanwhile is not followed: no renamed frame, the mode leaves", async () => {

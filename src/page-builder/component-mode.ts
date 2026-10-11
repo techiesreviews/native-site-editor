@@ -194,14 +194,14 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     return changed === undefined || changed === "route" || changed === "edit-mode";
   };
 
-  /** A `tag` element is still at the framed node of the page's bytes. */
-  function framed(mode: Mode) {
-    const source = peek.source(mode.page);
+  /** A `tag` element is still at `node` of the page's bytes. */
+  function framed(page: string, node: readonly number[], tag: string) {
+    const source = peek.source(page);
     if (source === undefined) return false;
-    const key = JSON.stringify([mode.chain[0].tag, mode.node]);
+    const key = JSON.stringify([tag, node]);
     if (placed?.source !== source || placed.key !== key) {
-      const tree = read(source), at = tree.at(mode.node);
-      placed = { source, key, at: at !== undefined && tree.view.name(at) === mode.chain[0].tag };
+      const tree = read(source), at = tree.at(node);
+      placed = { source, key, at: at !== undefined && tree.view.name(at) === tag };
     }
     return placed.at;
   }
@@ -211,7 +211,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     if (!mode || !opening || mode.entry !== opening) return undefined;
     const shown = ports.shown();
     if (shown.open !== mode.template || shown.page !== mode.page || !scopeHolds(opening.stamp)) return undefined;
-    return framed(mode) ? mode : undefined;
+    return framed(mode.page, mode.node, mode.chain[0].tag) ? mode : undefined;
   }
 
   function entry(): object | undefined {
@@ -377,6 +377,9 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     const back = pair.from.template === path, level = back ? pair.from : pair.to;
     const components = peek.site()?.components;
     if (!components || !Object.hasOwn(components, level.tag) || components[level.tag] !== path) return;
+    // Only onto a mode that reads on: its page still shown, its instance (renamed or not) still there.
+    const outer = mode.chain[0].template === mode.template ? level.tag : mode.chain[0].tag;
+    if (ports.shown().page !== mode.page || !framed(mode.page, mode.node, outer)) return;
     retarget(mode.template, level, back ? [] : pair.notes, opening.stamp);
   }
 
@@ -404,9 +407,11 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     },
     sync,
     leave() {
-      // Done also ends an entry still loading: nothing it started frames later.
+      // Done also ends an entry or a level still loading: nothing it started frames later, no share stays.
       latest?.cancel();
       latest = undefined;
+      for (const release of pending) release();
+      pending.clear();
       return end(true);
     },
     destroy() {
