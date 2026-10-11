@@ -527,6 +527,85 @@ test("leave (Done): every share released, the frame told, the instance it was on
   assert.equal(s.mode.leave(), undefined);
 });
 
+test("leave (Done) during an entry's load ends it too: it is stale, nothing frames later", async () => {
+  const s = setup();
+  await card(s, [0, 0]);
+  const ready = deferred(), mounted = deferred();
+  const pending = card(s, [0, 1], { ready: ready.promise }, () => mounted.resolve());
+  await mounted.promise;
+  s.mode.leave();
+  assert.deepEqual(s.live(), []);
+  ready.resolve();
+  assert.deepEqual(await pending, { status: "stale" });
+  assert.equal(s.mode.now(), undefined);
+  assert.equal(s.frames.at(-1), undefined);
+  assert.deepEqual(s.live(), []);
+});
+
+test("an entry of a missing template still supersedes the one loading", async () => {
+  const s = setup(), ready = deferred(), mounted = deferred();
+  const first = card(s, [0, 0], { ready: ready.promise }, () => mounted.resolve());
+  await mounted.promise;
+  assert.deepEqual(await s.mode.enter({ tag: "site-gone", template: "components/site-gone.html", instance: { path: "index.html", node: [0, 0] } }), { status: "stale" });
+  ready.resolve();
+  assert.deepEqual(await first, { status: "stale" });
+  assert.deepEqual(s.frames, []);
+  assert.deepEqual(s.live(), []);
+});
+
+test("settle matrix: the open rejecting: failed with its error, nothing live", async () => {
+  const s = setup(), error = new Error("editor failed");
+  s.m.workspace.open = () => Promise.reject(error);
+  assert.deepEqual(await card(s), { status: "failed", error });
+  assert.deepEqual(s.live(), []);
+  assert.equal(s.mode.opened(), undefined);
+});
+
+test("destroy during a level's open releases its share at once", async () => {
+  const s = setup();
+  await card(s);
+  const hold = s.m.holdOpen();
+  const pending = s.mode.open({ step: badgeStep });
+  await hold.reached;
+  assert.equal(s.live().length, 2);
+  s.mode.destroy();
+  assert.deepEqual(s.live(), []);
+  hold.release();
+  assert.equal(await pending, false);
+  assert.deepEqual(s.live(), []);
+});
+
+test("notes dismissed during a level's open or a rename: the transition still lands, the notes stay dismissed", async () => {
+  const s = setup();
+  await card(s, [0, 0], { notes: ["Carried over: 2 classes."] });
+  const hold = s.m.holdOpen();
+  const pending = s.mode.open({ step: badgeStep });
+  await hold.reached;
+  s.mode.dismissNotes();
+  hold.release();
+  assert.equal(await pending, true);
+  assert.deepEqual(s.mode.now()?.notes, []);
+  assert.equal(s.live().length, 2);
+  await s.mode.open({ back: 0 });
+  const wait = deferred();
+  const renamed = s.mode.rename(async () => { await wait.promise; return renameCard(s.m); });
+  s.mode.dismissNotes();
+  wait.resolve();
+  await renamed;
+  assert.equal(s.mode.now()?.template, TILE_PATH);
+  assert.equal(s.live().length, 2, "the mode's and the rename's");
+});
+
+test("a rename whose page left the preview meanwhile is not followed: no renamed frame, the mode leaves", async () => {
+  const s = setup();
+  await card(s);
+  const frames = s.frames.length;
+  await s.mode.rename(async () => { const result = await renameCard(s.m); s.m.setRoute("/about/"); return result; });
+  assert.equal(s.mode.now(), undefined);
+  assert.deepEqual(s.frames.slice(frames), [undefined]);
+  assert.deepEqual(s.live(), []);
+});
+
 // ---- Kept names, notes ----
 
 test("keep and kept are per source and node, and cleared on leave", async () => {

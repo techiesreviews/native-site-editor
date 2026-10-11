@@ -116,7 +116,7 @@ export interface ComponentMode {
    * nothing while a transition is in flight (each runs it once it settles).
    */
   sync(): void;
-  /** Ends the mode (Done): every share released, the frame told; the instance it was on. */
+  /** Ends the mode (Done) and any entry still loading: every share released, the frame told; the instance it was on. */
   leave(): { page: string; node: number[]; tag: string; template: string } | undefined;
   /** Ends everything: the mode (frame told, nothing drawn), pending transitions (they settle "stale"), the opening. */
   destroy(): void;
@@ -178,6 +178,8 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   // Shares of the page's history: the mode's (its entry's, promoted), each nested level's (level 1 first).
   let modeShare: (() => void) | undefined;
   const levelShares: (() => void)[] = [];
+  // A level's share taken before its open settles (destroy releases it at once).
+  const pending = new Set<() => void>();
   // Renames made in the mode, followed across their Undo and Redo; each holds the renamed template's share.
   const renames: { from: { tag: string; template: string }; to: { tag: string; template: string }; notes: readonly string[]; release: () => void }[] = [];
   // Slots made fixed in the mode: the name each had, by the template's source and the part.
@@ -260,12 +262,13 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     const loaded = Promise.resolve(request.ready).then((): Wait => ({ kind: "ready" }), (error: unknown): Wait => ({ kind: "error", error }));
     const { tag, template, instance } = request;
     const templateSource = peek.source(template), pageSource = instance && peek.source(instance.path);
-    if (destroyed || templateSource === undefined) { clearTimeout(timer); return { status: "stale" }; }
+    if (destroyed) { clearTimeout(timer); return { status: "stale" }; }
     let cancel!: () => void;
     const cancelled = new Promise<Wait>((done) => { cancel = () => done({ kind: "cancelled" }); });
     const me: Entry = { cancel: () => { me.share?.(); me.share = undefined; cancel(); } };
     latest?.cancel();
     latest = me;
+    if (templateSource === undefined) { clearTimeout(timer); return { status: "stale" }; }
     const timeout = { status: "failed", error: new EnterTimeout() } as const;
     // Still the latest entry, under the same repository, over the template as read.
     const holds = () => !destroyed && latest === me && scopeHolds(stamp) && ports.shown().open === template && peek.source(template) === templateSource;
@@ -324,20 +327,21 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     busy++;
     // A nested template's edits are undo steps of the framed page too (shared before it opens).
     let share = deeper ? once(ports.share(target.template, mode.page)) : undefined;
+    if (share) pending.add(share);
     try {
       if (!(await ports.open(target.template))) return false;
-      if (destroyed || state !== mode || opening !== before || !scopeHolds(stamp)
+      if (destroyed || !state || state.entry !== before || opening !== before || !scopeHolds(stamp)
         || ports.shown().open !== target.template || ports.shown().page !== mode.page
         || paths.some((path, index) => peek.source(path) !== sources[index])) return false;
-      if (share) { levelShares.push(share); share = undefined; }
+      if (share) { pending.delete(share); levelShares.push(share); share = undefined; }
       else for (const release of levelShares.splice(next.length - 1)) release();
       opening = Object.freeze({ template: target.template, stamp });
-      state = make(mode.page, mode.node, next, mode.notes, opening);
+      state = make(mode.page, mode.node, next, state.notes, opening);
       ports.frame(message(state));
       ports.changed();
       return true;
     } finally {
-      share?.();
+      if (share) { pending.delete(share); share(); }
       settle();
     }
   }
@@ -350,7 +354,9 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     try {
       const result = await run();
       // The template moved from under the mode: it follows while nothing else moved.
-      if (result && !destroyed && state === mode && opening === before && scopeHolds(stamp) && ports.shown().open === result.template) {
+      const shown = ports.shown();
+      if (result && !destroyed && state?.entry === before && opening === before && scopeHolds(stamp)
+        && shown.open === result.template && shown.page === mode.page) {
         const to = { tag: result.tag, template: result.template };
         renames.push({ from: { tag: mode.tag, template: mode.template }, to, notes: [...result.notes], release: once(ports.share(result.template, mode.page)) });
         retarget(mode.template, to, result.notes, before.stamp);
@@ -397,12 +403,19 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
       ports.changed();
     },
     sync,
-    leave: () => end(true),
+    leave() {
+      // Done also ends an entry still loading: nothing it started frames later.
+      latest?.cancel();
+      latest = undefined;
+      return end(true);
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       latest?.cancel();
       latest = undefined;
+      for (const release of pending) release();
+      pending.clear();
       end(false);
       opening = undefined;
     },
