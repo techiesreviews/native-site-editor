@@ -179,3 +179,11 @@ test("card insertion keeps the strict writer's refusal on implied end tags", () 
 test("a missing parent path does not fall back to top-level slot links", () => {
   assert.deepEqual(slotCardLinks(tree('<a href="/work/a/">A</a><card-project></card-project>'), [9, 1], href => href), []);
 });
+
+test("Add card counts an instance's children as the preview does: a <script> among them is not one", () => {
+  const source = page('<section-pair><h2 slot="title">Pair</h2><card-quote slot="quotes"></card-quote><script>ignored()</script><p slot="notes">x</p></section-pair>');
+  const result = cardSlotAddEdit(tree(source), [0, 0], templateOf, "quotes");
+  assert.equal(result?.index, 2);
+  // The writer counts as the preview does too: the new card lands before the notes, after the script.
+  assert.match(applyGuardedSourceEdit(source, result!.edit)!, /<card-quote slot="quotes"><\/card-quote><script>ignored\(\)<\/script><card-quote slot="quotes">[\s\S]*<\/card-quote>\s*<p slot="notes">/);
+});
