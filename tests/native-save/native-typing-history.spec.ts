@@ -37,6 +37,7 @@ async function mount(page: Page, baseURL: string | undefined) {
 }
 
 // Wait beyond the production 700 ms typing-settle timer.
+// fixed-wait: Exceeds the production 700 ms typing-settle timer to start a separate undo group.
 const settle = (page: Page) => page.waitForTimeout(800);
 
 const typeKeys = (page: Page, path: string, text: string) => page.evaluate(async ({ path, text }) => {

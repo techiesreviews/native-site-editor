@@ -69,6 +69,7 @@ function editableDocument({ dialog = false, fields = [], frames = [], activeElem
   frames?: { contentDocument: Document | null; closest?: (selector: string) => unknown }[];
   activeElement?: unknown;
 } = {}): Document {
+  // eslint-disable-next-line no-restricted-syntax -- Minimal Document models inaccessible frames and only the recovery queries.
   return {
     activeElement,
     querySelector: () => dialog ? {} : null,

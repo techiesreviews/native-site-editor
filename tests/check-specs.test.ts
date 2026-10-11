@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 // @ts-expect-error The script is plain JavaScript without declarations.
-import { unreadyClipboardReads } from "../scripts/check-specs.mjs";
+import { unreadyClipboardReads, fixedWaits } from "../scripts/check-specs.mjs";
 
 const read = "  const prompt = await page.evaluate(() => navigator.clipboard.readText());";
 const check = (lines: string[]): number[] => unreadyClipboardReads(lines.join("\n"));
@@ -92,4 +92,38 @@ test("nested templates keep their interpolations as code", () => {
 test("two emoji in a comment directly before a read keep the read's position", () => {
   assert.deepEqual(check(["  /* 📋📋 */ const t = await page.evaluate(() => navigator.clipboard.readText());"]), [1]);
   assert.deepEqual(check(["  // 📋📋", read]), [2]);
+});
+
+
+test("fixed waits reject timeout calls and multiline Promise sleeps", () => {
+  assert.deepEqual(fixedWaits([
+    "await page.waitForTimeout (100);",
+    "await new Promise<void>((resolve) => {",
+    "  window.setTimeout(resolve, 100);",
+    "});",
+    "await page.evaluate(() => new Promise(done => setTimeout(done, 0)));",
+  ].join("\n")), [1, 2, 5]);
+});
+
+test("fixed waits require a nonempty reason on the wait or line above", () => {
+  assert.deepEqual(fixedWaits([
+    "// fixed-wait: asserts no write within the debounce window",
+    "await page.waitForTimeout(100);",
+    "await new Promise(done => setTimeout(done, 100)); // fixed-wait: injects network latency",
+    "// fixed-wait:   ",
+    "await page.waitForTimeout(100);",
+    "// fixed-wait: too far above",
+    "other();",
+    "await page.waitForTimeout(100);",
+  ].join("\n")), [5, 8]);
+});
+
+test("fixed waits ignore text and comments, keeping template interpolations as code", () => {
+  assert.deepEqual(fixedWaits([
+    "// page.waitForTimeout(100)",
+    "const text = 'new Promise(done => setTimeout(done, 100))';",
+    "const text2 = `page.waitForTimeout(100)`;",
+    "const text3 = `result: ${new Promise(done => setTimeout(done, 100))}`;",
+    "new Promise(resolve => requestAnimationFrame(resolve));",
+  ].join("\n")), [4]);
 });

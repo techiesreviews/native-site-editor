@@ -63,8 +63,8 @@ async function seed(page: Page, baseURL: string | undefined, template = workTemp
 }
 
 // A mark on the frame's window: still there only if the document was never replaced.
-const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as unknown as { aseMark: string }).aseMark = "slice-41"; });
-const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as unknown as { aseMark?: string }).aseMark);
+const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as typeof window & { aseMark: string }).aseMark = "slice-41"; });
+const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as typeof window & { aseMark?: string }).aseMark);
 
 test("template roots have no move, duplicate or remove actions; children keep theirs", { tag: "@actual" }, async ({ page, baseURL }) => {
   const template = workTemplate.replace('  <div class="cards">', '  <section><h2>Nested section</h2></section>\n  <div class="cards">');
@@ -99,6 +99,7 @@ test("template roots have no move, duplicate or remove actions; children keep th
     // Page focus routes these keys through the same bar controls as the palette.
     await page.locator("body").evaluate(body => { body.tabIndex = -1; body.focus(); });
     for (const key of ["Delete", "Backspace", "ControlOrMeta+d"]) await page.keyboard.press(key);
+    // fixed-wait: Asserts root Delete, Backspace and duplicate keys cause no delayed source edits.
     await page.waitForTimeout(300);
     expect(await source(path)).toBe(before);
   };

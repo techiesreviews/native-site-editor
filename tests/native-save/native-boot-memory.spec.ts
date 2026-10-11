@@ -192,6 +192,7 @@ test('a failed branch list and a guess that never lands show the branch failure 
   await expect(page.locator('#content')).toContainText('Branches could not be loaded. Reload repositories to retry.');
   // The guess arriving late neither opens nor paints.
   release();
+  // fixed-wait: Asserts the released speculative boot result never paints after the branch failure handoff.
   await page.waitForTimeout(1500);
   await expect(page.locator('#branch option')).toHaveText(['Branches unavailable']);
   await expect(preview(page).locator('.hero h1')).toHaveCount(0);

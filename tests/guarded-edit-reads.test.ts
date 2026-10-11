@@ -1,79 +1,34 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { test } from "node:test";
-import type * as TS from "typescript-eslint-api/node_modules/typescript";
+import { ts, parse, walk, strip, member, isFunction, functionName, finding, analyse, referenceName, standsFor, bindingReceiver, functionOf, plansOf, isPlanMethod, matches, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
 
-// TypeScript 7 has no JavaScript API; this package owns the TS 6 parser.
-const ts: typeof TS = createRequire(import.meta.url)("typescript-eslint-api");
 type Rule = "plan-read" | "plan-unresolved" | "plan-wait" | "reads-helper" | "plan-default" | "stale-compare";
-type Finding = { file: string; line: number; rule: Rule; function: string; text: string };
-type AllowlistEntry = { rule: Rule; file: string; function: string; reason: string; count?: number };
-type Detector = (source: string, file: string) => Finding[];
-type FunctionBody = TS.FunctionLikeDeclaration & { body: TS.ConciseBody };
+
 // Exact counts keep a new compare in the same function from inheriting an exception.
 const allowlist: AllowlistEntry[] = [
-  { rule: "stale-compare", file: "src/controllers/agent-controller.ts", function: "isCurrent", reason: "Agent menu load epoch pins the account and host, not edit staleness." },
-  { rule: "stale-compare", file: "src/controllers/agent-controller.ts", function: "ensure", reason: "Agent menu load epoch deduplicates lazy loads for the same account and host." },
-  { rule: "stale-compare", file: "src/controllers/agent-controller.ts", function: "start", reason: "Agent menu load epoch prevents a discovery retry after controller disposal." },
-  { rule: "stale-compare", file: "src/controllers/boot-controller.ts", function: "current", reason: "Boot read generation rejects a superseded login/session load, not an edit." },
-  { rule: "stale-compare", file: "src/controllers/boot-controller.ts", function: "start", reason: "Boot read generation pins the failure handoff to the session it owns." },
-  { rule: "stale-compare", file: "src/controllers/command-palette-controller.ts", function: "live", reason: "Palette controller lifetime counter prevents an obsolete palette from using live ports." },
-  { rule: "stale-compare", file: "src/controllers/history-controller.ts", function: "live", reason: "History panel load counter owns its lazy mount; edit staleness belongs to the module." },
-  { rule: "stale-compare", file: "src/controllers/preview-selection-controller.ts", function: "editableTemplatePath", reason: "Preview selection intent pins the editable template to the file generation that selected it." },
-  { rule: "stale-compare", file: "src/controllers/preview-selection-controller.ts", function: "select", reason: "Preview selection intents reject stale instance clicks and superseded file reveals, not edits.", count: 2 },
-  { rule: "stale-compare", file: "src/controllers/preview-selection-controller.ts", function: "replayPending", reason: "Preview selection intent is replayed only in its original file generation." },
-  { rule: "stale-compare", file: "src/controllers/save-publish-controller.ts", function: "findDeletedUpstream", reason: "Boot-triggered draft reconciliation checks its read generation before looking for upstream deletions; not a guarded edit plan." },
-  { rule: "stale-compare", file: "src/controllers/setup-entry-controller.ts", function: "live", reason: "Setup wizard's own lifetime counter prevents obsolete lazy mounts." },
-  { rule: "stale-compare", file: "src/controllers/setup-entry-controller.ts", function: "remember", reason: "Setup wizard's own lifetime counter prevents a disposed wizard from saving onboarding memory." },
-  { rule: "stale-compare", file: "src/controllers/setup-entry-controller.ts", function: "finish", reason: "Setup wizard's own lifetime counter prevents a disposed wizard from finishing onboarding." },
-  { rule: "stale-compare", file: "src/controllers/setup-entry-controller.ts", function: "exit", reason: "Setup wizard's own lifetime counter prevents either disposed wizard variant from closing its replacement.", count: 2 },
-  { rule: "stale-compare", file: "src/controllers/setup-entry-controller.ts", function: "openOwner", reason: "Setup wizard's own lifetime counter rejects a superseded owner-setup load." },
+  { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "isCurrent" }, reason: "Agent menu load epoch pins the account and host, not edit staleness." },
+  { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "ensure" }, reason: "Agent menu load epoch deduplicates lazy loads for the same account and host." },
+  { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "start" }, reason: "Agent menu load epoch prevents a discovery retry after controller disposal." },
+  { file: "src/controllers/boot-controller.ts", match: { rule: "stale-compare", function: "current" }, reason: "Boot read generation rejects a superseded login/session load, not an edit." },
+  { file: "src/controllers/boot-controller.ts", match: { rule: "stale-compare", function: "start" }, reason: "Boot read generation pins the failure handoff to the session it owns." },
+  { file: "src/controllers/command-palette-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Palette controller lifetime counter prevents an obsolete palette from using live ports." },
+  { file: "src/controllers/history-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "History panel load counter owns its lazy mount; edit staleness belongs to the module." },
+  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "editableTemplatePath" }, reason: "Preview selection intent pins the editable template to the file generation that selected it." },
+  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "select" }, reason: "Preview selection intents reject stale instance clicks and superseded file reveals, not edits.", count: 2 },
+  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "replayPending" }, reason: "Preview selection intent is replayed only in its original file generation." },
+  { file: "src/controllers/save-publish-controller.ts", match: { rule: "stale-compare", function: "findDeletedUpstream" }, reason: "Boot-triggered draft reconciliation checks its read generation before looking for upstream deletions; not a guarded edit plan." },
+  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Setup wizard's own lifetime counter prevents obsolete lazy mounts." },
+  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "remember" }, reason: "Setup wizard's own lifetime counter prevents a disposed wizard from saving onboarding memory." },
+  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "finish" }, reason: "Setup wizard's own lifetime counter prevents a disposed wizard from finishing onboarding." },
+  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "exit" }, reason: "Setup wizard's own lifetime counter prevents either disposed wizard variant from closing its replacement.", count: 2 },
+  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "openOwner" }, reason: "Setup wizard's own lifetime counter rejects a superseded owner-setup load." },
 ];
 // Same-file helpers a plan calls are scanned too, except these waits: the module re-proves
 // every read after them, and the plan reads what it uses through `r` once they settle.
 const waits: AllowlistEntry[] = [
-  { rule: "plan-wait", file: "src/main.ts", function: "ensureNativeTextIndex", reason: "The site's text index load (open404 via nativeSiteReadForCreate) is a wait: it fills the index from branch bases and drafts for search and labels, not the plan's bytes." },
+  { file: "src/main.ts", match: { rule: "plan-wait", function: "ensureNativeTextIndex" }, reason: "The site's text index load (open404 via nativeSiteReadForCreate) is a wait: it fills the index from branch bases and drafts for search and labels, not the plan's bytes." },
 ];
 
-function parse(source: string, file: string) {
-  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-}
-function walk(node: TS.Node, visit: (node: TS.Node) => void) {
-  visit(node);
-  ts.forEachChild(node, child => walk(child, visit));
-}
-function strip(node: TS.Node): TS.Node {
-  while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node) || (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken)) node = ts.isPrefixUnaryExpression(node) ? node.operand : node.expression;
-  return node;
-}
-function member(node: TS.Node): { name: string; receiver: TS.Expression } | undefined {
-  if (ts.isPropertyAccessExpression(node)) return { name: node.name.text, receiver: node.expression };
-  if (ts.isElementAccessExpression(node) && node.argumentExpression) {
-    const key = strip(node.argumentExpression);
-    if (ts.isStringLiteral(key)) return { name: key.text, receiver: node.expression };
-  }
-  return undefined;
-}
-function isFunction(node: TS.Node): node is FunctionBody {
-  return ts.isFunctionLike(node) && "body" in node && !!node.body;
-}
-function boundName(node: FunctionBody): string | undefined {
-  let bound: TS.Node = node;
-  while (bound.parent && strip(bound.parent) === node) bound = bound.parent;
-  const parent = bound.parent;
-  return parent && (ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) ? parent.name.getText() : undefined;
-}
-function functionName(node: FunctionBody) {
-  return node.name?.getText() ?? boundName(node);
-}
-function finding(tree: TS.SourceFile, node: TS.Node, rule: Rule): Finding {
-  let name = "<top-level>";
-  for (let parent: TS.Node | undefined = node; parent; parent = parent.parent) {
-    if (isFunction(parent) && functionName(parent)) { name = functionName(parent)!; break; }
-  }
-  return { file: tree.fileName, line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1, rule, function: name, text: node.getText(tree) };
-}
 function readsParameter(parameter: TS.ParameterDeclaration) {
   return !!parameter.type && ts.isTypeReferenceNode(parameter.type) && parameter.type.typeName.getText() === "Reads";
 }
@@ -94,114 +49,23 @@ function identityCompare(node: TS.Node) {
   const parent = operand.parent;
   return !!parent && ts.isBinaryExpression(parent) && [ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(parent.operatorToken.kind);
 }
-// One file at a time, without imports or lib: the checker binds the file's own names, shadowing
-// included, so plans, helpers and aliases resolve as the code reads; imported names stay unresolved.
-type Analysis = { tree: TS.SourceFile; checker: TS.TypeChecker };
-const analysed = new Map<string, Analysis>();
-function analyse(source: string, file: string): Analysis {
-  const key = `${file}\0${source}`;
-  let analysis = analysed.get(key);
-  if (!analysis) {
-    const tree = parse(source, file);
-    const host: TS.CompilerHost = {
-      getSourceFile: name => name === file ? tree : undefined, fileExists: name => name === file, readFile: () => undefined, writeFile: () => {},
-      getDefaultLibFileName: () => "lib.d.ts", getCurrentDirectory: () => "", getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true, getNewLine: () => "\n",
-    };
-    analysis = { tree, checker: ts.createProgram([file], { noLib: true, noResolve: true, allowJs: true, types: [] }, host).getTypeChecker() };
-    analysed.set(key, analysis);
-  }
-  return analysis;
-}
-function declarationOf(checker: TS.TypeChecker, node: TS.Node): TS.Declaration | undefined {
-  const symbol = checker.getSymbolAtLocation(node);
-  return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
-}
-function declaredName(node: TS.Identifier) {
-  const parent = node.parent;
-  return (ts.isPropertyAccessExpression(parent) && parent.name === node) || ts.isPropertyAssignment(parent) && parent.name === node
-    || ((ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionDeclaration(parent) || ts.isBindingElement(parent)) && (parent.name === node || parent.propertyName === node));
-}
-// `const { source } = ports`, `const { peek } = edits`: the destructured name is the untracked reader.
-function destructuredReader(declaration: TS.Declaration) {
-  if (!ts.isBindingElement(declaration) || !ts.isVariableDeclaration(declaration.parent.parent) || !declaration.parent.parent.initializer) return false;
-  const name = (declaration.propertyName ?? declaration.name).getText(), from = strip(declaration.parent.parent.initializer).getText();
-  return name === "peek" || nativeReaders.has(name) || (name === "source" && (from === "ports" || from === "deps"));
-}
+
 // nativePictureSources parses supplied bytes only; these readers reach host file bytes.
 const nativeReaders = new Set(["nativeEffectiveSource", "nativeEditableSource", "nativeSources", "nativeBaseSources", "nativePreviewSources", "nativePageShownSources", "nativeRouteShownSources", "nativeAssetSources", "nativeLinkSources"]);
-function untracked(checker: TS.TypeChecker, node: TS.Node, seen = new Set<TS.Node>()): boolean {
-  if (inPeekDefault(node) || identityCompare(node) || seen.has(node)) return false;
-  seen.add(node);
-  const access = member(node);
-  if (access) {
-    if (access.name === "peek" || nativeReaders.has(access.name)) return true;
-    const receiver = strip(access.receiver);
-    if (access.name === "source" && (receiver.getText() === "deps" || receiver.getText() === "ports")) return true;
-    if (access.name === "get" && ts.isCallExpression(receiver) && strip(receiver.expression).getText() === "draftStore") return true;
-  }
-  if (!ts.isIdentifier(node) || declaredName(node)) return false;
-  if (nativeReaders.has(node.text)) return true;
-  // An alias: `const reads = deps.edits.peek`, `const read = ports.source`, or destructured.
-  const declaration = declarationOf(checker, node);
-  if (!declaration) return false;
-  if (destructuredReader(declaration)) return true;
-  return ts.isVariableDeclaration(declaration) && !!declaration.initializer && untracked(checker, strip(declaration.initializer), seen);
+function untracked(checker: TS.TypeChecker, node: TS.Node): boolean {
+  if (inPeekDefault(node) || identityCompare(node) || !referenceName(node)) return false;
+  return standsFor(checker, node, value => {
+    const name = referenceName(value);
+    if (name === "peek" || nativeReaders.has(name ?? "")) return true;
+    const access = member(value);
+    const receiver = access?.receiver ?? (ts.isBindingElement(value) ? bindingReceiver(value) : undefined);
+    if (!receiver) return false;
+    const from = strip(receiver);
+    if (name === "source" && ts.isIdentifier(from) && ["ports", "deps"].includes(from.text)) return true;
+    return name === "get" && ts.isCallExpression(from) && strip(from.expression).getText() === "draftStore";
+  });
 }
-function functionOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0): FunctionBody | undefined {
-  expression = strip(expression);
-  if (isFunction(expression)) return expression;
-  if (!ts.isIdentifier(expression) || depth > 8) return undefined;
-  const declaration = declarationOf(checker, expression);
-  if (declaration && isFunction(declaration)) return declaration;
-  return declaration && ts.isVariableDeclaration(declaration) && declaration.initializer ? functionOf(checker, declaration.initializer, depth + 1) : undefined;
-}
-function returnsOf(factory: FunctionBody): TS.Expression[] {
-  if (!ts.isBlock(factory.body)) return [factory.body];
-  const returned: TS.Expression[] = [];
-  const visit = (node: TS.Node): void => {
-    if (isFunction(node)) return;
-    if (ts.isReturnStatement(node) && node.expression) returned.push(node.expression);
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(factory.body, visit);
-  return returned;
-}
-// The plan functions an argument stands for: inline, a same-file name, either branch of a
-// conditional, or what a same-file factory returns (its setup runs before the plan, so it is not one).
-function plansOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0): FunctionBody[] | undefined {
-  expression = strip(expression);
-  if (depth > 8) return undefined;
-  if (ts.isConditionalExpression(expression)) {
-    const branches = [plansOf(checker, expression.whenTrue, depth + 1), plansOf(checker, expression.whenFalse, depth + 1)];
-    return branches.every(Boolean) ? branches.flat() as FunctionBody[] : undefined;
-  }
-  if (ts.isCallExpression(expression)) {
-    const factory = functionOf(checker, expression.expression);
-    const returned = factory ? returnsOf(factory).map(value => plansOf(checker, value, depth + 1)) : [];
-    return returned.length && returned.every(Boolean) ? returned.flat() as FunctionBody[] : undefined;
-  }
-  if (isFunction(expression)) return [expression];
-  const declaration = ts.isIdentifier(expression) ? declarationOf(checker, expression) : undefined;
-  if (declaration && isFunction(declaration)) return [declaration];
-  return declaration && ts.isVariableDeclaration(declaration) && declaration.initializer ? plansOf(checker, declaration.initializer, depth + 1) : undefined;
-}
-// `edits.run(...)`, `guardedEdits.now(...)`, and the same through `const { run } = edits` or `const run = edits.run`.
-function isPlanCall(checker: TS.TypeChecker, call: TS.CallExpression, depth = 0): boolean {
-  const callee = strip(call.expression);
-  const access = member(callee);
-  if (access) return ["run", "now"].includes(access.name) && /edits$/i.test(strip(access.receiver).getText());
-  if (!ts.isIdentifier(callee) || depth > 8) return false;
-  const declaration = declarationOf(checker, callee);
-  if (declaration && ts.isBindingElement(declaration) && ts.isVariableDeclaration(declaration.parent.parent) && declaration.parent.parent.initializer) {
-    return ["run", "now"].includes((declaration.propertyName ?? declaration.name).getText()) && /edits$/i.test(strip(declaration.parent.parent.initializer).getText());
-  }
-  if (!declaration || !ts.isVariableDeclaration(declaration) || !declaration.initializer) return false;
-  let value = strip(declaration.initializer);
-  // `edits.run.bind(edits)` is the method itself.
-  if (ts.isCallExpression(value) && member(strip(value.expression))?.name === "bind") value = strip(member(strip(value.expression))!.receiver);
-  const method = member(value);
-  return !!method && ["run", "now"].includes(method.name) && /edits$/i.test(strip(method.receiver).getText());
-}
+
 const planReads: Detector = (source, file) => {
   const { tree, checker } = analyse(source, file), hits: Finding[] = [];
   const seen = new Set<string>();
@@ -210,7 +74,7 @@ const planReads: Detector = (source, file) => {
     if (!seen.has(key)) { seen.add(key); hits.push({ ...finding(tree, node, rule), ...name ? { function: name } : {} }); }
   };
   walk(tree, node => {
-    if (!ts.isCallExpression(node) || !node.arguments[0] || !isPlanCall(checker, node)) return;
+    if (!ts.isCallExpression(node) || !node.arguments[0] || !isPlanMethod(checker, node.expression)) return;
     const plans = plansOf(checker, node.arguments[0]);
     if (!plans) return report(node.arguments[0], "plan-unresolved");
     // Same-file helpers the plan calls run inside it: scanned too, transitively.
@@ -222,7 +86,7 @@ const planReads: Detector = (source, file) => {
         if (untracked(checker, read)) report(read, "plan-read");
         if (!ts.isCallExpression(read)) return;
         const helper = functionOf(checker, read.expression), name = helper && functionName(helper);
-        if (name && waits.some(wait => wait.file === file && wait.function === name)) report(read, "plan-wait", name);
+        if (name && waits.some(wait => wait.file === file && typeof wait.match !== "string" && wait.match.function === name)) report(read, "plan-wait", name);
         else if (helper) bodies.push(helper);
         helper?.parameters.forEach((parameter, index) => {
           if (peekDefault(parameter) && (!read.arguments[index] || strip(read.arguments[index]).getText() === "undefined")) report(read, "plan-default");
@@ -258,20 +122,9 @@ const staleCompares: Detector = (source, file) => {
   return hits;
 };
 const guards = [planReads, readsHelpers, staleCompares];
-function matches(hit: Finding, entry: AllowlistEntry) {
-  return hit.rule === entry.rule && hit.file === entry.file && hit.function === entry.function;
-}
-function staleEntries(hits: Finding[], entries: AllowlistEntry[] = [...allowlist, ...waits]) {
-  return entries.filter(entry => !entry.reason.trim() || hits.filter(hit => matches(hit, entry)).length !== (entry.count ?? 1));
-}
-function sourceFiles(directory: string): string[] {
-  return readdirSync(new URL(`../${directory}/`, import.meta.url), { withFileTypes: true }).flatMap(entry => {
-    const file = `${directory}/${entry.name}`;
-    return entry.isDirectory() ? sourceFiles(file) : /\.(?:[cm]?[jt]s|tsx)$/.test(file) ? [file] : [];
-  });
-}
+
 const realHits = [...sourceFiles("src"), ...sourceFiles("shared")].flatMap(file => {
-  const source = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+  const source = readSource(file);
   return guards.flatMap(detect => detect(source, file));
 });
 const FAKE = "src/controllers/fake.ts";
@@ -355,8 +208,8 @@ test("real source tree uses tracked plan reads and module-owned edit staleness",
 });
 
 test("every allowlist entry still matches exactly its count and gives a reason", () => {
-  assert.deepEqual(staleEntries(realHits), []);
-  const entry: AllowlistEntry = { rule: "stale-compare", file: FAKE, function: "live", reason: "Controller lifetime, not edit staleness." };
+  assert.deepEqual(staleEntries(realHits, [...allowlist, ...waits]), []);
+  const entry: AllowlistEntry = { file: FAKE, match: { rule: "stale-compare", function: "live" }, reason: "Controller lifetime, not edit staleness." };
   const hit = staleCompares("const live = () => epoch === generation;", FAKE);
   assert.deepEqual(staleEntries(hit, [entry]), []);
   for (const hits of [[], [...hit, ...hit]]) assert.deepEqual(staleEntries(hits, [entry]), [entry]);

@@ -61,7 +61,7 @@ async function openMode(page: Page, baseURL: string | undefined) {
   await page.getByRole("treeitem", { name: /^Section work/ }).first().locator(".page-structure__label").click();
   // Every structure the preview reports from here on, to check the slot names it gives.
   await page.evaluate(() => {
-    const seen: unknown[] = (window as unknown as { reportedStructures: unknown[] }).reportedStructures = [];
+    const seen: unknown[] = (window as typeof window & { reportedStructures: unknown[] }).reportedStructures = [];
     addEventListener("message", (event) => { if (event.data?.source === "astro-native-preview" && event.data.type === "structure") seen.push(event.data.items); });
   });
   await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
@@ -80,7 +80,7 @@ test("Structure frames template parts and mirrors slot chip edits in both themes
   const undo = () => page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(outline).toBeVisible();
   // Placeholders showing, the page's elements still report the slots they fill (never the runtime's stand-in name).
-  expect(JSON.stringify(await page.evaluate(() => (window as unknown as { reportedStructures: unknown[] }).reportedStructures))).not.toContain("ase-placeholder");
+  expect(JSON.stringify(await page.evaluate(() => (window as typeof window & { reportedStructures: unknown[] }).reportedStructures))).not.toContain("ase-placeholder");
   await expect(page.locator(".page-structure [data-slot^='ase-placeholder']")).toHaveCount(0);
   await expect(outline.getByRole("treeitem").first()).toContainText("Section work");
   await expect(outline.getByRole("treeitem")).toHaveCount(5);
@@ -168,13 +168,14 @@ test("Structure frames template parts and mirrors slot chip edits in both themes
   await expect(title.getByRole("button", { name: "Attributes" })).toHaveCount(0);
   await lede.focus();
   await page.keyboard.press("Alt+ArrowUp");
-  await expect.poll(async () => (await source()).replace(/\s+(?=<)/g, "")).toContain('<section class="flow"><p class="lede">A few of the sites we made this year.</p><slot name="title">');
+  await expect.poll(async () => (await source())!.replace(/\s+(?=<)/g, "")).toContain('<section class="flow"><p class="lede">A few of the sites we made this year.</p><slot name="title">');
   await undo();
   await expect.poll(source).toBe(workTemplate);
   // Nor does the framed instance's own row move it on the page.
   const home = await effectiveSource(page, baseURL, "index.html");
   await outline.getByRole("treeitem").first().focus();
   await page.keyboard.press("Alt+ArrowUp");
+  // fixed-wait: Asserts Alt+Up on the template root leaves the page source unchanged after key handling.
   await page.waitForTimeout(300);
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(home);
   // Code edits and Undo/Redo refresh Structure even when the page's light DOM report is identical.

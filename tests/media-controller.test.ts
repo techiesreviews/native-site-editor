@@ -18,10 +18,10 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
   const sources = new Map([["index.html", '<section><img src="/images/old.png" alt="Old alt"></section>']]);
   const errors: unknown[] = [], changes: string[] = [];
   let pick: MediaPickerOptions | undefined;
-  const element = { getAttribute: () => busy ? "true" : "false" } as unknown as HTMLElement;
+  const element: Partial<HTMLElement> = { getAttribute: () => busy ? "true" : "false" };
   const module: MediaModule = {
     openMediaPicker: async (options) => { pick = options; }, closeMediaPicker: () => { closes++; },
-    mountMediaLibrary: () => { mounts++; return { element, ready: Promise.resolve(), refreshedKey: undefined, refresh: async () => { refreshes++; }, dispose: () => { disposed++; } }; },
+    mountMediaLibrary: () => { mounts++; return { element: element as HTMLElement, ready: Promise.resolve(), refreshedKey: undefined, refresh: async () => { refreshes++; }, dispose: () => { disposed++; } }; },
   };
   const ports: MediaControllerPorts = {
     workspace: () => ({ repo: scope.repo, scope, identity, site: { routes: { "/": "index.html" }, components: {} }, nativePaths: ["index.html", "images/old.png"], drafts: store }),
@@ -30,7 +30,7 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
     findEntry: async () => ({ sha: "sha", size: 12 }), entry: () => ({ sha: "sha", size: 12 }), readText: async () => "read text", rememberSource: (path, source) => { sources.set(path, source); },
     uploadedBlob: async () => undefined, readBlob: async () => new Blob(["image"], { type: "image/png" }), applyBatch: async () => {}, openPage: async () => {}, load: async () => module,
     openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
-    change: (_path, _source, edits) => { changes.push(edits[0].text); return true; }, galleryHost: () => element, galleryVisible: () => visible, imagesSelected: () => true, gallerySignature: () => signature,
+    change: (_path, _source, edits) => { changes.push(edits[0].text); return true; }, galleryHost: () => element as HTMLElement, galleryVisible: () => visible, imagesSelected: () => true, gallerySignature: () => signature,
     locateElement: (source) => { const tag = startTags(source).find((item) => item.name === "img"); return tag && { tag }; },
     observeBusy: (_element, changed) => { observerCallback = changed; return { disconnect() {} }; }, announce: () => {}, error: (error) => errors.push(error), ...overrides,
   };

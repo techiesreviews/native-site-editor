@@ -61,8 +61,8 @@ async function seed(page: Page, baseURL: string | undefined, withCards = true) {
 }
 
 // A mark on the frame's window: still there only if the document was never replaced.
-const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as unknown as { aseMark: string }).aseMark = "slice-47"; });
-const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as unknown as { aseMark?: string }).aseMark);
+const markFrame = (page: Page) => frame(page).locator("html").evaluate(() => { (window as typeof window & { aseMark: string }).aseMark = "slice-47"; });
+const frameMark = (page: Page) => frame(page).locator("html").evaluate(() => (window as typeof window & { aseMark?: string }).aseMark);
 
 const CARD = "components/card-project/card-project.html";
 

@@ -128,6 +128,7 @@ test("Alt+arrows in the page move a whole section only, one exact undo", { tag: 
   await frame(page).locator("section-feature p:visible").first().click();
   await expect(bar(page)).toBeVisible();
   await page.keyboard.press("Alt+ArrowUp");
+  // fixed-wait: Asserts Alt+Up on a paragraph inside the component cannot move the page section.
   await page.waitForTimeout(300);
   expect(await source()).toBe(before);
   // The whole feature section (picked in Structure), then Alt+Up with the

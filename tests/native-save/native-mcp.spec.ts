@@ -93,7 +93,7 @@ test("make_component drafts files and whole-element slots in one undo step", { t
     expect(made.result.tag).toBe("section-scroll");
     const htmlPath = "components/section-scroll/section-scroll.html";
     const cssPath = "components/section-scroll/section-scroll.css";
-    await expect.poll(async () => (await draft(page, indexPath)).content).toContain("<section-scroll");
+    await expect.poll(async () => (await draft(page, indexPath))!.content).toContain("<section-scroll");
     const source = (await call("read_file", { path: indexPath })).content;
     expect(source).toMatch(/<h2[^>]*slot="title"[^>]*>Scroll to verify<\/h2>/);
     expect((await call("read_file", { path: htmlPath })).content).toContain('<slot name="title"><h2');
@@ -180,7 +180,7 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     });
     expect(edited.state).toBe("applied");
     await expect(frame(page).locator(".hero h1")).toHaveText("Edited by an agent");
-    expect((await draft(page, indexPath)).content).toContain("Edited by an agent");
+    expect((await draft(page, indexPath))!.content).toContain("Edited by an agent");
     // A stale hash is refused, and nothing changes.
     const stale = await client.callTool({ name: "edit_file", arguments: { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "Edited", newText: "x" }] } });
     expect(stale.isError).toBe(true);
@@ -233,7 +233,7 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     await expect(frame(page).locator("main")).toBeEmpty();
     const details = await call("set_page_details", { page: "/our-team/", description: "The people behind the studio." });
     expect(details.state).toBe("applied");
-    const made = (await draft(page, "our-team/index.html")).content;
+    const made = (await draft(page, "our-team/index.html"))!.content;
     expect(made).toContain("<title>Our team</title>");
     expect(made).toContain('<meta name="description" content="The people behind the studio.">');
     // Its own address, not the home page's; og:title and og:description follow.
@@ -494,7 +494,7 @@ test("clicking a section component's own area selects it on the page, and Remove
     await expect(banner).toHaveCount(0);
     // Back to the committed page, so its draft is gone.
     await expect.poll(async () => (await draft(page, indexPath))?.content ?? indexSource).toBe(indexSource);
-    expect((await draft(page, templatePath)).content).toBe(template);
+    expect((await draft(page, templatePath))!.content).toBe(template);
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   } finally {
     await client.close();
@@ -674,13 +674,14 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     await expect(other.locator(".agent-pin__text")).toHaveText("Is this sentence true?");
     await expect(other.locator(".agent-pin__text")).toBeVisible();
     await page.mouse.move(5, 500);
+    // fixed-wait: Asserts a click-pinned card stays visible past the 800 ms hover close delay.
     await page.waitForTimeout(900);
     await expect(card).toBeVisible();
     await card.getByRole("button", { name: "Clear" }).click();
     await expect(pins).toHaveCount(1);
     await expect.poll(async () => (await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests.length).toBe(0);
     // The pins are the editor's: nothing of them is in the page's draft.
-    expect((await draft(page, indexPath)).content).not.toContain("agent-pin");
+    expect((await draft(page, indexPath))!.content).not.toContain("agent-pin");
     // Reading the branch again reloads the preview in place, parked until the
     // page is back. Its reads are held until the new frame is ready, so it
     // turns ready while parked: the pins still reach it.
@@ -691,7 +692,7 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     let holding = true;
     await page.route(/\/api\/files?\?/, (route) => { if (holding) heldReads.push(route); else void route.continue(); });
     await page.evaluate(() => {
-      const seen = window as unknown as { __pinRects: number; __readies: number };
+      const seen = window as typeof window & { __pinRects: number; __readies: number };
       seen.__pinRects = 0;
       seen.__readies = 0;
       addEventListener("message", (event) => {
@@ -702,7 +703,7 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
       });
       (document.getElementById("refresh") as HTMLButtonElement).click();
     });
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __readies: number }).__readies), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { __readies: number }).__readies), { timeout: 15_000 }).toBeGreaterThan(0);
     await expect(page.locator(".native-preview-pane")).toHaveClass(/is-parked/);
     holding = false;
     for (const route of heldReads.splice(0)) void route.continue();
@@ -710,7 +711,7 @@ test("Ask agent: a request about an element in the preview reaches the agent wit
     await expect(page.locator(".native-preview-pane")).not.toHaveClass(/is-parked/, { timeout: 30_000 });
     await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
     // The reloaded frame was told where the pins go: it reports their places.
-    await expect.poll(() => page.evaluate(() => (window as unknown as { __pinRects: number }).__pinRects), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { __pinRects: number }).__pinRects), { timeout: 15_000 }).toBeGreaterThan(0);
     await expect(pins).toHaveCount(1);
     await expect(pins.first()).toBeVisible();
   } finally {
@@ -836,6 +837,7 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(card).toBeHidden();
     await pin.click();
     await page.mouse.move(5, 500);
+    // fixed-wait: Asserts a click-pinned question card stays visible past the 800 ms hover close delay.
     await page.waitForTimeout(900);
     await expect(card).toBeVisible();
     await atPin(card, pin, "below");

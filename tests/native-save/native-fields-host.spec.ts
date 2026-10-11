@@ -62,7 +62,7 @@ test("a detached native field refuses an agent source replacement", async ({ pag
     return next;
   });
   await page.evaluate(() => {
-    const field = (window as unknown as { detachedNativeField: HTMLInputElement }).detachedNativeField;
+    const field = (window as typeof window & { detachedNativeField: HTMLInputElement }).detachedNativeField;
     field.value = "Must not land";
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });

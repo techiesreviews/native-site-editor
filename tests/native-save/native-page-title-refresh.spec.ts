@@ -51,6 +51,7 @@ type PointerStep = ["pointerdown" | "pointerup" | "pointercancel", number] | num
 function pointerSteps(page: Page, pointerType: "touch" | "pen", steps: PointerStep[]) {
   return explorer(page).evaluate(async (el, { pointerType, steps }) => {
     for (const step of steps) {
+      // fixed-wait: Controls touch and pen gesture timing, including delayed clicks and fallback suppression.
       if (typeof step === "number") await new Promise(resolve => setTimeout(resolve, step));
       else el.dispatchEvent(new PointerEvent(step[0], { pointerId: step[1], pointerType, button: 0, bubbles: true, cancelable: true, composed: true }));
     }
@@ -265,6 +266,7 @@ for (const pointerType of ["touch", "pen"] as const) {
     await titles.release();
     // Another pointer's release never schedules the fallback for this gesture.
     await explorer(page).dispatchEvent("pointerup", { pointerId: 92, pointerType, button: 0, bubbles: true });
+    // fixed-wait: Asserts a different pointer cannot release the title refresh fallback over its grace window.
     await page.waitForTimeout(1500);
     await expect(item(page, "Fern and kettle")).toBeVisible();
     // A tap's click may still be on its way, so the titles wait well past the next frames.

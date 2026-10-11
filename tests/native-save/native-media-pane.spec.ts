@@ -18,7 +18,7 @@ async function mount(page: Page, baseURL: string | undefined) {
     const view = mountMediaLibrary(host); await view.ready;
     Object.assign(window, { mediaPaneHarness: { view, host, remount: async () => {
       view.dispose(); const next = mountMediaLibrary(host); await next.ready;
-      (window as unknown as { mediaPaneHarness: { view: typeof next } }).mediaPaneHarness.view = next;
+      (window as typeof window & { mediaPaneHarness: { view: typeof next } }).mediaPaneHarness.view = next;
     } } });
   });
 }
@@ -41,7 +41,7 @@ test("persistent pane searches, filters, shows details and retains drafts throug
   await expect(panel).not.toBeVisible();
   await page.evaluate(() => { document.querySelector<HTMLElement>("#media-pane-harness")!.hidden = false; });
   await expect(panel.getByLabel("Default alt text", { exact: true })).toHaveValue("Persistent studio");
-  await page.evaluate(async () => { await (window as unknown as { mediaPaneHarness: { remount(): Promise<void> } }).mediaPaneHarness.remount(); });
+  await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { remount(): Promise<void> } }).mediaPaneHarness.remount(); });
   await panel.getByRole("button", { name: "pane-tag", exact: true }).click();
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
@@ -59,7 +59,7 @@ test("pane rename uses real atomic drafts and Undo restores references", async (
   await expect.poll(source).toEqual(before.replaceAll("studio-desk.svg", "pane-desk.svg"));
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(source).toEqual(before);
-  await page.evaluate(async () => { await (window as unknown as { mediaPaneHarness: { view: { refresh(): Promise<void> } } }).mediaPaneHarness.view.refresh(); });
+  await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { view: { refresh(): Promise<void> } } }).mediaPaneHarness.view.refresh(); });
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await expect.poll(() => storedDraft(page, "images/pane-desk.svg")).toBeUndefined();
 });
@@ -104,10 +104,10 @@ test("disposing a pane aborts pending optimisation and revokes its preview URLs"
   await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await expect.poll(() => Boolean(release)).toBe(true);
-  await page.evaluate(() => { (window as unknown as { mediaPaneHarness: { view: { dispose(): void } } }).mediaPaneHarness.view.dispose(); });
+  await page.evaluate(() => { (window as typeof window & { mediaPaneHarness: { view: { dispose(): void } } }).mediaPaneHarness.view.dispose(); });
   release!();
   await expect(panel).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => (window as unknown as { mediaPaneRevoked: string[] }).mediaPaneRevoked.length)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { mediaPaneRevoked: string[] }).mediaPaneRevoked.length)).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
 
@@ -124,7 +124,7 @@ test("refresh after real metadata Undo restores detail fields and cannot save un
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Undone pane alt");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("Undone pane alt");
-  await page.evaluate(async () => { await (window as unknown as { mediaPaneHarness: { view: { refresh(): Promise<void> } } }).mediaPaneHarness.view.refresh(); });
+  await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { view: { refresh(): Promise<void> } } }).mediaPaneHarness.view.refresh(); });
   await expect(alt).toHaveValue(originalAlt); await expect(tags).toHaveValue(originalTags);
   await panel.getByRole("button", { name: "Save metadata", exact: true }).click();
   await expect(panel.getByRole("status").last()).toContainText("saved as a draft");
@@ -156,6 +156,7 @@ for (const removed of [false, true]) {
       host.querySelector<HTMLButtonElement>(".media-library__thumbnail")!.click();
       const refreshing = view.refresh();
       releaseBlob(new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'], { type: "image/svg+xml" }));
+      // fixed-wait: Lets the released blob complete while the refresh load stays held; the sheet must remain closed.
       await new Promise(resolve => setTimeout(resolve, 50));
       const saveDuringLoad = host.querySelector('[aria-label="Default alt text"]') !== null;
       releaseLoad(); await refreshing;

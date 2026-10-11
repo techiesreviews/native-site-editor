@@ -371,6 +371,7 @@ test("with reduced motion the last page has no confetti, only a fade-in", async 
   await toReady(page);
   await expect(page.locator(".wizard-celebrate__name")).toHaveText("Calm site");
   await expect(page.getByRole("button", { name: "Open the editor" })).toBeVisible();
+  // fixed-wait: Asserts reduced motion never starts delayed confetti after the celebration appears.
   await page.waitForTimeout(600);
   await expect(page.locator(".confetti")).toHaveCount(0);
   expect(await page.locator(".wizard__panel--celebrate").evaluate((element) => getComputedStyle(element).animationName)).toBe("celebrate-fade");
@@ -397,6 +398,7 @@ test("an editor without a GitHub App opens the wizard on Connect GitHub and goes
   await page.goto(`${baseURL}/`);
   const dialog = page.locator(".wizard");
   await expect(dialog.getByRole("heading", { level: 1, name: "Connect GitHub" })).toBeVisible();
+  // fixed-wait: Asserts signed-out setup never starts an automatic authentication handoff before a click.
   await page.waitForTimeout(500);
   expect(handoffs, "no handoff before the click").toEqual([]);
   expect(new URL(page.url()).pathname).toBe("/");

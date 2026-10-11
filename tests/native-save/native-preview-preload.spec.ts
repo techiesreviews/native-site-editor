@@ -91,6 +91,7 @@ test("a repo that is not native never requests the runtime", async ({ page, base
   const runtime = runtimeRequests(page);
   await page.goto(`${baseURL}/#repo=${id}&branch=main`);
   await expect(page.getByText("No home page")).toBeVisible({ timeout: 30_000 });
+  // fixed-wait: Asserts the missing-home view never starts a delayed runtime preload.
   await page.waitForTimeout(500);
   expect(runtime).toEqual([]);
   await expect(pane(page)).toHaveCount(0);

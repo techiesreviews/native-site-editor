@@ -28,6 +28,8 @@ Claude Code loads `.claude/settings.json`; scripts in `scripts/agents/hooks/` en
 
   These reads also pass: reads inside an `expect.poll` callback, helpers that `return` the read (poll them where they are called), and reads straight after a `keyboard.press("ControlOrMeta+C")`. To opt out, put `// clipboard-ready: <reason>` on the read or on the line above it.
 
+- **Fixed waits** (`scripts/check-specs.mjs`): in `tests/**/*.spec.ts`, `waitForTimeout(...)` and `new Promise(... setTimeout ...)` sleeps fail. Wait on observable state. For a deliberate observation window, injected latency or an in-page polling interval, put `// fixed-wait: <specific reason>` on the wait or the line above it. The check ignores comments and literal text as the clipboard check does; template interpolations remain code.
+
 ## `npm run lint` (about 20 s, kept separate from `check` because of its speed)
 
 ESLint with type-aware typescript-eslint (`eslint.config.mjs`):
@@ -35,9 +37,15 @@ ESLint with type-aware typescript-eslint (`eslint.config.mjs`):
 - `@typescript-eslint/unbound-method`: a method passed without its object, such as `x: ports.source` or `.catch(ports.onError)`, loses `this`. Wrap it in an arrow (`(path) => ports.source(path)`) or use `.bind(obj)`. If a port interface only holds free functions, declare its members as properties (`frame?: (callback: () => void) => void`) and not as methods.
 - `no-restricted-syntax` for browser and Workers globals (`requestAnimationFrame`, `setTimeout`, `fetch` and others) used as object property values. When a port is called as `ports.frame()`, the global gets the wrong receiver and throws "Illegal invocation" (p5-21). Wrap the global in an arrow.
 
+- **Double assertions** (`no-restricted-syntax`, `tests/**`): `as unknown as X` fails. Type a fake with `satisfies` or a declared type; extend `Window` explicitly for browser probes. Escape a deliberate incomplete or malformed fixture with `// eslint-disable-next-line no-restricted-syntax -- <specific reason>`.
+
 Opt out on one line with a reason: `// eslint-disable-next-line @typescript-eslint/unbound-method -- <reason>`. A reason is required, for example: the original is saved only to restore it later, and every call passes `.call(this)`.
 
 typescript-eslint needs the TypeScript compiler API, which TypeScript 7 does not include. `tools/typescript-api/` is a small local package, installed as `typescript-eslint-api`, that depends on TypeScript 6. The committed `.npmrc` sets `install-links=true`, so npm copies it into `node_modules` and nests TypeScript 6 inside it, so its `tsc` stays out of `node_modules/.bin` and `npx tsc` remains TypeScript 7. `eslint.config.mjs` resolves typescript-eslint's `typescript` imports to it, and the `overrides` in `package.json` stop npm from rejecting the peer range.
+
+## Writing a source guard
+
+Use `tests/support/source-guard.ts` for parsing, bound names and aliases, destructuring, module references (imports, re-exports and dynamic imports), computed members and guarded plans. State the protected names/modules and permitted homes in the guard. Allowlist entries use `{ file, match, reason, count }` (count defaults to one); `staleEntries` rejects unused, over-counted or unreasoned exceptions. Shared loophole fixtures live in `tests/source-guard.test.ts`; keep rule-specific fixtures in each guard.
 
 ## CI
 

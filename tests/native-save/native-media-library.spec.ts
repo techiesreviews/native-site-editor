@@ -113,10 +113,10 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
   await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Add optimised copies", exact: true })).toBeEnabled();
-  await page.evaluate(() => (window as unknown as { mediaReceiptProbe: { replace(): void } }).mediaReceiptProbe.replace());
+  await page.evaluate(() => (window as typeof window & { mediaReceiptProbe: { replace(): void } }).mediaReceiptProbe.replace());
   await panel.getByRole("button", { name: "Add optimised copies", exact: true }).click();
   await expect(panel.locator(".media-library__message")).toContainText("changed since its optimisation preview");
-  const state = await page.evaluate(() => (window as unknown as { mediaReceiptProbe: { state(): { version: string; commits: number } } }).mediaReceiptProbe.state());
+  const state = await page.evaluate(() => (window as typeof window & { mediaReceiptProbe: { state(): { version: string; commits: number } } }).mediaReceiptProbe.state());
   expect(state).toEqual({ version: "binary-B", commits: 0 });
 });
 

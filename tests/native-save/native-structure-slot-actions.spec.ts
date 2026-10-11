@@ -32,7 +32,8 @@ test('slot actions fade in over the badge, which stays where it is',async({page}
  const badge=title.locator('.page-structure__slot-badge');
  await page.mouse.move(0,0);await expect(pencil).toHaveCSS('opacity','0');
  const rest=(await badge.boundingBox())!;
- await title.hover();await expect(pencil).toHaveCSS('opacity','1');await page.waitForTimeout(300);
+ await title.hover();await expect(pencil).toHaveCSS('opacity','1');
+ await title.evaluate(async (el: Element) => { await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)); });
  const hovered=(await badge.boundingBox())!;
  expect(hovered.x).toBe(rest.x);
  const geo=await title.evaluate((el:HTMLElement)=>{const r=el.getBoundingClientRect(),o=el.querySelector(':scope > .row-action-overlay')!,ob=o.getBoundingClientRect(),kids=[...o.children].map(c=>c.getBoundingClientRect());return{right:r.right,last:kids[kids.length-1].right,barLeft:ob.left,fade:getComputedStyle(o,'::before').opacity,overflow:el.scrollWidth-el.clientWidth,tree:el.closest('[role=tree]')!.scrollWidth-el.closest('[role=tree]')!.clientWidth};});

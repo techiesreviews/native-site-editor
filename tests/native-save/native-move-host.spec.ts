@@ -97,7 +97,7 @@ test("a detached section move callback refuses newer source and allows a fresh r
     return next;
   });
   // The old button, held from before the change, is pressed after it.
-  await page.evaluate(() => (window as unknown as { oldNativeMove: HTMLElement }).oldNativeMove.click());
+  await page.evaluate(() => (window as typeof window & { oldNativeMove: HTMLElement }).oldNativeMove.click());
   expect(await source(page)).toBe(changed);
   await expect(page.locator("#status")).toContainText("source or selection changed");
   await selectSection(page, 0);
@@ -115,7 +115,7 @@ test("an old section's Move down, pressed after another section is selected, ref
   await expect(bar(page).getByRole("button", { name: "Move up", exact: true })).toBeEnabled();
   expect(await source(page)).toBe(before);
   // Replays the old button's closure (a detached element, not a pointer press).
-  await page.evaluate(() => (window as unknown as { oldNativeMove: HTMLElement }).oldNativeMove.click());
+  await page.evaluate(() => (window as typeof window & { oldNativeMove: HTMLElement }).oldNativeMove.click());
   await expect(page.locator("#status")).toContainText("source or selection changed");
   expect(await source(page)).toBe(before);
   expect(await storedDraft(page, "index.html").then((draft) => draft?.content)).toBe(before);
@@ -143,7 +143,7 @@ test("Alt+Down while typing remains native and does not move the element", async
     });
   });
   await frame(page).locator("#moving").press("Alt+ArrowDown");
-  expect(await frame(page).locator("#moving").evaluate(() => (window as unknown as { nativeMoveTypingPrevented: boolean }).nativeMoveTypingPrevented)).toBe(false);
+  expect(await frame(page).locator("#moving").evaluate(() => (window as typeof window & { nativeMoveTypingPrevented: boolean }).nativeMoveTypingPrevented)).toBe(false);
   expect(await source(page)).toBe(before);
   await expect(frame(page).locator("#first > p").first()).toHaveAttribute("id", "moving");
 });
@@ -209,7 +209,7 @@ test("a new shadow selection clears the previous section shortcut before its fil
   });
   await frame(page).locator("site-header a").first().click({ position: { x: 5, y: 5 } });
   await expect.poll(() => page.evaluate(() => Boolean((window as any).gapMoveChecked))).toBe(true);
-  expect((await storedDraft(page, "index.html")).content).toBe(before);
+  expect((await storedDraft(page, "index.html"))!.content).toBe(before);
 });
 
 test("a section move waiting for its page editor refuses a foreign draft written during that await", async ({ page, baseURL }) => {
@@ -274,6 +274,7 @@ test("a never-saved page's section move applies at once, and a foreign draft wri
     element.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true, cancelable: true }));
     const mounted = document.querySelector("#current-page")?.getAttribute("data-path") === path && editor.getMountedSource(path) !== undefined;
     const before = editor.getMountedSource(path);
+    // fixed-wait: Polls mounted source inside the page before injecting the draft that follows the key move.
     for (let waited = 0; editor.getMountedSource(path) === before && waited < 5000; waited += 20) await new Promise(resolve => setTimeout(resolve, 20));
     const moved = editor.getMountedSource(path);
     const changed = record!.content.replace('<section id="new-first">', '<section id="new-first" data-agent="after-move">');

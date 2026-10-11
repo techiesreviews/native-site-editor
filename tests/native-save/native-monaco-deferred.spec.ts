@@ -16,7 +16,7 @@ test('no Monaco chunk is requested before the preview first paints', async ({ pa
   await page.exposeBinding('__asePaint', (_source, at: number) => { paints.push(at); });
   await page.exposeBinding('__aseRequest', (_source, url: string, at: number) => { requests.push({ url, at }); });
   await page.addInitScript((pattern) => {
-    const report = window as unknown as { __asePaint(at: number): void; __aseRequest(url: string, at: number): void };
+    const report = window as typeof window & { __asePaint(at: number): void; __aseRequest(url: string, at: number): void };
     if (window.top !== window) {
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) if (entry.name === 'first-contentful-paint') report.__asePaint(performance.timeOrigin + entry.startTime);
@@ -114,6 +114,7 @@ test('a text edit made before Monaco arrives survives Home, About and back Home 
   await pages(page, /^About/);
   await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'about/index.html');
   // The edit has left its polling and is waiting for the editor to draft it.
+  // fixed-wait: Lets the rename leave its polling loop before navigating away while Monaco remains held.
   await page.waitForTimeout(400);
   await pages(page, /^Home/);
   await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'index.html');
@@ -150,6 +151,7 @@ test('a file rename asked for before Monaco arrives never lands on the branch op
   release();
   // The editor arrives; the rename stays on main, never applied here.
   await editorMounted(page);
+  // fixed-wait: Asserts the delayed rename never creates a draft in the replacement branch after the editor mounts.
   await page.waitForTimeout(1000);
   expect((await storedDrafts(page)).filter((draft) => draft.branch === 'feature')).toEqual([]);
 });

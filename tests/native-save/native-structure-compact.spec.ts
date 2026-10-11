@@ -120,7 +120,8 @@ test('row controls never start a drag or choose the row',async({page})=>{
  await harness(page);await page.evaluate(()=>{const s=(window as any).slotHarness;s.source='<project-card><section slot="body">A</section><section slot="body">B</section></project-card>';s.version++;s.update();});
  const before=(await H(page)).selected.length;
  // Hovered first, as a pointer reaches a badge: it has stepped aside for the row's actions.
- await page.locator('[role=treeitem][data-node="0.1"]').hover();await page.waitForTimeout(300);
+ const row = page.locator('[role=treeitem][data-node="0.1"]');await row.hover();
+ await row.evaluate(async (el: Element) => { await Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)); });
  const badge=page.locator('[role=treeitem][data-node="0.1"] .page-structure__slot-badge'),box=(await badge.boundingBox())!;
  await page.mouse.move(box.x+4,box.y+4);await page.mouse.down();await page.mouse.move(box.x+4,box.y-30);await expect(page.locator('.page-structure__tree')).not.toHaveClass(/is-dragging/);await page.mouse.up();
  expect((await H(page)).movesTo).toEqual([]);
@@ -480,6 +481,7 @@ test('a template change while patched text waits ends the patch without its text
  // The patch ended with no text of its own: the preview draws the page again from its sources.
  expect((await patches(page)).at(-1)).toEqual(['end',null]);
  // Typing on patches nothing more.
+ // fixed-wait: Asserts typing after the patch ends creates no later patch during the write debounce.
  const count=(await patches(page)).length;await page.keyboard.type('er');await page.waitForTimeout(250);
  expect((await patches(page)).length).toBe(count);
 });

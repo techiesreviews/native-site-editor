@@ -363,13 +363,13 @@ test("a stale grid report cannot restore controls or edit the previous source", 
   await page.evaluate(() => {
     window.addEventListener("message", (event) => {
       if (event.data?.source === "astro-native-preview" && event.data.type === "item-grids" && event.data.hover) {
-        (window as unknown as { savedGridReport: unknown }).savedGridReport = event.data;
+        (window as typeof window & { savedGridReport: unknown }).savedGridReport = event.data;
       }
     });
   });
   await frame(page).locator("card-project").first().hover();
   await expect(addCard(page)).toBeVisible();
-  const old = await page.evaluate(() => (window as unknown as { savedGridReport: unknown }).savedGridReport);
+  const old = await page.evaluate(() => (window as typeof window & { savedGridReport: unknown }).savedGridReport);
   expect(old).toBeTruthy();
   await addCard(page).click();
   await expect(picker(page)).toBeFocused();
@@ -802,6 +802,7 @@ test("queued grid reports cannot close a newly opened Add card as… gallery bef
     const requests: { type: string; tracking?: number }[] = [];
     const controls = createCardGridControls(pane, frame, {
       describe: () => ({ noun: "card", label: "Work", card: "card-project" }),
+      swapCard: async () => undefined, variantFiles: { site: () => undefined, read: () => undefined },
       addCard: async () => undefined,
       linkPages: () => undefined,
       fillCard: () => undefined,

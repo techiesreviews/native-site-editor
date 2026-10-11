@@ -382,6 +382,7 @@ test("Alt+Down on a select in a heading's bar is the select's, not a move", asyn
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await bar(page).getByRole("combobox", { name: "Heading level" }).focus();
   await page.keyboard.press("Alt+ArrowDown");
+  // fixed-wait: Asserts a focused Heading level control suppresses the move shortcut before Escape closes it.
   await page.waitForTimeout(300);
   await page.keyboard.press("Escape");
   await expect(frame(page).locator("section.hero > h1:first-child")).toHaveCount(1);

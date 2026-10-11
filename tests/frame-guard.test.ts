@@ -1,15 +1,9 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { test } from "node:test";
-import type * as TS from "typescript-eslint-api/node_modules/typescript";
+import { ts, parse, walk, member, functionName, finding, literal, nameFindings, bindingReceiver, moduleReferences, unallowed, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
 
-// TypeScript 7 has no JavaScript API; this package owns the TS 6 parser.
-const ts: typeof TS = createRequire(import.meta.url)("typescript-eslint-api");
-type Finding = { file: string; line: number; rule: string; text: string };
 // `count`: how many findings the entry covers (default 1), so a new one beside it fails too.
-type AllowlistEntry = { file: string; match: string; reason: string; count?: number };
-type Detector = (source: string, file: string) => Finding[];
+
 const LINK = "src/components/preview-link.ts";
 const RUNTIME = "src/components/native-preview-runtime.js";
 const RULES = "src/page-builder/rules/";
@@ -30,58 +24,30 @@ const listenerAllowlist: AllowlistEntry[] = [
   { file: RUNTIME, match: "window", reason: "The runtime's one host listener is the frame side; preview-wire.test.ts pins its source and handled types." },
 ];
 const copiedAllowlist: AllowlistEntry[] = [
-  { file: "src/page-builder/native-operations.ts", match: '["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]', reason: "textNodes constrains source-tree content and insertion destinations, including pre and option, rather than canvas text editing or repeated items (slice 24)." },
-  { file: "src/page-builder/native-component-selection.ts", match: '/^(h[1-6]|p|span|a|button|img|picture|blockquote|figcaption|small|label|strong|em|b|i|cite|q|mark|code)$/', reason: "The default isContent predicate targets page-owned content through component slot assignments, rather than inline formatting or canvas text editing (slice 24)." },
-  { file: "src/components/element-icons.ts", match: "p: textT, text: textT, a: link", reason: "The object maps element names to display icons, not membership in a builder rule." },
-  { file: "src/native-structure.ts", match: "p: \"Paragraph\", a: \"Link\", button: \"Button\"", reason: "The object maps tag names to user-facing kind labels, not a shared tag membership rule." },
-  { file: "src/page-builder/component-model.ts", match: "[\"h1\", \"h2\", \"h3\", \"h4\", \"h5\", \"h6\", \"p\", \"li\", \"blockquote\", \"figcaption\", \"dt\", \"dd\", \"button\", \"label\", \"summary\", \"legend\", \"caption\", \"td\", \"th\", \"address\"]", reason: "TEXT_BLOCKS identifies block text lines for template planning, including address, rather than inline formatting or canvas text editing." },
-  { file: "src/page-builder/component-model.ts", match: "[\"p\", \"h1\", \"h2\", \"h3\", \"h4\", \"h5\", \"h6\", \"span\", \"a\", \"button\", \"label\", \"em\", \"strong\", \"b\", \"i\", \"small\", \"summary\", \"legend\", \"caption\", \"dt\"]", reason: "PHRASING_PARENTS constrains which parents may retain detached component content, not which children are inline formatting." },
-  { file: "src/page-builder/component-model.ts", match: "[\"p\", \"div\", \"h1\", \"h2\", \"h3\", \"h4\", \"h5\", \"h6\", \"section\", \"article\", \"blockquote\", \"ul\", \"ol\", \"figure\"]", reason: "BLOCKS identifies detached block content that cannot stand inside phrasing-only parents, not repeated item kinds." },
-  { file: "src/page-builder/component-model.ts", match: "[\"section\", \"div\", \"article\", \"aside\", \"figure\", \"nav\"]", reason: "Make component uses this list to offer eligible page containers, not to identify repeated items." },
-  { file: "src/page-builder/native-operations.ts", match: "[\"body\", \"main\", \"section\", \"article\", \"aside\", \"nav\", \"header\", \"footer\", \"div\", \"form\", \"fieldset\"", reason: "containers defines conservative source insertion destinations, not repeated item kinds." },
-  { file: "src/page-builder/native-operations.ts", match: "\"a abbr address area article aside audio b base", reason: "htmlNames is the HTML vocabulary used to reject catalogue and foreign names in the strict source parser." },
-  { file: "src/page-builder/native-operations.ts", match: "\"b big blockquote body br center code dd div", reason: "foreignBreakouts encodes HTML parser foreign-content breakout behaviour, not inline formatting or repeated items." },
+  { file: "src/page-builder/native-operations.ts", match: { text: '["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]', includes: true }, reason: "textNodes constrains source-tree content and insertion destinations, including pre and option, rather than canvas text editing or repeated items (slice 24)." },
+  { file: "src/page-builder/native-component-selection.ts", match: { text: '/^(h[1-6]|p|span|a|button|img|picture|blockquote|figcaption|small|label|strong|em|b|i|cite|q|mark|code)$/', includes: true }, reason: "The default isContent predicate targets page-owned content through component slot assignments, rather than inline formatting or canvas text editing (slice 24)." },
+  { file: "src/components/element-icons.ts", match: { text: "p: textT, text: textT, a: link", includes: true }, reason: "The object maps element names to display icons, not membership in a builder rule." },
+  { file: "src/native-structure.ts", match: { text: "p: \"Paragraph\", a: \"Link\", button: \"Button\"", includes: true }, reason: "The object maps tag names to user-facing kind labels, not a shared tag membership rule." },
+  { file: "src/page-builder/component-model.ts", match: { text: "[\"h1\", \"h2\", \"h3\", \"h4\", \"h5\", \"h6\", \"p\", \"li\", \"blockquote\", \"figcaption\", \"dt\", \"dd\", \"button\", \"label\", \"summary\", \"legend\", \"caption\", \"td\", \"th\", \"address\"]", includes: true }, reason: "TEXT_BLOCKS identifies block text lines for template planning, including address, rather than inline formatting or canvas text editing." },
+  { file: "src/page-builder/component-model.ts", match: { text: "[\"p\", \"h1\", \"h2\", \"h3\", \"h4\", \"h5\", \"h6\", \"span\", \"a\", \"button\", \"label\", \"em\", \"strong\", \"b\", \"i\", \"small\", \"summary\", \"legend\", \"caption\", \"dt\"]", includes: true }, reason: "PHRASING_PARENTS constrains which parents may retain detached component content, not which children are inline formatting." },
+  { file: "src/page-builder/component-model.ts", match: { text: "[\"p\", \"div\", \"h1\", \"h2\", \"h3\", \"h4\", \"h5\", \"h6\", \"section\", \"article\", \"blockquote\", \"ul\", \"ol\", \"figure\"]", includes: true }, reason: "BLOCKS identifies detached block content that cannot stand inside phrasing-only parents, not repeated item kinds." },
+  { file: "src/page-builder/component-model.ts", match: { text: "[\"section\", \"div\", \"article\", \"aside\", \"figure\", \"nav\"]", includes: true }, reason: "Make component uses this list to offer eligible page containers, not to identify repeated items." },
+  { file: "src/page-builder/native-operations.ts", match: { text: "[\"body\", \"main\", \"section\", \"article\", \"aside\", \"nav\", \"header\", \"footer\", \"div\", \"form\", \"fieldset\"", includes: true }, reason: "containers defines conservative source insertion destinations, not repeated item kinds." },
+  { file: "src/page-builder/native-operations.ts", match: { text: "\"a abbr address area article aside audio b base", includes: true }, reason: "htmlNames is the HTML vocabulary used to reject catalogue and foreign names in the strict source parser." },
+  { file: "src/page-builder/native-operations.ts", match: { text: "\"b big blockquote body br center code dd div", includes: true }, reason: "foreignBreakouts encodes HTML parser foreign-content breakout behaviour, not inline formatting or repeated items." },
 ];
 const headingAllowlist: AllowlistEntry[] = [
-  { file: "src/page-builder/component-model.ts", match: "export function templateStructure(", reason: "templateStructure renders structure rows and their heading labels while unwrapping slots; it does not decide whether a card has a heading slot." },
-  { file: "src/page-builder/component-model.ts", match: "function planComponent(", reason: "planComponent chooses new component slots and names a linked title, rather than recognising an existing card heading slot." },
-  { file: "src/page-builder/component-model.ts", match: "export function hasHeadingSlot(template: string) {\n  return headingSlotIn(parseSource(template), sourceView(template));\n}", reason: "This source-template adapter delegates directly to rules/cards.ts rather than copying its heading-slot walk." },
-  { file: "src/page-builder/native-operations.ts", match: "const heading = node.name === \"section\" ? node.children.find", reason: "nativeOutline and its mapper (two findings, one walk) report section headings and slot names for the source outline, not card heading-slot eligibility.", count: 2 },
+  { file: "src/page-builder/component-model.ts", match: { text: "export function templateStructure(", includes: true }, reason: "templateStructure renders structure rows and their heading labels while unwrapping slots; it does not decide whether a card has a heading slot." },
+  { file: "src/page-builder/component-model.ts", match: { text: "function planComponent(", includes: true }, reason: "planComponent chooses new component slots and names a linked title, rather than recognising an existing card heading slot." },
+  { file: "src/page-builder/component-model.ts", match: { text: "export function hasHeadingSlot(template: string) {\n  return headingSlotIn(parseSource(template), sourceView(template));\n}", includes: true }, reason: "This source-template adapter delegates directly to rules/cards.ts rather than copying its heading-slot walk." },
+  { file: "src/page-builder/native-operations.ts", match: { text: "const heading = node.name === \"section\" ? node.children.find", includes: true }, reason: "nativeOutline and its mapper (two findings, one walk) report section headings and slot names for the source outline, not card heading-slot eligibility.", count: 2 },
 ];
-
-function parse(source: string, file: string) {
-  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-}
-function walk(node: TS.Node, visit: (node: TS.Node) => void) {
-  visit(node);
-  ts.forEachChild(node, (child) => walk(child, visit));
-}
-function finding(tree: TS.SourceFile, node: TS.Node, rule: string, text = node.getText(tree)): Finding {
-  return { file: tree.fileName, line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1, rule, text };
-}
-function literal(node: TS.Node | undefined): string | undefined {
-  // `"div" as const`, `("div")`, `"div"!` and `<const>"div"` are the same literal.
-  while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
-  return node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : undefined;
-}
-function member(node: TS.Node): { name: string; receiver: TS.Expression } | undefined {
-  if (ts.isPropertyAccessExpression(node)) return { name: node.name.text, receiver: node.expression };
-  if (ts.isElementAccessExpression(node)) {
-    const name = literal(node.argumentExpression);
-    if (name !== undefined) return { name, receiver: node.expression };
-  }
-  return undefined;
-}
 
 // One link owns host posts: any read of `postMessage` (a call, a cast, a bound or aliased method).
 const framePosts: Detector = (source, file) => {
   if (file === LINK) return [];
-  const tree = parse(source, file), hits: Finding[] = [];
-  walk(tree, (node) => {
-    const access = member(node);
-    if (access?.name === "postMessage") hits.push(finding(tree, node, "frame-post", access.receiver.getText(tree)));
-  });
-  return hits;
+  return nameFindings(source, file, "frame-post", name => name === "postMessage", false,
+    node => (member(node)?.receiver ?? (ts.isBindingElement(node) ? bindingReceiver(node) : undefined))?.getText() ?? node.getText());
 };
 
 // One link owns host listeners and protocol reads; wire source names live once.
@@ -105,18 +71,11 @@ const frameListeners: Detector = (source, file) => {
     if (file !== "src/components/preview-wire.ts" && ["astro-native-preview", "astro-native-preview-host"].includes(literal(node) ?? "")) {
       hits.push(finding(tree, node, "wire-source"));
     }
-    if (!readers.has(file) && ts.isImportDeclaration(node)) {
-      const bindings = node.importClause?.namedBindings;
-      if (bindings && ts.isNamespaceImport(bindings) && /(?:^|\/)(?:preview-protocol|preview-wire)(?:\.ts)?$/.test(literal(node.moduleSpecifier) ?? "")) {
-        hits.push(finding(tree, bindings, "protocol-import"));
-      }
-      if (bindings && ts.isNamedImports(bindings)) {
-        for (const entry of bindings.elements) {
-          if (protectedImports.has((entry.propertyName ?? entry.name).text)) hits.push(finding(tree, entry, "protocol-import"));
-        }
-      }
-    }
   });
+  if (!readers.has(file)) for (const ref of moduleReferences(tree)) {
+    if (ref.name !== undefined ? protectedImports.has(ref.name) : /(?:^|\/)(?:preview-protocol|preview-wire)(?:\.[cm]?[jt]s)?$/.test(ref.module))
+      hits.push(finding(tree, ref.node, "protocol-import"));
+  }
   return hits;
 };
 
@@ -167,21 +126,17 @@ const RESERVED_HOME = "shared/custom-element-names.ts";
 const copiedBandSets = copiedLists((file) => file.startsWith(RULES), (words) => [...bandTags].every((tag) => words.includes(tag)), "copied-band-set");
 const copiedReservedSets = copiedLists((file) => file === RESERVED_HOME, (words) => [...new Set(words)].filter((name) => reservedNames.has(name)).length >= 3, "copied-reserved-set");
 const bandAllowlist: AllowlistEntry[] = [
-  { file: "src/components/element-icons.ts", match: "p: textT, text: textT, a: link", reason: "The object maps element names to display icons rather than page banner/contentinfo ancestry.", count: 1 },
-  { file: "src/native-structure.ts", match: 'p: "Paragraph", a: "Link", button: "Button"', reason: "The object maps element names to user-facing kind labels rather than page banner/contentinfo ancestry.", count: 1 },
-  { file: "src/page-builder/component-model.ts", match: "/^(section|article|main|header|footer|nav|aside)$/", reason: "templateStructure stops heading-label discovery at nested landmarks, including header/footer, rather than deciding page banner/contentinfo ancestry.", count: 1 },
-  { file: RUNTIME, match: '"section,article,main,header,footer,nav,aside"', reason: "SECTIONING finds a heading's owning landmark for structure labels, including header/footer, rather than deciding page banner/contentinfo ancestry.", count: 1 },
-  { file: "src/controllers/page-structure-controller.ts", match: '["main", "section", "header", "footer", "nav", "article", "aside", "slot"]', reason: "Page containers (and slot) that get no Text size control, rather than page banner/contentinfo ancestry.", count: 1 },
-  { file: "src/page-builder/native-operations.ts", match: '["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset"', reason: "containers defines conservative source insertion destinations rather than page banner/contentinfo ancestry.", count: 1 },
-  { file: "src/page-builder/native-operations.ts", match: '"a abbr address area article aside audio b base', reason: "htmlNames is the HTML vocabulary used to reject catalogue and foreign names in the strict source parser.", count: 1 },
+  { file: "src/components/element-icons.ts", match: { text: "p: textT, text: textT, a: link", includes: true }, reason: "The object maps element names to display icons rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/native-structure.ts", match: { text: 'p: "Paragraph", a: "Link", button: "Button"', includes: true }, reason: "The object maps element names to user-facing kind labels rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/page-builder/component-model.ts", match: { text: "/^(section|article|main|header|footer|nav|aside)$/", includes: true }, reason: "templateStructure stops heading-label discovery at nested landmarks, including header/footer, rather than deciding page banner/contentinfo ancestry.", count: 1 },
+  { file: RUNTIME, match: { text: '"section,article,main,header,footer,nav,aside"', includes: true }, reason: "SECTIONING finds a heading's owning landmark for structure labels, including header/footer, rather than deciding page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/controllers/page-structure-controller.ts", match: { text: '["main", "section", "header", "footer", "nav", "article", "aside", "slot"]', includes: true }, reason: "Page containers (and slot) that get no Text size control, rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/page-builder/native-operations.ts", match: { text: '["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset"', includes: true }, reason: "containers defines conservative source insertion destinations rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/page-builder/native-operations.ts", match: { text: '"a abbr address area article aside audio b base', includes: true }, reason: "htmlNames is the HTML vocabulary used to reject catalogue and foreign names in the strict source parser.", count: 1 },
 ];
 
 const walkNames = new Set(["dropCard", "dropHeading", "dropMeaningful", "hasHeadingSlot", "cardSlot", "dropItemsSlot", "cardsOnly"]);
-function functionName(node: TS.FunctionLikeDeclaration): string | undefined {
-  if (node.name && (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name))) return node.name.text;
-  if (ts.isVariableDeclaration(node.parent) && ts.isIdentifier(node.parent.name)) return node.parent.name.text;
-  return undefined;
-}
+
 function headingSlotBody(body: TS.Node) {
   let headingRegex = false, slot = false;
   const headings = new Set<string>();
@@ -216,23 +171,8 @@ const guards = [
   { detect: copiedBandSets, allowlist: bandAllowlist },
   { detect: copiedReservedSets, allowlist: [] },
 ];
-function matches(hit: Finding, entry: AllowlistEntry) {
-  return hit.file === entry.file && (hit.rule === "frame-post" || hit.rule === "frame-listener" ? hit.text === entry.match : hit.text.includes(entry.match));
-}
-function unallowed(hits: Finding[], allowlist: AllowlistEntry[]) {
-  return hits.filter((hit) => !allowlist.some((entry) => matches(hit, entry)));
-}
-// An entry is stale without a reason, or when it no longer covers exactly its count of findings.
-function staleEntries(hits: Finding[], allowlist: AllowlistEntry[]) {
-  return allowlist.filter((entry) => !entry.reason.trim() || hits.filter((hit) => matches(hit, entry)).length !== (entry.count ?? 1));
-}
-function sourceFiles(directory: string): string[] {
-  return readdirSync(new URL(`../${directory}/`, import.meta.url), { withFileTypes: true }).flatMap((entry) => {
-    const file = `${directory}/${entry.name}`;
-    return entry.isDirectory() ? sourceFiles(file) : /\.(?:[cm]?[jt]s|tsx)$/.test(file) ? [file] : [];
-  });
-}
-const sources = [...sourceFiles("src"), ...sourceFiles("shared")].map((file) => ({ file, source: readFileSync(new URL(`../${file}`, import.meta.url), "utf8") }));
+
+const sources = [...sourceFiles("src"), ...sourceFiles("shared")].map((file) => ({ file, source: readSource(file) }));
 const realHits = guards.map(({ detect }) => sources.flatMap(({ source, file }) => detect(source, file)));
 const FAKE = "src/components/fake.ts";
 

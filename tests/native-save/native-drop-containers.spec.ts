@@ -111,38 +111,38 @@ async function setup(page: Page, sources: Record<string, string> = probeSources)
     state.preview.update({ sources });
   }, sources);
   await expect(page.frameLocator(".native-preview-frame").locator("#target")).toBeVisible();
-  await expect.poll(() => page.evaluate(async () => Boolean(await (window as unknown as { dropTest: Harness }).dropTest.preview.probeDrop({ x: 40, y: 40 })))).toBe(true);
+  await expect.poll(() => page.evaluate(async () => Boolean(await (window as typeof window & { dropTest: Harness }).dropTest.preview.probeDrop({ x: 40, y: 40 })))).toBe(true);
 }
 
 test("probe promises settle on replacement, timeout, stale replies, History, re-render and destruction", async ({ page }) => {
   await setup(page);
   await page.evaluate(() => {
-    const h = (window as unknown as { dropTest: Harness }).dropTest;
+    const h = (window as typeof window & { dropTest: Harness }).dropTest;
     h.hold = true;
     h.start("old");
   });
-  await expect.poll(() => page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.held.length)).toBe(1);
-  await page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.start("new"));
-  await expect.poll(() => page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.held.length)).toBe(2);
-  expect(await page.evaluate(() => Object.hasOwn((window as unknown as { dropTest: Harness }).dropTest.results, "old"))).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { dropTest: Harness }).dropTest.held.length)).toBe(1);
+  await page.evaluate(() => (window as typeof window & { dropTest: Harness }).dropTest.start("new"));
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { dropTest: Harness }).dropTest.held.length)).toBe(2);
+  expect(await page.evaluate(() => Object.hasOwn((window as typeof window & { dropTest: Harness }).dropTest.results, "old"))).toBe(true);
   await page.evaluate(() => {
-    const h = (window as unknown as { dropTest: Harness }).dropTest;
+    const h = (window as typeof window & { dropTest: Harness }).dropTest;
     h.send(h.held[0]);
     h.send(h.held[1]);
   });
-  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { dropTest: Harness }).dropTest.results.new))).toBe(true);
-  expect(await page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.results.old)).toBeUndefined();
+  await expect.poll(() => page.evaluate(() => Boolean((window as typeof window & { dropTest: Harness }).dropTest.results.new))).toBe(true);
+  expect(await page.evaluate(() => (window as typeof window & { dropTest: Harness }).dropTest.results.old)).toBeUndefined();
 
   for (const mode of ["context", "route", "timeout", "render", "history", "destroy"] as const) {
     await page.evaluate(mode => {
-      const h = (window as unknown as { dropTest: Harness }).dropTest;
+      const h = (window as typeof window & { dropTest: Harness }).dropTest;
       h.held.length = 0;
       h.hold = true;
       h.start(mode);
     }, mode);
-    await expect.poll(() => page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.held.length)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { dropTest: Harness }).dropTest.held.length)).toBe(1);
     await page.evaluate(mode => {
-      const h = (window as unknown as { dropTest: Harness }).dropTest;
+      const h = (window as typeof window & { dropTest: Harness }).dropTest;
       const raw = h.held[0] as Record<string, unknown>;
       if (mode === "context") h.send({ ...raw, context: "stale" });
       if (mode === "route") h.send({ ...raw, path: "other.html" });
@@ -150,15 +150,15 @@ test("probe promises settle on replacement, timeout, stale replies, History, re-
       if (mode === "history") h.preview.setViewing(document.createElement("div"));
       if (mode === "destroy") h.preview.destroy();
     }, mode);
-    await expect.poll(() => page.evaluate(mode => Object.hasOwn((window as unknown as { dropTest: Harness }).dropTest.results, mode), mode)).toBe(true);
-    expect(await page.evaluate(mode => (window as unknown as { dropTest: Harness }).dropTest.results[mode], mode)).toBeUndefined();
+    await expect.poll(() => page.evaluate(mode => Object.hasOwn((window as typeof window & { dropTest: Harness }).dropTest.results, mode), mode)).toBe(true);
+    expect(await page.evaluate(mode => (window as typeof window & { dropTest: Harness }).dropTest.results[mode], mode)).toBeUndefined();
     if (mode !== "destroy") {
       await page.evaluate(mode => {
-        const h = (window as unknown as { dropTest: Harness }).dropTest;
+        const h = (window as typeof window & { dropTest: Harness }).dropTest;
         h.send(h.held[0]);
         if (mode === "history") h.preview.setViewing(undefined);
       }, mode);
-      await expect.poll(() => page.evaluate(async () => Boolean(await (window as unknown as { dropTest: Harness }).dropTest.preview.probeDrop({ x: 40, y: 40 })))).toBe(true);
+      await expect.poll(() => page.evaluate(async () => Boolean(await (window as typeof window & { dropTest: Harness }).dropTest.preview.probeDrop({ x: 40, y: 40 })))).toBe(true);
     }
   }
 });
@@ -220,7 +220,7 @@ test("items slots alone open the seal, including empty areas and zero-size wrapp
   const fallback = await probe(page, "#fallback", undefined, at);
   expect(fallback.containers[0]).toMatchObject({ kind: "slot", slot: "body" });
   expect(fallback.containers[0].rect.width).toBeGreaterThan(0);
-  await page.evaluate(() => (window as unknown as { dropTest: Harness }).dropTest.preview.destroy());
+  await page.evaluate(() => (window as typeof window & { dropTest: Harness }).dropTest.preview.destroy());
 });
 
 test("a bands probe through the preview spans a box-less band and snaps by it", async ({ page }) => {
@@ -228,7 +228,7 @@ test("a bands probe through the preview spans a box-less band and snaps by it", 
     '<section id="target" style="height:100px">A</section><section style="display:contents"><div style="height:100px">B</div></section>' +
     '</main><footer style="height:50px">Foot</footer></body></html>' });
   const snap = (y: number) => page.evaluate(async (y) => {
-    const report = await (window as unknown as { dropTest: Harness }).dropTest.preview.probeDrop({ x: 10, y }, undefined, true);
+    const report = await (window as typeof window & { dropTest: Harness }).dropTest.preview.probeDrop({ x: 10, y }, undefined, true);
     const { sectionSnap } = await import("/src/page-builder/section-snap.ts");
     const main = report!.containers[0];
     return { kinds: report!.containers.map(c => c.kind), heights: main.children.map(c => c.rect.height), index: sectionSnap(main, y).index };

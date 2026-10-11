@@ -1,18 +1,9 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { test } from "node:test";
-import { posix } from "node:path";
-import type * as TS from "typescript-eslint-api/node_modules/typescript";
-
-// TypeScript 7 has no JavaScript API; this package owns the TS 6 parser.
-const ts: typeof TS = createRequire(import.meta.url)("typescript-eslint-api");
+import { parse, finding, nameFindings, moduleReferences, modulePath, unallowed, staleEntries, sourceFiles, readSource, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
 
 type Rule = "reader-name" | "dom-read" | "reader-module";
-type Finding = { file: string; line: number; rule: Rule; function: string; text: string };
-type AllowlistEntry = { file: string; match: string; reason: string; count?: number };
-type Detector = (source: string, file: string) => Finding[];
-type FunctionBody = TS.FunctionLikeDeclaration & { body: TS.ConciseBody };
+
 const READERS = new Set(["parseMarked", "markedRange", "elementPathAt", "parseSource", "nativeOutline", "startTags", "startTagAttribute", "startTagAttributes", "decodedText", "decodeEntities", "decodeEntity", "plainText", "elementTree", "elementText", "breakText", "breaksAllowed", "breakSpelling"]);
 const DOM = new Set(["innerHTML", "outerHTML", "innerText", "textContent", "DOMParser", "createContextualFragment"]);
 const MODULES = new Set(["shared/html-source", "src/native-source-location", "src/page-builder/native-operations", "src/page-builder/html-entities"]);
@@ -35,171 +26,22 @@ const moduleAllowlist: AllowlistEntry[] = [
   { file: "src/page-builder/card-grid.ts", match: "textRangeInSource", reason: "withTitle maps a decoded title match back to its source spelling (design section 6, slice 43)." },
 ];
 
-function parse(source: string, file: string) {
-  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
-}
-function walk(node: TS.Node, visit: (node: TS.Node) => void) {
-  visit(node);
-  ts.forEachChild(node, child => walk(child, visit));
-}
-function strip(node: TS.Node): TS.Node {
-  while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node) || (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.ExclamationToken)) node = ts.isPrefixUnaryExpression(node) ? node.operand : node.expression;
-  return node;
-}
-function member(node: TS.Node): { name: string; receiver: TS.Expression } | undefined {
-  if (ts.isPropertyAccessExpression(node)) return { name: node.name.text, receiver: node.expression };
-  if (ts.isElementAccessExpression(node) && node.argumentExpression) {
-    const key = strip(node.argumentExpression);
-    if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return { name: key.text, receiver: node.expression };
-  }
-  return undefined;
-}
-function isFunction(node: TS.Node): node is FunctionBody {
-  return ts.isFunctionLike(node) && "body" in node && !!node.body;
-}
-function boundName(node: FunctionBody): string | undefined {
-  let bound: TS.Node = node;
-  while (bound.parent && strip(bound.parent) === node) bound = bound.parent;
-  const parent = bound.parent;
-  return parent && (ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) ? parent.name.getText() : undefined;
-}
-function functionName(node: FunctionBody) {
-  return node.name?.getText() ?? boundName(node);
-}
-function finding(tree: TS.SourceFile, node: TS.Node, rule: Rule): Finding {
-  let name = "<top-level>";
-  for (let parent: TS.Node | undefined = node; parent; parent = parent.parent) {
-    if (isFunction(parent) && functionName(parent)) { name = functionName(parent)!; break; }
-  }
-  return { file: tree.fileName, line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1, rule, function: name, text: node.getText(tree) };
-}
-// The property a destructured name is taken from: `{ step }`, `{ step: move }`, `{ ["step"]: move }`.
-function bindingKey(node: TS.BindingElement): string | undefined {
-  const key = node.propertyName ?? node.name;
-  if (ts.isComputedPropertyName(key)) {
-    const literal = strip(key.expression);
-    return ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal) ? literal.text : undefined;
-  }
-  return ts.isIdentifier(key) || ts.isStringLiteral(key) ? key.text : undefined;
-}
-// Member names and import/export source names are references; declaration names and text are not.
-function referenceName(node: TS.Node): string | undefined {
-  const access = member(node);
-  if (access) return access.name;
-  if (ts.isImportSpecifier(node) || ts.isExportSpecifier(node)) return (node.propertyName ?? node.name).text;
-  if (ts.isBindingElement(node)) return bindingKey(node);
-  if (!ts.isIdentifier(node)) return undefined;
-  const parent = node.parent;
-  if (ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent) || ts.isBindingElement(parent)
-    || ts.isPropertyAccessExpression(parent) && parent.name === node
-    || ts.isPropertyAssignment(parent) && parent.name === node
-    || (ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isFunctionLike(parent)
-      || ts.isClassDeclaration(parent) || ts.isInterfaceDeclaration(parent) || ts.isTypeAliasDeclaration(parent)
-      || ts.isPropertyDeclaration(parent) || ts.isPropertySignature(parent) || ts.isMethodSignature(parent)) && parent.name === node) return undefined;
-  return node.text;
-}
-
-// One file at a time, without imports or lib: the checker binds the file's own names, so a
-// renamed import or an alias resolves to the reader it stands for.
-function checkerFor(tree: TS.SourceFile): TS.TypeChecker {
-  const file = tree.fileName;
-  const host: TS.CompilerHost = {
-    getSourceFile: name => name === file ? tree : undefined, fileExists: name => name === file, readFile: () => undefined, writeFile: () => {},
-    getDefaultLibFileName: () => "lib.d.ts", getCurrentDirectory: () => "", getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true, getNewLine: () => "\n",
-  };
-  return ts.createProgram([file], { noLib: true, noResolve: true, types: [] }, host).getTypeChecker();
-}
-function inType(node: TS.Node) {
-  for (let parent: TS.Node | undefined = node; parent; parent = parent.parent) {
-    if (ts.isTypeNode(parent) || ts.isImportTypeNode(parent)) return true;
-    if ((ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) && parent.isTypeOnly) return true;
-    if (ts.isImportClause(parent) && parent.isTypeOnly || ts.isExportDeclaration(parent) && parent.isTypeOnly) return true;
-  }
-  return false;
-}
-// A same-file name standing for a reader: a renamed import, a destructured key, or a const bound to one.
-function standsForReader(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
-  const symbol = ts.isIdentifier(node) && depth <= 8 ? checker.getSymbolAtLocation(node) : undefined;
-  const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
-  if (!declaration) return false;
-  if (ts.isImportSpecifier(declaration)) return !inType(declaration) && readerName((declaration.propertyName ?? declaration.name).text);
-  if (ts.isBindingElement(declaration)) return readerName(bindingKey(declaration) ?? "");
-  if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) return false;
-  let value = strip(declaration.initializer);
-  // `reader.bind(null)` is the reader.
-  const bound = ts.isCallExpression(value) ? member(strip(value.expression)) : undefined;
-  if (bound?.name === "bind") value = strip(bound.receiver);
-  return readerName(referenceName(value) ?? "") || standsForReader(checker, value, depth + 1);
-}
 // Reader declarations also catch a hand-written low-level reader returning to a card file; type positions read nothing.
-const readerNames: Detector = (source, file) => {
-  const tree = parse(source, file), hits: Finding[] = [];
-  let checker: TS.TypeChecker | undefined;
-  walk(tree, node => {
-    const declaration = (ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node)) && node.name && ts.isIdentifier(node.name) ? node.name : undefined;
-    const name = declaration?.text ?? referenceName(node);
-    if (!name || inType(node)) return;
-    if (readerName(name) || !declaration && ts.isIdentifier(node) && standsForReader(checker ??= checkerFor(tree), node)) hits.push(finding(tree, declaration ?? node, "reader-name"));
-  });
-  return hits;
-};
-const domReads: Detector = (source, file) => {
-  const tree = parse(source, file), hits: Finding[] = [];
-  walk(tree, node => {
-    const name = referenceName(node);
-    if (name && domName(name) && !inType(node)) hits.push(finding(tree, node, "dom-read"));
-  });
-  return hits;
-};
-function readerModule(specifier: TS.Node | undefined, file: string) {
-  return !!specifier && (ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier)) && specifier.text.startsWith(".")
-    && MODULES.has(posix.normalize(posix.join(posix.dirname(file), specifier.text)).replace(/\.[cm]?[jt]s$/, ""));
-}
-const readerModules: Detector = (source, file) => {
-  const tree = parse(source, file), hits: Finding[] = [];
-  const named = (node: TS.ImportSpecifier | TS.ExportSpecifier) => {
-    const name = (node.propertyName ?? node.name).text;
-    if (!node.isTypeOnly && !readerName(name) && name !== "readPage" && name !== "VOID_ELEMENTS") hits.push(finding(tree, node, "reader-module"));
-  };
-  walk(tree, node => {
-    if (ts.isImportDeclaration(node) && readerModule(node.moduleSpecifier, file)) {
-      const clause = node.importClause;
-      if (clause?.isTypeOnly) return;
-      if (!clause) hits.push(finding(tree, node, "reader-module"));
-      if (clause?.name) hits.push(finding(tree, clause.name, "reader-module"));
-      const bindings = clause?.namedBindings;
-      if (bindings && ts.isNamespaceImport(bindings)) hits.push(finding(tree, bindings, "reader-module"));
-      if (bindings && ts.isNamedImports(bindings)) bindings.elements.forEach(named);
-    }
-    if (ts.isExportDeclaration(node) && !node.isTypeOnly && readerModule(node.moduleSpecifier, file)) {
-      if (node.exportClause && ts.isNamedExports(node.exportClause)) node.exportClause.elements.forEach(named);
-      else hits.push(finding(tree, node, "reader-module"));
-    }
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && readerModule(node.arguments[0], file)) hits.push(finding(tree, node, "reader-module"));
-  });
-  return hits;
-};
+const readerNames: Detector = (source, file) => nameFindings(source, file, "reader-name", readerName, true);
+const domReads: Detector = (source, file) => nameFindings(source, file, "dom-read", domName);
+const readerModules: Detector = (source, file) => moduleReferences(parse(source, file))
+  .filter(ref => MODULES.has(modulePath(ref.module, file))
+    && (ref.name === undefined || !readerName(ref.name) && !["readPage", "VOID_ELEMENTS"].includes(ref.name)))
+  .map(ref => finding(ref.node.getSourceFile(), ref.node, "reader-module"));
 const guards = [
   { detect: readerNames, allowlist: readerAllowlist },
   { detect: domReads, allowlist: domAllowlist },
   { detect: readerModules, allowlist: moduleAllowlist },
 ];
-function matches(hit: Finding, entry: AllowlistEntry) {
-  return hit.file === entry.file && (hit.function === entry.match || hit.text === entry.match);
-}
-function unallowed(hits: Finding[], entries: AllowlistEntry[]) {
-  return hits.filter(hit => !entries.some(entry => matches(hit, entry)));
-}
-// Exact counts prevent a second finding from inheriting an exception in the same function.
-function staleEntries(hits: Finding[], entries: AllowlistEntry[]) {
-  return entries.filter(entry => !entry.reason.trim() || hits.filter(hit => matches(hit, entry)).length !== (entry.count ?? 1));
-}
 
 // List this directory so newly added card files join the guard automatically.
-const files = readdirSync(new URL("../src/page-builder/", import.meta.url))
-  .filter(name => /^card-.*\.ts$/.test(name) || name === "cards.ts")
-  .map(name => `src/page-builder/${name}`);
-const realHits = guards.map(({ detect }) => files.flatMap(file => detect(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"), file)));
+const files = sourceFiles("src/page-builder").filter(file => /^src\/page-builder\/(?:card-.*|cards)\.ts$/.test(file));
+const realHits = guards.map(({ detect }) => files.flatMap(file => detect(readSource(file), file)));
 const FAKE = "src/page-builder/card-fake.ts";
 function flags(detect: Detector, source: string, rule: Rule) {
   const hits = detect(source, FAKE);

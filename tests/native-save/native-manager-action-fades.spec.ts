@@ -268,10 +268,11 @@ type Shot = { width: number; height: number; data: number[] };
 async function regionShot(page: Page, overlay: Locator, css: string): Promise<Shot> {
   const box = (await overlay.boundingBox())!;
   const style = await page.addStyleTag({ content: css });
+  // fixed-wait: Lets the injected screenshot stylesheet repaint before sampling fade pixels.
   await page.waitForTimeout(250);
   const clip = { x: Math.ceil(box.x + 22), y: Math.ceil(box.y + 3), width: Math.floor(box.width - 25), height: Math.floor(box.height - 6) };
   const png = (await page.screenshot({ clip, animations: "disabled" })).toString("base64");
-  await style.evaluate((el) => el.remove());
+  await style.evaluate((el) => (el as HTMLStyleElement).remove());
   return page.evaluate(async (src) => {
     const img = new Image();
     img.src = `data:image/png;base64,${src}`;

@@ -17,7 +17,7 @@ async function watchReads(page: Page) {
     reads.push({ shas: [...(params.get('shas')?.split(',') ?? []), ...(params.get('sha') ? [params.get('sha')!] : [])], at, end });
   });
   await page.addInitScript(() => {
-    const report = window as unknown as { __asePaint(at: number): void; __aseRead(url: string, at: number, end: number): void };
+    const report = window as typeof window & { __asePaint(at: number): void; __aseRead(url: string, at: number, end: number): void };
     if (window.top !== window) {
       new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) if (entry.name === 'first-contentful-paint') report.__asePaint(performance.timeOrigin + entry.startTime);
@@ -112,6 +112,7 @@ test('a page deep-linked by its address paints without the home page being read'
 test('the linked stylesheet is read in the first wave, before any pre-paint read ends', async ({ page, baseURL }) => {
   const { paints, reads } = await watchReads(page);
   // Each read takes a while, so serial reads cannot overlap by chance.
+  // fixed-wait: Adds 150 ms read latency so the first-wave overlap assertion distinguishes serial reads.
   await page.route(/\/api\/files?\?/, async (route) => { await new Promise((resolve) => setTimeout(resolve, 150)); await route.continue(); });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(preview(page).locator('.hero h1')).toBeVisible();
@@ -218,6 +219,7 @@ test('a predicted stylesheet read from before a branch switch does not outlive i
   await page.evaluate(() => { location.hash = '#repo=501&branch=feature&file=index.html'; });
   await expect.poll(() => featureReads, { timeout: 30_000 }).toBeGreaterThan(0);
   releaseOld();
+  // fixed-wait: Lets the stale main response settle while feature remains held to expose an obsolete paint.
   await page.waitForTimeout(500);
   releaseFeature();
   // Every colour the heading shows from feature's first paint on: never main's.
@@ -228,6 +230,7 @@ test('a predicted stylesheet read from before a branch switch does not outlive i
   while (Date.now() < deadline) {
     colors.push(await color().catch(() => ''));
     if (colors.at(-1) === 'rgb(7, 8, 9)' && colors.length > 3) break;
+    // fixed-wait: Samples heading colours across time to catch transient stale main-branch paint.
     await page.waitForTimeout(50);
   }
   const shown = colors.filter(Boolean);

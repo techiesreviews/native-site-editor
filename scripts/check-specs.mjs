@@ -95,6 +95,24 @@ export function unreadyClipboardReads(text) {
   return unready;
 }
 
+/** Line numbers of fixed waits without a reason on the wait or the preceding line. */
+export function fixedWaits(text) {
+  const code = codeOnly(text), lines = text.split("\n");
+  const offsets = [...code.matchAll(/\bwaitForTimeout\s*\(/g)].map(match => match.index);
+  for (const match of code.matchAll(/\bnew\s+Promise(?:\s*<[^;{}]*>)?\s*\(/g)) {
+    let depth = 1, at = match.index + match[0].length;
+    for (; at < code.length && depth > 0; at++) {
+      if (code[at] === "(") depth++;
+      else if (code[at] === ")") depth--;
+    }
+    if (/\bsetTimeout\s*\(/.test(code.slice(match.index, at))) offsets.push(match.index);
+  }
+  const optOut = /\/\/\s*fixed-wait:\s*\S/;
+  return [...new Set(offsets.map(offset => code.slice(0, offset).split("\n").length))]
+    .filter(line => !optOut.test(lines[line - 1]) && !optOut.test(lines[line - 2] ?? ""))
+    .sort((a, b) => a - b);
+}
+
 function specs(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -105,11 +123,16 @@ function specs(dir) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const findings = specs(join(root, "tests")).flatMap((file) => unreadyClipboardReads(readFileSync(file, "utf8"))
-    .map((line) => `${relative(root, file)}:${line}: clipboard read without a preceding expect.poll on the clipboard`));
+  const findings = specs(join(root, "tests")).flatMap((file) => {
+    const source = readFileSync(file, "utf8"), path = relative(root, file);
+    return [
+      ...unreadyClipboardReads(source).map(line => `${path}:${line}: clipboard read without a preceding expect.poll on the clipboard`),
+      ...fixedWaits(source).map(line => `${path}:${line}: fixed wait; wait on observable state or add "// fixed-wait: <reason>"`),
+    ];
+  });
   if (findings.length) {
     console.error(findings.join("\n"));
-    console.error(`check-specs: ${findings.length} finding(s). Poll the clipboard first or add "// clipboard-ready: <reason>".`);
+    console.error(`check-specs: ${findings.length} finding(s). Poll observable state or give a clipboard-ready / fixed-wait reason.`);
     process.exit(1);
   }
 }

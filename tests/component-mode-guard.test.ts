@@ -1,102 +1,22 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { test } from "node:test";
-import type * as TS from "typescript-eslint-api/node_modules/typescript";
+import { ts, walk, strip, member, finding, analyse, declarationOf, bindingKey, inType, reference, initializer, symbolAt, named, importedFrom, unallowed, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry } from "./support/source-guard.ts";
 
-// TypeScript 7 has no JavaScript API; the lint package supplies the TS 6 parser.
-const ts: typeof TS = createRequire(import.meta.url)("typescript-eslint-api");
 type Rule = "chain" | "ports" | "mode-json" | "mutable-state";
-type Finding = { file: string; line: number; rule: Rule; text: string };
-type AllowlistEntry = { file: string; match: string; reason: string; count: number };
+
 const HOME = "src/page-builder/component-mode.ts";
 const TOOLS = "src/page-builder/components.ts";
 const allowlist: AllowlistEntry[] = [];
 
-function walk(node: TS.Node, visit: (node: TS.Node) => void) {
-  visit(node);
-  ts.forEachChild(node, child => walk(child, visit));
-}
-function strip(node: TS.Node): TS.Node {
-  while (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node)
-    || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node)) node = node.expression;
-  return node;
-}
-function member(node: TS.Node): { name: string; receiver: TS.Expression } | undefined {
-  node = strip(node);
-  if (ts.isPropertyAccessExpression(node)) return { name: node.name.text, receiver: node.expression };
-  if (ts.isElementAccessExpression(node) && node.argumentExpression) {
-    const key = strip(node.argumentExpression);
-    if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return { name: key.text, receiver: node.expression };
-  }
-  return undefined;
-}
-function bindingKey(node: TS.BindingElement) {
-  const key = node.propertyName ?? node.name;
-  if (ts.isComputedPropertyName(key)) {
-    const value = strip(key.expression);
-    return ts.isStringLiteral(value) ? value.text : undefined;
-  }
-  return ts.isIdentifier(key) || ts.isStringLiteral(key) ? key.text : undefined;
-}
-function inType(node: TS.Node): boolean {
-  for (let parent: TS.Node | undefined = node; parent; parent = parent.parent) {
-    if (ts.isTypeNode(parent)) return true;
-    if ((ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent)) && parent.isTypeOnly) return true;
-    if (ts.isImportClause(parent) && parent.isTypeOnly || ts.isExportDeclaration(parent) && parent.isTypeOnly) return true;
-  }
-  return false;
-}
-function reference(node: TS.Node): boolean {
-  if (!ts.isIdentifier(node) || inType(node)) return false;
-  const parent = node.parent;
-  if (ts.isShorthandPropertyAssignment(parent)) return true;
-  return !(ts.isPropertyAccessExpression(parent) && parent.name === node
-    || ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent) || ts.isBindingElement(parent)
-    || "name" in parent && parent.name === node);
-}
-
 // No imports or lib are loaded. Symbols distinguish local aliases and shadowing; annotations
 // retain imported type names even when their checker type is any. Alias walks are cycle bounded.
 function detect(source: string, file: string): Finding[] {
-  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const host: TS.CompilerHost = {
-    getSourceFile: name => name === file ? tree : undefined, fileExists: name => name === file,
-    readFile: () => undefined, writeFile: () => {}, getDefaultLibFileName: () => "lib.d.ts",
-    getCurrentDirectory: () => "", getCanonicalFileName: name => name,
-    useCaseSensitiveFileNames: () => true, getNewLine: () => "\n",
-  };
-  const checker = ts.createProgram([file], { noLib: true, noResolve: true, types: [] }, host).getTypeChecker();
+  const { tree, checker } = analyse(source, file);
   const hits: Finding[] = [];
-  const add = (node: TS.Node, rule: Rule) => hits.push({ file, rule, text: node.getText(tree), line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1 });
-  const symbolAt = (node: TS.Node) => node.parent && ts.isShorthandPropertyAssignment(node.parent)
-    ? checker.getShorthandAssignmentValueSymbol(node.parent) : checker.getSymbolAtLocation(node);
-  const declaration = (node: TS.Node): TS.Declaration | undefined => {
-    const symbol = symbolAt(node);
-    return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
-  };
-  function initializer(node: TS.Node): TS.Node | undefined {
-    const decl = declaration(node);
-    if (decl && ts.isVariableDeclaration(decl)) return decl.initializer;
-    if (decl && ts.isBindingElement(decl) && ts.isVariableDeclaration(decl.parent.parent)) {
-      const value = decl.parent.parent.initializer, key = bindingKey(decl);
-      // A synthetic access preserves the original receiver (and thus its bound symbols).
-      if (value && key) return ts.factory.createPropertyAccessExpression(value, key);
-    }
-    return undefined;
-  }
-  function named(node: TS.Node, names: Set<string>, depth = 0): boolean {
-    node = strip(node);
-    if (depth > 12) return false;
-    const access = member(node);
-    if (access) return names.has(access.name);
-    if (!ts.isIdentifier(node)) return false;
-    const decl = declaration(node);
-    if (decl && ts.isImportSpecifier(decl)) return !inType(decl) && names.has((decl.propertyName ?? decl.name).text);
-    const value = initializer(node);
-    if (value) return named(value, names, depth + 1);
-    return names.has(node.text);
-  }
+  const add = (node: TS.Node, rule: Rule) => hits.push(finding(tree, node, rule));
+  const declaration = (node: TS.Node) => declarationOf(checker, node);
+  const valueOf = (node: TS.Node) => initializer(checker, node);
+  const namedValue = (node: TS.Node, names: Set<string>) => named(checker, node, names);
   function typeNamed(node: TS.Node | undefined, names: Set<string>, depth = 0): boolean {
     if (!node || depth > 12) return false;
     if (ts.isTypeReferenceNode(node)) {
@@ -121,7 +41,7 @@ function detect(source: string, file: string): Finding[] {
     if (decl && "type" in decl && typeNamed(decl.type as TS.TypeNode | undefined, names)) return true;
     const type = checker.getTypeAtLocation(node);
     if (names.has(type.aliasSymbol?.name ?? "") || names.has(type.getSymbol()?.name ?? "")) return true;
-    const value = initializer(node);
+    const value = valueOf(node);
     return !!value && receiverType(value, names, depth + 1);
   }
   function preview(node: TS.Node, depth = 0): boolean {
@@ -132,14 +52,14 @@ function detect(source: string, file: string): Finding[] {
     if (ts.isCallExpression(node)) {
       const access = member(node.expression);
       if (access?.name === "preview" && receiverType(access.receiver, new Set(["ComponentDeps"]))) return true;
-      if (named(node.expression, new Set(["createNativePreview"]))) return true;
+      if (namedValue(node.expression, new Set(["createNativePreview"]))) return true;
     }
     const decl = declaration(node);
     if (decl && "type" in decl && decl.type) {
       const text = (decl.type as TS.TypeNode).getText(tree);
       if (/\bReturnType\s*<\s*typeof\s+createNativePreview\s*>/.test(text)) return true;
     }
-    const value = initializer(node);
+    const value = valueOf(node);
     return !!value && preview(value, depth + 1);
   }
   function port(node: TS.Node, depth = 0): boolean {
@@ -165,28 +85,13 @@ function detect(source: string, file: string): Finding[] {
         return decl.initializer.parameters.some(param => typeNamed(param.type, new Set(["EditComponentFrameMode"])));
     }
     if (ts.isCallExpression(node) && member(node.expression)?.name === "bind") return port(member(node.expression)!.receiver, depth + 1);
-    const value = ts.isIdentifier(node) ? initializer(node) : undefined;
+    const value = ts.isIdentifier(node) ? valueOf(node) : undefined;
     return !!value && port(value, depth + 1);
   }
   // The module's createComponentMode: imported (renamed, namespaced or aliased), or unresolved in
   // a fixture; a local function of that name is not it.
-  const fromMode = (specifier: TS.Expression) => ts.isStringLiteral(specifier) && /(^|\/)component-mode(\.ts)?$/.test(specifier.text);
-  function creator(node: TS.Node, depth = 0): boolean {
-    node = strip(node);
-    if (depth > 12) return false;
-    const access = member(node);
-    if (access) {
-      // `modes.createComponentMode`: `modes` is the module's namespace import.
-      const receiver = strip(access.receiver), decl = ts.isIdentifier(receiver) ? declaration(receiver) : undefined;
-      return access.name === "createComponentMode" && !!decl && ts.isNamespaceImport(decl) && fromMode(decl.parent.parent.moduleSpecifier);
-    }
-    if (!ts.isIdentifier(node)) return false;
-    const decl = declaration(node);
-    if (!decl) return node.text === "createComponentMode";
-    if (ts.isImportSpecifier(decl)) return (decl.propertyName ?? decl.name).text === "createComponentMode" && fromMode(decl.parent.parent.parent.moduleSpecifier);
-    const value = initializer(node);
-    return !!value && creator(value, depth + 1);
-  }
+  const creator = (node: TS.Node) => importedFrom(checker, node, "createComponentMode",
+    specifier => /(^|\/)component-mode(\.[cm]?[jt]s)?$/.test(specifier));
   function adapter(node: TS.Node): boolean {
     for (let parent: TS.Node | undefined = node.parent; parent; parent = parent.parent) {
       if (!ts.isObjectLiteralExpression(parent)) continue;
@@ -202,8 +107,8 @@ function detect(source: string, file: string): Finding[] {
     node = strip(node);
     if (depth > 12) return false;
     if (member(node)?.name === "mode" || receiverType(node, new Set(["ComponentMode"]))) return true;
-    if (ts.isCallExpression(node) && named(node.expression, new Set(["createComponentMode"]))) return true;
-    const value = initializer(node);
+    if (ts.isCallExpression(node) && namedValue(node.expression, new Set(["createComponentMode"]))) return true;
+    const value = valueOf(node);
     if (value) return modeReceiver(value, depth + 1);
     return ts.isIdentifier(node) && /^(mode|editMode)$/.test(node.text);
   }
@@ -213,7 +118,7 @@ function detect(source: string, file: string): Finding[] {
     if (ts.isCallExpression(node)) {
       if (modeReader(node.expression)) return true;
     }
-    const value = ts.isIdentifier(node) ? initializer(node) : undefined;
+    const value = ts.isIdentifier(node) ? valueOf(node) : undefined;
     return !!value && modeRead(value, depth + 1);
   }
   function modeReader(node: TS.Node, depth = 0): boolean {
@@ -222,7 +127,7 @@ function detect(source: string, file: string): Finding[] {
     const access = member(node);
     if (access && ["now", "active"].includes(access.name) && modeReceiver(access.receiver)) return true;
     if (ts.isCallExpression(node) && member(node.expression)?.name === "bind") return modeReader(member(node.expression)!.receiver, depth + 1);
-    const value = ts.isIdentifier(node) ? initializer(node) : undefined;
+    const value = ts.isIdentifier(node) ? valueOf(node) : undefined;
     return !!value && modeReader(value, depth + 1);
   }
   function modeJson(node: TS.Node, depth = 0): boolean {
@@ -234,7 +139,7 @@ function detect(source: string, file: string): Finding[] {
         && strip(access.receiver).getText(tree) === "JSON" && !declaration(strip(access.receiver)))
         return !!node.arguments[0] && modeRead(node.arguments[0]);
     }
-    const value = ts.isIdentifier(node) ? initializer(node) : undefined;
+    const value = ts.isIdentifier(node) ? valueOf(node) : undefined;
     return !!value && modeJson(value, depth + 1);
   }
   // Opening is the private { template, stamp } type; Entry holds a pending opening's share.
@@ -268,7 +173,7 @@ function detect(source: string, file: string): Finding[] {
     if (ts.isCallExpression(node)) {
       const access = member(node.expression);
       if (access && ["stamp", "shareHistory"].includes(access.name)) return true;
-      if (named(node.expression, new Set(["stamp", "shareHistory"]))) return true;
+      if (namedValue(node.expression, new Set(["stamp", "shareHistory"]))) return true;
       // Same-file stamp factories retain their annotated return type without resolving imports.
       const decl = declaration(node.expression);
       if (decl && ts.isFunctionLike(decl) && typeNamed(decl.type, storedTypes)) return true;
@@ -279,9 +184,10 @@ function detect(source: string, file: string): Finding[] {
     const access = member(node);
     if (access) {
       // Every declaration of the field: each member of a union, a written value, a shorthand.
+      const receiverType = checker.getTypeAtLocation(access.receiver);
       const field = ts.isPropertyAccessExpression(node) ? checker.getSymbolAtLocation(node.name) : checker.getTypeAtLocation(access.receiver).getProperty(access.name);
-      const fields = field ? [...(field.declarations ?? []), ...(checker.getTypeAtLocation(access.receiver).isUnion()
-        ? checker.getTypeAtLocation(access.receiver).types.flatMap(type => type.getProperty(access.name)?.declarations ?? []) : [])] : [];
+      const fields = field ? [...(field.declarations ?? []), ...(receiverType.isUnion()
+        ? receiverType.types.flatMap(type => type.getProperty(access.name)?.declarations ?? []) : [])] : [];
       for (const decl of fields) {
         if ("type" in decl && (typeNamed(decl.type as TS.TypeNode | undefined, storedTypes) || shareType(decl.type as TS.TypeNode | undefined, access.name))) return true;
         if (ts.isPropertyAssignment(decl) && stores(decl.initializer, depth + 1)) return true;
@@ -291,7 +197,7 @@ function detect(source: string, file: string): Finding[] {
     if (ts.isIdentifier(node)) {
       const decl = declaration(node);
       if (decl && "type" in decl && typeNamed(decl.type as TS.TypeNode | undefined, storedTypes)) return true;
-      const value = initializer(node);
+      const value = valueOf(node);
       return !!value && stores(value, depth + 1);
     }
     if (ts.isObjectLiteralExpression(node) || ts.isArrayLiteralExpression(node) || ts.isConditionalExpression(node)
@@ -324,14 +230,14 @@ function detect(source: string, file: string): Finding[] {
     const symbols = new Set<TS.Symbol>();
     const bind = (name: TS.BindingName): void => {
       if (ts.isIdentifier(name)) {
-        const symbol = symbolAt(name);
+        const symbol = symbolAt(checker, name);
         if (symbol) symbols.add(symbol);
       } else for (const element of name.elements) if (ts.isBindingElement(element)) bind(element.name);
     };
     bind(decl.name);
     let found = false;
     walk(owner, node => {
-      const symbol = reference(node) ? symbolAt(node) : undefined;
+      const symbol = reference(node) ? symbolAt(checker, node) : undefined;
       if (!symbol || !symbols.has(symbol)) return;
       for (let parent: TS.Node | undefined = node.parent; parent && parent !== owner; parent = parent.parent)
         if (ts.isFunctionLike(parent)) { found = true; break; }
@@ -343,7 +249,7 @@ function detect(source: string, file: string): Finding[] {
     ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken]);
   walk(tree, node => {
     if (file !== HOME && !inType(node)) {
-      if (member(node) && named(node, chains) || reference(node) && named(node, chains)
+      if (member(node) && namedValue(node, chains) || reference(node) && namedValue(node, chains)
         || (ts.isImportSpecifier(node) || ts.isExportSpecifier(node)) && chains.has((node.propertyName ?? node.name).text)
         || ts.isBindingElement(node) && chains.has(bindingKey(node) ?? "")) add(node, "chain");
     }
@@ -356,11 +262,6 @@ function detect(source: string, file: string): Finding[] {
   return hits;
 }
 
-function matches(hit: Finding, entry: AllowlistEntry) { return hit.file === entry.file && hit.text === entry.match; }
-function unallowed(hits: Finding[], entries: AllowlistEntry[]) { return hits.filter(hit => !entries.some(entry => matches(hit, entry))); }
-function staleEntries(hits: Finding[], entries: AllowlistEntry[]) {
-  return entries.filter(entry => !entry.reason.trim() || entry.count < 1 || hits.filter(hit => matches(hit, entry)).length !== entry.count);
-}
 const FAKE = "src/component-mode-guard-fixture.ts";
 function flags(rule: Rule, source: string, file = FAKE) {
   const hits = detect(source, file);
@@ -464,15 +365,11 @@ test("mutable state catches protected annotations, containers, factories and sha
   passes("mutable-state", `const holder: { count: number; stamp: Stamp } = x; let count = holder.count; const held: { done: () => void } = x; let done = held.done;`);
 });
 
-function sourceFiles(directory = "src"): string[] {
-  return readdirSync(new URL(`../${directory}/`, import.meta.url), { withFileTypes: true }).flatMap(entry =>
-    entry.isDirectory() ? sourceFiles(`${directory}/${entry.name}`) : entry.name.endsWith(".ts") ? [`${directory}/${entry.name}`] : []);
-}
 test("every src TypeScript file respects the component mode boundary", () => {
   const files = sourceFiles();
   for (const file of [HOME, TOOLS, "src/components/native-preview.ts", "src/guarded-edit.ts", "src/editor-workspace.ts", "src/guarded-edit/commit.ts", "src/main.ts"])
     assert.ok(files.includes(file), file);
-  const hits = files.flatMap(file => detect(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"), file));
+  const hits = files.flatMap(file => detect(readSource(file), file));
   assert.deepEqual(unallowed(hits, allowlist), []);
   assert.deepEqual(staleEntries(hits, allowlist), []);
 });
