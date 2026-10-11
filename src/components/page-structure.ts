@@ -805,6 +805,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (!editingInstance || editingInstance !== id) foldState.set(id, false);
       editingInstance = id;
       el.classList.add("page-structure__row--editing-component");
+      // The template's rows line up as an instance's parts do, however deep (components.css).
+      group.classList.add("page-structure__group--flat");
+      group.style.setProperty("--flat-depth", String(level));
       el.setAttribute("aria-expanded", String(!isFolded(id)));
     }
     if (own?.opened) {

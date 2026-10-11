@@ -832,7 +832,8 @@ dd {
   border: 0;
   background: var(--surface-subtle);
   border-radius: var(--radius);
-  padding: 0 16px;
+  /* The trailing caret's own inset makes up the rest of the end padding. */
+  padding: 0 12px 0 16px;
   font-size: var(--type-base);
   white-space: nowrap;
 }

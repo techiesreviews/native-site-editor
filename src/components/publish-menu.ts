@@ -72,7 +72,7 @@ export function createPublishMenu(options: {
   const more = node("button", "button primary publish-menu__more");
   more.type = "button";
   more.setAttribute("aria-label", "More publish actions");
-  setIcon(more, "caret-down");
+  setIcon(more, "caret-down", 12);
   // The button names the progress of a publish, then its deploy
   // (deploy-status.ts), and goes back to Publish when it is done.
   const label = node("span", "publish-menu__label", "Publish");
