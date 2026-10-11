@@ -170,22 +170,29 @@ function referenceName(node: TS.Node): string | undefined {
   return node.text;
 }
 // Only the Edit component mode's receiver names this reader; clocks and other now ports do not.
-function modeReceiver(node: TS.Node): boolean {
+// A same-file alias of the receiver (`const m = tools.mode`, `const { mode: m } = tools`) is one.
+function modeReceiver(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
   node = strip(node);
-  return ts.isIdentifier(node) && node.text === "mode" || member(node)?.name === "mode";
+  if (member(node)?.name === "mode") return true;
+  if (!ts.isIdentifier(node) || depth > 8) return false;
+  const declaration = declarationOf(checker, node);
+  if (!declaration) return node.text === "mode";
+  if (ts.isBindingElement(declaration)) return bindingKey(declaration) === "mode";
+  if (ts.isVariableDeclaration(declaration)) return !!declaration.initializer && modeReceiver(checker, declaration.initializer, depth + 1);
+  return node.text === "mode";
 }
-function namedReference(node: TS.Node, names: Set<string>): boolean {
+function namedReference(checker: TS.TypeChecker, node: TS.Node, names: Set<string>): boolean {
   if (names !== READERS) return names.has(referenceName(node) ?? "");
   const access = member(node);
-  if (access) return access.name === "now" && modeReceiver(access.receiver);
+  if (access) return access.name === "now" && modeReceiver(checker, access.receiver);
   if (!ts.isBindingElement(node) || bindingKey(node) !== "now") return false;
   const receiver = destructured(node);
-  return !!receiver && modeReceiver(receiver);
+  return !!receiver && modeReceiver(checker, receiver);
 }
 function refers(checker: TS.TypeChecker, node: TS.Node, names: Set<string>): boolean {
   const name = referenceName(node);
   if (!name) return false;
-  if (namedReference(node, names)) return true;
+  if (namedReference(checker, node, names)) return true;
   const declaration = ts.isIdentifier(node) ? declarationOf(checker, node) : undefined;
   return !!declaration && referring(checker, node.getSourceFile(), names).has(declaration);
 }
@@ -202,17 +209,17 @@ function referring(checker: TS.TypeChecker, tree: TS.SourceFile, names: Set<stri
   const users = new Map<TS.Node, TS.Node[]>(), queue: TS.Node[] = [];
   walk(tree, declaration => {
     if (ts.isImportSpecifier(declaration)) {
-      if (namedReference(declaration, names)) queue.push(declaration);
+      if (namedReference(checker, declaration, names)) queue.push(declaration);
       return;
     }
-    if (ts.isBindingElement(declaration) && namedReference(declaration, names)) queue.push(declaration);
+    if (ts.isBindingElement(declaration) && namedReference(checker, declaration, names)) queue.push(declaration);
     // A function with its parameter defaults; a destructured name by what it is taken from.
     const value = isFunction(declaration) ? declaration : ts.isBindingElement(declaration) ? destructured(declaration)
       : ts.isVariableDeclaration(declaration) || ts.isParameter(declaration) ? declaration.initializer : undefined;
     if (value) walk(value, inner => {
       const name = referenceName(inner);
       if (!name) return;
-      if (namedReference(inner, names)) queue.push(declaration);
+      if (namedReference(checker, inner, names)) queue.push(declaration);
       const used = ts.isIdentifier(inner) ? declarationOf(checker, inner) : undefined;
       if (used) users.set(used, [...users.get(used) ?? [], declaration]);
     });
@@ -408,6 +415,7 @@ test("template-choice rejects template reads with every move rule name, includin
     'function choose() { Date.now(); performance.now(); return templateRules(); }',
     'function choose() { const { now } = Date; return now() ? templateRules() : pageRules(items); }',
     'function choose() { now(); return templateRules(); }',
+    'function choose() { const mode = Date; return mode.now() ? templateRules() : pageRules(items); }',
     'function read() { return tools.mode.now(); } function move() { return pageRules(items); }',
     'function read() { return tools.mode.now(); } function paint() { return read() ? insertTarget() : removeTarget(); }',
     'function choose() { const text = "mode.now"; return templateRules(); }',
@@ -434,6 +442,10 @@ test("template-choice follows destructured reads, aliases and transitive same-fi
     'function a() { b(); return pageRules(items); } function b() { return a(); } function choose() { tools.mode.now(); b(); }',
     'function read(t = tools.mode.now()) { return t; } function choose() { return read() ? templateRules() : pageRules(items); }',
     'function choose({ template } = tools.mode.now()) { return template ? templateRules() : pageRules(items); }',
+    'function choose() { const m = tools.mode; return m.now() ? templateRules() : pageRules(items); }',
+    'const { mode: m } = tools; function choose() { return m.now() ? templateRules() : pageRules(items); }',
+    'function choose() { const { mode } = tools; return mode.now() ? templateRules() : pageRules(items); }',
+    'const m = componentTools?.mode; const alias = m; function choose() { return alias?.now() ? templateRules() : pageRules(items); }',
   ]) flags(templateChoices, source, "template-choice");
   for (const source of [
     'const read = tools.mode.now; function choose(read) { read(); return templateRules(); }',
