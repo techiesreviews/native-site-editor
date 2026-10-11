@@ -25,10 +25,10 @@
   },
   {
     "spec": "native-save/native-structure-compact.spec.ts",
-    "line": 301,
+    "line": 302,
     "status": "failing-on-dev",
     "since": "2026-10-09",
-    "note": "Retro: failing on dev, formerly line 300; the parameterized 'a Show on a current paint' refusal test. Ticket 86 mentions a separate fix branch; current behavior has not been reverified.",
+    "note": "Retro: failing on dev, formerly lines 300 and 301; the parameterized 'a Show on a current paint' refusal test. Ticket 86 mentions a separate fix branch; current behavior has not been reverified.",
     "ticket": "docs/work/tech-debt/issues/09-flaky-specs.md"
   },
   {
