@@ -655,6 +655,21 @@ test("keep and kept are per source and node, and cleared on leave", async () => 
   assert.equal(s.mode.kept(CARD, [0]), undefined, "nothing kept outside the mode");
 });
 
+test("kept names are the template's: another level with the same bytes does not take them", async () => {
+  const s = setup();
+  await card(s);
+  // The badge and the pill templates read the same here; a name kept in one is not the other's.
+  s.m.writeDraft(PILL_PATH, BADGE);
+  assert.equal(await s.mode.open({ step: badgeStep }), true);
+  s.mode.keep(BADGE, [0], "label");
+  assert.equal(s.mode.kept(BADGE, [0]), "label");
+  assert.equal(await s.mode.open({ step: { ...pillStep, node: [0, 0] } }), true);
+  assert.equal(s.mode.now()?.template, PILL_PATH);
+  assert.equal(s.mode.kept(BADGE, [0]), undefined);
+  assert.equal(await s.mode.open({ back: 1 }), true);
+  assert.equal(s.mode.kept(BADGE, [0]), "label");
+});
+
 test("a new entry over a mode keeps its rename pair, the pair's share and kept names until leave", async () => {
   const s = setup();
   await card(s);

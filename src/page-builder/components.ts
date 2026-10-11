@@ -246,6 +246,9 @@ export interface ComponentStructureModel {
   disconnect(): void;
 }
 
+/** The status line when Edit component mode gave up at its deadline (component-mode.ts). */
+const LATE_MODE = `${new EnterTimeout().message} The template's code is open.`;
+
 export function createComponentTools(deps: ComponentDeps) {
   const refuse = (reason: string) => { deps.announce(reason); showRefusal(reason); };
   const panel = node("section", "component-panel");
@@ -641,22 +644,25 @@ export function createComponentTools(deps: ComponentDeps) {
    * `slot` (the element holding that slot, its `<slot>` marked in the code)
    * in the instance on show, else the template's first element. With an
    * instance on the page shown, Edit component mode frames it (`notes` in its
-   * bar). Resolves to whether the mode opened.
+   * bar). Resolves to "mode" when the mode opened, "late" when it gave up at
+   * its deadline (the code pane only, said so), else undefined.
    */
-  async function editComponent(tag: string, slot?: string, instance?: { path: string; node: readonly number[] }, notes: readonly string[] = []): Promise<boolean> {
+  async function editComponent(tag: string, slot?: string, instance?: { path: string; node: readonly number[] }, notes: readonly string[] = []): Promise<"mode" | "late" | undefined> {
     const template = templateOf(tag);
-    if (!template) return false;
+    if (!template) return undefined;
     const from = deps.selection();
     const moded = mode.now();
     const nested = instance ?? (from?.tag === tag && from.node ? { path: from.path, node: from.node } : undefined);
     if (moded && nested?.path === moded.template) {
       const source = deps.sources()[nested.path];
-      if (source === undefined || locateNativeElementRange(source, [...nested.node])?.tag.name !== tag) return false;
+      if (source === undefined || locateNativeElementRange(source, [...nested.node])?.tag.name !== tag) return undefined;
       const index = moded.chain.findIndex((level) => level.tag === tag);
-      return navigateMode(index < 0 ? undefined : index, { tag, template: template.path, node: nested.node });
+      return await navigateMode(index < 0 ? undefined : index, { tag, template: template.path, node: nested.node }) ? "mode" : undefined;
     }
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
     const framed = instance ?? instanceOf(from, tag);
+    // A failed load is told only while this entry still stands over what it read (below).
+    const pageSource = framed && deps.sources()[framed.path];
     let nodePath: number[] | undefined;
     let reveal: Promise<void> | undefined;
     const outcome = await mode.enter({ tag, template: template.path, instance: framed, notes, ready: framed && loadEditMode() }, { mounted: () => {
@@ -695,13 +701,14 @@ export function createComponentTools(deps: ComponentDeps) {
     if (outcome.status === "mode") {
       // Keep any part selected in this instance while the mode was loading.
       if (nodePath && !nativeComponentFrameSelected(deps.selection(), framed!, template.path)) deps.preview()?.selectNode({ path: template.path, node: nodePath });
-    } else if (outcome.status === "failed" && mode.opened() === template.path) {
-      // Told only while this entry's opening stands: the template's code is open without the frame.
-      if (outcome.error instanceof EnterTimeout) deps.announce(`${outcome.error.message} The template's code is open.`);
-      else deps.error(outcome.error);
+    } else if (outcome.status === "failed" && mode.opened() === template.path && deps.sources()[template.path] === template.source
+      && (!framed || deps.previewPage() === framed.path && deps.sources()[framed.path] === pageSource)) {
+      // Told only while this entry's opening stands over the page and template it read: the template's code is open without the frame.
+      if (outcome.error instanceof EnterTimeout) { deps.announce(LATE_MODE); await reveal; return "late"; }
+      deps.error(outcome.error);
     }
     await reveal;
-    return outcome.status === "mode";
+    return outcome.status === "mode" ? "mode" : undefined;
   }
 
   /** The instance on the page shown that a selection is, or is in (as its template's part), when it is a `tag`. */
@@ -1513,9 +1520,9 @@ export function createComponentTools(deps: ComponentDeps) {
     const notes = [...made.notes, ...made.cards.flatMap(card => card.notes), ...(loader?.notes ?? [])];
     const madeStamp = deps.edits.stamp();
     // A mode that doesn't open (its module held past the mode's deadline: the code pane only) leaves the notes to the status line.
-    const inMode = await editComponent(tag, undefined, { path, node: nodePath }, notes);
-    // The notes show once: in the mode's bar, else in the status line.
-    if (scopeHolds(madeStamp)) deps.announce([madeMessage(tag, made), ...(loader?.added ? [loader.added] : []), ...(inMode ? [] : notes)].join(" "));
+    const entered = await editComponent(tag, undefined, { path, node: nodePath }, notes);
+    // The notes show once: in the mode's bar, else in the status line (after why the mode did not open, if it gave up).
+    if (scopeHolds(madeStamp)) deps.announce([madeMessage(tag, made), ...(loader?.added ? [loader.added] : []), ...(entered === "mode" ? [] : [...(entered === "late" ? [LATE_MODE] : []), ...notes])].join(" "));
   }
 
   /** Make component without a dialog, using the same plan and undo step. */
@@ -1600,10 +1607,11 @@ export function createComponentTools(deps: ComponentDeps) {
     const madeStamp = deps.edits.stamp();
     const notes = planned?.loader?.notes ?? [];
     // The step refreshed the host's component registry before it resolved.
-    const inMode = await editComponent(tag, undefined, { path, node: [...parent, index] }, notes);
-    // The loader's notes show once: in the mode's bar, else in the status line.
+    const entered = await editComponent(tag, undefined, { path, node: [...parent, index] }, notes);
+    // The loader's notes show once: in the mode's bar, else in the status line (after why the mode did not open, if it gave up).
     const made = `Made the component <${tag}>: components/${tag}/${tag}.html${planned?.loader?.added ? `. ${planned.loader.added}` : ""}`;
-    if (scopeHolds(madeStamp)) deps.announce(inMode || !notes.length ? made : `${made}${made.endsWith(".") ? "" : "."} ${notes.join(" ")}`);
+    const after = entered === "mode" ? [] : [...(entered === "late" ? [LATE_MODE] : []), ...notes];
+    if (scopeHolds(madeStamp)) deps.announce(after.length ? `${made}${made.endsWith(".") ? "" : "."} ${after.join(" ")}` : made);
     return true;
   }
 
@@ -1948,6 +1956,8 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   return {
+    /** Edit component mode (component-mode.ts): what it is, on what, and for how long. */
+    mode,
     makeFromAgent,
     menuItems,
     slotMenu,

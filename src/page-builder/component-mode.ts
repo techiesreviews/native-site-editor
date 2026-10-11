@@ -106,7 +106,7 @@ export interface ComponentMode {
    * refused (undefined, `run` never called) with the mode off or another transition in flight.
    */
   rename<T extends Renamed | undefined>(run: () => Promise<T>): Promise<T | undefined>;
-  /** The name a slot made fixed in this mode had, while the template reads as that change left it. */
+  /** The name a slot made fixed in this mode had, while the template edited reads as that change left it. */
   keep(source: string, node: readonly number[], name: string): void;
   kept(source: string, node: readonly number[]): string | undefined;
   /** The bar's × on the notes: they go, the opening stays (no new entry). */
@@ -191,7 +191,8 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   const renames: { from: { tag: string; template: string }; to: { tag: string; template: string }; notes: readonly string[]; release: () => void }[] = [];
   // Slots made fixed in the mode: the name each had, by the template's source and the part.
   const fixedNames = new Map<string, string>();
-  const keptKey = (source: string, node: readonly number[]) => JSON.stringify([source, node]);
+  // Keyed by the template edited too: two templates with the same bytes keep their own.
+  const keptKey = (source: string, node: readonly number[]) => JSON.stringify([state?.template, source, node]);
   // The instance check of the last page source read (M3).
   let placed: { source: string; key: string; at: boolean } | undefined;
 
@@ -393,7 +394,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     open,
     rename,
     keep(source, node, name) { if (state) fixedNames.set(keptKey(source, node), name); },
-    kept: (source, node) => fixedNames.get(keptKey(source, node)),
+    kept: (source, node) => state ? fixedNames.get(keptKey(source, node)) : undefined,
     dismissNotes() {
       const mode = state;
       if (!mode?.notes.length) return;

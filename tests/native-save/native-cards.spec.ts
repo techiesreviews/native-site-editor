@@ -765,6 +765,7 @@ test("a Make component whose mode is slower than its deadline opens the code onl
     const note = "1 rule can't follow the parts into the component: .intro .lead em.";
     await expect(status(page)).toContainText("Made the component <section-made-to-be>", { timeout: 20_000 });
     await expect(status(page)).toContainText(note);
+    await expect(status(page)).toContainText("Edit component mode did not load in time. The template's code is open.");
     expect((await status(page).textContent())!.split(note).length).toBe(2);
     await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveCount(0);
     // The view arrives late: no mode starts, no notes in the bar, the frame stays off.

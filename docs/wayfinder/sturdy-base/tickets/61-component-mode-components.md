@@ -1,7 +1,7 @@
 ---
 title: "components.ts and the mode's bar on the Edit component mode module"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [60-component-mode-module]
 builder: claude ★
