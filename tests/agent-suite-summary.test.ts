@@ -26,13 +26,16 @@ test("known failures match report paths, exact titles, line families and spec-wi
 });
 
 test("summary marks known failures separately and still exits 1 for mixed failing reports", () => {
+  // Follows the registry, so editing the spec only means updating known-failures.json.
+  const compactLine = JSON.parse(readFileSync("tests/known-failures.json", "utf8"))
+    .find((entry: { spec: string }) => entry.spec === "native-save/native-structure-compact.spec.ts").line;
   const scratch = mkdtempSync(join(tmpdir(), "ase-summary-"));
   try {
     const report = join(scratch, "results.json");
     writeFileSync(report, JSON.stringify({ suites: [{ title: "suite", file: "native-save/native-selector.spec.ts", specs: [
       { title: entries[0].title, file: "unknown.spec.ts", line: 1, tests: [{ status: "unexpected" }] },
       { title: "component CSS loads on demand, scopes to matching shadow root, and edits live", line: 999, tests: [{ status: "unexpected", results: [{ status: "failed", error: { message: "first error\nnext line" } }] }] },
-      { title: "variant", file: "native-save/native-structure-compact.spec.ts", line: 301, tests: [{ status: "unexpected" }] },
+      { title: "variant", file: "native-save/native-structure-compact.spec.ts", line: compactLine, tests: [{ status: "unexpected" }] },
       { title: "retried", tests: [{ status: "flaky" }] },
     ] }] }));
     const result = spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", report], { encoding: "utf8" });
