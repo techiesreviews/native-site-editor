@@ -312,36 +312,10 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
   border-radius: 8px;
   padding: 2px 0;
 }
-/* Edit component mode's slot chip (slot-chip.css) wears the slot badge's look
-   in the tree: the same surface, type and shape, its name capitalised like a
-   slot's label. An items slot takes the pink hue, a fixed part stays muted
-   and struck through. */
 .page-structure__row > .slot-chip {
-  height: 16px;
-  margin: 0 0 0 auto;
-  padding: 0 5px;
-  border-radius: var(--radius-small, 4px);
-  background: var(--component-surface);
-  color: var(--component-text);
-  font: inherit;
-  font-size: var(--type-badge);
-  font-weight: 600;
-  line-height: 16px;
+  margin-left: auto;
+  margin-right: 6px;
 }
-.page-structure__row > .slot-chip ~ .slot-chip { margin-left: 4px; }
-.page-structure__row > .slot-chip:not(.slot-chip--renaming) > .slot-chip__name { display: inline-block; }
-.page-structure__row > .slot-chip:not(.slot-chip--renaming) > .slot-chip__name::first-letter { text-transform: uppercase; }
-.page-structure__row > .slot-chip--items {
-  background: oklch(from var(--component-surface) l c 355);
-  color: oklch(from var(--component-text) l c 355);
-}
-.page-structure__row > .slot-chip--fixed {
-  background: color-mix(in oklch, var(--muted) 16%, transparent);
-  color: var(--muted);
-}
-.page-structure__row > .slot-chip--fixed:hover { background: color-mix(in oklch, var(--muted) 26%, transparent); }
-/* The row's faded bar ends where its chips begin (page-structure.ts measures). */
-.page-structure__row:has(> .slot-chip) > .row-action-overlay { right: var(--row-action-end, 0px); }
 .page-structure__row--outer > .page-structure__label { opacity: 0.6; }
 
 /* Keep the badge clear while its name is being typed. */
