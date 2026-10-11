@@ -38,13 +38,18 @@ A decided plan, ready to hand off, for a new **media manager** covering every me
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Research media manager designs on Mobbin](tickets/01-research-mobbin-patterns.md): ~70 screens (image links expire ~2026-11-10); shortlist of eight: Shopify-style detail card with "Used in", Klaviyo before/after optimise, progress on the tile, a thumb-friendly picker, focus point per place with live previews (Squarespace), named crop shapes, grouped clean-up suggestions with Undo or a Trash, a floating bar for many files
+- [Research today's media code and what to keep](tickets/04-research-media-code-today.md): two upload paths share no code; responsive copies are loose files that rename/delete ignore; Delete unused misses absolute URLs, JS, sitemap and feed; Undo needs an open page; `media.json` has no room for focus or crop; keep scanner, batch/Undo, Optimise worker and Publish pipeline, split the 455-line view on ten seams, delete the legacy workspace members
+- [Research responsive images, crop and focus point in plain HTML](tickets/03-research-responsive-output-crop-focus.md): `<img srcset sizes>` over `<picture>`; one width set per file, `sizes` measured per place plus `auto` for lazy images; the top image loads eagerly; shapes are CSS per place, cutting makes a new file; focus point is inline `object-position`; backgrounds and `og:image` get no copies; today's markup leaves stale `<source>` tags on replace
+- [Research the images on existing sites](tickets/05-research-images-on-existing-sites.md): techies-reviews has 77 outside images from 60 sites, a quarter broken; the editor's own security policy blocks them, so fetching needs a new guarded Worker route; 60 unused files (13.4 MB); 490 of 533 images have empty alt; hand-made responsive sets should be adopted; logos, banners, scripts, embeds, sample code and component templates are off limits
+- [Research optimising every media kind in the browser](tickets/02-research-optimising-every-media-kind.md): Safari likely uploads large PNGs today (needs a small WebP encoder); keep WebP q80 ≤2400 px, AVIF too slow for a default; HEIC via a decoder loaded on demand; SVG minify, GIF → MP4; video via Mediabunny to H.264 MP4 + poster, audio to AAC; PDFs kept as is; 20 MB cap, warnings at 10 MB / 1 MB, repo size shown, no Git LFS
+
 ## Not yet specified
 
 - **Folders, names and tags.** Today there is no folder management in the Images tab. How Lex wants to organise media (folders made in the manager, tags, automatic grouping by page or kind) will be clearer after the look prototype.
 - **Replacing a file everywhere.** Swapping one image in one place versus replacing the file behind every use (same address, new picture). This may become its own ticket once the manager's look and the responsive output are settled.
-- **Images from other websites in the manager.** Whether they are listed, counted and previewed before the fix-all brings them in. This depends on the fix-all decision.
-- **Alt text.** The edit bar warns about missing alt text today. Whether the manager shows gaps per file or per use, and how agents' alt text is reviewed, comes after the agents ticket.
-- **CSS background images and og:image.** Whether crop, focus point and responsive copies apply to images set in CSS or in social-share tags. This hangs on the responsive output research.
+- **Images from other websites in the manager.** Whether they are listed, counted and previewed before the fix-all brings them in. The editor's security policy blocks showing them today (ticket 05), so this depends on the fix-all decision.
+- **Alt text.** The edit bar warns about missing alt text today, but 490 of 533 images on techies-reviews have empty alt, which counts as decorative, so the warning finds nothing (ticket 05). Whether the manager shows gaps per file or per use, and how agents' alt text is reviewed, comes after the agents ticket.
 
 ## Out of scope
 
