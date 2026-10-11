@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ts, parse, walk, member, functionName, finding, literal, nameFindings, bindingReceiver, moduleReferences, unallowed, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
+import { ts, parse, walk, member, functionName, finding, literal, nameFindings, bindingReceiver, nodeText, moduleReferences, unallowed, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
 
 // `count`: how many findings the entry covers (default 1), so a new one beside it fails too.
 
@@ -47,7 +47,7 @@ const headingAllowlist: AllowlistEntry[] = [
 const framePosts: Detector = (source, file) => {
   if (file === LINK) return [];
   return nameFindings(source, file, "frame-post", name => name === "postMessage", false,
-    node => (member(node)?.receiver ?? (ts.isBindingElement(node) ? bindingReceiver(node) : undefined))?.getText() ?? node.getText());
+    node => nodeText(member(node)?.receiver ?? (ts.isBindingElement(node) ? bindingReceiver(node) : undefined) ?? node, node.getSourceFile()));
 };
 
 // One link owns host listeners and protocol reads; wire source names live once.
@@ -187,6 +187,17 @@ test("frame posts reject frame receivers through chains, assertions, casts and a
   assert.deepEqual(unallowed(framePosts('worker.postMessage({});', "src/page-builder/media-optimise.ts"), postAllowlist), []);
   assert.deepEqual(framePosts('frame.contentWindow?.postMessage({});', LINK), []);
   assert.deepEqual(framePosts('// window.postMessage({});\nconst text = "postMessage";', FAKE), []);
+});
+
+test("frame posts report nested destructured receivers without reading synthetic positions", () => {
+  for (const source of [
+    'const { frame: { postMessage: send } } = api; send({});',
+    'const { ["frame"]: { [`postMessage`]: send } } = api; send({});',
+    'const { nested: { frame: { postMessage: send } } } = api; send({});',
+  ]) {
+    flags(framePosts, source, "frame-post");
+    assert.ok(framePosts(source, FAKE).some(hit => hit.text === (source.includes("nested:") ? "api.nested.frame" : "api.frame")), source);
+  }
 });
 
 test("frame listeners reject listeners, assignments, copied source names and protocol imports", () => {

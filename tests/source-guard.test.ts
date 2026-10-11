@@ -86,6 +86,25 @@ test("source guard resolves guarded methods and inline, conditional and factory 
   walk(tree, node => { if (ts.isBindingElement(node) && node.name.getText(tree) === "first") assert.equal(bindingKey(node), "now"); });
 });
 
+test("source guard resolves nested guarded-method bindings and receiver aliases", () => {
+  for (const source of [
+    'const { edits: { run: apply } } = ports; apply(r => forbidden());',
+    'const { nested: { edits: { [`now`]: apply } } } = ports; apply(r => forbidden());',
+    'const { edits: { run: apply } } = ports; const alias = apply; alias(r => forbidden());',
+    'const { edits: queue } = ports; const host = queue; const { now: apply } = host; apply(r => forbidden());',
+  ]) {
+    const { tree, checker } = analyse(source, FILE);
+    let plans = 0;
+    walk(tree, node => {
+      if (ts.isCallExpression(node) && isPlanMethod(checker, node.expression)) plans += plansOf(checker, node.arguments[0])?.length ?? 0;
+    });
+    assert.equal(plans, 1, source);
+  }
+  const source = 'const { history: { run: apply } } = ports; apply(r => forbidden());';
+  const { tree, checker } = analyse(source, FILE);
+  walk(tree, node => { if (ts.isCallExpression(node)) assert.equal(isPlanMethod(checker, node.expression), false); });
+});
+
 test("source guard rejects unused, over-counted, invalid and unreasoned allowlist entries", () => {
   const hits = names("forbidden();");
   const entry: AllowlistEntry = { file: FILE, match: "forbidden", reason: "Fixture exception.", count: 1 };

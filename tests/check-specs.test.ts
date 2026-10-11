@@ -127,3 +127,38 @@ test("fixed waits ignore text and comments, keeping template interpolations as c
     "new Promise(resolve => requestAnimationFrame(resolve));",
   ].join("\n")), [4]);
 });
+
+test("fixed waits parse object and nested Promise type arguments", () => {
+  for (const type of [
+    "{ done: boolean }",
+    "{ done: boolean; value: Map<string, { nested: boolean }> }",
+    "() => { done: boolean }",
+    "{ callback: () => Promise<{ done: boolean }>; tuple: [number, boolean] }",
+  ]) {
+    assert.deepEqual(fixedWaits(`new Promise<${type}>(resolve => setTimeout(() => resolve({ done: true }), 100))`), [1], type);
+    assert.deepEqual(fixedWaits(`new Promise<${type}>(resolve => requestAnimationFrame(resolve))`), [], type);
+  }
+  assert.deepEqual(fixedWaits("new Promise<\n  { done: boolean; nested: Promise<boolean> }\n>(resolve => setTimeout(resolve, 100))"), [1]);
+});
+
+test("fixed wait opt-outs require real line comments, including inside template interpolations", () => {
+  for (const fake of [
+    'const text = "// fixed-wait: fake";',
+    "const text = '// fixed-wait: fake';",
+    'const text = `// fixed-wait: fake`;',
+    'const text = `outer ${"// fixed-wait: fake"}`;',
+    '/* // fixed-wait: fake */',
+  ]) {
+    assert.deepEqual(fixedWaits(`${fake}\nawait page.waitForTimeout(100);`), [2], fake);
+    assert.deepEqual(fixedWaits(`${fake} await page.waitForTimeout(100);`), [1], fake);
+    assert.deepEqual(fixedWaits(`${fake}\nawait new Promise(resolve => setTimeout(resolve, 100));`), [2], fake);
+  }
+  assert.deepEqual(fixedWaits('const text = "// fixed-wait: fake"; // fixed-wait: observes a debounce\nawait page.waitForTimeout(100);'), []);
+  assert.deepEqual(fixedWaits('const text = `result: ${\n// fixed-wait: injects latency in the interpolation\nnew Promise(resolve => setTimeout(resolve, 100))}`;'), []);
+});
+
+test("clipboard opt-outs also require real line comments", () => {
+  assert.deepEqual(check(['const text = "// clipboard-ready: fake";', read]), [2]);
+  assert.deepEqual(check(['/* // clipboard-ready: fake */', read]), [2]);
+  assert.deepEqual(check([`${read} // clipboard-ready: written synchronously`]), []);
+});

@@ -61,7 +61,7 @@ function untracked(checker: TS.TypeChecker, node: TS.Node): boolean {
     const receiver = access?.receiver ?? (ts.isBindingElement(value) ? bindingReceiver(value) : undefined);
     if (!receiver) return false;
     const from = strip(receiver);
-    if (name === "source" && ts.isIdentifier(from) && ["ports", "deps"].includes(from.text)) return true;
+    if (name === "source" && standsFor(checker, from, value => ts.isIdentifier(value) && ["ports", "deps"].includes(value.text))) return true;
     return name === "get" && ts.isCallExpression(from) && strip(from.expression).getText() === "draftStore";
   });
 }
@@ -159,6 +159,8 @@ test("plans reject aliased and destructured readers and plan calls, and resolve 
     "const { source } = ports; edits.run(r => source(path));",
     "const { peek: shown } = ports.edits; edits.run(r => shown.source(path));",
     "const { run } = ports.edits; run(r => ports.source(path));",
+    "const { edits: { run: apply } } = ports; apply(r => ports.source(path));",
+    'const { edits: { ["now"]: apply } } = deps; apply(r => deps.source(path));',
     "const now = guardedEdits.now.bind(guardedEdits); now(r => nativeSources());",
     "const plan = ready ? r => r.source(path) : r => ports.source(path); edits.run(plan);",
   ]) flags(planReads, source, "plan-read");
@@ -171,6 +173,26 @@ test("plans reject aliased and destructured readers and plan calls, and resolve 
     "function textPlan() { const shown = ports.source(path); return r => r.source(path) === shown ? { stayed: \"\" } : { refuse: \"\" }; } edits.run(textPlan());",
     "function plan(r) { return r.source(path); } function act() { const ports = { source: () => \"\" }; edits.run(plan); }",
   ]) assert.deepEqual(planReads(source, FAKE), [], source);
+});
+
+test("untracked source reads follow receiver aliases without crossing shadowed bindings", () => {
+  for (const receiver of ["ports", "deps"]) {
+    for (const read of ['host.source(path)', 'second["source"](path)', 'source(path)']) {
+      const aliases = `const host = ${receiver}; const second = host; const { source } = second;`;
+      flags(planReads, `${aliases} edits.run(r => ${read});`, "plan-read");
+      flags(readsHelpers, `${aliases} function plan(r: Reads) { return ${read}; }`, "reads-helper");
+    }
+  }
+  for (const source of [
+    "const host = ports; function plan(host, r: Reads) { return host.source(path); }",
+    "const host = deps; function act(host) { edits.run(r => host.source(path)); }",
+    "const host = ports; edits.run(host => host.source(path));",
+    "const host = r; edits.run(r => host.source(path));",
+    "const host = second; const second = host; edits.run(r => host.source(path));",
+  ]) {
+    assert.deepEqual(planReads(source, FAKE), [], source);
+    assert.deepEqual(readsHelpers(source, FAKE), [], source);
+  }
 });
 
 test("findings use the innermost named function and count shared plans once", () => {

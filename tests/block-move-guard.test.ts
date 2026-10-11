@@ -158,6 +158,8 @@ test("move-plan follows move aliases, renamed imports, namespace members and tra
 test("move-plan recognises destructured, aliased, bound and string-access guarded edit methods", () => {
   for (const source of [
     'const { run } = ports.edits; run(r => pageRules(items));',
+    'const { edits: { run: apply } } = ports; apply(r => pageRules(items));',
+    'const { edits: { [`now`]: apply } } = deps; apply(r => templateRules());',
     'const { now: apply } = guardedEdits; apply(r => templateRules());',
     'const run = deps.edits.run; run(r => pageRules(items));',
     'const now = guardedEdits.now.bind(guardedEdits); now(r => templateRules());',

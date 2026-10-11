@@ -402,6 +402,8 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   await page.waitForTimeout(180);
   await page.mouse.up();
   await expect(editor.locator('.selected-text').first()).toBeVisible();
+  // fixed-wait: Observes whether mouse release incorrectly queues cursor selection after the 120 ms debounce.
+  await page.waitForTimeout(180);
   await expect(current(page)).toHaveText('h1');
   // A real code click queues cursor selection; a real body crumb click wins while it waits.
   // The page's clock stands still between the two clicks, so the wait (120 ms) cannot

@@ -17,6 +17,10 @@ export function parse(source: string, file: string) {
   return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
 }
 
+export function nodeText(node: TS.Node, tree: TS.SourceFile): string {
+  return node.pos < 0 ? ts.createPrinter().printNode(ts.EmitHint.Unspecified, node, tree) : node.getText(tree);
+}
+
 export function walk(node: TS.Node, visit: (node: TS.Node) => void) {
   visit(node);
   ts.forEachChild(node, child => walk(child, visit));
@@ -120,7 +124,7 @@ export function plansOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0)
 
 export function isEdits(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
   node = strip(node);
-  if (/edits$/i.test(member(node)?.name ?? node.getText())) return true;
+  if (/edits$/i.test(member(node)?.name ?? (ts.isIdentifier(node) ? node.text : ""))) return true;
   if (!ts.isIdentifier(node) || depth > 8) return false;
   const declaration = declarationOf(checker, node);
   if (declaration && ts.isBindingElement(declaration)) return /edits$/i.test(bindingKey(declaration) ?? "");
@@ -136,8 +140,9 @@ export function isPlanMethod(checker: TS.TypeChecker, node: TS.Node, depth = 0):
   if (access) return ["run", "now"].includes(access.name) && isEdits(checker, access.receiver);
   if (!ts.isIdentifier(node)) return false;
   const declaration = declarationOf(checker, node);
-  if (declaration && ts.isBindingElement(declaration) && ts.isVariableDeclaration(declaration.parent.parent) && declaration.parent.parent.initializer) {
-    return ["run", "now"].includes(bindingKey(declaration) ?? "") && isEdits(checker, declaration.parent.parent.initializer);
+  if (declaration && ts.isBindingElement(declaration)) {
+    const receiver = bindingReceiver(declaration);
+    return ["run", "now"].includes(bindingKey(declaration) ?? "") && !!receiver && isEdits(checker, receiver);
   }
   return !!declaration && ts.isVariableDeclaration(declaration) && !!declaration.initializer && isPlanMethod(checker, declaration.initializer, depth + 1);
 }
