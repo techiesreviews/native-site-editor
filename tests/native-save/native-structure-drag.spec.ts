@@ -183,6 +183,14 @@ test("a row press on a Block that does not move starts no drag (an <svg> island)
   await expect(frame(page).locator("#services > svg.mark")).toHaveCount(1);
   const original = await source(page);
   await unfold(page, "1.2");
+  // The heading beside it drags (and the drag code is in, so a drag would start at once); Escape cancels it.
+  const heading = await box(row(page, "1.2.0"));
+  await pressAndMove(page, { x: heading.x, y: heading.y }, { x: heading.x, y: heading.y - 12 });
+  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(ghost(page)).toHaveCount(0);
+  expect(await source(page)).toBe(original);
   // The <svg> row (#services' second child): pressed and moved well past the threshold, nothing drags.
   const svg = await box(row(page, "1.2.1"));
   await page.mouse.move(svg.x, svg.y);
@@ -193,12 +201,6 @@ test("a row press on a Block that does not move starts no drag (an <svg> island)
   await expect(row(page, "1.2.1")).not.toHaveClass(/is-drag-source/);
   await page.mouse.up();
   expect(await source(page)).toBe(original);
-  // The heading beside it still drags.
-  const heading = await box(row(page, "1.2.0"));
-  await pressAndMove(page, { x: heading.x, y: heading.y }, { x: heading.x, y: heading.y - 12 });
-  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
-  await page.keyboard.press("Escape");
-  await page.mouse.up();
 });
 
 test("a block from the rail drops in Structure at the depth the pointer's x picks", async ({ page, baseURL }) => {
