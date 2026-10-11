@@ -10,14 +10,6 @@ import type { Reads } from "../guarded-edit";
 /** The host's ports are exactly the card operations' dependencies, read live. */
 export type CardsControllerPorts = CardsDeps;
 
-const MOVE_ICONS = new Set(["up", "down", "left", "right"]);
-
-// Only a whole section moves from the bar or the keyboard, so a card's own
-// move arrows are left out of the edit bar.
-export function withoutCardMoves<T extends { kind: string; icon?: unknown }>(controls: T[]): T[] {
-  return controls.filter((control) => !(control.kind === "button" && MOVE_ICONS.has(control.icon as string)));
-}
-
 export function createCardsController(ports: CardsControllerPorts) {
   let cards: Cards | undefined;
 
@@ -37,7 +29,7 @@ export function createCardsController(ports: CardsControllerPorts) {
       createPage: (card, request) => cards?.createPage(card, request),
     } satisfies CardGridHandlers as CardGridHandlers,
     controls(selection: NativePreviewSelection, source: string) {
-      return cards ? withoutCardMoves(cards.controls(selection, source)) : [];
+      return cards ? cards.controls(selection, source) : [];
     },
     cardOffer: (parent: string) => cards?.cardOffer(parent),
     cardsLinkingTo: (route: string, excluding: Set<string>, reads: Reads) => cards?.cardsLinkingTo(route, excluding, reads),

@@ -175,22 +175,6 @@ test("a repository change while the page opens drops the move without a word", a
   assert.deepEqual(f.notices, []);
 });
 
-test("MCP move_section (moveNativeSectionTo) moves by the editor's engine as one step, keeping CRLF and leaving no blank line", () => {
-  const source = "<main>\r\n  <section>A</section>\r\n  <section>B</section>\r\n  <section>C</section>\r\n</main>\r\n";
-  const f = fixture({ page: source });
-  assert.equal(f.controller.moveNativeSectionTo(f.target, [0], 3), "moved");
-  assert.equal(f.page(), "<main>\r\n  <section>B</section>\r\n  <section>C</section>\r\n  <section>A</section>\r\n</main>\r\n");
-  assert.deepEqual(f.mem.steps(), ["range"]);
-  assert.deepEqual(f.mem.selected, [{ path: PAGE, node: [0, 2] }]);
-  // Its own gaps stay without a step (said); another parent is refused.
-  const moved = f.page();
-  const g = fixture({ page: moved });
-  assert.equal(g.controller.moveNativeSectionTo({ ...g.target, node: [0, 2] }, [0], 3), "stayed");
-  assert.equal(g.mem.announced.at(-1), "Section stayed in place");
-  assert.equal(g.controller.moveNativeSectionTo(g.target, [], 0), undefined);
-  assert.deepEqual(g.mem.steps(), []);
-});
-
 test("text typed in the preview is one step on the open page, the element selected after it", async () => {
   const f = fixture();
   await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "A", after: "AB" } as never);

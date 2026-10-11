@@ -176,8 +176,9 @@ fixture repository is additive.
 - Items are found in the page's own markup only; a grid inside a component
   template is the template's and is not offered.
 - Duplicate copies an item exactly, including its link; Add card is the clean copy.
-- Cards can be reordered by dragging them; only whole sections move with the
-  edit bar's arrows or Alt+↑/↓.
+- Cards are reordered by dragging them or with Alt+arrows, as any Block (the
+  Block move module, `src/page-builder/block-move.ts`); a card's own controls are
+  Duplicate, Remove and Add card, with no Move buttons.
 
 Section insertion controls measure the actual Add-card button
 rectangle after layout. Only a colliding section plus moves to the nearest

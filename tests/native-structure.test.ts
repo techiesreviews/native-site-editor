@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { startTags, type ElementRange } from "../src/native-source-location.ts";
-import { altFromPath, duplicateEdit, linkWrapEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, setAttributesEdit, structureLabel, swapEdits, unwrapEdits } from "../src/native-structure.ts";
+import { altFromPath, duplicateEdit, linkWrapEdit, nativeElementLabel, nativeKindLabel, newTabEdit, opensInNewTab, previousHeadingLevel, removeEdit, setAttributeEdit, setAttributesEdit, structureLabel, unwrapEdits } from "../src/native-structure.ts";
 
 const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
   [...edits].sort((a, b) => b.start - a.start).reduce((out, edit) => out.slice(0, edit.start) + edit.text + out.slice(edit.end), source);
@@ -65,14 +65,6 @@ test("Open in new tab writes target and noopener, and takes both away again", ()
   // Already noopener: not written twice.
   const already = `<a href="/x" rel="noopener">x</a>`;
   assert.equal(apply(already, [newTabEdit(already, startTags(already)[0], true)]), `<a href="/x" rel="noopener" target="_blank">x</a>`);
-});
-
-test("swap exchanges two siblings and keeps what lies between", () => {
-  const a = rangeAt(page, 1);
-  const b = rangeAt(page, 3);
-  const swapped = apply(page, swapEdits(page, a, b));
-  assert.equal(swapped, `<main>\n  <section class="b" data-key="b"><p>B</p></section>\n  <section class="a" data-key="a">\n    <h2>A</h2>\n  </section>\n  <img src="x.png" alt="">\n</main>`);
-  assert.deepEqual(swapEdits(page, a, a), []);
 });
 
 test("attributes are set, added, quoted and removed on the start tag", () => {

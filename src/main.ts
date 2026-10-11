@@ -847,7 +847,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
 }));
 // The Block move module (src/page-builder/block-move.ts): what a press moves, where it may go,
 // and the move as one guarded edit, on the page or the template edited: the edit bar, the
-// canvas's and Page Structure's Alt+arrows (the drags and MCP arrive in sturdy-base slices 32-33).
+// canvas's and Page Structure's Alt+arrows, and MCP move_section (drags arrive in slice 32).
 const blockMoves = createBlockMoves({
   edits: guardedEdits,
   editing: () => componentTools?.editModeTemplate(),
@@ -1647,9 +1647,6 @@ function editOpenPage(...args: Parameters<typeof pageStructureController.editOpe
 }
 function isNativeSectionTag(...args: Parameters<typeof pageStructureController.isNativeSectionTag>) {
   return pageStructureController.isNativeSectionTag(...args);
-}
-function moveNativeSectionTo(...args: Parameters<typeof pageStructureController.moveNativeSectionTo>) {
-  return pageStructureController.moveNativeSectionTo(...args);
 }
 function applyNativeTextEdit(...args: Parameters<typeof pageStructureController.applyNativeTextEdit>) {
   return pageStructureController.applyNativeTextEdit(...args);
@@ -4661,7 +4658,7 @@ const agentSiteActions: AgentSiteActions = {
     return undefined;
   },
   sectionTags: () => new Set(nativeSectionChoices().map((choice) => choice.tag)),
-  moveSection: moveNativeSectionTo,
+  moveSection: (at, gap) => blockMoves.move(at, { gap, section: true }, { stale: "The page changed in the editor meanwhile. Read it again." }),
   moveFile: (path, to, keepOldUrl) =>
     withAgentAnswers({ option: keepOldUrl }, async () => {
       const target = agentFileTarget(path);

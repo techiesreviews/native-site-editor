@@ -3,6 +3,7 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
+import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
@@ -346,8 +347,8 @@ export interface AgentSiteActions {
   }>;
   setPageDetail(path: string, field: "title" | "description", value: string): Promise<string | undefined>;
   sectionTags(): ReadonlySet<string>;
-  /** The page structure's drag (moveNativeSectionTo). */
-  moveSection(target: { path: string; node: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined;
+  /** Moves the proved section through the Block move module. */
+  moveSection(at: MoveAt, gap: { parent: number[]; index: number }): MoveOutcome;
   /** The Files tab's rename or move, with its confirmation answered. */
   moveFile(path: string, to: string, keepOldUrl?: boolean): Promise<string | undefined>;
   deleteFile(path: string): Promise<string | undefined>;
@@ -542,13 +543,17 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       }
       const parent = parseOutlineId(args.container ?? "") ?? (args.container === "" ? [] : undefined);
       if (!parent || args.index === undefined) throw new Conflict("Say where the section goes.");
-      const moved = actions.moveSection({ path, node, tag: section.tag }, parent, args.index);
-      if (!moved) throw new Error("The section could not be moved.");
-      const from = node[node.length - 1];
-      const at = [...parent, args.index > from ? args.index - 1 : args.index];
+      const moving = actions.moveSection({ path, node, painted: source }, { parent, index: args.index });
+      const outcome = moving.status === "pending" ? await moving.settled : moving;
+      if (outcome.status === "stale") throw new Conflict(outcome.message);
+      if (outcome.status === "refused") {
+        if (outcome.failed) throw new Error(outcome.message);
+        throw new Conflict(outcome.message);
+      }
+      const id = outlineId(outcome.status === "moved" ? outcome.node : node);
       return {
-        message: moved === "stayed" ? "The section is already there." : `Section moved to ${outlineId(at)}, unsaved.`,
-        result: { section: outlineId(moved === "stayed" ? node : at), hash: await hashOf(actions, path) },
+        message: outcome.status === "stayed" ? "The section is already there." : `Section moved to ${id}, unsaved.`,
+        result: { section: id, hash: await hashOf(actions, path) },
       };
     }
     case "move_file": {

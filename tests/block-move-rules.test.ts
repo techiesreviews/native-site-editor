@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { chromium } from "@playwright/test";
 import {
-  nativeElementDepthMove, nativeElementMoveMessage, nativeSectionMovePlan, pageRules, templateRules,
+  nativeElementDepthMove, nativeElementMoveMessage, ownSlot, pageRules, templateRules,
   type MovePlan, type MoveRules, type MoveStep,
 } from "../src/page-builder/block-move-rules";
 import { templateSlotRefusal } from "../src/page-builder/native-elements";
@@ -49,20 +49,30 @@ test("sibling paths remain exact with repeated identical nodes and distinguish e
 
 test("a section moves among its siblings by the editor's engine (MCP move_section): whole lines, no blank lines, CRLF kept", () => {
   const moved = (source: string, from: number[], parent: number[], index: number) => {
-    const plan = nativeSectionMovePlan(source, from, parent, index);
+    const place = { parent, index, slot: ownSlot(source, from) };
+    const plan = page().to(source, from, place);
     assert.equal(plan.status, "moved");
-    return plan.status === "moved" ? { html: applyGuardedSourceEdit(source, plan.edit)!, selection: plan.selection } : undefined;
+    const result = plan.status === "moved" ? { html: applyGuardedSourceEdit(source, plan.edit)!, selection: plan.selection } : undefined;
+    // A template's root stays; sibling sections inside it use the same bytes and paths.
+    if (parent.length) {
+      const template = templateRules().to(source, from, place);
+      assert.equal(template.status, "moved");
+      if (template.status === "moved") assert.deepEqual({ html: html(source, template), selection: template.selection }, result);
+    }
+    return result;
   };
   const source = `<main>\n  <section class="a">\n    <h2>A</h2>\n  </section>\n  <section class="b"><p>B</p></section>\n  <img src="x.png" alt="">\n</main>`;
   // To the end, to the front, and one gap down; the selection follows the section.
   assert.deepEqual(moved(source, [0, 0], [0], 3), { html: `<main>\n  <section class="b"><p>B</p></section>\n  <img src="x.png" alt="">\n  <section class="a">\n    <h2>A</h2>\n  </section>\n</main>`, selection: [0, 2] });
   assert.deepEqual(moved(source, [0, 2], [0], 0), { html: `<main>\n  <img src="x.png" alt="">\n  <section class="a">\n    <h2>A</h2>\n  </section>\n  <section class="b"><p>B</p></section>\n</main>`, selection: [0, 0] });
   assert.deepEqual(moved(source, [0, 0], [0], 2)?.selection, [0, 1]);
-  // Its own gaps stay; a gap that is not there, another parent and an empty path are refused.
-  assert.deepEqual(nativeSectionMovePlan(source, [0, 0], [0], 0), { status: "stayed", reason: "already-position" });
-  assert.deepEqual(nativeSectionMovePlan(source, [0, 0], [0], 1), { status: "stayed", reason: "already-position" });
-  for (const [from, parent, index] of [[[0, 0], [0], 4], [[0, 0], [0], -1], [[0, 0], [], 0], [[0, 0], [0, 1], 0], [[], [], 0]] as const)
-    assert.equal(nativeSectionMovePlan(source, [...from], [...parent], index).status, "refused");
+  // Its own gaps stay; a gap outside the sibling count refuses on both adapters.
+  for (const [name, rules] of both()) {
+    for (const index of [0, 1])
+      assert.deepEqual(rules.to(source, [0, 0], { parent: [0], index, slot: ownSlot(source, [0, 0]) }), { status: "stayed", reason: "already-position" }, name);
+    for (const index of [-1, 4])
+      assert.equal(rules.to(source, [0, 0], { parent: [0], index, slot: ownSlot(source, [0, 0]) }).status, "refused", name);
+  }
   // Sections of a whole document's <body>, one blank line between two: it stays where it was, and none is added.
   const doc = `<!doctype html>\n<html>\n<body>\n  <section>A</section>\n\n  <section>\n    <p>B</p>\n  </section>\n  <section>C</section>\n</body>\n</html>\n`;
   const down = moved(doc, [0], [], 3)!;
@@ -76,10 +86,10 @@ test("a section moves among its siblings by the editor's engine (MCP move_sectio
   // In an instance's items slot a section keeps its own slot; without the items rule the instance stays closed.
   const list = `<main>\n  <section-list>\n    <section>A</section>\n    <section slot="more">X</section>\n    <section>B</section>\n  </section-list>\n</main>`;
   const items = (tag: string) => tag === "section-list";
-  const inSlot = nativeSectionMovePlan(list, [0, 0, 1], [0, 0], 0, items);
+  const inSlot = pageRules(items).to(list, [0, 0, 1], { parent: [0, 0], index: 0, slot: ownSlot(list, [0, 0, 1]) });
   assert.equal(inSlot.status, "moved");
   if (inSlot.status === "moved") assert.equal(applyGuardedSourceEdit(list, inSlot.edit), `<main>\n  <section-list>\n    <section slot="more">X</section>\n    <section>A</section>\n    <section>B</section>\n  </section-list>\n</main>`);
-  assert.equal(nativeSectionMovePlan(list, [0, 0, 0], [0, 0], 3).status, "refused");
+  assert.equal(page().to(list, [0, 0, 0], { parent: [0, 0], index: 3, slot: ownSlot(list, [0, 0, 0]) }).status, "refused");
   // Move up/down on a section (the edit bar, Alt+Up/Down) is the same engine, one edit, on either document.
   for (const [name, rules] of both())
     assert.equal(html(crlf, rules.step(crlf, [0, 1], "up")), `<main>\r\n  <section>B</section>\r\n  <section>\r\n    <h2>A</h2>\r\n  </section>\r\n  <section>C</section>\r\n</main>\r\n`, name);

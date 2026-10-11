@@ -1,6 +1,10 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { applySiteCommand, buildAgentContext, linkedStylesheets, type AgentSiteActions } from "../src/agent-site.ts";
+import { createGuardedEdits } from "../src/guarded-edit.ts";
+import { createBlockMoves } from "../src/page-builder/block-move.ts";
+import { readSource, type SourceNode } from "../src/page-builder/source-tree.ts";
+import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 
@@ -99,4 +103,94 @@ test("make_component reports refusals as conflicts and never calls the action fo
   await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "bad.id" } }), /not on the page/);
   await assert.rejects(applySiteCommand(actions, { ...command, expectedHash: "stale" }), /changed in the editor/);
   assert.equal(calls, 2);
+});
+
+test("move_section reports the module's moved id and stayed reply; Undo reselects the original section", async t => {
+  // Only pageOutline needs DOM here. This balanced fixture has no browser repairs,
+  // headings or component slots; the source adapter supplies its element tree.
+  const original = Object.getOwnPropertyDescriptor(globalThis, "document");
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, "document", original);
+    else Reflect.deleteProperty(globalThis, "document");
+  });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: {
+    createElement: () => {
+      let content: unknown;
+      return {
+        set innerHTML(markup: string) {
+          const tree = readSource(markup);
+          class OutlineElement {
+            children: OutlineElement[];
+            constructor(readonly node?: SourceNode, readonly parentElement: OutlineElement | null = null) {
+              this.children = tree.children(node).map(child => new OutlineElement(child, node ? this : null));
+            }
+            get localName() { return this.node?.type === "element" ? this.node.name : ""; }
+            get textContent() { return tree.text(this.node); }
+            getAttribute(name: string) { return this.node ? tree.attribute(this.node, name)?.value ?? null : null; }
+            matches() { return false; }
+            querySelectorAll(selector: string): OutlineElement[] {
+              const all = this.children.flatMap(child => [child, ...child.querySelectorAll("*")]);
+              return selector === "*" ? all : all.filter(child => child.localName === selector);
+            }
+            querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
+          }
+          content = new OutlineElement();
+        },
+        get content() { return content; },
+      };
+    },
+  } });
+  const path = "index.html";
+  const source = "<main><section>A</section><section>B</section><section>C</section></main>";
+  const site = { routes: { "/": path }, components: {} };
+  const m = createMemoryWorkspace({ branch: { [path]: source }, open: path, site });
+  const edits = createGuardedEdits(m.workspace);
+  const moves = createBlockMoves({ edits, editing: () => undefined,
+    mounted: file => m.openFile() === file && m.model(file) !== undefined,
+    forgetOpening: () => () => {},
+  });
+  const actions = {
+    open: async file => { assert.equal(file, path); return true; },
+    isMounted: file => m.openFile() === file,
+    text: async file => m.workspace.source(file),
+    sectionTags: () => new Set<string>(),
+    moveSection: (at, gap) => {
+      assert.equal(at.painted, m.workspace.source(path));
+      // Exercise the caller's pending settlement too.
+      const outcome = moves.move(at, { gap, section: true }, { stale: "Read the page again." });
+      assert.notEqual(outcome.status, "pending");
+      return outcome.status === "pending" ? outcome : { status: "pending", settled: Promise.resolve(outcome) };
+    },
+  } satisfies Pick<AgentSiteActions, "open" | "isMounted" | "text" | "sectionTags" | "moveSection">;
+  const command: AgentCommand = {
+    id: "move-1", operation: "move_section", path, branch: "dev", commit: "c", content: "",
+    expectedHash: await textHash(source), args: { section: "0.0", container: "0", index: 3 },
+    state: "pending", createdAt: 1,
+  };
+  // The returned id describes the moved node after the source sibling was removed.
+  const outcome = await applySiteCommand(actions as AgentSiteActions, command);
+  assert.equal(outcome.message, "Section moved to 0.2, unsaved.");
+  assert.deepEqual(outcome.result, { section: "0.2", hash: await textHash(m.workspace.source(path)!) });
+  assert.equal(m.workspace.source(path), "<main><section>B</section><section>C</section>\n<section>A</section></main>");
+  const stayed = await applySiteCommand(actions as AgentSiteActions, { ...command,
+    expectedHash: outcome.result!.hash, args: { section: "0.2", container: "0", index: 3 },
+  });
+  assert.equal(stayed.message, "The section is already there.");
+  assert.equal(stayed.result!.section, "0.2");
+  assert.deepEqual(m.steps(), ["range"]);
+  assert.ok(m.undo());
+  assert.equal(m.workspace.source(path), source);
+  assert.deepEqual(m.selected.at(-1), { path, node: [0, 0] });
+
+  for (const [returned, errorType] of [
+    [{ status: "stale", message: "Read the page again." }, "Conflict"],
+    [{ status: "refused", message: "A section moves among its own siblings only." }, "Conflict"],
+    [{ status: "refused", message: "The active file is read only.", failed: true }, "Error"],
+  ] as const) {
+    await assert.rejects(applySiteCommand({ ...actions, moveSection: () => returned } as AgentSiteActions, command), (error: Error) => {
+      assert.equal(error.constructor.name, errorType);
+      assert.equal(error.message, returned.message);
+      return true;
+    });
+  }
 });

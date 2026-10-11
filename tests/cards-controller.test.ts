@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { withoutCardMoves } from "../src/controllers/cards-controller.ts";
 import { cardsFixture } from "./fakes/cards-fixture.ts";
 import { createCards } from "../src/page-builder/cards.ts";
 import type { NativeSite } from "../shared/native-project.ts";
@@ -32,12 +31,6 @@ test("mounting creates the card operations once the workspace mounts", () => {
   assert.equal(controller.mounted(), true);
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 1]), page), []);
   assert.equal(controller.cardOffer("/"), undefined);
-});
-
-test("a card's edit bar keeps its actions but leaves out every move arrow", () => {
-  const controls = ["up", "down", "left", "right", "duplicate", "remove", "add"].map((icon) => ({ kind: "button", icon }));
-  assert.deepEqual(withoutCardMoves([...controls, { kind: "link", icon: "up" }]).map(({ kind, icon }) => `${kind}:${icon}`),
-    ["button:duplicate", "button:remove", "button:add", "link:up"]);
 });
 
 // Card source locations use the browser's HTML parser. Bundle the real memory
@@ -276,25 +269,6 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.deepEqual(result.said, ["The source changed. Select the element again and try again."]);
     });
 
-    await t.test("move uses now, preserves selection and undoes", async () => {
-      const result = await browserPage.evaluate(({ page, site }) => {
-        const { ports, m } = cardsFixture({ "index.html": page }, site);
-        const cards = cardsCreate(ports);
-        const moved = cards.move({ path: "index.html", node: [0, 0, 1, 0] }, "down");
-        const after = m.source("index.html"), steps = m.steps(), selected = m.selected;
-        const undone = m.undo();
-        m.close();
-        const closed = cards.move({ path: "index.html", node: [0, 0, 1, 0] }, "down");
-        return { moved, after, steps, selected, undone, restored: m.source("index.html"), closed };
-      }, { page, site: plainSite });
-      assert.equal(result.moved, true);
-      assert.ok(result.after!.indexOf("Two") < result.after!.indexOf("One"));
-      assert.deepEqual(result.steps, ["range"]);
-      assert.deepEqual(result.selected[0], { path: "index.html", node: [0, 0, 1, 1] });
-      assert.equal(result.undone, true);
-      assert.equal(result.restored, page);
-      assert.equal(result.closed, false);
-    });
     await t.test("an unchanged fill and swap still return their results without another step", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
         const { controller, m } = cardsFixture(branch, site);
@@ -400,19 +374,6 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.match(result.created!, /Birch/);
     });
 
-    await t.test("painted move controls refuse a changed source", async () => {
-      const result = await browserPage.evaluate(({ page, site }) => {
-        const { ports, m } = cardsFixture({ "index.html": page }, site);
-        const controls = cardsCreate(ports).controls({ path: "index.html", node: [0, 0, 1, 0], tag: "article", text: "", reason: "click", selectors: [] }, page);
-        m.typeInto("index.html");
-        const down = controls.find(control => control.kind === "button" && control.label === "Move down");
-        if (down?.kind === "button") down.onPress();
-        return { steps: m.steps(), after: m.source("index.html"), said: m.announced };
-      }, { page, site: plainSite });
-      assert.deepEqual(result.steps, []);
-      assert.equal(result.after, `${page}<!-- typed -->`);
-      assert.deepEqual(result.said, ["The source changed. Select the element again and try again."]);
-    });
   } finally {
     await browser.close();
   }

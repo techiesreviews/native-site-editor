@@ -11,8 +11,7 @@ import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { isSectionTemplate } from "../native-insert";
-import { nativeSectionMovePlan, type MoveStep } from "../page-builder/block-move-rules";
-import { itemsSlotRule } from "../page-builder/block-insert";
+import type { MoveStep } from "../page-builder/block-move-rules";
 import { type BlockMoves, type MoveAt, type MoveOptions, type Settled } from "../page-builder/block-move";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
@@ -716,32 +715,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     return tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? ""));
   }
 
-  // Moves a whole section to another gap among its siblings (`index` counted
-  // as the insert points are: before the sibling at that index, or the count
-  // for the end), as one undo step, keeping it selected: a drag in the page
-  // structure or the canvas ends here. "stayed" when the gap is the one the
-  // section already fills (announced, nothing recorded); nothing for another
-  // parent, for anything but a section, or when the move cannot be made. MCP
-  // move_section comes here; it moves by the editor's one move engine
-  // (nativeMoveEdit), as drags and Alt+Up/Down do.
-  function moveNativeSectionTo(target: { path: string; node?: number[]; tag: string }, parent: number[], index: number): "moved" | "stayed" | undefined {
-    const { path, node } = target;
-    if (!path || !node?.length || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-    let verdict: "moved" | "stayed" | undefined;
-    const outcome = ports.edits.now(r => {
-      const source = r.source(path) ?? "";
-      if (!isNativeSectionTag(target.tag, r)) return NOTHING;
-      const plan = nativeSectionMovePlan(source, node, parent, index, itemsSlotRule(tag => r.template(tag)?.source));
-      if (plan.status === "stayed") { verdict = "stayed"; return { stayed: "Section stayed in place" }; }
-      if (plan.status !== "moved") return NOTHING;
-      verdict = "moved";
-      return { edits: new Map([[path, [plan.edit]]]), select: { after: { path, node: plan.selection } }, done: "Section moved", undone: "Undid moving the section" };
-    }, { anchor: path });
-    if (outcome.ok) return verdict;
-    ports.errorMessage(new Error(outcome.message));
-    return undefined;
-  }
-
   // Writes text typed into a preview element into its source, as one undo
   // step: only the changed stretch of text is replaced, so formatting around
   // it stays. A change that cannot be placed exactly (it crosses a tag) is
@@ -846,13 +819,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   return {
     renderEditBar: renderNativeEditBar,
-    moveSectionTo: moveNativeSectionTo,
     renderNativeEditBar,
     removeEmptyNewLink,
     editOpenPage,
     isNativeSectionTag,
     moveBlock,
-    moveNativeSectionTo,
     applyNativeTextEdit,
     textEdits: () => nativeTextEditQueue,
     nativeTextSourceEdit,

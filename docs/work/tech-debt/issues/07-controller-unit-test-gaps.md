@@ -11,7 +11,7 @@ blocked_by: []
 
 Gaps the reviews named; the browser specs cover these paths today.
 
-- Page structure (`p5-18`): `renderNativeEditBar` (attribute fields, linked-copy chip, format/link actions, empty new link), `prepareNativeTextEdit`/`applyNativeTextEdit` queue order, `moveNativeSectionAfterOpening`, `moveNativeSectionTo`, `nativeLinkedAncestor`; the `cardControls` port wiring and section/master gate.
+- Page structure (`p5-18`): `renderNativeEditBar` (attribute fields, linked-copy chip, format/link actions, empty new link), `prepareNativeTextEdit`/`applyNativeTextEdit` queue order, `nativeLinkedAncestor`; the `cardControls` port wiring and section/master gate.
 - Cards (`p5-20`): no mounted-with-a-real-site test (`controls`, `describe`, `plan`, `cardsLinkingTo`, `cardOffer` after mount); unmounted `preview.addCard`.
 - File operations (`p5-21`): `moveFileTarget` itself (epoch guard after `targetFiles`, plain-move dialog, asset-reference error), delete's `stale()` after `targetFiles` and in-use refusal, `duplicateFileTarget`, cancelled dialogs, pins taken before planning.
 - Save/publish (`p5-22`): refresh adopting during the first `findEntry` await; the discard-all count after drafts change; no-user scope; `saved` ordering.

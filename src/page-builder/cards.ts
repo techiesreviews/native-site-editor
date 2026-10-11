@@ -16,7 +16,7 @@ import type { CardFilled, CardLinkPages, CardPageRequest, CardSwapped, GridDescr
 import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
-import { duplicateEdit, removeEdit, swapEdits } from "../native-structure";
+import { duplicateEdit, removeEdit } from "../native-structure";
 import { allElements, elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
@@ -482,32 +482,9 @@ export function createCards(deps: CardsDeps) {
     return accepted(outcome, "The page changed meanwhile; try again.") ? result : undefined;
   }
 
-  /** Moves the item at `node` one place among its grid's items, keeping it selected. */
-  function move(selection: { path: string; node?: number[] }, direction: "up" | "down", painted = deps.edits.peek.source(selection.path), since = deps.edits.stamp()): boolean {
-    const { path, node } = selection;
-    if (!node || painted === undefined || !deps.editable(path)) return false;
-    let found = false;
-    const outcome = deps.edits.now(reads => {
-      if (reads.source(path) !== painted) return { refuse: "The source changed. Select the element again and try again." };
-      const route = routeOf(reads, path);
-      const own = route && gridOfItem(painted, node, context(reads, route));
-      if (!own) return { edits: new Map(), done: "", undone: "" };
-      found = true;
-      const { grid, position } = own;
-      const other = grid.items[position + (direction === "up" ? -1 : 1)];
-      if (!other) return { edits: new Map([[path, []]]), done: "", undone: "" };
-      const row = deps.preview()?.selectedItemGrid()?.row;
-      const words = direction === "up" ? (row ? "left" : "up") : (row ? "right" : "down");
-      return { edits: new Map([[path, swapEdits(painted, grid.items[position].range, other.range)]]),
-        select: { before: { path, node }, after: { path, node: [...grid.parent, other.index] } },
-        done: `${capital(grid.noun)} moved ${words}`, undone: `Undid moving the ${grid.noun}.` };
-    }, { anchor: path, since });
-    return accepted(outcome, "The source changed. Select the element again and try again.") && found;
-  }
-
   /**
    * The edit bar's controls for a selection in or around an item: the
-   * item's own (Move, Duplicate, Remove, Add card, Open page) when it is
+   * item's own (Duplicate, Remove, Add card, Open page) when it is
    * one, else Select card when it is inside one (in the page, or in a
    * component's template on the page).
    */
@@ -533,11 +510,7 @@ export function createCards(deps: CardsDeps) {
     }
     const { grid, position } = own;
     const item = grid.items[position];
-    const previous = grid.items[position - 1];
-    const next = grid.items[position + 1];
     const noun = capital(grid.noun);
-    const reported = preview.selectedItemGrid();
-    const row = reported && reported.parent.join(".") === grid.parent.join(".") ? reported.row : false;
     const path = selection.path;
     const since = deps.edits.stamp();
     const change = (edits: RangeEdit[], next: number[] | undefined, done: string, undone: string) => {
@@ -551,8 +524,6 @@ export function createCards(deps: CardsDeps) {
       return accepted(outcome, "The source changed. Select the element again and try again.");
     };
     const out: EditBarControl[] = [
-      { kind: "button", icon: row ? "left" : "up", label: row ? "Move left" : "Move up", disabled: !previous, onPress: () => move(selection, "up", source, since) },
-      { kind: "button", icon: row ? "right" : "down", label: row ? "Move right" : "Move down", disabled: !next, onPress: () => move(selection, "down", source, since) },
       { kind: "button", icon: "duplicate", label: "Duplicate", onPress: () => change([duplicateEdit(source, item.range)], [...grid.parent, item.index + 1], `${noun} duplicated`, `Undid duplicating the ${grid.noun}.`) },
       {
         kind: "button",
@@ -612,7 +583,6 @@ export function createCards(deps: CardsDeps) {
     swapCard,
     cardText,
     variantFiles: deps.variantFiles,
-    move,
     controls,
 
     /** The Pages tab's offer for a new subpage of `parent`: the label of its checkbox, when a grid lists those pages. */

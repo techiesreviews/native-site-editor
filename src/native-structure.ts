@@ -82,16 +82,6 @@ export function duplicateEdit(source: string, range: ElementRange): RangeEdit {
   return { start: lines.end, end: lines.end, text };
 }
 
-/** Exchanges two non-overlapping elements' source, keeping the whitespace between them. */
-export function swapEdits(source: string, a: ElementRange, b: ElementRange): RangeEdit[] {
-  const [first, second] = a.start < b.start ? [a, b] : [b, a];
-  if (first.end > second.start) return [];
-  return [
-    { start: first.start, end: first.end, text: source.slice(second.start, second.end) },
-    { start: second.start, end: second.end, text: source.slice(first.start, first.end) },
-  ];
-}
-
 /** Sets (or, with `value` undefined, removes) an attribute on a start tag. */
 export function setAttributeEdit(source: string, tag: StartTag, name: string, value: string | undefined): RangeEdit {
   const current = startTagAttribute(source, tag, name);
