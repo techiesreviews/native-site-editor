@@ -50,7 +50,7 @@ function settingsDialog(title: string, scope: string) {
   status.setAttribute("role", "status");
   const actions = node("div", "site-settings__actions");
   const footer = node("div", "site-settings__footer");
-  footer.append(node("p", "site-settings__draft-note", "Drafts until you save to GitHub"), status, actions);
+  footer.append(node("p", "site-settings__draft-note", "Drafts until you publish"), status, actions);
   root.append(top, body, footer);
   const tabs: { label: string; tab: HTMLButtonElement; panel: HTMLElement }[] = [];
   const select = (label: string, focus = false) => {

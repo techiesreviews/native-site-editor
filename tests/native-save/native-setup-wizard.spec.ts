@@ -421,5 +421,5 @@ test("an editor with a private owner setup link keeps the locked sign-in, with n
 
 /** Finishing writes drafts and reloads the editor before announcing completion. */
 async function toFinishedStarter(page: Page) {
-  await expect(page.locator("#status")).toHaveText(/Added \d+ files as drafts\. Save to GitHub to keep them\./, { timeout: 30_000 });
+  await expect(page.locator("#status")).toHaveText(/Added \d+ files as drafts\. Publish to keep them\./, { timeout: 30_000 });
 }

@@ -4,7 +4,7 @@
 // (worker/starter.ts) and prepared here for someone else's repository; the
 // Blank page is one page and one stylesheet in the native conventions
 // (docs/adr/0001-the-repository-is-the-site.md, worker/site-conventions.ts).
-// Both become ordinary drafts in the editor, saved with Save to GitHub.
+// Both become ordinary drafts in the editor, saved with Publish.
 import { NATIVE_CONFIG_PATH } from "./native-project";
 import type { StarterFile } from "./types";
 

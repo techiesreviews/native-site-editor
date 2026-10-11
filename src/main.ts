@@ -961,7 +961,7 @@ const historyController = createHistoryController({
   panel: () => document.getElementById("changes") ?? undefined,
   anchor: () => document.getElementById("history-button") ?? undefined,
   loadHistory,
-  emptyMessage: () => node("p", "muted commit-history__message", "No commits yet. Save to GitHub makes the first one."),
+  emptyMessage: () => node("p", "muted commit-history__message", "No commits yet. Publishing makes the first one."),
   viewport: () => ({ width: innerWidth, height: innerHeight }),
   onResize: callback => { window.addEventListener("resize", callback); return () => window.removeEventListener("resize", callback); },
   openFile: (file, commit, head) => void openFileVersion(file, commit, head),
@@ -1871,7 +1871,7 @@ function nativeSettingsController({ createSiteSettings }: typeof import("./compo
         let next = source;
         try { for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value); }
         catch (error) { return { refuse: error instanceof Error ? error.message : "Page settings could not be changed." }; }
-        return { edits: new Map([[path, next]]), ...at ? { select: { before: at, after: at } } : {}, done: "Page settings applied as a draft. Save to GitHub to keep them.", undone: "Undid page settings." };
+        return { edits: new Map([[path, next]]), ...at ? { select: { before: at, after: at } } : {}, done: "Page settings applied as a draft. Publish to keep them.", undone: "Undid page settings." };
       }, { since }));
     },
     planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
@@ -1912,7 +1912,7 @@ function nativeSettingsController({ createSiteSettings }: typeof import("./compo
         if (source !== original) return { refuse: "Navigation changed while this panel was open. Reopen it to review the latest links." };
         const list = readNavigation(source, path.startsWith("components/"));
         if (!list) return { refuse: "This header's navigation is not a simple list of links." };
-        try { return { edits: new Map([[path, editNavigation(source, list, links)]]), done: "Navigation applied as a draft. Save to GitHub to keep it.", undone: "Undid changing navigation." }; }
+        try { return { edits: new Map([[path, editNavigation(source, list, links)]]), done: "Navigation applied as a draft. Publish to keep it.", undone: "Undid changing navigation." }; }
         catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
       }, { since }));
     },
@@ -1985,7 +1985,7 @@ function applyNativeSiteSettings(values: SiteSettingsValues, r: Reads): PlanResu
   } catch (error) { return { refuse: error instanceof Error ? error.message : "Site settings could not be changed." }; }
   const creates: { path: string; content: string }[] = [];
   if (config === undefined && edits.has(NATIVE_CONFIG_PATH)) { creates.push({ path: NATIVE_CONFIG_PATH, content: edits.get(NATIVE_CONFIG_PATH)! }); edits.delete(NATIVE_CONFIG_PATH); }
-  return { creates, edits, done: `Site settings applied to ${edits.size + creates.length} files as drafts. Save to GitHub to keep them.`, undone: "Undid site settings on all affected pages." };
+  return { creates, edits, done: `Site settings applied to ${edits.size + creates.length} files as drafts. Publish to keep them.`, undone: "Undid site settings on all affected pages." };
 }
 
 async function openNativeNavigation(pagePath: string) {
@@ -3382,7 +3382,7 @@ function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
 }
 
 // The site's name or address into `.editor/config.json` as a draft (the
-// rest of the file kept); Save to GitHub keeps it. Undo in the editor takes it back.
+// rest of the file kept); Publish keeps it. Undo in the editor takes it back.
 async function writeSiteSettings(change: { name?: string; url?: string }): Promise<string | undefined> {
   // The file is read for this repository and branch; if the user moves on meanwhile, nothing is
   // written (it would land in the other one). The branch's file is read first, so the plan reads it.
@@ -3397,7 +3397,7 @@ async function writeSiteSettings(change: { name?: string; url?: string }): Promi
     }
   }
   const what = change.name !== undefined ? "name" : "address";
-  const done = `Site ${what} set as a draft. Save to GitHub to keep it.`, undone = `Undid setting the site ${what}.`;
+  const done = `Site ${what} set as a draft. Publish to keep it.`, undone = `Undid setting the site ${what}.`;
   const outcome = await guardedEdits.run(r => {
     const text = r.source(NATIVE_CONFIG_PATH), next = withSiteSettings(text, change);
     if ("error" in next) return { refuse: next.error };
@@ -3536,7 +3536,7 @@ async function writeStartingPoint(point: StartingPoint, partial?: { committed: s
   }
   // Opened again: the home page is a draft now, so the native preview takes over from this screen.
   await loadSnapshot();
-  if (added) announce(`Added ${added} ${added === 1 ? "file" : "files"} as drafts. Save to GitHub to keep them.`);
+  if (added) announce(`Added ${added} ${added === 1 ? "file" : "files"} as drafts. Publish to keep them.`);
   if (problems.length) errorMessage(new Error(problems.join(" ")));
   return undefined;
 }
@@ -3959,7 +3959,7 @@ function openCreate(folder: string, opener: HTMLElement) {
 // ---- Deleting, renaming, moving and duplicating files. ----
 //
 // Each is a pending change in the browser drafts (src/file-changes.ts),
-// saved with Save to GitHub in one commit. In a native site, pages and
+// saved with Publish in one commit. In a native site, pages and
 // components are found again from the files after each, and a page whose
 // URL changes has the links to it updated in the same operation. Undo
 // right after (the open file's editor), Restore on a deletion
@@ -4724,7 +4724,7 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     return;
   }
   if (draft.opaque) {
-    content.replaceChildren(node("p", "empty-message", `${draft.path} is ${draft.movedFrom ? `${draft.movedFrom} moved here` : "a copy of another file"}. Its content is not shown in the editor; save to GitHub to keep the change.`));
+    content.replaceChildren(node("p", "empty-message", `${draft.path} is ${draft.movedFrom ? `${draft.movedFrom} moved here` : "a copy of another file"}. Its content is not shown in the editor; publish to keep the change.`));
     status(`Selected ${draft.path}.`);
     return;
   }

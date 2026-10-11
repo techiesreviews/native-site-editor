@@ -8,7 +8,7 @@
 
 import type { ChangeStatus } from "./change-status";
 
-/** A file the editor adds as a draft; the user saves it with Save to GitHub. */
+/** A file the editor adds as a draft; the user saves it with Publish. */
 export interface PipelineFile {
   path: string;
   content: string;
@@ -42,7 +42,7 @@ export function workerNameFor(repositoryName: string): string {
 
 function workflow(options: { name: string; branch: string; job: string; step: string; run: string; env: string[] }) {
   return `# ${options.name}: runs on every push to ${options.branch}, which is what the editor's
-# Save to GitHub does. There is no build: the repository is the site.
+# Publish does. There is no build: the repository is the site.
 name: ${options.name}
 
 on:

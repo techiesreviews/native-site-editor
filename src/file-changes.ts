@@ -1,5 +1,5 @@
 // Pending file changes as browser drafts: edits, new files, deletions and
-// renames, and what Save to GitHub commits for them.
+// renames, and what Publish commits for them.
 //
 // A draft is one path (src/drafts.ts). An edit (M) has the blob it began
 // from; a new file (A) has none. A deletion (D) is a draft marking the path
@@ -19,7 +19,7 @@ import type { PublishFile } from "../shared/types";
 
 export type ChangeKind = "A" | "M" | "R" | "D";
 
-/** One change as Save to GitHub lists it: a path, or both paths of a rename. */
+/** One change as Publish lists it: a path, or both paths of a rename. */
 export interface FileChange {
   kind: ChangeKind;
   /** The path the change leaves (a rename's new path; a deletion's removed path). */

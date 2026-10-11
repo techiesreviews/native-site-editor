@@ -17,7 +17,7 @@ import "./setup-checklist.css";
 export interface SetupActions {
   /** Start your site: bring the starting points forward. */
   start: () => void;
-  /** Opens Save to GitHub. */
+  /** Opens Publish. */
   save: () => void;
   /** Writes the site name to the settings as a draft; resolves to a problem. */
   saveName: (name: string) => Promise<string | undefined>;
@@ -28,7 +28,7 @@ export interface SetupActions {
 
 const ITEMS: { id: SetupItemId; title: string; text: string; action?: string; optional?: boolean }[] = [
   { id: "start", title: "Start your site", text: "Add a first page from the Starter site or a blank page.", action: "Choose a start" },
-  { id: "save", title: "Save to GitHub", text: "Keep your first version in the repository.", action: "Open Save" },
+  { id: "save", title: "Publish", text: "Keep your first version in the repository.", action: "Open Publish" },
   { id: "name", title: "Name your site", text: "The name the editor uses for your site and its page details.", action: "Name it" },
   { id: "agent", title: "Connect an agent", text: "Let Claude, Codex or another agent work on the site as drafts.", action: "Connect", optional: true },
 ];
@@ -118,7 +118,7 @@ export function createSetupChecklist(actions: SetupActions) {
       const problem = await actions.saveName(name);
       nameMessage.classList.toggle("is-error", Boolean(problem));
       if (!problem) nameDirty = false;
-      nameMessage.textContent = problem ?? "Name added as a draft. Save to GitHub keeps it.";
+      nameMessage.textContent = problem ?? "Name added as a draft. Publish keeps it.";
     } finally {
       nameSubmit.disabled = false;
     }

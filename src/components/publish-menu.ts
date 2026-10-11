@@ -33,7 +33,7 @@ function refusedNotice(scope: DraftScope) {
   if (!waiting.length) return "";
   return [
     changed.length ? `GitHub changed these files: ${changed.join(", ")}. Refresh and review the latest version before publishing.` : "",
-    gone.length ? `GitHub deleted these files since your drafts began: ${gone.join(", ")}. Discard those drafts or keep them as new files in Save to GitHub.` : "",
+    gone.length ? `GitHub deleted these files since your drafts began: ${gone.join(", ")}. Discard those drafts or keep them as new files in Publish.` : "",
     "Your drafts are kept.",
   ].filter(Boolean).join(" ");
 }

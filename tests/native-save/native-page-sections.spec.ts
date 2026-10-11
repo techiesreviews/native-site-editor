@@ -102,7 +102,7 @@ test("the top bar shows the open page's title, follows the applied Page settings
   await expect(label(page)).toHaveText("About this project");
   await expect(page.locator("#explorer-toggle")).toHaveAttribute("title", "Pages & files — about/index.html");
   await writeSetting(page, "Title", "Our story");
-  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Publish to keep them.");
   await expect(label(page)).toHaveText("Our story");
   // An empty title: the first heading.
   await writeSetting(page, "Title", "");

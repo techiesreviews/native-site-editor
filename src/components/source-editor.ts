@@ -41,7 +41,7 @@ export interface SourceFile {
   scope?: DraftScope;
   baseSha?: string | null;
   onPublished?: (result: PublishResult, submitted: SavedDraft[]) => void;
-  /** Native save UI relabels the publish menu to "Save to GitHub" wording. */
+  /** Native save UI shows "Saving…" progress instead of "Publishing…" in the publish menu. */
   saveLabels?: boolean;
   onDiscardNew?: () => void;
   onContextChange?: (

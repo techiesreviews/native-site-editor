@@ -143,12 +143,12 @@ test("Page settings Title keeps the first heading as its placeholder", async ({ 
 test("typing a title and a description writes the head, og tags along, one undo step each; back as it was, nothing to save", async ({ page, baseURL }) => {
   await open(page, baseURL, 501);
   await writeSetting(page, "Title", "Home & <more>");
-  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Publish to keep them.");
   // The code editor opens with the <head> folded, so read the mounted source rather than the rendered lines.
   await expect.poll(() => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toContain("\n  <title>Home &amp; &lt;more&gt;</title>\n");
   await expect(page.locator("#current-page")).toHaveText("Home");
   await writeSetting(page, "Description", 'The "home" page');
-  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Publish to keep them.");
   const written = (await draft(page, "index.html")).content;
   expect(written).toBe(starterHome
     .replace("<title>Native Studio</title>", "<title>Home &amp; &lt;more&gt;</title>")
@@ -177,7 +177,7 @@ test("typing a title and a description writes the head, og tags along, one undo 
   // An emptied title leaves an empty <title>, and the top bar falls back to the heading.
   await open(page, baseURL, 501, "about/index.html");
   await writeSetting(page, "Title", "");
-  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Publish to keep them.");
   // Applying the dialog may restore the head fold; assert the actual source bytes.
   await expect.poll(async () => (await draft(page, "about/index.html"))?.content).toContain("<title></title>");
   await expect(page.locator("#current-page")).toHaveText("About this project");
@@ -206,7 +206,7 @@ test("a typed title survives a reload, and saving commits it in the page", async
   await open(page, baseURL, 530, fernPath);
   await readSetting(page, "Title", "Fern & Kettle");
   await writeSetting(page, "Title", "Fern & Kettle café");
-  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Publish to keep them.");
   await reloaded(page, fernPath);
   await readSetting(page, "Title", "Fern & Kettle café");
   await saveAll(page);
@@ -225,7 +225,7 @@ test("a description a page lacks is added after its title; the Pages tab's Renam
   await readSetting(page, "Title", "The first note");
   await readSetting(page, "Description", "");
   await writeSetting(page, "Description", "Notes, the first.");
-  await expect(status(page)).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(status(page)).toHaveText("Page settings applied as a draft. Publish to keep them.");
   expect((await draft(page, "notes/first-note/index.html")).content).toContain('  <title>The first note</title>\n  <meta name="description" content="Notes, the first.">\n');
 
   await openExplorer(page, "Pages");

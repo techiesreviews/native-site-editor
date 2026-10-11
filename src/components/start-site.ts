@@ -6,7 +6,7 @@ import "./onboarding.css";
 // Start your site: shown in place of the preview when the open repository
 // has nothing to show, because it is empty (no commits yet) or has no
 // index.html at its top. The Starter site and the Blank page are written as
-// drafts (the preview then shows the site, and Save to GitHub saves it);
+// drafts (the preview then shows the site, and Publish saves it);
 // Build it with an agent copies a prompt that connects a coding agent to
 // this editor tab and asks it to build the site.
 
@@ -29,7 +29,7 @@ export function createStartSite(options: {
       "p",
       "intro",
       options.empty
-        ? `${options.repository} has no files yet. Choose how to start: it is added as drafts you review here, and Save to GitHub makes the first commit.`
+        ? `${options.repository} has no files yet. Choose how to start: it is added as drafts you review here, and Publish makes the first commit.`
         : `${options.repository} has no index.html at its top, so there is no page to preview. Choose how to start: it is added as drafts next to your files, which stay as they are unless you say otherwise.`,
     ),
   );

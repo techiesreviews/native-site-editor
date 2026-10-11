@@ -4,7 +4,7 @@ import type { EditorContext } from "./types";
  * What an agent can ask the open editor tab to do. The Worker validates and
  * queues each one; the browser applies it through the same code the
  * editor's own controls use, so every change is an ordinary draft (Undo,
- * Discard changes, Save to GitHub by the user).
+ * Discard changes, Publish by the user).
  *
  * `update_active_draft` and `create_file_draft` are the Astro-era active-file
  * operations; the code editor still applies them.

@@ -320,7 +320,7 @@ export async function publish(
       409,
       [
         conflicts.length ? `GitHub changed these files: ${conflicts.join(", ")}. Refresh and review the latest version before publishing.` : "",
-        gone.length ? `GitHub deleted these files since your drafts began: ${gone.join(", ")}. Discard those drafts or keep them as new files in Save to GitHub.` : "",
+        gone.length ? `GitHub deleted these files since your drafts began: ${gone.join(", ")}. Discard those drafts or keep them as new files in Publish.` : "",
         "Your drafts are kept.",
       ].filter(Boolean).join(" "),
       [...conflicts, ...gone],

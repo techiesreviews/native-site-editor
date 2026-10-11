@@ -1,4 +1,4 @@
-// Line diff between a file's clean baseline and its draft, so Save to GitHub
+// Line diff between a file's clean baseline and its draft, so Publish
 // can show what a commit would change before it is made.
 export interface DiffLine {
   kind: "same" | "add" | "del";

@@ -55,13 +55,13 @@ test("an empty repository's checklist goes from 1/3 to 3/3 as the site is saved 
   await expect(pill(page)).toHaveText("Setup 1/3");
   await openChecklist(page);
   await expect(page.locator(".setup-item")).toHaveCount(4);
-  await expect(panel(page).locator(".setup-item[data-item]")).toHaveText([/Start your site/, /Save to GitHub/, /Name your site/, /Connect an agent\s*Optional/]);
+  await expect(panel(page).locator(".setup-item[data-item]")).toHaveText([/Start your site/, /Publish/, /Name your site/, /Connect an agent\s*Optional/]);
   await expect(panel(page).getByText("Put it online")).toHaveCount(0);
   await expect(item(page, "start")).toHaveClass(/is-done/);
   await expect(item(page, "save")).not.toHaveClass(/is-done/);
   await expect(item(page, "agent")).toContainText("Optional");
 
-  // Save to GitHub opens the Save panel.
+  // Publish opens the Publish panel.
   await item(page, "save").getByRole("button").click();
   await expect(panel(page)).toBeHidden();
   await expect(page.locator("#publish-files")).toBeVisible();

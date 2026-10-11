@@ -26,7 +26,7 @@ export interface Directory {
 /**
  * The commit an empty repository (no commits, no branches yet) is shown at:
  * git's null object name. The editor opens such a repository on its default
- * branch with no files, so drafts can be written; the first Save to GitHub
+ * branch with no files, so drafts can be written; the first Publish
  * creates the branch (worker/publish.ts `startRepository`).
  */
 export const EMPTY_COMMIT = "0".repeat(40);

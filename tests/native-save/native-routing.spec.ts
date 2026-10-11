@@ -76,7 +76,7 @@ test("opening a nested page file shows its route, and titling it writes its <tit
   await open(page, baseURL, "work/index.html");
   await expect(heading(page)).toHaveText("Work");
   await writeSetting(page, "Title", "Our work");
-  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Publish to keep them.");
   // The <head> is collapsed in the code editor: the draft holds the title.
   await expect.poll(async () => (await storedDraft(page, "work/index.html"))?.content).toContain("<title>Our work</title>");
 
@@ -88,7 +88,7 @@ test("opening a nested page file shows its route, and titling it writes its <tit
 
   // The title as it was: nothing left to save.
   await writeSetting(page, "Title", "Work");
-  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Save to GitHub to keep them.");
+  await expect(page.locator("#status")).toHaveText("Page settings applied as a draft. Publish to keep them.");
   await expect(publishButton(page)).toBeDisabled();
 });
 

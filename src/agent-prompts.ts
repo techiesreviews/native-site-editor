@@ -14,7 +14,7 @@ function addServerSteps(url: string) {
 /** The task that builds a site from nothing, about `about` when the user said. */
 export function buildSitePrompt(about?: string) {
   const subject = about?.trim() ? about.trim().replace(/\s+/g, " ").slice(0, 300) : "<what it is about>";
-  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, then tell me to review the drafts in the editor and Save to GitHub.`;
+  return `Build a site for ${subject} in this repository: call get_site, read the native-site://conventions resource and follow it (with no index.html yet, its "Starting a site from nothing"), write the pages with write_file and create_page, then tell me to review the drafts in the editor and Publish them.`;
 }
 
 /**
