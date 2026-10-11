@@ -29,7 +29,13 @@ type Model = { text: string; version: number; session: number };
 /** A wait the test holds open: `reached` once the code under test waits on it, then `release()`. */
 export interface Hold { reached: Promise<void>; release(): void }
 
-export function createMemoryWorkspace(init: { branch?: Record<string, string>; drafts?: Record<string, string>; open?: string; mounted?: string[]; site?: NativeSite } = {}) {
+export function createMemoryWorkspace(init: {
+  branch?: Record<string, string>; drafts?: Record<string, string>; open?: string; mounted?: string[]; site?: NativeSite;
+  /** The workspace's Edit component mode entry from the code under test (src/page-builder/component-mode.ts `entry()`). */
+  editModeEntry?: () => object | undefined;
+  /** Runs as `open` mounts a file, before it resolves (main.ts's synchronous refresh). */
+  onOpen?: (path: string) => void;
+} = {}) {
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
   let scopeKey = "lex/site@main", generation = 0, versionView = false, route: string | undefined = "/";
   let editEntry: object | undefined;
@@ -170,7 +176,7 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
     generation: () => generation,
     versionView: () => versionView,
     route: () => route,
-    editModeEntry: () => editEntry,
+    editModeEntry: () => init.editModeEntry ? init.editModeEntry() : editEntry,
     agentActing: () => false,
     site: () => site,
     files: () => [...files()],
@@ -199,6 +205,7 @@ export function createMemoryWorkspace(init: { branch?: Record<string, string>; d
       if (beforeMount && !beforeMount()) return;
       if (!models.has(path)) mount(path);
       mountListener?.(path, false);
+      init.onOpen?.(path);
     },
     anchor(path) {
       const model = models.get(path), version = model?.version;

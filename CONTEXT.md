@@ -31,6 +31,9 @@ A whole page section or section component that can be inserted, moved, duplicate
 **Edit bar**:
 The contextual editing controls anchored to the selected element in the preview.
 
+**Edit component mode**:
+Editing a component in place on a page: one of its instances is framed where it stands, and its template is edited for every page that uses it. The slot chip changes which parts are slots, the component is renamed from the bar, a nested component opens in place behind a breadcrumb, and Done leaves. It ends when its template is no longer the file open, or its page is no longer the one shown.
+
 **Source editor**:
 The code panes for editing a site's files directly, alongside the visual preview.
 
