@@ -26,7 +26,7 @@ The claim was committed and pushed under the tracker convention. That started th
 
 ### Choices settled with Lex (2026-10-11)
 
-- **Direction:** Lex chose Collections as the basis for refinement, with collections as the starting view.
+- **Direction:** Lex chose Collections as the visual basis for refinement. In the compact refinement, Lex changed the starting view to the picture grid, with collections opened when needed.
 - **Place in the editor:** Media replaces Images and becomes the place to manage all images, videos, audio, PDFs and other downloads. Files remains for the site's other files.
 
 - **Collection view:** Lex chose a picture grid first, with a switch to a list showing file size and usage.
@@ -43,12 +43,22 @@ The claim was committed and pushed under the tracker convention. That started th
 
 - **Picker:** Lex chose the same collections, search and views in a smaller window, full-screen on phones. The term **Media picker** is recorded in `CONTEXT.md`.
 
+- **Compact opening view:** Lex wants to start by seeing the images, then go into a collection if needed. Media opens on **Images**, with buttons to switch to other kinds and an accessible Collections control. The interface and its workings should be more compact, with fewer repeated headings, toolbars and steps.
+
 ### Refined Collections mockup (2026-10-11)
 
 The [refined mockup](../prototype/refined.html) incorporates the choices above and keeps all five screens available: library, adding files with optimise, details, the page picker and clean-up. Published with `html_render` in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-28a968f2-73cb-462c-bc2b-39e9929c3c71-html`.
 
 [Refinement validation](../prototype/refined-validation.md) records phone, tablet and desktop browser checks, the independent source review, and corrections to picker scrolling, cancellation and partly completed uploads. Downloaded Mobbin references remain embedded from local prototype assets.
 
-The proposed small-screen layout has two pictures across on phones and three on tablets, with details on their own screen and the confirmed full-screen phone picker. **Awaiting Lex's reaction to this layout; the ticket remains open.**
+The proposed small-screen layout has two pictures across on phones and three on tablets, with details on their own screen and the confirmed full-screen phone picker. Lex asked to **make the interface and workings more compact**. This calls for a further refinement of controls and navigation; the ticket remains open until Lex has seen it.
 
 Organisation rules and existing file renames have graduated into [Decide how collections and file names behave](15-collections-and-file-names.md). This follow-up does not reopen the name Collections or the decision to allow several memberships.
+
+### Compact, pictures-first refinement (2026-10-11)
+
+The refined mockup now opens directly on Images. Collections opens from the grid when needed. Repeated screen navigation, headings and upload steps have been removed; search and kinds remain visible, while filters, file count and grid/list share a toolbar. The picker opens directly on compatible files. Phone details use a shorter preview and disclosures for usage and memberships; clean-up uses short suggestion rows while retaining review and confirmation.
+
+Published with `html_render`, title **Media manager: compact, pictures first**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-2db4ce96-bec3-486d-93f7-07b9bd338f18-html`. The [validation record](../prototype/refined-validation.md) covers the compact screens, independent review and corrections to search scope, collection counts and returning to the latest file view.
+
+**Awaiting Lex's reaction to this compact version, including phone and tablet presentation. The ticket remains open.**
