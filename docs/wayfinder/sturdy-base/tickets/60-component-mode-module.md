@@ -1,7 +1,7 @@
 ---
 title: "Edit component mode module, its memory adapter and suite (no callers)"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: []
 builder: claude ★
@@ -22,3 +22,9 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/edit-component-
 
 - `tests/component-mode.test.ts` on the memory workspace covers design section 8's first list (enter, superseded, stale, failed, the settle matrix row by row, drill/back with shares and stale stamps, rename with Undo/Redo follow, leaving on another file, another page shown, the branch, version view and a moved instance, kept names, replacement keeping rename shares, dismissal, destroy, `now()` pure, no stamp recursion, `sync()` during an open), counting live shares after every step.
 - `npm run check`, `npm test`, full `native-save` suite green; budget delta reported (the module is not imported yet: expect none).
+
+## Done (2026-10-11)
+
+- `src/page-builder/component-mode.ts` (`createComponentMode` → `now`, `entry`, `opened`, `enter`, `open`, `rename`, `keep`/`kept`, `dismissNotes`, `sync`, `leave`, `destroy`; `drillChain`/`backChain` copied in; M3 in `now()`), no callers. One port beyond the design: optional `read` (page tree as the preview counts it, default `readPage`), so the instance check runs in Node on `readSource`. `leave()` also cancels an entry or level still loading. Memory workspace: `init.editModeEntry`, `init.onOpen`. CONTEXT.md: **Edit component mode**.
+- Commits: "Add the Edit component mode module, its memory adapter and suite (no callers)" and two "Component mode:" fix commits (Sol's review: seven findings, all fixed with a case each).
+- Tests: `tests/component-mode.test.ts` (47 cases, incl. the two chain cases moved from `edit-component-chain.test.ts`, still there until 61). `npm test` green; full `native-save` 887 passed, 56 skipped (group-tagged). Budget delta: none (not imported).
