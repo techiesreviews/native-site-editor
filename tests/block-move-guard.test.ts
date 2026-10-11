@@ -123,9 +123,10 @@ function plansOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0): Funct
 // A guarded edit queue: `edits`, `ports.edits`, `guardedEdits`, or a same-file name bound to one.
 function isEdits(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
   node = strip(node);
-  if (/edits$/i.test(node.getText())) return true;
+  if (/edits$/i.test(member(node)?.name ?? node.getText())) return true;
   if (!ts.isIdentifier(node) || depth > 8) return false;
   const declaration = declarationOf(checker, node);
+  if (declaration && ts.isBindingElement(declaration)) return /edits$/i.test(bindingKey(declaration) ?? "");
   return !!declaration && ts.isVariableDeclaration(declaration) && !!declaration.initializer && isEdits(checker, declaration.initializer, depth + 1);
 }
 // `edits.run`, `guardedEdits["now"]`, `edits.run.bind(edits)`, and same-file names bound to them, destructured too.
@@ -143,12 +144,21 @@ function isPlanMethod(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolea
   }
   return !!declaration && ts.isVariableDeclaration(declaration) && !!declaration.initializer && isPlanMethod(checker, declaration.initializer, depth + 1);
 }
+// The property a destructured name is taken from: `{ step }`, `{ step: move }`, `{ ["step"]: move }`.
+function bindingKey(node: TS.BindingElement): string | undefined {
+  const key = node.propertyName ?? node.name;
+  if (ts.isComputedPropertyName(key)) {
+    const literal = strip(key.expression);
+    return ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal) ? literal.text : undefined;
+  }
+  return ts.isIdentifier(key) || ts.isStringLiteral(key) ? key.text : undefined;
+}
 // Member names and import/export source names are references; declaration names and text are not.
 function referenceName(node: TS.Node): string | undefined {
   const access = member(node);
   if (access) return access.name;
   if (ts.isImportSpecifier(node) || ts.isExportSpecifier(node)) return (node.propertyName ?? node.name).text;
-  if (ts.isBindingElement(node)) return (node.propertyName ?? node.name).getText().replace(/^['"]|['"]$/g, "");
+  if (ts.isBindingElement(node)) return bindingKey(node);
   if (!ts.isIdentifier(node)) return undefined;
   const parent = node.parent;
   if (ts.isImportSpecifier(parent) || ts.isExportSpecifier(parent) || ts.isBindingElement(parent)
@@ -178,11 +188,14 @@ function referring(checker: TS.TypeChecker, tree: TS.SourceFile, names: Set<stri
   found = new Set();
   const users = new Map<TS.Node, TS.Node[]>(), queue: TS.Node[] = [];
   walk(tree, declaration => {
-    if (ts.isImportSpecifier(declaration) || ts.isBindingElement(declaration)) {
+    if (ts.isImportSpecifier(declaration)) {
       if (names.has(referenceName(declaration)!)) queue.push(declaration);
       return;
     }
-    const value = isFunction(declaration) ? declaration.body : ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+    if (ts.isBindingElement(declaration) && names.has(bindingKey(declaration) ?? "")) queue.push(declaration);
+    // A function with its parameter defaults; a destructured name by what it is taken from.
+    const value = isFunction(declaration) ? declaration : ts.isBindingElement(declaration) ? destructured(declaration)
+      : ts.isVariableDeclaration(declaration) || ts.isParameter(declaration) ? declaration.initializer : undefined;
     if (value) walk(value, inner => {
       const name = referenceName(inner);
       if (!name) return;
@@ -198,6 +211,11 @@ function referring(checker: TS.TypeChecker, tree: TS.SourceFile, names: Set<stri
   }
   byNames.set(names, found);
   return found;
+}
+function destructured(node: TS.BindingElement): TS.Expression | undefined {
+  let root: TS.Node = node;
+  while (ts.isBindingElement(root) || ts.isObjectBindingPattern(root) || ts.isArrayBindingPattern(root)) root = root.parent;
+  return ts.isVariableDeclaration(root) || ts.isParameter(root) ? root.initializer : undefined;
 }
 // Code outside any function (a closure is a scope of its own); imports and re-exports choose nothing.
 function walkOutside(node: TS.Node, visit: (node: TS.Node) => void) {
@@ -283,7 +301,7 @@ test("move-engine rejects calls, aliases, imports, re-exports and member referen
       `import { ${name} } from "./moves";`, `import { ${name} as move } from "./moves";`,
       `export { ${name} } from "./moves";`, `export { ${name} as move } from "./moves";`,
       `ops.${name};`, `ops?.${name}();`, `ops["${name}"];`, `ops?.["${name}"]();`, `ops[\`${name}\`]();`,
-      `const { ${name}: move } = ops;`,
+      `const { ${name}: move } = ops;`, `const { ["${name}"]: move } = ops;`,
     ]) flags(moveEngine, source, "move-engine");
     assert.deepEqual(moveEngine(`import { ${name} as move } from "./moves"; move();`, ENGINE_HOME), []);
     assert.deepEqual(moveEngine(`export function ${name}() { return true; }`, FAKE), []);
@@ -326,6 +344,9 @@ test("move-plan follows move aliases, renamed imports, namespace members and tra
     'const rules = ready ? templateRules() : pageRules(items); edits.run(r => rules.step(r.source(path), from, "up"));',
     'function rules() { return pageRules(items); } const selected = rules(); edits.run(r => selected.step(r.source(path), from, "up"));',
     'function a() { b(); return pageRules(items); } function b() { return a(); } edits.run(r => b());',
+    'const rules = pageRules(items); const { step } = rules; edits.run(r => step(r.source(path), from, "up"));',
+    'function helper(rules = pageRules(items)) { return rules.step(source, from, "up"); } edits.run(r => helper());',
+    'edits.run((r, rules = templateRules()) => rules.to(r.source(path), from, place));',
   ]) flags(movePlans, source, "move-plan");
   for (const source of [
     'edits.run(r => r.source(path));',
@@ -350,6 +371,8 @@ test("move-plan recognises destructured, aliased, bound and string-access guarde
     'const tx = ports.edits; tx.run(r => pageRules(items));',
     'const tx = ports.edits; const { now } = tx; now(r => pageRules(items));',
     'const first = edits.run; const second = first; second(r => templateRules());',
+    'const { edits: tx } = ports; tx.run(r => pageRules(items));',
+    'const tx = ports["edits"]; tx.now(r => pageRules(items));',
   ]) flags(movePlans, source, "move-plan");
   for (const source of ['const tx = ports.history; tx.run(r => pageRules(items));', 'const first = edits.stamp; first(r => pageRules(items));']) assert.deepEqual(movePlans(source, FAKE), [], source);
   const hits = movePlans('const plan = r => pageRules(items); edits.run(plan); edits.now(plan);', FAKE);
@@ -393,6 +416,8 @@ test("template-choice follows destructured reads, aliases and transitive same-fi
     'const template = tools.editModeTemplate(); const rules = template ? templateRules() : pageRules(items); export const step = () => rules;',
     'function page() { return pageRules(items); } function template() { return templateRules(); } function choose() { return tools.editModeTemplate() ? template() : page(); }',
     'function a() { b(); return pageRules(items); } function b() { return a(); } function choose() { tools.editModeTemplate(); b(); }',
+    'function read(t = tools.editModeTemplate()) { return t; } function choose() { return read() ? templateRules() : pageRules(items); }',
+    'function choose({ template } = tools.editModeTemplate()) { return template ? templateRules() : pageRules(items); }',
   ]) flags(templateChoices, source, "template-choice");
   for (const source of [
     'const read = tools.editModeTemplate; function choose(read) { read(); return templateRules(); }',
