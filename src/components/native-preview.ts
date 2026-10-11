@@ -632,7 +632,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   function checkPageError() {
     if (loadError) return;
     const shown = site && (alone ? site.components[alone] : site.routes[route]);
-    const message = site && shown && unreadable.size
+    // Only a page or template can be it, so a site with just stylesheets unread costs nothing.
+    const message = site && shown && [...unreadable.keys()].some((path) => !/\.css$/i.test(path))
       ? unreadableNeededFile(nativeShownFiles(site, [shown], (path) => unreadable.has(path) ? undefined : sources[path], () => false).files, () => false, unreadable)
       : undefined;
     if (message) showBanner(message, true);

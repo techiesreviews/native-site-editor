@@ -81,16 +81,18 @@ async function waitForTextIndex(page: Page) {
   if (await explorer(page).evaluate((element) => element.matches(":popover-open"))) await page.keyboard.press("Escape");
 }
 
-test("a template only another page uses that is not UTF-8 text is that page's error once the index knows it", async ({ page, baseURL }) => {
+// Followed at once, the link's page is read before the text index reaches it
+// and the template is found unreadable then; later, the index knows both.
+for (const indexed of [false, true]) test(`a template only another page uses that is not UTF-8 text is that page's error${indexed ? " once the index knows it" : ", followed before the index"}`, async ({ page, baseURL }) => {
   const pageErrors: string[] = [];
   page.on("pageerror", (failure) => pageErrors.push(failure.message));
   await openSite(page, baseURL, "components/odd-block/odd-block.html", () => latin1("<section>Caf\u00e9</section>\n"),
     (about) => about.replace("</main>", "  <odd-block></odd-block>\n</main>"));
-  await waitForTextIndex(page);
+  if (indexed) await waitForTextIndex(page);
   await expect(error(page)).toBeHidden();
 
   await preview(page).locator("site-header [data-key='nav-about']").click({ modifiers: ["ControlOrMeta"] });
-  await expect(error(page)).toHaveText("components/odd-block/odd-block.html: This file is not UTF-8 text.");
+  await expect(error(page)).toHaveText("components/odd-block/odd-block.html: This file is not UTF-8 text.", { timeout: 15_000 });
   await expect(page.locator(".native-preview-frame")).toBeHidden();
   await choosePage(page, "Home");
   await homeIsBack(page);

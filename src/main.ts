@@ -2198,12 +2198,10 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
   const isFile = (path: string) => fileSet.has(path);
   let loaded = false, first = true;
   for (let round = 0; round < 20; round++) {
+    // A file that cannot be read as text is not asked for again: a
+    // stylesheet is left out of the page, and a page or template the page
+    // needs is the preview's error (nativeUnreadableShown).
     const shown = nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), isFile);
-    // A stylesheet that cannot be read as text is left out of the page; a
-    // page or template the page needs cannot be, so it fails the read (known
-    // only once the sources that use it are read: an extra read with them may be unused).
-    const needed = unreadableNeededFile(shown.files, held, nativeUnreadableFiles);
-    if (needed) throw new Error(needed);
     for (const [tag, css] of shown.componentCss)
       if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
     for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
@@ -2781,6 +2779,11 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     const styleExtras = nativeBootStyleExtras(site, files, bootSize);
     await readNativeShownFiles(repo.full_name, site, shownPages, live, [...(files.includes(NATIVE_CONFIG_PATH) ? [NATIVE_CONFIG_PATH] : []), ...extras], styleExtras);
     if (!live()) return true;
+    // A page or template the page on show needs that cannot be read as text
+    // fails the load with its path (known only once the sources that use it
+    // are read: an extra read with them may be unused).
+    const needed = nativeUnreadableShown(site, shownPages);
+    if (needed) throw new Error(needed);
     // The stylesheets the pages link, and the files those import, render
     // with the first update; one that cannot be read is reported by the
     // preview, not here.
@@ -3178,11 +3181,19 @@ function noteNativeUnreadable(files: UnreadableFile[] | undefined) {
   nativePreview?.setUnreadable(nativePreviewUnreadable());
   showNativeWarnings();
 }
-// The unreadable files with no draft in their place: the preview draws a
-// page or template from its draft, and lets one without say why it cannot.
+// The first page or template the pages `pages` show that cannot be read as
+// text and has no draft in its place, as "path: why".
+function nativeUnreadableShown(site: NativeSite, pages: string[]) {
+  const scope = draftScope(), files = new Set(nativeFiles(scope));
+  const source = (path: string) => nativeEffectiveSource(path, scope);
+  return unreadableNeededFile(nativeShownFiles(site, pages, source, (path) => files.has(path)).files, (path) => source(path) !== undefined, nativeUnreadableFiles);
+}
+// The unreadable files with no draft (or History's earlier version) in their
+// place: the preview draws a page or template from that, and lets one without
+// say why it cannot.
 function nativePreviewUnreadable() {
   const scope = draftScope();
-  return new Map([...nativeUnreadableFiles].filter(([path]) => nativeEffectiveSource(path, scope) === undefined));
+  return new Map([...nativeUnreadableFiles].filter(([path]) => path !== versionView?.path && nativeEffectiveSource(path, scope) === undefined));
 }
 function showNativeWarnings(projectWarnings = nativeProjectWarnings) {
   nativeProjectWarnings = projectWarnings;
