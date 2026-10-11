@@ -3,7 +3,7 @@ title: "Move any element anywhere HTML allows (outside components, and inside th
 type: task (AFK)
 status: closed
 assignee:
-blocked_by: [36-blocks-drag-themselves, 37-structure-mirror-and-x-depth]
+blocked_by: [36-drag-existing-blocks, 37-structure-mirror-and-x-depth]
 builder: claude ★
 phase: 4
 ---

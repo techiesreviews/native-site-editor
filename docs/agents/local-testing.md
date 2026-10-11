@@ -40,10 +40,9 @@ servers share these ports, and a pattern kill takes theirs down too.
   `port.sh` command; specs must pass with both fonts.
 - Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`
   (about 15 minutes).
-- Known flaky specs: `native-shared-link-host.spec.ts:82`,
-  `native-canvas.spec.ts:195`, `native-shared-authoring-host.spec.ts:282`;
-  rerun once before calling a failure flaky
-  ([tech debt 09](../work/tech-debt/issues/09-flaky-specs.md)).
+- Known failures: [tests/known-failures.json](../../tests/known-failures.json)
+  records flaky and failing-on-dev tests. Rerun once before calling a new
+  failure flaky; known failures still fail the suite summary.
 
 ## Reading results
 

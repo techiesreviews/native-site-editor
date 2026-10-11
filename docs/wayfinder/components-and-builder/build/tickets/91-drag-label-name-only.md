@@ -3,7 +3,7 @@ title: "The drag label shows only the block's icon and name, in Structure's colo
 type: task (AFK)
 status: closed
 assignee:
-blocked_by: [35-canvas-drag-line-and-label]
+blocked_by: [35-canvas-drag-new-blocks]
 builder: sol
 phase: 4
 ---

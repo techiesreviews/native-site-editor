@@ -3,7 +3,7 @@ title: "A dragged card targets the gaps between cards"
 type: task (AFK)
 status: closed
 assignee:
-blocked_by: [36-blocks-drag-themselves]
+blocked_by: [36-drag-existing-blocks]
 builder: sol
 phase: 4
 ---

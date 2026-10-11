@@ -24,7 +24,7 @@
     "test:browser:all": "playwright test",
     "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\"",
     "test:budget": "tsx tests/perf/byte-budget.ts",
-    "lint": "eslint"
+    "lint": "eslint && node scripts/agents/tickets.mjs check"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",
