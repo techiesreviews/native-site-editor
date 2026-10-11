@@ -84,7 +84,7 @@ for (const gate of ["memory", "load"]) {
 if [[ \${!#} == /proc/meminfo ]]; then cat "$ASE_MEMORY_FILE"; exit; fi
 args=("$@")
 for (( i=0; i<\${#args[@]}; i++ )); do
-  if [[ \${args[i]} == load=* ]]; then args[i]="load=$(cat "$ASE_LOAD_FILE")"; fi
+  if [[ \${args[i]} == cur=* ]]; then args[i]="cur=$(cat "$ASE_LOAD_FILE")"; fi
 done
 exec /usr/bin/awk "\${args[@]}"
 `, { mode: 0o755 });

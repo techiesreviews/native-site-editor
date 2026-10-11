@@ -69,7 +69,7 @@ resource_wait() {
   if awk -v avail="$avail" -v min="$min_mem" 'BEGIN {exit !(avail < min)}'; then
     wait_reason="memory ${avail} KiB < $min_mem KiB"
   fi
-  if awk -v load="$load" -v max="$max_load" 'BEGIN {exit !(load > max)}'; then
+  if awk -v cur="$load" -v max="$max_load" 'BEGIN {exit !(cur > max)}'; then # "load" is a gawk builtin name
     wait_reason+="${wait_reason:+; }load $load > $max_load"
   fi
   [[ -n $wait_reason ]]
