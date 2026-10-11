@@ -1,7 +1,7 @@
 ---
 title: "Card copies on the source tree: card-grid's elementTree, plainText and slot scan go"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [41-card-tree-fill-and-swap, 42-card-tree-page-paths, 45-element-end-at-parent]
 builder: sol
@@ -22,3 +22,8 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/card-tree-desig
 - `rg "elementTree|function plainText|function decodeEntities|indexOf\(\"</slot\"" src/page-builder` finds nothing outside source-tree.ts and component-model.ts.
 - `tests/card-grid.test.ts`'s `elementTree`/`plainText` uses go through `readSource` (replace, don't layer), plus: a fallback `Caf&eacute;`, a nested slot's fallback, `withTitle` with a title written with references, with formatting in the title leaf, and with another spelling of the same character in kept text; `<div><span>A</div>` still refused.
 - `native-cards`, `native-add-card*`, `native-card-paths*`, `native-slot-change-pages-actual` specs green; `npm run check`, `npm test`, full `native-save` suite green; budget delta reported.
+
+## Done (2026-10-11)
+
+- card-grid's `elementTree`, `SourceElement`, `RAW_TEXT`, `plainText`, `decodeEntities`, `allElements`, `attribute` and card-source's `itemElement` go. `textLeaves`/`titleLeaf`/`itemTitle` read any `SourceTree`; `itemCopy`, `itemFill`, `pageBodyCopy`, `leafSummary`, `itemPageFill`, `canFill`, `fillFrom` read `readSource` and require `exact`; `tagOf` reads the tree. `withTitle` matches the decoded title per text node and maps it back through `textRangeInSource` (new optional decoder; `decodeHtmlEntity` split out of `decodeHtmlEntities`), keeping the unmatched rest of a reference. `slotFallbacks` reads the template's tree (first non-empty fallback per decoded name, own properties only; `fallbackFor` reads them, so a slot named `constructor` no longer throws, also a dev bug). Built T5 and T4's rest: sibling titles come from the page tree, so a sibling card with an implied end keeps its title. Commits a1d455c8 (Sol built, Claude fixed an import cycle and the old-title scope), 63135a8f, 697bcd41 (Sol's review findings).
+- Tests: card-grid +13 (references in fallbacks, nested slot fallback, `withTitle` ×5 spellings incl. formatting, partial and shared references, empty-first and prototype-named slots, `<div><span>A</div>` refused by every copy, pre's dropped newline ×3, peer title with an implied end), card-fill +2, cards-controller +3 (peer with implied end on the grid, links and Pages-tab paths). `npm test` 1956; full native-save 887 passed, 0 failed; smoke 42, @actual 54. Budget −487 B gzip total.
