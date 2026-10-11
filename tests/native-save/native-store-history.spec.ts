@@ -82,6 +82,13 @@ test("Undo of a stylesheet whose pane has closed redraws the preview", async ({ 
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/project-card/project-card.html");
   const first = frame(page).locator(".project-card__title").first();
+  // The mode frames the first card, so the shade leaves its title free (once, under load,
+  // the click waited out the test on the shade instead; sturdy-base 35).
+  await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveText("Editing<project-card>");
+  await expect.poll(() => first.evaluate((element) => {
+    const at = element.getBoundingClientRect();
+    return document.elementFromPoint(at.right - 2, at.top + 2)?.getAttribute("data-native-selection-box") ?? "free";
+  }), { message: "the first card's title stands under the Edit component shade" }).not.toBe("edit-shade");
   const box = (await first.boundingBox())!;
   await first.click({ position: { x: box.width - 2, y: 2 } });
   // Measured on another instance: the one clicked in Edit component mode is having its text edited (focused).
