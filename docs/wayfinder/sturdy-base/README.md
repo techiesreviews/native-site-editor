@@ -57,6 +57,7 @@ One module (`src/page-builder/block-move.ts`) answers "what does this press move
 | [32 Drags: canvas, edit bar name, Page Structure rows](tickets/32-block-move-drags.md) | M | sol | 30 |
 | [33 MCP move_section; dead card Move buttons and swapEdits go](tickets/33-block-move-mcp-and-dead-card-moves.md) | S | sol | 31 |
 | [34 Guard test: one move engine, one page/template choice](tickets/34-block-move-guard-test.md) | S | sol | 31-33 |
+| [35 The two specs that fail under load pass reliably](tickets/35-flaky-specs.md) | S | claude ★ | – |
 
 31 and 32 may run together (main.ts regions 520-614/1612-1722 vs 923-958). No file of 26/27 is edited (native-preview.ts keeps its `onMove`/`onBlockPress` handlers; the palette runs the bar's buttons as before); only main.ts is shared, in other regions. Run 31 before 18, or 18 allowlists the `itemsSlots()` peeks in page-structure-controller (712, 779) and main.ts (1693). Lead decides before 31-33 (design section 8, each recommended): B1 template Sections move by the template rules from the canvas and bar too; B2 a non-Section Structure row opens its page and moves, as Sections do; B3 Undo of every move reselects the block where it was; B4 Structure focus follows the real path after a Section or pending move; B5 Section Move buttons disabled at a slot's edge; B6 a row press on a Block that does not move starts no drag.
 
