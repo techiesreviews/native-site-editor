@@ -1414,6 +1414,13 @@ function productionHeaders(): Connect.NextHandleFunction {
   };
 }
 
+// Idle connections stay open. Node closes a keep-alive connection after 6 s
+// of quiet, and a spec's `page.request` (a keep-alive agent) that sends on it
+// as it closes gets ECONNRESET; a loaded machine widens that moment.
+function keepIdleConnections(server: { keepAliveTimeout?: number }) {
+  server.keepAliveTimeout = 0;
+}
+
 async function main() {
   initialGit = buildInitialGit();
   if (distMode) {
@@ -1427,6 +1434,7 @@ async function main() {
       build: { outDir: resolve(projectRoot, distDir!) },
       preview: { host: "127.0.0.1", port: appPort, strictPort: true },
     });
+    keepIdleConnections(server.httpServer);
     const close = () => void server.close().catch(() => undefined).finally(() => process.exit(0));
     process.once("SIGTERM", close);
     process.once("SIGINT", close);
@@ -1464,6 +1472,7 @@ async function main() {
     },
   });
   await app.listen();
+  if (app.httpServer) keepIdleConnections(app.httpServer);
   const cleanup = async () => {
     await app.close().catch(() => undefined);
   };

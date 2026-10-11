@@ -400,28 +400,32 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   await expect(editor.locator('.selected-text').first()).toBeVisible();
   await page.waitForTimeout(180);
   await expect(current(page)).toHaveText('h1');
-  // A real code click queues cursor selection; a real body crumb click wins before 120ms.
+  // A real code click queues cursor selection; a real body crumb click wins while it waits.
+  // The page's clock stands still between the two clicks, so the wait (120 ms) cannot
+  // run out however long a loaded machine takes to send them.
   const clear = crumbs(page).first();
   const clearBox = (await clear.boundingBox())!;
-  const timing = await page.evaluateHandle(() => {
-    const result = { cursor: 0, clear: 0, source: '' };
+  const pointed = await page.evaluateHandle(() => {
+    const result = { source: '', clearedAfter: false };
     window.addEventListener('native-code-pointer', event => {
       const pointer = (event as CustomEvent).detail;
-      if (pointer.kind === 'cursor') { result.cursor = performance.now(); result.source = pointer.source; }
-    }, { once: false });
+      if (pointer.kind === 'cursor') result.source = pointer.source;
+    });
     window.addEventListener('click', event => {
-      if ((event.target as Element).closest('.canvas-crumb')) result.clear = performance.now();
+      if ((event.target as Element).closest('.canvas-crumb')) result.clearedAfter = !!result.source;
     }, { capture: true });
     return result;
   });
+  await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
   await page.mouse.click(box.x + 30, box.y + box.height / 2);
   await page.mouse.click(clearBox.x + clearBox.width / 2, clearBox.y + clearBox.height / 2);
-  const measured = await timing.jsonValue();
-  expect(measured.source).toContain('<section class="hero"');
-  expect(measured.cursor).toBeGreaterThan(0);
-  expect(measured.clear - measured.cursor).toBeGreaterThanOrEqual(0);
-  expect(measured.clear - measured.cursor).toBeLessThan(120);
-  await timing.dispose();
+  const seen = await pointed.jsonValue();
+  expect(seen.source).toContain('<section class="hero"');
+  expect(seen.clearedAfter).toBe(true);
+  await pointed.dispose();
+  await page.clock.runFor(500);
+  await page.clock.resume();
   await expect(crumbs(page)).toHaveText(['body']);
   await page.waitForTimeout(180);
   await expect(crumbs(page)).toHaveText(['body']);

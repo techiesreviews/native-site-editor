@@ -60,10 +60,15 @@ test("hovering the open repository's row lists its branches beside the menu, and
   expect(beside.x).toBeLessThan(menu.x + menu.width + 12);
   expect(Math.abs(beside.y - row.y)).toBeLessThan(10);
 
-  // The pointer on its way to the flyout, across the rest of the menu, keeps it open.
+  // The pointer on its way to the flyout, across the rest of the menu, keeps it open:
+  // a 100 ms way, on the page's clock (a loaded machine takes longer to send the moves).
+  await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
   await page.mouse.move(row.x + row.width - 4, row.y + row.height + 30, { steps: 4 });
+  await page.clock.runFor(100);
   await page.mouse.move(beside.x + 20, beside.y + 50, { steps: 4 });
-  await page.waitForTimeout(400);
+  await page.clock.runFor(400);
+  await page.clock.resume();
   await expect(flyout(page)).toBeVisible();
 
   await branchItem(page, "feature").click();
