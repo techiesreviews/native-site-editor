@@ -13,17 +13,9 @@ the automated checks in [guardrails.md](guardrails.md).
 
 ## Ports
 
-| Port | Use |
-| --- | --- |
-| 5216 | Timing (`scripts/agents/timing.sh`, all locks) and single-port full suites |
-| 5226, 5236, 5246, 5256 | Focused specs, smoke, full-suite shards (`scripts/agents/port.sh`) |
-
-Each run also takes port + 1 (the native-preview project). Every browser run
-holds its port's lock: through `port.sh`, or
-`flock /tmp/ase-5216.lock env ASE_TEST_PORT=5216 <cmd>` for 5216.
-
-Stop only processes you started, by PID or process group: other agents'
-servers share these ports.
+Pool, resource gates, lock ownership and orphan cleanup: see
+[agent-scripts.md](agent-scripts.md#ports). Run browser tests through `port.sh`;
+run timing through `timing.sh`. Stop only processes you started.
 
 ## Which tests
 
@@ -38,8 +30,8 @@ servers share these ports.
 - CI fonts (DejaVu Sans, wider than the local Noto Sans): put
   `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` (run from the worktree root) in front of the
   `port.sh` command; specs must pass with both fonts.
-- Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`
-  (about 15 minutes).
+- Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`;
+  duration and shard limits: [agent-scripts.md](agent-scripts.md).
 - Known failures: [tests/known-failures.json](../../tests/known-failures.json)
   records flaky and failing-on-dev tests. Rerun once before calling a new
   failure flaky; known failures still fail the suite summary.

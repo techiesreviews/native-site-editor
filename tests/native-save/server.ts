@@ -1421,7 +1421,28 @@ function keepIdleConnections(server: { keepAliveTimeout?: number }) {
   server.keepAliveTimeout = 0;
 }
 
+// Agent scripts preserve their PID across exec. Watching that owner catches death
+// above the tsx/shell wrappers too; demos without an owner keep their normal lifetime.
+function watchTestOwner() {
+  const owner = process.env.ASE_TEST_OWNER_PID;
+  if (!owner || !/^[1-9][0-9]*$/.test(owner)) return;
+  const path = `/proc/${owner}/stat`;
+  const identity = () => {
+    try {
+      const stat = readFileSync(path, "utf8");
+      const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      return fields[0] === "Z" ? undefined : fields[19]; // State and start time, after the command.
+    } catch { return undefined; }
+  };
+  const started = identity();
+  const timer = setInterval(() => {
+    if (!started || identity() !== started) process.exit(0);
+  }, 1_000);
+  timer.unref();
+}
+
 async function main() {
+  watchTestOwner();
   initialGit = buildInitialGit();
   if (distMode) {
     const server = await preview({
