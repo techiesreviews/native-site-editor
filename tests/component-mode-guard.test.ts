@@ -170,15 +170,20 @@ function detect(source: string, file: string): Finding[] {
   }
   // The module's createComponentMode: imported (renamed, namespaced or aliased), or unresolved in
   // a fixture; a local function of that name is not it.
+  const fromMode = (specifier: TS.Expression) => ts.isStringLiteral(specifier) && /(^|\/)component-mode(\.ts)?$/.test(specifier.text);
   function creator(node: TS.Node, depth = 0): boolean {
     node = strip(node);
     if (depth > 12) return false;
     const access = member(node);
-    if (access) return access.name === "createComponentMode";
+    if (access) {
+      // `modes.createComponentMode`: `modes` is the module's namespace import.
+      const receiver = strip(access.receiver), decl = ts.isIdentifier(receiver) ? declaration(receiver) : undefined;
+      return access.name === "createComponentMode" && !!decl && ts.isNamespaceImport(decl) && fromMode(decl.parent.parent.moduleSpecifier);
+    }
     if (!ts.isIdentifier(node)) return false;
     const decl = declaration(node);
     if (!decl) return node.text === "createComponentMode";
-    if (ts.isImportSpecifier(decl)) return (decl.propertyName ?? decl.name).text === "createComponentMode";
+    if (ts.isImportSpecifier(decl)) return (decl.propertyName ?? decl.name).text === "createComponentMode" && fromMode(decl.parent.parent.parent.moduleSpecifier);
     const value = initializer(node);
     return !!value && creator(value, depth + 1);
   }
@@ -273,10 +278,15 @@ function detect(source: string, file: string): Finding[] {
     // A field read off a typed holder (`holder.stamp`, `held["release"]`): the field's declared type.
     const access = member(node);
     if (access) {
+      // Every declaration of the field: each member of a union, a written value, a shorthand.
       const field = ts.isPropertyAccessExpression(node) ? checker.getSymbolAtLocation(node.name) : checker.getTypeAtLocation(access.receiver).getProperty(access.name);
-      const decl = field?.valueDeclaration ?? field?.declarations?.[0];
-      if (decl && "type" in decl && (typeNamed(decl.type as TS.TypeNode | undefined, storedTypes) || shareType(decl.type as TS.TypeNode | undefined, access.name))) return true;
-      if (decl && ts.isPropertyAssignment(decl) && stores(decl.initializer, depth + 1)) return true;
+      const fields = field ? [...(field.declarations ?? []), ...(checker.getTypeAtLocation(access.receiver).isUnion()
+        ? checker.getTypeAtLocation(access.receiver).types.flatMap(type => type.getProperty(access.name)?.declarations ?? []) : [])] : [];
+      for (const decl of fields) {
+        if ("type" in decl && (typeNamed(decl.type as TS.TypeNode | undefined, storedTypes) || shareType(decl.type as TS.TypeNode | undefined, access.name))) return true;
+        if (ts.isPropertyAssignment(decl) && stores(decl.initializer, depth + 1)) return true;
+        if (ts.isShorthandPropertyAssignment(decl) && stores(decl.name, depth + 1)) return true;
+      }
     }
     if (ts.isIdentifier(node)) {
       const decl = declaration(node);
@@ -394,6 +404,9 @@ test("component share and frame ports are called only in the createComponentMode
   flags("ports", `function f(deps: ComponentDeps) { const adapter = { share: () => deps.shareHistory('a', 'b') }; createComponentMode(adapter); }`);
   flags("ports", `function createComponentMode<T>(ports: T) { return ports; } function f(deps: ComponentDeps) { createComponentMode({ share: () => deps.shareHistory('a', 'b') }); }`);
   passes("ports", `import * as modes from './component-mode'; function f(deps: ComponentDeps) { const create = modes.createComponentMode; create({ share: () => deps.shareHistory('a', 'b') }); }`);
+  flags("ports", `const other = { createComponentMode: (x: unknown) => x }; function f(deps: ComponentDeps) { other.createComponentMode({ share: () => deps.shareHistory('a', 'b') }); }`);
+  flags("ports", `import { createComponentMode } from './other-mode'; function f(deps: ComponentDeps) { createComponentMode({ share: () => deps.shareHistory('a', 'b') }); }`);
+  flags("ports", `import * as other from './other-mode'; function f(deps: ComponentDeps) { other.createComponentMode({ share: () => deps.shareHistory('a', 'b') }); }`);
 });
 
 test("mode JSON comparisons follow aliases of the read and of its serialised result", () => {
@@ -428,6 +441,8 @@ test("mutable state catches protected annotations, containers, factories and sha
     `const holder: { stamp: Stamp } = x; let since = holder.stamp;`,
     `const held: { release: () => void } = x; let release = held["release"];`,
     `const opening = { since: edits.stamp() }; let since = opening.since;`,
+    `const stamp = edits.stamp(); const holder = { stamp }; let since = holder.stamp;`,
+    `const holder: { stamp: number } | { stamp: Stamp } = x; let since = holder.stamp;`,
   ]) {
     flags("mutable-state", declaration);
     const imports = declaration.match(/import[^;]+;/g)?.join("\n") ?? "";
