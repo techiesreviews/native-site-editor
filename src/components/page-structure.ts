@@ -689,6 +689,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         const chip = template!.badge(at);
         if (chip) el.append(chip);
       }
+      // The faded bar opens just before the chips, so a chip stays clickable on hover.
+      const chipRoom = () => {
+        const first = el.querySelector<HTMLElement>(":scope > .slot-chip");
+        if (first) el.style.setProperty("--row-action-end", `${el.clientWidth - first.offsetLeft + 2}px`);
+      };
+      if (own.chips.length) { el.addEventListener("pointerenter", chipRoom); el.addEventListener("focusin", chipRoom); }
       if (own.opens && template!.open) {
         const open = button("Open ›", () => template!.open!(item.node), "page-structure__action page-structure__action--open");
         open.setAttribute("aria-label", `Open ${kind} component`);
