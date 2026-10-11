@@ -16,6 +16,7 @@ import type { TemplateStructureItem } from "../page-builder/component-model";
 import type { ComponentStructureModel, ElementTextModel } from "../page-builder/components";
 import type { DragPress } from "../page-builder/insert-drag";
 import { foldRows, type StructureDropView, type TreeRow } from "../page-builder/tree-drop";
+import { followRows } from "./structure-follow";
 
 // The page structure sidebar: the rendered page's own elements as a tree,
 // fed by the runtime's index paths after each render. A row selects its
@@ -138,6 +139,8 @@ const EDGE = 28;
 const EDGE_STEP = 10;
 
 const key = (node: readonly number[]) => node.join(".");
+/** The element selected in the preview; `paintedSource`: the bytes of the page painted when it was. */
+type SelectTarget = { path: string; node: number[]; paintedSource?: string; host?: { path?: string; node?: number[]; paintedSource?: string } };
 /** A row's move: the moved element's path, or "stayed". */
 type RowMoved = number[] | "stayed";
 // Where level 1's drop line starts, from the tree's left edge (page-structure.css `.page-structure__drop`).
@@ -230,6 +233,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let rendered = "";
   let selected: string | undefined;
   let pendingSelection: { path: string; node: number[] } | undefined;
+  // A selection reported for a paint of this page not drawn here yet: its row, and those bytes.
+  let selectedAhead: { id: string; painted: string } | undefined;
   // Rows folded or unfolded by hand; any other row inside <main> is folded.
   const foldState = new Map<string, boolean>();
   const inMain = new Set<string>();
@@ -1280,28 +1285,48 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         structure = next;
         return;
       }
+      // The same page drawn again with rows added, removed or moved above others (Undo, Redo, an
+      // edit in code, Edit component mode ending as its instance moved): folds and the mark follow their elements.
+      if (next && previousStructure && path === previousStructure.path && previousStructure.items !== next.items) {
+        const follow = followRows(previousStructure.items, next.items), moved = (id: string) => id.startsWith("@") ? id : follow(id);
+        const folds = [...foldState];
+        foldState.clear();
+        for (const [id, closed] of folds) { const to = moved(id); if (to !== undefined) foldState.set(to, closed); }
+        if (selected !== undefined) selected = moved(selected);
+        if (editingInstance !== undefined) editingInstance = moved(editingInstance);
+      }
+      const ahead = selectedAhead && path === previousStructure?.path && next?.paintedSource === selectedAhead.painted ? selectedAhead : undefined;
+      if (ahead) selected = ahead.id;
+      if (ahead || path !== previousStructure?.path) selectedAhead = undefined;
       const proof = handlers.componentFieldsRevision?.();
       const signature = next ? `${next.path}\n${JSON.stringify(next.items)}\n${next.paintedSource ?? ""}\n${proof ?? ""}` : "";
       if ((!handlers.componentSlots || proof !== undefined) && signature === rendered && !tree.hidden === Boolean(next?.path)) return;
       rendered = signature;
       render();
-      if (pending?.path === path) {
-        const current = rows.get(key(pending.node));
+      if (pending?.path === path || ahead) {
+        const current = rows.get(ahead ? ahead.id : key(pending!.node));
         if (current) reveal(current);
         current?.scrollIntoView({ block: "nearest" });
       }
     },
     /** Mark the row of the element selected in the preview, and show it. */
-    select(target: { path: string; node: number[] } | undefined) {
+    select(target: SelectTarget | undefined) {
       pendingSelection = target && target.path !== structure?.path ? { path: target.path, node: [...target.node] } : undefined;
       const template = target && [...rows.values()].some(row => row.dataset.templatePath === target.path);
       if (template) pendingSelection = undefined;
-      const id = target && template ? templateKey(target.path, target.node) : target && structure && target.path === structure.path ? key(target.node) : undefined;
-      if (id === selected) return;
+      // An element of a template without rows of its own here (no Edit component mode): its instance's row is marked.
+      const host = !template && target?.host?.node && target.host.path === structure?.path ? target.host : undefined;
+      const id = target && template ? templateKey(target.path, target.node) : target && structure && target.path === structure.path ? key(target.node) : host && key(host.node!);
+      // Chosen in a paint of the page newer than the rows drawn (the frame reports a selection before
+      // its structure): its row is marked once that paint is drawn.
+      const painted = host ? host.paintedSource : id !== undefined && !template ? target?.paintedSource : undefined;
+      selectedAhead = painted !== undefined && structure?.paintedSource !== undefined && painted !== structure.paintedSource ? { id: id!, painted } : undefined;
+      if (id === selected && !selectedAhead) return;
       // Another element chosen (on the page or here): a row edit is kept and ends. The
       // edited element, its instance (its own writes select that) or what is in it do not count.
       const owner = editingModule?.editing();
       if (owner !== undefined && !(id !== undefined && (id === owner || owner.startsWith(`${id}.`) || id.startsWith(`${owner}.`) || owner.startsWith(`~${id}:`)))) editingModule!.finish("commit", false);
+      if (selectedAhead) return;
       const current = setSelected(id);
       if (current) reveal(current);
       current?.scrollIntoView({ block: "nearest" });

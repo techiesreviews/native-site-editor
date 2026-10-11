@@ -7,7 +7,7 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const title = (page: Page) => page.locator(".edit-mode__title");
 const source = (page: Page, path: string) => page.evaluate(async path =>
   (await import("/src/components/code-editor.ts")).getMountedSource(path), path);
-const home = '<!doctype html><html><head><title>Mode home</title><link rel="stylesheet" href="/styles/site.css"></head><body><main><section-mode></section-mode></main></body></html>';
+const home = '<!doctype html><html><head><title>Mode home</title><link rel="stylesheet" href="/styles/site.css"></head><body><main><section-mode></section-mode><section id="after"><h2>After heading</h2><p>After text</p></section><section id="last"><h2>Last heading</h2><p>Last text</p></section></main></body></html>';
 const destination = '<!doctype html><html><head><title>Destination</title><link rel="stylesheet" href="/styles/site.css"></head><body><main><section id="first"><h2>Destination heading</h2><p>First paragraph</p></section><section id="second"><div class="flow"><p>Second paragraph</p></div></section></main></body></html>';
 
 async function seed(page: Page, baseURL: string | undefined) {
@@ -20,6 +20,16 @@ async function seed(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).getByText("Shared heading", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => source(page, "index.html")).toBe(home);
+}
+
+const row = (page: Page, name: RegExp) => page.getByRole("treeitem", { name }).first();
+async function insertAbove(page: Page) {
+  const at = home.indexOf("<section-mode>");
+  await page.evaluate(async ({ at }) => {
+    (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, text: "<p>Before instance</p>", expected: "" });
+  }, { at });
+  await expect(frame(page).getByText("Before instance", { exact: true })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: /^Paragraph Before instance/ })).toBeVisible();
 }
 
 async function enter(page: Page) {
@@ -73,19 +83,39 @@ test("Ctrl-click leaves component mode; rail and canvas drags work on the page s
 
 test("Undo before mode entry moves the instance and clears the mode bar and frame", { tag: "@actual" }, async ({ page, baseURL }) => {
   await seed(page, baseURL);
-  const at = home.indexOf("<section-mode>");
-  await page.evaluate(async ({ at }) => {
-    (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, text: "<p>Before instance</p>", expected: "" });
-  }, { at });
-  await expect(frame(page).getByText("Before instance", { exact: true })).toBeVisible();
+  await insertAbove(page);
   await enter(page);
+  await expect(row(page, /^Section mode/)).toHaveAttribute("aria-expanded", "true");
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(frame(page).getByText("Before instance", { exact: true })).toHaveCount(0);
   await expect(title(page)).toHaveCount(0);
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']:visible, [data-native-selection-box='edit-shade']:visible")).toHaveCount(0);
   await expect(page.locator("[data-template-path]")).toHaveCount(0);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+  // The tree follows the instance, not the row index it had: the section now in its old place stays folded.
+  await expect(row(page, /^Section mode/)).toHaveAttribute("aria-selected", "true");
+  await expect(row(page, /^Section After heading/)).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("#structure [role=treeitem][aria-selected=true]")).toHaveCount(1);
   // Reopen only after proving Undo alone cleared the mode, then verify the restored page bytes.
   await page.getByRole("treeitem", { name: /^Section mode/ }).first().locator(".page-structure__label").click();
   await expect.poll(() => source(page, "index.html")).toBe(home);
+});
+
+test("Undo and Redo of a row above keep the unfolded, selected row on its element", { tag: "@actual" }, async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  await insertAbove(page);
+  const after = row(page, /^Section After heading/), last = row(page, /^Section Last heading/);
+  await after.locator(".page-structure__label").click();
+  await expect(after).toHaveAttribute("aria-selected", "true");
+  if (await after.getAttribute("aria-expanded") === "false") await after.locator(".page-structure__toggle").click();
+  await expect(after).toHaveAttribute("aria-expanded", "true");
+  for (const step of ["Undo", "Redo"]) {
+    await page.getByRole("button", { name: step, exact: true }).click();
+    await expect(frame(page).getByText("Before instance", { exact: true })).toHaveCount(step === "Undo" ? 0 : 1);
+    await expect(page.getByRole("treeitem", { name: /^Paragraph Before instance/ })).toHaveCount(step === "Undo" ? 0 : 1);
+    await expect(after).toHaveAttribute("aria-expanded", "true");
+    await expect(after).toHaveAttribute("aria-selected", "true");
+    await expect(last).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator("#structure [role=treeitem][aria-selected=true]")).toHaveCount(1);
+  }
 });

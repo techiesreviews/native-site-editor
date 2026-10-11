@@ -46,7 +46,7 @@ export interface PreviewSelectionPorts {
   renderEditBar(selection: NativePreviewSelection): void;
   linkStyles(selection: NativePreviewSelection, reveal: boolean): void;
   clearMoveAction(): void;
-  structureSelect(target: NodeTarget | undefined): void;
+  structureSelect(target: (NodeTarget & Pick<NativePreviewSelection, "paintedSource" | "host">) | undefined): void;
   hideComponentTools(): void;
   agentContext(): void;
   announce(message: string): void;
@@ -139,7 +139,7 @@ export function createPreviewSelectionController(ports: PreviewSelectionPorts) {
     store.selection.value = selection.path ? selection : undefined;
     // Agents see the selection (get_selection).
     if (reveal) ports.agentContext();
-    ports.structureSelect(selection.path && selection.node ? { path: selection.path, node: selection.node } : undefined);
+    ports.structureSelect(selection.path && selection.node ? { path: selection.path, node: selection.node, paintedSource: selection.paintedSource, host: selection.host } : undefined);
     if (!selection.path) {
       ports.clearMoveAction();
       ports.preview()?.hideEditBar();
