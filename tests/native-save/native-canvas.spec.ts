@@ -416,6 +416,9 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
     }, { capture: true });
     return result;
   });
+  // Installed here, not before the page loads: a clock from the start fakes
+  // `performance` too, and Monaco's input-latency measure then throws on every key.
+  // The timers this check needs are all set after it.
   await page.clock.install();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
   await page.mouse.click(box.x + 30, box.y + box.height / 2);

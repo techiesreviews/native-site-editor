@@ -62,6 +62,9 @@ test("hovering the open repository's row lists its branches beside the menu, and
 
   // The pointer on its way to the flyout, across the rest of the menu, keeps it open:
   // a 100 ms way, on the page's clock (a loaded machine takes longer to send the moves).
+  // Installed here, not before the page loads: a clock from the start fakes
+  // `performance` too, and Monaco's input-latency measure then throws on every key.
+  // The timers this check needs are all set after it.
   await page.clock.install();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
   await page.mouse.move(row.x + row.width - 4, row.y + row.height + 30, { steps: 4 });
