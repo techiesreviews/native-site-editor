@@ -158,7 +158,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const editor = ports.editorModule;
     const { path, node, rect } = selection;
     // The page's `main` container has nothing the bar can do; it stays out of the way.
-    if (!preview || !editor || !path || !rect || ports.appStore.openFile.value !== path || !editor.isMounted(path) || selection.tag === "main" && ports.componentTools?.editModeTemplate()?.path !== path) {
+    if (!preview || !editor || !path || !rect || ports.appStore.openFile.value !== path || !editor.isMounted(path) || selection.tag === "main" && ports.componentTools?.mode.now()?.template !== path) {
       nativeFormatActions = {};
       rowRemoval = undefined;
       preview?.hideEditBar();
@@ -565,7 +565,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // the workspace (`since`), the selection and its editor model hold. Any
     // block of the page's <main> drags by its name in the bar (ticket 12 §10).
     let onMove: ((step: MoveStep) => void) | undefined;
-    const templateRoot = ports.componentTools?.isTemplateRoot(selection);
+    const mode = ports.componentTools?.mode.now();
+    const templateRoot = mode && ports.componentTools?.isTemplateRoot(selection, mode.template);
     const section = isNativeSectionTag(selection.tag);
     // What the bar draws: from the bytes it is drawn with.
     const grip = !templateRoot && node?.length ? ports.moves.grip({ path, node, painted: source }) : undefined;
@@ -606,11 +607,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // Non-Sections have the steps' keys, but no move arrow buttons in the bar.
     if (!templateRoot && !section) controls.push(...ports.cardControls(selection, source));
     if (range && node) {
-      const template = ports.componentTools?.editModeTemplate();
+      const template = ports.componentTools?.mode.now();
       const chain = ["body", ...node.map((_, depth) => ports.locateNativeElementRange(source, node.slice(0, depth + 1))?.tag.name ?? "")];
       const allowed = selection.paintedSource === source && !selection.host && pageRemovable(chain);
       // A card's own Remove (cards.ts) stays, an items slot's card included.
-      if (template?.path === path) controls.push(...(ports.componentTools?.removeControl(selection, kind) ?? []));
+      if (template?.template === path) controls.push(...(ports.componentTools?.removeControl(selection, kind) ?? []));
       else if (Object.values(ports.nativeSite?.routes ?? {}).includes(path) && allowed && !controls.some(control => control.label === "Remove")) {
         controls.push({ kind: "button", icon: "remove", label: "Remove",
           onPress: () => change([removeEdit(source, range)], selectionAfterRemove(node,
@@ -832,8 +833,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     removeRow(path: string, node: number[], source: string | undefined) {
       if (source === undefined || ports.nativeEffectiveSource(path) !== source || !ports.nativePreview) return false;
       const chain = ["body", ...node.map((_, depth) => ports.locateNativeElementRange(source, node.slice(0, depth + 1))?.tag.name ?? "")];
-      const template = ports.componentTools?.editModeTemplate();
-      if (template?.path === path) {
+      const template = ports.componentTools?.mode.now();
+      if (template?.template === path) {
         const target: NativePreviewSelection = { path, node, tag: chain.at(-1)!, text: "", reason: "click", selectors: [], paintedSource: source };
         if (!ports.componentTools?.removeControl(target, "Element").length) return false;
         // On a page the bar drawn for the row decides (a card's own Remove, an items slot's card included).

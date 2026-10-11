@@ -12,6 +12,7 @@
 
 import { isSectionTemplate } from "../../shared/html-source";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type PlanResult, type Reads, type StaleKey, type Stamp } from "../guarded-edit";
+import type { Mode } from "./component-mode";
 import { itemsSlotRule } from "./block-insert";
 import { nativeElementMoveMessage, ownSlot, pageRules, templateRules, type MovePlan, type MoveStep } from "./block-move-rules";
 import { nativeEditInside, nativeMovableBlock, nativeOutline } from "./native-operations";
@@ -20,7 +21,7 @@ import { isCustomElementName } from "./rules/movable";
 export interface BlockMovePorts {
   edits: Pick<GuardedEdits, "run" | "now" | "stamp" | "peek">;
   /** Edit component mode's template edited, if any: every move in that path uses the template rules. */
-  editing(): { path: string; tag: string } | undefined;
+  editing(): Pick<Mode, "template" | "tag"> | undefined;
   /** Whether `path` is the open, mounted file: the move is written now, in the key's event. */
   mounted(path: string): boolean;
   /**
@@ -127,7 +128,7 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
   };
 
   function grip(at: MoveAt): Grip | undefined {
-    const source = at.painted, template = ports.editing()?.path === at.path;
+    const source = at.painted, template = ports.editing()?.template === at.path;
     if (source === undefined || !at.node.length) return undefined;
     const { items, rules } = rulesFor(template, edits.peek);
     const from = rules.subject(source, at.node);
@@ -152,7 +153,7 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
   function move(at: MoveAt, to: MoveTo, options: MoveOptions = {}): MoveOutcome {
     if (!at.node.length) throw new Error("Block move: no element to move.");
     const { path } = at, stale = options.stale ?? STALE_MESSAGE;
-    const template = ports.editing()?.path === path;
+    const template = ports.editing()?.template === path;
     // The bytes the destination was measured on: a drop's, else the press's.
     const expected = "drop" in to ? to.painted : at.painted;
     // A Section on the page as the press saw it: a template made a Section or not meanwhile is stale.

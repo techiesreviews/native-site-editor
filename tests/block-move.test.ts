@@ -43,7 +43,7 @@ function setup(init: { page?: string; open?: string; editing?: string; workspace
   const forgotten: { path: string; painted: string }[] = [];
   const ports = {
     edits,
-    editing: () => init.editing === undefined ? undefined : { path: init.editing, tag: "section-hero" },
+    editing: () => init.editing === undefined ? undefined : { template: init.editing, tag: "section-hero" },
     mounted: path => m.openFile() === path && m.model(path) !== undefined,
     forgetOpening: path => painted => { forgotten.push({ path, painted }); },
   } satisfies BlockMovePorts;

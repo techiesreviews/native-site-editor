@@ -196,12 +196,13 @@ const codePanes = createCodePanesController({
   mountCodeResize,
   mountCodeWidthResize,
 });
-// Undo or Redo of a file no pane shows (a stylesheet whose pane closed) still redraws the preview.
+// Undo or Redo of a file no pane shows still redraws the preview and syncs the framed instance.
 editorModule.onUnmountedText(({ scope, path }) => {
   const live = draftScope();
   if (!live || draftKey(live, path) !== draftKey(scope, path)) return;
   renderDraftFiles();
   if (nativeModeActive()) updateNativePreviewSources();
+  componentTools?.refresh();
 });
 // A pane that needs the code now (Review, focusing the code) asks for Monaco.
 editorModule.setViewLoader(() => codePanes.want().then((module) => module.monacoView));
@@ -348,7 +349,7 @@ function mountWorkspace() {
     // In Edit component mode, into the template edited (its items slots are its own <slot> elements).
     drag: kind => {
       const since = guardedEdits.stamp();
-      const template = componentTools?.editModeTemplate();
+      const template = componentTools?.mode.now();
       const block = { kind: "new", block: kind, ...(template ? { template: true } : {}) } as const;
       // In Edit component mode Page Structure takes it into the template edited, as the canvas does.
       return loadBlockDrag().then(drag => since.holds() ? nativePreview?.blockDrag(block, {
@@ -356,7 +357,7 @@ function mountWorkspace() {
         drop: (target, where, painted, pointer) => {
           const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
           const at = blockInsertPorts.target();
-          if (template && at?.path !== template.path) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
+          if (template && at?.path !== template.template) { refuse("Edit component mode was left meanwhile: nothing was added.", { pointer }); return; }
           if (since.holds()) void finishRailTyping(() => since.holds()).then(async finished => {
             if (!since.holds()) return;
             if (!finished) { blockInsertPorts.refuse(STILL_UPDATING, pointer); return; }
@@ -365,7 +366,7 @@ function mountWorkspace() {
           }).catch(errorMessage);
         },
         announce,
-      }, drag.createBlockDrag, template?.path) : undefined);
+      }, drag.createBlockDrag, template?.template) : undefined);
     },
   });
   sidebarResize = mountSidebarResize(
@@ -486,13 +487,14 @@ function mountWorkspace() {
     onDismissContextMenu: () => previewElementMenu?.close(false),
     // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
     onContextMenu: (point, anchor, selection) => {
-      const target = componentTools?.instanceSelection(selection);
+      const target = componentTools?.mode.opened() ? selection : componentTools?.instanceSelection(selection);
       const entries = target ? elementMenuItems(target) : [];
       if (entries.length) previewElementMenu?.open(anchor, entries, point, "Element actions");
     },
     // The images of a page shown by following a link are read when it shows.
     // A page the text index has not read yet is read when it shows.
     onRouteShown: (route) => {
+      componentTools?.mode.sync();
       if (!nativeSite) return;
       if (nativePreviewBehind) updateNativePreviewSources();
       void loadNativeAssets(nativeRouteShownSources(route));
@@ -585,7 +587,7 @@ function mountWorkspace() {
       const stale = !opens ? STRUCTURE_MOVE_STALE : isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
       const at = { path, node: item.node, painted: template ? template.painted : nativeStructurePaintedSources.get(item) };
       return pageStructureController.moveBlock(at, direction, template
-        ? { guard: () => componentTools?.editModeTemplate()?.path === path, stale }
+        ? { guard: () => componentTools?.mode.now()?.template === path, stale }
         : { since: paint?.since, guard: () => opens || !paint?.model || paint.model.isCurrent(), stale });
     },
     // A row drags as its block does on the page: the same targets, in the tree as well.
@@ -811,7 +813,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   draftScope,
   versionView: () => Boolean(versionView),
   route: () => nativePreview?.route(),
-  editModeEntry: () => componentTools?.editModeEntry(),
+  editModeEntry: () => componentTools?.mode.entry(),
   agentActing: () => agentActingDepth > 0,
   site: () => nativeSite,
   files: () => nativeFiles(),
@@ -850,7 +852,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
 // canvas's and Page Structure's Alt+arrows, and MCP move_section (drags arrive in slice 32).
 const blockMoves = createBlockMoves({
   edits: guardedEdits,
-  editing: () => componentTools?.editModeTemplate(),
+  editing: () => componentTools?.mode.now(),
   mounted: path => appStore.openFile.value === path && Boolean(editorModule?.isMounted(path)),
   forgetOpening: path => {
     const draft = draftScope();
@@ -870,10 +872,10 @@ const blockInsertPorts: BlockInsertPorts = {
     const path = route !== undefined && nativeSite && !versionView ? nativeSite.routes[route] : undefined;
     if (!path) return undefined;
     // Edit component mode builds in the template edited, a part of it selected.
-    const template = componentTools?.editModeTemplate();
-    if (template && template.page === path) {
+    const template = componentTools?.mode.now();
+    if (template) {
       const selection = appStore.selection.value;
-      return selection?.path === template.path ? { path: template.path, node: selection.node, painted: selection.paintedSource, template: template.tag } : { path: template.path, template: template.tag };
+      return selection?.path === template.template ? { path: template.template, node: selection.node, painted: selection.paintedSource, template: template.tag } : { path: template.template, template: template.tag };
     }
     // A part of a component's template stands for its instance on the page.
     const selection = appStore.selection.value;
@@ -890,8 +892,8 @@ const blockInsertPorts: BlockInsertPorts = {
 const loadBlockDrag = lazyModule(() => import("./page-builder/block-drag"));
 // Page Structure's side of a block's drag: its line, and its own targets
 // (in Edit component mode, the rows of the template edited).
-const structureDrop = (drag: Awaited<ReturnType<typeof loadBlockDrag>>, block: DraggedBlock, template?: { path: string; tag: string }) =>
-  pageStructure && drag.structureDrop(pageStructure.dropView(template?.path), block, tag => guardedEdits.peek.template(tag)?.source, template?.tag);
+const structureDrop = (drag: Awaited<ReturnType<typeof loadBlockDrag>>, block: DraggedBlock, template?: { template: string; tag: string }) =>
+  pageStructure && drag.structureDrop(pageStructure.dropView(template?.template), block, tag => guardedEdits.peek.template(tag)?.source, template?.tag);
 
 // A page block dragged by its name in the edit bar (`pressed` none: the
 // selection) or pressed in the page: moved where it is dropped, one undo
@@ -902,7 +904,7 @@ const structureDrop = (drag: Awaited<ReturnType<typeof loadBlockDrag>>, block: D
 // page, repository and session hold throughout.
 function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   const target = blockInsertPorts.target(), selection = appStore.selection.value;
-  const template = target?.template !== undefined ? componentTools?.editModeTemplate() : undefined;
+  const template = target?.template !== undefined ? componentTools?.mode.now() : undefined;
   if (pressed && Boolean(pressed.template) !== Boolean(template)) return undefined;
   const from = pressed ?? (selection?.node && selection.path === target?.path
     ? { node: selection.node, tag: selection.tag, cls: "", painted: selection.paintedSource } : undefined);
@@ -937,7 +939,7 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
         else report(outcome);
       },
       announce,
-    }, drag.createBlockDrag, template?.path);
+    }, drag.createBlockDrag, template?.template);
   }), true);
 }
 const loadBlockInsert = lazyModule(async () => (await import("./controllers/block-insert-controller")).createBlockInsertController(blockInsertPorts));
@@ -1457,7 +1459,7 @@ const previewSelection = createPreviewSelectionController({
   preview: () => nativePreview,
   editor: () => editorModule,
   componentTag: (path) => nativeComponentTagForPath(path),
-  editingScopePath: () => componentTools?.editingScope()?.path,
+  editingScopePath: () => componentTools?.mode.opened(),
   instanceContent: (source, node, tag) => nativeInstanceContent(source, node, tag),
   locateTag: (source, node) => locateNativeElement(source, node),
   tagName: (source, node) => locateNativeElementRange(source, [...node])?.tag.name,

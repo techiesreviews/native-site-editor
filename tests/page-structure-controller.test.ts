@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPageStructureController, type PageStructurePorts } from "../src/controllers/page-structure-controller.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
-import { createBlockMoves } from "../src/page-builder/block-move.ts";
+import { createBlockMoves, type BlockMovePorts } from "../src/page-builder/block-move.ts";
 import { textRangeInSource } from "../shared/html-source.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 
@@ -21,7 +21,7 @@ function locateNativeElementRange(html: string, node: number[]) {
 }
 
 // The controller on the memory workspace and the real guarded edit module.
-function fixture(init: { page?: string; open?: string; band?: string } = {}) {
+function fixture(init: { page?: string; open?: string; band?: string; editing?: string } = {}) {
   const mem = createMemoryWorkspace({
     branch: { [PAGE]: init.page ?? SOURCE, [BAND]: init.band ?? "<section>Band</section>", "styles/site.css": "body{}" },
     open: init.open ?? PAGE,
@@ -32,10 +32,10 @@ function fixture(init: { page?: string; open?: string; band?: string } = {}) {
   const notices: string[] = [], errors: string[] = [], forgotten: string[] = [];
   let refreshes = 0;
   const moves = createBlockMoves({
-    edits, editing: () => undefined,
+    edits, editing: () => init.editing ? { template: init.editing, tag: "x-band" } : undefined,
     mounted: path => mem.openFile() === path && mem.model(path) !== undefined,
     forgetOpening: () => painted => { forgotten.push(painted); },
-  });
+  } satisfies BlockMovePorts);
   const ports = {
     edits,
     appStore: { openFile: { get value() { return mem.openFile(); } }, selection: { get value() { return state.selected; } } },
@@ -195,4 +195,13 @@ test("queued text edits apply in the order typed, each its own guarded step", as
   await f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before: "AB", after: "ABC" } as never);
   assert.equal(f.page(), "<main><section>ABC</section><section>B</section></main>");
   assert.deepEqual(f.mem.steps(), ["range", "range"]);
+});
+
+test("a template row moves through the now-shaped editing port and leaves the page alone", () => {
+  const band = "<section><div>A</div><div>B</div></section>";
+  const f = fixture({ open: BAND, band, editing: BAND });
+  assert.deepEqual(f.controller.moveBlock({ path: BAND, node: [0, 0], painted: band }, "down"), [0, 1]);
+  assert.equal(f.edits.peek.source(BAND), "<section><div>B</div>\n<div>A</div></section>");
+  assert.equal(f.page(), SOURCE);
+  assert.deepEqual(f.notices, []);
 });

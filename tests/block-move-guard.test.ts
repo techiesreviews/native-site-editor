@@ -17,7 +17,7 @@ const ENGINE = new Set(["nativeMoveEdit", "nativeElementMovePlan", "nativeElemen
 // What makes a move plan, and everything that answers where or whether a block moves.
 const PLANS = new Set([...ENGINE, "nativeElementSiblingMove", "nativeElementDepthMove", "pageRules", "templateRules"]);
 const RULES = new Set([...PLANS, "templateMovePath", "templateMoveRefusal", "nativeMoveRefusal", "nativeMoveDestinationValid"]);
-const READERS = new Set(["editModeTemplate"]);
+const READERS = new Set(["now"]);
 const engineAllowlist: AllowlistEntry[] = [];
 const planAllowlist: AllowlistEntry[] = [];
 const choiceAllowlist: AllowlistEntry[] = [];
@@ -169,15 +169,28 @@ function referenceName(node: TS.Node): string | undefined {
       || ts.isPropertyDeclaration(parent) || ts.isPropertySignature(parent) || ts.isMethodSignature(parent)) && parent.name === node) return undefined;
   return node.text;
 }
+// Only the Edit component mode's receiver names this reader; clocks and other now ports do not.
+function modeReceiver(node: TS.Node): boolean {
+  node = strip(node);
+  return ts.isIdentifier(node) && node.text === "mode" || member(node)?.name === "mode";
+}
+function namedReference(node: TS.Node, names: Set<string>): boolean {
+  if (names !== READERS) return names.has(referenceName(node) ?? "");
+  const access = member(node);
+  if (access) return access.name === "now" && modeReceiver(access.receiver);
+  if (!ts.isBindingElement(node) || bindingKey(node) !== "now") return false;
+  const receiver = destructured(node);
+  return !!receiver && modeReceiver(receiver);
+}
 function refers(checker: TS.TypeChecker, node: TS.Node, names: Set<string>): boolean {
   const name = referenceName(node);
   if (!name) return false;
-  if (names.has(name)) return true;
+  if (namedReference(node, names)) return true;
   const declaration = ts.isIdentifier(node) ? declarationOf(checker, node) : undefined;
   return !!declaration && referring(checker, node.getSourceFile(), names).has(declaration);
 }
 // The file's declarations that stand for a name: a renamed import or destructured name, a value
-// made from one (`const rules = pageRules(items)`, `const t = tools.editModeTemplate()`), or a
+// made from one (`const rules = pageRules(items)`, `const t = tools.mode.now()`), or a
 // function whose body refers to one; transitively, through the same-file names they refer to.
 const reached = new WeakMap<TS.SourceFile, Map<Set<string>, Set<TS.Node>>>();
 function referring(checker: TS.TypeChecker, tree: TS.SourceFile, names: Set<string>): Set<TS.Node> {
@@ -189,17 +202,17 @@ function referring(checker: TS.TypeChecker, tree: TS.SourceFile, names: Set<stri
   const users = new Map<TS.Node, TS.Node[]>(), queue: TS.Node[] = [];
   walk(tree, declaration => {
     if (ts.isImportSpecifier(declaration)) {
-      if (names.has(referenceName(declaration)!)) queue.push(declaration);
+      if (namedReference(declaration, names)) queue.push(declaration);
       return;
     }
-    if (ts.isBindingElement(declaration) && names.has(bindingKey(declaration) ?? "")) queue.push(declaration);
+    if (ts.isBindingElement(declaration) && namedReference(declaration, names)) queue.push(declaration);
     // A function with its parameter defaults; a destructured name by what it is taken from.
     const value = isFunction(declaration) ? declaration : ts.isBindingElement(declaration) ? destructured(declaration)
       : ts.isVariableDeclaration(declaration) || ts.isParameter(declaration) ? declaration.initializer : undefined;
     if (value) walk(value, inner => {
       const name = referenceName(inner);
       if (!name) return;
-      if (names.has(name)) queue.push(declaration);
+      if (namedReference(inner, names)) queue.push(declaration);
       const used = ts.isIdentifier(inner) ? declarationOf(checker, inner) : undefined;
       if (used) users.set(used, [...users.get(used) ?? [], declaration]);
     });
@@ -383,51 +396,54 @@ test("move-plan recognises destructured, aliased, bound and string-access guarde
 test("template-choice rejects template reads with every move rule name, including nested closures", () => {
   for (const name of RULES) {
     for (const read of [
-      'tools.editModeTemplate()', 'componentTools?.editModeTemplate()', 'anything.editModeTemplate',
-      'anything?.["editModeTemplate"]', 'editModeTemplate()',
+      'tools.mode.now()', 'componentTools?.mode.now()', 'anything.mode.now',
+      'anything?.mode?.["now"]', 'mode.now()',
     ]) flags(templateChoices, `function choose() { const t = ${read}; return t ? ${name}() : other(); }`, "template-choice");
-    flags(templateChoices, `function choose() { tools.editModeTemplate(); const nested = () => ops.${name}(); }`, "template-choice");
-    assert.deepEqual(templateChoices(`function choose() { return tools.editModeTemplate() ? ${name}() : other(); }`, MOVE_HOME), []);
+    flags(templateChoices, `function choose() { tools.mode.now(); const nested = () => ops.${name}(); }`, "template-choice");
+    assert.deepEqual(templateChoices(`function choose() { return tools.mode.now() ? ${name}() : other(); }`, MOVE_HOME), []);
   }
   for (const source of [
-    'function read() { return tools.editModeTemplate(); }',
+    'function read() { return tools.mode.now(); }',
     'function move() { return templateRules(); }',
-    'function read() { return tools.editModeTemplate(); } function move() { return pageRules(items); }',
-    'function read() { return tools.editModeTemplate(); } function paint() { return read() ? insertTarget() : removeTarget(); }',
-    'function choose() { const text = "editModeTemplate"; return templateRules(); }',
-    'function choose() { tools.editModeTemplate(); return nativeMoveEditor(); }',
+    'function choose() { Date.now(); performance.now(); return templateRules(); }',
+    'function choose() { const { now } = Date; return now() ? templateRules() : pageRules(items); }',
+    'function choose() { now(); return templateRules(); }',
+    'function read() { return tools.mode.now(); } function move() { return pageRules(items); }',
+    'function read() { return tools.mode.now(); } function paint() { return read() ? insertTarget() : removeTarget(); }',
+    'function choose() { const text = "mode.now"; return templateRules(); }',
+    'function choose() { tools.mode.now(); return nativeMoveEditor(); }',
   ]) assert.deepEqual(templateChoices(source, FAKE), [], source);
 });
 
 test("template-choice follows destructured reads, aliases and transitive same-file readers", () => {
   for (const source of [
-    'function choose() { const { editModeTemplate } = tools; return editModeTemplate() ? templateRules() : pageRules(items); }',
-    'const { editModeTemplate: editing } = tools; function choose() { return editing() ? templateRules() : pageRules(items); }',
-    'const read = tools.editModeTemplate; const alias = read; function choose() { alias(); return templateRules(); }',
-    'const t = () => tools.editModeTemplate(); function choose() { return t() ? templateRules() : pageRules(items); }',
-    'function t() { return read(); } const read = () => tools.editModeTemplate(); function choose() { t(); return templateRules(); }',
-    'const t = () => tools.editModeTemplate(); const alias = t; function choose() { alias(); return templateRules(); }',
-    'function read() { return read() || tools.editModeTemplate(); } function choose() { read(); return templateRules(); }',
-    'import { pageRules as rules } from "./moves"; function choose() { tools.editModeTemplate(); return rules(items); }',
-    'const rules = templateRules; function choose() { tools.editModeTemplate(); return rules(); }',
-    'function choose() { const nested = () => tools.editModeTemplate(); return templateRules(); }',
-    'const rules = tools.editModeTemplate() ? templateRules() : pageRules(items);',
-    'const template = tools.editModeTemplate(); export const step = () => template ? templateRules() : pageRules(items);',
-    'const template = tools.editModeTemplate(); const rules = template ? templateRules() : pageRules(items); export const step = () => rules;',
-    'function page() { return pageRules(items); } function template() { return templateRules(); } function choose() { return tools.editModeTemplate() ? template() : page(); }',
-    'function a() { b(); return pageRules(items); } function b() { return a(); } function choose() { tools.editModeTemplate(); b(); }',
-    'function read(t = tools.editModeTemplate()) { return t; } function choose() { return read() ? templateRules() : pageRules(items); }',
-    'function choose({ template } = tools.editModeTemplate()) { return template ? templateRules() : pageRules(items); }',
+    'function choose() { const { now } = tools.mode; return now() ? templateRules() : pageRules(items); }',
+    'const { now: editing } = tools.mode; function choose() { return editing() ? templateRules() : pageRules(items); }',
+    'const read = tools.mode.now; const alias = read; function choose() { alias(); return templateRules(); }',
+    'const t = () => tools.mode.now(); function choose() { return t() ? templateRules() : pageRules(items); }',
+    'function t() { return read(); } const read = () => tools.mode.now(); function choose() { t(); return templateRules(); }',
+    'const t = () => tools.mode.now(); const alias = t; function choose() { alias(); return templateRules(); }',
+    'function read() { return read() || tools.mode.now(); } function choose() { read(); return templateRules(); }',
+    'import { pageRules as rules } from "./moves"; function choose() { tools.mode.now(); return rules(items); }',
+    'const rules = templateRules; function choose() { tools.mode.now(); return rules(); }',
+    'function choose() { const nested = () => tools.mode.now(); return templateRules(); }',
+    'const rules = tools.mode.now() ? templateRules() : pageRules(items);',
+    'const template = tools.mode.now(); export const step = () => template ? templateRules() : pageRules(items);',
+    'const template = tools.mode.now(); const rules = template ? templateRules() : pageRules(items); export const step = () => rules;',
+    'function page() { return pageRules(items); } function template() { return templateRules(); } function choose() { return tools.mode.now() ? template() : page(); }',
+    'function a() { b(); return pageRules(items); } function b() { return a(); } function choose() { tools.mode.now(); b(); }',
+    'function read(t = tools.mode.now()) { return t; } function choose() { return read() ? templateRules() : pageRules(items); }',
+    'function choose({ template } = tools.mode.now()) { return template ? templateRules() : pageRules(items); }',
   ]) flags(templateChoices, source, "template-choice");
   for (const source of [
-    'const read = tools.editModeTemplate; function choose(read) { read(); return templateRules(); }',
-    'const t = () => tools.editModeTemplate(); function choose() { const t = () => true; return t() ? templateRules() : pageRules(items); }',
-    'const { editModeTemplate: reading } = tools; function choose(reading) { reading(); return templateRules(); }',
-    'const template = tools.editModeTemplate(); export const step = () => pageRules(items);',
-    'export const read = () => tools.editModeTemplate(); const rules = pageRules(items);',
-    'import { pageRules } from "./moves"; const template = tools.editModeTemplate(); export function move() { return pageRules(items); }',
-    'export { templateRules } from "./moves"; export const template = tools.editModeTemplate();',
-    'function a() { b(); return pageRules(items); } function b() { return a(); } function c() { return d(); } function d() { return c(); } function choose() { tools.editModeTemplate(); d(); }',
+    'const read = tools.mode.now; function choose(read) { read(); return templateRules(); }',
+    'const t = () => tools.mode.now(); function choose() { const t = () => true; return t() ? templateRules() : pageRules(items); }',
+    'const { now: reading } = tools.mode; function choose(reading) { reading(); return templateRules(); }',
+    'const template = tools.mode.now(); export const step = () => pageRules(items);',
+    'export const read = () => tools.mode.now(); const rules = pageRules(items);',
+    'import { pageRules } from "./moves"; const template = tools.mode.now(); export function move() { return pageRules(items); }',
+    'export { templateRules } from "./moves"; export const template = tools.mode.now();',
+    'function a() { b(); return pageRules(items); } function b() { return a(); } function c() { return d(); } function d() { return c(); } function choose() { tools.mode.now(); d(); }',
   ]) assert.deepEqual(templateChoices(source, FAKE), [], source);
 });
 

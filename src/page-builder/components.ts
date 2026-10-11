@@ -1962,30 +1962,10 @@ export function createComponentTools(deps: ComponentDeps) {
     menuItems,
     slotMenu,
     identity,
-    /**
-     * Edit component mode's template while it is the file open (the rail
-     * builds in it): its tag and path, the page it is framed on, and the
-     * opening (`entry`, the same object until the template is opened again).
-     */
-    editModeTemplate() {
-      const moded = mode.now();
-      return moded && { tag: moded.tag, path: moded.template, page: moded.page, entry: moded.entry };
-    },
-    /**
-     * The mode's opening as the guarded edit's stamps hold it (src/editor-workspace.ts): the entry
-     * while the mode is on over its template, the file open. Not proved here (a stamp proves the rest).
-     */
-    editModeEntry: () => mode.entry(),
-    /** Only explicit template entry permits shared-template editing from a page preview. */
-    editingScope() {
-      const path = mode.opened();
-      return path === undefined ? undefined : { path };
-    },
     /** Map a reported shadow child to its verified real page instance; never guess selectors. */
     instanceSelection(selection: NativePreviewSelection): NativePreviewSelection | undefined {
       const host = selection.host;
       if (!host) return selection;
-      if (mode.opened()) return selection;
       if (!host.path || !host.node || deps.previewPage() !== host.path) return;
       const at = instanceAt(host.path, host.node);
       if (!at || at.tag !== host.tag || templateOf(at.tag)?.path !== selection.path) return;
@@ -1994,12 +1974,11 @@ export function createComponentTools(deps: ComponentDeps) {
     structure,
     textRow,
     templateRows,
-    /** The root of the template currently edited cannot move, duplicate or be removed. */
-    isTemplateRoot(selection: NativePreviewSelection): boolean {
-      const moded = mode.now();
-      const source = moded && deps.sources()[moded.template];
+    /** Whether `selection` is `template`'s root (the template edited's root cannot move, duplicate or be removed). */
+    isTemplateRoot(selection: NativePreviewSelection, template: string): boolean {
+      const source = deps.sources()[template];
       const root = source === undefined ? undefined : templateRoot(source);
-      return Boolean(moded && selection.path === moded.template && root && selection.node?.join() === root.join());
+      return Boolean(selection.path === template && root && selection.node?.join() === root.join());
     },
     /** Template removals share the slot-change transaction, including every file read. */
     removeControl(selection: NativePreviewSelection, kind: string): EditBarControl[] {

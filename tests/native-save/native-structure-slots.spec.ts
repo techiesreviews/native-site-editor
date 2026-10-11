@@ -48,7 +48,7 @@ test('link and image detail fields use exact instance sources and ordinary selec
 });
 test('field sessions reject scope and template changes, and shadow selections require true host proof',async({page})=>{
  await harness(page);
- const result=await page.evaluate(()=>{const state=(window as any).slotHarness,tools=state.tools;const field=tools.structure('index.html',[0]).openField('title','text');state.template+='<!-- new -->';const changedTemplate=field.write('Wrong');const replacement=tools.structure('index.html',[0]).openField('title','text');state.model++;const changedModel=replacement.write('Wrong');const second=tools.structure('index.html',[0]).openField('title','text');state.revision='B';const changedScope=second.write('Wrong');const shadow={path:'components/project-card.html',node:[0,0],tag:'h2',text:'',reason:'click',selectors:[],host:{path:'index.html',node:[0],tag:'project-card',selector:'project-card'}};return {changedTemplate,changedScope,changedModel,valid:tools.instanceSelection(shadow),invalid:tools.instanceSelection({...shadow,host:{...shadow.host,node:[9]}}),scope:tools.editingScope(),closed:state.closed,source:state.source};});
+ const result=await page.evaluate(()=>{const state=(window as any).slotHarness,tools=state.tools;const field=tools.structure('index.html',[0]).openField('title','text');state.template+='<!-- new -->';const changedTemplate=field.write('Wrong');const replacement=tools.structure('index.html',[0]).openField('title','text');state.model++;const changedModel=replacement.write('Wrong');const second=tools.structure('index.html',[0]).openField('title','text');state.revision='B';const changedScope=second.write('Wrong');const shadow={path:'components/project-card.html',node:[0,0],tag:'h2',text:'',reason:'click',selectors:[],host:{path:'index.html',node:[0],tag:'project-card',selector:'project-card'}};return {changedTemplate,changedScope,changedModel,valid:tools.instanceSelection(shadow),invalid:tools.instanceSelection({...shadow,host:{...shadow.host,node:[9]}}),scope:tools.mode.opened(),closed:state.closed,source:state.source};});
  expect(result.closed).toBe(0);expect(result.changedTemplate).toBe(false);expect(result.changedScope).toBe(false);expect(result.changedModel).toBe(false);expect(result.source).toContain('Original');expect(result.valid.path).toBe('index.html');expect(result.valid.node).toEqual([0]);expect(result.invalid).toBeUndefined();expect(result.scope).toBeUndefined();
 });
 
@@ -61,8 +61,8 @@ test('optional visibility and root actions remain explicit and keyboard reachabl
  await page.getByRole('treeitem',{name:/^Project card/}).click();expect(await page.evaluate(()=>(window as any).slotHarness.opened)).toEqual([]);
  const edit=page.getByRole('button',{name:'Edit component',exact:true});await edit.focus();await expect(edit).toHaveCSS('opacity','1');await page.keyboard.press('Enter');
  await expect.poll(()=>page.evaluate(()=>(window as any).slotHarness.opened)).toEqual(['components/project-card.html']);
- expect(await page.evaluate(()=>(window as any).slotHarness.tools.editingScope())).toEqual({path:'components/project-card.html'});
- await page.evaluate(()=>{(window as any).slotHarness.revision='next';});expect(await page.evaluate(()=>(window as any).slotHarness.tools.editingScope())).toBeUndefined();
+ expect(await page.evaluate(()=>(window as any).slotHarness.tools.mode.opened())).toEqual('components/project-card.html');
+ await page.evaluate(()=>{(window as any).slotHarness.revision='next';});expect(await page.evaluate(()=>(window as any).slotHarness.tools.mode.opened())).toBeUndefined();
 });
 
 test('slot URL writes reject executable protocols without double decoding literal attribute input',async({page})=>{
