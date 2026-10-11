@@ -2,7 +2,7 @@
 title: Prototype the media manager's look
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + Codex (prototype)
 blocked_by: [01-research-mobbin-patterns, 04-research-media-code-today]
 ---
 
