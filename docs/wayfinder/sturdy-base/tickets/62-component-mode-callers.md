@@ -1,7 +1,7 @@
 ---
 title: "Callers ask the Edit component mode module; the mode ends when its page or its instance goes"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [61-component-mode-components, 33-block-move-mcp-and-dead-card-moves, 34-block-move-guard-test]
 builder: sol
@@ -23,3 +23,9 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/edit-component-
 - `page-structure-controller.test.ts` and `block-move.test.ts` template cases green with `now()`-shaped fakes; slice 34's guard green with a fixture for the new name.
 - New browser specs: M1 (Ctrl+click a link inside the framed template: the bar leaves; a rail drag and a canvas press drag on the new page work); M3 (Undo past the mode's first step moves the instance: the mode ends).
 - `native-edit-component*`, `native-block-move`, `native-block-drag`, `native-structure-drag`, `native-move-keys` green; `npm run check`, `npm test`, full `native-save` suite and the `@actual` group green; budget delta reported.
+
+## Done (2026-10-11)
+
+- main.ts and page-structure-controller.ts read `componentTools.mode` (`now()`, `entry()`, `opened()`); `editModeTemplate()`, `editModeEntry()`, `editingScope()` and the mode tests of `instanceSelection`/`isTemplateRoot` are gone (`isTemplateRoot(selection, template)` is a pure root check). Block move's `editing` port is `Pick<Mode, "template" | "tag">`. Slice 34's guard reads `mode.now()` by receiver (aliases of `tools.mode` included; `Date.now()` is not a reader).
+- M1: `onRouteShown` calls `mode.sync()`. M3: an Undo/Redo of an unmounted file (the page, while the template is open) calls `componentTools.refresh()`, so `sync()` ends a mode whose instance moved.
+- Commits: "Callers ask the Edit component mode module; …" (Sol) and "Block move guard: a same-file alias …" (Sol's review). Tests: page-structure-controller template-row case on a `now()`-shaped port, guard fixtures for the new name; spec `native-edit-component-leave-actual` (M1 Ctrl+click then rail and canvas drags; M3 Undo past the mode's first step). `npm test` 2012 passed; full `native-save` 888 passed, 59 skipped (group-tagged); smoke 42; `@actual` 57. Budget: entry -172 B raw (-71 B gzip).
