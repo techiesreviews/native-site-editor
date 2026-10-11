@@ -237,7 +237,7 @@ for (const late of [true, false]) {
   });
 }
 
-test("settle matrix: mounts after the deadline: failed at it; the late mount opens the code only", async (t) => {
+test("settle matrix: mounts after the deadline: failed at it; the late mount writes nothing", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const s = setup(), hold = s.m.holdOpen();
   let mounted = 0;
@@ -250,10 +250,15 @@ test("settle matrix: mounts after the deadline: failed at it; the late mount ope
   assert.equal(s.mode.opened(), undefined);
   hold.release();
   await flush();
-  assert.equal(mounted, 1);
-  assert.equal(s.mode.opened(), CARD_PATH);
+  // The code pane shows the template (the host mounted it), but this entry gave up: no opening, no `mounted`.
+  assert.equal(s.m.openFile(), CARD_PATH);
+  assert.equal(mounted, 0);
+  assert.equal(s.mode.opened(), undefined);
+  assert.equal(s.mode.entry(), undefined);
   assert.equal(s.mode.now(), undefined);
   assert.deepEqual(s.frames, []);
+  assert.equal(s.counts.changed, 0);
+  assert.deepEqual(s.live(), []);
 });
 
 test("settle matrix: a late mount after a later entry sets nothing", async (t) => {

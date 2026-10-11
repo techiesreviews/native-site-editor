@@ -8,6 +8,8 @@ import { createGuardedEdits, type Reads } from "../src/guarded-edit";
 import { componentRenameStep, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type PreparedComponentLoader } from "../src/page-builder/component-plans";
 import * as rename from "../src/page-builder/component-rename";
 import { makeComponentPlan, slotChipState, type MakeComponentPlan } from "../src/page-builder/component-model";
+import { createComponentMode, type ComponentMode } from "../src/page-builder/component-mode";
+import { readSource } from "../src/page-builder/source-tree";
 import * as carry from "../src/page-builder/component-css";
 import { elementEnd, startTags } from "../shared/html-source";
 import type { SlotChipReport } from "../src/page-builder/edit-component-mode";
@@ -110,13 +112,33 @@ test("a rename typed as the same name is no step", async () => {
   assert.deepEqual(m.steps(), []);
 });
 
+/** The workspace's Edit component mode entry fed by the mode module (component-mode.ts's `entry()`), on the card at [0, 0]. */
+async function moded() {
+  let mode!: ComponentMode;
+  const m = createMemoryWorkspace({
+    branch: { "index.html": PAGE, [TEMPLATE_PATH]: TEMPLATE, "components/site-card/site-card.css": CSS, [EMPTY_PATH]: "" },
+    open: "index.html", mounted: [TEMPLATE_PATH], site, editModeEntry: () => mode.entry(),
+  });
+  const edits = createGuardedEdits(m.workspace);
+  mode = createComponentMode({
+    edits,
+    shown: () => { const route = m.workspace.route(); return { open: m.openFile(), page: route === undefined ? undefined : site.routes[route as "/"] }; },
+    open: async (path) => { await m.workspace.open(path); return m.openFile() === path; },
+    share: () => () => {}, frame: () => {}, changed: () => {},
+    read: (source) => readSource(source, { page: true }),
+  });
+  const enter = async () => assert.deepEqual(await mode.enter({ tag: "site-card", template: TEMPLATE_PATH, instance: { path: "index.html", node: [0, 0] } }), { status: "mode" });
+  await enter();
+  return { m, edits, mode, enter };
+}
+
 test("leaving and entering Edit component mode again during an await refuses the step", async () => {
   // Before the plan (rename's lazy load, held by the stamp taken as it began) …
   {
-    const { m, edits } = setup();
+    const { m, edits, mode, enter } = await moded();
     const stamp = edits.stamp(), loaded = deferred();
     const waiting = loaded.promise.then(() => edits.run(renameBody, { since: stamp, anchor: TEMPLATE_PATH }));
-    m.leaveEditMode(); m.enterEditMode();
+    mode.leave(); await enter();
     loaded.resolve();
     const outcome = await waiting;
     assert.equal(!outcome.ok && outcome.reason === "stale" && outcome.changed, "edit-mode");
@@ -125,15 +147,23 @@ test("leaving and entering Edit component mode again during an await refuses the
   }
   // … and inside it.
   {
-    const { m, edits } = setup();
+    const { m, edits, mode, enter } = await moded();
     const gate = deferred();
     const pending = edits.run(async r => { const plan = renameBody(r); await gate.promise; return plan; }, { anchor: TEMPLATE_PATH });
     await Promise.resolve();
-    m.leaveEditMode(); m.enterEditMode();
+    mode.leave(); await enter();
     gate.resolve();
     const outcome = await pending;
     assert.equal(!outcome.ok && outcome.reason === "stale" && outcome.changed, "edit-mode");
     assert.deepEqual(m.steps(), []);
+  }
+  // The same mode throughout: the step is written.
+  {
+    const { m, edits } = await moded();
+    const stamp = edits.stamp();
+    const outcome = await edits.run(renameBody, { since: stamp, anchor: TEMPLATE_PATH });
+    assert.deepEqual(outcome, { ok: true, status: "applied" });
+    assert.deepEqual(m.steps(), ["operation"]);
   }
 });
 

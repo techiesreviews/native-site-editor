@@ -83,7 +83,8 @@ export interface ComponentMode {
    * Opens `template` in the code pane and, with an `instance` on the page shown, frames it once
    * `ready` settles. A later enter supersedes this one; the entry's history share is released
    * unless the mode starts; past ENTER_DEADLINE from the call it gives up ("failed" with an
-   * EnterTimeout) and nothing late starts the mode. "opened": no instance, the code pane only.
+   * EnterTimeout) and nothing late is written (a late mount sets no opening and runs no `mounted`).
+   * "opened": no instance, the code pane only.
    */
   enter(request: { tag: string; template: string; instance?: { path: string; node: readonly number[] };
     notes?: readonly string[]; ready?: Promise<unknown> },
@@ -132,6 +133,12 @@ export class EnterTimeout extends Error {
   }
 }
 
+/** The repository, branch and version view are still the stamp's; the page shown and the mode's entry may have moved. */
+export function scopeHolds(stamp: Stamp) {
+  const changed = stamp.changed();
+  return changed === undefined || changed === "route" || changed === "edit-mode";
+}
+
 /** Reopening a tag already in the chain returns to it instead of recursing. */
 export function drillChain(chain: readonly Level[], step: Level): Level[] {
   const index = chain.findIndex((level) => level.tag === step.tag);
@@ -170,29 +177,24 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   const read = (source: string) => ports.read ? ports.read(source) : readPage(source);
   let state: (Mode & { entry: Opening }) | undefined;
   let opening: Opening | undefined;
-  // The newest enter: only it may start the mode or set a late opening.
+  // The newest enter: only it may start the mode.
   let latest: Entry | undefined;
   // Transitions in flight (enter, open, rename): `sync` waits for them.
   let busy = 0;
   let destroyed = false;
   // Shares of the page's history: the mode's (its entry's, promoted), each nested level's (level 1 first).
-  let modeShare: (() => void) | undefined;
-  const levelShares: (() => void)[] = [];
+  let ownShare: (() => void) | undefined;
+  const nestedShares: (() => void)[] = [];
   // A level's share taken before its open settles (destroy releases it at once).
   const pending = new Set<() => void>();
   // Renames made in the mode, followed across their Undo and Redo; each holds the renamed template's share.
   const renames: { from: { tag: string; template: string }; to: { tag: string; template: string }; notes: readonly string[]; release: () => void }[] = [];
   // Slots made fixed in the mode: the name each had, by the template's source and the part.
-  const keptNames = new Map<string, string>();
+  const fixedNames = new Map<string, string>();
   const keptKey = (source: string, node: readonly number[]) => JSON.stringify([source, node]);
   // The instance check of the last page source read (M3).
   let placed: { source: string; key: string; at: boolean } | undefined;
 
-  /** The repository, branch and version view are still the stamp's; the page shown and the mode's entry may have moved. */
-  const scopeHolds = (stamp: Stamp) => {
-    const changed = stamp.changed();
-    return changed === undefined || changed === "route" || changed === "edit-mode";
-  };
 
   /** A `tag` element is still at `node` of the page's bytes. */
   function framed(page: string, node: readonly number[], tag: string) {
@@ -238,11 +240,11 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     if (!was) return undefined;
     state = undefined;
     placed = undefined;
-    for (const release of levelShares.splice(0)) release();
-    modeShare?.();
-    modeShare = undefined;
+    for (const release of nestedShares.splice(0)) release();
+    ownShare?.();
+    ownShare = undefined;
     for (const each of renames.splice(0)) each.release();
-    keptNames.clear();
+    fixedNames.clear();
     ports.frame(undefined);
     if (tell) ports.changed();
     return { page: was.page, node: [...was.node], tag: was.chain[0].tag, template: was.chain[0].template };
@@ -272,25 +274,18 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     const timeout = { status: "failed", error: new EnterTimeout() } as const;
     // Still the latest entry, under the same repository, over the template as read.
     const holds = () => !destroyed && latest === me && scopeHolds(stamp) && ports.shown().open === template && peek.source(template) === templateSource;
-    const mount = () => {
-      const mine = opening = Object.freeze({ template, stamp });
-      hooks.mounted?.();
-      return mine;
-    };
     busy++;
     try {
       // The template's edits are undo steps of the framed page from this opening on.
       if (instance) me.share = once(ports.share(template, instance.path));
       const opens = ports.open(template).then((ok): Wait => ({ kind: ok ? "mounted" : "refused" }), (error: unknown): Wait => ({ kind: "error", error }));
       const first = await Promise.race([opens, deadline, cancelled]);
-      if (first.kind === "timeout") {
-        // A late mount opens the template's code only (no frame), and only for the latest entry.
-        void opens.then((late) => { if (late.kind === "mounted" && holds()) mount(); });
-        return timeout;
-      }
+      // A mount after the deadline writes nothing (no opening, no `mounted`): the entry gave up.
+      if (first.kind === "timeout") return timeout;
       if (first.kind === "error") return { status: "failed", error: first.error };
       if (first.kind !== "mounted" || !holds()) return { status: "stale" };
-      const mine = mount();
+      const mine = opening = Object.freeze({ template, stamp });
+      hooks.mounted?.();
       if (!instance) return { status: "opened" };
       const second = await Promise.race([loaded, deadline, cancelled]);
       if (second.kind === "timeout") return timeout;
@@ -298,9 +293,9 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
       if (second.kind !== "ready" || !holds() || opening !== mine
         || ports.shown().page !== instance.path || peek.source(instance.path) !== pageSource) return { status: "stale" };
       // A mode already on gives way: its level and mode shares go (renames and kept names stay until leave).
-      for (const release of levelShares.splice(0)) release();
-      modeShare?.();
-      modeShare = me.share;
+      for (const release of nestedShares.splice(0)) release();
+      ownShare?.();
+      ownShare = me.share;
       me.share = undefined;
       state = make(instance.path, instance.node, [{ tag, template, node: instance.node }], request.notes ?? [], mine);
       ports.frame(message(state));
@@ -333,8 +328,8 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
       if (destroyed || !state || state.entry !== before || opening !== before || !scopeHolds(stamp)
         || ports.shown().open !== target.template || ports.shown().page !== mode.page
         || paths.some((path, index) => peek.source(path) !== sources[index])) return false;
-      if (share) { pending.delete(share); levelShares.push(share); share = undefined; }
-      else for (const release of levelShares.splice(next.length - 1)) release();
+      if (share) { pending.delete(share); nestedShares.push(share); share = undefined; }
+      else for (const release of nestedShares.splice(next.length - 1)) release();
       opening = Object.freeze({ template: target.template, stamp });
       state = make(mode.page, mode.node, next, state.notes, opening);
       ports.frame(message(state));
@@ -397,8 +392,8 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     enter,
     open,
     rename,
-    keep(source, node, name) { if (state) keptNames.set(keptKey(source, node), name); },
-    kept: (source, node) => keptNames.get(keptKey(source, node)),
+    keep(source, node, name) { if (state) fixedNames.set(keptKey(source, node), name); },
+    kept: (source, node) => fixedNames.get(keptKey(source, node)),
     dismissNotes() {
       const mode = state;
       if (!mode?.notes.length) return;

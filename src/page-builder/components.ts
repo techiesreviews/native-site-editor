@@ -1,5 +1,6 @@
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
+import { createComponentMode, EnterTimeout, scopeHolds, type Level } from "./component-mode";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
 // Components, first class (docs/page-builder/components.md): what the page
@@ -444,7 +445,7 @@ export function createComponentTools(deps: ComponentDeps) {
       };
     };
     if (isComponent(selection.tag)) out.component = { tag: selection.tag, onEdit: guardedEdit(selection.tag),
-      open: selection.path === editMode?.active()?.templatePath };
+      open: selection.path === mode.now()?.template };
     // The instance around the selection: in the same file, else (for an
     // element of a template) the instance on the page it renders in.
     const at = locate(selection, true);
@@ -466,9 +467,9 @@ export function createComponentTools(deps: ComponentDeps) {
       };
     }
     // In Edit component mode, a part of the template edited: its slot chip after its name.
-    const moded = editMode?.active();
-    const chip = moded && selection.path === moded.templatePath && selection.node?.length ? templateChip(selection.node) : undefined;
-    if (chip) out.chip = editMode!.chip(selection.node!, chip);
+    const moded = mode.now();
+    const chip = moded && selection.path === moded.template && selection.node?.length ? templateChip(selection.node) : undefined;
+    if (chip && editMode) out.chip = editMode.chip(moded!.template, selection.node!, chip);
     return out;
   }
 
@@ -488,7 +489,7 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   function makeComponentOfferedFor(target: ElementMenuTarget): boolean {
-    if (editMode?.active() || isComponent(target.tag) || target.host || !target.node?.length || tagOfFile(target.path) || locate(target)) return false;
+    if (mode.now() || isComponent(target.tag) || target.host || !target.node?.length || tagOfFile(target.path) || locate(target)) return false;
     const source = deps.sources()[target.path];
     const chain = source === undefined ? undefined : elementChain(source, target.node);
     return Boolean(chain && makeComponentOffered(chain.map(element => element.localName)));
@@ -507,14 +508,14 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   function slotMenu(target: ElementMenuTarget): MenuItem[] {
-    const mode = editMode?.active();
+    const moded = mode.now();
     const source = deps.sources()[target.path], stamp = deps.edits.stamp();
     // The node path must have been read against the template's current bytes.
-    if (!mode || target.path !== mode.templatePath || !target.node?.length || source === undefined || target.paintedSource !== source) return [];
+    if (!moded || target.path !== moded.template || !target.node?.length || source === undefined || target.paintedSource !== source) return [];
     const state = templateChip(target.node);
     return slotMenuItems(state).map(label => ({ label, run: () => {
       // The mode's opening, the repository and the page shown are the menu's (the stamp), and so are the template's bytes.
-      if (editMode?.active()?.templatePath !== mode.templatePath || !stamp.holds() || deps.sources()[target.path] !== source) {
+      if (mode.now()?.template !== moded.template || !stamp.holds() || deps.sources()[target.path] !== source) {
         deps.announce("The template changed meanwhile; select the part again.");
         return;
       }
@@ -597,148 +598,110 @@ export function createComponentTools(deps: ComponentDeps) {
   // ---- Edit component. ----
 
   /**
-   * Opens `tag`'s template in the code pane; root entry selects its root.
-   * Legacy explicit slot entry selects its part matching
-   * `slot` (the element holding that slot, its `<slot>` marked in the code)
-   * in the instance on show, else the template's first element. Resolves to
-   * whether Edit component mode opened (with `notes` in its bar).
+   * Edit component mode (component-mode.ts): the opening the guarded edit's stamps hold, the
+   * framed instance and its chain, the history shares, renames followed and kept slot names.
+   * Everything here asks it whether the mode is on (`now()`); the bar's view draws it.
    */
-  // Edit component's opening of a template (the Edit component mode entry the guarded edit's
-  // stamps hold): it stands while its own stamp holds, all but the entry key, which it is itself.
-  let explicitTemplate: { path: string; stamp: Stamp } | undefined;
-  let modeOpening = false;
-  /**
-   * The repository, branch and version view are still the stamp's: the page shown may have moved (opening a
-   * template can show a page that uses it) and so may the mode's entry. The mode itself ends with its page (renderBar).
-   */
-  const scopeHolds = (stamp: Stamp) => [undefined, "route", "edit-mode"].includes(stamp.changed() as string);
-  const standing = (entry: typeof explicitTemplate): entry is NonNullable<typeof explicitTemplate> => Boolean(entry && scopeHolds(entry.stamp));
-  /** Opens `path` as the template edited: a new entry, with a new stamp or the one it `kept` (a rename moved it). */
-  const enter = (path: string, kept?: Stamp) => (explicitTemplate = { path, stamp: kept ?? deps.edits.stamp() });
+  const mode = createComponentMode({
+    edits: deps.edits,
+    shown: () => ({ open: deps.currentPath(), page: deps.previewPage() }),
+    open: (path) => deps.openFile(path),
+    // The template's edits are undo steps of the page it is framed on (main.ts's shareHistory).
+    share: (path, page) => deps.shareHistory?.(path, page) ?? (() => {}),
+    frame: (frame) => deps.preview()?.editComponent?.(frame),
+    // The bar's view draws what the mode says when it changes; through a transition (a level
+    // opening, a rename moving the template) it keeps the mode it last drew.
+    changed: () => { editMode?.draw(mode.now()); barKey = ""; renderBar(); deps.refreshBar(); deps.refreshStructure?.(); },
+  });
 
   /**
    * Opens the template of a nested instance in the mode (`step`), or goes back to the chain's
    * level `index`, on the same framed page instance. Resolves to whether it did.
    */
-  async function navigateMode(index: number | undefined, step?: { tag: string; templatePath: string; node: readonly number[] }): Promise<boolean> {
-    const mode = editMode;
-    const before = mode?.active();
-    if (!mode || !before || modeOpening) return false;
-    const level = index === undefined ? step : before.chain[index];
-    if (!level) return false;
-    const template = templateOf(level.tag);
-    if (!template || template.path !== level.templatePath) return false;
-    const stamp = deps.edits.stamp(), editor = deps.editor();
-    const sources = before.chain.map((entry) => [entry.templatePath, deps.sources()[entry.templatePath]] as const);
-    const pageSource = deps.sources()[before.path];
-    const proof = JSON.stringify(before);
-    const fromPath = deps.currentPath();
-    // A nested template's edits are undo steps of the framed page too (shared before it opens, as the mode's first).
-    const release = index === undefined ? deps.shareHistory?.(template.path, before.path) : undefined;
-    let done = false;
-    modeOpening = true;
-    try {
-      if (fromPath !== before.templatePath || !(await deps.openFile(template.path))) return false;
-      if (!scopeHolds(stamp) || deps.editor() !== editor || deps.currentPath() !== template.path
-        || deps.previewPage() !== before.path || deps.sources()[before.path] !== pageSource
-        || deps.sources()[template.path] !== template.source || JSON.stringify(mode.active()) !== proof
-        || sources.some(([path, source]) => deps.sources()[path] !== source)) return false;
-      enter(template.path);
-      if (index === undefined && step) { mode.drill(step); if (release) levelShares.push(release); }
-      else if (index !== undefined) { mode.back(index); letGoLevels(index); }
-      done = true;
-      deps.editor()?.focusEditor?.(template.path);
+  async function navigateMode(index: number | undefined, step?: Level): Promise<boolean> {
+    const before = mode.now();
+    const level = index === undefined ? step : before?.chain[index];
+    if (!before || !level) return false;
+    const done = await mode.open(index === undefined ? { step: level } : { back: index });
+    if (done) {
+      deps.editor()?.focusEditor?.(level.template);
       // Back selects the instance we opened from, ready to offer Open again.
-      deps.preview()?.selectNode({ path: template.path, node: index === undefined ? [0] : [...(before.chain[index + 1]?.node ?? [0])] });
+      deps.preview()?.selectNode({ path: level.template, node: index === undefined ? [0] : [...(before.chain[index + 1]?.node ?? [0])] });
       deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`);
-      return true;
-    } finally {
-      if (!done) release?.();
-      modeOpening = false;
-      barKey = "";
-      renderBar();
-      deps.refreshBar();
     }
+    barKey = "";
+    renderBar();
+    deps.refreshBar();
+    return done;
   }
 
+  /**
+   * Opens `tag`'s template in the code pane; root entry selects its root.
+   * Legacy explicit slot entry selects its part matching
+   * `slot` (the element holding that slot, its `<slot>` marked in the code)
+   * in the instance on show, else the template's first element. With an
+   * instance on the page shown, Edit component mode frames it (`notes` in its
+   * bar). Resolves to whether the mode opened.
+   */
   async function editComponent(tag: string, slot?: string, instance?: { path: string; node: readonly number[] }, notes: readonly string[] = []): Promise<boolean> {
     const template = templateOf(tag);
     if (!template) return false;
     const from = deps.selection();
-    const moded = editMode?.active();
+    const moded = mode.now();
     const nested = instance ?? (from?.tag === tag && from.node ? { path: from.path, node: from.node } : undefined);
-    if (moded && nested?.path === moded.templatePath) {
+    if (moded && nested?.path === moded.template) {
       const source = deps.sources()[nested.path];
       if (source === undefined || locateNativeElementRange(source, [...nested.node])?.tag.name !== tag) return false;
       const index = moded.chain.findIndex((level) => level.tag === tag);
-      return navigateMode(index < 0 ? undefined : index, { tag, templatePath: template.path, node: nested.node });
+      return navigateMode(index < 0 ? undefined : index, { tag, template: template.path, node: nested.node });
     }
-    const openingStamp = deps.edits.stamp();
     // Edit component mode frames the instance it was chosen on, on the page shown; it loads while the template opens.
     const framed = instance ?? instanceOf(from, tag);
-    const framedSource = framed && deps.sources()[framed.path];
-    // A failed load is told only while this entry still stands (below), never after it was left.
-    const modeLoad = framed && loadEditMode().then((mode) => ({ mode }), (error: unknown) => ({ error }));
-    // The mode's edits of the template are undo steps of the framed page (from this opening); an entry that never starts the mode lets go.
-    const entry = latestEntry = {};
-    const release = framed ? deps.shareHistory?.(template.path, framed.path) : undefined;
-    const share: EntryShare | undefined = release && { release };
-    if (share) { letGo(entryShare); entryShare = share; }
-    if (!(await deps.openFile(template.path))
-      || !scopeHolds(openingStamp) || deps.currentPath() !== template.path || deps.sources()[template.path] !== template.source) { letGo(share); return false; }
-    const opened = enter(template.path);
-    if (share) share.opened = opened;
-    // The template's code takes the caret straight away: typing edits it at once.
-    deps.editor()?.focusEditor?.(template.path);
-    const source = deps.sources()[template.path] ?? template.source;
-    const target = templateSlots(source).find((entry) => entry.name === slot);
-    // The element that shows the slot: its nearest ancestor that is not a slot.
-    let element = target?.element.parent;
-    while (element?.name === "slot") element = element.parent;
-    // A slot shows no box of its own: a template that is one slot (`<slot><p>…</p></slot>`)
-    // has nothing to select in the preview, only its code to mark.
-    const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
-    const nodePath = element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0];
-    // Whether the mode opened (else the code pane shows the template alone).
-    const entered = framed && modeLoad ? modeLoad.then((loaded) => {
-      // Still this template, opened by this Edit component, over the same page source (the node still names the instance).
-      // A later Edit component (another instance) supersedes this one.
-      if (latestEntry !== entry || explicitTemplate !== opened || !standing(opened) || deps.currentPath() !== template.path
-        || deps.previewPage() !== framed.path || deps.sources()[framed.path] !== framedSource || deps.sources()[template.path] !== source) { letGo(share); return false; }
-      if (!("mode" in loaded)) { letGo(share); deps.error(loaded.error); return false; }
-      // A mode already on (another instance) gives way: its share goes, the frame is told only the new mode.
-      letGoLevels(0);
-      modeShare?.();
-      modeShare = undefined;
-      if (share && entryShare === share) { entryShare = undefined; modeShare = share.release; }
-      loaded.mode.enter({ path: framed.path, node: framed.node, tag, templatePath: template.path }, notes);
-      deps.refreshStructure?.();
-      renderBar();
+    let nodePath: number[] | undefined;
+    let reveal: Promise<void> | undefined;
+    const outcome = await mode.enter({ tag, template: template.path, instance: framed, notes, ready: framed && loadEditMode() }, { mounted: () => {
+      // The template's code takes the caret straight away: typing edits it at once.
+      deps.editor()?.focusEditor?.(template.path);
+      const source = deps.sources()[template.path] ?? template.source;
+      const target = templateSlots(source).find((entry) => entry.name === slot);
+      // The element that shows the slot: its nearest ancestor that is not a slot.
+      let element = target?.element.parent;
+      while (element?.name === "slot") element = element.parent;
+      // A slot shows no box of its own: a template that is one slot (`<slot><p>…</p></slot>`)
+      // has nothing to select in the preview, only its code to mark.
+      const rootIsSlot = /^\s*(?:<!--[\s\S]*?-->\s*)*<slot[\s>]/i.test(source);
+      nodePath = element ? elementPathAt(source, element.start) : rootIsSlot ? undefined : [0];
+      // A part of the framed instance chosen while the template opened (a click on a slow machine) stays selected.
+      const key = (value: NativePreviewSelection | undefined) => value && JSON.stringify([value.path, value.node, value.host?.path, value.host?.node]);
+      const opening = deps.selection();
+      const chosen = Boolean(framed) && key(opening) !== key(from) && nativeComponentFrameSelected(opening, framed!, template.path);
+      if (nodePath && !chosen) deps.preview()?.selectNode({ path: template.path, node: nodePath });
+      else if (!nodePath && target && deps.currentPath() === template.path) {
+        deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
+        return;
+      }
+      deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`);
+      if (!target) return;
+      // Once the preview has selected the part (and marked its tag), the slot's own tag is selected.
+      reveal = (async () => {
+        for (let waited = 0; waited < 2000; waited += 50) {
+          await new Promise((done) => setTimeout(done, 50));
+          const now = deps.selection();
+          if (now !== from && now?.path === template.path) break;
+        }
+        if (deps.currentPath() === template.path) deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
+      })();
+    } });
+    if (outcome.status === "mode") {
       // Keep any part selected in this instance while the mode was loading.
-      const now = deps.selection();
-      const inFrame = nativeComponentFrameSelected(now, framed, template.path);
-      if (nodePath && !inFrame) deps.preview()?.selectNode({ path: template.path, node: nodePath });
-      return true;
-    }) : Promise.resolve(false);
-    // A part of the framed instance chosen while the template opened (a click on a slow machine) stays selected.
-    const key = (value: NativePreviewSelection | undefined) => value && JSON.stringify([value.path, value.node, value.host?.path, value.host?.node]);
-    const opening = deps.selection();
-    const chosen = Boolean(framed) && key(opening) !== key(from) && nativeComponentFrameSelected(opening, framed!, template.path);
-    if (nodePath && !chosen) deps.preview()?.selectNode({ path: template.path, node: nodePath });
-    else if (!nodePath && target && deps.currentPath() === template.path) {
-      deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
-      return entered;
+      if (nodePath && !nativeComponentFrameSelected(deps.selection(), framed!, template.path)) deps.preview()?.selectNode({ path: template.path, node: nodePath });
+    } else if (outcome.status === "failed" && mode.opened() === template.path) {
+      // Told only while this entry's opening stands: the template's code is open without the frame.
+      if (outcome.error instanceof EnterTimeout) deps.announce(`${outcome.error.message} The template's code is open.`);
+      else deps.error(outcome.error);
     }
-    deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`);
-    if (!target) return entered;
-    // Once the preview has selected the part (and marked its tag), the slot's own tag is selected.
-    for (let waited = 0; waited < 2000; waited += 50) {
-      await new Promise((done) => setTimeout(done, 50));
-      const now = deps.selection();
-      if (now !== from && now?.path === template.path) break;
-    }
-    if (deps.currentPath() === template.path) deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
-    return entered;
+    await reveal;
+    return outcome.status === "mode";
   }
 
   /** The instance on the page shown that a selection is, or is in (as its template's part), when it is a `tag`. */
@@ -756,19 +719,16 @@ export function createComponentTools(deps: ComponentDeps) {
   let editModeLoad: Promise<EditComponentMode> | undefined;
   let chipEvent: string | undefined;
   let destroyed = false;
-  // Slots made fixed in this mode: the chip offers the name each had while the template reads
-  // as that change left it (Undo and Redo bring it back too). Keyed by template, source and part.
-  const keptNames = new Map<string, string>();
-  const keptKey = (template: string, source: string, node: readonly number[]) => JSON.stringify([template, source, node]);
   // The template Structure last drew in the mode (refresh draws it again only when it changed).
   let modeStructureKey = "";
   /** One state rule for the label and Structure, including names retained while fixed. */
   function templateChip(at: readonly number[]) {
-    const mode = editMode?.active();
-    const source = mode && deps.sources()[mode.templatePath];
-    if (!mode || source === undefined) return undefined;
+    const moded = mode.now();
+    const source = moded && deps.sources()[moded.template];
+    if (!moded || source === undefined) return undefined;
     const chip = slotChipState(source, at, tag => templateOf(tag)?.source);
-    const kept = chip?.state === "fixed" ? keptNames.get(keptKey(mode.templatePath, source, at)) : undefined;
+    // A slot made fixed in this mode offers the name it had (component-mode.ts keeps it).
+    const kept = chip?.state === "fixed" ? mode.kept(source, at) : undefined;
     return chip && kept ? { ...chip, name: kept } : chip;
   }
 
@@ -778,13 +738,14 @@ export function createComponentTools(deps: ComponentDeps) {
    * "Open ›" only on the level edited.
    */
   function templateRows(path: string, at: readonly number[]) {
-    const mode = editMode?.active();
-    if (!mode || mode.path !== path || mode.node.join() !== at.join()) return undefined;
-    const sources = mode.chain.map((level) => deps.sources()[level.templatePath]);
+    const moded = mode.now();
+    if (!moded || moded.page !== path || moded.node.join() !== at.join()) return undefined;
+    const chain = moded.chain;
+    const sources = chain.map((level) => deps.sources()[level.template]);
     if (sources.some((source) => source === undefined)) return undefined;
-    const last = mode.chain.length - 1;
+    const last = chain.length - 1;
     const levelRows = (k: number) => {
-      const templatePath = mode.chain[k].templatePath;
+      const templatePath = chain[k].template;
       const mark = (rows: TemplateStructureItem[]): TemplateStructureItem[] => rows.map((row) => ({ ...row, path: templatePath, paintedSource: sources[k],
         chips: k === last ? row.chips : [], opens: k === last && isComponent(row.tag) && Boolean(templateOf(row.tag)), children: mark(row.children) }));
       return mark(templateStructure(sources[k]!, tag => templateOf(tag)?.source));
@@ -793,24 +754,24 @@ export function createComponentTools(deps: ComponentDeps) {
     let level = items;
     for (let k = 1; k <= last; k++) {
       const find = (rows: TemplateStructureItem[]): TemplateStructureItem | undefined => {
-        for (const row of rows) { if (row.node.join() === mode.chain[k].node.join()) return row; const found = find(row.children); if (found) return found; }
+        for (const row of rows) { if (row.node.join() === chain[k].node.join()) return row; const found = find(row.children); if (found) return found; }
         return undefined;
       };
       const holder = find(level);
       if (!holder) break;
       holder.opens = false;
-      holder.opened = { path: mode.chain[k].templatePath, root: templateRoot(sources[k]!), current: k === last };
+      holder.opened = { path: chain[k].template, root: templateRoot(sources[k]!), current: k === last };
       holder.children = level = levelRows(k);
     }
-    return { path: mode.templatePath, root: templateRoot(sources[0]!), nested: last > 0, items, source: sources[last],
+    return { path: moded.template, root: templateRoot(sources[0]!), nested: last > 0, items, source: sources[last],
       badge: (node: readonly number[]) => {
         const state = templateChip(node);
-        return state && editMode?.badge(node, state);
+        return state && editMode?.badge(moded.template, node, state);
       },
       open: (node: readonly number[]) => {
-        const source = deps.sources()[mode.templatePath];
+        const source = deps.sources()[moded.template];
         const tag = source === undefined ? undefined : locateNativeElementRange(source, [...node])?.tag.name;
-        if (tag) void editComponent(tag, undefined, { path: mode.templatePath, node });
+        if (tag) void editComponent(tag, undefined, { path: moded.template, node });
       } };
   }
 
@@ -820,10 +781,8 @@ export function createComponentTools(deps: ComponentDeps) {
 
   function applyChip(event: Event) {
     const report = (event as CustomEvent<SlotChipReport>).detail;
-    const mode = editMode?.active();
     const refuseChip = (reason: string) => { event.preventDefault(); refuse(reason); };
-    if (!mode || report.template !== mode.templatePath || deps.currentPath() !== mode.templatePath
-      || !standing(explicitTemplate)) { refuseChip("Select a part in Edit component mode before changing its slot."); return; }
+    if (report.template !== mode.now()?.template) { refuseChip("Select a part in Edit component mode before changing its slot."); return; }
     // A rename refused is told now, so the chip shows its old name again.
     const peeked = slotChipPlan(deps.edits.peek, report);
     if ("refuse" in peeked) { refuseChip(peeked.refuse); return; }
@@ -834,13 +793,13 @@ export function createComponentTools(deps: ComponentDeps) {
       const plan = slotChipPlan(r, report);
       if (!("refuse" in plan)) planned = plan;
       return plan;
-    }, { since: stamp, anchor: report.template, guard: () => !event.defaultPrevented && editMode?.active()?.templatePath === report.template }).then((outcome) => {
+    }, { since: stamp, anchor: report.template, guard: () => !event.defaultPrevented && mode.now()?.template === report.template }).then((outcome) => {
       if (quiet(outcome)) return;
       if (!outcome.ok) { refuse(outcome.message); editMode?.resetChip(); }
       else if (outcome.message) refuse(outcome.message);
       else if (report.action === "toggle" && planned) {
         const { change, source, node } = planned;
-        if (change.kind === "made-fixed" && change.name) keptNames.set(keptKey(report.template, source, node), change.name);
+        if (change.kind === "made-fixed" && change.name) mode.keep(source, node, change.name);
         const now = deps.selection();
         if (now === selected || now?.path === report.template && JSON.stringify(now.node) === JSON.stringify(report.node)) {
           const preview = deps.preview(), target = { path: report.template, node };
@@ -858,42 +817,21 @@ export function createComponentTools(deps: ComponentDeps) {
       deps.refreshBar();
     });
   }
-  // Shares of the page's history (deps.shareHistory): the mode's, let go as it ends, and the
-  // latest entry's until it starts the mode, or its opening of the template is left first.
-  type EntryShare = { release: () => void; opened?: object };
-  let modeShare: (() => void) | undefined;
-  let entryShare: EntryShare | undefined;
-  // The latest Edit component entry: only it may start the mode. A share ends the template
-  // pane's binding only at its next opening (as the stylesheet pane keeps the page's journal).
-  let latestEntry: object | undefined;
-  function letGo(share: EntryShare | undefined) {
-    if (!share || entryShare !== share) return;
-    entryShare = undefined;
-    share.release();
-  }
-  // The page's history shared with each opened nested level's template (level 1 first).
-  const levelShares: (() => void)[] = [];
-  /** Lets go of the shares of the levels after the first `keep` nested ones. */
-  function letGoLevels(keep: number) {
-    for (const release of levelShares.splice(keep)) release();
-  }
-  // Renames made in the mode (build slice 76): the mode follows its template across each one's
-  // Undo and Redo. Each holds the renamed template's share of the page's history.
-  const modeRenames: { from: { tag: string; templatePath: string }; to: { tag: string; templatePath: string }; notes: string[]; release?: () => void }[] = [];
+  // A rename committed by the tag's blur, still writing: Done waits for it.
   let renaming: Promise<unknown> | undefined;
 
   /**
    * Renames the component the mode edits now to `name` (build slice 76): its folder and files move,
    * its instances on every page and in other templates and the tag selectors naming it in the site's
-   * stylesheets follow, as one operation and one undo step. Resolves to why it was refused.
+   * stylesheets follow, as one operation and one undo step; the mode follows the template
+   * (component-mode.ts). Resolves to why it was refused.
    */
   async function renameComponent(name: string): Promise<string | undefined> {
-    const mode = editMode?.active();
-    const entry = explicitTemplate;
-    if (!mode || !deps.files || deps.currentPath() !== mode.templatePath || !standing(entry))
-      return "Open the component in Edit component mode before renaming it.";
-    const stamp = deps.edits.stamp(), proof = JSON.stringify(mode);
-    const sameMode = () => JSON.stringify(editMode?.active()) === proof;
+    const moded = mode.now();
+    if (!moded || !deps.files) return "Open the component in Edit component mode before renaming it.";
+    const stamp = deps.edits.stamp();
+    // The same mode: its opening, its chain and its notes (a new object at each change).
+    const sameMode = () => mode.now() === moded;
     const changed = "The component or the repository changed meanwhile; it was not renamed.";
     let rename: typeof import("./component-rename");
     try {
@@ -908,68 +846,38 @@ export function createComponentTools(deps: ComponentDeps) {
     // The files are proven too: one added to the folder meanwhile would stay behind.
     const files = deps.files(), listed = [...files].sort().join("\n");
     const selected = deps.selection();
-    const part = selected?.path === mode.templatePath && selected.node ? [...selected.node] : [0];
+    const part = selected?.path === moded.template && selected.node ? [...selected.node] : [0];
     let planned: RenamePlanned | undefined;
+    let outcome: Outcome | undefined;
     // The template moves from under the mode: it stays on until told where it went.
-    modeOpening = true;
-    let outcome: Outcome;
-    try {
+    await mode.rename(async () => {
       outcome = await deps.edits.run(r => {
-        const plan = componentRenameStep(r, rename, { from: mode.tag, typed: name, files, part });
+        const plan = componentRenameStep(r, rename, { from: moded.tag, typed: name, files, part });
         if (!("refuse" in plan)) planned = plan;
         return plan;
-      }, { since: stamp, anchor: mode.templatePath, guard: () => sameMode() && [...deps.files!()].sort().join("\n") === listed });
-    } finally {
-      modeOpening = false;
-    }
+      }, { since: stamp, anchor: moded.template, guard: () => sameMode() && [...deps.files!()].sort().join("\n") === listed });
+      return outcome.ok && outcome.status === "applied" && planned ? { tag: planned.tag, template: planned.template, notes: planned.notes } : undefined;
+    });
+    if (!outcome) return changed;
     if (!outcome.ok) { barKey = ""; renderBar(); return outcome.reason === "stale" ? changed : outcome.message; }
     if (outcome.status !== "applied" || !planned) return undefined;
-    const { tag, template, notes } = planned;
-    // The mode's own entry moved with its template; the rest of the stamp still holds.
-    if (!scopeHolds(stamp) || deps.currentPath() !== template || !sameMode()) { barKey = ""; renderBar(); return undefined; }
-    enter(template, entry.stamp);
-    modeRenames.push({ from: { tag: mode.tag, templatePath: mode.templatePath }, to: { tag, templatePath: template }, notes, release: deps.shareHistory?.(template, mode.path) });
-    editMode!.retag(mode.templatePath, { tag, templatePath: template }, notes);
+    // The mode followed its template, unless something else moved meanwhile.
+    if (mode.now()?.template !== planned.template) { barKey = ""; renderBar(); return undefined; }
     // The part selected before stays selected in the renamed template.
-    const preview = deps.preview(), target = { path: template, node: part };
+    const preview = deps.preview(), target = { path: planned.template, node: part };
     preview?.selectAfterUpdate(target);
     preview?.flushPendingUpdate?.();
     preview?.selectNode(target);
     return outcome.message;
   }
 
-  /** The mode's template went elsewhere by a rename's Undo or Redo (the file now open): the mode follows it. */
-  function followRename() {
-    const mode = editMode?.active(), path = deps.currentPath();
-    if (!mode || !path || path === mode.templatePath || explicitTemplate?.path !== mode.templatePath || !standing(explicitTemplate)) return;
-    const pair = modeRenames.find((each) => each.from.templatePath === mode.templatePath && each.to.templatePath === path)
-      ?? modeRenames.find((each) => each.to.templatePath === mode.templatePath && each.from.templatePath === path);
-    if (!pair) return;
-    const back = pair.from.templatePath === path, level = back ? pair.from : pair.to;
-    if (site()?.components[level.tag] !== path) return;
-    enter(path, explicitTemplate.stamp);
-    editMode!.retag(mode.templatePath, level, back ? [] : pair.notes);
-  }
-
-  /** Ends the mode, if it is on; the instance it was on. */
-  function leaveMode() {
-    const was = editMode?.leave();
-    if (was) deps.refreshStructure?.();
-    for (const each of modeRenames.splice(0)) each.release?.();
-    keptNames.clear();
-    letGoLevels(0);
-    modeShare?.();
-    modeShare = undefined;
-    return was;
-  }
   const loadEditMode = () => editModeLoad ??= import("./edit-component-mode").then(({ createEditComponentMode, SLOT_CHIP_EVENT }) => {
     chipEvent = SLOT_CHIP_EVENT;
     if (!destroyed) window.addEventListener(chipEvent, applyChip);
     return editMode = createEditComponentMode({
-      frame: (mode) => deps.preview()?.editComponent?.(mode),
-      changed: () => { barKey = ""; renderBar(); deps.refreshBar(); deps.refreshStructure?.(); },
       back: (index) => { void navigateMode(index); },
-      template: () => { const path = editMode?.active()?.templatePath; return path === undefined ? undefined : deps.sources()[path]; },
+      dismiss: () => mode.dismissNotes(),
+      template: () => { const path = mode.now()?.template; return path === undefined ? undefined : deps.sources()[path]; },
       // Done waits for a rename committed as it is clicked (leaving the name commits it).
       rename: (name) => (renaming = renameComponent(name)).finally(() => { renaming = undefined; }),
     });
@@ -982,17 +890,14 @@ export function createComponentTools(deps: ComponentDeps) {
   let barKey = "";
   let barTag = "";
   function renderBar() {
-    if (!modeOpening) followRename();
-    if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || !standing(explicitTemplate))) explicitTemplate = undefined;
-    if (entryShare?.opened && entryShare.opened !== explicitTemplate) letGo(entryShare);
-    // The mode lasts while its template stays open over its page; another file (Files, a page's element) ends it.
-    const moded = editMode?.active();
-    if (!modeOpening && moded && (explicitTemplate?.path !== moded.templatePath || deps.previewPage() !== moded.path)) leaveMode();
-    const inMode = editMode?.active();
+    // A rename's Undo or Redo is followed; another file, another page or the repository ends the mode.
+    mode.sync();
+    const inMode = editMode?.drawn();
     const tag = tagOfFile(deps.currentPath());
     deps.codeTitle.classList.toggle("code-pane__title--component", Boolean(tag));
     if (!tag || !site()) {
-      if (barKey) deps.canvasComponent(undefined);
+      // What is drawn: `barTag` (`barKey` is cleared to draw again when the mode changes).
+      if (barTag) deps.canvasComponent(undefined);
       barKey = barTag = "";
       usedOnDropdown.close();
       return;
@@ -1017,11 +922,10 @@ export function createComponentTools(deps: ComponentDeps) {
   async function backToPage() {
     if (renaming) await renaming.catch(() => undefined);
     // Done in Edit component mode only leaves it: every change was made as it went.
-    const edited = leaveMode();
-    const page = edited?.path ?? deps.previewPage() ?? Object.values(site()?.routes ?? {})[0];
-    const host = edited ?? deps.selection()?.host;
+    const edited = mode.leave();
+    const page = edited?.page ?? deps.previewPage() ?? Object.values(site()?.routes ?? {})[0];
+    const host = edited ? { path: edited.page, node: edited.node } : deps.selection()?.host;
     if (!page || !(await deps.openFile(page))) return;
-    explicitTemplate = undefined;
     if (host?.path === page && host.node) deps.preview()?.selectNode({ path: page, node: [...host.node] });
   }
 
@@ -1608,13 +1512,9 @@ export function createComponentTools(deps: ComponentDeps) {
     const { made, loader } = result;
     const notes = [...made.notes, ...made.cards.flatMap(card => card.notes), ...(loader?.notes ?? [])];
     const madeStamp = deps.edits.stamp();
-    // A mode that hasn't opened in a few seconds (its module held) counts as the code pane.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const inMode = await Promise.race([
-      editComponent(tag, undefined, { path, node: nodePath }, notes),
-      new Promise<boolean>((done) => { timer = setTimeout(() => done(false), 8000); }),
-    ]).finally(() => clearTimeout(timer));
-    // Where the code pane opens instead of the mode, the notes go to the status line.
+    // A mode that doesn't open (its module held past the mode's deadline: the code pane only) leaves the notes to the status line.
+    const inMode = await editComponent(tag, undefined, { path, node: nodePath }, notes);
+    // The notes show once: in the mode's bar, else in the status line.
     if (scopeHolds(madeStamp)) deps.announce([madeMessage(tag, made), ...(loader?.added ? [loader.added] : []), ...(inMode ? [] : notes)].join(" "));
   }
 
@@ -1698,9 +1598,12 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!outcome.ok) { refuse(outcome.reason === "stale" ? "The page or repository changed meanwhile; no component was made." : outcome.message); return false; }
     if (outcome.message) refuse(outcome.message);
     const madeStamp = deps.edits.stamp();
+    const notes = planned?.loader?.notes ?? [];
     // The step refreshed the host's component registry before it resolved.
-    await editComponent(tag, undefined, { path, node: [...parent, index] }, planned?.loader?.notes ?? []);
-    if (scopeHolds(madeStamp)) deps.announce(`Made the component <${tag}>: components/${tag}/${tag}.html${planned?.loader?.added ? `. ${planned.loader.added}` : ""}`);
+    const inMode = await editComponent(tag, undefined, { path, node: [...parent, index] }, notes);
+    // The loader's notes show once: in the mode's bar, else in the status line.
+    const made = `Made the component <${tag}>: components/${tag}/${tag}.html${planned?.loader?.added ? `. ${planned.loader.added}` : ""}`;
+    if (scopeHolds(madeStamp)) deps.announce(inMode || !notes.length ? made : `${made}${made.endsWith(".") ? "" : "."} ${notes.join(" ")}`);
     return true;
   }
 
@@ -2038,7 +1941,7 @@ export function createComponentTools(deps: ComponentDeps) {
         const element = at.instance.fills.get(name)?.find(part => part.type === "element");
         deps.preview()?.selectNode({ path, node: element ? elementPathAt(at.source, element.start) ?? at.node : at.node });
       },
-      opens: path === editMode?.active()?.templatePath,
+      opens: path === mode.now()?.template,
       edit() { if (read()) void editComponent(initial.tag, undefined, { path, node: initial.node }); },
       disconnect() { const at = read(); if (at) void openDetach(at); },
     };
@@ -2055,31 +1958,24 @@ export function createComponentTools(deps: ComponentDeps) {
      * opening (`entry`, the same object until the template is opened again).
      */
     editModeTemplate() {
-      if (!modeOpening) followRename();
-      const mode = editMode?.active();
-      return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath && standing(explicitTemplate)
-        ? { tag: mode.tag, path: mode.templatePath, page: mode.path, entry: explicitTemplate as object } : undefined;
+      const moded = mode.now();
+      return moded && { tag: moded.tag, path: moded.template, page: moded.page, entry: moded.entry };
     },
     /**
      * The mode's opening as the guarded edit's stamps hold it (src/editor-workspace.ts): the entry
      * while the mode is on over its template, the file open. Not proved here (a stamp proves the rest).
      */
-    editModeEntry(): object | undefined {
-      const mode = editMode?.active();
-      return mode && deps.currentPath() === mode.templatePath && explicitTemplate?.path === mode.templatePath ? explicitTemplate : undefined;
-    },
+    editModeEntry: () => mode.entry(),
     /** Only explicit template entry permits shared-template editing from a page preview. */
     editingScope() {
-      if (!modeOpening) followRename();
-      if (explicitTemplate && (explicitTemplate.path !== deps.currentPath() || !standing(explicitTemplate))) explicitTemplate = undefined;
-      return explicitTemplate ? { path: explicitTemplate.path } : undefined;
+      const path = mode.opened();
+      return path === undefined ? undefined : { path };
     },
     /** Map a reported shadow child to its verified real page instance; never guess selectors. */
     instanceSelection(selection: NativePreviewSelection): NativePreviewSelection | undefined {
       const host = selection.host;
       if (!host) return selection;
-      if (!modeOpening) followRename();
-      if (explicitTemplate && explicitTemplate.path === deps.currentPath() && standing(explicitTemplate)) return selection;
+      if (mode.opened()) return selection;
       if (!host.path || !host.node || deps.previewPage() !== host.path) return;
       const at = instanceAt(host.path, host.node);
       if (!at || at.tag !== host.tag || templateOf(at.tag)?.path !== selection.path) return;
@@ -2090,18 +1986,17 @@ export function createComponentTools(deps: ComponentDeps) {
     templateRows,
     /** The root of the template currently edited cannot move, duplicate or be removed. */
     isTemplateRoot(selection: NativePreviewSelection): boolean {
-      const mode = editMode?.active();
-      const source = mode && deps.sources()[mode.templatePath];
+      const moded = mode.now();
+      const source = moded && deps.sources()[moded.template];
       const root = source === undefined ? undefined : templateRoot(source);
-      return Boolean(mode && selection.path === mode.templatePath && root && selection.node?.join() === root.join());
+      return Boolean(moded && selection.path === moded.template && root && selection.node?.join() === root.join());
     },
     /** Template removals share the slot-change transaction, including every file read. */
     removeControl(selection: NativePreviewSelection, kind: string): EditBarControl[] {
-      const mode = editMode?.active(), node = selection.node;
+      const moded = mode.now(), node = selection.node;
       const source = deps.sources()[selection.path];
-      if (!mode || mode.templatePath !== selection.path || deps.currentPath() !== selection.path
-        || !standing(explicitTemplate) || source === undefined || selection.paintedSource !== source || !node) return [];
-      const offered = templateRemovalPlan(deps.edits.peek, selection.path, node, mode.tag, kind);
+      if (!moded || moded.template !== selection.path || source === undefined || selection.paintedSource !== source || !node) return [];
+      const offered = templateRemovalPlan(deps.edits.peek, selection.path, node, moded.tag, kind);
       if (!offered || "refuse" in offered) return [];
       const stamp = deps.edits.stamp();
       return [{ kind: "button", icon: "remove", label: "Remove", onPress: () => {
@@ -2110,8 +2005,8 @@ export function createComponentTools(deps: ComponentDeps) {
         void deps.edits.run(r => {
           // The part was read against the bytes painted.
           if (r.source(selection.path) !== source) return { refuse: STALE_MESSAGE };
-          return templateRemovalPlan(r, selection.path, node, mode.tag, kind) ?? { refuse: "This part can no longer be removed." };
-        }, { since: stamp, anchor: selection.path, guard: () => editMode?.active()?.templatePath === mode.templatePath }).then(outcome => {
+          return templateRemovalPlan(r, selection.path, node, moded.tag, kind) ?? { refuse: "This part can no longer be removed." };
+        }, { since: stamp, anchor: selection.path, guard: () => mode.now()?.template === moded.template }).then(outcome => {
           if (quiet(outcome)) return;
           if (!outcome.ok || outcome.message) refuse(outcome.message!);
           else if (deps.selection() === selected || deps.selection()?.path === selection.path && deps.selection()?.node?.join() === node.join()) {
@@ -2133,9 +2028,9 @@ export function createComponentTools(deps: ComponentDeps) {
     refresh() {
       renderBar();
       // In the mode, Structure draws the template: a change to it (code, Undo, Redo) draws it again.
-      const mode = editMode?.active();
-      const key = mode ? JSON.stringify([mode.path, mode.node, mode.chain, mode.chain.map((level) => deps.sources()[level.templatePath])]) : "";
-      if (key !== modeStructureKey) { modeStructureKey = key; if (mode) deps.refreshStructure?.(); }
+      const moded = mode.now();
+      const key = moded ? JSON.stringify([moded.page, moded.node, moded.chain, moded.chain.map((level) => deps.sources()[level.template])]) : "";
+      if (key !== modeStructureKey) { modeStructureKey = key; if (moded) deps.refreshStructure?.(); }
     },
     editComponent,
     newComponent,
@@ -2145,9 +2040,9 @@ export function createComponentTools(deps: ComponentDeps) {
       if (chipEvent) window.removeEventListener(chipEvent, applyChip);
       destroyResize?.();
       panel.remove();
-      if (barKey) deps.canvasComponent(undefined);
-      leaveMode();
-      letGo(entryShare);
+      if (barTag) deps.canvasComponent(undefined);
+      mode.destroy();
+      editMode?.draw(undefined);
       usedOnDropdown.destroy();
       usedOn.remove();
       dialog.remove();

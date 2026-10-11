@@ -597,7 +597,9 @@ test("child selections omit template entry while root entry rejects stale or mis
     const host = document.createElement("div");
     document.body.append(host);
     const tools = createComponentTools({
-      site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }), edits: createGuardedEdits(createMemoryWorkspace().workspace), sources: () => sources,
+      site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }), sources: () => sources,
+      // The guarded edit reads the same sources (Edit component mode peeks the template through it).
+      edits: createGuardedEdits({ ...createMemoryWorkspace().workspace, source: (file: string) => sources[file], site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }) }),
       editor: () => undefined, preview: () => ({ selectNode: (at: { path: string; node: number[] }) => selected.push(at), selectAfterUpdate: () => {} }),
       currentPath: () => path, selection: () => selection,
       openFile: async (file: string) => { opened.push(file); path = file; return true; },
@@ -614,7 +616,8 @@ test("child selections omit template entry while root entry rejects stale or mis
       const staleOpened = [...opened];
       const fresh = tools.identity(selection).component.onEdit;
       fresh();
-      await Promise.resolve();
+      // The template opens, then its root is selected.
+      for (let tries = 0; !selected.length && tries < 50; tries++) await new Promise((done) => setTimeout(done, 10));
       const selectedRoot = selected[0];
       delete sources[templatePath];
       const missingDirect = Boolean(tools.identity(selection).component.onEdit);

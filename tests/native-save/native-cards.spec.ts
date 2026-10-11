@@ -671,7 +671,9 @@ test("Make component on a grid of plain cards makes the section and a card compo
   for (const file of ["section-recent-work/section-recent-work.html", "section-recent-work/section-recent-work.css", "card-recent-work/card-recent-work.css"]) expect(await storedDraft(page, `components/${file}`)).toBeDefined();
 });
 
-test("Make component copies the rules that styled the section into its CSS, so its heading, lead and links look the same", async ({ page, baseURL }) => {
+/** Home with a section styled by rules scoped to its class, one of which (for a slotted part's child) can't follow it into a component. */
+async function introSection(page: Page, baseURL: string | undefined) {
+  await open(page, baseURL);
   // A section styled by rules scoped to its class (one through an ancestor), and one rule for something inside a slotted part.
   const home = readFileSync("fixtures/native-cards/index.html", "utf8").replace(`    <section class="flow" id="work">`, `    <section class="intro">
       <h2>Made to be changed</h2>
@@ -692,10 +694,13 @@ test("Make component copies the rules that styled the section into its CSS, so i
   main .intro .actions a { text-decoration: none; font-weight: 700; padding: 4px 10px; border: 2px solid currentColor; }
 }
 `;
-  await open(page, baseURL);
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "styles/site.css", content: css } });
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "index.html", content: home } });
   await page.reload();
+}
+
+test("Make component copies the rules that styled the section into its CSS, so its heading, lead and links look the same", async ({ page, baseURL }) => {
+  await introSection(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
   const properties = ["letter-spacing", "text-transform", "color", "font-size", "font-style", "word-spacing", "text-decoration-line", "font-weight", "padding-left", "border-top-width"];
@@ -740,6 +745,47 @@ test("Make component copies the rules that styled the section into its CSS, so i
   const made = frame(page).locator("section-made-to-be");
   await expect(made.locator(":scope > h2")).toHaveText("Made to be changed");
   await expect.poll(async () => [await looks(made.locator(":scope > h2")), await looks(made.locator(":scope > .lead")), await looks(made.locator(":scope > a"))]).toEqual(before);
+});
+
+test("a Make component whose mode is slower than its deadline opens the code only, its notes once in the status line, and no mode later", async ({ page, baseURL }) => {
+  await introSection(page, baseURL);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
+  // The mode's bar (its lazily loaded view) is held past the 8 s it is given.
+  let release!: () => void, requested = false;
+  const held = new Promise<void>((done) => { release = done; });
+  await page.route(/\/edit-component-mode(?:\.ts|-[\w-]+\.js)/, async (route) => { requested = true; await held; await route.continue(); });
+  try {
+    await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section Made to be changed/ }).locator(".page-structure__label").first().click();
+    await bar(page).getByRole("button", { name: "Make component", exact: true }).click();
+    const template = "components/section-made-to-be/section-made-to-be.html";
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
+    await expect.poll(() => requested).toBe(true);
+    // The deadline passes: the notes go to the status line, once; the code pane keeps the template.
+    const note = "1 rule can't follow the parts into the component: .intro .lead em.";
+    await expect(status(page)).toContainText("Made the component <section-made-to-be>", { timeout: 20_000 });
+    await expect(status(page)).toContainText(note);
+    expect((await status(page).textContent())!.split(note).length).toBe(2);
+    await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveCount(0);
+    // The view arrives late: no mode starts, no notes in the bar, the frame stays off.
+    release();
+    await page.evaluate(() => import("/src/page-builder/edit-component-mode.ts"));
+    await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveCount(0);
+    await expect(page.locator(".canvas-bar").getByRole("note")).toHaveCount(0);
+    await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeHidden();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
+    await expect(status(page)).toContainText(note);
+    // Edit component again opens the mode now that its view is here.
+    await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+    await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Section made to be/ }).locator(".page-structure__label").first().click();
+    await bar(page).getByRole("button", { name: "Edit Section made to be component", exact: true }).click();
+    await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveText("Editing<section-made-to-be>");
+    await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });
 
 test("queued grid reports cannot close a newly opened Add card as… gallery before its tracking request is applied", async ({ page, baseURL }) => {

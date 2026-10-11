@@ -62,7 +62,8 @@ section-work {
 }
 `;
 
-test("the component's tag is renamed in place everywhere as one undo step", { tag: "@actual" }, async ({ page, baseURL }) => {
+/** Home's work section as a section-work instance (About uses it too), opened in Edit component mode. */
+async function editWork(page: Page, baseURL: string | undefined) {
   await page.goto(baseURL!);
   const home = homeWithWork(), about = aboutWithWork(), styles = sheet();
   for (const [path, content] of [[OLD.html, workTemplate], [OLD.css, workCss], ["index.html", home], [ABOUT, about], [SHEET, styles]])
@@ -79,6 +80,11 @@ test("the component's tag is renamed in place everywhere as one undo step", { ta
   const before = [workTemplate, workCss, undefined, undefined, home, about, styles];
   const rename = (text: string) => text.replaceAll("<section-work", "<section-showcase").replaceAll("</section-work>", "</section-showcase>");
   const after = [undefined, undefined, workTemplate, workCss, rename(home), rename(about), styles.replace("\nsection-work {", "\nsection-showcase {")];
+  return { files, before, after };
+}
+
+test("the component's tag is renamed in place everywhere as one undo step", { tag: "@actual" }, async ({ page, baseURL }) => {
+  const { files, before, after } = await editWork(page, baseURL);
   const name = tag(page).locator(".edit-mode__name");
 
   // Esc cancels: nothing changes.
@@ -142,4 +148,24 @@ test("the component's tag is renamed in place everywhere as one undo step", { ta
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${ABOUT}`);
   await expect(frame(page).locator("section-showcase h2:visible")).toHaveText("How we work", { timeout: 30_000 });
   if (shots) await page.screenshot({ path: `${shots}/3-about.png` });
+});
+
+test("a tag renamed by leaving it for Done: Done waits for the rename, then the page opens on the renamed instance", { tag: "@actual" }, async ({ page, baseURL }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const { files, after } = await editWork(page, baseURL);
+  await tag(page).dblclick();
+  await expect(tag(page).locator(".edit-mode__name")).toBeFocused();
+  await page.keyboard.type("showcase");
+  // Done at once: the click leaves the name (committing it) and Done waits for the rename's step.
+  await page.getByRole("button", { name: "Done editing component" }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await expect.poll(files).toEqual(after);
+  await expect(frame(page).locator("section-showcase h2:visible").first()).toHaveText("Recent work");
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeHidden();
+  await expect(page.locator(".canvas-bar .edit-mode__title")).toHaveCount(0);
+  // The renamed instance is selected on the page.
+  await expect(page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Section showcase component", exact: true })).toBeVisible();
+  await expect(page.getByRole("treeitem", { name: /^Section showcase/ }).first()).toHaveAttribute("aria-selected", "true");
+  expect(errors).toEqual([]);
 });
