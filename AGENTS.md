@@ -1,5 +1,7 @@
 # Agents
 
+Finding code: read `docs/agents/code-map.md`.
+
 ## Agent skills
 
 ### Issue tracker
