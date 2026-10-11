@@ -14,7 +14,10 @@ type FunctionBody = TS.FunctionLikeDeclaration & { body: TS.ConciseBody };
 const ENGINE_HOME = "src/page-builder/block-move-rules.ts";
 const MOVE_HOME = "src/page-builder/block-move.ts";
 const ENGINE = new Set(["nativeMoveEdit", "nativeElementMovePlan", "nativeElementKeyMove", "templateKeyMove"]);
-const MOVE = new Set([...ENGINE, "nativeElementSiblingMove", "nativeElementDepthMove", "templateMovePath", "templateMoveRefusal", "nativeMoveRefusal", "nativeMoveDestinationValid", "pageRules", "templateRules"]);
+// What makes a move plan, and everything that answers where or whether a block moves.
+const PLANS = new Set([...ENGINE, "nativeElementSiblingMove", "nativeElementDepthMove", "pageRules", "templateRules"]);
+const RULES = new Set([...PLANS, "templateMovePath", "templateMoveRefusal", "nativeMoveRefusal", "nativeMoveDestinationValid"]);
+const READERS = new Set(["editModeTemplate"]);
 const engineAllowlist: AllowlistEntry[] = [];
 const planAllowlist: AllowlistEntry[] = [];
 const choiceAllowlist: AllowlistEntry[] = [];
@@ -34,7 +37,7 @@ function member(node: TS.Node): { name: string; receiver: TS.Expression } | unde
   if (ts.isPropertyAccessExpression(node)) return { name: node.name.text, receiver: node.expression };
   if (ts.isElementAccessExpression(node) && node.argumentExpression) {
     const key = strip(node.argumentExpression);
-    if (ts.isStringLiteral(key)) return { name: key.text, receiver: node.expression };
+    if (ts.isStringLiteral(key) || ts.isNoSubstitutionTemplateLiteral(key)) return { name: key.text, receiver: node.expression };
   }
   return undefined;
 }
@@ -117,22 +120,28 @@ function plansOf(checker: TS.TypeChecker, expression: TS.Node, depth = 0): Funct
   if (declaration && isFunction(declaration)) return [declaration];
   return declaration && ts.isVariableDeclaration(declaration) && declaration.initializer ? plansOf(checker, declaration.initializer, depth + 1) : undefined;
 }
-// `edits.run(...)`, `guardedEdits.now(...)`, and the same through `const { run } = edits` or `const run = edits.run`.
-function isPlanCall(checker: TS.TypeChecker, call: TS.CallExpression, depth = 0): boolean {
-  const callee = strip(call.expression);
-  const access = member(callee);
-  if (access) return ["run", "now"].includes(access.name) && /edits$/i.test(strip(access.receiver).getText());
-  if (!ts.isIdentifier(callee) || depth > 8) return false;
-  const declaration = declarationOf(checker, callee);
+// A guarded edit queue: `edits`, `ports.edits`, `guardedEdits`, or a same-file name bound to one.
+function isEdits(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
+  node = strip(node);
+  if (/edits$/i.test(node.getText())) return true;
+  if (!ts.isIdentifier(node) || depth > 8) return false;
+  const declaration = declarationOf(checker, node);
+  return !!declaration && ts.isVariableDeclaration(declaration) && !!declaration.initializer && isEdits(checker, declaration.initializer, depth + 1);
+}
+// `edits.run`, `guardedEdits["now"]`, `edits.run.bind(edits)`, and same-file names bound to them, destructured too.
+function isPlanMethod(checker: TS.TypeChecker, node: TS.Node, depth = 0): boolean {
+  node = strip(node);
+  if (depth > 8) return false;
+  const bind = ts.isCallExpression(node) ? member(strip(node.expression)) : undefined;
+  if (bind?.name === "bind") return isPlanMethod(checker, bind.receiver, depth + 1);
+  const access = member(node);
+  if (access) return ["run", "now"].includes(access.name) && isEdits(checker, access.receiver);
+  if (!ts.isIdentifier(node)) return false;
+  const declaration = declarationOf(checker, node);
   if (declaration && ts.isBindingElement(declaration) && ts.isVariableDeclaration(declaration.parent.parent) && declaration.parent.parent.initializer) {
-    return ["run", "now"].includes((declaration.propertyName ?? declaration.name).getText()) && /edits$/i.test(strip(declaration.parent.parent.initializer).getText());
+    return ["run", "now"].includes((declaration.propertyName ?? declaration.name).getText()) && isEdits(checker, declaration.parent.parent.initializer);
   }
-  if (!declaration || !ts.isVariableDeclaration(declaration) || !declaration.initializer) return false;
-  let value = strip(declaration.initializer);
-  // `edits.run.bind(edits)` is the method itself.
-  if (ts.isCallExpression(value) && member(strip(value.expression))?.name === "bind") value = strip(member(strip(value.expression))!.receiver);
-  const method = member(value);
-  return !!method && ["run", "now"].includes(method.name) && /edits$/i.test(strip(method.receiver).getText());
+  return !!declaration && ts.isVariableDeclaration(declaration) && !!declaration.initializer && isPlanMethod(checker, declaration.initializer, depth + 1);
 }
 // Member names and import/export source names are references; declaration names and text are not.
 function referenceName(node: TS.Node): string | undefined {
@@ -150,25 +159,50 @@ function referenceName(node: TS.Node): string | undefined {
       || ts.isPropertyDeclaration(parent) || ts.isPropertySignature(parent) || ts.isMethodSignature(parent)) && parent.name === node) return undefined;
   return node.text;
 }
-function refers(checker: TS.TypeChecker, node: TS.Node, names: Set<string>, seen = new Set<TS.Node>()): boolean {
-  if (seen.has(node)) return false;
-  seen.add(node);
+function refers(checker: TS.TypeChecker, node: TS.Node, names: Set<string>): boolean {
   const name = referenceName(node);
   if (!name) return false;
   if (names.has(name)) return true;
-  if (!ts.isIdentifier(node)) return false;
-  const declaration = declarationOf(checker, node);
-  if (!declaration) return false;
-  if (ts.isImportSpecifier(declaration) || ts.isBindingElement(declaration)) return names.has(referenceName(declaration)!);
-  // A value made from a name stands for it: `const rules = pageRules(items)`, `const t = tools.editModeTemplate()`.
-  let found = false;
-  if (ts.isVariableDeclaration(declaration) && declaration.initializer) walk(declaration.initializer, inner => { found ||= refers(checker, inner, names, seen); });
+  const declaration = ts.isIdentifier(node) ? declarationOf(checker, node) : undefined;
+  return !!declaration && referring(checker, node.getSourceFile(), names).has(declaration);
+}
+// The file's declarations that stand for a name: a renamed import or destructured name, a value
+// made from one (`const rules = pageRules(items)`, `const t = tools.editModeTemplate()`), or a
+// function whose body refers to one; transitively, through the same-file names they refer to.
+const reached = new WeakMap<TS.SourceFile, Map<Set<string>, Set<TS.Node>>>();
+function referring(checker: TS.TypeChecker, tree: TS.SourceFile, names: Set<string>): Set<TS.Node> {
+  let byNames = reached.get(tree);
+  if (!byNames) reached.set(tree, byNames = new Map());
+  let found = byNames.get(names);
+  if (found) return found;
+  found = new Set();
+  const users = new Map<TS.Node, TS.Node[]>(), queue: TS.Node[] = [];
+  walk(tree, declaration => {
+    if (ts.isImportSpecifier(declaration) || ts.isBindingElement(declaration)) {
+      if (names.has(referenceName(declaration)!)) queue.push(declaration);
+      return;
+    }
+    const value = isFunction(declaration) ? declaration.body : ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
+    if (value) walk(value, inner => {
+      const name = referenceName(inner);
+      if (!name) return;
+      if (names.has(name)) queue.push(declaration);
+      const used = ts.isIdentifier(inner) ? declarationOf(checker, inner) : undefined;
+      if (used) users.set(used, [...users.get(used) ?? [], declaration]);
+    });
+  });
+  for (let declaration = queue.pop(); declaration; declaration = queue.pop()) {
+    if (found.has(declaration)) continue;
+    found.add(declaration);
+    queue.push(...users.get(declaration) ?? []);
+  }
+  byNames.set(names, found);
   return found;
 }
-// Code outside any function (a closure is a scope of its own).
+// Code outside any function (a closure is a scope of its own); imports and re-exports choose nothing.
 function walkOutside(node: TS.Node, visit: (node: TS.Node) => void) {
   visit(node);
-  ts.forEachChild(node, child => { if (!isFunction(child)) walkOutside(child, visit); });
+  ts.forEachChild(node, child => { if (!isFunction(child) && !ts.isImportDeclaration(child) && !ts.isExportDeclaration(child)) walkOutside(child, visit); });
 }
 const moveEngine: Detector = (source, file) => {
   if (file === ENGINE_HOME) return [];
@@ -178,57 +212,37 @@ const moveEngine: Detector = (source, file) => {
   });
   return hits;
 };
+// Same-file helpers, aliases and values a plan refers to are followed by `refers`.
 const movePlans: Detector = (source, file) => {
   if (file === MOVE_HOME) return [];
   const { tree, checker } = analyse(source, file), hits: Finding[] = [], seen = new Set<TS.Node>();
   walk(tree, node => {
-    if (!ts.isCallExpression(node) || !node.arguments[0] || !isPlanCall(checker, node)) return;
-    const plans = plansOf(checker, node.arguments[0]);
+    if (!ts.isCallExpression(node) || !node.arguments[0] || !isPlanMethod(checker, node.expression)) return;
     // Unresolved plans belong to guarded-edit-reads' plan-unresolved rule.
-    if (!plans) return;
-    const bodies = [...plans], scanned = new Set<TS.Node>();
-    for (let body = bodies.pop(); body; body = bodies.pop()) {
-      if (scanned.has(body)) continue;
-      scanned.add(body);
-      walk(body.body, read => {
-        if (refers(checker, read, MOVE) && !seen.has(read)) {
-          seen.add(read); hits.push(finding(tree, read, "move-plan"));
-        }
-        if (ts.isCallExpression(read)) {
-          const helper = functionOf(checker, read.expression);
-          if (helper) bodies.push(helper);
-        }
+    for (const plan of plansOf(checker, node.arguments[0]) ?? []) {
+      walk(plan.body, read => {
+        if (!seen.has(read) && refers(checker, read, PLANS)) { seen.add(read); hits.push(finding(tree, read, "move-plan")); }
       });
     }
   });
   return hits;
 };
+// A scope (a function with its closures, or module-level code) that reads the template edited and reaches move rules.
 const templateChoices: Detector = (source, file) => {
   if (file === MOVE_HOME) return [];
   const { tree, checker } = analyse(source, file), hits: Finding[] = [];
-  const readers = new Set(["editModeTemplate"]);
-  function readsTemplate(body: TS.Node, scan = walk, seen = new Set<TS.Node>()): boolean {
-    if (seen.has(body)) return false;
-    seen.add(body);
-    let reads = false;
+  const choice = (body: TS.Node, scan: typeof walk) => {
+    let reads = false, move: TS.Node | undefined;
     scan(body, node => {
-      if (refers(checker, node, readers)) reads = true;
-      if (ts.isCallExpression(node)) {
-        const helper = functionOf(checker, node.expression);
-        if (helper && readsTemplate(helper.body, walk, seen)) reads = true;
-      }
+      reads ||= refers(checker, node, READERS);
+      if (!move && refers(checker, node, RULES)) move = node;
     });
-    return reads;
-  }
-  function firstMove(body: TS.Node, scan = walk) {
-    let move: TS.Node | undefined;
-    scan(body, node => { if (!move && refers(checker, node, MOVE)) move = node; });
-    return move;
-  }
+    return reads ? move : undefined;
+  };
   walk(tree, node => {
-    if (isFunction(node) && readsTemplate(node.body) && firstMove(node.body)) hits.push(finding(tree, node, "template-choice"));
+    if (isFunction(node) && choice(node.body, walk)) hits.push(finding(tree, node, "template-choice"));
   });
-  const move = readsTemplate(tree, walkOutside) && firstMove(tree, walkOutside);
+  const move = choice(tree, walkOutside);
   if (move) hits.push(finding(tree, move, "template-choice"));
   return hits;
 };
@@ -268,7 +282,7 @@ test("move-engine rejects calls, aliases, imports, re-exports and member referen
       `${name}();`, `const move = ${name};`,
       `import { ${name} } from "./moves";`, `import { ${name} as move } from "./moves";`,
       `export { ${name} } from "./moves";`, `export { ${name} as move } from "./moves";`,
-      `ops.${name};`, `ops?.${name}();`, `ops["${name}"];`, `ops?.["${name}"]();`,
+      `ops.${name};`, `ops?.${name}();`, `ops["${name}"];`, `ops?.["${name}"]();`, `ops[\`${name}\`]();`,
       `const { ${name}: move } = ops;`,
     ]) flags(moveEngine, source, "move-engine");
     assert.deepEqual(moveEngine(`import { ${name} as move } from "./moves"; move();`, ENGINE_HOME), []);
@@ -282,8 +296,8 @@ test("move-engine rejects calls, aliases, imports, re-exports and member referen
   ]) assert.deepEqual(moveEngine(source, FAKE), [], source);
 });
 
-test("move-plan rejects every move name in inline, named, conditional and factory plans", () => {
-  for (const name of MOVE) {
+test("move-plan rejects every plan-making name in inline, named, conditional and factory plans", () => {
+  for (const name of PLANS) {
     for (const source of [
       `ports.edits.run(r => ${name}());`, `guardedEdits.now(r => ops["${name}"]());`,
       `const plan = r => ops.${name}(); deps.edits.now(plan);`,
@@ -296,6 +310,8 @@ test("move-plan rejects every move name in inline, named, conditional and factor
     ]) flags(movePlans, source, "move-plan");
     assert.deepEqual(movePlans(`edits.run(r => ${name}());`, MOVE_HOME), []);
   }
+  // Refusals and paths answer questions; a plan that asks one moves nothing (template-choice covers choosing them).
+  for (const name of [...RULES].filter(name => !PLANS.has(name))) assert.deepEqual(movePlans(`edits.run(r => ${name}(r.source(path)) ? remove() : keep());`, FAKE), [], name);
 });
 
 test("move-plan follows move aliases, renamed imports, namespace members and transitive helpers", () => {
@@ -308,6 +324,8 @@ test("move-plan follows move aliases, renamed imports, namespace members and tra
     'function helper() { return templateRules(); } const alias = helper; edits.run(r => alias());',
     'function helper() { return helper() || pageRules(items); } edits.run(r => helper());',
     'const rules = ready ? templateRules() : pageRules(items); edits.run(r => rules.step(r.source(path), from, "up"));',
+    'function rules() { return pageRules(items); } const selected = rules(); edits.run(r => selected.step(r.source(path), from, "up"));',
+    'function a() { b(); return pageRules(items); } function b() { return a(); } edits.run(r => b());',
   ]) flags(movePlans, source, "move-plan");
   for (const source of [
     'edits.run(r => r.source(path));',
@@ -329,14 +347,18 @@ test("move-plan recognises destructured, aliased, bound and string-access guarde
     'const now = guardedEdits.now.bind(guardedEdits); now(r => templateRules());',
     'ports.edits["now"](r => pageRules(items));',
     '(ports.edits!.run as Function)(r => templateRules());',
+    'const tx = ports.edits; tx.run(r => pageRules(items));',
+    'const tx = ports.edits; const { now } = tx; now(r => pageRules(items));',
+    'const first = edits.run; const second = first; second(r => templateRules());',
   ]) flags(movePlans, source, "move-plan");
+  for (const source of ['const tx = ports.history; tx.run(r => pageRules(items));', 'const first = edits.stamp; first(r => pageRules(items));']) assert.deepEqual(movePlans(source, FAKE), [], source);
   const hits = movePlans('const plan = r => pageRules(items); edits.run(plan); edits.now(plan);', FAKE);
   assert.equal(hits.length, 1, "the same plan reference is counted once");
   assert.equal(hits[0].function, "plan");
 });
 
-test("template-choice rejects template reads with every move name, including nested closures", () => {
-  for (const name of MOVE) {
+test("template-choice rejects template reads with every move rule name, including nested closures", () => {
+  for (const name of RULES) {
     for (const read of [
       'tools.editModeTemplate()', 'componentTools?.editModeTemplate()', 'anything.editModeTemplate',
       'anything?.["editModeTemplate"]', 'editModeTemplate()',
@@ -369,6 +391,8 @@ test("template-choice follows destructured reads, aliases and transitive same-fi
     'const rules = tools.editModeTemplate() ? templateRules() : pageRules(items);',
     'const template = tools.editModeTemplate(); export const step = () => template ? templateRules() : pageRules(items);',
     'const template = tools.editModeTemplate(); const rules = template ? templateRules() : pageRules(items); export const step = () => rules;',
+    'function page() { return pageRules(items); } function template() { return templateRules(); } function choose() { return tools.editModeTemplate() ? template() : page(); }',
+    'function a() { b(); return pageRules(items); } function b() { return a(); } function choose() { tools.editModeTemplate(); b(); }',
   ]) flags(templateChoices, source, "template-choice");
   for (const source of [
     'const read = tools.editModeTemplate; function choose(read) { read(); return templateRules(); }',
@@ -376,6 +400,9 @@ test("template-choice follows destructured reads, aliases and transitive same-fi
     'const { editModeTemplate: reading } = tools; function choose(reading) { reading(); return templateRules(); }',
     'const template = tools.editModeTemplate(); export const step = () => pageRules(items);',
     'export const read = () => tools.editModeTemplate(); const rules = pageRules(items);',
+    'import { pageRules } from "./moves"; const template = tools.editModeTemplate(); export function move() { return pageRules(items); }',
+    'export { templateRules } from "./moves"; export const template = tools.editModeTemplate();',
+    'function a() { b(); return pageRules(items); } function b() { return a(); } function c() { return d(); } function d() { return c(); } function choose() { tools.editModeTemplate(); d(); }',
   ]) assert.deepEqual(templateChoices(source, FAKE), [], source);
 });
 
