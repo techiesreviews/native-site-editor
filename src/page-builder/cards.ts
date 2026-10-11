@@ -17,10 +17,10 @@ import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead,
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit } from "../native-structure";
-import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy } from "./card-grid";
+import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { cardFill, cardFillMarkup, itemPageFill, pageTitle, slotFallbacks } from "./card-fill";
+import { cardFill, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { readPage } from "../native-source-location";
 import type { CardLook } from "./card-looks";

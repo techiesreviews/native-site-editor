@@ -9,10 +9,10 @@ import {
   itemTitle,
   leafSummary,
   pageBodyCopy,
+  slotFallbacks,
   textLeaves,
 } from "../src/page-builder/card-grid.ts";
 import { readSource } from "../src/page-builder/source-tree.ts";
-import { slotFallbacks } from "../src/page-builder/card-fill.ts";
 import { rewriteRouteLinks } from "../src/native-page-moves.ts";
 
 const card = (title: string, slug: string, note = "Cafe · 2025") => `<card-project>
@@ -307,3 +307,13 @@ for (const newline of ["\n", "\r\n", "&#10;"]) {
       `<main><h1>New</h1><pre>${newline}Read about New <a href="/#all">All</a></pre></main>`);
   });
 }
+
+test("an empty first slot of a name does not hide a later fallback of that name, however it is spelled", () => {
+  assert.deepEqual(slotFallbacks('<slot name="title"> </slot><slot name="title">Later</slot>').fallbacks, { title: "Later" });
+  assert.deepEqual(slotFallbacks('<slot name="caf&eacute;"></slot><slot name="caf&#233;">Note</slot><slot name="café">Other</slot>').fallbacks, { café: "Note" });
+});
+
+test("a title matched inside a reference keeps what the rest of that reference says", () => {
+  const tree = readSource("<article><h3>\u2242</h3><a>&NotEqualTilde; here</a></article>");
+  assert.equal(itemCopy(tree, tree.at([0])!, { noun: "card", title: "X" }), "<article><h3>X</h3><a>X\u0338 here</a></article>");
+});

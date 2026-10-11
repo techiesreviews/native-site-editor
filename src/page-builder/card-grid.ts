@@ -65,6 +65,9 @@ export function escapeText(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// Raw text and templates: never text a copy resets or a title swap touches.
+const NOT_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "template"]);
+
 /**
  * A text leaf: an element holding text and inline markup only (a heading,
  * a paragraph, a link, a `<card-note>` with text in it), the unit whose
@@ -77,7 +80,7 @@ export function textLeaves<N>(tree: SourceTree<N>, elements = tree.children()): 
   const visit = (element: N) => {
     // Scripts, styles and templates are not text to reset: they stay as written.
     const name = tree.view.name(element);
-    if (VOID_ELEMENTS.has(name) || ["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "template"].includes(name)) return;
+    if (VOID_ELEMENTS.has(name) || NOT_TEXT.has(name)) return;
     if (inlineOnly(element) && plain(tree.text(element))) {
       out.push(element);
       return;
@@ -139,6 +142,9 @@ export function placeholderFor(tag: string, noun: string, about = `this ${noun}`
   return "Text";
 }
 
+/** Text as the browser reads it: CR LF and lone CR as LF, character references decoded. */
+const decoded = (raw: string) => decodeHtmlEntities(raw.replace(/\r\n?/g, "\n"));
+
 /** Replace decoded title matches in individual text nodes, preserving all other source spelling. */
 function withTitle(tree: SourceTree<SourceNode>, leaf: SourceElement, from: string | undefined, to: string): Edit[] {
   if (!from) return [];
@@ -146,17 +152,22 @@ function withTitle(tree: SourceTree<SourceNode>, leaf: SourceElement, from: stri
   const visit = (node: SourceNode) => {
     if (node.type === "element") {
       // Raw text is never title copy, even when nested in a kept leaf.
-      if (["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "template"].includes(tree.view.name(node))) return;
+      if (NOT_TEXT.has(tree.view.name(node))) return;
       tree.view.children(node).forEach(visit);
       return;
     }
     const text = tree.text(node);
     const source = tree.source.slice(node.start, node.end);
     // The tree drops a pre/listing's first newline; the mapper reads the whole source run.
-    const omitted = decodeHtmlEntities(source.replace(/\r\n?/g, "\n")).length - text.length;
+    const omitted = decoded(source).length - text.length;
     for (let at = text.indexOf(from); at >= 0; at = text.indexOf(from, at + from.length)) {
       const span = textRangeInSource(source, at + omitted, at + omitted + from.length, from, decodeHtmlEntity);
-      if (span) edits.push({ start: node.start + span.start, end: node.start + span.end, text: escapeText(to) });
+      if (!span) continue;
+      // A reference that decodes to more than the match (`&NotEqualTilde;`) keeps the rest of what it says.
+      const written = decoded(source.slice(span.start, span.end));
+      const head = at + omitted - decoded(source.slice(0, span.start)).length;
+      edits.push({ start: node.start + span.start, end: node.start + span.end,
+        text: escapeText(written.slice(0, head)) + escapeText(to) + escapeText(written.slice(head + from.length)) });
     }
   };
   visit(leaf);
@@ -372,4 +383,22 @@ function linkPath(href: string) {
 /** The leaves of a stretch of a page, as their tag and text: what `pageBodyCopy` compares. */
 export function leafSummary<N>(tree: SourceTree<N>): { name: string; text: string }[] | undefined {
   return tree.exact ? textLeaves(tree).map((leaf) => ({ name: tree.view.name(leaf), text: plain(tree.text(leaf)) })) : undefined;
+}
+
+/**
+ * The text a component template shows for each of its named slots when
+ * the page fills none: its fallback as the browser shows it (a nested
+ * slot's fallback included), the first non-empty one per name.
+ */
+export function slotFallbacks(template: string): { fallbacks: Record<string, string> } {
+  const fallbacks: Record<string, string> = {};
+  const tree = readSource(template);
+  for (const slot of tree.elements()) {
+    if (tree.view.name(slot) !== "slot") continue;
+    const name = tree.attribute(slot, "name")?.value;
+    if (!name || name in fallbacks) continue;
+    const text = plain(tree.text(slot));
+    if (text) fallbacks[name] = text;
+  }
+  return { fallbacks };
 }

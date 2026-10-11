@@ -88,20 +88,6 @@ export function cardSlots(template: string, tree = readSource(template)): Templa
 }
 
 /**
- * The text a component template shows for each of its named slots when
- * the page fills none (its fallback, as plain text).
- */
-export function slotFallbacks(template: string): { fallbacks: Record<string, string> } {
-  const fallbacks: Record<string, string> = {};
-  for (const slot of cardSlots(template)) {
-    if (!slot.name) continue;
-    const text = plain(readSource(slot.fallback).text());
-    if (text) fallbacks[slot.name] = text;
-  }
-  return { fallbacks };
-}
-
-/**
  * Which of a card template's slots (cardSlots) take its title (the first
  * heading slot, else one named "title"), body (the first text slot after the
  * title, else the last before it), image and link; any other is "other". The
