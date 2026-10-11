@@ -1,7 +1,7 @@
 ---
 title: "Guard test: Edit component mode's state, shares and frame message only in its module"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [62-component-mode-callers]
 builder: sol
@@ -21,3 +21,9 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/edit-component-
 
 - `tests/component-mode-guard.test.ts` green on dev, with a passing and a deliberately failing fixture for each rule.
 - `npm run check`, `npm test`, full `native-save` suite green.
+
+## Done (2026-10-11)
+
+- `tests/component-mode-guard.test.ts` (TS 6 parser, per-file checker, as the block move and card tree guards): `drillChain`/`backChain` named outside component-mode.ts; `ComponentDeps.shareHistory` or the preview's `editComponent` (EditComponentFrameMode) called outside the object passed to component-mode's own `createComponentMode` (imported by name or namespace; `EditorWorkspace.shareHistory` not flagged); a compared `JSON.stringify` of `mode.now()`/`active()` (aliases followed); a module-level `let`, or a `let` captured inside `createComponentTools`, holding a `Stamp`, an opening/entry or a share release (annotations, initialisers, holder fields). A failing and a near-miss fixture per rule; allowlist empty; src/ clean.
+- Added by the lead (found in 62's M3): Page Structure kept folds and the selected row by node index, so after Undo past the mode's first step another section showed unfolded; the same drift followed any Undo/Redo adding or removing a row above. `followRows` (src/components/structure-follow.ts) carries folds and the selection to the same elements; a selection the frame reports before its structure waits for that paint; a template element with no rows marks its instance's row.
+- Commits: "Guard test: …" (Sol), "Page Structure: folds and the selected row follow …", two review-fix commits (Sol's two reviews). Tests: guard (6 cases), `structure-follow.test.ts` (6), `native-edit-component-leave-actual` M3 assertions and a plain Undo/Redo case.
