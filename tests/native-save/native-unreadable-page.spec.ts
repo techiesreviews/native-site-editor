@@ -54,6 +54,9 @@ test("a page that is not UTF-8 text, opened by a link or from Pages, shows the n
   await choosePage(page, "About");
   await expect(error(page)).toHaveText(message);
   await expect(page.locator("#content")).toContainText("This file is not UTF-8 text.", { timeout: 15_000 });
+  // Said where it was asked for, not as a failed request left over on Home.
+  await expect(page.locator("#status")).toHaveText(message);
+  await expect(page.locator("#notice")).toBeHidden();
   await choosePage(page, "Home");
   await homeIsBack(page);
 

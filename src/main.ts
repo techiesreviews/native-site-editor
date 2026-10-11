@@ -37,7 +37,7 @@ import { createAgentController } from "./controllers/agent-controller";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
 import { type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -4351,7 +4351,9 @@ async function openEntry(
           error instanceof Error ? error.message : "Could not read this file.",
         ),
       );
-      errorMessage(error);
+      // A file that is not text (or too big) is said here, where it was asked for, not as a failed request.
+      if (unreadableAsText(error)) status(`${path}: ${error instanceof Error ? error.message : "This file cannot be read as text."}`);
+      else errorMessage(error);
     }
   }
 }
