@@ -4,7 +4,7 @@ import { createRowMenu } from "./components/row-menu";
 import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } from "./components/element-menu";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
 import { nativeChoiceMarkup } from "./page-builder/native-elements";
-import { nativeDestinations, nativeMarkupInsertEdit, nativeMoveRefusal } from "./page-builder/native-operations";
+import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { INLINE_FORMATTING, TEXT_LINE_TAGS, TEXT_TAGS } from "./page-builder/rules/text-level";
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
 import { createFilesTreeController } from "./controllers/files-tree-controller";
@@ -48,7 +48,6 @@ import { mountBlockRail } from "./components/block-rail";
 import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
 import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import type { DraggedBlock } from "./page-builder/drop-target";
-import type { DropContainer } from "./page-builder/drop-report";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import type { SiteSettingsValues, SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
@@ -79,8 +78,7 @@ import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./nati
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
 import { itemsSlotRule } from "./page-builder/block-insert";
-import { createBlockMoves } from "./page-builder/block-move";
-import { templateMoveRefusal, templateMovePath } from "./page-builder/block-move-rules";
+import { createBlockMoves, type MoveAt } from "./page-builder/block-move";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
@@ -910,29 +908,28 @@ const structureDrop = (drag: Awaited<ReturnType<typeof loadBlockDrag>>, block: D
 
 // A page block dragged by its name in the edit bar (`pressed` none: the
 // selection) or pressed in the page: moved where it is dropped, one undo
-// step (the block-insert controller's `move`), anywhere HTML's content rules
+// step (the Block move module's `move`), anywhere HTML's content rules
 // allow (slice 82). In Edit component mode the template's parts move the
 // same way in the template (a named slot with its element), and the page's
 // blocks stay put. The drag's targets load with the first one; the press's
 // page, repository and session hold throughout.
 function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
-  const at = blockInsertPorts.target(), selection = appStore.selection.value;
-  const template = at?.template !== undefined ? componentTools?.editModeTemplate() : undefined;
+  const target = blockInsertPorts.target(), selection = appStore.selection.value;
+  const template = target?.template !== undefined ? componentTools?.editModeTemplate() : undefined;
   if (pressed && Boolean(pressed.template) !== Boolean(template)) return undefined;
-  const from = pressed ?? (selection?.node && selection.path === at?.path
-    ? { node: selection.node, tag: selection.tag, cls: "", band: !template && isNativeSectionTag(selection.tag), painted: selection.paintedSource } : undefined);
-  if (!at || !from) return undefined;
-  // A part a named slot holds alone moves with its slot.
-  const node = template ? from.painted === undefined ? undefined : templateMovePath(from.painted, from.node) : from.node;
-  if (!node) return undefined;
+  const from = pressed ?? (selection?.node && selection.path === target?.path
+    ? { node: selection.node, tag: selection.tag, cls: "", painted: selection.paintedSource } : undefined);
+  if (!target || !from) return undefined;
+  const at: MoveAt = { path: target.path, node: from.node, painted: from.painted };
+  const grip = blockMoves.grip(at);
+  if (!grip || !grip.drags) return undefined;
   // Another page shown meanwhile ends it too: its probes measure that page.
   const since = guardedEdits.stamp();
-  const painted = from.painted, items = nativeMoveItems();
-  // Why a container can't take it, by the bytes the press measured (the probe's paths are theirs).
-  const fits = (container: DropContainer) => painted === undefined ? "The page is still updating. Try again in a moment."
-    : template ? templateMoveRefusal(painted, node, container.path)
-    : nativeMoveRefusal(painted, node, container.path, items, container.kind === "items" ? container.slot : undefined);
-  const block: DraggedBlock = { kind: "move", path: node, band: from.band, fits, ...(template ? { template: true } : {}) };
+  const block: DraggedBlock = {
+    kind: "move", path: grip.from, band: grip.band,
+    fits: container => grip.refusal(container.path, container.kind === "items" && !template ? container.slot : undefined),
+    ...(template ? { template: true } : {}),
+  };
   // The chip says the name; a press in the page names it once the drag code is in.
   let name = press.source?.textContent?.trim() || from.tag;
   const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, from.tag));
@@ -943,9 +940,14 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
       tree: structureDrop(drag, block, template),
       drop: (target, where, painted) => {
         if (drag.dropStays(block, target)) { announce(`${name} stayed in place`); return; }
-        const place = { parent: target.container.path, index: target.index, where, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
-        const request = { from: node, name, pressed: from.painted, place, painted, inside: from.node.slice(node.length) };
-        if (since.holds()) void loadBlockInsert().then(blocks => since.holds() ? blocks.move(request, at, since) : undefined).catch(errorMessage);
+        const drop = { parent: target.container.path, index: target.index, ...(target.container.kind === "items" && !template ? { slot: target.container.slot } : {}) };
+        if (!since.holds()) return;
+        const outcome = blockMoves.move(at, { drop, painted, name, where }, { since, stale: "The page is still updating. Try again in a moment." });
+        const report = (settled: Exclude<typeof outcome, { status: "pending" }>) => {
+          if (settled.status !== "stayed" && settled.message) blockInsertPorts.refuse(settled.message);
+        };
+        if (outcome.status === "pending") void outcome.settled.then(report).catch(errorMessage);
+        else report(outcome);
       },
       announce,
     }, drag.createBlockDrag, template?.path);

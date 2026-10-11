@@ -1,9 +1,8 @@
 // Inserting a block (Section, Div, Heading, Paragraph, Image, Button) into a
-// page, or moving any of the page's elements (or the template's parts in
-// Edit component mode) where HTML allows: one source edit and one undo
+// page where HTML allows: one source edit and one undo
 // step, with the block selected and its place flashed. The rail's click
 // (`click`) picks the place from the selection
-// (src/page-builder/block-insert.ts); a drag (`drop`, `move`) brings the
+// (src/page-builder/block-insert.ts); a drag (`drop`) brings the
 // place it was dropped on. In Edit component mode the target is the
 // template edited (`template`): its path, a selected part of it, the place
 // by the template's rule (`templateClickTarget`).
@@ -13,12 +12,11 @@
 // placeholder image through `r`, so all of them are proved before the
 // write; the module opens the page, writes the step, selects and flashes.
 // The caller's stamp (`since`, taken at the click, drop or press) holds
-// across the lazy loads. The painted/typed-inside rules stay here.
+// across the lazy loads. The insertion painted/typed-inside rules stay here.
 
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg, type NativeElementKind } from "../page-builder/native-elements";
 import { blockMarkup, blockNames, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal } from "../page-builder/block-insert";
-import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit, nativeMoveRefusal } from "../page-builder/native-operations";
-import { nativeElementMovePlan, templateMoveRefusal } from "../page-builder/block-move-rules";
+import { applyGuardedSourceEdit, nativeEditInside, nativeMarkupInsertEdit } from "../page-builder/native-operations";
 import { STALE_MESSAGE, type GuardedEdits, type Reads, type PlanResult, type Outcome, type Stamp } from "../guarded-edit";
 
 type NodeRequest = { path: string; node: number[] };
@@ -125,41 +123,6 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     }, { since, anchor: at.path }), pointer);
   }
 
-  /**
-   * The page's block at `from` (named `name`, measured on the `pressed`
-   * bytes) dragged to `place` (measured on the `painted` bytes; `slot` for
-   * an instance's items slot): moved there as one step, or the reason
-   * flashes when the page has changed since or the HTML there cannot take
-   * it. `since`: the stamp held from the press; `inside`:
-   * the path from the moved slot down to the part pressed in it.
-   */
-  async function move(request: { from: number[]; name: string; pressed: string | undefined; place: { parent: number[]; index: number; where: string; slot?: string }; painted: string | undefined; inside?: number[] }, at = ports.target(), since: Stamp = ports.edits.stamp()) {
-    if (!at) { ports.refuse("Open a page to move blocks in it."); return; }
-    report(await ports.edits.run(r => {
-      const { from, name, place } = request, { path } = at;
-      const source = r.source(path);
-      if (source === undefined) return { refuse: "Open a page to move blocks in it." };
-      // Text typed inside the block since the press can still move with it.
-      const pressed = request.pressed !== undefined && nativeEditInside(request.pressed, source, from);
-      if (request.painted !== source || !pressed) return { refuse: "The page is still updating. Try again in a moment." };
-      const items = itemsSlotRule(tag => r.template(tag)?.source);
-      const refused = at.template === undefined ? undefined : templateMoveRefusal(source, from, place.parent);
-      if (refused) return { refuse: `${name} was not moved: ${refused}` };
-      const plan = nativeElementMovePlan(source, from, place, items);
-      if (plan.status === "stayed") return { stayed: `${name} stayed in place` };
-      const next = plan.status === "moved" ? applyGuardedSourceEdit(source, plan.edit) : undefined;
-      if (plan.status !== "moved" || next === undefined) return { refuse: `${name} was not moved: ${nativeMoveRefusal(source, from, place.parent, items, place.slot) ?? "the HTML there cannot take it."}` };
-      return {
-        edits: new Map([[path, next]]),
-        done: `${name} moved. ${place.where}`, undone: `Undid moving the ${name}.`,
-        select: {
-          before: { path, node: [...from, ...request.inside ?? []] },
-          after: { path, node: [...plan.selection, ...request.inside ?? []] }, flash: place.where,
-        },
-      };
-    }, { since, anchor: at.path }));
-  }
-
-  return { insert, click, drop, move };
+  return { insert, click, drop };
 }
 export type BlockInsertController = ReturnType<typeof createBlockInsertController>;

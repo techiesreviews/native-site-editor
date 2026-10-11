@@ -169,6 +169,37 @@ test("a Section dragged in Structure snaps between page bands", async ({ page, b
   await expect.poll(() => source(page)).toBe(original);
 });
 
+test("a row press on a Block that does not move starts no drag (an <svg> island); its siblings still drag", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=540&branch=main&file=index.html`);
+  await expect(frame(page).locator("#work .cards card-project").first()).toBeVisible({ timeout: 30_000 });
+  const fixture = await (await page.request.get(`${baseURL}/__demo/file?repo=native-cards&path=index.html`)).text();
+  const mark = '<svg class="mark" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"></circle></svg>';
+  const withMark = fixture.replace("<h2>What we do</h2>", `<h2>What we do</h2>\n      ${mark}`);
+  expect(withMark).not.toBe(fixture);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "index.html", content: withMark } });
+  await page.reload();
+  await open(page, baseURL);
+  await expect(frame(page).locator("#services > svg.mark")).toHaveCount(1);
+  const original = await source(page);
+  await unfold(page, "1.2");
+  // The <svg> row (#services' second child): pressed and moved well past the threshold, nothing drags.
+  const svg = await box(row(page, "1.2.1"));
+  await page.mouse.move(svg.x, svg.y);
+  await page.mouse.down();
+  await page.mouse.move(svg.x, svg.y + 10, { steps: 2 });
+  await page.mouse.move(svg.x, svg.y - 40, { steps: 8 });
+  await expect(ghost(page)).toHaveCount(0);
+  await expect(row(page, "1.2.1")).not.toHaveClass(/is-drag-source/);
+  await page.mouse.up();
+  expect(await source(page)).toBe(original);
+  // The heading beside it still drags.
+  const heading = await box(row(page, "1.2.0"));
+  await pressAndMove(page, { x: heading.x, y: heading.y }, { x: heading.x, y: heading.y - 12 });
+  await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Heading");
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+});
+
 test("a block from the rail drops in Structure at the depth the pointer's x picks", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const original = await source(page);

@@ -189,13 +189,19 @@ test("bytes older than the source are stale, in the caller's words; nothing writ
 });
 
 test("a template behind an items slot, read through r, edited before the write is stale", () => {
-  const f = setup();
-  let calls = 0;
-  // The guard runs before the plan and again just before the write: the second time, the template changes.
-  const guard = () => { if (++calls === 2) f.m.writeDraft(WORK, templates[WORK].replace('<div class="cards">', '<div class="grid">')); return true; };
-  const out = f.moves.move(f.at([0, 1, 1]), { step: "down" }, { guard });
-  assert.deepEqual(out, { status: "stale", message: "The page changed meanwhile. Try again.", changed: { file: WORK } });
-  assert.equal(f.page(), SOURCE);
+  for (const to of [
+    { step: "down" as const },
+    { drop: { parent: [0, 1], index: 4, slot: "more" }, painted: SOURCE, name: "Card project", where: "Into Section work" },
+  ]) {
+    const f = setup();
+    let calls = 0;
+    // The guard runs before the plan and again just before the write: the second time, the template changes.
+    const guard = () => { if (++calls === 2) f.m.writeDraft(WORK, templates[WORK].replace('<div class="cards">', '<div class="grid">')); return true; };
+    const out = f.moves.move(f.at([0, 1, 1]), to, { guard });
+    assert.deepEqual(out, { status: "stale", message: "The page changed meanwhile. Try again.", changed: { file: WORK } });
+    assert.equal(f.page(), SOURCE);
+    assert.deepEqual(f.m.steps(), []);
+  }
   // A file the plan did not read changes nothing.
   const g = setup();
   let other = 0;
@@ -241,7 +247,28 @@ test("refusals: into itself, a named slot, a nested component, before a <details
   assert.deepEqual(g.moves.move(g.at([0, 2], HERO), { drop: { parent: [0, 1], index: 0 }, painted, name: "Paragraph", where: "There" }),
     { status: "refused", message: `Paragraph was not moved: ${templateSlotRefusal("title")}` });
   assert.deepEqual(g.moves.move(g.at([0, 1, 0], HERO), { step: "in" }), { status: "refused", message: templateSlotRefusal("eyebrow") });
+  assert.deepEqual(g.moves.move(g.at([0, 2], HERO), { drop: { parent: [], index: 1 }, painted, name: "Paragraph", where: "There" }),
+    { status: "refused", message: "Paragraph was not moved: Parts go inside the template's element, not beside it." });
   assert.deepEqual(g.m.steps(), []);
+});
+
+test("a link drops into another paragraph where HTML allows", () => {
+  const page = '<main><section><p>One <a href="/a">link</a>.</p><p>Two</p></section></main>';
+  const f = setup({ page });
+  assert.deepEqual(f.moves.move(f.at([0, 0, 0, 0]), { drop: { parent: [0, 0, 1], index: 0 }, painted: page, name: "Link", where: "Into Paragraph" }),
+    { status: "moved", node: [0, 0, 1, 0] });
+  assert.equal(f.page(), '<main><section><p>One .</p><p>Two <a href="/a">link</a></p></section></main>');
+  assert.deepEqual(f.m.steps(), ["range"]);
+});
+
+test("a drop refuses the press stamp after the route changes", () => {
+  const f = setup();
+  const at = f.at([0, 0, 1]), since = f.edits.stamp();
+  f.m.setRoute("/other/");
+  assert.deepEqual(f.moves.move(at, { drop: { parent: [0, 2], index: 1 }, painted: SOURCE, name: "Paragraph", where: "Into Section" }, { since }),
+    { status: "stale", message: "The page changed meanwhile. Try again.", changed: "route" });
+  assert.equal(f.page(), SOURCE);
+  assert.deepEqual(f.m.steps(), []);
 });
 
 test("a gap moves a Section among its own siblings only", () => {
