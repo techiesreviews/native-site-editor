@@ -7,24 +7,27 @@ import type * as TS from "typescript-eslint-api/node_modules/typescript";
 // TypeScript 7 has no JavaScript API; this package owns the TS 6 parser.
 const ts: typeof TS = createRequire(import.meta.url)("typescript-eslint-api");
 type Finding = { file: string; line: number; rule: string; text: string };
-type AllowlistEntry = { file: string; match: string; reason: string };
+// `count`: how many findings the entry covers (default 1), so a new one beside it fails too.
+type AllowlistEntry = { file: string; match: string; reason: string; count?: number };
 type Detector = (source: string, file: string) => Finding[];
 const LINK = "src/components/preview-link.ts";
 const RUNTIME = "src/components/native-preview-runtime.js";
 const RULES = "src/page-builder/rules/";
 
-const nonFrameChannels: AllowlistEntry[] = [
-  { file: "src/drafts.ts", match: "channel", reason: "BroadcastChannel announces draft changes between editor tabs, not to the preview frame." },
-  { file: "src/page-builder/media-optimise.ts", match: "worker", reason: "The image optimisation Worker receives jobs and returns results independently of the preview." },
-  { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: "The image optimisation worker endpoint replies to its owner, not to the preview frame." },
-];
+const DRAFTS = "BroadcastChannel announces draft changes between editor tabs, not to the preview frame.";
+const OPTIMISER = "The image optimisation Worker receives jobs and returns results independently of the preview.";
+const OPTIMISER_SIDE = "The image optimisation worker endpoint replies to its owner, not to the preview frame.";
 const postAllowlist: AllowlistEntry[] = [
-  ...nonFrameChannels,
-  { file: RUNTIME, match: "parent", reason: "Runtime posts are the frame endpoint; preview-wire.test.ts pins their types and posting shapes." },
+  { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
+  { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
+  { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE, count: 3 },
+  { file: RUNTIME, match: "parent", reason: "The runtime's posts (emit and ready) are the frame side; preview-wire.test.ts pins their types and shapes.", count: 2 },
 ];
 const listenerAllowlist: AllowlistEntry[] = [
-  ...nonFrameChannels,
-  { file: RUNTIME, match: "window", reason: "The runtime host listener is the frame endpoint; preview-wire.test.ts pins its count, source and handled types." },
+  { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
+  { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
+  { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE },
+  { file: RUNTIME, match: "window", reason: "The runtime's one host listener is the frame side; preview-wire.test.ts pins its source and handled types." },
 ];
 const copiedAllowlist: AllowlistEntry[] = [
   { file: "src/page-builder/native-operations.ts", match: '["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]', reason: "textNodes constrains source-tree content and insertion destinations, including pre and option, rather than canvas text editing or repeated items (slice 24)." },
@@ -43,11 +46,11 @@ const headingAllowlist: AllowlistEntry[] = [
   { file: "src/page-builder/component-model.ts", match: "export function templateStructure(", reason: "templateStructure renders structure rows and their heading labels while unwrapping slots; it does not decide whether a card has a heading slot." },
   { file: "src/page-builder/component-model.ts", match: "function planComponent(", reason: "planComponent chooses new component slots and names a linked title, rather than recognising an existing card heading slot." },
   { file: "src/page-builder/component-model.ts", match: "export function hasHeadingSlot(template: string) {\n  return headingSlotIn(parseSource(template), sourceView(template));\n}", reason: "This source-template adapter delegates directly to rules/cards.ts rather than copying its heading-slot walk." },
-  { file: "src/page-builder/native-operations.ts", match: "const heading = node.name === \"section\" ? node.children.find", reason: "nativeOutline and its mapper report section headings and slot names for the source outline, not card heading-slot eligibility." },
+  { file: "src/page-builder/native-operations.ts", match: "const heading = node.name === \"section\" ? node.children.find", reason: "nativeOutline and its mapper (two findings, one walk) report section headings and slot names for the source outline, not card heading-slot eligibility.", count: 2 },
 ];
 
 function parse(source: string, file: string) {
-  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith(".js") ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  return ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
 }
 function walk(node: TS.Node, visit: (node: TS.Node) => void) {
   visit(node);
@@ -57,6 +60,8 @@ function finding(tree: TS.SourceFile, node: TS.Node, rule: string, text = node.g
   return { file: tree.fileName, line: tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1, rule, text };
 }
 function literal(node: TS.Node | undefined): string | undefined {
+  // `"div" as const`, `("div")`, `"div"!` and `<const>"div"` are the same literal.
+  while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isNonNullExpression(node) || ts.isTypeAssertionExpression(node))) node = node.expression;
   return node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : undefined;
 }
 function member(node: TS.Node): { name: string; receiver: TS.Expression } | undefined {
@@ -68,13 +73,12 @@ function member(node: TS.Node): { name: string; receiver: TS.Expression } | unde
   return undefined;
 }
 
-// One link owns host posts, including optional chains, assertions and casts.
+// One link owns host posts: any read of `postMessage` (a call, a cast, a bound or aliased method).
 const framePosts: Detector = (source, file) => {
   if (file === LINK) return [];
   const tree = parse(source, file), hits: Finding[] = [];
   walk(tree, (node) => {
-    if (!ts.isCallExpression(node)) return;
-    const access = member(node.expression);
+    const access = member(node);
     if (access?.name === "postMessage") hits.push(finding(tree, node, "frame-post", access.receiver.getText(tree)));
   });
   return hits;
@@ -87,9 +91,11 @@ const frameListeners: Detector = (source, file) => {
   const protectedImports = new Set(["FRAME_SOURCE", "HOST_SOURCE", "readFrameMessage"]);
   walk(tree, (node) => {
     if (file !== LINK && ts.isCallExpression(node) && literal(node.arguments[0]) === "message") {
+      // Any call naming "message" first: a listener added through a bound or aliased method too.
       const access = member(node.expression);
-      if (access?.name === "addEventListener") hits.push(finding(tree, node, "frame-listener", access.receiver.getText(tree)));
-      else if (ts.isIdentifier(node.expression) && node.expression.text === "addEventListener") hits.push(finding(tree, node, "frame-listener", "globalThis"));
+      const receiver = access?.name === "addEventListener" ? access.receiver.getText(tree)
+        : ts.isIdentifier(node.expression) && node.expression.text === "addEventListener" ? "globalThis" : node.expression.getText(tree);
+      hits.push(finding(tree, node, "frame-listener", receiver));
     }
     if (file !== LINK && ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const access = member(node.left);
@@ -193,16 +199,17 @@ function matches(hit: Finding, entry: AllowlistEntry) {
 function unallowed(hits: Finding[], allowlist: AllowlistEntry[]) {
   return hits.filter((hit) => !allowlist.some((entry) => matches(hit, entry)));
 }
+// An entry is stale without a reason, or when it no longer covers exactly its count of findings.
 function staleEntries(hits: Finding[], allowlist: AllowlistEntry[]) {
-  return allowlist.filter((entry) => !entry.reason.trim() || !hits.some((hit) => matches(hit, entry)));
+  return allowlist.filter((entry) => !entry.reason.trim() || hits.filter((hit) => matches(hit, entry)).length !== (entry.count ?? 1));
 }
 function sourceFiles(directory: string): string[] {
   return readdirSync(new URL(`../${directory}/`, import.meta.url), { withFileTypes: true }).flatMap((entry) => {
     const file = `${directory}/${entry.name}`;
-    return entry.isDirectory() ? sourceFiles(file) : file.endsWith(".ts") ? [file] : [];
+    return entry.isDirectory() ? sourceFiles(file) : /\.(?:[cm]?[jt]s|tsx)$/.test(file) ? [file] : [];
   });
 }
-const sources = [...sourceFiles("src"), ...sourceFiles("shared"), RUNTIME].map((file) => ({ file, source: readFileSync(new URL(`../${file}`, import.meta.url), "utf8") }));
+const sources = [...sourceFiles("src"), ...sourceFiles("shared")].map((file) => ({ file, source: readFileSync(new URL(`../${file}`, import.meta.url), "utf8") }));
 const realHits = guards.map(({ detect }) => sources.flatMap(({ source, file }) => detect(source, file)));
 const FAKE = "src/components/fake.ts";
 
@@ -213,14 +220,14 @@ function flags(detect: Detector, source: string, rule: string) {
 }
 
 test("frame posts reject frame receivers through chains, assertions, casts and aliases", () => {
-  for (const source of ['frame.contentWindow?.postMessage({});', 'frame.contentWindow!.postMessage({});', '(x.contentWindow as Window).postMessage({});', 'window.postMessage({});', 'const peer = frame.contentWindow; peer.postMessage({});', 'frame.contentWindow["postMessage"]({});']) flags(framePosts, source, "frame-post");
+  for (const source of ['frame.contentWindow?.postMessage({});', 'frame.contentWindow!.postMessage({});', '(x.contentWindow as Window).postMessage({});', 'window.postMessage({});', 'const peer = frame.contentWindow; peer.postMessage({});', 'frame.contentWindow["postMessage"]({});', '(frame.contentWindow.postMessage as Function)({});', 'const post = window.postMessage.bind(window);']) flags(framePosts, source, "frame-post");
   assert.deepEqual(unallowed(framePosts('worker.postMessage({});', "src/page-builder/media-optimise.ts"), postAllowlist), []);
   assert.deepEqual(framePosts('frame.contentWindow?.postMessage({});', LINK), []);
   assert.deepEqual(framePosts('// window.postMessage({});\nconst text = "postMessage";', FAKE), []);
 });
 
 test("frame listeners reject listeners, assignments, copied source names and protocol imports", () => {
-  for (const source of ['window.addEventListener("message", receive);', 'window.onmessage = receive;', 'addEventListener("message", receive);', 'onmessage = receive;', 'window["onmessage"] = receive;']) flags(frameListeners, source, "frame-listener");
+  for (const source of ['window.addEventListener("message", receive);', 'window.onmessage = receive;', 'addEventListener("message", receive);', 'onmessage = receive;', 'window["onmessage"] = receive;', 'window.addEventListener.bind(window)("message", receive);', 'const on = window.addEventListener; on("message", receive);']) flags(frameListeners, source, "frame-listener");
   for (const source of ['const source = "astro-native-preview";', 'const source = `astro-native-preview-host`;']) flags(frameListeners, source, "wire-source");
   for (const name of ["FRAME_SOURCE", "HOST_SOURCE", "readFrameMessage"]) flags(frameListeners, `import { ${name} as renamed } from "./preview-protocol";`, "protocol-import");
   flags(frameListeners, 'import * as wire from "./preview-wire";', "protocol-import");
@@ -230,7 +237,7 @@ test("frame listeners reject listeners, assignments, copied source names and pro
 });
 
 test("copied rule sets reject arrays, object keys, regexes and plain tag lists", () => {
-  for (const source of ['const tags = new Set(["article", "li", "div"]);', 'const tags = ["strong", "em", "b"];', 'const tags = { strong: true, em: true, ["span"]: true };', String.raw`const tags = /\b(?:strong|em|span)\b/;`, 'const tags = "article, li | div";', 'const tags = `strong em span`;']) flags(copiedRuleSets, source, "copied-rule-set");
+  for (const source of ['const tags = new Set(["article", "li", "div"]);', 'const tags = ["strong", "em", "b"];', 'const tags = { strong: true, em: true, ["span"]: true };', String.raw`const tags = /\b(?:strong|em|span)\b/;`, 'const tags = "article, li | div";', 'const tags = `strong em span`;', 'const tags = new Set(["article" as const, ("li"), "div" satisfies string]);']) flags(copiedRuleSets, source, "copied-rule-set");
   for (const source of ['const tags = ["strong", "em"];', 'const tags = ["strong", "strong", "em"];', 'const sentence = "a div in an article";', String.raw`const whitespace = /\s+\b/;`, 'const chars = /[bius]/;', 'const heading = /h[1-6]/;', 'const tags = /strong|em/i;']) assert.deepEqual(copiedRuleSets(source, FAKE), [], source);
   assert.deepEqual(copiedRuleSets('const tags = ["article", "li", "div"];', `${RULES}fake.ts`), []);
 });
@@ -255,4 +262,6 @@ test("every allowlist entry still matches a detector finding and gives a reason"
   const entry = { file: FAKE, match: "worker", reason: "Worker channel." };
   assert.deepEqual(staleEntries(framePosts('worker.postMessage({});', FAKE), [entry]), []);
   assert.deepEqual(staleEntries(framePosts('worker.send({});', FAKE), [entry]), [entry]);
+  assert.deepEqual(staleEntries(framePosts('worker.postMessage({}); worker.postMessage({});', FAKE), [entry]), [entry], "a second finding under one entry fails");
+  assert.deepEqual(staleEntries(framePosts('worker.postMessage({}); worker.postMessage({});', FAKE), [{ ...entry, count: 2 }]), []);
 });
