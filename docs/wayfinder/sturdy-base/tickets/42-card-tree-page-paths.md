@@ -1,7 +1,7 @@
 ---
 title: "Card grids, slot links and sibling pages read page paths through the source tree"
 type: task (AFK)
-status: open
+status: closed
 assignee:
 blocked_by: [40-source-tree-module, 33-block-move-mcp-and-dead-card-moves]
 builder: sol
@@ -22,3 +22,8 @@ Design: /home/ubulex/Projects/native-site-editor/.scratch/sturdy/card-tree-desig
 - `rg "parseMarked|markedRange|nativeOutline|locateNativeElementRange|querySelector|textContent" src/page-builder/card-source.ts src/page-builder/card-slot.ts src/page-builder/cards.ts` finds nothing.
 - `tests/card-source.test.ts` covers grids, items, `itemAround`, labels, collections and `mainRange` in Node on `readSource(page, { page: true })`; `tests/card-slot.test.ts` a `<script>` among an instance's cards and a page with no `<body>` tag; `tests/cards-controller.test.ts` one Create page case with a `<script>` among the cards.
 - `native-cards`, `native-add-card*`, `native-card-paths*`, `native-delete-card-race`, `native-slot-change-pages-actual` specs green; `npm run check`, `npm test`, full `native-save` suite green; budget delta reported.
+
+## Done (2026-10-11)
+
+- card-source's `gridAt`, `gridOfItem` (string overload kept for main.ts), `itemAround`, `pageGrids`, `instanceLabel`, `mainRange` take a `SourceTree<N>`; `childAt`, `Parsed`, the parse-per-call and DOM walking go. card-slot's `cardSlotAddEdit` and `slotCardLinks` take a tree (the `nativeOutline` walk, `<body>` walk and double decode go; `nativeInstanceInsertEdit` still writes). cards.ts reads `readPage(source)` for card ranges, the last item's slot and sibling pages (`itemTitle` of a peer stays on `itemElement` until 43). T3, T4 (sibling pages and slots; a peer's own title still needs an exact peer) and T6 built. Commits 95fb8b22, 00be95f0 (Sol built, Claude fixed a missing-parent guard; Sol's review found no defects).
+- Tests: card-source +10 (grids, items, itemAround, labels, collections, mainRange, scripts on `readSource(page, { page: true })`), card-slot +6 (script among an instance's cards for links and Add card, `&amp;eacute;` href once, no `<body>`, strict refusal, missing parent), cards-controller +3 Create page cases (script, implied end on the grid path and the links path). `npm test` 1926; full native-save 887 passed, 0 failed; smoke 42, @actual 54. Budget +177 B gzip total, paint 338 KB unchanged.
