@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPageStructureController, type PageStructurePorts } from "../src/controllers/page-structure-controller.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
+import { createBlockMoves } from "../src/page-builder/block-move.ts";
 import { textRangeInSource } from "../shared/html-source.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 
@@ -28,8 +29,13 @@ function fixture(init: { page?: string; open?: string; band?: string } = {}) {
   });
   const edits = createGuardedEdits(mem.workspace);
   const state = { selected: { path: PAGE, node: [0, 0] } as { path: string; node: number[] } | undefined };
-  const notices: string[] = [], errors: string[] = [];
-  let previewUpdates = 0, refreshes = 0;
+  const notices: string[] = [], errors: string[] = [], forgotten: string[] = [];
+  let refreshes = 0;
+  const moves = createBlockMoves({
+    edits, editing: () => undefined,
+    mounted: path => mem.openFile() === path && mem.model(path) !== undefined,
+    forgetOpening: () => painted => { forgotten.push(painted); },
+  });
   const ports = {
     edits,
     appStore: { openFile: { get value() { return mem.openFile(); } }, selection: { get value() { return state.selected; } } },
@@ -42,27 +48,27 @@ function fixture(init: { page?: string; open?: string; band?: string } = {}) {
     get versionView() { return undefined; },
     locateNativeElementRange, textRangeInSource,
     nativePageLabelOf: (path: string) => path,
-    updateNativePreviewSources: () => { previewUpdates++; },
     refuse: (message: string) => notices.push(message),
     errorMessage: (error: unknown) => errors.push(error instanceof Error ? error.message : String(error)),
-    itemsSlots: () => () => false,
+    moves,
   } as unknown as PageStructurePorts;
   const controller = createPageStructureController(ports);
   const target = { path: PAGE, node: [0, 0], tag: "section" };
   const page = () => edits.peek.source(PAGE);
-  return { mem, edits, controller, state, notices, errors, target, page, previewUpdates: () => previewUpdates, refreshes: () => refreshes };
+  return { mem, edits, controller, ports, state, notices, errors, forgotten, target, page, refreshes: () => refreshes };
 }
 
-// What the bar offers: the painted bytes, the workspace now, and a guard on its selection and editor model.
-function barOffer(f: ReturnType<typeof fixture>) {
+// What the bar holds for its selection: the painted bytes, the workspace then, and a guard on its selection and editor model.
+function barMove(f: ReturnType<typeof fixture>, direction: "up" | "down") {
   const model = f.mem.workspace.modelState(PAGE)!, node = f.target.node;
-  return { painted: SOURCE, since: f.edits.stamp(), guard: () => model.isCurrent() && f.state.selected?.path === PAGE && f.state.selected.node.join() === node.join() };
+  const options = { since: f.edits.stamp(), stale: MOVE_STALE, guard: () => model.isCurrent() && f.state.selected?.path === PAGE && f.state.selected.node.join() === node.join() };
+  return () => f.controller.moveBlock({ path: PAGE, node, painted: SOURCE }, direction, options);
 }
 
 for (const moved of ["generation", "scope", "source", "selection", "version", "route", "remount"] as const) {
   test(`a bar's section move refuses once the ${moved} moved since it was offered`, () => {
     const f = fixture();
-    const offer = barOffer(f);
+    const move = barMove(f, "down");
     if (moved === "generation") f.mem.bumpGeneration();
     if (moved === "scope") f.mem.setScope("lex/site@other");
     if (moved === "source") f.mem.typeInto(PAGE);
@@ -71,50 +77,102 @@ for (const moved of ["generation", "scope", "source", "selection", "version", "r
     if (moved === "route") f.mem.setRoute("/about");
     if (moved === "remount") f.mem.remount(PAGE);
     const before = f.page();
-    assert.equal(f.controller.moveNativeSection(f.target, "down", offer), "stayed");
+    assert.equal(move(), "stayed");
     assert.equal(f.page(), before);
     assert.deepEqual(f.mem.steps(), []);
     assert.deepEqual(f.notices, [MOVE_STALE]);
   });
 }
 
-test("a section move writes one step by the editor's move engine, keeps the section selected, and undoes", () => {
+test("a bar's section move answers the moved path, and nothing is said at an edge", () => {
   const f = fixture();
-  assert.equal(f.controller.moveNativeSection(f.target, "down", barOffer(f)), "moved");
-  assert.equal(f.page(), "<main><section>B</section>\n<section>A</section></main>");
+  assert.equal(barMove(f, "up")(), "stayed");
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(barMove(f, "down")(), [0, 1]);
   assert.deepEqual(f.mem.steps(), ["range"]);
-  assert.deepEqual(f.mem.selected, [{ path: PAGE, node: [0, 1] }]);
-  assert.equal(f.mem.announced.at(-1), "Moved down");
-  assert.equal(f.mem.undo(), true);
+});
+
+// The bar drawn for a selection: its Move buttons, as the edit bar would press them (a detached button too).
+function drawBar(f: ReturnType<typeof fixture>, node = f.target.node) {
+  let model: { controls: { label?: string; disabled?: boolean; onPress?: () => void }[] } | undefined;
+  Object.assign(f.ports, {
+    nativePreview: { ...f.ports.nativePreview, showEditBar: (shown: typeof model) => { model = shown; }, hideEditBar: () => { model = undefined; } },
+    nativeEditableSource: (path: string) => f.edits.peek.source(path),
+    startTagAttribute: () => undefined, element: () => ({ textContent: "" }), setupScope: () => "scope", generation: 0,
+    agentController: { captureAsk: () => undefined }, previewSelection: { textSelection: () => undefined }, cardControls: () => [],
+    nativeTextTags: new Set(), nativeLinkParents: new Set(), nativeNamedDescendant: () => false, nativePictureSources: () => false,
+  });
+  f.controller.renderNativeEditBar({ path: PAGE, node, tag: "section", text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { x: 0, y: 0, width: 1, height: 1 } } as never);
+  const button = (label: string) => model!.controls.find(control => control.label === label)!;
+  return button;
+}
+
+test("the bar's Move buttons are off at the ends, and a detached one refuses once another section is selected", () => {
+  const f = fixture();
+  const button = drawBar(f);
+  assert.equal(button("Move up").disabled, true);
+  assert.equal(button("Move down").disabled, false);
+  f.state.selected = { path: PAGE, node: [0, 1] };
+  button("Move down").onPress!();
   assert.equal(f.page(), SOURCE);
+  assert.deepEqual(f.notices, [MOVE_STALE]);
+  f.state.selected = { path: PAGE, node: [0, 0] };
+  drawBar(f)("Move down").onPress!();
+  assert.equal(f.page(), "<main><section>B</section>\n<section>A</section></main>");
 });
 
-test("a structure row's section move (no selection) moves from the bytes painted for it", () => {
-  const f = fixture();
-  f.state.selected = undefined;
-  assert.equal(f.controller.moveNativeSection(f.target, "down", { painted: SOURCE }), "moved");
+// A Structure row while another file is open: the page opens first, the move settles later.
+const rowMove = (f: ReturnType<typeof fixture>, at: { node: number[]; painted: string }, direction: "up" | "down") =>
+  f.controller.moveBlock({ path: PAGE, ...at }, direction, { stale: OPEN_STALE }) as Promise<unknown>;
+
+test("Alt+Down on a row while another file is open opens the page, then answers the moved path", async () => {
+  const f = fixture({ open: "styles/site.css" });
+  assert.deepEqual(await rowMove(f, { node: [0, 0], painted: SOURCE }, "down"), [0, 1]);
+  assert.equal(f.mem.openFile(), PAGE);
   assert.deepEqual(f.mem.steps(), ["range"]);
-  assert.equal(fixture().controller.moveNativeSection(f.target, "down", { painted: "<main></main>" }), "stayed");
+  assert.deepEqual(f.notices, []);
 });
 
-test("a section move at the first sibling records no history and says nothing", () => {
-  const f = fixture();
-  assert.equal(f.controller.moveNativeSection(f.target, "up", barOffer(f)), "stayed");
+test("a section template made non-section during an Alt+Up wait refuses, writing nothing", async () => {
+  const page = "<main><section>A</section><x-band></x-band></main>";
+  const f = fixture({ page, open: "styles/site.css" });
+  const hold = f.mem.holdOpen();
+  const moving = rowMove(f, { node: [0, 1], painted: page }, "up");
+  await hold.reached;
+  f.mem.writeDraft(BAND, "<div>Band</div>");
+  hold.release();
+  assert.equal(await moving, "stayed");
+  assert.equal(f.page(), page);
+  assert.deepEqual(f.mem.steps(), []);
+  assert.deepEqual(f.notices, [OPEN_STALE]);
+});
+
+test("a page draft written while its editor opens keeps the page unmounted and refuses the move", async () => {
+  const f = fixture({ open: "styles/site.css" });
+  const hold = f.mem.holdOpen();
+  const moving = rowMove(f, { node: [0, 0], painted: SOURCE }, "down");
+  await hold.reached;
+  const foreign = SOURCE.replace("<section>A", '<section data-agent="during-open">A');
+  f.mem.writeDraft(PAGE, foreign);
+  hold.release();
+  assert.equal(await moving, "stayed");
+  assert.equal(f.mem.model(PAGE), undefined);
+  assert.equal(f.page(), foreign);
+  assert.deepEqual(f.mem.steps(), []);
+  assert.deepEqual(f.notices, [OPEN_STALE]);
+  assert.deepEqual(f.forgotten, [SOURCE]);
+});
+
+test("a repository change while the page opens drops the move without a word", async () => {
+  const f = fixture({ open: "styles/site.css" });
+  const hold = f.mem.holdOpen();
+  const moving = rowMove(f, { node: [0, 0], painted: SOURCE }, "down");
+  await hold.reached;
+  f.mem.bumpGeneration();
+  hold.release();
+  assert.equal(await moving, "stayed");
   assert.deepEqual(f.mem.steps(), []);
   assert.deepEqual(f.notices, []);
-  assert.deepEqual(f.mem.announced, []);
-});
-
-test("a section component moves when its template is a section, not when it is not", () => {
-  const page = "<main><x-band></x-band><section>B</section></main>";
-  const band = { path: PAGE, node: [0, 0], tag: "x-band" };
-  const f = fixture({ page });
-  assert.equal(f.controller.isNativeSectionTag("x-band"), true);
-  assert.equal(f.controller.moveNativeSection(band, "down", { painted: page }), "moved");
-  const g = fixture({ page, band: "<div>Band</div>" });
-  assert.equal(g.controller.isNativeSectionTag("x-band"), false);
-  assert.equal(g.controller.moveNativeSection(band, "down", { painted: page }), undefined);
-  assert.deepEqual(g.mem.steps(), []);
 });
 
 test("MCP move_section (moveNativeSectionTo) moves by the editor's engine as one step, keeping CRLF and leaving no blank line", () => {
@@ -131,70 +189,6 @@ test("MCP move_section (moveNativeSectionTo) moves by the editor's engine as one
   assert.equal(g.mem.announced.at(-1), "Section stayed in place");
   assert.equal(g.controller.moveNativeSectionTo(g.target, [], 0), undefined);
   assert.deepEqual(g.mem.steps(), []);
-});
-
-test("Alt+Down on a row while another file is open opens the page, then moves the section as one step", async () => {
-  const f = fixture({ open: "styles/site.css" });
-  await f.controller.moveNativeSectionAfterOpening(f.target, "down", SOURCE);
-  assert.equal(f.mem.openFile(), PAGE);
-  assert.equal(f.page(), "<main><section>B</section>\n<section>A</section></main>");
-  assert.deepEqual(f.mem.steps(), ["range"]);
-  assert.deepEqual(f.notices, []);
-});
-
-test("leaving Edit component mode while the page opens still moves the section", async () => {
-  const f = fixture({ open: "styles/site.css" });
-  f.mem.enterEditMode();
-  const hold = f.mem.holdOpen();
-  const moving = f.controller.moveNativeSectionAfterOpening(f.target, "down", SOURCE);
-  await hold.reached;
-  f.mem.leaveEditMode();
-  hold.release();
-  await moving;
-  assert.deepEqual(f.mem.steps(), ["range"]);
-  assert.deepEqual(f.notices, []);
-});
-
-test("a section template made non-section during an Alt+Up wait refuses, writing nothing", async () => {
-  const page = "<main><section>A</section><x-band></x-band></main>";
-  const f = fixture({ page, open: "styles/site.css" });
-  const hold = f.mem.holdOpen();
-  const moving = f.controller.moveNativeSectionAfterOpening({ path: PAGE, node: [0, 1], tag: "x-band" }, "up", page);
-  await hold.reached;
-  f.mem.writeDraft(BAND, "<div>Band</div>");
-  hold.release();
-  await moving;
-  assert.equal(f.page(), page);
-  assert.deepEqual(f.mem.steps(), []);
-  assert.deepEqual(f.notices, ["The section could not be moved"]);
-});
-
-test("a page draft written while its editor opens keeps the page unmounted and refuses the move", async () => {
-  const f = fixture({ open: "styles/site.css" });
-  const hold = f.mem.holdOpen();
-  const moving = f.controller.moveNativeSectionAfterOpening(f.target, "down", SOURCE);
-  await hold.reached;
-  const foreign = SOURCE.replace("<section>A", '<section data-agent="during-open">A');
-  f.mem.writeDraft(PAGE, foreign);
-  hold.release();
-  await moving;
-  assert.equal(f.mem.model(PAGE), undefined);
-  assert.equal(f.page(), foreign);
-  assert.deepEqual(f.mem.steps(), []);
-  assert.deepEqual(f.notices, [OPEN_STALE]);
-  assert.equal(f.previewUpdates(), 1);
-});
-
-test("a repository change while the page opens drops the move without a word", async () => {
-  const f = fixture({ open: "styles/site.css" });
-  const hold = f.mem.holdOpen();
-  const moving = f.controller.moveNativeSectionAfterOpening(f.target, "down", SOURCE);
-  await hold.reached;
-  f.mem.bumpGeneration();
-  hold.release();
-  await moving;
-  assert.deepEqual(f.mem.steps(), []);
-  assert.deepEqual(f.notices, []);
 });
 
 test("text typed in the preview is one step on the open page, the element selected after it", async () => {

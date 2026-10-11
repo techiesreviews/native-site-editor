@@ -11,8 +11,9 @@ import { decodeHtmlEntities } from "../page-builder/html-entities";
 import { REQUEST_TEXT_LIMIT } from "../../shared/agent";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { isSectionTemplate } from "../native-insert";
-import { nativeMovableBlock, type ItemsSlotRule } from "../page-builder/native-operations";
-import { nativeElementSiblingMove, nativeSectionMovePlan, templateMovePath } from "../page-builder/block-move-rules";
+import { nativeSectionMovePlan, type MoveStep } from "../page-builder/block-move-rules";
+import { itemsSlotRule } from "../page-builder/block-insert";
+import { type BlockMoves, type MoveAt, type MoveOptions, type Settled } from "../page-builder/block-move";
 import { type ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
 import { type createPageStructure } from "../components/page-structure";
@@ -66,19 +67,17 @@ export interface PageStructurePorts {
   readonly elementPathAt: (html: string, start: number) => number[] | undefined;
   readonly textRangeInSource: (inner: string, start: number, end: number, text: string) => import("../../shared/html-source").SourceSpan | undefined;
   readonly wrapperAround: (inner: string, at: number, names: string[]) => ElementRange | undefined;
-  /** Which slots of a component are items slots: blocks in them drag by the bar's name as page blocks do. */
-  readonly itemsSlots: () => ItemsSlotRule;
-  /** Canvas and edit-bar sibling keys use the host's fresh source and one transaction. */
-  readonly moveBlock: (selection: NativePreviewSelection, direction: "up" | "down") => "moved" | "stayed";
+  /** The Block move module (src/page-builder/block-move.ts): the bar's drag handle, Move buttons and steps. */
+  readonly moves: BlockMoves;
 }
 
-/** What a section move was offered against: the bytes painted for it, the workspace then (`since`) and, from the bar, its selection and editor model (`guard`). */
-export interface SectionMoveOffer { painted: string; since?: Stamp; guard?: () => boolean }
+/** A step's outcome: the moved element's path, or "stayed" (an edge, or a refusal already said). */
+export type BlockMoved = number[] | "stayed";
 
 // A plan with nothing to write: no step, nothing said.
 const NOTHING: Planned = { done: "", undone: "" };
 const SECTION_MOVE_STALE = "The source or selection changed. Select the section again before moving it.";
-const SECTION_OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
+const BLOCK_MOVE_STALE = "The source changed or its editor is not open. Select the element again before moving it.";
 const FIELD_STALE = "The source or selection changed. Select the element again before editing its fields.";
 const TEXT_UNPLACED = "That text change could not be placed in the source. Change text within one formatting at a time.";
 
@@ -113,7 +112,24 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // the link away again. The wrap and what is typed are one undo step.
   let nativeNewLink: { path: string; node: number[]; link: number[]; text: { start: number; end: number }; shown?: boolean } | undefined;
 
-  let nativeElementMoveAction: EditBarModel["onMove"];
+  // The bar's step for its selection: the edit bar's keys and Move buttons, the canvas's Alt+arrows.
+  let nativeElementMoveAction: ((step: MoveStep) => void) | undefined;
+
+  // What a move came to, said: a refusal or stale bytes as a refusal, a write the editor would not
+  // take as an error. `quietGone`: a move that waited for its page drops a repository change unsaid.
+  function said(out: Settled, quietGone: boolean): BlockMoved {
+    if (out.status === "moved") { if (out.message) ports.errorMessage(new Error(out.message)); return out.node; }
+    if (out.status === "stayed") return "stayed";
+    if (quietGone && out.status === "stale" && (out.changed === "scope" || out.changed === "generation")) return "stayed";
+    if (out.failed) ports.errorMessage(new Error(out.message));
+    else refuse(out.message);
+    return "stayed";
+  }
+  // One step of a Block (the Block move module): now on the mounted page, or once its page opens.
+  function moveBlock(at: MoveAt, step: MoveStep, options: MoveOptions): BlockMoved | Promise<BlockMoved> {
+    const out = ports.moves.move(at, { step }, options);
+    return out.status === "pending" ? out.settled.then(settled => said(settled, true)) : said(out, false);
+  }
 
   // One native field keeps the bytes, the workspace (a stamp) and the editor
   // model from when its popover opened, then the bytes and model it last wrote. The edit bar may replace a
@@ -543,38 +559,41 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // Whole sections (a <section> or a section component) move and duplicate
     // from icon buttons always in the bar, as one undo step each; Remove is
     // below, for any removable element (slice 81).
-    // Alt+Up/Down move any block; Sections keep their proven move path,
-    // from the bar, the preview or the page structure (`moveNativeSection`),
-    // as do plain Up/Down on the bar's name. Any block of the page's <main>
-    // drags by its name in the bar (ticket 12 §10).
-    let onMove: EditBarModel["onMove"];
+    // Any Block moves a step from the bar (Alt+arrows, plain Up/Down on its
+    // name, a Section's Move buttons) and the canvas's Alt+arrows, by the
+    // Block move module: the template's rules in Edit component mode, else
+    // the page's. Only the bytes this selection was painted from move, while
+    // the workspace (`since`), the selection and its editor model hold. Any
+    // block of the page's <main> drags by its name in the bar (ticket 12 §10).
+    let onMove: ((step: MoveStep) => void) | undefined;
     const templateRoot = ports.componentTools?.isTemplateRoot(selection);
-    // In Edit component mode, a part of the template edited (slice 82).
-    const editing = ports.componentTools?.editModeTemplate()?.path === path;
-    const draggable = Boolean(!templateRoot && node && (editing ? templateMovePath(source, node) : nativeMovableBlock(source, node, ports.itemsSlots())));
-    if (!templateRoot && range && node && isNativeSectionTag(selection.tag)) {
+    const section = isNativeSectionTag(selection.tag);
+    // What the bar draws: from the bytes it is drawn with.
+    const grip = !templateRoot && node?.length ? ports.moves.grip({ path, node, painted: source }) : undefined;
+    const draggable = Boolean(grip?.drags);
+    if (!templateRoot && node?.length) {
+      // A page shown but not open opens first: its editor's model then is not this one.
+      const model = ports.editorModule.isMounted(path) ? modelNow(path) : undefined, selected = stillSelected(path, node);
+      const at = { path, node, painted: selection.paintedSource };
+      const options = { since: ports.edits.stamp(), guard: () => (!model || model.isCurrent()) && selected(), stale: section ? SECTION_MOVE_STALE : BLOCK_MOVE_STALE };
+      onMove = step => void moveBlock(at, step, options);
+    }
+    if (!templateRoot && range && node && section) {
       const parent = node.slice(0, -1);
       const index = node[node.length - 1];
-      const before = index > 0 ? ports.locateNativeElementRange(source, [...parent, index - 1]) : undefined;
-      const after = ports.locateNativeElementRange(source, [...parent, index + 1]);
-      // Only the source this selection was painted from moves; a newer one, or another selection, refuses.
-      const model = modelNow(path), selected = stillSelected(path, node);
-      const offer: SectionMoveOffer | undefined = selection.paintedSource === source
-        ? { painted: source, since: ports.edits.stamp(), guard: () => (!model || model.isCurrent()) && selected() } : undefined;
-      const move = (direction: "up" | "down") => offer ? moveNativeSection(selection, direction, offer) : (refuse(SECTION_MOVE_STALE), "stayed" as const);
-      onMove = move;
+      const move = onMove!;
       controls.push({
         kind: "button",
         icon: "up",
         label: "Move up",
-        disabled: !before,
+        disabled: !grip?.steps.up,
         onPress: () => move("up"),
       });
       controls.push({
         kind: "button",
         icon: "down",
         label: "Move down",
-        disabled: !after,
+        disabled: !grip?.steps.down,
         onPress: () => move("down"),
       });
       controls.push({
@@ -585,9 +604,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
       });
     }
     // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
-    // Non-Sections have sibling keys, but no move arrow buttons in the bar.
-    if (!templateRoot && node && !isNativeSectionTag(selection.tag)) onMove = direction => ports.moveBlock(selection, direction);
-    if (!templateRoot && !isNativeSectionTag(selection.tag)) controls.push(...ports.cardControls(selection, source));
+    // Non-Sections have the steps' keys, but no move arrow buttons in the bar.
+    if (!templateRoot && !section) controls.push(...ports.cardControls(selection, source));
     if (range && node) {
       const template = ports.componentTools?.editModeTemplate();
       const chain = ["body", ...node.map((_, depth) => ports.locateNativeElementRange(source, node.slice(0, depth + 1))?.tag.name ?? "")];
@@ -698,66 +716,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     return tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? ""));
   }
 
-  // The plan of a section move one sibling position from the bytes painted
-  // for it: `verdict` says what came of it ("stayed" at the first or last
-  // position, undefined when the section cannot move this way).
-  function sectionMovePlan(r: Reads, target: { path: string; node: number[]; tag: string }, direction: "up" | "down", painted: string, stale: string) {
-    const outcome: { verdict?: "moved" | "stayed"; plan: Planned | { refuse: string } } = { plan: NOTHING };
-    if (r.source(target.path) !== painted) { outcome.verdict = "stayed"; outcome.plan = { refuse: stale }; return outcome; }
-    if (!isNativeSectionTag(target.tag, r)) return outcome;
-    // The editor's one move engine (nativeMoveEdit), as Alt+Up/Down on any block and drags use.
-    const plan = nativeElementSiblingMove(painted, target.node, direction, ports.itemsSlots());
-    if (plan.status !== "moved") { if (plan.status === "stayed") outcome.verdict = "stayed"; return outcome; }
-    const done = direction === "up" ? "Moved up" : "Moved down";
-    outcome.verdict = "moved";
-    outcome.plan = { edits: new Map([[target.path, [plan.edit]]]), select: { after: { path: target.path, node: plan.selection } }, done, undone: `Undid: ${done}` };
-    return outcome;
-  }
-
-  // Moves a whole section one sibling position, as one undo step, keeping it
-  // selected: the Move up/down buttons and Alt+Up/Down from the bar, the
-  // preview and the page structure all come here. "stayed" at the first or
-  // last position or when the offer is stale (said); nothing for anything but
-  // a section, when the page is not the mounted file, or when the edit could
-  // not be made.
-  function moveNativeSection(target: { path: string; node?: number[]; tag: string }, direction: "up" | "down", offer: SectionMoveOffer): "moved" | "stayed" | undefined {
-    const { path, node } = target;
-    if (!path || !node?.length || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !isNativeSectionTag(target.tag)) return undefined;
-    let move: ReturnType<typeof sectionMovePlan> | undefined;
-    const outcome = ports.edits.now(r => (move = sectionMovePlan(r, { path, node, tag: target.tag }, direction, offer.painted, SECTION_MOVE_STALE)).plan,
-      { since: offer.since, guard: offer.guard, anchor: path });
-    if (outcome.ok) return move?.verdict;
-    if (outcome.reason === "stale") { refuse(SECTION_MOVE_STALE); return "stayed"; }
-    // A refusal the plan made is said; one the editor made is an error, as any failed write.
-    if (move?.verdict === "moved") { ports.errorMessage(new Error(outcome.message)); return undefined; }
-    refuse(outcome.message);
-    return move?.verdict;
-  }
-
-  // Alt+Up/Down on a page structure row while another file is open (a
-  // component chosen in the preview, a file from the explorer): the page
-  // file opens first (the guarded edit's anchor; it does not mount once the
-  // painted bytes changed), as an insert does, then the section moves. A move
-  // that still cannot be made is said so rather than passed off as the end of
-  // the list.
-  async function moveNativeSectionAfterOpening(target: { path: string; node: number[]; tag: string }, direction: "up" | "down", paintedSource: string) {
-    const draft = ports.draftScope();
-    // A kept model of the page, forgotten when the open is refused: it holds bytes older than the draft's.
-    const cachedModel = draft ? ports.editorModule?.captureFileModelState(draft, target.path, true) : undefined;
-    let move: ReturnType<typeof sectionMovePlan> | undefined;
-    const outcome = await ports.edits.run(r => (move = sectionMovePlan(r, target, direction, paintedSource, SECTION_OPEN_STALE)).plan,
-      { since: loadStamp(), anchor: target.path, guard: () => ports.nativeEffectiveSource(target.path) === paintedSource, openOnlyIfCurrent: true });
-    if (outcome.ok) { if (outcome.status === "applied" || move?.verdict === "stayed") return; refuse("The section could not be moved"); return; }
-    if (outcome.reason === "stale" && (outcome.changed === "scope" || outcome.changed === "generation")) return;
-    if (outcome.reason === "stale" || outcome.message === SECTION_OPEN_STALE) {
-      if (draft && ports.nativeEffectiveSource(target.path) !== paintedSource && cachedModel?.isCurrent() && !ports.editorModule?.isMounted(target.path)) ports.editorModule?.forgetDraftModel(draft, target.path);
-      ports.updateNativePreviewSources();
-      refuse(SECTION_OPEN_STALE); return;
-    }
-    if (move?.verdict === "moved") ports.errorMessage(new Error(outcome.message));
-    refuse("The section could not be moved");
-  }
-
   // Moves a whole section to another gap among its siblings (`index` counted
   // as the insert points are: before the sibling at that index, or the count
   // for the end), as one undo step, keeping it selected: a drag in the page
@@ -773,7 +731,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const outcome = ports.edits.now(r => {
       const source = r.source(path) ?? "";
       if (!isNativeSectionTag(target.tag, r)) return NOTHING;
-      const plan = nativeSectionMovePlan(source, node, parent, index, ports.itemsSlots());
+      const plan = nativeSectionMovePlan(source, node, parent, index, itemsSlotRule(tag => r.template(tag)?.source));
       if (plan.status === "stayed") { verdict = "stayed"; return { stayed: "Section stayed in place" }; }
       if (plan.status !== "moved") return NOTHING;
       verdict = "moved";
@@ -888,14 +846,12 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   return {
     renderEditBar: renderNativeEditBar,
-    moveSection: moveNativeSection,
     moveSectionTo: moveNativeSectionTo,
     renderNativeEditBar,
     removeEmptyNewLink,
     editOpenPage,
     isNativeSectionTag,
-    moveNativeSection,
-    moveNativeSectionAfterOpening,
+    moveBlock,
     moveNativeSectionTo,
     applyNativeTextEdit,
     textEdits: () => nativeTextEditQueue,

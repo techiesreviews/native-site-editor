@@ -108,12 +108,12 @@ export interface PageStructureHandlers {
   /** Delete selects the row and runs the edit bar’s Remove, against its painted source. */
   onRemove?: (path: string, node: number[], source: string | undefined) => boolean;
   /**
-   * Alt+Up/Down on a row: move that element one sibling position. "moved",
-   * "stayed" (an edge or refused move) or "pending" (the page file is
-   * opening first; the move follows). A moved path restores focus after a
-   * depth change. A handled refusal keeps row focus.
+   * Alt+arrows on a row: move that element one step. The moved element's
+   * path, "stayed" (an edge, or a refusal already said) or a promise of
+   * either (the page file opens first; the move follows). Focus follows the
+   * moved path; a handled refusal keeps row focus.
    */
-  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down" | "out" | "in", template?: { painted: string | undefined }) => "moved" | "stayed" | "pending" | number[] | undefined;
+  onMove?: (path: string, item: NativeStructureItem, direction: "up" | "down" | "out" | "in", template?: { painted: string | undefined }) => RowMoved | Promise<RowMoved> | undefined;
   /**
    * A press on the row of a block in `<main>` that may become a drag (the
    * page's block drag, insert-drag.ts `trackDrag`); none when it cannot.
@@ -138,6 +138,8 @@ const EDGE = 28;
 const EDGE_STEP = 10;
 
 const key = (node: readonly number[]) => node.join(".");
+/** A row's move: the moved element's path, or "stayed". */
+type RowMoved = number[] | "stayed";
 // Where level 1's drop line starts, from the tree's left edge (page-structure.css `.page-structure__drop`).
 const LINE_LEFT = 10;
 
@@ -353,6 +355,28 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
 
   // The row to focus once the next render shows a section that just moved.
   let focusAfterRender: string | undefined;
+  // A move that opened its file first and settled before the tree showed its bytes (`moved`): the
+  // render that shows them focuses `to`'s row, while `from`'s row (the row moved) still has focus.
+  let focusAfterMove: { from: string; to: string; path: string; page: boolean; moved: string | undefined } | undefined;
+  // Whether the tree shows the bytes the move wrote, on `to`'s row (the page's paint, or a template row's).
+  const shows = (move: NonNullable<typeof focusAfterMove>) => {
+    const painted = move.page ? (structure?.path === move.path ? structure.paintedSource : undefined) : (items.get(move.to) as TemplateStructureItem | undefined)?.paintedSource;
+    return painted !== undefined && painted === move.moved;
+  };
+  const focusedRow = () => tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined;
+  // Focus follows the element a row's key moved (`from`: that row; `keyOf`: a path's row; `page`: a
+  // row of the page, else of the template `path`): at the next render, or, for a move that opens its
+  // file first, once it settles and the tree shows it, while the row moved still has focus.
+  function followMove(outcome: RowMoved | Promise<RowMoved>, from: string, path: string, keyOf: (node: number[]) => string, page = true) {
+    if (Array.isArray(outcome)) { focusAfterRender = keyOf(outcome); return; }
+    if (outcome === "stayed") return;
+    void outcome.then(moved => {
+      if (moved === "stayed" || focusedRow() !== from) return;
+      const move = { from, to: keyOf(moved), path, page, moved: handlers.pageSource?.(path) }, row = rows.get(move.to);
+      if (row && shows(move)) { reveal(row); focusRowOnly(row); }
+      else focusAfterMove = move;
+    });
+  }
 
   // The drag a press on a row began (insert-drag.ts): its release is not a click.
   let rowDrag: { justDragged(): boolean } | undefined;
@@ -866,8 +890,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const part = movable.has(itemKey(item)) && templatePaths.has(item) ? item as TemplateStructureItem : undefined;
     if (part && event.altKey && !event.ctrlKey && !event.metaKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
       const direction = ({ ArrowUp: "up", ArrowDown: "down", ArrowLeft: "out", ArrowRight: "in" } as const)[event.key as "ArrowUp"];
-      const outcome = handlers.onMove?.(templatePaths.get(item)!, item, direction, { painted: part.paintedSource });
-      if (Array.isArray(outcome)) focusAfterRender = templateKey(templatePaths.get(item)!, outcome);
+      const path = templatePaths.get(item)!;
+      const outcome = handlers.onMove?.(path, item, direction, { painted: part.paintedSource });
+      if (outcome) followMove(outcome, itemKey(item), path, node => templateKey(path, node), false);
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -883,19 +908,16 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     };
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowLeft" || event.key === "ArrowRight") && structure?.path) {
       const outcome = handlers.onMove?.(structure.path, item, event.key === "ArrowLeft" ? "out" : "in");
-      if (Array.isArray(outcome)) focusAfterRender = key(outcome);
+      if (outcome) followMove(outcome, key(item.node), structure.path, key);
       event.preventDefault();
       event.stopPropagation();
       return;
     }
     // Alt+Up/Down requests a source move; its row keeps focus on refusal.
     if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === "ArrowUp" || event.key === "ArrowDown") && structure?.path) {
-      const direction = event.key === "ArrowUp" ? "up" : "down";
-      const last = item.node.length - 1;
-      const target = [...item.node.slice(0, last), item.node[last] + (direction === "up" ? -1 : 1)];
-      const outcome = handlers.onMove?.(structure.path, item, direction);
+      const outcome = handlers.onMove?.(structure.path, item, event.key === "ArrowUp" ? "up" : "down");
       if (outcome) {
-        if (outcome !== "stayed") focusAfterRender = key(Array.isArray(outcome) ? outcome : target);
+        followMove(outcome, key(item.node), structure.path, key);
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -1010,7 +1032,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     rootAlias = undefined;
     slotRows.clear();
     inMain.clear();
-    const focused = focusAfterRender ?? (tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.node : undefined);
+    let focused = focusAfterRender ?? focusedRow();
+    // A settled move's focus waits while its row has focus, for the render that shows its bytes.
+    const settledMove = focusAfterMove && focusedRow() === focusAfterMove.from ? focusAfterMove : undefined;
+    focusAfterMove = undefined;
     const previousFocus = tree.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.slotRow : undefined;
     // A row's button with focus (a badge, an action) is found again on its redrawn row.
     const active = document.activeElement;
@@ -1043,6 +1068,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     editorWaiting = false;
     itemsSlot = handlers.itemsSlots?.();
     tree.replaceChildren(...structure.items.flatMap((item) => row(item, 1)), drop);
+    if (settledMove && shows(settledMove)) focused = settledMove.to;
+    else focusAfterMove = settledMove;
     const pendingTemplate = pendingSelection && [...rows.values()].some(row => row.dataset.templatePath === pendingSelection!.path);
     if (pendingTemplate && pendingSelection) {
       selected = templateKey(pendingSelection.path, pendingSelection.node);

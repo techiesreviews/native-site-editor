@@ -178,6 +178,67 @@ test("Alt+Down on a page structure row while a component file is open opens the 
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 });
 
+// Opens the Project card's template in Edit component mode (the page's rows stay in Structure).
+async function editProjectCard(page: Page) {
+  await row(page, "Section").locator(".page-structure__toggle").click();
+  await tree(page).getByRole("treeitem", { name: /^Project card Reusable cards$/ }).locator(".page-structure__label").click();
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await frame(page).locator("project-card article").first().click({ position: { x: 5, y: 5 } });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", CARD);
+  await expect(tree(page)).toBeVisible();
+}
+const CARD = "components/project-card/project-card.html";
+const mountedSource = (page: Page, path: string) => page.evaluate(async file => (await import("/src/components/code-editor.ts")).getMountedSource(file), path);
+
+test("Alt+Down on a heading row while a component file is open opens the page first, moves the heading, and its row keeps focus", async ({ page }) => {
+  await editProjectCard(page);
+  await row(page, "Section A native browser preview").locator(".page-structure__toggle").click();
+  const heading = row(page, "Heading A native browser preview");
+  await expect(heading).toHaveAttribute("data-node", "1.0.0");
+  await heading.evaluate((el) => (el as HTMLElement).focus());
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(frame(page).locator("section.hero > p:first-child + h1")).toHaveCount(1);
+  await expect(status(page)).toHaveText("Moved down in Section");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
+  // Focus follows the moved heading to its row at its new place.
+  await expect(heading).toHaveAttribute("data-node", "1.0.1");
+  await expect(heading).toBeFocused();
+  await undo(page);
+  await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
+});
+
+test("in Edit component mode a template Section a named slot holds alone moves with its slot from the bar as from its row", async ({ page }) => {
+  await editProjectCard(page);
+  const original = (await mountedSource(page, CARD))!;
+  const made = original.replace('  <p class="project-card__body"', '  <slot name="extra"><section class="card-extra" style="padding: 12px"><p>Extra</p></section></slot>\n  <p class="project-card__body"');
+  await page.evaluate(async ({ path, before, text }) => {
+    (await import("/src/components/code-editor.ts")).replaceActiveRange({ path, start: 0, end: before.length, expected: before, text });
+  }, { path: CARD, before: original, text: made });
+  const extra = frame(page).locator("project-card section.card-extra").first();
+  await expect(extra).toBeVisible();
+  await extra.click({ position: { x: 3, y: 3 } });
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section");
+  // The template's rules: the slot moves with the Section it holds alone, above the title.
+  const up = made.replace('  <h3 class="project-card__title" data-key="card-title"><slot name="title">Untitled project</slot></h3>\n  <slot name="extra"><section class="card-extra" style="padding: 12px"><p>Extra</p></section></slot>\n',
+    '  <slot name="extra"><section class="card-extra" style="padding: 12px"><p>Extra</p></section></slot>\n  <h3 class="project-card__title" data-key="card-title"><slot name="title">Untitled project</slot></h3>\n');
+  expect(up).not.toBe(made);
+  await expect(bar(page).getByRole("button", { name: "Move up", exact: true })).toBeEnabled();
+  await bar(page).getByRole("button", { name: "Move up", exact: true }).focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(() => mountedSource(page, CARD)).toBe(up);
+  // First in the template's element now: Move up is off.
+  await expect(bar(page).getByRole("button", { name: "Move up", exact: true })).toBeDisabled();
+  expect(await page.evaluate(async path => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), CARD)).toBe(true);
+  await expect.poll(() => mountedSource(page, CARD)).toBe(made);
+  // Its row's Alt+Up writes the same bytes.
+  const selected = tree(page).locator("[role='treeitem'][data-template-path][aria-selected='true']");
+  await expect(selected).toHaveCount(1);
+  await selected.focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(() => mountedSource(page, CARD)).toBe(up);
+  await expect(selected).toBeFocused();
+});
+
 // Default fixture group: native-cards, Section > Div > card-project instances.
 const cardsSource = async (page: Page) => {
   await editorMounted(page);

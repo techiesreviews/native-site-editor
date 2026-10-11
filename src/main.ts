@@ -80,7 +80,7 @@ import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagA
 import { positionText } from "./page-builder/insert-target";
 import { itemsSlotRule } from "./page-builder/block-insert";
 import { createBlockMoves } from "./page-builder/block-move";
-import { nativeElementKeyMove, nativeElementMoveMessage, templateKeyMove, templateMoveRefusal, templateMovePath, type NativeElementMoveResult, type NativeMoveDirection } from "./page-builder/block-move-rules";
+import { templateMoveRefusal, templateMovePath } from "./page-builder/block-move-rules";
 import { componentLabel, nativeInsertEdit, isSectionTemplate } from "./native-insert";
 import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
@@ -515,27 +515,20 @@ function mountWorkspace() {
       if (!structure) { pageStructure?.update(undefined); return; }
       codePanes.notePreviewPainted();
       noteNativePainted();
-      const path = structure.path, source = structure.paintedSource, scope = draftScope(), epoch = generation, scopeKey = setupScope();
-      const proof = scope && editorModule?.captureFileModelState(scope, path);
+      const path = structure.path, source = structure.paintedSource, scope = draftScope();
+      // A row's move holds the workspace from this paint, and the page's editor model if it is mounted.
+      const paint = { since: guardedEdits.stamp(), model: scope && editorModule?.isMounted(path) ? editorModule.captureFileModelState(scope, path) : undefined };
       const capture = (item: NativeStructureItem) => {
         nativeStructurePaintedSources.set(item, source);
-        nativeStructureMoveActions.set(item, direction => {
-          if (source === undefined || !proof?.isCurrent() || epoch !== generation || scopeKey !== setupScope() || versionView || appStore.openFile.value !== path || !editorModule?.isMounted(path) || nativeEffectiveSource(path) !== source) {
-            refuse("The source changed or its editor is not open. Select the element again before moving it."); return "stayed";
-          }
-          return moveNativeBlock(path, source, item.node, direction);
-        });
+        nativeStructurePaints.set(item, paint);
         item.children.forEach(capture);
       };
       const shown = structure;
       shown.items.forEach(capture);
       pageStructure?.update(shown);
     },
-    onMove: (direction) => {
-      if (direction !== "out" && direction !== "in") { pageStructureController.nativeElementMoveAction?.(direction); return; }
-      const selection = appStore.selection.value;
-      if (selection && !componentTools?.isTemplateRoot(selection)) moveNativeCanvasBlock(selection, direction);
-    },
+    // Alt+arrows on the canvas: the edit bar's step for the selection.
+    onMove: (direction) => pageStructureController.nativeElementMoveAction?.(direction),
     onBlockPress: dragPageBlock,
     onDismissRequest: (id) => void agentController.dismiss(id),
     onAnswerRequest: async (id, text) => {
@@ -585,23 +578,16 @@ function mountWorkspace() {
     planUrl: nativeUrlPlan,
     applyUrl: changeNativeUrl,
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
-    // In Edit component mode a row of the template edited (`template`: the bytes it was painted from).
+    // A row's Alt+arrows, by the Block move module. In Edit component mode a row of the template
+    // edited (`template`: the bytes it was painted from) moves in it while that mode lasts. A page
+    // that is not open opens first (the model held from the paint is then not its editor's).
     onMove: (path, item, direction, template) => {
-      if (template) {
-        if (template.painted === undefined || nativeEffectiveSource(path) !== template.painted || componentTools?.editModeTemplate()?.path !== path || appStore.openFile.value !== path || !editorModule?.isMounted(path)) {
-          refuse("The source changed. Wait for the preview before moving this element."); return "stayed";
-        }
-        return moveNativeTemplatePart(path, template.painted, item.node, direction);
-      }
-      const paintedSource = nativeStructurePaintedSources.get(item);
-      if (paintedSource === undefined || nativeEffectiveSource(path) !== paintedSource) {
-        refuse("The source changed. Wait for the preview before moving this element."); return "stayed";
-      }
-      if (direction === "out" || direction === "in" || !isNativeSectionTag(item.tag)) return nativeStructureMoveActions.get(item)?.(direction);
-      const target = { path, node: item.node, tag: item.tag };
-      if (appStore.openFile.value === path && editorModule?.isMounted(path)) return moveNativeSection(target, direction, { painted: paintedSource }) ?? "stayed";
-      void moveNativeSectionAfterOpening(target, direction, paintedSource);
-      return "pending";
+      const paint = nativeStructurePaints.get(item), opens = !editorModule?.isMounted(path) || appStore.openFile.value !== path;
+      const stale = !opens ? STRUCTURE_MOVE_STALE : isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
+      const at = { path, node: item.node, painted: template ? template.painted : nativeStructurePaintedSources.get(item) };
+      return pageStructureController.moveBlock(at, direction, template
+        ? { guard: () => componentTools?.editModeTemplate()?.path === path, stale }
+        : { since: paint?.since, guard: () => opens || !paint?.model || paint.model.isCurrent(), stale });
     },
     // A row drags as its block does on the page: the same targets, in the tree as well.
     itemsSlots: nativeMoveItems,
@@ -874,8 +860,8 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   error: errorMessage,
 }));
 // The Block move module (src/page-builder/block-move.ts): what a press moves, where it may go,
-// and the move as one guarded edit, on the page or the template edited. Its ways in arrive in
-// sturdy-base slices 31-33.
+// and the move as one guarded edit, on the page or the template edited: the edit bar, the
+// canvas's and Page Structure's Alt+arrows (the drags and MCP arrive in sturdy-base slices 32-33).
 const blockMoves = createBlockMoves({
   edits: guardedEdits,
   editing: () => componentTools?.editModeTemplate(),
@@ -890,7 +876,6 @@ const blockMoves = createBlockMoves({
     };
   },
 });
-void blockMoves;
 // The block rail's clicks and drags: one source edit per block, the new block selected.
 // Loaded with the first click.
 const blockInsertPorts: BlockInsertPorts = {
@@ -1612,7 +1597,12 @@ function wholeWrapper(inner: string, tags: string[]) {
 // Elements a link inside can be removed from, keeping its text.
 const nativeLinkParents = new Set([...TEXT_LINE_TAGS].filter((tag) => tag !== "a" && tag !== "button"));
 const nativeStructurePaintedSources = new WeakMap<NativeStructureItem, string | undefined>();
-const nativeStructureMoveActions = new WeakMap<NativeStructureItem, (direction: "up" | "down" | "out" | "in") => number[] | "stayed" | undefined>();
+// The workspace and the page's editor model when a Structure row was painted, for its moves.
+const nativeStructurePaints = new WeakMap<NativeStructureItem, { since: Stamp; model?: { isCurrent(): boolean } }>();
+// A Structure row's stale words: the page open, or opening for the move.
+const STRUCTURE_MOVE_STALE = "The source changed. Wait for the preview before moving this element.";
+const SECTION_OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
+const BLOCK_OPEN_STALE = "The source changed while its editor opened. Select the element again before moving it.";
 
 const pageStructureController = createPageStructureController({
   get nativePreview() { return nativePreview; },
@@ -1655,56 +1645,11 @@ const pageStructureController = createPageStructureController({
   get elementPathAt() { return elementPathAt; },
   get textRangeInSource() { return textRangeInSource; },
   get wrapperAround() { return wrapperAround; },
-  itemsSlots: nativeMoveItems,
-  moveBlock: moveNativeCanvasBlock,
+  get moves() { return blockMoves; },
   edits: guardedEdits,
 });
 function renderNativeEditBar(...args: Parameters<typeof pageStructureController.renderNativeEditBar>) {
   return pageStructureController.renderNativeEditBar(...args);
-}
-
-const NATIVE_MOVE_STALE = "The source changed or its editor is not open. Select the element again before moving it.";
-
-/**
- * One guarded move of the open file `path` from the bytes `painted` (the
- * guarded edit module, src/guarded-edit.ts): one history step, the moved
- * element selected. `from` is the element's path the message names.
- */
-function moveNativeOpenFile(path: string, painted: string, move: (source: string) => NativeElementMoveResult, from: number[], direction: NativeMoveDirection): number[] | "stayed" {
-  if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) { refuse(NATIVE_MOVE_STALE); return "stayed"; }
-  let moved: number[] | undefined;
-  const outcome = guardedEdits.now(r => {
-    if (r.source(path) !== painted) return { refuse: NATIVE_MOVE_STALE };
-    const result = move(painted);
-    if (result.status === "refused") return { refuse: result.error };
-    // Already at the end: nothing to write, nothing said.
-    if (result.status === "stayed") return { done: "", undone: "" };
-    moved = result.selection;
-    const message = nativeElementMoveMessage(painted, from, direction);
-    return { edits: new Map([[path, [result.edit]]]), select: { after: { path, node: result.selection } }, done: message, undone: `Undid: ${message}` };
-  }, { anchor: path });
-  if (outcome.ok) return outcome.status === "applied" && moved ? moved : "stayed";
-  // The editor would not take a move it was given: an error, as any failed write.
-  if (outcome.reason === "refused" && moved) errorMessage(new Error(outcome.message));
-  else refuse(outcome.reason === "stale" ? NATIVE_MOVE_STALE : outcome.message);
-  return "stayed";
-}
-
-/** One guarded move and one history step, shared by canvas and Structure. */
-function moveNativeBlock(path: string, source: string, node: number[], direction: NativeMoveDirection): number[] | "stayed" {
-  return moveNativeOpenFile(path, source, painted => nativeElementKeyMove(painted, node, direction, nativeMoveItems()), node, direction);
-}
-
-/** In Edit component mode, Alt+arrows on a template's part (slice 82): one guarded move and one step on the template. */
-function moveNativeTemplatePart(path: string, source: string, node: number[], direction: NativeMoveDirection): number[] | "stayed" {
-  return moveNativeOpenFile(path, source, painted => templateKeyMove(painted, node, direction), templateMovePath(source, node) ?? node, direction);
-}
-
-function moveNativeCanvasBlock(selection: NativePreviewSelection, direction: NativeMoveDirection): "moved" | "stayed" {
-  if (!selection.node || selection.paintedSource === undefined) { refuse(NATIVE_MOVE_STALE); return "stayed"; }
-  // In Edit component mode the template's parts move in the template, by its drags' rules.
-  const move = componentTools?.editModeTemplate()?.path === selection.path ? moveNativeTemplatePart : moveNativeBlock;
-  return move(selection.path, selection.paintedSource, selection.node, direction) === "stayed" ? "stayed" : "moved";
 }
 
 function editOpenPage(...args: Parameters<typeof pageStructureController.editOpenPage>) {
@@ -1712,12 +1657,6 @@ function editOpenPage(...args: Parameters<typeof pageStructureController.editOpe
 }
 function isNativeSectionTag(...args: Parameters<typeof pageStructureController.isNativeSectionTag>) {
   return pageStructureController.isNativeSectionTag(...args);
-}
-function moveNativeSection(...args: Parameters<typeof pageStructureController.moveNativeSection>) {
-  return pageStructureController.moveNativeSection(...args);
-}
-function moveNativeSectionAfterOpening(...args: Parameters<typeof pageStructureController.moveNativeSectionAfterOpening>) {
-  return pageStructureController.moveNativeSectionAfterOpening(...args);
 }
 function moveNativeSectionTo(...args: Parameters<typeof pageStructureController.moveNativeSectionTo>) {
   return pageStructureController.moveNativeSectionTo(...args);
