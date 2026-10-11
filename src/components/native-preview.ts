@@ -14,6 +14,7 @@ import {
   type NativeSite,
 } from "../../shared/native-project";
 import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
+import { nativeShownFiles, unreadableNeededFile } from "../native-boot";
 import { editBarSources } from "./edit-bar-sources";
 import { createEditBar, type EditBarModel, type SelectionRect } from "./edit-bar";
 import { createInsertControls, type InsertChoice, type InsertPoint } from "./insert-controls";
@@ -100,6 +101,8 @@ interface UpdateInput {
   component?: string;
   /** A template explicitly opened through Files or Edit component. */
   editableTemplatePath?: string;
+  /** As setUnreadable gives them. */
+  unreadable?: ReadonlyMap<string, string>;
 }
 
 // The home page's `<main …>` start tag, or a plain one when it has none.
@@ -303,7 +306,7 @@ function composeStyles(
   assets: Record<string, string>,
   route: string,
   alone: string | undefined,
-  unreadable: ReadonlySet<string> = new Set(),
+  unreadable: ReadonlyMap<string, string> = new Map(),
 ) {
   // Each component rule also styles what a page slots in (shared/slotted-css.ts).
   const stylesByComponent: Record<string, { path: string; source: string }> = {};
@@ -345,7 +348,7 @@ function composePayload(
   selectText: { start: number; end: number } | undefined,
   hash?: string,
   editableTemplatePath?: string,
-  unreadable?: ReadonlySet<string>,
+  unreadable?: ReadonlyMap<string, string>,
 ) {
   const pages: Record<string, string> = {};
   const pagePaths: Record<string, string> = {};
@@ -517,7 +520,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The component shown by itself, when its template is open and no page uses it.
   let alone: string | undefined;
   let editableTemplatePath: string | undefined;
-  let unreadable: ReadonlySet<string> = new Set();
+  let unreadable: ReadonlyMap<string, string> = new Map();
   /**
    * Measure nested containers at a frame-viewport point, or all page bands in <main>:
    * the report on `path` (the page, or in Edit component mode the template edited)
@@ -603,6 +606,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // A load/site failure (frame hidden) outranks a transient runtime error
   // (banner only), so runtime "clear-error" must not wipe a hard load error.
   let loadError = false;
+  // A page (or a template it uses) on show that the host could not read as
+  // text: the frame is hidden behind its error until another page shows.
+  let pageError = false;
   let selectNode: QueuedSelection | undefined;
   let selectText: { start: number; end: number } | undefined;
   // The id a followed link's fragment names, scrolled to after the next render.
@@ -619,6 +625,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       frameHost.hidden = false;
       canvas.bar.hidden = false;
     }
+  }
+
+  // Shows or clears the error for a page on show that cannot be drawn
+  // (unreadableNeededFile); a load error outranks it.
+  function checkPageError() {
+    if (loadError) return;
+    const shown = site && (alone ? site.components[alone] : site.routes[route]);
+    const message = site && shown && unreadable.size
+      ? unreadableNeededFile(nativeShownFiles(site, [shown], (path) => unreadable.has(path) ? undefined : sources[path], () => false).files, () => false, unreadable)
+      : undefined;
+    if (message) showBanner(message, true);
+    else if (pageError) showBanner(undefined, false);
+    pageError = Boolean(message);
   }
 
   function post() {
@@ -652,6 +671,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function schedule() {
     if (!site) { link.cancel("drop-probe"); return; }
+    checkPageError();
     slotGhosts.clear();
     slotSelection = undefined;
     link.stale([
@@ -765,8 +785,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   });
   // Runtime-reported render failures (bad define, recursive templates) surface
   // as a banner but keep the frame visible, unless a hard load error is shown.
-  link.on("error", (message) => { if (!loadError) showBanner(message.message, false); });
-  link.on("clear-error", () => { if (!loadError) showBanner(undefined, false); });
+  link.on("error", (message) => { if (!loadError && !pageError) showBanner(message.message, false); });
+  link.on("clear-error", () => { if (!loadError && !pageError) showBanner(undefined, false); });
   link.on("insert-points", (message) => {
     if (!site || site.routes[route] !== message.path) return;
     // An earlier version on show (History): its gaps are counted in its
@@ -1025,6 +1045,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (input.sources) sources = input.sources;
       if (input.componentStyles) componentStyles = input.componentStyles;
       if (input.assets) assets = input.assets;
+      if (input.unreadable) unreadable = input.unreadable;
       if (Object.hasOwn(input, "component") && (input.component ?? "") !== focusTag) {
         focusTag = input.component ?? "";
         if (frameState.ready) postFocus();
@@ -1233,13 +1254,20 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** Clear the runtime outline and every host selection surface together. */
     clearSelection() { clearSelection(); },
-    /** Files the host could not read as text: a page linking one of them is drawn without it, with no error. */
-    setUnreadable(paths: readonly string[]) {
-      unreadable = new Set(paths);
+    /**
+     * Files the host could not read as text and has no draft of, with why: a
+     * page linking one of them is drawn without it, with no error; a page or
+     * template on show among them is the preview's error.
+     */
+    setUnreadable(files: ReadonlyMap<string, string>) {
+      unreadable = files;
+      checkPageError();
     },
     setError(message: string | undefined) {
       loadError = Boolean(message);
+      pageError = false;
       showBanner(message, true);
+      if (!message) checkPageError();
     },
     /**
      * Show the site's warnings, one per line, each with the fixes it
@@ -1288,7 +1316,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       site = undefined;
       shownRoute = undefined;
       editableTemplatePath = undefined;
-      unreadable = new Set();
+      unreadable = new Map();
+      pageError = false;
       pageBuilder.setViewing(Boolean(viewing));
       componentStyles = {};
       loadError = false;

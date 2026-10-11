@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, unreadableNeededFile, usedComponentTags, withSiteIndexed, type SiteIndexGate } from "../src/native-boot.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 
 const site: NativeSite = {
@@ -189,4 +189,21 @@ test("nothing to read asks for nothing", async () => {
   const { asked, read } = fakeBatches({}, {});
   assert.deepEqual(await readSiteTexts([], read), { texts: new Map(), unreadable: [] });
   assert.deepEqual(asked, []);
+});
+
+test("a page or template on show that cannot be read as text, and has no source, is named with why; a stylesheet never is", () => {
+  const why = "This file is not UTF-8 text.";
+  const read = (skip: string) => (path: string) => path === skip ? undefined : files[path];
+  const shown = (skip: string) => nativeShownFiles(site, ["about/index.html"], read(skip), isFile).files;
+  const unreadable = (path: string) => new Map([[path, why]]);
+  const none = () => false;
+  assert.equal(unreadableNeededFile(shown("about/index.html"), none, unreadable("about/index.html")), `about/index.html: ${why}`);
+  // A template the page uses, found once the page is read.
+  const footer = "components/site-footer/site-footer.html";
+  assert.equal(unreadableNeededFile(shown(footer), none, unreadable(footer)), `${footer}: ${why}`);
+  // One the page does not use, a stylesheet it links, or one with a source here (a draft) is not.
+  assert.equal(unreadableNeededFile(shown(""), none, unreadable("components/site-header/site-header.html")), undefined);
+  assert.equal(unreadableNeededFile(shown("styles/about.css"), none, unreadable("styles/about.css")), undefined);
+  assert.equal(unreadableNeededFile(shown(footer), (path) => path === footer, unreadable(footer)), undefined);
+  assert.equal(unreadableNeededFile(shown(""), none, new Map()), undefined);
 });

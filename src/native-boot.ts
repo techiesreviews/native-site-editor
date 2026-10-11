@@ -181,6 +181,19 @@ export function unreadableAsText(error: unknown): boolean {
 export interface UnreadableFile { path: string; message: string }
 
 /**
+ * The first page or template among `files` (what a page shows,
+ * nativeShownFiles) that has no source here (`held` false) and cannot be read
+ * as text (`unreadable`, path to why), as "path: why". A stylesheet is never
+ * it: the page is drawn without one.
+ */
+export function unreadableNeededFile(files: Iterable<string>, held: (path: string) => boolean, unreadable: ReadonlyMap<string, string>): string | undefined {
+  if (!unreadable.size) return undefined;
+  for (const path of files)
+    if (!/\.css$/i.test(path) && !held(path) && unreadable.has(path)) return `${path}: ${unreadable.get(path)}`;
+  return undefined;
+}
+
+/**
  * The texts of `files` (path and blob SHA), read in batches (`read`). One
  * file GitHub cannot give as text fails its whole batch, so a refused batch
  * is halved until that file is alone: it is then left out and named in

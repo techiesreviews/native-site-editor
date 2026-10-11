@@ -37,7 +37,7 @@ import { createAgentController } from "./controllers/agent-controller";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
 import { type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -436,7 +436,8 @@ function mountWorkspace() {
   fileActions.attachRoot(element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
   pagesTree = createPagesTree({
     open: (file) => {
-      if (file === appStore.openFile.value && editorModule?.isMounted(file)) explorerDropdown?.close();
+      // The open page chosen again shows in the preview, which a link may have taken elsewhere.
+      if (file === appStore.openFile.value && editorModule?.isMounted(file)) { explorerDropdown?.close(); updatePreview(); }
       else void restoreFile(file, generation);
     },
     plan: (request) => {
@@ -2097,6 +2098,7 @@ function updateNativePreview() {
   nativePreview.update({
     sources: nativePreviewSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
+    unreadable: nativePreviewUnreadable(),
     route: nativeRouteForPath(appStore.openFile.value),
     component: appStore.openFile.value ? nativeComponentTagForPath(appStore.openFile.value) : undefined,
     editableTemplatePath: nativeEditableTemplatePath(),
@@ -2120,7 +2122,7 @@ function nativeShownPaths() {
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
   nativePreviewBehind = false;
-  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), editableTemplatePath: nativeEditableTemplatePath() });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), unreadable: nativePreviewUnreadable(), editableTemplatePath: nativeEditableTemplatePath() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
   void loadNativeShownFiles();
@@ -2200,8 +2202,8 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
     // A stylesheet that cannot be read as text is left out of the page; a
     // page or template the page needs cannot be, so it fails the read (known
     // only once the sources that use it are read: an extra read with them may be unused).
-    const needed = [...shown.files].find((path) => !/\.css$/i.test(path) && !held(path) && nativeUnreadableFiles.has(path));
-    if (needed) throw new Error(`${needed}: ${nativeUnreadableFiles.get(needed)}`);
+    const needed = unreadableNeededFile(shown.files, held, nativeUnreadableFiles);
+    if (needed) throw new Error(needed);
     for (const [tag, css] of shown.componentCss)
       if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
     for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
@@ -2813,6 +2815,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     sources: nativeSources(),
     componentStyles: Object.fromEntries(nativeComponentStyles),
     assets: Object.fromEntries(nativeAssets),
+    unreadable: nativePreviewUnreadable(),
     // The page about to open shows at once (its file opens next).
     route: nativeRouteForPath(appStore.openFile.value ?? openPath) ?? nativeDefaultRoute(site),
     editableTemplatePath: nativeEditableTemplatePath(),
@@ -3172,8 +3175,14 @@ function noteNativeUnreadable(files: UnreadableFile[] | undefined) {
   if (!files) nativeUnreadableFiles.clear();
   else if (!files.length) return;
   for (const file of files ?? []) nativeUnreadableFiles.set(file.path, file.message);
-  nativePreview?.setUnreadable([...nativeUnreadableFiles.keys()]);
+  nativePreview?.setUnreadable(nativePreviewUnreadable());
   showNativeWarnings();
+}
+// The unreadable files with no draft in their place: the preview draws a
+// page or template from its draft, and lets one without say why it cannot.
+function nativePreviewUnreadable() {
+  const scope = draftScope();
+  return new Map([...nativeUnreadableFiles].filter(([path]) => nativeEffectiveSource(path, scope) === undefined));
 }
 function showNativeWarnings(projectWarnings = nativeProjectWarnings) {
   nativeProjectWarnings = projectWarnings;
