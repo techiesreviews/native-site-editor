@@ -187,7 +187,8 @@ export interface SourceSpan {
 // inner source, skipping tags and comments and decoding entities. Undefined
 // when the mapped source does not decode to `text`, or when the span would
 // cut through a tag, so a wrapper is only ever inserted around balanced HTML.
-export function textRangeInSource(inner: string, start: number, end: number, text: string): SourceSpan | undefined {
+// A caller can supply its text reader's entity decoder; the default remains decodeEntity.
+export function textRangeInSource(inner: string, start: number, end: number, text: string, decoder = decodeEntity): SourceSpan | undefined {
   if (start < 0 || end <= start) return undefined;
   const starts: number[] = [];
   const ends: number[] = [];
@@ -216,7 +217,7 @@ export function textRangeInSource(inner: string, start: number, end: number, tex
       }
     }
     if (char === "&") {
-      const entity = decodeEntity(inner, i);
+      const entity = decoder(inner, i);
       if (entity) {
         unit(entity.text, i, i + entity.length);
         i += entity.length;

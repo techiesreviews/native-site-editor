@@ -8,7 +8,7 @@ import { readPage, type ElementRange } from "../native-source-location";
 import { nativeLinkTarget, isFolderRoute } from "../../shared/native-routes";
 import { normalizeRoute } from "../native-create";
 import { componentLabel } from "../native-insert";
-import { collectionParent, elementTree, itemNoun, type SourceElement } from "./card-grid";
+import { collectionParent, itemNoun } from "./card-grid";
 import { plain, type SourceTree } from "./source-tree";
 import { itemKind, NOT_GRIDS, repeatedRun } from "./rules/items";
 
@@ -152,12 +152,6 @@ export function pageGrids<N>(tree: SourceTree<N>, context: GridContext): SourceG
   };
   tree.children().forEach((child, index) => visit(child, [index]));
   return out;
-}
-
-/** The element tree of an item's source (src/page-builder/card-grid.ts `elementTree`): the item itself. */
-export function itemElement(source: string, range: ElementRange): SourceElement | undefined {
-  const tree = elementTree(source, range.start, range.end);
-  return tree?.length === 1 ? tree[0] : undefined;
 }
 
 /** The content of an explicitly closed `<main>` in the page. */

@@ -2242,23 +2242,35 @@ const numericReplacements: Record<number, number> = {
 };
 /** HTML character references, with the HTML attribute ambiguity rule. No DOM required. */
 export function decodeHtmlEntities(value: string, attribute = false): string {
-  return value.replace(/&(#(?:[xX][\da-fA-F]+|\d+);?|[a-zA-Z][a-zA-Z\d]*;?)/g, (all, key: string, offset: number) => {
-    if (key[0] === "#") {
-      const hex = key[1] === "x" || key[1] === "X";
-      const code = parseInt(key.slice(hex ? 2 : 1), hex ? 16 : 10);
-      const valid = code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
-      return String.fromCodePoint(valid ? numericReplacements[code] ?? code : 0xfffd);
-    }
-    // Named references are case sensitive. The longest recognised prefix wins.
-    for (let length = Math.min(key.length, 32); length > 0; length--) {
-      const name = key.slice(0, length);
-      if (!Object.hasOwn(namedCharacterReferences, name)) continue;
-      const decoded = namedCharacterReferences[name];
-      if (decoded === undefined) continue;
-      const following = value[offset + 1 + length] ?? "";
-      if (attribute && !name.endsWith(";") && /[a-zA-Z\d=]/.test(following)) return all;
-      return decoded + key.slice(length);
-    }
-    return all;
+  return value.replace(/&(#(?:[xX][\da-fA-F]+|\d+);?|[a-zA-Z][a-zA-Z\d]*;?)/g, (all, _key: string, offset: number) => {
+    const entity = decodeHtmlEntity(value, offset, attribute);
+    return entity ? entity.text + all.slice(entity.length) : all;
   });
+}
+
+const REFERENCE = /&(#(?:[xX][\da-fA-F]+|\d+);?|[a-zA-Z][a-zA-Z\d]*;?)/y;
+
+/** One character reference and its source length, for decoded text offset mapping. */
+export function decodeHtmlEntity(value: string, offset: number, attribute = false): { text: string; length: number } | undefined {
+  REFERENCE.lastIndex = offset;
+  const match = REFERENCE.exec(value);
+  if (!match) return undefined;
+  const key = match[1];
+  if (key[0] === "#") {
+    const hex = key[1] === "x" || key[1] === "X";
+    const code = parseInt(key.slice(hex ? 2 : 1), hex ? 16 : 10);
+    const valid = code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
+    return { text: String.fromCodePoint(valid ? numericReplacements[code] ?? code : 0xfffd), length: match[0].length };
+  }
+  // Named references are case sensitive. The longest recognised prefix wins.
+  for (let length = Math.min(key.length, 32); length > 0; length--) {
+    const name = key.slice(0, length);
+    if (!Object.hasOwn(namedCharacterReferences, name)) continue;
+    const decoded = namedCharacterReferences[name];
+    if (decoded === undefined) continue;
+    const following = value[offset + 1 + length] ?? "";
+    if (attribute && !name.endsWith(";") && /[a-zA-Z\d=]/.test(following)) return undefined;
+    return { text: decoded, length: 1 + length };
+  }
+  return undefined;
 }

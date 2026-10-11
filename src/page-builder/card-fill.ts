@@ -1,10 +1,10 @@
 // A card's fill plan, read from source without a DOM. Writing it is a
 // separate operation: these rows describe each slot's source and mapping.
 // An empty unnamed fallback has no row; text or image fallbacks still do.
-import { attributeEdit, descendants, parseSource, slotLabel, startTagAttributes, templateSlots, type TemplateSlot } from "./component-model";
+import { attributeEdit, slotLabel, templateSlots, type TemplateSlot } from "./component-model";
 import { readSource, plain, type SourceTree, type SourceNode, type SourceElement } from "./source-tree";
 import { slotMarkup } from "../native-insert";
-import { allElements, elementTree, itemFill, plainText as itemPlainText, textLeaves, titleLeaf } from "./card-grid";
+import { itemFill, textLeaves, titleLeaf } from "./card-grid";
 
 export type CardFillRole = "title" | "body" | "image" | "link" | "other";
 export type CardFillFrom = "h1" | "<title>" | "address" | "meta description" | "og:image" | "matched" | "kept" | "not used";
@@ -85,6 +85,20 @@ export function pageTitle(source: string, route: string, tree: SourceTree<Source
 export function cardSlots(template: string, tree = readSource(template)): TemplateSlot[] {
   const slots = templateSlots(template).map((slot) => ({ ...slot, name: tree.attribute(slot.element, "name")?.value ?? "", forward: tree.attribute(slot.element, "slot")?.value }));
   return slots.filter((slot, at) => slots.findIndex((other) => other.name === slot.name) === at);
+}
+
+/**
+ * The text a component template shows for each of its named slots when
+ * the page fills none (its fallback, as plain text).
+ */
+export function slotFallbacks(template: string): { fallbacks: Record<string, string> } {
+  const fallbacks: Record<string, string> = {};
+  for (const slot of cardSlots(template)) {
+    if (!slot.name) continue;
+    const text = plain(readSource(slot.fallback).text());
+    if (text) fallbacks[slot.name] = text;
+  }
+  return { fallbacks };
 }
 
 /**
@@ -310,16 +324,17 @@ export function cardFillMarkup(card: string, template: string, rows: CardFillRow
  * "not used". Then the title and link as `itemFill`. The rows describe the mapping.
  */
 export function itemPageFill(card: string, noun: string, title: string, href: string, facts: CardFillRow[]): { markup: string; rows: CardFillRow[] } | undefined {
-  const root = elementTree(card)?.[0];
-  if (!root) return undefined;
-  const source = card;
-  const leaves = textLeaves(source, [root]);
-  const heading = titleLeaf(source, root, leaves);
+  const tree = readSource(card);
+  const root = tree.children()[0];
+  if (!tree.exact || !root) return undefined;
+  const source = tree.source;
+  const leaves = textLeaves(tree, [root]);
+  const heading = titleLeaf(tree, root, leaves);
   // The first paragraph after the title, text or empty; one holding a link is the card's link ("Read about …"), not its text.
-  const blank = (element: (typeof leaves)[number]) => !element.children.length && !itemPlainText(source.slice(element.innerStart, element.innerEnd));
-  const body = heading && allElements([root]).find(element => element.name === "p" && element.start >= heading.end
-    && (leaves.includes(element) || blank(element)) && !allElements(element.children).some(child => child.name === "a"));
-  const img = [...descendants(parseSource(source))].find(element => element.name === "img");
+  const blank = (element: (typeof leaves)[number]) => !tree.children(element).length && !plain(tree.text(element));
+  const body = heading && [root, ...tree.elements(root)].find((element): element is SourceElement => element.type === "element" && tree.view.name(element) === "p" && element.start >= heading.end
+    && (leaves.includes(element) || blank(element)) && !tree.elements(element).some(child => tree.view.name(child) === "a"));
+  const img = tree.elements(root).find((element): element is SourceElement => element.type === "element" && tree.view.name(element) === "img");
   const edits: RangeEdit[] = [];
   const rows = facts.map((fact): CardFillRow => {
     const row = { ...fact, slot: undefined };
@@ -327,13 +342,13 @@ export function itemPageFill(card: string, noun: string, title: string, href: st
     const target = row.role === "body" ? body : img;
     if (!target) return { ...row, from: "not used", status: "not-used" };
     if (row.status === "filled") {
-      if (row.role === "body" && body && row.text !== undefined) edits.push({ start: body.innerStart, end: body.innerEnd, text: escapeText(row.text) });
+      if (row.role === "body" && body && row.text !== undefined) edits.push({ start: body.tag.end, end: body.close!.start, text: escapeText(row.text) });
       if (row.role === "image" && img && row.src !== undefined) edits.push(...cardImageEdits(source, img, row.src));
       return row;
     }
     return row.role === "body" && body
-      ? { ...row, from: "kept", status: "kept", text: itemPlainText(source.slice(body.innerStart, body.innerEnd)) }
-      : { ...row, from: "kept", status: "kept", src: img && startTagAttributes(source, img.tag).find(attribute => attribute.name === "src")?.value };
+      ? { ...row, from: "kept", status: "kept", text: plain(tree.text(body)) }
+      : { ...row, from: "kept", status: "kept", src: img && tree.attribute(img, "src")?.value };
   }).filter(row => row.status !== "not-used" || Boolean(row.text || row.src));
   // The title and the card's link are filled over the facts (itemFill keeps the rest of the text).
   const filled = itemFill(applyEdits(source, edits), noun, title, href);

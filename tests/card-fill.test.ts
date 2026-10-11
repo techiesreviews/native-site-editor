@@ -383,3 +383,15 @@ test("two slots whose names read the same are one slot, the first", () => {
   assert.deepEqual(rows.filter(row => row.slot !== undefined).map(row => row.slot), ["café"]);
   assert.equal(cardFillMarkup('<card-x><h3 slot="café">Old</h3></card-x>', card, rows), '<card-x><h3 slot="café"><a href="/new/">New</a></h3></card-x>');
 });
+
+test("plain card fills keep body text and image addresses decoded once", () => {
+  const result = itemPageFill('<article><h3>Old</h3><p>Caf&eacute; &amp;eacute;</p><img src="/caf&eacute;/&amp;eacute;.png"></article>', "card", "New", "/new/", plainFacts("<h1>New</h1>"))!;
+  assert.equal(result.rows.find(row => row.role === "body")?.text, "Café &eacute;");
+  assert.equal(result.rows.find(row => row.role === "image")?.src, "/café/&eacute;.png");
+  assert.match(result.markup, /<p>Caf&eacute; &amp;eacute;<\/p>/);
+  assert.match(result.markup, /src="\/caf&eacute;\/&amp;eacute;\.png"/);
+});
+
+test("plain card fills refuse an implied end inside a closed outer card", () => {
+  assert.equal(itemPageFill('<article><h3>Old</h3><p>Unclosed</article>', "card", "New", "/new/", plainFacts("<h1>New</h1>")), undefined);
+});

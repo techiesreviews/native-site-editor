@@ -167,16 +167,17 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.equal(result.files.includes("_components/card-quote.css"), false);
     });
 
-    for (const scenario of ["script", "implied-grid", "implied-links"] as const) {
+    for (const scenario of ["script", "implied-grid", "implied-links", "peer-grid", "peer-links"] as const) {
       await t.test(`Create page copies its own slot's sibling with ${scenario}`, async () => {
         const result = await browserPage.evaluate(async ({ branch, site, scenario }) => {
-          const nested = scenario !== "implied-links";
+          const nested = !scenario.endsWith("links");
+          const parentImplied = scenario.startsWith("implied");
           const routes = nested ? ["/work/oak/", "/work/pine/", "/work/fir/"] : ["/oak/", "/pine/", "/fir/"];
           // Keep this callback anonymous: tsx name helpers are absent in the page.
-          const linked = [(slot: string, title: string, href?: string) => `<card-project slot="${slot}"><h3 slot="title">${title}</h3>${href ? `<a slot="link" href="${href}">Read</a>` : ""}</card-project>`][0]!;
-          const between = scenario === "script" ? "<script>ignored()</script>" : '<p slot="intro">Unclosed';
+          const linked = [(slot: string, title: string, href?: string) => `<card-project slot="${slot}"><h3 slot="title">${title}</h3>${href ? `<a slot="link" href="${href}">Read</a>` : ""}${scenario.startsWith("peer") && title === "Pine card" ? "<p>Unclosed<div>After</div>" : ""}</card-project>`][0]!;
+          const between = !parentImplied ? "<script>ignored()</script>" : '<p slot="intro">Unclosed';
           // An implied p closes at this div, leaving the cards as instance children.
-          const closeImplied = scenario === "script" ? "" : '<div slot="intro">Intro</div>';
+          const closeImplied = !parentImplied ? "" : '<div slot="intro">Intro</div>';
           const source = `<main><section-pair>${linked("quotes", "Oak card", routes[0])}${between}${closeImplied}${linked("notes", "Blank")}${linked("notes", "Pine card", routes[1])}${linked("quotes", "Fir card", routes[2])}</section-pair></main>`;
           branch["index.html"] = source;
           const inputs: Record<string, string> = { ...branch, "_components/section-pair.html": '<section><slot name="quotes"><card-project></card-project></slot><slot name="notes"><card-project></card-project></slot></section>' };
@@ -190,13 +191,13 @@ test("guarded card actions on the memory workspace with the browser parser", asy
           });
           const pairedSite = { ...site, routes: siteRoutes, components: { ...site.components, "section-pair": "_components/section-pair.html" } };
           const { controller, m } = cardsFixture(inputs, pairedSite);
-          const card = { path: "index.html", node: [0, 0, scenario === "script" ? 1 : 3] };
+          const card = { path: "index.html", node: [0, 0, !parentImplied ? 1 : 3] };
           const choices = controller.preview.linkPages(card);
           const fill = await controller.preview.createPage(card, { parent: "/work/", title: "Birch" });
           return { fill, inGrid: choices?.inGrid, created: m.draft("work/birch/index.html")?.content, after: m.source("index.html"), steps: m.steps() };
         }, { branch, site: componentSite, scenario });
         assert.deepEqual(result.fill, { title: "Birch", route: "/work/birch/" });
-        assert.deepEqual(result.inGrid, [scenario === "implied-links" ? "/pine/" : "/work/pine/"]);
+        assert.deepEqual(result.inGrid, [scenario.endsWith("links") ? "/pine/" : "/work/pine/"]);
         assert.match(result.created!, /data-sibling="Pine"/);
         assert.match(result.created!, /Birch stays in this sentence/);
         assert.doesNotMatch(result.created!, /Pine card/);
@@ -225,6 +226,20 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.equal(result.undone, true);
       assert.equal(result.restored, collectionPage);
       assert.equal(result.files.includes("work/birch/index.html"), false);
+    });
+
+    await t.test("Pages tab keeps the peer card's title when that card has an implied end", async () => {
+      const result = await browserPage.evaluate(async ({ branch, site }) => {
+        const source = branch["index.html"].replace('Oak</a></h3></card-quote>', 'Oak card</a></h3><p>Unclosed<div>After</div></card-quote>');
+        const inputs = { ...branch, "index.html": source, "work/oak/index.html": '<html><head><title>Oak</title></head><body><main><h1>Different heading</h1><h2>Oak card stays in this sentence.</h2></main></body></html>' };
+        const { controller, m } = cardsFixture(inputs, site);
+        const error = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        return { error, created: m.draft("work/birch/index.html")?.content, steps: m.steps() };
+      }, collectionData);
+      assert.equal(result.error, undefined);
+      assert.match(result.created!, /Birch stays in this sentence/);
+      assert.doesNotMatch(result.created!, /Oak card/);
+      assert.deepEqual(result.steps, ["operation"]);
     });
 
     await t.test("a page delete's card removal reads every page through the delete's plan", async () => {

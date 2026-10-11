@@ -11,7 +11,9 @@
 // parent URL (`/work/fern-and-kettle/`, `/work/harbour-lane-pottery/`) is a
 // collection of those pages, with no data file anywhere.
 
-import { startTags, VOID_ELEMENTS, startTagAttribute, type StartTag } from "../../shared/html-source";
+import { VOID_ELEMENTS, textRangeInSource } from "../../shared/html-source";
+import { readSource, plain, type SourceTree, type SourceNode, type SourceElement } from "./source-tree";
+import { decodeHtmlEntities, decodeHtmlEntity } from "./html-entities";
 import { isFolderRoute } from "../../shared/native-routes";
 import { INLINE_FORMATTING } from "./rules/text-level";
 
@@ -58,93 +60,6 @@ function parentOf(route: string): string | undefined {
   return at < 0 ? undefined : trimmed.slice(0, at + 1);
 }
 
-// ---- A small element tree over a stretch of source ----
-
-/** An element of a source stretch, with offsets into the whole source. */
-export interface SourceElement {
-  name: string;
-  tag: StartTag;
-  /** Outer range. */
-  start: number;
-  end: number;
-  /** Content range (equal for a void element). */
-  innerStart: number;
-  innerEnd: number;
-  children: SourceElement[];
-}
-
-const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"]);
-
-/**
- * The elements of `source` between `from` and `to` as a tree, from their
- * start and end tags. Undefined when an element is not closed by its own
- * end tag (an implied end, `<li>` with no `</li>`), since a guessed tree
- * would edit the wrong text.
- */
-export function elementTree(source: string, from = 0, to = source.length): SourceElement[] | undefined {
-  const byStart = new Map(startTags(source).filter((tag) => tag.start >= from && tag.start < to).map((tag) => [tag.start, tag]));
-  const roots: SourceElement[] = [];
-  const stack: SourceElement[] = [];
-  let i = from;
-  while (i < to) {
-    const lt = source.indexOf("<", i);
-    if (lt < 0 || lt >= to) break;
-    if (source.startsWith("<!--", lt)) {
-      const close = source.indexOf("-->", lt + 4);
-      i = close < 0 ? to : close + 3;
-      continue;
-    }
-    const tag = byStart.get(lt);
-    if (tag) {
-      const element: SourceElement = { name: tag.name, tag, start: tag.start, end: tag.end, innerStart: tag.end, innerEnd: tag.end, children: [] };
-      (stack.at(-1)?.children ?? roots).push(element);
-      if (VOID_ELEMENTS.has(tag.name)) {
-        i = tag.end;
-        continue;
-      }
-      if (RAW_TEXT.has(tag.name)) {
-        const close = source.toLowerCase().indexOf(`</${tag.name}`, tag.end);
-        if (close < 0 || close >= to) return undefined;
-        const gt = source.indexOf(">", close);
-        element.innerEnd = close;
-        element.end = gt + 1;
-        i = gt + 1;
-        continue;
-      }
-      stack.push(element);
-      i = tag.end;
-      continue;
-    }
-    const end = /^<\/([a-zA-Z][^\s/>]*)\s*>/.exec(source.slice(lt, Math.min(to, lt + 200)));
-    if (end) {
-      const name = end[1].toLowerCase();
-      const open = stack.at(-1);
-      if (!open || open.name !== name) return undefined;
-      stack.pop();
-      open.innerEnd = lt;
-      open.end = lt + end[0].length;
-      i = open.end;
-      continue;
-    }
-    i = lt + 1;
-  }
-  return stack.length ? undefined : roots;
-}
-
-/** The text of a stretch of markup: tags and comments dropped, entities decoded, spaces collapsed. */
-export function plainText(html: string): string {
-  return decodeEntities(html.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();
-}
-
-function decodeEntities(text: string) {
-  const named: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", middot: "·", mdash: "—", ndash: "–", hellip: "…", rsquo: "’", lsquo: "‘", ldquo: "“", rdquo: "”" };
-  return text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z][a-z0-9]*));/gi, (whole, dec, hex, name) => {
-    if (dec) return String.fromCodePoint(Number(dec));
-    if (hex) return String.fromCodePoint(Number.parseInt(hex, 16));
-    return named[name.toLowerCase()] ?? whole;
-  });
-}
-
 /** `text` safe as element content. */
 export function escapeText(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -156,34 +71,22 @@ export function escapeText(text: string): string {
  * text a copy resets. Leaves are found from the top down, so a link in a
  * paragraph is part of the paragraph's leaf.
  */
-export function textLeaves(source: string, elements: SourceElement[]): SourceElement[] {
-  const out: SourceElement[] = [];
-  const inlineOnly = (element: SourceElement): boolean => element.children.every((child) => INLINE_FORMATTING.has(child.name) && inlineOnly(child));
-  const visit = (element: SourceElement) => {
+export function textLeaves<N>(tree: SourceTree<N>, elements = tree.children()): N[] {
+  const out: N[] = [];
+  const inlineOnly = (element: N): boolean => tree.children(element).every((child) => INLINE_FORMATTING.has(tree.view.name(child)) && inlineOnly(child));
+  const visit = (element: N) => {
     // Scripts, styles and templates are not text to reset: they stay as written.
-    if (VOID_ELEMENTS.has(element.name) || RAW_TEXT.has(element.name) || element.name === "template") return;
-    if (inlineOnly(element) && plainText(source.slice(element.innerStart, element.innerEnd))) {
+    const name = tree.view.name(element);
+    if (VOID_ELEMENTS.has(name) || ["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "template"].includes(name)) return;
+    if (inlineOnly(element) && plain(tree.text(element))) {
       out.push(element);
       return;
     }
-    element.children.forEach(visit);
+    tree.children(element).forEach(visit);
   };
   elements.forEach(visit);
   return out;
 }
-
-/** Every element in `elements` and under them, in source order. */
-export function allElements(elements: SourceElement[]): SourceElement[] {
-  const out: SourceElement[] = [];
-  const visit = (element: SourceElement) => {
-    out.push(element);
-    element.children.forEach(visit);
-  };
-  elements.forEach(visit);
-  return out;
-}
-
-const attribute = (source: string, element: SourceElement, name: string) => startTagAttribute(source, element.tag, name)?.value;
 
 // ---- A card's copy ----
 
@@ -214,16 +117,16 @@ function applyEdits(source: string, edits: Edit[]) {
 }
 
 /** The title leaf of an item: its `slot="title"` element, else its first heading, else the item itself when it is a leaf. */
-export function titleLeaf(source: string, item: SourceElement, leaves = textLeaves(source, [item])): SourceElement | undefined {
-  return leaves.find((leaf) => attribute(source, leaf, "slot") === "title")
-    ?? leaves.find((leaf) => /^h[1-6]$/.test(leaf.name))
+export function titleLeaf<N>(tree: SourceTree<N>, item: N, leaves = textLeaves(tree, [item])): N | undefined {
+  return leaves.find((leaf) => tree.attribute(leaf, "slot")?.value === "title")
+    ?? leaves.find((leaf) => /^h[1-6]$/.test(tree.view.name(leaf)))
     ?? (leaves[0] === item ? item : undefined);
 }
 
 /** The item's title as text: the text of its title leaf. */
-export function itemTitle(source: string, item: SourceElement): string | undefined {
-  const leaf = titleLeaf(source, item);
-  return leaf ? plainText(source.slice(leaf.innerStart, leaf.innerEnd)) || undefined : undefined;
+export function itemTitle<N>(tree: SourceTree<N>, item: N): string | undefined {
+  const leaf = titleLeaf(tree, item);
+  return leaf ? plain(tree.text(leaf)) || undefined : undefined;
 }
 
 /** A placeholder for a leaf whose text is reset, by what the leaf is. */
@@ -236,32 +139,36 @@ export function placeholderFor(tag: string, noun: string, about = `this ${noun}`
   return "Text";
 }
 
-/** Edits to the text runs (between tags and comments) of `source` from `start` to `end`, each run passed through `change`. */
-function textRunEdits(source: string, start: number, end: number, change: (run: string) => string): Edit[] {
+/** Replace decoded title matches in individual text nodes, preserving all other source spelling. */
+function withTitle(tree: SourceTree<SourceNode>, leaf: SourceElement, from: string | undefined, to: string): Edit[] {
+  if (!from) return [];
   const edits: Edit[] = [];
-  const pattern = /<!--[\s\S]*?-->|<[^>]*>/g;
-  const inner = source.slice(start, end);
-  let from = 0;
-  const run = (to: number) => {
-    const text = inner.slice(from, to);
-    const next = change(text);
-    if (next !== text) edits.push({ start: start + from, end: start + to, text: next });
+  const visit = (node: SourceNode) => {
+    if (node.type === "element") {
+      // Raw text is never title copy, even when nested in a kept leaf.
+      if (["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "template"].includes(tree.view.name(node))) return;
+      tree.view.children(node).forEach(visit);
+      return;
+    }
+    const text = tree.text(node);
+    const source = tree.source.slice(node.start, node.end);
+    // The tree drops a pre/listing's first newline; the mapper reads the whole source run.
+    const omitted = decodeHtmlEntities(source.replace(/\r\n?/g, "\n")).length - text.length;
+    for (let at = text.indexOf(from); at >= 0; at = text.indexOf(from, at + from.length)) {
+      const span = textRangeInSource(source, at + omitted, at + omitted + from.length, from, decodeHtmlEntity);
+      if (span) edits.push({ start: node.start + span.start, end: node.start + span.end, text: escapeText(to) });
+    }
   };
-  for (const match of inner.matchAll(pattern)) {
-    run(match.index);
-    from = match.index + match[0].length;
-  }
-  run(inner.length);
+  visit(leaf);
   return edits;
 }
 
-/** Replaces each occurrence of `title` (as written or escaped) in a leaf's inner markup. */
-function withTitle(inner: string, from: string | undefined, to: string) {
-  if (!from) return inner;
-  const escaped = escapeText(from);
-  let text = inner.split(escaped).join(escapeText(to));
-  if (escaped !== from) text = text.split(from).join(escapeText(to));
-  return text;
+/** A title's single wrapping link, with no words outside it. */
+function wholeTitleLink(tree: SourceTree<SourceNode>, leaf: SourceElement): SourceElement | undefined {
+  const children = tree.children(leaf);
+  const only = children.length === 1 ? children[0] : undefined;
+  return only?.type === "element" && tree.view.name(only) === "a"
+    && !plain(tree.view.children(leaf).filter(node => node !== only).map(node => tree.text(node)).join("")) ? only : undefined;
 }
 
 /**
@@ -274,11 +181,13 @@ function withTitle(inner: string, from: string | undefined, to: string) {
  * placeholder for its kind (`placeholderFor`). Links to the item's page go to
  * `href` instead. Undefined when the item's markup is not a clean tree.
  */
-export function itemCopy(source: string, item: SourceElement, options: ItemCopyOptions): string | undefined {
-  const leaves = textLeaves(source, [item]);
-  const titleAt = titleLeaf(source, item, leaves);
-  const oldTitle = titleAt ? plainText(source.slice(titleAt.innerStart, titleAt.innerEnd)) : undefined;
-  const slotOf = (leaf: SourceElement) => attribute(source, leaf, "slot");
+export function itemCopy(tree: SourceTree<SourceNode>, item: SourceNode, options: ItemCopyOptions): string | undefined {
+  if (!tree.exact || item.type !== "element") return undefined;
+  const source = tree.source;
+  const leaves = textLeaves(tree, [item]).filter((node): node is SourceElement => node.type === "element");
+  const titleAt = titleLeaf(tree, item, leaves);
+  const oldTitle = titleAt ? plain(tree.text(titleAt)) : undefined;
+  const slotOf = (leaf: SourceNode) => tree.attribute(leaf, "slot")?.value;
   const titleText = options.title?.trim()
     || (titleAt && slotOf(titleAt) && options.fallbacks?.[slotOf(titleAt)!])
     || `New ${options.noun}`;
@@ -288,30 +197,29 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
     let text: string;
     if (leaf === titleAt) {
       // The title keeps a wrapping link (`<h3><a href>Title</a></h3>`), with only its words changed.
-      const only = leaf.children.length === 1 && leaf.children[0].name === "a" && !plainText(source.slice(leaf.innerStart, leaf.children[0].start) + source.slice(leaf.children[0].end, leaf.innerEnd))
-        ? leaf.children[0] : undefined;
-      edits.push({ start: (only ?? leaf).innerStart, end: (only ?? leaf).innerEnd, text: escapeText(titleText) });
+      const target = wholeTitleLink(tree, leaf) ?? leaf;
+      edits.push({ start: target.tag.end, end: target.close!.start, text: escapeText(titleText) });
       continue;
-    } else if (leaf.name === "a" || allElements(leaf.children).some((child) => child.name === "a")) {
+    } else if (tree.view.name(leaf) === "a" || tree.elements(leaf).some((child) => tree.view.name(child) === "a")) {
       // Only its words change, run by run between tags, so a link's address is left to the link pass below.
-      edits.push(...textRunEdits(source, leaf.innerStart, leaf.innerEnd, (run) => withTitle(run, oldTitle, titleText)));
+      edits.push(...withTitle(tree, leaf, oldTitle, titleText));
       continue;
     } else if (options.keepText) {
       continue;
     } else if (slot && options.fallbacks?.[slot]) {
       text = escapeText(options.fallbacks[slot]);
     } else {
-      text = escapeText(placeholderFor(leaf.name, options.noun));
+      text = escapeText(placeholderFor(tree.view.name(leaf), options.noun));
     }
-    edits.push({ start: leaf.innerStart, end: leaf.innerEnd, text });
+    edits.push({ start: leaf.tag.end, end: leaf.close!.start, text });
   }
   // Links to the item's own page go to the new one (or nowhere yet).
   // Not inside a leaf whose whole content was replaced.
   const inRemoved = (at: number) => edits.some((edit) => at >= edit.start && at < edit.end);
   if (options.href !== undefined)
-    for (const element of allElements([item])) {
-      if (element.name !== "a" || inRemoved(element.start)) continue;
-      const href = startTagAttribute(source, element.tag, "href");
+    for (const element of [item, ...tree.elements(item)]) {
+      if (tree.view.name(element) !== "a" || inRemoved(element.start)) continue;
+      const href = tree.attribute(element, "href");
       if (!href || !source.slice(href.start, href.end).includes("=") || (options.isLinked && !options.isLinked(href.value))) continue;
       edits.push(hrefEdit(href, options.href));
     }
@@ -329,25 +237,26 @@ export function itemCopy(source: string, item: SourceElement, options: ItemCopyO
  * is pointed at the page; else the heading's text becomes a link.
  */
 export function itemFill(card: string, noun: string, title: string, href: string): { markup: string; added: boolean } | undefined {
-  const root = elementTree(card)?.[0];
-  const markup = root && itemCopy(card, root, { noun, title, href, keepText: true, isLinked: value => !value.trim() });
-  const item = markup === undefined ? undefined : elementTree(markup)?.[0];
-  if (markup === undefined || !item) return undefined;
-  const links = allElements([item]).filter(element => element.name === "a");
-  if (links.some(link => attribute(markup, link, "href") === href)) return { markup, added: false };
-  const heading = titleLeaf(markup, item);
+  const original = readSource(card);
+  const root = original.children()[0];
+  const markup = root && itemCopy(original, root, { noun, title, href, keepText: true, isLinked: value => !value.trim() });
+  const tree = markup === undefined ? undefined : readSource(markup);
+  const item = tree?.children()[0];
+  if (markup === undefined || !tree?.exact || !item || item.type !== "element") return undefined;
+  const links = [item, ...tree.elements(item)].filter((element): element is SourceElement => element.type === "element" && tree.view.name(element) === "a");
+  if (links.some(link => tree.attribute(link, "href")?.value === href)) return { markup, added: false };
+  const heading = titleLeaf(tree, item);
   // Collections also accept text-only items; keep their existing copy fill.
-  if (!heading || !/^h[1-6]$/.test(heading.name)) return { markup, added: false };
+  if (!heading || heading.type !== "element" || !/^h[1-6]$/.test(tree.view.name(heading))) return { markup, added: false };
   const around = links.find(link => link.start <= heading.start && heading.end <= link.end);
-  const only = heading.children.length === 1 && heading.children[0].name === "a" && !plainText(markup.slice(heading.innerStart, heading.children[0].start) + markup.slice(heading.children[0].end, heading.innerEnd))
-    ? heading.children[0] : undefined;
+  const only = wholeTitleLink(tree, heading);
   const link = around ?? only;
   const pointed = (anchor: SourceElement): Edit => {
-    const old = startTagAttribute(markup, anchor.tag, "href");
+    const old = tree.attribute(anchor, "href");
     return old ? hrefEdit(old, href) : { start: anchor.tag.end - 1, end: anchor.tag.end - 1, text: ` href="${escapeAttribute(href)}"` };
   };
   // itemCopy already gave the heading (or its whole link) the page's title.
-  const edits = link ? [pointed(link)] : [{ start: heading.innerStart, end: heading.innerEnd, text: `<a href="${escapeAttribute(href)}">${escapeText(title)}</a>` }];
+  const edits = link ? [pointed(link)] : [{ start: heading.tag.end, end: heading.close!.start, text: `<a href="${escapeAttribute(href)}">${escapeText(title)}</a>` }];
   return { markup: applyEdits(markup, edits), added: true };
 }
 
@@ -398,8 +307,8 @@ export interface PageCopyOptions {
 }
 
 /**
- * The body part of a new subpage made from a sibling's (`source`, a whole
- * document; `main` its `<main>` element or body content range): what every
+ * The body part of a new subpage made from a sibling's tree (its `<main>`
+ * content or body content, with offsets into the whole source): what every
  * sibling shares stays, what each says for itself is reset. With `other`
  * (a second sibling) whose `<main>` has the same leaves (`textLeaves`, by
  * tag) a leaf whose text is the same in both stays as it is (the headings
@@ -412,41 +321,38 @@ export interface PageCopyOptions {
  * has the sibling's title swapped for the new one. Links
  * to the sibling's own URL go to the new one. Images stay as they are.
  */
-export function pageBodyCopy(source: string, main: { start: number; end: number }, otherLeaves: { name: string; text: string }[] | undefined, options: PageCopyOptions): string | undefined {
-  const tree = elementTree(source, main.start, main.end);
-  if (!tree) return undefined;
-  const leaves = textLeaves(source, tree);
-  const parents = new Map<SourceElement, SourceElement>();
-  for (const element of allElements(tree)) for (const child of element.children) parents.set(child, element);
-  const compare = otherLeaves && otherLeaves.length === leaves.length && otherLeaves.every((leaf, index) => leaf.name === leaves[index].name)
+export function pageBodyCopy(tree: SourceTree<SourceNode>, otherLeaves: { name: string; text: string }[] | undefined, options: PageCopyOptions): string | undefined {
+  const source = tree.source;
+  if (!tree.exact) return undefined;
+  const leaves = textLeaves(tree).filter((node): node is SourceElement => node.type === "element");
+  const compare = otherLeaves && otherLeaves.length === leaves.length && otherLeaves.every((leaf, index) => leaf.name === tree.view.name(leaves[index]))
     ? otherLeaves : undefined;
   let titled = false;
   const edits: Edit[] = [];
   // Leaves whose whole content is replaced: their links go with it.
   const replaced: Edit[] = [];
   leaves.forEach((leaf, index) => {
-    const inner = source.slice(leaf.innerStart, leaf.innerEnd);
-    const text = plainText(inner);
-    const holdsLink = leaf.name === "a" || allElements(leaf.children).some((child) => child.name === "a");
-    const keep = compare ? compare[index].text === text : (/^h[2-6]$/.test(leaf.name) || holdsLink);
-    if (leaf.name === "h1" && !titled) {
+    const text = plain(tree.text(leaf));
+    const holdsLink = tree.view.name(leaf) === "a" || tree.elements(leaf).some((child) => tree.view.name(child) === "a");
+    const keep = compare ? compare[index].text === text : (/^h[2-6]$/.test(tree.view.name(leaf)) || holdsLink);
+    if (tree.view.name(leaf) === "h1" && !titled) {
       titled = true;
-      replaced.push({ start: leaf.innerStart, end: leaf.innerEnd, text: escapeText(options.title) });
+      replaced.push({ start: leaf.tag.end, end: leaf.close!.start, text: escapeText(options.title) });
       return;
     }
     if (keep) {
-      edits.push(...textRunEdits(source, leaf.innerStart, leaf.innerEnd, (run) => withTitle(run, options.oldTitle, options.title)));
+      edits.push(...withTitle(tree, leaf, options.oldTitle, options.title));
       return;
     }
     // Text a page puts in a component's slot resets to the component's own fallback.
-    const slot = attribute(source, leaf, "slot");
-    const host = parents.get(leaf);
-    const fallback = slot && host?.name.includes("-") ? options.fallback?.(host.name, slot) : undefined;
-    replaced.push({ start: leaf.innerStart, end: leaf.innerEnd, text: escapeText(fallback ?? placeholderFor(leaf.name, "page", options.title)) });
+    const slot = tree.attribute(leaf, "slot")?.value;
+    const host = tree.view.parent(leaf);
+    const fallback = slot && host && tree.view.name(host).includes("-") ? options.fallback?.(tree.view.name(host), slot) : undefined;
+    replaced.push({ start: leaf.tag.end, end: leaf.close!.start, text: escapeText(fallback ?? placeholderFor(tree.view.name(leaf), "page", options.title)) });
   });
-  for (const element of allElements(tree)) {
-    if (element.name !== "a" || replaced.some((edit) => element.start >= edit.start && element.start < edit.end)) continue;
-    const href = startTagAttribute(source, element.tag, "href");
+  for (const element of tree.elements()) {
+    if (tree.view.name(element) !== "a" || replaced.some((edit) => element.start >= edit.start && element.start < edit.end)) continue;
+    const href = tree.attribute(element, "href");
     const target = href ? linkPath(href.value) : undefined;
     if (!href || target === undefined || !source.slice(href.start, href.end).includes("=")) continue;
     const rest = href.value.trim().slice(target.length);
@@ -464,24 +370,6 @@ function linkPath(href: string) {
 }
 
 /** The leaves of a stretch of a page, as their tag and text: what `pageBodyCopy` compares. */
-export function leafSummary(source: string, range: { start: number; end: number }): { name: string; text: string }[] | undefined {
-  const tree = elementTree(source, range.start, range.end);
-  return tree ? textLeaves(source, tree).map((leaf) => ({ name: leaf.name, text: plainText(source.slice(leaf.innerStart, leaf.innerEnd)) })) : undefined;
-}
-
-/**
- * The text a component template shows for each of its named slots when
- * the page fills none (its fallback, as plain text).
- */
-export function slotFallbacks(template: string): { fallbacks: Record<string, string> } {
-  const fallbacks: Record<string, string> = {};
-  for (const tag of startTags(template)) {
-    if (tag.name !== "slot") continue;
-    const name = startTagAttribute(template, tag, "name")?.value;
-    if (!name) continue;
-    const close = template.toLowerCase().indexOf("</slot", tag.end);
-    const text = close < 0 ? "" : plainText(template.slice(tag.end, close));
-    if (text && !(name in fallbacks)) fallbacks[name] = text;
-  }
-  return { fallbacks };
+export function leafSummary<N>(tree: SourceTree<N>): { name: string; text: string }[] | undefined {
+  return tree.exact ? textLeaves(tree).map((leaf) => ({ name: tree.view.name(leaf), text: plain(tree.text(leaf)) })) : undefined;
 }

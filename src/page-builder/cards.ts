@@ -15,12 +15,12 @@ import type { EditBarControl } from "../components/edit-bar";
 import type { CardFilled, CardLinkPages, CardPageRequest, CardSwapped, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
-import { firstHeadingText, nativeNewTarget, slugify } from "../native-pages";
+import { nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit } from "../native-structure";
-import { elementTree, aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks } from "./card-grid";
-import { gridAt, gridOfItem, instanceLabel, itemAround, itemElement, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
+import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy } from "./card-grid";
+import { gridAt, gridOfItem, instanceLabel, itemAround, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
 import { cardSlotAddEdit, slotCardLinks } from "./card-slot";
-import { cardFill, cardFillMarkup, itemPageFill, pageTitle } from "./card-fill";
+import { cardFill, cardFillMarkup, itemPageFill, pageTitle, slotFallbacks } from "./card-fill";
 import { cardFolder } from "./page-choices";
 import { readPage } from "../native-source-location";
 import type { CardLook } from "./card-looks";
@@ -28,7 +28,7 @@ import type { CardContent } from "./card-swap";
 import type { VariantFiles } from "../../shared/variant-lookup";
 import type { GuardedEdits, Outcome, Planned, Reads } from "../guarded-edit";
 import { isSectionTemplate } from "../../shared/html-source";
-import type { SourceTree } from "./source-tree";
+import { readSource, plain, type SourceTree } from "./source-tree";
 import { nativeLinkTarget } from "../../shared/native-routes";
 
 /** The range at a preview path, if the element has an exact source range. */
@@ -185,11 +185,12 @@ export function createCards(deps: CardsDeps) {
    * reset (`reset` false).
    */
   function cardMarkup(reads: Reads, source: string, route: string, grid: SourceGrid, item: SourceGrid["items"][number], page?: { title: string; route: string }) {
-    const element = itemElement(source, item.range);
+    const tree = readSource(source, { from: item.range.start, to: item.range.end });
+    const element = tree.children().length === 1 ? tree.children()[0] : undefined;
     const tag = grid.kind.split(".")[0];
     const component = tag.includes("-") ? template(reads, tag) : undefined;
     const slots = component ? slotFallbacks(component) : { fallbacks: {} };
-    const copy = element && itemCopy(source, element, {
+    const copy = element && itemCopy(tree, element, {
       noun: grid.noun,
       title: page?.title,
       href: item.route ? page?.route ?? "" : undefined,
@@ -218,9 +219,15 @@ export function createCards(deps: CardsDeps) {
     const other = linked.slice(0, -1).at(-1);
     const otherSource = other?.route ? reads.source(site.routes[other.route]) : undefined;
     const range = (text: string) => mainRange(readPage(text)) ?? nativePageBody(text);
-    const otherLeaves = otherSource ? leafSummary(otherSource, range(otherSource)) : undefined;
-    const oldTitle = from.title || firstHeadingText(sibling);
-    const body = pageBodyCopy(sibling, range(sibling), otherLeaves, {
+    const mainTree = (text: string) => {
+      const main = range(text);
+      return readSource(text, { from: main.start, to: main.end });
+    };
+    const otherLeaves = otherSource ? leafSummary(mainTree(otherSource)) : undefined;
+    const whole = readSource(sibling);
+    const heading = whole.elements().find(node => whole.view.name(node) === "h1");
+    const oldTitle = from.title || (heading && plain(whole.text(heading)));
+    const body = pageBodyCopy(mainTree(sibling), otherLeaves, {
       title,
       from: from.route,
       to: route,
@@ -316,9 +323,10 @@ export function createCards(deps: CardsDeps) {
 
   /** Components, collections and plain cards with a heading can link to a page. */
   function canFill(reads: Reads, tag: string, grid?: SourceGrid, markup?: string): boolean {
-    const root = markup && elementTree(markup)?.[0];
-    const title = root && titleLeaf(markup!, root);
-    return template(reads, tag) !== undefined || Boolean(grid && pageParent(reads, grid)) || Boolean(title && /^h[1-6]$/.test(title.name));
+    const tree = markup === undefined ? undefined : readSource(markup);
+    const root = tree?.exact ? tree.children()[0] : undefined;
+    const title = tree && root && titleLeaf(tree, root);
+    return template(reads, tag) !== undefined || Boolean(grid && pageParent(reads, grid)) || Boolean(title && /^h[1-6]$/.test(tree!.view.name(title)));
   }
 
   /** The pages the new card can link to (page-choices.ts): the site's, its page file, and those the grid's other cards link to. */
@@ -349,7 +357,11 @@ export function createCards(deps: CardsDeps) {
     return range && source!.slice(range.start, range.end);
   }
 
-  const tagOf = (markup: string) => markup.slice(1).match(/^[^\s/>]+/)?.[0].toLowerCase();
+  const tagOf = (markup: string) => {
+    const tree = readSource(markup);
+    const root = tree.children()[0];
+    return root && tree.view.name(root);
+  };
 
   // Swaps the card's look in place (card-swap.ts, loaded with the looks),
   // one undo step, keeping it selected: its content carried by role, `kept`
@@ -379,9 +391,11 @@ export function createCards(deps: CardsDeps) {
   function fillFrom(reads: Reads, card: NewCard, route: string, page: string) {
     const source = reads.source(card.path);
     const range = source === undefined ? undefined : rangeAt(readPage(source), card.node);
-    const element = range && itemElement(source!, range);
-    if (!element || !range || source === undefined) return undefined;
-    const tag = element.name;
+    if (!range || source === undefined) return undefined;
+    const tree = readSource(source, { from: range.start, to: range.end });
+    const element = tree.children().length === 1 ? tree.children()[0] : undefined;
+    if (!tree.exact || !element) return undefined;
+    const tag = tree.view.name(element);
     const text = template(reads, tag);
     const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
     if (!canFill(reads, tag, grid, source.slice(range.start, range.end))) return undefined;
@@ -441,11 +455,8 @@ export function createCards(deps: CardsDeps) {
    * of them go to (a card's second link, to About, is not a sibling).
    */
   function siblingPages(reads: Reads, source: string, card: NewCard, route: string, routes: Record<string, string>): { route?: string; title?: string }[] {
-    const titled = (range: SourceGrid["items"][number]["range"]) => {
-      const element = itemElement(source, range);
-      return element && itemTitle(source, element);
-    };
     const tree = readPage(source);
+    const titled = (element: ReturnType<typeof tree.at>) => element && itemTitle(tree, element);
     const parent = tree.at(card.node.slice(0, -1));
     // `at` is undefined for the top level and for a path not there.
     const children = card.node.length > 1 && parent === undefined ? [] : tree.children(parent);
@@ -455,7 +466,7 @@ export function createCards(deps: CardsDeps) {
     const sameSlot = (at: number) => at !== own && slotOf(children[at]) === slotOf(children[own]);
     const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
     const items = grid?.items.filter((item) => sameSlot(item.index));
-    if (items?.some((item) => item.route)) return items.map((item) => ({ route: item.route, title: titled(item.range) }));
+    if (items?.some((item) => item.route)) return items.map((item) => ({ route: item.route, title: titled(tree.at([...grid!.parent, item.index])) }));
     const links = slotCardLinks(tree, card.node, (href) => nativeLinkTarget(href, route, routes));
     const folder = cardFolder(links);
     const peers = children.filter((_, at) => sameSlot(at));
@@ -464,8 +475,7 @@ export function createCards(deps: CardsDeps) {
         const href = tree.view.name(element) === "a" ? tree.attribute(element, "href")?.value : undefined;
         return href !== undefined && nativeLinkTarget(href, route, routes) === link;
       }));
-      const range = item === undefined ? undefined : tree.range(item);
-      return { route: link, title: range && titled(range) };
+      return { route: link, title: titled(item) };
     });
   }
 
@@ -620,7 +630,11 @@ export function createCards(deps: CardsDeps) {
         const { source, grid, file, route } = found;
         const title = request.title.trim();
         if (site.routes["/"]) reads.source(site.routes["/"]);
-        const content = subpageDocument(reads, grid.items.map(item => { const element = itemElement(source, item.range); return { route: item.route, title: element && itemTitle(source, element) }; }), title, target.value.route);
+        const tree = readPage(source);
+        const content = subpageDocument(reads, grid.items.map(item => {
+          const element = tree.at([...grid.parent, item.index]);
+          return { route: item.route, title: element && itemTitle(tree, element) };
+        }), title, target.value.route);
         const where = `“${grid.label}” on ${deps.pageLabel(file)}`;
         const last = grid.items[grid.items.length - 1];
         const copy = cardMarkup(reads, source, route, grid, last, { title, route: target.value.route });
