@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ts, nameFindings, walk, strip, member, isFunction, finding, analyse, declarationOf, plansOf, isPlanMethod, bindingKey, referenceName, destructured, walkOutside, refers, unallowed, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
+import { ts, nameFindings, walk, strip, member, isFunction, finding, analyse, declarationOf, plansOf, isPlanMethod, bindingKey, referenceName, bindingReceiver, walkOutside, refers, unallowed, staleEntries, sourceFiles, readSource, type TS, type Finding, type AllowlistEntry, type Detector } from "./support/source-guard.ts";
 
 type Rule = "move-engine" | "move-plan" | "template-choice";
 
@@ -32,7 +32,7 @@ function namedReference(checker: TS.TypeChecker, node: TS.Node, names: Set<strin
   const access = member(node);
   if (access) return access.name === "now" && modeReceiver(checker, access.receiver);
   if (!ts.isBindingElement(node) || bindingKey(node) !== "now") return false;
-  const receiver = destructured(node);
+  const receiver = bindingReceiver(node);
   return !!receiver && modeReceiver(checker, receiver);
 }
 
@@ -204,6 +204,9 @@ test("template-choice follows destructured reads, aliases and transitive same-fi
   for (const source of [
     'function choose() { const { now } = tools.mode; return now() ? templateRules() : pageRules(items); }',
     'const { now: editing } = tools.mode; function choose() { return editing() ? templateRules() : pageRules(items); }',
+    'const { mode: { now: editing } } = tools; function choose() { return editing() ? templateRules() : pageRules(items); }',
+    'const { ["mode"]: { ["now"]: editing } } = tools; function choose() { return editing() ? templateRules() : pageRules(items); }',
+    'const { [`mode`]: { [`now`]: editing } } = tools; function choose() { return editing() ? templateRules() : pageRules(items); }',
     'const read = tools.mode.now; const alias = read; function choose() { alias(); return templateRules(); }',
     'const t = () => tools.mode.now(); function choose() { return t() ? templateRules() : pageRules(items); }',
     'function t() { return read(); } const read = () => tools.mode.now(); function choose() { t(); return templateRules(); }',

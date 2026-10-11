@@ -120,12 +120,12 @@ export function fixedWaits(text) {
     }
     if (code[at] !== "(") continue;
     let depth = 1;
-    at++;
+    const argumentsStart = ++at;
     for (; at < code.length && depth > 0; at++) {
       if (code[at] === "(") depth++;
       else if (code[at] === ")") depth--;
     }
-    if (/\bsetTimeout\s*\(/.test(code.slice(match.index, at))) offsets.push(match.index);
+    if (/\bsetTimeout\s*\(/.test(code.slice(argumentsStart, at))) offsets.push(match.index);
   }
   const optOut = /\/\/\s*fixed-wait:\s*\S/;
   return [...new Set(offsets.map(offset => code.slice(0, offset).split("\n").length))]

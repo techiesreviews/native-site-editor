@@ -141,6 +141,11 @@ test("fixed waits parse object and nested Promise type arguments", () => {
   assert.deepEqual(fixedWaits("new Promise<\n  { done: boolean; nested: Promise<boolean> }\n>(resolve => setTimeout(resolve, 100))"), [1]);
 });
 
+test("fixed waits ignore Promise type method signatures", () => {
+  assert.deepEqual(fixedWaits("await new Promise<{ setTimeout(): void }>(resolve => resolve(timer));"), []);
+  assert.deepEqual(fixedWaits("await new Promise<{ setTimeout(): void }>(resolve => setTimeout(() => resolve(timer), 100));"), [1]);
+});
+
 test("fixed wait opt-outs require real line comments, including inside template interpolations", () => {
   for (const fake of [
     'const text = "// fixed-wait: fake";',
