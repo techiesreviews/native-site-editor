@@ -2,7 +2,7 @@
 
 A week (from 2026-10-10) of cleanup under the editor, no new features. Order: (0) agent-drift bugs, (1) one guarded edit module, (2) a typed editor↔preview protocol, (3) one Block move module, then (6) one HTML source-tree reader for cards, (4) Edit component mode in one module, (5) one Variant lookup.
 
-Tickets are numbered by candidate: 01-09 for (0), 10-19 for (1), 20s for (2), 30s for (3), 40s for (6), 50s for (5). Each slice lands on `dev` with `npm run check`, `npm test` and the full `native-save` suite green, and deploys to preview only. ★ = a Claude agent builds it; the rest go to Sol.
+Tickets are numbered by candidate: 01-09 for (0), 10-19 for (1), 20s for (2), 30s for (3), 40s for (6), 50s for (5), 60s for (4). Each slice lands on `dev` with `npm run check`, `npm test` and the full `native-save` suite green, and deploys to preview only. ★ = a Claude agent builds it; the rest go to Sol.
 
 ## 1. Guarded edit
 
@@ -88,3 +88,16 @@ One module in `shared/` answers which Variants a tag (or `.btn`) has on the site
 | --- | --- | --- | --- |
 | [50 One Variant lookup for the editor and the Worker](tickets/50-one-variant-lookup.md) | M | claude ★ | – |
 | [51 Page-band tags and reserved custom-element names live once in rules/](tickets/51-band-and-reserved-name-rules.md) | S | sol | 28 |
+
+## 6. Edit component mode in one module
+
+One module (`src/page-builder/component-mode.ts`, no DOM, in the entry chunk) owns what Edit component mode is: the opening the guarded edit's stamps hold (`entry()`), the framed instance and its chain of opened templates, every history share's lifetime (entry, mode, nested level, rename), renames followed across Undo/Redo, kept slot names, Make component's notes and the frame message, and one rule for when the mode lasts (`now()`: its template is the file open, its page is shown, the repository/branch/version view hold, its instance is where it was). Ports: stamps and `peek`, the file open and page shown, open, share, frame, changed; the memory workspace is the test adapter. The bar's view keeps its DOM and draws the module's state; components.ts, main.ts and Page Structure stop deciding whether the mode is on (sixteen predicates today). Design: `~/Projects/native-site-editor/.scratch/sturdy/edit-component-mode-design.md`.
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [60 Module, memory adapter and suite (no callers)](tickets/60-component-mode-module.md) | M | claude ★ | – |
+| [61 components.ts and the mode's bar on the module](tickets/61-component-mode-components.md) | L | claude ★ | 60 |
+| [62 Callers ask the module; the mode ends when its page or its instance goes](tickets/62-component-mode-callers.md) | M | sol | 61, 33, 34 |
+| [63 Guard test: mode state, shares and frame message only in the module](tickets/63-component-mode-guard-test.md) | S | sol | 62 |
+
+60 adds files only (plus one optional field of the memory workspace and a CONTEXT.md entry) and may start now, beside 33, 34 and 42-44. 61 edits components.ts, edit-component-mode.ts and edit-component-chain.ts (deleted) and no file of 33 or 42-44; it keeps `editModeTemplate()`/`editModeEntry()`/`editingScope()` as one-line reads so main.ts is not edited. 62 edits main.ts and page-structure-controller.ts, which 33 also edits (other regions), and renames the query 34's guard test names: run it after 33 and 34. Lead asks Lex before 61 and 62 (design section 9, each recommended, each fixing an inconsistency): M1 the mode ends as soon as its page leaves the preview (a Ctrl/⌘+click on a link, an agent pin's Show page), instead of the bar saying "Editing … Done" with nothing framed until the next edit; M2 Make component's and + New component's notes show once, in the bar or else the status line, and a mode slower than 8 s to load no longer opens late; M3 the mode ends when its instance is no longer where it was on the page (an Undo past the mode's first step, an agent's change), instead of the frame vanishing under a bar that still says "Editing". Without a decision the slice keeps today's behaviour for that item.
