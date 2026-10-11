@@ -344,7 +344,5 @@ button.page-structure__slot-badge:focus-visible { outline: var(--focus-ring); ou
 .page-structure__row:has(> .slot-chip) > .row-action-overlay { right: var(--row-action-end, 0px); }
 .page-structure__row--outer > .page-structure__label { opacity: 0.6; }
 
-/* Keep the badge clear while its name is being typed, here or in a chip that
-   mirrors it (the edit bar's), which widens it past the bar's measured end. */
-.page-structure__row:has(> .slot-chip--renaming) > .row-action-overlay,
-:root:has(.slot-chip--renaming) .page-structure__row:has(> .slot-chip[data-slot-chip-group]) > .row-action-overlay { display: none; }
+/* Keep the badge clear while its name is being typed. */
+.page-structure__row:has(> .slot-chip--renaming) > .row-action-overlay { display: none; }
