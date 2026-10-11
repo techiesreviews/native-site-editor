@@ -17,6 +17,7 @@
 // - `.editor/config.json` holds editor-only settings.
 //
 // The module takes plain path lists and text; it has no DOM and no I/O.
+import { RESERVED_CUSTOM_ELEMENT_NAMES } from "./custom-element-names";
 import { resolveImportPath } from "./css-imports";
 import { asciiLower, startTagAttribute, startTags, type StartTag } from "./html-source";
 import { NATIVE_HOME_PAGE, deriveNativeRoutes } from "./native-routes";
@@ -67,21 +68,10 @@ const FOLDER_COMPONENT = /^components\/([\w.-]+)\/([\w.-]+)\.html$/;
 const FLAT_COMPONENT = /^components\/([\w.-]+)\.html$/;
 // Custom element names: at least one dash, lowercase, starts with a letter.
 const TAG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/;
-// Names the spec reserves; `customElements.define` throws on these.
-const RESERVED_TAGS = new Set([
-  "annotation-xml",
-  "color-profile",
-  "font-face",
-  "font-face-src",
-  "font-face-uri",
-  "font-face-format",
-  "font-face-name",
-  "missing-glyph",
-]);
 
 /** Whether `tag` can name a component: a valid custom-element name the spec does not reserve. */
 export function isNativeComponentTag(tag: string): boolean {
-  return TAG.test(tag) && !RESERVED_TAGS.has(tag);
+  return TAG.test(tag) && !RESERVED_CUSTOM_ELEMENT_NAMES.has(tag);
 }
 
 /** Whether the repository paths make a native site: it has a home page. */

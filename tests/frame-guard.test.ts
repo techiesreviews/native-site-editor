@@ -131,29 +131,50 @@ function regexWords(text: string) {
   // Escapes are regex syntax, never tag names; character classes are not lists.
   return text.slice(1, text.lastIndexOf("/")).replace(/\\(?:x[\da-fA-F]{2}|u[\da-fA-F]{4}|.)/g, " ").replace(/\[[^\]]*\]/g, " ").match(/[a-z][a-z0-9-]*/g) ?? [];
 }
-// Rules live once in src/page-builder/rules/, including lists wrapped in Set.
-const copiedRuleSets: Detector = (source, file) => {
-  if (file.startsWith(RULES)) return [];
-  const tree = parse(source, file), hits: Finding[] = [];
-  walk(tree, (node) => {
-    let words: string[] = [];
-    if (ts.isArrayLiteralExpression(node)) words = node.elements.map((entry) => literal(entry) ?? "");
-    else if (ts.isObjectLiteralExpression(node)) words = node.properties.map((entry) => {
-      const name = entry.name;
-      if (!name) return "";
-      if (ts.isIdentifier(name)) return name.text;
-      if (ts.isComputedPropertyName(name)) return literal(name.expression) ?? "";
-      return literal(name) ?? "";
-    });
-    else if (ts.isRegularExpressionLiteral(node)) words = regexWords(node.text);
-    else if (literal(node) !== undefined) {
-      const tokens = literal(node)!.trim().split(/[,|\s]+/);
-      if (tokens.every((token) => selectorTags.has(token) || /^[a-z][a-z0-9]*-[a-z0-9-]+$/.test(token))) words = tokens;
-    }
-    if (threeMembers(words)) hits.push(finding(tree, node, "copied-rule-set"));
+// Reuse the same literal forms for each group; a Set's array is visited too.
+function listWords(node: TS.Node): string[] {
+  if (ts.isArrayLiteralExpression(node)) return node.elements.map((entry) => literal(entry) ?? "");
+  if (ts.isObjectLiteralExpression(node)) return node.properties.map((entry) => {
+    const name = entry.name;
+    if (!name) return "";
+    if (ts.isIdentifier(name)) return name.text;
+    if (ts.isComputedPropertyName(name)) return literal(name.expression) ?? "";
+    return literal(name) ?? "";
   });
-  return hits;
-};
+  if (ts.isRegularExpressionLiteral(node)) return regexWords(node.text);
+  const text = literal(node);
+  if (text !== undefined) {
+    const tokens = text.trim().split(/[,|\s]+/);
+    if (tokens.every((token) => selectorTags.has(token) || /^[a-z][a-z0-9]*-[a-z0-9-]+$/.test(token))) return tokens;
+  }
+  return [];
+}
+function copiedLists(home: (file: string) => boolean, containsGroup: (words: string[]) => boolean, rule: string): Detector {
+  return (source, file) => {
+    if (home(file)) return [];
+    const tree = parse(source, file), hits: Finding[] = [];
+    walk(tree, (node) => {
+      if (containsGroup(listWords(node))) hits.push(finding(tree, node, rule));
+    });
+    return hits;
+  };
+}
+// Rules live once in src/page-builder/rules/, including lists wrapped in Set.
+const copiedRuleSets = copiedLists((file) => file.startsWith(RULES), threeMembers, "copied-rule-set");
+const bandTags = new Set(["article", "aside", "main", "nav", "section"]);
+const reservedNames = new Set(["annotation-xml", "color-profile", "font-face", "font-face-src", "font-face-uri", "font-face-format", "font-face-name", "missing-glyph"]);
+const RESERVED_HOME = "shared/custom-element-names.ts";
+const copiedBandSets = copiedLists((file) => file.startsWith(RULES), (words) => [...bandTags].every((tag) => words.includes(tag)), "copied-band-set");
+const copiedReservedSets = copiedLists((file) => file === RESERVED_HOME, (words) => [...new Set(words)].filter((name) => reservedNames.has(name)).length >= 3, "copied-reserved-set");
+const bandAllowlist: AllowlistEntry[] = [
+  { file: "src/components/element-icons.ts", match: "p: textT, text: textT, a: link", reason: "The object maps element names to display icons rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/native-structure.ts", match: 'p: "Paragraph", a: "Link", button: "Button"', reason: "The object maps element names to user-facing kind labels rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/page-builder/component-model.ts", match: "/^(section|article|main|header|footer|nav|aside)$/", reason: "templateStructure stops heading-label discovery at nested landmarks, including header/footer, rather than deciding page banner/contentinfo ancestry.", count: 1 },
+  { file: RUNTIME, match: '"section,article,main,header,footer,nav,aside"', reason: "SECTIONING finds a heading's owning landmark for structure labels, including header/footer, rather than deciding page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/controllers/page-structure-controller.ts", match: '["main", "section", "header", "footer", "nav", "article", "aside", "slot"]', reason: "Structure containers identify rows that accept children, including slot, rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/page-builder/native-operations.ts", match: '["body", "main", "section", "article", "aside", "nav", "header", "footer", "div", "form", "fieldset"', reason: "containers defines conservative source insertion destinations rather than page banner/contentinfo ancestry.", count: 1 },
+  { file: "src/page-builder/native-operations.ts", match: '"a abbr address area article aside audio b base', reason: "htmlNames is the HTML vocabulary used to reject catalogue and foreign names in the strict source parser.", count: 1 },
+];
 
 const walkNames = new Set(["dropCard", "dropHeading", "dropMeaningful", "hasHeadingSlot", "cardSlot", "dropItemsSlot", "cardsOnly"]);
 function functionName(node: TS.FunctionLikeDeclaration): string | undefined {
@@ -192,6 +213,8 @@ const guards = [
   { detect: frameListeners, allowlist: listenerAllowlist },
   { detect: copiedRuleSets, allowlist: copiedAllowlist },
   { detect: headingSlotWalks, allowlist: headingAllowlist },
+  { detect: copiedBandSets, allowlist: bandAllowlist },
+  { detect: copiedReservedSets, allowlist: [] },
 ];
 function matches(hit: Finding, entry: AllowlistEntry) {
   return hit.file === entry.file && (hit.rule === "frame-post" || hit.rule === "frame-listener" ? hit.text === entry.match : hit.text.includes(entry.match));
@@ -240,6 +263,20 @@ test("copied rule sets reject arrays, object keys, regexes and plain tag lists",
   for (const source of ['const tags = new Set(["article", "li", "div"]);', 'const tags = ["strong", "em", "b"];', 'const tags = { strong: true, em: true, ["span"]: true };', String.raw`const tags = /\b(?:strong|em|span)\b/;`, 'const tags = "article, li | div";', 'const tags = `strong em span`;', 'const tags = new Set(["article" as const, ("li"), "div" satisfies string]);']) flags(copiedRuleSets, source, "copied-rule-set");
   for (const source of ['const tags = ["strong", "em"];', 'const tags = ["strong", "strong", "em"];', 'const sentence = "a div in an article";', String.raw`const whitespace = /\s+\b/;`, 'const chars = /[bius]/;', 'const heading = /h[1-6]/;', 'const tags = /strong|em/i;']) assert.deepEqual(copiedRuleSets(source, FAKE), [], source);
   assert.deepEqual(copiedRuleSets('const tags = ["article", "li", "div"];', `${RULES}fake.ts`), []);
+});
+
+test("page-band guard rejects all five tags in each literal form, but not four", () => {
+  for (const source of ['const tags = ["article", "aside", "main", "nav", "section"];', 'const tags = new Set(["article", "aside", "main", "nav", "section"]);', 'const tags = { article: true, aside: true, main: true, nav: true, section: true };', 'const tags = /article|aside|main|nav|section/;', 'const tags = "article, aside, main, nav, section";']) flags(copiedBandSets, source, "copied-band-set");
+  for (const source of ['const tags = ["article", "aside", "main", "nav"];', 'const tags = /article|aside|main|nav/;', 'const tags = "article, aside, main, nav";', 'const tags = ["article", "aside", "main", "nav", "nav"];']) assert.deepEqual(copiedBandSets(source, FAKE), [], source);
+  assert.deepEqual(copiedBandSets('const tags = ["article", "aside", "main", "nav", "section"];', `${RULES}page-bands.ts`), []);
+});
+
+test("reserved-name guard rejects three distinct names in each literal form, but not two", () => {
+  for (const source of ['const names = ["annotation-xml", "color-profile", "font-face"];', 'const names = new Set(["annotation-xml", "color-profile", "font-face"]);', 'const names = { "annotation-xml": true, "color-profile": true, "font-face": true };', 'const names = /annotation-xml|color-profile|font-face/;', 'const names = "annotation-xml, color-profile, font-face";']) flags(copiedReservedSets, source, "copied-reserved-set");
+  for (const source of ['const names = ["annotation-xml", "color-profile"];', 'const names = /annotation-xml|color-profile/;', 'const names = "annotation-xml, color-profile";', 'const names = ["annotation-xml", "color-profile", "color-profile"];']) assert.deepEqual(copiedReservedSets(source, FAKE), [], source);
+  const source = 'const names = ["annotation-xml", "color-profile", "font-face"];';
+  assert.deepEqual(copiedReservedSets(source, RESERVED_HOME), []);
+  assert.equal(copiedReservedSets(source, `${RULES}fake.ts`).length, 1, "reserved names have only the shared home");
 });
 
 test("heading-slot guard rejects named declarations and renamed heading-slot walks", () => {

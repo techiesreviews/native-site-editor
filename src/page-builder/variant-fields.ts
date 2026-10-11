@@ -12,6 +12,7 @@
 // so the variant parser stays out of the boot bundle.
 
 import { isSectionTemplate, startTags } from "../../shared/html-source";
+import { isPageHeaderFooter } from "./rules/page-bands";
 import { valueLabel, type Variant } from "../../shared/variants";
 
 export { variantLookup } from "../../shared/variant-lookup";
@@ -25,7 +26,7 @@ export function isToneBand(chain: readonly string[], page: boolean, template: (t
       const root = startTags(html)[0];
       return isSectionTemplate(html) || Boolean(root && ["header", "footer"].includes(root.name) && /^[\s]*$/.test(html.slice(0, root.start).replace(/<!--[\s\S]*?-->/g, "")));
     }
-    return tag === "section" || (["header", "footer"].includes(tag) && !ancestors.some((name) => ["article", "aside", "main", "nav", "section"].includes(name)));
+    return tag === "section" || isPageHeaderFooter(tag, ancestors);
   };
   const ancestors = chain.slice(0, -1);
   return band(chain.at(-1)!, ancestors) && !ancestors.some((tag, index) => template(tag) !== undefined || band(tag, ancestors.slice(0, index)));

@@ -4,16 +4,14 @@
 // A sealed element is taken whole: a component instance (opened only through
 // its items slots), template and raw-text islands, and SVG or MathML content.
 
+import { RESERVED_CUSTOM_ELEMENT_NAMES } from "../../../shared/custom-element-names";
 import type { MarkupView } from "./tree";
 
 /** HTML tags whose content the page's blocks never reach: inert or raw text, and the roots of foreign content. */
 export const SEALED_TAGS = new Set(["template", "noscript", "xmp", "noembed", "noframes", "svg", "math"]);
 
-/** Names the spec reserves for SVG and MathML; `customElements.define` throws on them. */
-const RESERVED_NAMES = new Set(["annotation-xml", "color-profile", "font-face", "font-face-src", "font-face-uri", "font-face-format", "font-face-name", "missing-glyph"]);
-
 /** Whether `name` (lower case, as the HTML parser makes it) is a valid custom element name the spec does not reserve. */
-export const isCustomElementName = (name: string) => /^[a-z][a-z0-9._-]*-[a-z0-9._-]*$/.test(name) && !RESERVED_NAMES.has(name);
+export const isCustomElementName = (name: string) => /^[a-z][a-z0-9._-]*-[a-z0-9._-]*$/.test(name) && !RESERVED_CUSTOM_ELEMENT_NAMES.has(name);
 
 /** A component instance: an HTML element with a custom element name. */
 export const isInstance = <N>(node: N, view: MarkupView<N>) =>

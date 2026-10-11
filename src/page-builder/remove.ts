@@ -1,3 +1,4 @@
+import { isPageHeaderFooter } from "./rules/page-bands";
 import { descendants, parseSource, slotChangePages, templateRoot, type SourceElement, type SourceNode } from "./component-model";
 import { removeEdit } from "../native-structure";
 import { startTagAttribute } from "../../shared/html-source";
@@ -13,7 +14,7 @@ export function pageRemovable(chain: readonly string[]): boolean {
   const tag = chain.at(-1), parents = chain.slice(0, -1);
   if (!tag || chain.some(name => !name) || chain[0] !== "body" || ["body", "main", "head"].includes(tag) || parents.some(name => name.includes("-"))) return false;
   if (tag.includes("-")) return parents.includes("main");
-  if (tag === "header" || tag === "footer") return parents.some(name => ["article", "aside", "main", "nav", "section"].includes(name));
+  if (tag === "header" || tag === "footer") return !isPageHeaderFooter(tag, parents);
   return true;
 }
 
