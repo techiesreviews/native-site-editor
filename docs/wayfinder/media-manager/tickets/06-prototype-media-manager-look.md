@@ -23,7 +23,7 @@ Lex chose **Tiles — more pictures in cropped squares** from the new Google Pho
 - **Page picker:** The same manager's collections, search, views and media records appear in a smaller window, with only compatible files available. The picker is full-screen on phones. Add files and file details remain within it; Use confirms the choice and Cancel keeps the existing placement.
 - **Phone and tablet:** The selected mockup shows three square pictures across on phones, four on tablets and six on wider screens. Phone filenames use readable strips and may shorten long names. Details opens on its own screen with Back and shows the complete name and image. Usage is available by tap; hover/focus wording opens below the top controls. Independent usage and selection targets remain at least 44 px and do not overlap. The phone picker keeps its status above a single row of Cancel and Use buttons.
 
-The latest Tiles publication is recorded below under **Search and Collections simplification**. The first selected Tiles publication remains under **Tiles selection and refinement**. The preceding Canvas mockup was published with `html_render`, title **Media manager: photo-style Canvas**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-e4e3fba8-9f28-451f-8216-77cd5c98a8e6-html`. Canvas source SHA256: `0dc3f3b3bb48f8be447a9dbcf9229a0883cf1d0cc9eeec94657e5e7f64f944e1`. Downloaded references remain available as research assets.
+The latest selected Tiles publication is recorded below under **Search and Collections simplification**. A new control-layout comparison, awaiting Lex’s choice, is recorded under **Finding and inserting first**. The first selected Tiles publication remains under **Tiles selection and refinement**. The preceding Canvas mockup was published with `html_render`, title **Media manager: photo-style Canvas**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-e4e3fba8-9f28-451f-8216-77cd5c98a8e6-html`. Canvas source SHA256: `0dc3f3b3bb48f8be447a9dbcf9229a0883cf1d0cc9eeec94657e5e7f64f944e1`. Downloaded references remain available as research assets.
 
 **Follow-up decisions:** [Collections and file names](15-collections-and-file-names.md) graduates the map's **Folders, names and tags** fog into a concrete ticket, covering collection management and existing file renames. Its dependency was added to the handoff. The terms **Media collection** and **Media picker** were added to `CONTEXT.md` using domain-modeling. New upload destinations and naming remain in ticket 07.
 
@@ -72,6 +72,27 @@ Published with `html_render`, title **Media manager: compact search and Collecti
 This refinement adds no domain term or media policy. **Media collection** and **Media picker** already cover the agreed behaviour in `CONTEXT.md`; browser styling features are implementation details. The collection/file-name fog already graduated to ticket 15, and no further fog or ticket is resolved here. Only prototype and planning artifacts change, committed locally on dev without a push or deployment.
 
 ## Comments
+
+### Finding and inserting first (2026-10-12)
+
+Lex asked to remove the redundant Media title and explore simpler arrangements of search, Add files, Collections and More. The primary use is finding an image to add or insert; managing files comes second. Lex also asked for a softer gradient blur behind the selection control, usage number and filename, clarifying **“with the name”** when asked about the overlays.
+
+The new [control-layout comparison](../prototype/find-first-directions.html) explores three genuinely different placements within the selected Tiles direction:
+
+| Direction | Arrangement | Trade-off |
+| --- | --- | --- |
+| Search first | Full-width search, then Collections, Add files and More | A clear search field and named actions, using two rows |
+| One bar | One shared row on wide screens; search and icons above Collections on phones | More room on wide screens, with less prominent action labels |
+| In the grid | Add files is the first tile in the unfiltered view, after matches in search/collection results | A direct picture-area entry point, using one thumbnail position |
+
+All three omit the visible Media title, retain the existing editor tabs, use the native Collections dropdown and keep management in More. They reuse the working import, details, compatible page picker and clean-up screens. In the picker, selecting a compatible file and confirming Use still inserts it for that place; the ordinary manager does not silently insert a file. All remains the opening media kind, while the page picker remains restricted to compatible files. The selected grid density and shared media/collection records remain unchanged.
+
+The soft photo-overlay treatment keeps foreground text and symbols sharp, using a fading background behind them. Files without a picture preview keep a clean surface with dark text instead of photo gradients. Names, checked selection and the usage distinctions remain available, with independent touch targets; this is a visual experiment rather than a new media rule.
+
+Published with `html_render`, title **Media manager: finding and adding first — three ideas**, height 1000, thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-675e6ab4-22ac-4bba-a866-47fc3ad9305d-html`. Comparison source SHA256: `ba1e877f632cb25b5e4370ca21e4d1354ef48f6b47dfa3b20ea307b7fdef7951`. [Validation](../prototype/find-first-validation.md) records the focused checks, limited design review and its corrections. Downloaded local media remain inlined; the comparison uses no expiring image links. Close the page picker before switching comparison directions, because its native modal makes the outer comparison control inert.
+
+**Awaiting Lex’s choice:** no direction from this comparison is promoted or treated as chosen. The selected `tiles.html` remains the previous design reference until that choice. This is further exploration within the already claimed look ticket; it does not settle another ticket or clear additional fog. No new domain term is introduced, and `CONTEXT.md` keeps its existing media vocabulary. Prototype and planning artifacts only, committed locally on dev without a push or deployment.
+
 
 ### New photo-app exploration (2026-10-12)
 
