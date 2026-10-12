@@ -39,6 +39,22 @@ The [Apple Photos library reference](../prototype/references/apple-photos-librar
 
 ## Comments
 
+### New photo-app exploration (2026-10-12)
+
+Lex requested a **new prototype**, using Mobbin to take inspiration from Google Photos and Apple Photos. A separate [photo-app comparison](../prototype/photo-app-directions.html) explores three layouts around the agreed media-manager behaviour:
+
+| Direction | Layout | Strength | Trade-off |
+| --- | --- | --- | --- |
+| Timeline | Date-grouped, fitted picture rows | Makes recent additions easy to browse | Date headings take space; dates are demonstration added dates |
+| Tiles | Closely spaced square thumbnails | Shows more files at once | Previews crop the original image shape |
+| Natural | Full-image rows at each image's original proportions | Makes different shapes and the full picture visible | Less uniform and less dense than square tiles |
+
+The new [Google Photos and Apple Photos references](../prototype/references/README.md) were found through Mobbin MCP, downloaded and inspected. They inform the grid, filtering and selection presentation. All remains the opening kind, Collections stays in filters, and usage remains available through badges. The existing five screens and compatible page picker are retained. Reference screenshots are design research; sample images are separate assets from the map's reference site.
+
+Published with `html_render`, title **Media manager: photo-app directions**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-243e8714-baeb-4684-85ee-c26a59a6c9b0-html`, height 1600. Source SHA256: `6b203f2035d0bdc1cff80632b1a949743d478c250d9dc108af058b289e7348d4`. [Validation](../prototype/photo-app-validation.md) records the phone/tablet/desktop checks, the limited independent design review and corrections to short Timeline rows, narrow-tile controls, filenames and usage text. The standalone prototype, local reference screens and documentation are committed locally on `dev`; no editor code was changed, pushed or deployed.
+
+**Choice pending:** Lex has not chosen among these new directions. The Canvas resolution above remains the recorded baseline. No new layout, date grouping or selection interaction is treated as a settled decision, and no new domain term has been introduced. This exploration does not close another ticket or clear additional fog.
+
 ### First design comparison (2026-10-11)
 
 Three candidate directions are ready for Lex: **Gallery** (large previews), **Desk** (compact file list) and **Collections** (folders first). The [interactive mockups](../prototype/directions.html) cover the library, adding files with the optimise comparison, details, choosing a file for a page and clean-up. Supporting screens are shared and labelled as such. The [six downloaded Mobbin references](../prototype/references/README.md) are kept with the prototype; it does not use expiring image links.
