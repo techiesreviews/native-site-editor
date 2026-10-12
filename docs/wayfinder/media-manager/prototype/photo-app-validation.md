@@ -1,5 +1,7 @@
 # Photo-library directions — validation
 
+Lex subsequently chose **Tiles — more pictures in cropped squares** on 12 October 2026. [The selected Tiles mockup](tiles.html) and [its checks](tiles-validation.md) now supersede Canvas. The comparison harness has been removed under the prototype skill; its reviewed source is retained in Git at `f2956c77` (`git show f2956c77:docs/wayfinder/media-manager/prototype/photo-app-directions.html`). The sections below record the comparison before selection.
+
 Validated on 12 October 2026. The comparison owns only `photo-app-directions.html` and this record. Existing Canvas remains unchanged at SHA256 `0dc3f3b3bb48f8be447a9dbcf9229a0883cf1d0cc9eeec94657e5e7f64f944e1`. These three directions remain candidates for Lex; no choice is inferred.
 
 Frozen comparison HTML SHA256: `6b203f2035d0bdc1cff80632b1a949743d478c250d9dc108af058b289e7348d4`.
@@ -73,7 +75,7 @@ All worker temporary artifacts use the dedicated directory `/tmp/media-photo-app
 
 The temporary `check.cjs` runner was removed after verification. There is no worker server/background command or active browser, upload timer or layout observer. Existing Canvas, product code, tracker, assets and reference files were not modified. The worker did not commit, push, render, publish or deploy. Dates, file facts and usage remain sample data; direction choice is still Lex’s. The lead owns publication and final resolution.
 
-## Publication and pending choice
+## Publication and later selection
 
 T3 `preview_status` and `preview_open` were attempted before browser fallback. `preview_open` and the final `html_preview` reported:
 
@@ -83,6 +85,6 @@ Local Playwright supplied rendered checks; no host configuration was changed.
 
 Published with `html_render`, title **Media manager: photo-app directions**, height 1600, thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-243e8714-baeb-4684-85ee-c26a59a6c9b0-html`. Absolute local image paths are inlined by the publication tool. No expiring image URL is embedded.
 
-Lex was asked one plain-language choice question with Timeline, Tiles and Natural options. No answer has been assumed. Canvas remains the recorded baseline, with SHA256 `0dc3f3b3bb48f8be447a9dbcf9229a0883cf1d0cc9eeec94657e5e7f64f944e1`; the map decision and domain terms remain unchanged. Ticket 06 records this comparison as further exploration. The new prototype, local assets and documentation are committed locally on dev, without a push or deployment.
+At publication, Lex was asked one plain-language choice question with Timeline, Tiles and Natural options, and no answer was assumed. Canvas was then the recorded baseline, with SHA256 `0dc3f3b3bb48f8be447a9dbcf9229a0883cf1d0cc9eeec94657e5e7f64f944e1`. Lex later chose Tiles; ticket 06 and the map now record that choice and point to the selected mockup. No new domain term was introduced. Both the comparison and selection work are committed locally on dev, without a push or deployment.
 
 The lead's temporary directory `/tmp/mm-photo-directions-review-492d7080` contains the review brief, immutable snapshots, copied references, JSON/report, lead notes and eight final screenshots. It is removed after recording this evidence and publishing the inlined artifact. The worker's own temporary directory is removed in the same cleanup. The review CLI exited and browsers closed; no owned server, watcher or upload timer remains.
