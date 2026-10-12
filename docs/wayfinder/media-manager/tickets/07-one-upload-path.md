@@ -2,7 +2,7 @@
 title: Decide the one way media gets added
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + Codex (grilling)
 blocked_by: [02-research-optimising-every-media-kind, 04-research-media-code-today]
 ---
 
