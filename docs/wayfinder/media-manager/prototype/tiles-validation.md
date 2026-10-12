@@ -2,7 +2,7 @@
 
 Lex selected Tiles for more pictures in cropped squares. The standalone planning artifact is `tiles.html`; this does not change or deploy the production editor.
 
-Current refined HTML SHA256: `0f67231dd6a91573436a594b749366eca9ccf2e4cc7b04bccc3e98a872cba925`. The later supporting-screen and review-correction sections record this refinement.
+Current refined HTML SHA256: `720341dadfda40d3f82b88fe95f5fed4d69c23e5e8d46c929a7e90f81aa77075`. The latest simple-search, compact-row and keyboard-focus sections record this refinement.
 
 Initial selected-only HTML SHA256: `cc0263544f3b783d70cff7a0fffb8551a7a7a42f7306d6d71f643d8296dd54f0`.
 
@@ -100,3 +100,45 @@ Final `html_preview` was attempted with the complete `0f67231dd6a91573436a594b74
 Lex was asked one plain-language reaction question after publication. No response has been assumed, and no new media policy or domain term was introduced. The closed look ticket records the requested refinement and the map updates its existing decision line. This remains planning-only work, committed locally on dev without a push or deployment.
 
 The lead's dedicated `/tmp/mm-tiles-flow-review-492d7080` directory holds baseline/candidate snapshots, review brief and JSON/report, copied references and rendered checks; the worker's dedicated `/tmp/mm-tiles-flow-20261012` directory holds draft/final/correction screenshots. Both are removed after recording the evidence and publishing the inlined artifact. All CLI/browser processes have ended; no server, watcher or upload timer remains.
+
+## Simple search and native Collections select — 2026-10-12
+
+Lex requested a simpler main browsing surface: search and an always-visible Collections dropdown. This supersedes the previous responsive Filters button and visible kind/count/view toolbar. Main default remains All; kind and picture-grid/list choices remain in More. The compatible picker has the same two primary controls and its own More menu, with the media kind restricted to the page target. The selected Tiles layout, shared records, memberships and other four screens are unchanged. Collection change restores focus to the new select after the existing render refresh.
+
+Frozen HTML SHA256: `8c712e6feb14bc1ae371ae1004522b1d608fe91055977fe2ae8ea7e0af5caf31`.
+
+Implementation follows [MDN: Customizable select elements](https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Forms/Customizable_select) and [Chrome: A customizable select](https://developer.chrome.com/blog/a-customizable-select), checked during this round. It uses a native `<select>` with a first-child button and `<selectedcontent>`, explicit escaped option values, scoped `@supports`, `appearance: base-select` on both the select and `::picker(select)`, picker-icon styling, `option::checkmark` and a selected-option background/checkmark. Options are text only. The ordinary native select remains the fallback, with the enhancement button hidden; no JavaScript listbox, dependency or added animation was introduced. The accessible label is Collections, and All collections is first. Wide controls share a row; narrow actual containers stack them. Both options and controls retain at least 44 px height.
+
+Local Chromium `153.0.8010.12` genuinely supports `appearance: base-select`, `selector(::picker(select))` and `HTMLSelectedContentElement`. Computed appearance is `base-select`, and the browser clones All collections into selectedcontent. The focused Playwright runner passed 42 assertions across 360/768/1200 px: only the two primary controls are visible; a real dropdown click opens the native picker; a real option click and keyboard Space/Home/ArrowDown/Enter update the collection and retain select focus; search respects that collection; More opens the retained kind and list actions; nested dropdown Escape closes the select first while the media dialog stays open, and the next Escape closes that dialog; compatible selection and the visible action footer remain intact. No document overflow or page errors occurred.
+
+Supplementary 360/768 checks added 30 collection fixtures and reached the final native option by scrolling/clicking it. A value containing ampersand, quote and angle brackets round-tripped correctly. A 30-image picker retained its content-pane position when its dropdown was opened and dismissed with Escape. The fallback was exercised by removing only the enhancement `@supports` rule from the test page's CSSOM: computed appearance became `auto`, the enhancement button was hidden, real native keyboard selection updated the collection, and nested first/second Escape still behaved correctly. This is a forced fallback-style check in Chromium, not a claim that an unsupported browser was run. Attempts to disable the feature with Chromium flags did not change support; no browser/host configuration was changed. MDN notes limited cross-browser availability, so real Safari/Firefox rendering remains unverified. A supplementary runner initially used an improperly escaped CSS selector for the special-value option; using the actual last option fixed the probe without a source change.
+
+The lead again reported T3 `preview_status=false` and explicit AppArmor sandbox failure from `preview_open`; local Playwright used `file://` without a server or sandbox changes. Node script parsing and scoped `git diff --check` passed. Screenshots are `/tmp/mm-simple-select-20261012/{library,options,picker}-{360,768,1200}.png`, `long-options-{360,768}.png`, `large-picker-{360,768}.png` and `native-fallback-360.png`. The worker visually inspected the phone library/open menu/picker and tablet library. The directory, including its temporary `check.cjs`, is retained for the lead's pending visual review/publication as requested. All browsers were closed in `finally`; no timer, server or background command remains. The worker did not commit, push, render, publish or deploy.
+
+### Compact controls follow-up
+
+Lex further requested “compact”. Search and Collections now share one row on phone as well as wide screens, with two flexible columns, an 8 px gap, no tools-panel padding and a shortened Search placeholder. Both controls are exactly 44 px high. The native selectedcontent truncates a long chosen name with ellipsis; its option retains the full name when opened. This supersedes the earlier narrow-container stacking description.
+
+Final HTML SHA256: `5b18b08316d0b0cde8c94efacf16d2702a9ca9b1f8757f910b32f4fbd2f2e644`.
+
+A focused 360/768 check confirmed equal 44 px heights, the same row, an exact 8 px gap, zero tools padding and no overflow. Real option click/change, long-label ellipsis/full option text, retained More list/grid controls, nested select Escape and compatible picker selection/footer passed without page errors. The library/options/picker screenshots at those two widths were regenerated in `/tmp/mm-simple-select-20261012/`; the worker visually inspected all three phone captures. Source parsing and scoped diff checks passed. Browsers closed in `finally`, no new runner was created, and the previous 42-case suite was not repeated. Earlier 1200 px and supplemental captures in the directory remain historical, not screenshots of this compact source.
+
+### Native option keyboard focus correction
+
+The lead's Claude Opus 5.5 medium review identified one defect: the chosen option's background masked the keyboard's current position. A scoped `option:focus-visible` rule now follows `:checked`, drawing a 2 px project-blue inset outline. No optional count, shape or chevron changes were made.
+
+Final HTML SHA256: `720341dadfda40d3f82b88fe95f5fed4d69c23e5e8d46c929a7e90f81aa77075`.
+
+Real keyboard Space opening at 360/768 focused the selected All collections option; its computed outline was 2 px `rgb(36, 89, 211)`, offset −2 px. ArrowDown focused the unselected Studio art option with the same outline. Both rows remained 44 px high. Enter changed the native value; real click/change and nested first/second Escape still passed, without overflow or page errors. Screenshots: `/tmp/mm-simple-select-20261012/keyboard-{selected,other}-{360,768}.png`; both phone states were visually inspected. Source parsing and scoped diff checks passed. Browser closed in `finally`; no new runner or background process was created. This check was limited to the reviewed defect.
+
+### Lead review and compact publication
+
+The read-only Claude CLI review used `claude-opus-5-5` at medium effort on immutable compact source `5b18b08316d0b0cde8c94efacf16d2702a9ca9b1f8757f910b32f4fbd2f2e644`. It inspected the six current phone/tablet library, open-select and picker screenshots, the phone baseline and relevant select/search source. It did not run a browser. CLI exited 0, `is_error` was false, no permission denials were reported and `modelUsage` included the pinned model. Its one accessibility finding concerned weak keyboard focus in the open option menu. An explicit blue outline now follows the selected-option rule; real keyboard checks and screenshots cover both the selected and another option. Optional count, corner-shape and chevron suggestions were not treated as requirements from Lex.
+
+The lead inspected the current phone library/open menu/picker, tablet library and final keyboard-selected capture, and reviewed the actual source difference. The final outline-only correction received focused interaction/geometry checks rather than another broad workflow run. Only prototype HTML and planning records changed. Existing downloaded images remain local and are inlined by publication; no new media term or unresolved policy was inferred.
+
+Published with `html_render`, title **Media manager: compact search and Collections**, height 950, thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-89db0b3f-dff3-4d13-ab9e-5cb2da2de908-html`. Current source SHA256: `720341dadfda40d3f82b88fe95f5fed4d69c23e5e8d46c929a7e90f81aa77075`.
+
+Final `html_preview` was attempted with this exact complete source and returned the same host AppArmor sandbox error. Local Playwright supplied rendered checks; no host configuration was changed. Unsupported-browser fallback was simulated in Chromium rather than tested in Safari or Firefox. The look ticket stays closed with its resolution amended to Lex’s explicit simplification and compactness request; no additional fog is cleared.
+
+The lead’s `/tmp/mm-simple-select-review-20261012` review snapshots, screenshots, brief and result and the worker’s `/tmp/mm-simple-select-20261012` screenshots and temporary runner are removed after recording publication and evidence. All browser and CLI processes have ended; no server, watcher or upload timer remains. Work is committed locally on dev without a push or deployment.
