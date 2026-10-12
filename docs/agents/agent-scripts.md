@@ -2,7 +2,7 @@
 
 Run from the worktree root; dependencies must already be installed.
 
-Claude tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
+Agent tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
 
 - `scripts/agents/port.sh <cmd...>` waits for resources, locks a free slot, and sets `ASE_TEST_PORT`. Port rules below.
 - `scripts/agents/timing.sh <cmd...>` holds all eight focused slot locks, then `5216`, for an exclusive timing run.
@@ -12,9 +12,10 @@ Claude tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
 - `scripts/agents/worktree.sh <branch> [base=origin/dev]` creates a sibling worktree with shared dev `node_modules` and native-static fixture symlinks; records UTC time, `${ASE_OWNER:-unknown}`, branch and base in `.scratch/owner`, then prints its path. Set `ASE_OWNER` to the agent/thread identifier.
 - `scripts/agents/worktrees.sh [--prune] [--older-than DAYS=3]` lists registered paths, branches, owners, dirtiness, commit age, merge state against local `origin/dev` or `origin/main`, and live cwd state from `/proc`. Listing is the default. Prune removes only clean, merged, inactive worktrees whose commit and creation ages exceed DAYS; unknown state is kept. Root, dev and locked worktrees are kept. It runs `git worktree prune` and keeps branches.
 - `scripts/agents/tickets.mjs frontier [map]` prints open wayfinder tickets with all blockers closed, including builder and title; `check` validates statuses and same-map blocker slugs in both `tickets/` and `build/tickets/`, and fails with `file:line`. Lint runs the check.
-- `scripts/agents/review.sh <worktree> <brief-file> <out-dir>` sends the brief through stdin to read-only `gpt-6.1-sol` at `medium`; verifies `REVIEW_STATUS: complete` and the logged model.
+- `scripts/agents/review.sh <worktree> <brief-file> <out-dir>` wraps the agent runner in review mode; copies `out.md` to `<out-dir>/result.md` and `run.log` there, and verifies `REVIEW_STATUS: complete`. Model and CLI overrides below apply.
 - `scripts/agents/review-brief.sh <ticket-file> [base=origin/dev]` prints the standard slice brief: diff scope, ticket/linked spec, standards, finding format and the author's validation contract. Review completion accepts the first non-blank line, stripping a leading BOM or markdown fence.
-- `scripts/agents/sol.sh <worktree> <brief-file> [effort=medium]` builds with `gpt-6.1-sol` in workspace-write, adds the shared Git directory, appends the build contract and verifies the logged model. Runs in the foreground; Claude uses `run_in_background: true` and waits for completion. `SOL_TIMEOUT` defaults to `90m` (positive integer seconds or `s/m/h/d`); expiry kills the process group. Prints the final report and Git status; logs/report: `<worktree>/.scratch/sol/`.
+- `scripts/agents/agent.sh build|review <worktree> <brief> [--model M] [--cli codex|claude] [--effort E]` runs the selected agent; defaults and adapters below.
+- `scripts/agents/sol.sh <worktree> <brief-file> [effort=medium]` is a compatibility wrapper for `agent.sh build`; model/CLI environment overrides apply. Logs now live in `.scratch/agent/build/`.
 - `scripts/agents/unit.sh [files...]` runs all unit tests via `npm test`, or selected files via `tsx --test`; prints pass/fail counts and each failure's name and first four error lines. Preserves the command's exit status; full log: `.scratch/unit/<time>-<pid>.log`.
 - `scripts/agents/shots.sh <out-dir> <scratch-spec.spec.ts>` runs only that `.scratch/` scenario through a dedicated Playwright config on a `port.sh` slot. Serves the real starter over fake GitHub, stops its server on completion/failure, and prints PNG paths. Fixture: `${ASE_NATIVE_SAVE_FIXTURE:-$HOME/Projects/native-site-editor-starter}`; screenshot destination: `ASE_SHOTS_OUT_DIR`. Example below.
 - `scripts/agents/suite-summary.mjs <results.json> [...]` merges shard counts and prints each failure's file, line, title and first error line; labels and separately counts matches in [tests/known-failures.json](../../tests/known-failures.json) as known flaky or known failing on dev. It exits non-zero for every failure, report error or unreadable input. Registry titles match exactly and survive line moves; line-only entries cover parameterized tests, and spec-only entries cover the file.
@@ -22,6 +23,47 @@ Claude tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
 - `scripts/agents/land.sh [--branch dev]` locks the target branch, fetches and rebases, runs check, test and lint, then pushes; a non-fast-forward rejection retries up to three attempts. UI/build/package changes also run the byte budget through `port.sh`. Conflicts abort the rebase. Logs: `.scratch/land/<time>-<pid>/`. `--dry-run` stops before pushing and skips the budget unless `--budget` is added; start on a clean branch.
 - `scripts/agents/deploy-preview.sh` locks preview deploys, refuses uncommitted changes, fetches and detaches at `origin/dev`, then deploys preview only. Prints `preview <version-id> <sha>`; full output: `.scratch/deploy/<time>-<pid>.log`.
 - `scripts/agents/ci-status.sh [branch=dev] [--wait]` prints the latest run per workflow and fails for unsuccessful completed runs, with failed steps and the last 20 log lines. `--wait` checks only the current `origin/<branch>` head every 30 seconds, prints changes, and times out after 20 minutes; requires authenticated `gh`.
+
+## Agent runner
+
+Build and review default to `codex`, `gpt-6.1-sol`, effort `medium`. Set
+`ASE_BUILD_MODEL` or `ASE_REVIEW_MODEL` to change the model. CLI precedence is
+`--cli`, then `ASE_AGENT_CLI`, then model inference: `claude-*`, `opus`, `sonnet`,
+`haiku`, `fable` select Claude; all others select Codex. `--model` overrides the
+kind's environment default. `--effort` is passed to the selected CLI; the CLI/model
+validates its supported levels.
+
+Both modes read the brief on stdin with cwd set to the worktree. Build appends the
+unstaged-work and validation contract. Both adapters verify the actual model
+(Codex's `model:` log line; Claude's JSON `modelUsage` keys or `model` field).
+Claude aliases permit their family; full names permit a dated snapshot suffix.
+Missing metadata, fallback models, CLI errors and empty reports fail the run.
+Outputs are `<worktree>/.scratch/agent/<build|review>/out.md` and `run.log`.
+The runner prints the report and `git status --short`.
+
+Codex build uses `workspace-write`, network access and `--add-dir` for the shared
+Git directory; review uses `read-only`. Both automatically trust the vetted repo
+hooks; interactive Codex asks once to approve new or changed hooks.
+Claude build uses `acceptEdits` and adds the shared Git directory. Review uses
+`default` permissions, exposes only Read/Grep/Glob/Bash, and allows only read tools
+and Bash `git diff`, `git log`, `git show`. Claude returns JSON; the runner extracts
+the result text. The lead commits builders' unstaged work.
+
+`ASE_AGENT_TIMEOUT` defaults to `90m`, with legacy `SOL_TIMEOUT` as fallback.
+Use positive integer seconds or `s/m/h/d` (at most 2147483 seconds). Expiry or
+interruption kills the CLI's whole process group. Claude callers use
+`run_in_background: true`; Codex callers wait in the foreground or its background
+terminal. Helpers themselves stay in the foreground.
+
+To add another CLI, add one adapter function in `agent-run.mjs` and register it in
+the adapter registry (plus inference if wanted). Contract:
+accept `{kind, worktree, model, effort}`, Git common dir and output path; return
+`{command, args, capture, finish(stdout, runLog)}`. Read stdin; honor build versus
+read-only review permissions; verify the actual model in `finish`. Return final
+text, or null if the CLI wrote `out.md`. Set `capture` for stdout parsing. Shared
+code owns cwd, brief/footer, logging, deadlines, cleanup and Git status. Add pure
+argument/result tests plus fake CLI coverage; no other CLIs are installed here.
+Instruction imports use `AGENTS.md`: `CLAUDE.md` and `GEMINI.md` contain `@AGENTS.md`.
 
 ## Screenshots
 

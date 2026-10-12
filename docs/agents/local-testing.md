@@ -5,8 +5,9 @@ the automated checks in [guardrails.md](guardrails.md).
 
 ## Setup
 
-- Node 24: Claude sets PATH through [Hooks](guardrails.md#hooks); in other shells use
-  `export PATH=/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin:$PATH`.
+- Node 24: [Hooks](guardrails.md#hooks) set PATH in Claude; other agent CLIs receive
+  a SessionStart instruction to prefix shell commands with the discovered Node PATH.
+  In a plain terminal, put your installed Node >=24 on PATH.
 - One branch, one worktree: `scripts/agents/worktree.sh <branch>` (shared
   `node_modules` and the native-static fixture are linked in).
 - Leave a worktree untouched while a suite runs from it.
@@ -52,9 +53,11 @@ builds: runs from different sittings differ by about 30 ms.
 
 ## Code review
 
-`scripts/agents/review.sh <worktree> <brief> <out-dir>` (GPT-6.1 Sol,
-read-only). The reviewer applies `CODING_STANDARDS.md`. Sol builders run with
-`codex exec -s workspace-write` and cannot commit: the lead commits their work.
+`scripts/agents/review.sh <worktree> <brief> <out-dir>` runs a read-only agent
+(default `gpt-6.1-sol`; override with `ASE_REVIEW_MODEL` and `ASE_AGENT_CLI`).
+The reviewer applies `CODING_STANDARDS.md`. Builders leave changes unstaged
+under the build contract; the lead commits. Codex uses `workspace-write`;
+Claude uses `acceptEdits`. Invocation and hook trust: [agent-scripts.md](agent-scripts.md#agent-runner).
 
 ## Landing and preview
 

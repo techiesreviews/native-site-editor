@@ -14,29 +14,30 @@ Run one slice end to end. The lead supplies the ticket and build map.
 
 - Fetch from the dev worktree, then use `scripts/agents/worktree.sh build/<slice>-<slug> origin/dev`.
   Work only in the returned worktree. Set `ASE_OWNER` to your thread identifier.
-- Node PATH is handled by the Claude SessionStart hook.
+- Node PATH comes from SessionStart: Claude sets it; Codex and other CLIs receive an export instruction.
 - Starter slices use a separate starter worktree based on `origin/dev`; its integration branch is `dev`.
 - Prototypes live on `prototype/<slug>` branches in their own worktree and never land on dev.
 
 ## Waiting
 
-Long jobs run as one background Bash command with `run_in_background: true`.
-Wait for its completion notice. This applies to a Sol build, full suite or review.
-Helpers stay in the foreground within that command; their exit is the completion signal.
+Claude: run long Bash jobs with `run_in_background: true`; wait for the completion notice.
+Codex: run in the foreground or its background terminal; wait for the command to exit.
+This applies to builds, full suites and reviews. Helpers stay in the foreground within the command.
 
 ## Build and tests
 
-- `builder: claude`: implement the ticket yourself.
-- `builder: sol`: write `.scratch/sol-brief.md` with ticket/spec/file pointers and acceptance criteria.
-  Run `scripts/agents/sol.sh "$PWD" .scratch/sol-brief.md medium` as a background command.
-  Inspect the report and diff; correct defects, then commit the unstaged work yourself.
+- Implement with the ticket's selected model, or write `.scratch/agent-brief.md` with
+  ticket/spec/file pointers and acceptance criteria. Run
+  `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model <model> --effort medium`.
+  CLI is inferred; `--cli` overrides it. Legacy `builder: sol` uses the default model;
+  `builder: claude` means implement directly. Inspect the report and diff; fix defects, then commit.
 - Add unit coverage for pure rules. Run `npm run check`, `scripts/agents/unit.sh` and `npm run lint`.
   `unit.sh <files...>` selects unit files; full logs stay in `.scratch/unit/`.
 - Run touched browser specs through `scripts/agents/port.sh`; select their fixture group
   as described in local-testing.md. Run `scripts/agents/full-suite.sh 3` only for shared plumbing.
   Compare failures with `tests/known-failures.json`; rerun once before calling a new failure flaky.
-- Commits credit the builder: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`;
-  add `Co-Authored-By: GPT-6.1 Sol <noreply@openai.com>` for Sol-built work.
+- Credit whichever model built the change: `Co-Authored-By: <model name> <noreply@<vendor>>`
+  (OpenAI: `openai.com`; Anthropic: `anthropic.com`).
 
 ## Review
 
