@@ -44,6 +44,8 @@ A decided plan, ready to hand off, for a new **media manager** covering every me
 - [Research the images on existing sites](tickets/05-research-images-on-existing-sites.md): techies-reviews has 77 outside images from 60 sites, a quarter broken; the editor's own security policy blocks them, so fetching needs a new guarded Worker route; 60 unused files (13.4 MB); 490 of 533 images have empty alt; hand-made responsive sets should be adopted; logos, banners, scripts, embeds, sample code and component templates are off limits
 - [Research optimising every media kind in the browser](tickets/02-research-optimising-every-media-kind.md): Safari likely uploads large PNGs today (needs a small WebP encoder); keep WebP q80 ≤2400 px, AVIF too slow for a default; HEIC via a decoder loaded on demand; SVG minify, GIF → MP4; video via Mediabunny to H.264 MP4 + poster, audio to AAC; PDFs kept as is; 20 MB cap, warnings at 10 MB / 1 MB, repo size shown, no Git LFS
 
+- [Prototype the media manager's look](tickets/06-prototype-media-manager-look.md): Canvas, pictures first in Media replacing Images; overlapping Collections on demand, grid/list, visible search and kinds, hover/tap usage badges and No uses found, shared picker with phone full-screen; collection and file-name rules graduated to ticket 15
+
 ## Not yet specified
 
 - **Replacing a file everywhere.** Swapping one image in one place versus replacing the file behind every use (same address, new picture). This may become its own ticket once the manager's look and the responsive output are settled.

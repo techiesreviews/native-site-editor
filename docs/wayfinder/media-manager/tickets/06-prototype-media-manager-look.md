@@ -1,7 +1,7 @@
 ---
 title: Prototype the media manager's look
 type: prototype (HITL)
-status: open
+status: closed
 assignee: Lex + Codex (prototype)
 blocked_by: [01-research-mobbin-patterns, 04-research-media-code-today]
 ---
@@ -10,6 +10,26 @@ blocked_by: [01-research-mobbin-patterns, 04-research-media-code-today]
 
 What should the media manager look like, and how does it work as one place? Using the Mobbin patterns, make mockups (published with `html_render`) of the main screens: the library itself, adding files with the optimise step visible, the detail panel for one file, the picker opened from a spot on a page, and the clean-up view. Decide with Lex: whether it replaces the Images tab and takes in media from Files (images, video, audio, PDFs) or sits beside Files; grid, list or both; how search, kinds, folders and tags show; how "used on" and "unused" are shown; whether the picker is the same manager in a smaller frame; and what it looks like on a tablet or phone. Show two or three clearly different directions first, then refine the one Lex picks.
 
+
+## Resolution (2026-10-12)
+
+Lex chose **Canvas — larger pictures with names on them**, including the phone and tablet presentation. The [selected Canvas mockup](../prototype/canvas.html) is the final design reference; earlier comparisons remain research assets. It carries the chosen look through the library, adding files with optimise, details, the page picker and clean-up.
+
+- **Place in the editor:** Media replaces Images and manages images, video, audio, PDFs and other downloads. Files remains for the site's other files, such as pages, styles and scripts.
+- **Opening and views:** Media opens directly on the **Images** grid. Collections opens when needed from the grid. Grid is the default inside a collection too, with a list switch showing file size and usage. All media includes files with no collection.
+- **Organisation:** **Collections** are named groups browsed like folders. One media file can belong to several collections without extra copies. There is no separate folder tree or tag field in this design; collection membership is separate from physical storage. Collections has its own search, and Back restores the file view just left.
+- **Finding files:** Search stays visible, with **All / Images / Video / Audio / Documents** buttons. Documents includes PDFs and other downloads. Collection and usage filters sit under **Filters**. Search makes its active kind clear and offers a way to search all media while keeping the query. Collection counts cover every kind; the picker counts compatible files.
+- **Usage:** A numbered badge sits with each picture. It counts distinct pages, rather than collection memberships. Hover or keyboard focus expands **Used on X pages**; tapping opens the usage text and page names. A checked file with no uses found has **0 / No uses found**, and a filter finds these files. Other uses and **Not checked yet** are shown separately, so zero page uses alone cannot imply unused.
+- **Page picker:** The same manager's collections, search, views and media records appear in a smaller window, with only compatible files available. The picker is full-screen on phones. Add files and file details remain within it; Use confirms the choice and Cancel keeps the existing placement.
+- **Phone and tablet:** Two pictures across on phones, three on tablets, with Canvas's larger picture frames and readable filename strips. Details opens on its own screen with Back. Usage is available by tap. Controls remain easy to tap, while repeated navigation and headings are removed. The phone picker keeps its status above a single row of Cancel and Use buttons.
+
+The selected mockup was published with `html_render`, title **Media manager: Canvas — final mockup**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-087a675a-4678-4d42-b9b6-9c5bac8a8739-html`. Source SHA256: `5bad53883e6854905ff0ef8976a63ea9ac90a78a9a5df03f1b5f1f8a77e88af9`. The comparison controls were removed; the downloaded references remain available.
+
+**Follow-up decisions:** [Collections and file names](15-collections-and-file-names.md) graduates the map's **Folders, names and tags** fog into a concrete ticket, covering collection management and existing file renames. Its dependency was added to the handoff. The terms **Media collection** and **Media picker** were added to `CONTEXT.md` using domain-modeling. New upload destinations and naming remain in ticket 07.
+
+The mockup demonstrates optimise comparison, progress, retry, clean-up review, confirmation and Undo. It does not settle upload defaults or original retention (07), responsive output (08), crop/focus (09), scanner scope and safe removal/recovery (10), or descriptions and agent permissions (13). The remaining map fog still depends on those decisions. No editor code was changed or deployed.
+
+Verification is recorded in [the selected mockup checks](../prototype/canvas-validation.md), [look review](../prototype/look-validation.md), [compact refinement checks](../prototype/refined-validation.md) and [the first comparison](../prototype/validation.md). [Downloaded Mobbin screens](../prototype/references/README.md) are kept locally and inlined into published mockups; no expiring image links are used. All prototype work after the initial claim was committed locally on dev without a push.
 
 ## Comments
 
@@ -69,4 +89,4 @@ Lex requested another design iteration and chose **the overall look and feel** a
 
 Published with `html_render`, title **Media manager looks: Quiet and Canvas**, in T3 thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-5a3e5a8c-5694-4e1d-9972-36b0e53d2ea1-html`. The [look validation](../prototype/look-validation.md) records checks at 360, 728 and 768 px, independent visual review, and corrections to the phone picker footer and selected-file tick.
 
-**Awaiting Lex's choice of the final look, including phone and tablet presentation. The ticket remains open.**
+On 2026-10-12, Lex chose **Canvas**, including phone and tablet presentation. The final decisions are recorded in the resolution above.
