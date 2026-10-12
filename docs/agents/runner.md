@@ -43,7 +43,7 @@ This applies to builds, full suites and reviews. Helpers stay in the foreground 
 
 - Generate `.scratch/review-brief.md` with
   `scripts/agents/review-brief.sh <ticket-file> origin/dev > .scratch/review-brief.md`.
-- Run `scripts/agents/review.sh "$PWD" .scratch/review-brief.md .scratch/review` in the background.
+- Run `scripts/agents/review.sh "$PWD" .scratch/review-brief.md .scratch/review`; follow Waiting above.
   Read `.scratch/review/result.md`, verify findings, fix real defects and commit fixes.
   Re-review once when fixes are substantial; record rejected findings with reasons.
 - Close the ticket in the same branch and append `## Done (YYYY-MM-DD)`:
@@ -51,7 +51,7 @@ This applies to builds, full suites and reviews. Helpers stay in the foreground 
 
 ## Land and preview
 
-- Editor slices: `scripts/agents/land.sh`, then `scripts/agents/ci-status.sh dev --wait` in the background.
+- Editor slices: `scripts/agents/land.sh`, then `scripts/agents/ci-status.sh dev --wait`; follow Waiting above.
   Fix CI failures from your landing. Deploy when needed with `scripts/agents/deploy-preview.sh`.
   Record the landed SHA and preview version id. Options and logs: [agent-scripts.md](agent-scripts.md).
 - Starter slices: rebase on `origin/dev` and push `HEAD:dev` under
