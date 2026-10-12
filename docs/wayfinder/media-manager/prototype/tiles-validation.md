@@ -196,3 +196,16 @@ Published with `html_render`, title **Media manager: One bar — automatic addin
 `html_preview` was attempted with that exact complete source at 360 px and returned: “This host blocks the sandbox T3's browser runs in (AppArmor on Ubuntu 23.10+).” Local browser checks supplied the rendered evidence; no host configuration was changed. The mockup does not persist files or perform real uploads/optimisation. Browser-specific enhancement/fallback and native OS drag gestures retain the limitations above.
 
 The dedicated worker and review temporary directories, screenshots, runner scripts, immutable snapshots and CLI reports are removed after recording this evidence and publication. All owned browsers and CLI sessions ended; no server or watcher was started. The selected source, ticket and map decision are committed locally on dev without a push or deployment.
+
+
+## Phosphor dropdown icons — 2026-10-12
+
+Lex requested Phosphor icons for the dropdown. The native enhanced Collections select uses the installed `@phosphor-icons/core` 2.1.1 Regular `caret-down.svg` and `check.svg`, embedded as SVG data masks with `currentColor`. This follows `src/icons.ts` and the editor’s mask convention; no remote icon request, dependency or state change is added. The ordinary native fallback remains available. No new domain term or decision is introduced.
+
+Focused local Chromium checks passed at 360/768 px for library and picker open/select/change, keyboard Space/Home/Enter, the existing 2 px option focus outline, nested Escape, and forced native fallback with keyboard focus. The All collections label fits, controls stay 44 px high, and no overflow or page errors occurred. The lead inspected the actual CSS-only diff and phone closed/open and tablet open screenshots. A fallback runner assertion initially failed because its CSS-rule matcher removed no enhancement; matching `conditionText` correctly made the check pass without a source change. Script parsing and diff checks passed; no broad state suite or additional independent review was warranted for these two glyph replacements.
+
+T3 preview status/open and final exact-source `html_preview` returned the existing host AppArmor browser sandbox failure. Local checks used file URLs, with no server or host changes. Safari/Firefox were not tested.
+
+Latest publication: `html_render`, title **Media manager: One bar — Phosphor dropdown**, height 1000, thread `492d7080-d465-4710-96fd-0516aedb90b7`, attachment `492d7080-d465-4710-96fd-0516aedb90b7-2e91ada7-8e35-4620-8c25-f9165ea24a47-html`. Source SHA256: `c9e88918b2213280a7fcd053430074dc48975e82a45e5fe680c3a8f328cc0c3a`.
+
+Screenshots in `/tmp/mm-phosphor-select-20261012/` covered `{library,options,picker,picker-options,fallback}-{360,768}.png` and are removed after recording the evidence. All owned browsers closed; no background command or server remains. Prototype and planning artifacts only, committed locally on dev without a push or deployment.
