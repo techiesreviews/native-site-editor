@@ -13,10 +13,10 @@ A decided plan, ready to build, for a second source next to GitHub: **a folder o
 
 - **Planning first.** Tickets produce decisions, not code. Building is handed off once the map is clear, and waits until the media manager's build is done (Lex, 2026-10-13): both rewrite how files are read and added.
 - **Settled while charting (2026-10-13, with Lex):**
-  - **No GitHub sign-in needed** for a folder. "Open a folder on this computer" is offered on the sign-in screen and in the project selector, only where the browser can do it. GitHub stays the default, and the only choice in Firefox and Safari.
+  - **No GitHub sign-in needed** for a folder. Folders are added from the project overview and the project selector (see ticket 05), only where the browser can do it; elsewhere the option shows disabled with how to fix it. GitHub stays the default, and the only choice in Firefox and Safari.
   - **Nothing leaves the computer before an agent connects.** Once one connects, the server holds the site's own text files (pages, styles, components and the other files the editor shows) so the agent can read them, never ignored, hidden or secret files such as `.env`, and drops them on disconnect.
   - **Save writes files and never commits.** In a folder that is a git clone, a note says to commit and push with your own tools. The editor does not show git status. Lex asked whether the editor can offer to **create a new GitHub repository** from a folder: see its ticket.
-  - **A folder is its own project** in the project selector ("On this computer", with recent folders), separate from any GitHub repository holding the same site; reopening costs one click plus Chrome's permission prompt.
+  - **A folder is its own project**, a card on the project overview and an entry in the project selector, separate from any GitHub repository holding the same site; reopening costs one click plus Chrome's permission prompt.
   - **Order of building:** the source abstraction with GitHub behaviour unchanged and covered by the existing tests, then reading and preview from a folder, then saving, then outside changes, then agents.
 - **Facts found while charting (dev, 2026-10-13):**
   - The preview never fetches: the host reads every file and posts strings and `data:` URLs into a sandboxed `srcdoc` frame (`src/components/native-preview.ts`, `native-preview-runtime.js` accepts `data:` only). A folder feeds it without changes.
@@ -37,6 +37,7 @@ A decided plan, ready to build, for a second source next to GitHub: **a folder o
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Decide how a folder is opened and reopened](tickets/05-opening-and-reopening.md#resolution-2026-10-13): the editor opens on a project overview (cards for folders and GitHub repositories, latest edited first, picture from the last visit) that replaces the sign-in screen and Get started; every visit starts there, a direct link opens a project; the selector has All projects, Add project, then the open kind first; a folder card's click regains permission; refused permission explains how to give it back, a missing folder offers Find it; unsupported browsers show the option disabled with a fix and a help page on techies.tools
 - [Research what agents on a folder need from the Worker](tickets/04-research-agents-on-a-folder.md#resolution-2026-10-13): a GitHub-free session made only when an agent connects (8 h, capped storage); the tab shares the folder's text files by hash and the Worker reads them instead of GitHub; folders keyed `folder:<uuid>`; connections pinned to the folder allowed; OAuth works on a session cookie but claude.ai needs CIMD first (also for GitHub); today's tab shares before any agent connects, which folders must not do
 - [Research what to skip and how big a folder can be](tickets/02-research-skip-and-limits.md#resolution-2026-10-13): skip `.git`, `node_modules`, caches and OS junk by name, never `dist`/`build`; secrets such as `.env` are never read or sent; `.gitignore` as git reads it (the 4 KB `ignore` package); lazy fingerprints with a cache, techies-reviews opens in about 0.1 s; caps 10,000 files, 1 MB text, 20 MiB per file
 - [Research the source seam in the editor](tickets/03-research-source-seam.md#resolution-2026-10-13): one `SiteSource` at the reads by fingerprint plus one batch write, GitHub and folder adapters, seven capabilities; GitHub draft keys untouched, folders `folder:<uuid>`; the folder's git tree hash stands in for a commit; a Web Lock leader tab watches and applies agent changes; save checks all then writes, a partial failure leaves the rest as drafts; OPFS handles as test fakes; +1–2 KB for GitHub, a 10–12 KB folder chunk
@@ -46,7 +47,7 @@ A decided plan, ready to build, for a second source next to GitHub: **a folder o
 
 - **Starting a site in an empty folder.** Whether Start your site (Starter site, Blank page) writes into an empty folder or one without `index.html`, and whether the Setup checklist has a folder version. Hangs on the GitHub-only features and the saving tickets.
 - **Download site and the media manager on a folder.** Download site may be pointless when the files are already on disk; the media manager's adding, optimising and clean-up must work on a folder, which may change its plan once the source seam is designed.
-- **Mobile and other Chromium browsers.** Android Chrome can open a folder but remembers nothing and cannot watch; Brave has the API off by default. Whether either is offered, and with what wording, belongs with opening and reopening.
+- **The sign-in screen, Get started and the Setup wizard under the overview.** The overview replaces the sign-in screen and Get started (ticket 05); how the Setup wizard's first step and the Setup checklist start from "On GitHub" is settled with the overview's prototype and the handoff.
 
 ## Out of scope
 

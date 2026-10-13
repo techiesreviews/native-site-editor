@@ -102,6 +102,10 @@ The view of the current page and its unsaved changes inside the editor. It rende
 A site open in the editor, from one source: a GitHub repository on a branch, or a local folder. Each project has its own drafts, even when a folder and a repository hold the same site.
 _Avoid_: workspace (in user-facing text)
 
+**Project overview**:
+The screen the editor opens on: every project as a card (a picture of its home page from the last visit, its name, where it lives, when it was last edited, its unsaved changes), latest edited first, with Add project offering On this computer or On GitHub. With no projects yet it is an empty state guiding the first one. It replaces the sign-in screen and Get started; a direct link to a project skips it, and All projects in the project selector returns to it. (Planned in ADR 0002.)
+_Avoid_: dashboard, home, recent folders
+
 **Local folder**:
 A folder on the user's computer opened as a project, where the browser allows it. It needs no GitHub account; the user commits it with their own tools if it is a git clone.
 
@@ -139,7 +143,7 @@ The numbered marker on the element of an agent request in the preview, showing w
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
 
 **Get started**:
-A screen shown to a signed-in user with no repository in the editor yet who left the Setup wizard (or reaches it from the wizard's fallback). It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor.
+A screen shown to a signed-in user with no repository in the editor yet who left the Setup wizard (or reaches it from the wizard's fallback). It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor. Planned to fold into the project overview (ADR 0002).
 
 **Setup wizard**:
 A full-screen guide for a signed-in account with no repository, in three numbered steps: Connect GitHub (done for an account whose App is installed; for one that came back from GitHub's install page without installing, a retry with screenshots of what GitHub asks), Create your site (the repository, with the chosen starting point committed as its first commit), and Your site is ready (a celebration: the site's name, a live miniature of its home page, a short confetti burst, and Open the editor). Connecting an agent is done after sign-up from the Setup checklist, and putting the site online comes later, when publishing works properly. It replaces Get started for an account with no repository. The sign-in screen has one button; the Worker sends a new sign-in without the App to GitHub's install page by itself and reports what is left to do as `onboarding` in `/api/session`. The Setup checklist takes over once the editor opens.

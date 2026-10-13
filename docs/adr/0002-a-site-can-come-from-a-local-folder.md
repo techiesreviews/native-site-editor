@@ -14,7 +14,7 @@ The editor is closer to source-neutral than its routes suggest: the preview neve
 
 ## Decisions (Lex, 2026-10-13)
 
-1. **A folder is its own project**, listed under "On this computer" with recent folders, separate from any GitHub repository with the same site. It is offered only where the browser supports it; GitHub stays the default and the only choice elsewhere.
+1. **A folder is its own project**, a card on the project overview the editor opens on (with the GitHub projects, latest edited first), separate from any GitHub repository with the same site. It is offered only where the browser supports it; GitHub stays the default and the only choice elsewhere.
 2. **No GitHub sign-in needed** to open, edit and save a folder.
 3. **Save writes files, never commits.** For a folder that is a git clone, the user commits and pushes with their own tools; the editor shows no git status.
 4. **Nothing leaves the computer before an agent connects.** Once one connects, the Worker holds the site's own text files (not ignored, hidden or secret files) so the agent can read them, and drops them on disconnect.
