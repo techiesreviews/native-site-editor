@@ -147,3 +147,7 @@ Lex chose **Compact Balanced audio, about 0.7 MB per minute** for audio that nee
 ### Already-compressed audio boundary agreed with Lex (2026-10-13)
 
 Lex chose **Keep compressed audio below about 1.2 MB per minute** unchanged, to avoid losing quality for a small saving. The stricter alternative was keeping only compressed audio below about 0.7 MB per minute. The question covered already-compressed MP3/M4A and explicitly retained the 20 MB whole-file limit. The researched build mapping is MP3 or AAC below 160 kbps; include that precise boundary in the final policy confirmation. A file extension alone does not establish that audio is already compressed; lossless M4A is not covered by this exception. The agreed try-shrinking-first rule still applies to files over the hard cap.
+
+### Explicit Speech audio choice agreed with Lex (2026-10-13)
+
+Lex chose **Offer an explicit Speech choice for smaller voice recordings** as the audio smaller-file choice. It combines left and right sound into one channel (mono), at about 0.5 MB per minute. A general Smaller files choice preserving stereo was offered as an alternative. Balanced and Higher quality preserve stereo where present. Speech is applied only when explicitly selected; the editor never guesses that a recording is speech. The researched mapping is AAC-LC M4A at 64 kbps mono, to include in the final policy confirmation. Its interaction with the already-compressed-audio exception remains to be settled.
