@@ -2,7 +2,7 @@
 title: Decide how a folder is opened and reopened
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-browser-support]
 ---
 
