@@ -15,3 +15,4 @@ Given the research, what HTML does the editor write for an image on a page? `src
 ## Comments
 
 - 2026-10-13, Lex: **No backup format.** Everyday page images use one format per file (the format chosen at adding) with the visitor's browser picking the size, not `<picture>` with an older-format fallback. Accepted that the ~3% of browsers without WebP/AVIF support may not show the image.
+- 2026-10-13, Lex: **Measure the size hint; the browser fine-tunes.** The editor measures how wide the image appears in the preview at phone, tablet and desktop widths when an image is placed, replaced or moved, and writes `sizes` from that. Images that wait to load also get `auto` first so supporting browsers use the real layout width. Lex does nothing. Rejected: today's single-width guess, and always sending the largest file.
