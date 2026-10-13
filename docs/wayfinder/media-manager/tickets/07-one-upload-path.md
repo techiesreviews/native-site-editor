@@ -143,3 +143,7 @@ Lex chose **Let Higher quality keep the full-size image** instead of limiting th
 ### Balanced audio quality agreed with Lex (2026-10-13)
 
 Lex chose **Compact Balanced audio, about 0.7 MB per minute** for audio that needs shrinking, with richer sound available through Higher quality. Richer Balanced audio at about 1 MB per minute was offered as an alternative. Both choices were described as M4A output, with approximate sizes rather than guarantees. The researched build mapping for the compact choice is AAC-LC at 96 kbps stereo (about 0.72 MB per minute); include that mapping in the final policy confirmation. The boundary for retaining already-compressed audio and the remaining audio preset details still need to be settled.
+
+### Already-compressed audio boundary agreed with Lex (2026-10-13)
+
+Lex chose **Keep compressed audio below about 1.2 MB per minute** unchanged, to avoid losing quality for a small saving. The stricter alternative was keeping only compressed audio below about 0.7 MB per minute. The question covered already-compressed MP3/M4A and explicitly retained the 20 MB whole-file limit. The researched build mapping is MP3 or AAC below 160 kbps; include that precise boundary in the final policy confirmation. A file extension alone does not establish that audio is already compressed; lossless M4A is not covered by this exception. The agreed try-shrinking-first rule still applies to files over the hard cap.
