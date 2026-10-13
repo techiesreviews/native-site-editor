@@ -107,3 +107,7 @@ Lex requested `$handoff` after the default-storage choice. The ticket remains op
 ### Explicit folder destination agreed with Lex (2026-10-13)
 
 Lex chose **Keep it in the folder I dropped it into** for media dropped into a particular folder in Files. The prepared website file stays in that chosen folder while using the same automatic preparation as other adding paths. Always sending it to the usual media folder was offered as an alternative. Collection membership remains independent of physical storage. The separate location for an optionally retained original is unchanged; its exact path remains to be settled.
+
+### Exact originals folder agreed with Lex (2026-10-13)
+
+Lex chose **Always use `media/originals/`** for optionally retained full-size originals, including when the prepared website file was dropped into a different folder in Files. An originals subfolder within the chosen destination was offered as an alternative. The original remains accessible through the file's details. The previously agreed retention, personal-detail removal and per-file size rules still apply.
