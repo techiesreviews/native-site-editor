@@ -2,7 +2,7 @@
 title: Decide the fix-all for existing images
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [05-research-images-on-existing-sites, 07-one-upload-path, 08-responsive-image-output]
 ---
 
