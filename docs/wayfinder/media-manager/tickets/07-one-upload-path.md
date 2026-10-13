@@ -139,3 +139,7 @@ Lex chose **Offer Smallest files (slower) as an extra choice** in the simple ima
 ### Higher quality image dimensions agreed with Lex (2026-10-13)
 
 Lex chose **Let Higher quality keep the full-size image** instead of limiting that image preset to 2,400 pixels wide. Higher quality uses gentler compression while retaining the source dimensions; it is a website version, distinct from optionally keeping an original. The question also proposed Smaller files at up to 1,600 pixels, Balanced at up to 2,400, and Smallest files (slower) using AVIF at up to 2,400; include those proposed preset mappings in the final policy confirmation. The agreed hard cap and automatic responsive copies still apply.
+
+### Balanced audio quality agreed with Lex (2026-10-13)
+
+Lex chose **Compact Balanced audio, about 0.7 MB per minute** for audio that needs shrinking, with richer sound available through Higher quality. Richer Balanced audio at about 1 MB per minute was offered as an alternative. Both choices were described as M4A output, with approximate sizes rather than guarantees. The researched build mapping for the compact choice is AAC-LC at 96 kbps stereo (about 0.72 MB per minute); include that mapping in the final policy confirmation. The boundary for retaining already-compressed audio and the remaining audio preset details still need to be settled.
