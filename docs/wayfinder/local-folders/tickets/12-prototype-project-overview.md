@@ -2,7 +2,7 @@
 title: Prototype the project overview
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [05-opening-and-reopening]
 ---
 
