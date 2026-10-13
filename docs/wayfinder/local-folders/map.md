@@ -38,6 +38,7 @@ A decided plan, ready to build, for a second source next to GitHub: **a folder o
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
 - [Research what agents on a folder need from the Worker](tickets/04-research-agents-on-a-folder.md#resolution-2026-10-13): a GitHub-free session made only when an agent connects (8 h, capped storage); the tab shares the folder's text files by hash and the Worker reads them instead of GitHub; folders keyed `folder:<uuid>`; connections pinned to the folder allowed; OAuth works on a session cookie but claude.ai needs CIMD first (also for GitHub); today's tab shares before any agent connects, which folders must not do
+- [Research what to skip and how big a folder can be](tickets/02-research-skip-and-limits.md#resolution-2026-10-13): skip `.git`, `node_modules`, caches and OS junk by name, never `dist`/`build`; secrets such as `.env` are never read or sent; `.gitignore` as git reads it (the 4 KB `ignore` package); lazy fingerprints with a cache, techies-reviews opens in about 0.1 s; caps 10,000 files, 1 MB text, 20 MiB per file
 
 ## Not yet specified
 
