@@ -45,6 +45,7 @@ A decided plan, ready to hand off, for a new **media manager** covering every me
 - [Research optimising every media kind in the browser](tickets/02-research-optimising-every-media-kind.md): Safari likely uploads large PNGs today (needs a small WebP encoder); keep WebP q80 ≤2400 px, AVIF too slow for a default; HEIC via a decoder loaded on demand; SVG minify, GIF → MP4; video via Mediabunny to H.264 MP4 + poster, audio to AAC; PDFs kept as is; 20 MB cap, warnings at 10 MB / 1 MB, repo size shown, no Git LFS
 
 - [Prototype the media manager's look](tickets/06-prototype-media-manager-look.md): Tiles with One bar search/Collections/More and Phosphor dropdown icons, Add new file in More and automatic drop-to-add into the viewed collection, soft photo overlays including hover; Media replaces Images, All opens the dense grid, grid/list and usage remain, shared picker full-screen on phones; collection and file-name rules graduated to ticket 15
+- [Decide the one way media gets added](tickets/07-one-upload-path.md#resolution-2026-10-13): automatic browser preparation everywhere, simple presets remembered per site, image families and optional originals, explicit Files destinations respected, tidy names numbered on conflicts, and per-kind limits and failure rules
 
 ## Not yet specified
 

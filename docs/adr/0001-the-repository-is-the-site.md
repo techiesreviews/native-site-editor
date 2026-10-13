@@ -56,6 +56,7 @@ README.md, AGENTS.md
 - **Pages.** Every `.html` file is a page, except under `components/`, `node_modules/`, and any folder or file whose name starts with `.` or `_`. `index.html` is `/`, `a/b/index.html` is `/a/b/`, any other `x.html` is `/x.html`. `404.html` at the root is the not-found page.
 - **Pages are full documents**: `<!doctype html>`, `<html lang>`, a `<head>` with `<title>`, `<meta name="description">`, Open Graph tags, the favicon, `<link rel="stylesheet" href="/styles/site.css">` and `<script type="module" src="/components/components.js"></script>`, and a `<body>` with the page.
 - **Links and asset paths are root links** (`/about/`, `/images/hero.svg`). They work on any host at a domain root and locally through any static server; not from `file://` or a subfolder.
+- **New-media storage amendment (Lex, 2026-10-13).** [Decide the one way media gets added](../wayfinder/media-manager/tickets/07-one-upload-path.md#resolution-2026-10-13) supersedes the illustrated `images/` default for media newly added through the editor, including explicit Files destinations and separately retained originals. Existing asset paths remain valid; no migration is required. This is an agreed plan awaiting implementation.
 - **`.editor/config.json`** holds editor-only settings: `{ "site": { "name": "…", "url": "https://…" } }` for now. Nothing the site loads is in `.editor/`.
 
 ## 2. Components (the starter's convention)
