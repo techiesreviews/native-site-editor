@@ -54,6 +54,10 @@ _Avoid_: separate media files (when referring to the copies as library items)
 **Focus point**:
 The spot in an image that must stay visible when the image is trimmed to fit its place. It is set for each place the image is used, not for the file.
 
+**Trimmed copy**:
+A new image made when the user trims, zooms into, turns or flips a picture for one place. Only that place uses it; the original file is unchanged. Choosing a shape alone never makes one.
+_Avoid_: crop (for the file), edited image
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
