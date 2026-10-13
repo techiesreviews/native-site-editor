@@ -2,7 +2,7 @@
 title: Decide how unused media is cleaned up safely
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [04-research-media-code-today, 05-research-images-on-existing-sites]
 ---
 
