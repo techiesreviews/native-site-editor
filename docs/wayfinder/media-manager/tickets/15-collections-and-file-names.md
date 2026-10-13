@@ -20,3 +20,4 @@ This graduates **Folders, names and tags** from the map's fog. The [look prototy
 
 - 2026-10-13: Claimed for grilling by Lex + claude.
 - 2026-10-13: **Deleting a collection** removes only the group. Its files stay in Media (All and any other collections); nothing on the site changes, and unused files still reach Clean up as usual. Declined: offering to remove the group's unused files at the same time; removing every file in the group.
+- 2026-10-13: **Taking files out of a collection vs removing them.** Inside a collection, selected files offer two separate actions: "Take out of <collection>" (membership only; files stay in Media) and "Remove file" (to Recently removed, with ticket 10's warning when pages use them). Declined: only "take out" inside a collection, with file removal from All only; one Remove button that then asks which.
