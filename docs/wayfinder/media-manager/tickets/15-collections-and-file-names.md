@@ -19,3 +19,4 @@ This graduates **Folders, names and tags** from the map's fog. The [look prototy
 ## Comments
 
 - 2026-10-13: Claimed for grilling by Lex + claude.
+- 2026-10-13: **Deleting a collection** removes only the group. Its files stay in Media (All and any other collections); nothing on the site changes, and unused files still reach Clean up as usual. Declined: offering to remove the group's unused files at the same time; removing every file in the group.
