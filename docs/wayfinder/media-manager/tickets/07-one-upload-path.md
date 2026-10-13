@@ -135,3 +135,7 @@ Lex chose **Remember my choices for this site** when adding settings are changed
 ### Optional AVIF choice agreed with Lex (2026-10-13)
 
 Lex chose **Offer Smallest files (slower) as an extra choice** in the simple image adding settings, using AVIF. The question explained that the research found potentially smaller files but much longer preparation. Leaving AVIF out of the adding settings was offered and recommended as an alternative; Lex chose to include it. AVIF is optional, not the Balanced default. The ordinary WebP default and previously agreed exceptions remain; exact preset mappings are still to be confirmed. This decision concerns adding media, not the separate fix-all policy.
+
+### Higher quality image dimensions agreed with Lex (2026-10-13)
+
+Lex chose **Let Higher quality keep the full-size image** instead of limiting that image preset to 2,400 pixels wide. Higher quality uses gentler compression while retaining the source dimensions; it is a website version, distinct from optionally keeping an original. The question also proposed Smaller files at up to 1,600 pixels, Balanced at up to 2,400, and Smallest files (slower) using AVIF at up to 2,400; include those proposed preset mappings in the final policy confirmation. The agreed hard cap and automatic responsive copies still apply.
