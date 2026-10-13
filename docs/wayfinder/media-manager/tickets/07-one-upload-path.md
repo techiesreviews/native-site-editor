@@ -123,3 +123,7 @@ Lex chose **Automatically tidy names** while adding media: lowercase names with 
 ### Duplicate incoming names agreed with Lex (2026-10-13)
 
 Lex chose **Automatically add a number and keep both** when a newly added file's name already exists in its destination folder. The example offered was adding `holiday-2.webp` when `holiday.webp` already exists. Pausing to ask for a different name was offered as an alternative. Adding a file never replaces an existing file.
+
+### Optional adding settings agreed with Lex (2026-10-13)
+
+Lex chose **Simple choices only** for the optional adding settings in More: choices such as **Smaller files**, **Balanced** and **Higher quality**, plus **Keep original**. Simple choices with an Advanced section and showing detailed controls straight away were offered as alternatives. No Advanced section for exact sizes, formats or quality numbers is planned. Exact preset mappings and whether changed settings persist remain to be settled; the automatic adding experience is unchanged.
