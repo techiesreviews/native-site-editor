@@ -58,6 +58,13 @@ The spot in an image that must stay visible when the image is trimmed to fit its
 A new image made when the user trims, zooms into, turns or flips a picture for one place. Only that place uses it; the original file is unchanged. Choosing a shape alone never makes one.
 _Avoid_: crop (for the file), edited image
 
+**Recently removed**:
+The list in the media manager of media files removed in the last 30 days, each restorable with one click, even after saving.
+_Avoid_: bin, trash
+
+**Always keep**:
+A mark on a media file that stops clean-up from ever suggesting it, for files used from outside the site.
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
