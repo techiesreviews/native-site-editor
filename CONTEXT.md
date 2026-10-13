@@ -55,7 +55,7 @@ _Avoid_: separate media files (when referring to the copies as library items)
 The spot in an image that must stay visible when the image is trimmed to fit its place. It is set for each place the image is used, not for the file.
 
 **Trimmed copy**:
-A new image made when the user trims, zooms into, turns or flips a picture for one place. Only that place uses it; the original file is unchanged. Choosing a shape alone never makes one.
+A new image made when the user or an agent trims, zooms into, turns or flips a picture for one place. Only that place uses it; the original file is unchanged. Choosing a shape alone never makes one.
 _Avoid_: crop (for the file), edited image
 
 **Recently removed**:
@@ -72,6 +72,16 @@ _Avoid_: GIF (for the converted file), autoplay video
 **Online video**:
 A YouTube or Vimeo video placed by pasting its address. It stays on the service; the site keeps a copy of its still picture and loads the service only when a visitor presses play.
 _Avoid_: embed (in user-facing text)
+
+**Description**:
+A media file's alt text, written once in its details and used by every place; a place can have its own words. An empty description counts as not described yet unless the file or place is marked Decorative.
+_Avoid_: alt text (in user-facing text)
+
+**Decorative**:
+A mark on a media file or place saying the picture adds nothing to read aloud, so its empty description is intended rather than a gap.
+
+**To check**:
+The list in the media manager of descriptions and subtitles an agent wrote, each marked "by agent" until the user presses OK or edits it.
 
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.

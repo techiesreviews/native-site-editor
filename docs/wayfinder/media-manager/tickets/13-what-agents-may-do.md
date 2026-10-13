@@ -1,7 +1,7 @@
 ---
 title: Decide what agents may do with media
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [07-one-upload-path, 08-responsive-image-output, 10-safe-clean-up]
 ---
@@ -24,3 +24,35 @@ Agents may see media, place and swap it, write alt text, and run the same optimi
 - 2026-10-13, Lex: **YouTube and Vimeo: only videos already in Media.** Agents may place again a pasted video already listed in Media (its still picture is already in the site). Pasting a new address, and switching old YouTube or Vimeo players to "picture until tapped" in Improve images (both copy a picture in from outside), stay with Lex. Declined: any address (an exception to "no new media from outside"), and never.
 - 2026-10-13, Lex: **Agents may write and attach subtitles.** An agent may write a subtitles file (for example from a script Lex gave it) and attach it to a video or audio; like descriptions, it carries the "by agent" mark until Lex checks it. Declined: attach existing subtitles files only (recommended; writing stays with Lex because words or timing may be wrong), and leave subtitles to Lex entirely. Consequence: an agent-written subtitles file is a second allowed kind of new file, besides trimmed copies; it is text the agent writes, not media brought in from outside.
 - 2026-10-13, Lex: **Agents use Lex's preparation settings and may change them.** Agents prepare media with the site's remembered settings (ticket 07) and may also change them, for example when Lex asks for smaller files; the change shows like other agent changes and can be undone. Declined: use them but never change them (recommended), and pick a different setting per job without changing the saved ones.
+
+## Resolution (2026-10-13)
+
+Lex confirmed the whole plan below, including the connecting details marked ★, by choosing **Yes, confirm and close 13**. Only this planning ticket closes; no editor code, push or deployment is authorised.
+
+**How agents work with media.** Agents use media through the open editor, as all agent edits work today: the Worker queues each change and the editor tab applies it with the editor's own code, so it becomes an ordinary unsaved change Lex can check, undo or discard before saving. No media action asks for an extra Yes/No first, including Clean up and Improve images across many pages. ★ While the editor is closed agents cannot do media work, as with all agent work today; so an agent's optimise or fix runs in the open tab, with no queue and no Worker processing.
+
+**Seeing media.** ★ A tool lists every media file with its kind, size, Image family, uses, description (and whether it is by an agent or Decorative), Always keep and Not checked yet marks. ★ A tool returns a small preview of a picture so an agent can describe it.
+
+**Placing and framing.** Agents may place, swap and replace media. ★ They write exactly the markup the editor writes (ticket 08's `srcset`/`sizes`, `width`/`height` and loading order; ticket 12's players). They may set a place's shape and focus point and may also trim, zoom, turn or flip, which saves a Trimmed copy (ticket 09). ★ They may switch a Looping video on or off for a place and choose a video's still picture from a moment or an image in Media.
+
+**No new media from outside.** Agents never upload, fetch from the web or generate media. The only new files they make come from the site itself: Trimmed copies, ★ lighter files from Improve images, ★ video stills, and subtitles files they write.
+
+**Improve images.** Agents may run it: lighter files with responsive copies for heavy pictures already in the site, and GIFs turned into Looping videos (ticket 11). Pictures from other websites are left as they are and listed for Lex; switching old YouTube or Vimeo players to "picture until tapped" also stays with Lex, because both copy a picture in from outside.
+
+**Online videos.** Agents may place again an Online video already in Media. Pasting a new address stays with Lex.
+
+**Subtitles.** Agents may write a subtitles file (for example from a script Lex gave) and attach it to a video or audio. It carries the "by agent" mark until Lex checks it.
+
+**Clean-up.** Agents may remove unused files. They may remove a still-used file only after swapping it out of every mention, so no visitor sees a broken picture. They never remove Always keep files. They may add Always keep but never take it off. ★ They may restore files from Recently removed. Families are removed and restored together (ticket 10).
+
+**Settings.** Agents prepare media with the site's remembered settings (ticket 07) and may change them, shown and undoable like other agent changes.
+
+**Descriptions (alt text).** A media file's description is written once in its details and used by every new place; a place that needs other words can have its own. ★ Changing a file's description updates every place that uses it, except places with their own words. Old empty descriptions count as "not described yet" until the picture or place is marked **Decorative**; ★ the editor remembers that mark, since `alt=""` alone cannot tell the two apart. Gaps show on the file in Media and on the place. Descriptions an agent writes carry a small "by agent" mark, and Media gets a **To check** list (picture or file, its text, OK or Edit) that ★ covers agent-written subtitles too. ★ The mark survives saving and clears when Lex presses OK or edits the text. Visitors see the text as soon as Lex saves. This clears the map's Alt text fog.
+
+**What agents are told.** ★ One Media chapter in the site conventions (`native-site://conventions`, the one source per the components-and-builder map's ticket 05), copied into the starter's `AGENTS.md` and drift-tested like the Components chapter. It replaces today's "the user uploads other images in the editor" line and states the rules above. A site's own `AGENTS.md` may add style rules (for example how to word descriptions) but cannot loosen these.
+
+**Declined along the way.** Shape and focus only, or no framing; a Yes/No before removing files and the fix-all, or before every action; only unused files, or removing used files like Lex; leaving Always keep to Lex, or letting agents remove it; descriptions per place only or per picture only; keeping old empty descriptions as decoration, or asking once per site; agent descriptions as ordinary changes, or as suggestions to accept; agents bringing outside pictures in, or no Improve images for agents; any YouTube/Vimeo address, or none; attaching existing subtitles only, or none; never changing settings, or a per-job setting.
+
+**Facts behind it (dev, 2026-10-13).** Agents have no media tools today; `write_file` takes text only. Agent changes expire if not picked up within 2 minutes. One OAuth scope (`site`), no per-tool permissions. Drafts record no author. The starter's `AGENTS.md` says only that images live in `images/` with root links. The alt warning fires only when `alt` is absent.
+
+**For the build.** Code reviews during the build go to GPT-6.1 Sol through read-only `codex exec`. Build checks: whether `.editor/media.json` (or wherever the Decorative and "by agent" marks live) is protected from direct agent writes that bypass these rules; `docs/mcp.md` is out of date (it leaves out `make_component`).
