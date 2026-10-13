@@ -1,7 +1,7 @@
 ---
 title: Decide how video, audio and documents are handled
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [02-research-optimising-every-media-kind]
 ---
@@ -35,3 +35,25 @@ Can Lex place a video from YouTube or Vimeo by its address, and when should the 
 - 2026-10-13, video backgrounds: Lex chose **yes, with a picture first**. A section's background can be a looping silent video behind its text, with the small pause button; visitors on slow connections or with motion turned off see its still picture. (Alternative declined: backgrounds stay pictures only.)
 - 2026-10-13, media on the editing canvas: Lex chose **still, play to check**. On the canvas every video, audio player and YouTube/Vimeo video shows its still state so a click selects it for editing; a play button in the edit bar checks that it plays, YouTube included; looping videos stay still until played. (Alternative declined: behaving exactly as for visitors.)
 - 2026-10-13, YouTube and Vimeo in the library: Lex chose **yes, under Video**. A pasted video appears among the videos in Media with its picture and a small YouTube or Vimeo mark, shows where it is used and can be placed again without pasting; removing it from Media never touches the service. (Alternative declined: living only on the page, with just its copied picture in Media.)
+
+## Resolution (2026-10-13)
+
+Lex confirmed the whole plan below, including the connecting details marked ★, by choosing **Yes, confirm and close 12**. Only this planning ticket closes; no editor code, push or deployment is authorised.
+
+**The site's own videos.** A placed video shows its still picture with a play button and loads and plays, with sound, only on tap. Once playing it has a bar in the site's style with play/pause, timeline, time, sound on/off, full screen, picture-in-picture and speed. In the video's details Lex can change the still picture to a chosen moment or any image from Media; it applies everywhere the video is used. A subtitles file (`.vtt` or `.srt`) can be added in the details, which gives the bar a CC button.
+
+**Looping videos.** Any video can be set, per place, to loop silently and play by itself; videos made from GIFs start with this on ★. They always have one small round pause/play button in a corner. For visitors whose device asks for less motion they start paused and play only when pressed. Looping videos may fill picture spots (a card's photo, a component's hero picture), taking the spot's shape and focus point; ordinary videos with sound stay out of picture spots. A section's background can be a looping video; visitors with motion turned off, or whose browser asks to save data ★, see its still picture.
+
+**YouTube and Vimeo.** Lex pastes an address in the media picker to place a video ★. Visitors see a still picture with a play button; the service loads only on tap. The still picture is copied into the site's media once, prepared like other images, and can be swapped for Lex's own. After the tap the site-styled bar is laid over the service's player, as the FluentPlayer plugin does; YouTube's small logo may still appear at moments. When a Vimeo owner's plan does not allow hiding Vimeo's bar, Vimeo's own bar shows after the tap. Pasted videos appear in Media under Video with a small YouTube or Vimeo mark, show their uses and can be placed again; removing one from Media never touches the service. **Improve images** (ticket 11) also lists existing YouTube and Vimeo players that can switch to "picture until tapped", fixed per page or all at once with the same Undo; other embeds stay alone. This extends ticket 11 for those two services only.
+
+**Audio.** A player in the site's style with play/pause, timeline and elapsed/total time; volume stays with the visitor's device. With a subtitles file, a Transcript link under the player shows the text ★.
+
+**PDFs and other downloads.** A card with the PDF's first-page picture, its name, type and size. Any tap on a PDF card opens it in the browser, so its button reads Open ★. Other downloads show a file-type picture, and tapping saves them, since browsers cannot open them ★.
+
+**In the editor.** The Add panel's Image item becomes **Media**, opening the picker with every kind plus the YouTube/Vimeo address field. On the canvas everything stays still so a click selects it; a play button in the edit bar checks playback, YouTube included; looping videos stay still until played. In Media and the picker, video tiles show the still picture and length, audio tiles a sound picture and length, PDF tiles the first page ★.
+
+**Connecting details ★.** One small shared player script and style in the site serves the video bar, audio player, corner pause button and YouTube/Vimeo layer. Without it, visitors get the browser's own controls, so everything still plays. The bars take the site's own colours and fonts and keep keyboard and screen-reader use working. A video's still picture, subtitles file and copied YouTube/Vimeo picture belong to its family and are removed and restored together in Clean up (ticket 10).
+
+**Facts behind it.** Today the editor cannot place video, audio, embeds or download links. Its Add panel offers Section, Div, Heading, Paragraph, Image and Button; the library lists images only. Its security policy blocks YouTube on the canvas and has no `media-src`. techies-reviews has 81 YouTube embeds, no Vimeo, no `<video>`/`<audio>` and no download links. Vimeo hides its own bar only for paid owners ([Vimeo help](https://help.vimeo.com/hc/en-us/articles/12426259745937)).
+
+**Build checks.** Real-phone full screen, picture-in-picture and gestures on the custom bar; what YouTube still shows over a custom bar; whether YouTube or Vimeo captions can drive the CC button on those videos. The editor's security policy needs YouTube/Vimeo frames and `media-src 'self' blob:` for canvas playback.

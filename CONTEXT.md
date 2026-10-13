@@ -65,6 +65,14 @@ _Avoid_: bin, trash
 **Always keep**:
 A mark on a media file that stops clean-up from ever suggesting it, for files used from outside the site.
 
+**Looping video**:
+A silent video set, for one place, to play by itself on repeat, always with a small pause/play button and paused for visitors who ask for less motion. Animated GIFs become looping videos.
+_Avoid_: GIF (for the converted file), autoplay video
+
+**Online video**:
+A YouTube or Vimeo video placed by pasting its address. It stays on the service; the site keeps a copy of its still picture and loads the service only when a visitor presses play.
+_Avoid_: embed (in user-facing text)
+
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.
 
