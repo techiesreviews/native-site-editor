@@ -46,9 +46,11 @@ A decided plan, ready to hand off, for a new **media manager** covering every me
 
 - [Prototype the media manager's look](tickets/06-prototype-media-manager-look.md): Tiles with One bar search/Collections/More and Phosphor dropdown icons, Add new file in More and automatic drop-to-add into the viewed collection, soft photo overlays including hover; Media replaces Images, All opens the dense grid, grid/list and usage remain, shared picker full-screen on phones; collection and file-name rules graduated to ticket 15
 - [Decide the one way media gets added](tickets/07-one-upload-path.md#resolution-2026-10-13): automatic browser preparation everywhere, simple presets remembered per site, image families and optional originals, explicit Files destinations respected, tidy names numbered on conflicts, and per-kind limits and failure rules
+- [Decide the responsive image output](tickets/08-responsive-image-output.md#resolution-2026-10-13): plain `<img srcset sizes>` in one format with no fallback; `sizes` measured at phone/tablet/desktop plus `auto` for lazy images; first-screen images load first; replacing inside `<picture>` cleans it up; older images get copies when placed; backgrounds one file; Social image gets a 1200 × 630 JPEG sharing copy
 
 ## Not yet specified
 
+- **Site addresses in sub-folders.** Media (and other) addresses are written from the site root (`/media/…`), which breaks when a site is served from a sub-folder such as a GitHub Pages project site. Site-wide, not specific to images; raised in research 03 and left open by ticket 08.
 - **Replacing a file everywhere.** Swapping one image in one place versus replacing the file behind every use (same address, new picture). This may become its own ticket once the manager's look and the responsive output are settled.
 - **Images from other websites in the manager.** Whether they are listed, counted and previewed before the fix-all brings them in. The editor's security policy blocks showing them today (ticket 05), so this depends on the fix-all decision.
 - **Alt text.** The edit bar warns about missing alt text today, but 490 of 533 images on techies-reviews have empty alt, which counts as decorative, so the warning finds nothing (ticket 05). Whether the manager shows gaps per file or per use, and how agents' alt text is reviewed, comes after the agents ticket.
