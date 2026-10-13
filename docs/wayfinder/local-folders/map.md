@@ -1,0 +1,50 @@
+---
+label: wayfinder:map
+title: Edit a site from a folder on this computer
+charted: 2026-10-13
+tracker: local markdown (tickets live in tickets/ with a blocked_by line in each)
+---
+
+## Destination
+
+A decided plan, ready to build, for a second source next to GitHub: **a folder on the user's computer**, opened with the browser's File System Access API wherever it exists (desktop Chrome and Edge). Preview, page builder, code panes, Pages and Files tabs, drafts and undo work on it as on a repository; Save writes the chosen drafts into the folder with the same conflict safety as GitHub; changes made in the folder by other tools (an agent, a code editor) are picked up and never overwritten silently; GitHub-only features are hidden or explained; and agents connect over MCP without GitHub. The map is done when [ADR 0002](../../adr/0002-a-site-can-come-from-a-local-folder.md) is accepted and a spec and build tickets exist in `build/`. Building starts after the media manager is built, and ends with a proof in a real Chrome: open, edit, save, an outside change picked up, an agent edit through MCP.
+
+## Notes
+
+- **Planning first.** Tickets produce decisions, not code. Building is handed off once the map is clear, and waits until the media manager's build is done (Lex, 2026-10-13): both rewrite how files are read and added.
+- **Settled while charting (2026-10-13, with Lex):**
+  - **No GitHub sign-in needed** for a folder. "Open a folder on this computer" is offered on the sign-in screen and in the project selector, only where the browser can do it. GitHub stays the default, and the only choice in Firefox and Safari.
+  - **Nothing leaves the computer before an agent connects.** Once one connects, the server holds the site's own text files (pages, styles, components and the other files the editor shows) so the agent can read them, never ignored, hidden or secret files such as `.env`, and drops them on disconnect.
+  - **Save writes files and never commits.** In a folder that is a git clone, a note says to commit and push with your own tools. The editor does not show git status. Lex asked whether the editor can offer to **create a new GitHub repository** from a folder: see its ticket.
+  - **A folder is its own project** in the project selector ("On this computer", with recent folders), separate from any GitHub repository holding the same site; reopening costs one click plus Chrome's permission prompt.
+  - **Order of building:** the source abstraction with GitHub behaviour unchanged and covered by the existing tests, then reading and preview from a folder, then saving, then outside changes, then agents.
+- **Facts found while charting (dev, 2026-10-13):**
+  - The preview never fetches: the host reads every file and posts strings and `data:` URLs into a sandboxed `srcdoc` frame (`src/components/native-preview.ts`, `native-preview-runtime.js` accepts `data:` only). A folder feeds it without changes.
+  - Every client read and write goes through Worker `/api/*` routes (`api`/`postApi` in `src/main.ts`): snapshot, tree, file(s), blob, head, publish, history, restore, branches, change status. A file version is its git blob SHA, a snapshot a commit SHA. `textBlobSha` and `gitBlobSha` already hash locally, so a folder can produce the same identities.
+  - Drafts and upload bytes are keyed `[account, repoId, branch, …]` in IndexedDB (`src/drafts.ts`, `src/uploads.ts`); the scope is built by hand in about six places in `main.ts` and requires a signed-in user.
+  - Outside changes are found by comparing the branch head on focus, at most every 15 s; there is no per-file polling.
+  - The Worker only knows GitHub sessions. MCP grants carry a login and repo id and are re-checked against the GitHub App installation on every request; `list_files`, `read_file`, `export_site` and part of `get_site` read saved files from GitHub at the tab's commit, drafts from the tab. The tab reaches the Worker by polling the agent hub (every 2 s while connected); the sharing tab is the last focused one.
+  - Several tabs already sync drafts through BroadcastChannel; there are no Web Locks yet.
+  - Tests fake GitHub on the server (`tests/native-save/server.ts`); the folder picker runs in the browser, so a fake folder must be a browser-side stub installed with `page.addInitScript`.
+- **Language:** use the terms in `CONTEXT.md`. *Project*, *Local folder*, *Save to folder* and *Outside change* were added while charting; *Draft* and *Agent connection* now speak of a project.
+- **Lessons from Video Review** (Lex's other project): remembered handles in IndexedDB need a user gesture to regain permission (show "Reopen <folder>", never a dead screen); one tab applies agent changes (Web Locks), the others sync (BroadcastChannel); the disk sits behind an interface with a fake for tests, plus one real Chromium smoke test.
+- **Grilling tickets** run as a live conversation with Lex, in plain language, one round at a time with a recommended answer for each question. Lex is not technical. The agent never answers for Lex.
+- **Research tickets** are resolved by subagents. Each works in its own git worktree, puts findings on a `research/lf-<nn>-<name>` branch in `docs/wayfinder/local-folders/research/`, and adds a pointer to the ticket.
+- **Code reviews** during the build go to GPT-6.1 Sol through `scripts/agents/review.sh`. The handoff ticket must say so.
+- **To find takeable tickets:** look in `tickets/` for `status: open`, an empty `assignee:`, and every `blocked_by` ticket closed. Claim a ticket by filling in `assignee:` before doing any work.
+
+## Decisions so far
+
+<!-- one line per closed ticket: [title](tickets/file.md): gist -->
+
+## Not yet specified
+
+- **Starting a site in an empty folder.** Whether Start your site (Starter site, Blank page) writes into an empty folder or one without `index.html`, and whether the Setup checklist has a folder version. Hangs on the GitHub-only features and the saving tickets.
+- **Download site and the media manager on a folder.** Download site may be pointless when the files are already on disk; the media manager's adding, optimising and clean-up must work on a folder, which may change its plan once the source seam is designed.
+- **Mobile and other Chromium browsers.** Whether anything is offered on Android Chrome, Opera, Brave or Arc depends on the browser-support research.
+
+## Out of scope
+
+<!-- closed tickets ruled beyond the destination, with a one-line reason -->
+
+- Committing, pushing or showing git status from the editor for a folder that is a git clone. Lex decided on 2026-10-13 that the user does that with their own tools.

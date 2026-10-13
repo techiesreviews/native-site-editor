@@ -73,11 +73,24 @@ The code panes for editing a site's files directly, alongside the visual preview
 **Editing preview**:
 The view of the current page and its unsaved changes inside the editor. It renders supported HTML, CSS, and components without running the site's own scripts.
 
+**Project**:
+A site open in the editor, from one source: a GitHub repository on a branch, or a local folder. Each project has its own drafts, even when a folder and a repository hold the same site.
+_Avoid_: workspace (in user-facing text)
+
+**Local folder**:
+A folder on the user's computer opened as a project, where the browser allows it. It needs no GitHub account; the user commits it with their own tools if it is a git clone.
+
 **Draft**:
-An unsaved file change in the editor, belonging to one account, repository, and branch.
+An unsaved file change in the editor, belonging to one project (for a GitHub repository: one account, repository, and branch).
 
 **Save to GitHub**:
 Saving selected draft changes together as one commit on the selected branch, with overlapping upstream changes requiring review.
+
+**Save to folder**:
+Writing selected draft changes into a local folder's files, never committing; a file changed in the folder since it was read requires review instead of being overwritten.
+
+**Outside change**:
+A change to a project's files made by something other than the editor (a commit on GitHub, or an agent or code editor writing into a local folder). A file without drafts follows it; a file with drafts shows a conflict.
 
 **Publish**:
 Making a saved version of the site available at its public address through the site's host.
@@ -89,7 +102,7 @@ The state of a saved change: Saved, Building, Live, or Failed, according to the 
 The site's name and public address used by the editor when creating and updating page details.
 
 **Agent connection**:
-An authorized connection through which an external agent reads the site and proposes changes as drafts. It follows the repository shown by the sharing editor tab; the user reviews and saves changes.
+An authorized connection through which an external agent reads the site and proposes changes as drafts. It follows the project shown by the sharing editor tab; the user reviews and saves changes.
 
 **Agent request**:
 Something the user asks connected agents to do about an element of the preview, sent from the edit bar with the element's context. Agents fetch it, carry it out as drafts, and reply; when an agent asks a question, the user answers on the pin and the request goes back to agents with the whole conversation. The user dismisses it.
