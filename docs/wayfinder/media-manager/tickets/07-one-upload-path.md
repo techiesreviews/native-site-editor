@@ -155,3 +155,7 @@ Lex chose **Offer an explicit Speech choice for smaller voice recordings** as th
 ### Speech and already-small audio agreed with Lex (2026-10-13)
 
 Lex chose **Always leave already-small recordings unchanged** when Speech is selected. Applying Speech even to already-small recordings was offered and recommended as an alternative; Lex chose retention instead. The already-compressed MP3/AAC boundary therefore takes precedence over Speech for files that fit the hard cap. Speech converts recordings that need shrinking; it does not guarantee that every added recording becomes mono or M4A. The agreed try-shrinking-first rule still applies when the whole file exceeds the hard cap.
+
+### Higher quality video resolution agreed with Lex (2026-10-13)
+
+Lex chose **Let Higher quality video keep its full resolution**, such as 4K, rather than limiting that preset to 1080p. Higher quality uses gentler compression; the same per-file hard cap still applies. The question proposed Smaller files at up to 720p and Balanced at up to 1080p; include those preset mappings in the final policy confirmation. This settles an adding setting, not playback or page markup.
