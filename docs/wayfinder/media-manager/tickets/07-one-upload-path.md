@@ -151,3 +151,7 @@ Lex chose **Keep compressed audio below about 1.2 MB per minute** unchanged, to 
 ### Explicit Speech audio choice agreed with Lex (2026-10-13)
 
 Lex chose **Offer an explicit Speech choice for smaller voice recordings** as the audio smaller-file choice. It combines left and right sound into one channel (mono), at about 0.5 MB per minute. A general Smaller files choice preserving stereo was offered as an alternative. Balanced and Higher quality preserve stereo where present. Speech is applied only when explicitly selected; the editor never guesses that a recording is speech. The researched mapping is AAC-LC M4A at 64 kbps mono, to include in the final policy confirmation. Its interaction with the already-compressed-audio exception remains to be settled.
+
+### Speech and already-small audio agreed with Lex (2026-10-13)
+
+Lex chose **Always leave already-small recordings unchanged** when Speech is selected. Applying Speech even to already-small recordings was offered and recommended as an alternative; Lex chose retention instead. The already-compressed MP3/AAC boundary therefore takes precedence over Speech for files that fit the hard cap. Speech converts recordings that need shrinking; it does not guarantee that every added recording becomes mono or M4A. The agreed try-shrinking-first rule still applies when the whole file exceeds the hard cap.
