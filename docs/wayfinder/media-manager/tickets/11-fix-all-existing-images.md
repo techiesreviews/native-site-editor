@@ -1,7 +1,7 @@
 ---
 title: Decide the fix-all for existing images
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [05-research-images-on-existing-sites, 07-one-upload-path, 08-responsive-image-output]
 ---
@@ -20,3 +20,17 @@ The fix-all brings old images and images from other websites up to standard, pag
 - 2026-10-13, pictures inside components: Lex chose **yes, as their own rows**. Components are listed with their reach (for example "Site header, on 104 pages: 2 heavy pictures"), Fix all includes them, and each has its own Undo like a page. (Alternatives declined: only when picked; never.)
 - 2026-10-13, GIFs already on pages: Lex chose **turn into looping video**. Each animated GIF on a page becomes a small silent video that plays and loops by itself, as new GIFs do when added (ticket 07). Where a GIF is a page's sharing picture, the sharing picture uses its first frame. (Alternatives declined: asking per GIF; leaving GIFs alone.)
 - 2026-10-13, descriptions (alt text): Lex chose **not here, decide later**. Improve images only makes pictures lighter and faster; descriptions are decided together with what agents may do (ticket 13 and the map's Alt text fog). (Alternative declined: a missing-description count per page row.)
+
+## Resolution (2026-10-13)
+
+Lex confirmed the complete plan, including the connecting details marked ★ here, by choosing **Yes, confirm and close**. Only this planning ticket closes; implementation, pushes and deployments remain unauthorised. Adding rules follow [ticket 07](07-one-upload-path.md#resolution-2026-10-13), page markup follows [ticket 08](08-responsive-image-output.md#resolution-2026-10-13), and clean-up follows [ticket 10](10-safe-clean-up.md#resolution-2026-10-13).
+
+**Where and how.** **Improve images** sits in Media's More menu next to Clean up. It lists pages, and components as their own rows with their reach (for example "Site header, on 104 pages: 2 heavy pictures"), each saying what would change. Lex fixes one row or all; Fix all includes components. The Media tab's count badge also counts this work. ★ It runs only when Lex presses it. ★ A row opens to show its pictures, and Lex can untick any (for example affiliate banners); unticked pictures are remembered as left as is. ★ Progress shows while it runs, with Cancel; finished rows stay done, and closing the editor stops the run with the remaining rows still listed. After a run, a list of changed pages and components gives each its own **Undo** plus **Undo all**. Nothing goes live until saved.
+
+**Pictures from other websites.** The editor's browser code fetches them; there is no new Worker route. Build note: this widens the editor's security policy so its code may load and read images from other websites; widen only what images need. Only hosts that allow cross-site reading can be brought in (about half of the live hosts on techies-reviews). ★ Brought-in pictures follow the adding rules (site image recipe, responsive copies, `media/images/`, tidy names numbered on conflict), ★ named with the source website first, for example `mobbin-og-image.webp`. ★ A link around the picture stays unchanged; only the picture's address changes. Pictures that cannot be brought in stay exactly as they are and are listed on their row as **website gone** or **not allowed**; Lex can drop in an own copy to replace one. Side effect: outside pictures now show in the editor canvas. This clears the map's fog **Images from other websites in the manager**: they are counted and previewed in Improve images, not listed in the library.
+
+**Heavy pictures already in the site.** The fix-all makes a new, lighter file with responsive copies and points every mention at it (pages, components, sharing pictures, sitemap and other mentions). The old file becomes unused and is offered by Clean up, where Always keep protects a file linked from outside. ★ It uses the site's remembered image setting, including AVIF if chosen. ★ Every improved picture gets `width`/`height`, measured `sizes` and the loading order from ticket 08. ★ Hand-made responsive sets already in the site are adopted, not duplicated.
+
+**GIFs.** Each animated GIF on a page becomes a small silent looping video, as when added (ticket 07; playback details stay with [ticket 12](12-video-audio-and-documents.md)). Where a GIF is a page's sharing picture, the sharing picture uses its first frame.
+
+**Left alone.** ★ SVG logos and icons (they only get `width`/`height`), YouTube embeds and their stills in structured data, pictures swapped in by scripts, and sample code inside articles. Descriptions (alt text) are not part of the fix-all; they are decided with [what agents may do](13-what-agents-may-do.md) and the map's Alt text fog. No editor implementation, push or deployment is authorised.
