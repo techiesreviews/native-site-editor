@@ -2,7 +2,7 @@
 title: Decide the responsive image output
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-research-responsive-output-crop-focus]
 ---
 
