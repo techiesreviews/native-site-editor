@@ -103,3 +103,7 @@ Lex chose **One media folder, grouped by kind** for newly added media: `media/im
 ### Session handoff (2026-10-13)
 
 Lex requested `$handoff` after the default-storage choice. The ticket remains open and claimed. The comments above record actual answers; no final resolution or map Decisions-so-far entry has been written. Remaining discussion covers explicit folder destinations, original-folder naming, initial names and conflicts, optional settings and their persistence, and the precise balanced audio defaults. Finish the live conversation and confirm the complete policy with Lex before closing the ticket.
+
+### Explicit folder destination agreed with Lex (2026-10-13)
+
+Lex chose **Keep it in the folder I dropped it into** for media dropped into a particular folder in Files. The prepared website file stays in that chosen folder while using the same automatic preparation as other adding paths. Always sending it to the usual media folder was offered as an alternative. Collection membership remains independent of physical storage. The separate location for an optionally retained original is unchanged; its exact path remains to be settled.
