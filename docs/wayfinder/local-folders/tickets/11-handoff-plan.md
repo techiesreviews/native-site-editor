@@ -3,7 +3,7 @@ title: Hand off the plan for building
 type: task (HITL)
 status: open
 assignee:
-blocked_by: [05-opening-and-reopening, 06-saving-to-a-folder, 07-outside-changes, 08-github-only-features, 09-put-a-folder-on-github, 10-agents-on-a-folder]
+blocked_by: [05-opening-and-reopening, 06-saving-to-a-folder, 07-outside-changes, 08-github-only-features, 09-put-a-folder-on-github, 10-agents-on-a-folder, 12-prototype-project-overview]
 ---
 
 ## Question
