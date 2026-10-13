@@ -37,6 +37,8 @@ A decided plan, ready to build, for a second source next to GitHub: **a folder o
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Research what agents on a folder need from the Worker](tickets/04-research-agents-on-a-folder.md#resolution-2026-10-13): a GitHub-free session made only when an agent connects (8 h, capped storage); the tab shares the folder's text files by hash and the Worker reads them instead of GitHub; folders keyed `folder:<uuid>`; connections pinned to the folder allowed; OAuth works on a session cookie but claude.ai needs CIMD first (also for GitHub); today's tab shares before any agent connects, which folders must not do
+
 ## Not yet specified
 
 - **Starting a site in an empty folder.** Whether Start your site (Starter site, Blank page) writes into an empty folder or one without `index.html`, and whether the Setup checklist has a folder version. Hangs on the GitHub-only features and the saving tickets.
