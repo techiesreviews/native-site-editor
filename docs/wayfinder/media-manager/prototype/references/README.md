@@ -63,3 +63,7 @@ Captured on 2026-10-13 for [Prototype crop and the focus point](../../tickets/09
 ### What Save does
 
 Save writes a **new file** next to the original, named `…-edited` (seen: `studio-lights-5-edited.webp`, a new Media item), and switches only this block to it. The original file and other posts that use it are untouched. A snackbar says "Image edited." with Undo. Opening Crop again starts from the edited file, not the original (no earlier crop is put back), on Free. There is **no focus point** in this editor; the Cover block still has its separate focal point picker in the block settings. The call for testing describes the crop as "block-level, not attachment-level"; we saw that as a new attachment used only by this block.
+
+## Brizy image popup (from Lex, 2026-10-13)
+
+- `brizy-image-popup.webp`: screenshot Lex shared of the Brizy page builder. A dark popup above the image toolbar has Image/Mask tabs, a picture thumbnail with a draggable focus dot and a shape menu ("Custom"), a Zoom slider, and switches for Lazy Load, Fetch Priority and Open in Lightbox. Lex asked for the edit-bar crop popup to look like this.
