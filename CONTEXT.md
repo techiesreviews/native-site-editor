@@ -34,8 +34,12 @@ The one place in the editor where a site's media files are found, added, optimis
 _Avoid_: Images tab, image library
 
 **Media collection**:
-A named group of media files, browsed like a folder. A media file can belong to several collections without making extra copies.
+A named group of media files, browsed like a folder but working like a tag: a media file can belong to several collections without making extra copies, and taking it out of a collection never removes the file.
 _Avoid_: folder, tag (when naming these groups in user-facing text)
+
+**Replace everywhere**:
+Putting a new picture under an existing media file's name and address, so every place and every outside link shows the new picture. The old picture goes to Recently removed.
+_Avoid_: overwrite, swap (which is one place only)
 
 **Media picker**:
 The media manager opened to choose a media file for one place on a page. It shows files that fit that place.

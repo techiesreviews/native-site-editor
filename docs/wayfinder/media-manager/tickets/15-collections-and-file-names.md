@@ -1,7 +1,7 @@
 ---
 title: Decide how collections and file names behave
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [06-prototype-media-manager-look, 04-research-media-code-today]
 ---
@@ -33,3 +33,31 @@ This graduates **Folders, names and tags** from the map's fog. The [look prototy
 - 2026-10-13: **Replace everywhere.** Besides Replace for one place (ticket 09), a picture's details get "Replace everywhere": Lex picks the new picture, every use switches to it, and the old file goes to Recently removed; its old address forwards to the new one for Always keep files (same tick box as renaming). Visitors never see the old picture from their browser's memory. Declined: one place at a time only; the new picture taking over the old name and address.
 - 2026-10-13: Lex then said: "This is basically same name new picture." Clarifying whether Replace everywhere should keep the old file name.
 - 2026-10-13: **Replace everywhere keeps the old name** (supersedes the "new name" entry above). The new picture takes over the old file's name and address, so outside links show it too with nothing to forward. Every mention in the site gets a quiet "new version" mark on its address so visitors' browsers fetch the new picture at once. The old picture goes to Recently removed. Declined: the new picture keeping its own name with forwarding; asking each time.
+
+## Resolution (2026-10-14)
+
+Lex confirmed the plan below on 2026-10-14. ★ marks connecting details filled in by the agent and confirmed with the whole plan.
+
+**Collections work like tags.** A media file can be in several collections; membership is separate from where the file is stored (ticket 06). Taking a file out of a collection never removes the file.
+
+- **Taking out vs removing.** Inside a collection, selected files offer two separate actions: "Take out of <collection>" (membership only) and "Remove file" (to Recently removed, with ticket 10's warning when pages use it).
+- **Deleting a collection** removes only the group. Its files stay in Media under All and any other collections; nothing on the site changes, and unused files still reach Clean up as usual. ★ Before saving, Undo works as for other changes; collections do not go to Recently removed.
+- **Creating, renaming and deleting.** While viewing a collection, More offers Rename collection and Delete collection. The last item in the Collections dropdown opens **Manage collections**: every collection with Rename and Delete, plus New collection. "Add to collection" also offers New collection (as in the prototype). ★ Renaming to a name already in use says it is taken; it never merges.
+- **No combine button.** To merge, select all in one collection, Add to collection → the other, then delete the empty one.
+
+**First open on an existing site.** Folders with real names become starting collections (techies-reviews: `images/logos/` → Logos, `images/brand/` → Brand); date folders such as `uploads/2023/09/` do not. ★ Generic storage folders (`images`, `uploads`, `media/images` and the other ticket 07 kind folders) do not either, and folder names are shown readably (`logos` → Logos). ★ Tags in an existing `.editor/media.json` become collections. No file is moved.
+
+**Renaming a media file.** There is one name: the real file name. Renaming in details renames the file and its whole family (responsive copies, kept original, video still, subtitles) and fixes every mention. ★ Every mention means every place ticket 10 counts as a use, not only `.html`/`.css` as today. ★ The file stays in its folder and keeps its type; the new name is tidied as at adding (ticket 07). ★ Collections, description and Always keep follow the file. ★ Trimmed copies keep their own names and still remember their renamed source.
+
+- **Taken name.** Before saving, the name field says the name is taken and suggests the next numbered one (`lisbon-tram-2`). Nothing is ever replaced.
+- **Outside links.** The rename offers the same "Keep the old address working" tick box as Change URL for pages, ticked by default for Always keep files and unticked otherwise. It adds forwarding lines to the same `_redirects` file, so it works on hosts that support it, as for pages. ★ When ticked, the old addresses of the responsive copies forward too.
+
+**Replace everywhere.** A picture's details get **Replace everywhere**, besides ticket 09's Replace for one place. Lex picks the new picture; it takes over the old file's name and address, so every page and every outside link shows it with nothing to forward. Each mention in the site gets a quiet "new version" mark on its address so visitors' browsers fetch the new picture at once. The old picture goes to Recently removed. ★ The new picture is prepared as at adding and gets its own responsive copies. ★ Each place keeps its shape and focus point, re-centred as with ticket 09's Replace; places that used a Trimmed copy of the old picture switch to the new picture in the same shape. ★ If the file type changes (`.jpg` → `.webp`), the base name stays, mentions are updated and Always keep files forward from the old address.
+
+**Agents** (consistent with ticket 13). Agents may rename media files and create, rename, delete and fill collections under the same rules, as ordinary unsaved changes through the open editor. ★ They may use Replace everywhere only with a file already in Media, since they never add media from outside.
+
+**Declined along the way.** Removing a collection's files with it, or offering to remove its unused ones; only "take out" inside a collection, or one Remove button that asks; every folder (including dates) as collections, or none; an editor-only label, or a label plus a separate file name; silently numbering, or refusing, taken names; always forwarding, or never forwarding with only a warning; a "Combine with…" button, or viewing several collections at once; managing collections in only one place; agents limited to collections, or neither; Replace one place at a time only; Replace everywhere giving the new picture its own name, or asking each time.
+
+**Facts behind it (dev, 2026-10-13).** Today's rename (Files tab and agent `move_file`) moves only the named file, rewrites mentions only in `.html`/`.css`, ignores responsive copies (named `-480w` today, versus ticket 07's `-480`) and `.editor/media.json`, writes `_redirects` only for page moves, and refuses taken names. Delete refuses while `.html`/`.css` mention the file and leaves copies behind. `.editor/media.json` holds `{ tags, alt }` per path; neither techies-reviews nor the starter has one. The prototype models collections as a list of names plus `memberships` per file, with no rename, delete or combine. No visible name separate from the file name exists anywhere.
+
+**Map.** Clears the **Replacing a file everywhere** fog. **Folders, names and tags** had already left the map when it graduated to this ticket. The **Media collection** entry in `CONTEXT.md` now says collections work like tags, and **Replace everywhere** is added. No editor code, push or deployment.
