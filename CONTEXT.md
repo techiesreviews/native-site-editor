@@ -47,6 +47,10 @@ Making a media file smaller in the user's own browser while it is being added, b
 **Responsive copy**:
 A smaller copy of an image, made when it is added, so each visitor's browser can load the size that fits their screen.
 
+**Image family**:
+An image together with its responsive copies and any retained original, shown and managed as one item in the media manager.
+_Avoid_: separate media files (when referring to the copies as library items)
+
 **Focus point**:
 The spot in an image that must stay visible when the image is trimmed to fit its place. It is set for each place the image is used, not for the file.
 
