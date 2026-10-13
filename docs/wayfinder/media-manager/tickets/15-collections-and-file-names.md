@@ -2,7 +2,7 @@
 title: Decide how collections and file names behave
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [06-prototype-media-manager-look, 04-research-media-code-today]
 ---
 
@@ -15,3 +15,7 @@ Decide with Lex how creating, renaming, combining and deleting collections work.
 Decide how renaming an existing media file works: changing its visible name, its actual file name, or both; resolving name conflicts; and keeping every use, responsive copy and collection membership intact. The [current-code research](04-research-media-code-today.md) found that today's rename and delete ignore responsive copies. Make the desired behaviour explicit in plain language.
 
 This graduates **Folders, names and tags** from the map's fog. The [look prototype](06-prototype-media-manager-look.md) demonstrates candidate membership controls; this ticket settles their rules. New-media storage, initial naming and adding-time name conflicts are settled in [Decide the one way media gets added](07-one-upload-path.md#resolution-2026-10-13); this ticket decides existing-file renames and collection operations. Safe whole-file deletion and recovery remain in [clean-up](10-safe-clean-up.md).
+
+## Comments
+
+- 2026-10-13: Claimed for grilling by Lex + claude.
