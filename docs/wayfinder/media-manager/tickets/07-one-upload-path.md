@@ -131,3 +131,7 @@ Lex chose **Simple choices only** for the optional adding settings in More: choi
 ### Adding settings persistence agreed with Lex (2026-10-13)
 
 Lex chose **Remember my choices for this site** when adding settings are changed in More, including **Keep original**, with an easy **Reset to defaults**. Applying changed settings only to the next batch and then returning to defaults was offered as an alternative. Remembered choices apply to future additions on that site; this does not authorise changing existing media.
+
+### Optional AVIF choice agreed with Lex (2026-10-13)
+
+Lex chose **Offer Smallest files (slower) as an extra choice** in the simple image adding settings, using AVIF. The question explained that the research found potentially smaller files but much longer preparation. Leaving AVIF out of the adding settings was offered and recommended as an alternative; Lex chose to include it. AVIF is optional, not the Balanced default. The ordinary WebP default and previously agreed exceptions remain; exact preset mappings are still to be confirmed. This decision concerns adding media, not the separate fix-all policy.
