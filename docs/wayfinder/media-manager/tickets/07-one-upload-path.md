@@ -115,3 +115,7 @@ Lex chose **Always use `media/originals/`** for optionally retained full-size or
 ### Initial media names agreed with Lex (2026-10-13)
 
 Lex chose **Keep the incoming name; update its format ending** for newly added media. For example, `holiday.jpg` becomes `holiday.webp` when converted and appears as `holiday.webp` in Media. Generating numbered names such as `image-001.webp` was offered as an alternative. This settles the initial naming basis and format extension; safe-name adjustments and duplicate-name handling remain to be settled. Renaming existing files remains with [Decide how collections and file names behave](15-collections-and-file-names.md).
+
+### Incoming name tidying agreed with Lex (2026-10-13)
+
+Lex chose **Automatically tidy names** while adding media: lowercase names with spaces and punctuation turned into hyphens. The example offered was `Summer Holiday (1).JPG` becoming `summer-holiday-1.webp`. Keeping capitals and spaces while changing only characters that cannot be used safely was offered as an alternative. This applies to newly added files; existing-file rename rules remain with [Decide how collections and file names behave](15-collections-and-file-names.md).
