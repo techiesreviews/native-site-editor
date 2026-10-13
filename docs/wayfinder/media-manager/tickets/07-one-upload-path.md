@@ -111,3 +111,7 @@ Lex chose **Keep it in the folder I dropped it into** for media dropped into a p
 ### Exact originals folder agreed with Lex (2026-10-13)
 
 Lex chose **Always use `media/originals/`** for optionally retained full-size originals, including when the prepared website file was dropped into a different folder in Files. An originals subfolder within the chosen destination was offered as an alternative. The original remains accessible through the file's details. The previously agreed retention, personal-detail removal and per-file size rules still apply.
+
+### Initial media names agreed with Lex (2026-10-13)
+
+Lex chose **Keep the incoming name; update its format ending** for newly added media. For example, `holiday.jpg` becomes `holiday.webp` when converted and appears as `holiday.webp` in Media. Generating numbered names such as `image-001.webp` was offered as an alternative. This settles the initial naming basis and format extension; safe-name adjustments and duplicate-name handling remain to be settled. Renaming existing files remains with [Decide how collections and file names behave](15-collections-and-file-names.md).
