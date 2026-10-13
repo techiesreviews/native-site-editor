@@ -13,3 +13,4 @@ The fix-all brings old images and images from other websites up to standard, pag
 ## Comments
 
 - 2026-10-13, where it lives: Lex chose **in Media, next to Clean up**. **Improve images** in Media's More menu opens a list of pages, each saying what would change (for example "6 pictures from other websites, 3 heavy"). Lex fixes one page or all of them. The Media tab's count badge (ticket 10) also counts this work. (Alternatives declined: a button on each page; both equally.)
+- 2026-10-13, how outside pictures are fetched: Lex chose **the browser fetches them**, not a new Worker route. This means widening the editor's security policy so its code may load and read images from any website, and only hosts that allow cross-site reading can be brought in (24 of 44 live hosts on techies-reviews, research 05). A side effect: outside pictures would then show in the editor canvas. (Alternative declined: a guarded Worker route that fetches nearly every live host.)
