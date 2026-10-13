@@ -127,3 +127,7 @@ Lex chose **Automatically add a number and keep both** when a newly added file's
 ### Optional adding settings agreed with Lex (2026-10-13)
 
 Lex chose **Simple choices only** for the optional adding settings in More: choices such as **Smaller files**, **Balanced** and **Higher quality**, plus **Keep original**. Simple choices with an Advanced section and showing detailed controls straight away were offered as alternatives. No Advanced section for exact sizes, formats or quality numbers is planned. Exact preset mappings and whether changed settings persist remain to be settled; the automatic adding experience is unchanged.
+
+### Adding settings persistence agreed with Lex (2026-10-13)
+
+Lex chose **Remember my choices for this site** when adding settings are changed in More, including **Keep original**, with an easy **Reset to defaults**. Applying changed settings only to the next batch and then returning to defaults was offered as an alternative. Remembered choices apply to future additions on that site; this does not authorise changing existing media.
