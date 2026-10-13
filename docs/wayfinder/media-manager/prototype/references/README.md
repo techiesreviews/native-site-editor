@@ -29,3 +29,37 @@ The comparison explored **Timeline** (date-grouped rows), **Tiles** (a dense squ
 Two additional images were copied unchanged from the map's `~/Projects/techies-reviews` reference site: `images/uploads/2023/12/lex-bw.png` → `../demo-media/portrait-mono.png` (472 × 521), and `images/brand/lex.png` → `../demo-media/portrait-colour.png` (639 × 639). The existing artwork remains sample content. Layout ratios use the actual asset dimensions, while file sizes, usage, dates and page placements are demonstration data. No image was extracted from a Mobbin screenshot.
 
 The later supporting-screen pass applies the same photo-app direction to file details, adding files with optimise, the compatible page picker, clean-up, selection actions and usage information. It keeps the chosen Tiles library and the existing media model. The references guide visual hierarchy and compact controls; upload defaults, scanner scope and removal policies remain decisions in their separate tickets.
+
+## WordPress 7.1 media editor (Crop)
+
+Captured on 2026-10-13 for [Prototype crop and the focus point](../../tickets/09-prototype-crop-and-focus.md), after Lex said he likes how the WordPress image editor looks and works. Screens come from a real WordPress 7.1 site run locally with the WordPress Playground command line tool (`@wp-playground/cli` 3.1.58, `server --wp=7.1`, PHP 8.3; the current release is 7.1.3), driven by headless Chromium. The picture is our own demo file `../demo-media/pink-light.webp` (960 × 538), uploaded as `studio-lights.webp`; nothing was taken from WordPress media. Desktop shots are 1440 × 900; phone shots are 390 × 844 at 2× and reduced. They show the editor opened from an Image block's **Crop** button unless noted. Background reading: the [call for testing](https://make.wordpress.org/core/2026/05/21/media-editor-modal-call-for-testing/) and the Gutenberg [23.3](https://make.wordpress.org/core/2026/06/03/whats-new-in-gutenberg-23-3-03-jun/) and [23.5](https://make.wordpress.org/core/2026/07/01/whats-new-in-gutenberg-23-5-july-1-2026/) release notes. Our restyled mockup is [crop-wordpress-style.html](../crop-wordpress-style.html).
+
+| Saved screen | What it shows |
+| --- | --- |
+| [Default](wordpress-media-editor-default.webp) | Opens as "Edit media" on Free: picture area left, Crop / Details tabs right, straighten ruler under the picture, Reset · Undo · Redo and Cancel · Save at the bottom; Save greyed until something changes |
+| [Wide 16:9](wordpress-media-editor-wide-16-9.webp) | Aspect ratio dropdown set to "Wide - 16:9"; fixed shapes keep only the four corner handles |
+| [Square, zoom, straighten](wordpress-media-editor-square-zoom-straighten.webp) | Square after two Zoom in presses and 8° on the ruler: the picture behind the fixed frame tilts and grows; the outside shows through a pale grey wash; the ruler gets a blue focus ring |
+| [Turned and flipped](wordpress-media-editor-turned-and-flipped.webp) | After Flip horizontal (button stays pressed, dark) and Rotate 90° clockwise |
+| [Resizing, Free](wordpress-media-editor-resizing-free.webp) | While dragging a corner: thirds grid inside the frame, live "W: 759px H: 415px" label by the handle |
+| [Magnified after resize](wordpress-media-editor-magnified-after-resize.webp) | About two seconds after letting go: the smaller frame is enlarged to fill the picture area again (the "magnified crop canvas") |
+| [Details tab](wordpress-media-editor-details-tab.webp) | Title, Alt text, Caption, Description, then date added, author, file name, type, size, dimensions, attached to |
+| [Keyboard shortcuts](wordpress-media-editor-keyboard-shortcuts.webp) | Ctrl Z / Ctrl Shift Z, arrows to pan, + / − zoom, R and Shift R turn, H / V flip, Shift + arrows for larger steps |
+| [Panel hidden](wordpress-media-editor-panel-hidden.webp) | Side panel closed with the header's panel button; the picture area takes the full width. WordPress remembers this choice next time |
+| [After Save](wordpress-media-editor-after-save.webp) | Back in the post: the block now shows `studio-lights-…-edited.webp`, with an "Image edited. Undo" snackbar |
+| [Phone](wordpress-media-editor-phone.webp) | Full screen; no side panel and no Details; one row of icon buttons (turn ×2, flip ×2, zoom ×2, aspect ratio) above Reset · Undo · Redo · Cancel · Save |
+| [Phone shape menu](wordpress-media-editor-phone-shape-menu.webp) | The aspect ratio button opens a menu: Free, Original, Square - 1:1, Standard - 4:3, Portrait - 3:4, Classic - 3:2, Classic Portrait - 2:3, Wide - 16:9, Tall - 9:16 |
+| [Cover block](wordpress-media-editor-cover-block.webp) | The same editor from a Cover block's "Crop background image" button; it opens on Free and knows nothing about the cover's own shape |
+
+### How it is laid out
+
+- **Window.** A large dialog 40 px in from every edge of the screen (1360 × 820 on a 1440 × 900 screen), white, 8 px corners, soft layered shadow, 35% black backdrop. Header 72 px: "Edit media" (20 px, semi-bold) on the left; on the right three 32 px icon buttons: keyboard shortcuts, side panel (dark when on), close.
+- **Picture area.** Left, flat light grey (#e0e0e0) panel with rounded corners. The crop frame has a thin dark border; handles are 12 px white circles with a 1 px blue ring, each with an invisible 44 px grab area. Free shows eight handles (corners and edges); fixed shapes show four corners. Outside the frame the picture is seen through a pale grey wash, not darkened. A thirds grid appears only while dragging. Dragging moves the **picture** under a frame that stays put; the frame is always enlarged to fill the area after a resize (the "magnified crop canvas"). Pinch zoom is listed in the release notes (not tried here).
+- **Straighten.** A 360 px ruler under the picture, inside the grey area: −45° to 45°, numbers every 15°, the current value in bold over a blue centre line; the scale slides under the line as you drag. Turning by 90° is done with buttons instead (the "snap" rotation).
+- **Side panel.** 280 px, right. Two plain tabs, **Crop** and **Details**, with a close cross. Crop tab: small uppercase labels ROTATE (two buttons), FLIP (two buttons), ZOOM (+ and −), then ASPECT RATIO as a 40 px dropdown. Details tab: the picture's title, alt text, caption and description fields plus file facts.
+- **Bottom bar.** Left: Reset (text button), Undo, Redo. Right: Cancel (text) and Save (blue, greyed until there is a change).
+- **Phone.** Full screen. The side panel and Details disappear; the controls become one row of 32 px icon buttons under the picture, the shapes move into a menu, and the bottom bar stays.
+- **Type and colour.** System font, 13 px body, 11 px semi-bold uppercase labels, near-black text (#1e1e1e), WordPress blue #3858e9 for the primary button, handles, links and the ruler pointer.
+
+### What Save does
+
+Save writes a **new file** next to the original, named `…-edited` (seen: `studio-lights-5-edited.webp`, a new Media item), and switches only this block to it. The original file and other posts that use it are untouched. A snackbar says "Image edited." with Undo. Opening Crop again starts from the edited file, not the original (no earlier crop is put back), on Free. There is **no focus point** in this editor; the Cover block still has its separate focal point picker in the block settings. The call for testing describes the crop as "block-level, not attachment-level"; we saw that as a new attachment used only by this block.
