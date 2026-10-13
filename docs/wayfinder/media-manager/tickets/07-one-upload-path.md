@@ -119,3 +119,7 @@ Lex chose **Keep the incoming name; update its format ending** for newly added m
 ### Incoming name tidying agreed with Lex (2026-10-13)
 
 Lex chose **Automatically tidy names** while adding media: lowercase names with spaces and punctuation turned into hyphens. The example offered was `Summer Holiday (1).JPG` becoming `summer-holiday-1.webp`. Keeping capitals and spaces while changing only characters that cannot be used safely was offered as an alternative. This applies to newly added files; existing-file rename rules remain with [Decide how collections and file names behave](15-collections-and-file-names.md).
+
+### Duplicate incoming names agreed with Lex (2026-10-13)
+
+Lex chose **Automatically add a number and keep both** when a newly added file's name already exists in its destination folder. The example offered was adding `holiday-2.webp` when `holiday.webp` already exists. Pausing to ask for a different name was offered as an alternative. Adding a file never replaces an existing file.
