@@ -2,7 +2,7 @@
 title: Prototype crop and the focus point
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [03-research-responsive-output-crop-focus, 06-prototype-media-manager-look]
 ---
 
