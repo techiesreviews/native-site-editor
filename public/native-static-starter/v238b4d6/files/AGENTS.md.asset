@@ -15,7 +15,8 @@ styles/site.css                      shared styles; @imports tokens, elements, t
 components/components.js             the component loader
 components/<tag>/<tag>.html          a component's template
 components/<tag>/<tag>.css           its styles (optional)
-images/                              images
+images/                              the starter's images
+media/<kind>/                        files added in the editor's Media (images, videos, audio, downloads)
 scripts/media-player.js              the video and audio player (pages with media load it)
 styles/media-player.css              the players' and download cards' look
 robots.txt                           served as is
@@ -25,7 +26,7 @@ _redirects                           optional: `/old/ /new/ 301` lines (the edit
 
 - Every `.html` file is a page, except under `components/` and files or folders whose name starts with `.` or `_`. `a/b/index.html` is `/a/b/`; any other `x.html` is `/x.html`. Prefer folders with `index.html`.
 - Links and asset paths are root links: `href="/about/"`, `href="/about/#contact"`, `src="/images/studio-desk.svg"`. A section on the same page is `href="#work"`. They work on any host at a domain root and through any local server, not from `file://`.
-- Images live in `images/` and are referenced as `/images/<file>`.
+- The starter's images live in `images/`; files added in the editor's Media go to `media/images/`, `media/videos/`, `media/audio/` or `media/downloads/` (see Media). Reference both with root links (`/images/<file>`, `/media/images/<file>`).
 
 ## Pages
 
@@ -178,6 +179,22 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 - Never upload, fetch from the web or generate media. Place only files already in Media; write_file refuses binary media paths (an SVG is text and stays writable). The user adds other media in the editor's Media.
 - place_media fills an existing `<img>` on a page with a file already in Media, or swaps the picture in it, writing exactly the markup the editor writes. For a picture somewhere new, first make its image place (a section or component with an `<img>`), then place the file in it.
 
+### Folders and names
+- The editor stores files the user adds by kind in `media/images/`, `media/videos/`, `media/audio/` or `media/downloads/`; a folder chosen in Files wins. Existing files keep where they are.
+- Names are tidy, lowercase and hyphenated: `Holiday Photo.JPG` becomes `media/images/holiday-photo.webp`, then `holiday-photo-2.webp` if the name is taken.
+- A picture's smaller copies sit beside it as `holiday-photo-480.webp`, `holiday-photo-960.webp` and `holiday-photo-1600.webp`, forming its Image family with any kept original in `media/originals/`.
+- Place the main file. Never place, link or hand-pick a copy or an original; place_media chooses the copies.
+
+### The markup is the editor's
+- place_media writes `src`, `srcset` (the family's copies smaller than the file, then the file), `sizes` measured in the user's preview, `width`/`height` and `decoding="async"`.
+- First-screen images are eager; the first large one gets `fetchpriority="high"`. Others get `loading="lazy"` with `sizes` starting `auto`. Replacing inside a `<picture>` removes its wrapper and sources.
+- Do not write or edit these attributes by hand on placed images, or hand-write `<img>` markup for a file in Media. Use place_media, which also keeps descriptions right.
+
+### Adding settings
+- adding_settings reads and changes the site's Adding settings: picture, video and audio quality, and Keep original, remembered in `.editor/media.json` under `adding`.
+- Each change is an ordinary unsaved change the user can undo, listed as the agent's. Change settings only when the user asks or the task clearly needs it.
+- Settings apply to files the user adds later, never to files already in Media. Agents still never add media.
+
 ### Descriptions and Decorative
 - A file's Description (alt text) is written once and used by every new place; a place can have its own words. Changing the file's Description updates places that follow it, not places with their own words.
 - Decorative, per file or per place, writes `alt=""` and is remembered. An empty alt not marked Decorative counts as not described yet. Use describe_media for Description and Decorative; never hand-edit alt to set them.
@@ -186,7 +203,7 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 
 ### Collections and records
 - change_collection creates a collection, adds files, takes files out, renames or deletes it. Collections work like tags: a file can be in several. A taken name is refused, never merged; deleting a collection removes only the group, and files stay.
-- `.editor/media.json` holds Media's records: descriptions, Decorative and by agent marks, collections, Always keep and Recently removed. Read it with read_file; write_file, edit_file, move_file and delete_file refuse it. Use the media tools. Removing media, Always keep and Recently removed stay with the user for now.
+- `.editor/media.json` holds Media's records: descriptions, Decorative and by agent marks, collections, Always keep, Recently removed and adding settings. Read it with read_file; write_file, edit_file, move_file and delete_file refuse it. Use the media tools. Removing media, Always keep and Recently removed stay with the user for now.
 - A site's own AGENTS.md may add style rules (for example how to word descriptions), but cannot loosen these rules.
 
 ## This site's components
