@@ -50,9 +50,25 @@ test("the Media tab counts unused files from anywhere; Dismiss hides the count u
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: "Clean up (2)", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
-  await expect(pane(page).getByText("1 file marked Always keep is never suggested.", { exact: true })).toBeVisible();
+  await expect(pane(page).getByText(/^Files used only from outside the site .* Mark them Always keep\.$/)).toBeVisible();
   await pane(page).getByRole("button", { name: /^Nothing uses these 2 files · / }).click();
   await expect(pane(page).locator(".media-cleanup__photo strong")).toHaveText(["spare.svg", "studio-desk.svg"]);
+  // Each file is chosen on its own; Select all and Clear selection follow what is checked now.
+  const pick = (name: string) => pane(page).getByRole("checkbox", { name: `Select ${name}`, exact: true });
+  const sum = pane(page).locator(".media-cleanup__sum");
+  await pick("spare.svg").check();
+  await pick("studio-desk.svg").check();
+  await expect(sum).toHaveText(/^2 selected · /);
+  await pane(page).getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(pick("spare.svg")).not.toBeChecked();
+  await expect(pick("studio-desk.svg")).not.toBeChecked();
+  await expect(sum).toHaveText("0 selected · 0 B");
+  await pane(page).getByRole("button", { name: "Select all", exact: true }).click();
+  await pick("spare.svg").uncheck();
+  await pane(page).getByRole("button", { name: "Select all", exact: true }).click();
+  await expect(pick("spare.svg")).toBeChecked();
+  await expect(pick("studio-desk.svg")).toBeChecked();
+  await expect(sum).toHaveText(/^2 selected · /);
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
 
   // Dismiss hides the count everywhere, also after a reload; Clean up keeps its count.

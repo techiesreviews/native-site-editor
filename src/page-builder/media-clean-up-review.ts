@@ -1,9 +1,7 @@
 import type { RemovedMedia } from "../../shared/media-records";
 import { formatBytes } from "../uploads";
 import type { MediaCleanUpGroup, MediaCleanUpItem, MediaCleanUpKind, MediaCleanUpSuggestions } from "./media-clean-up";
-import { mediaUsageState } from "./media-usage-text";
 import { RECENTLY_REMOVED_DAYS } from "./recently-removed";
-import type { MediaUsageRecords } from "./media-usage";
 
 /** The Clean up review's words and sums (ticket 10, the Tiles mockup's clean-up screens). */
 
@@ -34,25 +32,8 @@ export function itemLine(item: MediaCleanUpItem, sizeKnown = true) {
   return `${sizeKnown ? `${formatBytes(item.size)} · ` : ""}No uses found${copies ? ` · with its ${copies} ${copies === 1 ? "copy" : "copies"}` : ""}`;
 }
 
-/** What the check covered and what it kept apart, so "no uses found" is read for what it is:
- * checked files with no uses (offered), files only other site files use (kept), and files not
- * checked yet (never offered). Families count once. */
-export function cleanUpScope(records: MediaUsageRecords | undefined, kept: number) {
-  const tally = { checked: 0, otherUses: 0, notChecked: 0 };
-  for (const family of records?.families ?? []) {
-    const state = mediaUsageState(family);
-    if (state === "not-checked") tally.notChecked++;
-    else { tally.checked++; if (state === "other-uses-only") tally.otherUses++; }
-  }
-  const lines = [`Checked ${filesCount(tally.checked)} against every page, style, script, feed, data and notes file on the site.`];
-  if (tally.otherUses) lines.push(`${filesCount(tally.otherUses)} only other site files use ${tally.otherUses === 1 ? "is" : "are"} kept out of Clean up.`);
-  if (tally.notChecked) lines.push(`${filesCount(tally.notChecked)} not checked yet ${tally.notChecked === 1 ? "is" : "are"} never suggested.`);
-  if (kept) lines.push(`${filesCount(kept)} marked Always keep ${kept === 1 ? "is" : "are"} never suggested.`);
-  return { ...tally, lines };
-}
-
-/** The limit of any check, said once on the first screen. */
-export const cleanUpLimit = "No uses found is not a guarantee. A file used from outside the site (a shared PDF, a newsletter picture) or by an address a script builds cannot be seen. Mark such files Always keep in their details.";
+/** The limit of any check, the groups screen's one line. */
+export const cleanUpLimit = "Files used only from outside the site (a shared PDF, a newsletter picture) can't be seen. Mark them Always keep.";
 
 /** The review's footer: "2 selected · 3 KB". */
 export function selectionLine(items: readonly MediaCleanUpItem[], selected: ReadonlySet<string>) {

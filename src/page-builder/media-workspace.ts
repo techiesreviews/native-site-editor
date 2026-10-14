@@ -746,6 +746,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (unusedOnly) {
         const usage = wideUsage(unique, text, ctx);
         if (unique.some((path) => usage[path].files.length)) throw new Error("Some selected images are now referenced. Refresh the library before deleting unused images.");
+        // Clean up never removes a family with an Always keep member, even one marked during a recheck.
+        const kept = unique.find(path => metadata.files[path]?.alwaysKeep);
+        if (kept) throw new Error(`${kept.split("/").pop()} is marked Always keep now, so Clean up leaves it.`);
       }
       batch.deletes.push(...unique);
       recordsEdit(batch, metadata, await removedRecords(ctx, metadata, unique));

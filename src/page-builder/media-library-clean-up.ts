@@ -4,7 +4,7 @@ import { icon } from "../icons";
 import { cleanUpMenuItem } from "./media-badge";
 import type { MediaCleanUpItem, MediaCleanUpKind, MediaCleanUpSuggestions } from "./media-clean-up";
 import {
-  cleanedMessage, cleanUpGroupNames, cleanUpLimit, cleanUpScope, groupLine, itemLine, keepSelected,
+  cleanedMessage, cleanUpGroupNames, cleanUpLimit, groupLine, itemLine, keepSelected,
   selectionLine, sizedSuggestions, undoEntries, undoneMessage,
 } from "./media-clean-up-review";
 import { basename, mediaKind } from "./media-library-filter";
@@ -20,6 +20,8 @@ export interface CleanUpHost extends LibrarySheetContext {
   /** The families Clean up removed last, kept by the view so Undo outlives leaving the screen. */
   memory: { undo?: string[] };
 }
+
+const checking = "Checking which files are used again. Removing waits until it is done.";
 
 type Phase = { at: "groups" } | { at: "review"; kind: MediaCleanUpKind } | { at: "confirm"; kind: MediaCleanUpKind };
 
@@ -55,6 +57,8 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
       draw(active instanceof HTMLElement && element.contains(active) ? active.dataset.focusKey ?? false : false);
     };
     const { live, badge, steady } = current();
+    // While the site is checked again the open review stays, but nothing can be removed until it is done.
+    const actionable = live?.state === "ready";
     const head = node("header", "media-detail__head");
     const back = button("", () => phase.at === "groups" ? h.close() : go(phase.at === "confirm" ? { at: "review", kind: phase.kind } : { at: "groups" }), "media-detail__back");
     back.setAttribute("aria-label", "Back"); back.dataset.focusKey = "back"; back.append(icon("arrow-left", 20));
@@ -113,10 +117,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         }
         element.append(list);
       }
-      const scope = cleanUpScope(h.adapter.usage?.records(), h.library().keep?.length ?? 0);
-      const notes = node("div", "media-cleanup__scope");
-      for (const line of scope.lines) notes.append(node("p", "", line));
-      element.append(notes, node("p", "media-cleanup__limit", cleanUpLimit));
+      element.append(node("p", "media-cleanup__limit", cleanUpLimit));
       if (ready && badge?.show) {
         const dismiss = button("Dismiss", () => { h.cleanUp.dismiss(); draw(); }, "button secondary");
         const row = node("div", "media-cleanup__dismiss");
@@ -127,9 +128,8 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
 
     function drawReview(kind: MediaCleanUpKind, items: MediaCleanUpItem[]) {
       title.textContent = cleanUpGroupNames[kind];
-      const all = items.every(item => selected.has(item.main));
-      const toggle = button(all ? "Clear selection" : "Select all", () => {
-        selected = all ? new Set() : new Set(items.map(item => item.main)); draw("select-all");
+      const toggle = button("Select all", () => {
+        selected = items.every(item => selected.has(item.main)) ? new Set() : new Set(items.map(item => item.main)); draw("select-all");
       }, "button secondary media-cleanup__select-all");
       toggle.dataset.focusKey = "select-all";
       element.append(node("p", "media-library__muted", "Choose the files to remove. Copies of an image go with it."), toggle);
@@ -154,6 +154,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         grid.append(card);
       }
       const footer = node("div", "media-cleanup__footer");
+      if (!actionable) footer.append(node("span", "media-library__muted", checking));
       const sum = node("span", "media-cleanup__sum"); sum.setAttribute("aria-live", "polite");
       const next = button("Review removal", () => go({ at: "confirm", kind }), "button primary");
       next.dataset.focusKey = "review";
@@ -162,7 +163,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
       paintFooter();
       function paintFooter() {
         sum.textContent = selectionLine(items, selected);
-        next.disabled = !selected.size;
+        next.disabled = !selected.size || !actionable;
         const every = items.every(item => selected.has(item.main));
         toggle.textContent = every ? "Clear selection" : "Select all";
       }
@@ -196,9 +197,10 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         h.tell(cleanedMessage(mains));
         if (h.alive() && sheet.element.dataset.mode === "clean-up") draw();
       }), "button primary");
+      remove.disabled = !actionable;
       const actions = node("div", "media-remove__actions");
       actions.append(keep, remove);
-      element.append(actions);
+      element.append(...actionable ? [] : [node("p", "media-library__muted", checking)], actions);
     }
   }
 

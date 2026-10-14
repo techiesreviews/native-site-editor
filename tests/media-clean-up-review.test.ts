@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { parseMediaRecords, type RemovedMedia } from "../shared/media-records";
 import { mediaCleanUpSuggestions } from "../src/page-builder/media-clean-up";
 import {
-  cleanedMessage, cleanUpScope, groupLine, itemLine, keepSelected, selectionLine, sizedSuggestions, undoEntries, undoneMessage,
+  cleanedMessage, groupLine, itemLine, keepSelected, selectionLine, sizedSuggestions, undoEntries, undoneMessage,
 } from "../src/page-builder/media-clean-up-review";
-import { mediaUsageRecords, type MediaUsageRecords } from "../src/page-builder/media-usage";
+import { mediaUsageRecords } from "../src/page-builder/media-usage";
 
 const usage = mediaUsageRecords({
   media: ["media/hero.jpg", "media/hero-480.webp", "media/spare.svg", "media/used.png", "media/styled.png"],
@@ -34,22 +34,6 @@ test("a reviewed file says what the check found and the copies that go with it",
   assert.equal(itemLine({ main: "a.jpg", members: ["a.jpg", "a-480.jpg", "a-960.jpg"], size: 10 }), "10 B · No uses found · with its 2 copies");
   assert.equal(itemLine({ main: "media/spare.svg", members: ["media/spare.svg"], size: 300 }), "300 B · No uses found");
   assert.equal(itemLine({ main: "guide.pdf", members: ["guide.pdf"], size: 0 }, false), "No uses found");
-});
-
-test("the scope keeps checked, other-use, not-checked and Always keep files apart", () => {
-  const scope = cleanUpScope(usage, 0);
-  assert.deepEqual({ checked: scope.checked, otherUses: scope.otherUses, notChecked: scope.notChecked }, { checked: 4, otherUses: 1, notChecked: 0 });
-  assert.deepEqual(scope.lines, [
-    "Checked 4 files against every page, style, script, feed, data and notes file on the site.",
-    "1 file only other site files use is kept out of Clean up.",
-  ]);
-  const partly: MediaUsageRecords = { ...usage, families: [...usage.families, { main: "media/new.png", members: ["media/new.png"], checked: false, pages: [], otherUses: [] }] };
-  assert.deepEqual(cleanUpScope(partly, 2).lines.slice(1), [
-    "1 file only other site files use is kept out of Clean up.",
-    "1 file not checked yet is never suggested.",
-    "2 files marked Always keep are never suggested.",
-  ]);
-  assert.deepEqual(cleanUpScope(undefined, 0).lines, ["Checked 0 files against every page, style, script, feed, data and notes file on the site."]);
 });
 
 test("the selection sums the chosen families and drops files no longer suggested", () => {

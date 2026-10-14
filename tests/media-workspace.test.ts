@@ -222,6 +222,12 @@ test("used images cannot pass Delete unused and unread sources cannot be called 
   await assert.rejects(f.host.remove(["images/unused.png"], true), /usage is incomplete/);
   assert.equal(f.batches.length, 0);
 });
+test("Clean up's removal refuses a family with an Always keep member", async () => {
+  const f = fixture(); f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/unused.png": { alwaysKeep: true } } }));
+  await f.host.load();
+  await assert.rejects(f.host.remove(["images/unused.png"], true), /unused\.png is marked Always keep now/);
+  assert.equal(f.batches.length, 0); assert.equal(f.paths.has("images/unused.png"), true);
+});
 test("Delete unused refuses image-set strings and escaped url references", async () => {
   for (const css of ['.x{background:image-set("/images/unused.png" 1x)}', '.x{background:u\\72l(/images/unused.png)}', '.x{background:u\\72\r\nl(/images/unused.png)}']) {
     const f = fixture(); f.text.set("styles/site.css", css); await f.host.load();
