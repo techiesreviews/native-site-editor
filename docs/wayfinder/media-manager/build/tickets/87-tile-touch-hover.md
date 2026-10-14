@@ -1,7 +1,7 @@
 ---
 title: A tapped tile does not stay lit on touch screens
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-87 runner)
 blocked_by: [86-phone-list-view]
 builder: claude

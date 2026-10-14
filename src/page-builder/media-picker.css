@@ -122,8 +122,10 @@
 }
 .media-library__name::before { backdrop-filter: blur(8px); mask-image: linear-gradient(transparent, #000 75%); }
 .media-library__name::after { background: linear-gradient(transparent, rgb(10 18 32 / .64) 55%, rgb(10 18 32 / .82)); }
-/* Names show on hover, keyboard focus or selection; touch has no hover, so always there. */
-.media-library__card:is(:hover, :focus-within, :has(input:checked)) .media-library__name { opacity: 1; }
+/* Names show on a mouse hover, keyboard focus or selection; touch has no hover, so always there.
+   Hover only counts for a real mouse: a touch screen keeps :hover on the last tap. */
+.media-library__card:is(:has(:focus-visible), :has(input:checked)) .media-library__name { opacity: 1; }
+@media (hover: hover) and (pointer: fine) { .media-library__card:hover .media-library__name { opacity: 1; } }
 @media (hover: none), (any-pointer: coarse) { .media-library__name { opacity: 1; } }
 @supports not (backdrop-filter: blur(1px)) { .media-library__shade::before, .media-library__name::before { display: none; } }
 
@@ -131,9 +133,10 @@
 .media-library .media-library__usage, .media-library__select { position: absolute; top: 0; z-index: 2; width: 44px; height: 44px; display: grid; place-items: center; isolation: isolate; }
 .media-library .media-library__usage { left: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font-size: var(--type-base); font-weight: 650; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #0009; }
 .media-library__select { right: 0; cursor: pointer; }
-/* Hover and focus use the name's soft background. */
+/* A mouse hover and keyboard focus use the name's soft background; a tap leaves nothing lit. */
 .media-library__usage::before, .media-library__select::before { content: ""; position: absolute; inset: 0; z-index: -1; display: none; background: radial-gradient(ellipse, rgb(10 18 32 / .38), transparent 72%); backdrop-filter: blur(8px); mask-image: radial-gradient(ellipse, #000 45%, transparent 75%); }
-.media-library__usage:is(:hover, :focus-visible)::before, .media-library__select:is(:hover, :focus-within)::before { display: block; }
+.media-library__usage:focus-visible::before, .media-library__select:has(:focus-visible)::before { display: block; }
+@media (hover: hover) and (pointer: fine) { :is(.media-library__usage, .media-library__select):hover::before { display: block; } }
 .media-library .media-library__usage:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
 .media-library .media-library__select input { appearance: none; width: 22px; height: 22px; margin: 0; color: inherit; border: 1.5px solid; border-radius: 50%; background: rgb(10 18 32 / .12); box-shadow: 0 1px 3px #0006; cursor: pointer; }
 .media-library .media-library__select input:checked { border-color: #fff; background: var(--primary); }
@@ -190,12 +193,16 @@
 .media-library__empty:has(> button) { text-align: center; }
 .media-library__empty > button { margin-top: 12px; }
 
-/* Usage (media-manager ticket 06): the number counts distinct pages; hover or keyboard focus
-   opens its words below the top controls, on the name's soft background with sharp text. */
+/* Usage (media-manager ticket 06): the number counts distinct pages; a mouse hover or keyboard
+   focus opens its words below the top controls, on the name's soft background with sharp text. */
 .media-library__card { container-type: inline-size; }
 .media-library__usage-label { display: none; }
-.media-library__grid:not(.media-library__grid--list) .media-library__usage:is(:hover, :focus-visible) .media-library__usage-label {
-  display: block; position: absolute; top: 46px; left: 4px; width: max-content; max-width: calc(100cqi - 8px);
+.media-library__grid:not(.media-library__grid--list) .media-library__usage:focus-visible .media-library__usage-label { display: block; }
+@media (hover: hover) and (pointer: fine) {
+  .media-library__grid:not(.media-library__grid--list) .media-library__usage:hover .media-library__usage-label { display: block; }
+}
+.media-library__grid:not(.media-library__grid--list) .media-library__usage .media-library__usage-label {
+  position: absolute; top: 46px; left: 4px; width: max-content; max-width: calc(100cqi - 8px);
   padding: 4px 8px; border-radius: 8px; background: rgb(10 18 32 / .8); backdrop-filter: blur(8px);
   box-shadow: 0 0 10px 2px rgb(10 18 32 / .35); color: #fff; text-align: left; text-shadow: none;
   font-size: var(--type-small); font-weight: 600; line-height: 1.3; white-space: normal; pointer-events: none;

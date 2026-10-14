@@ -257,8 +257,8 @@ test("the list keeps 44 px selection and usage targets apart on a phone, without
   await expect(pane(page).locator(".media-library__grid--list")).toHaveCount(0);
 });
 
-/** The list controls whose soft background shows, as "path usage" or "path select". */
-const lit = (page: Page) => pane(page).locator(".media-library__grid--list").evaluate(list => [...list.querySelectorAll<HTMLElement>(".media-library__usage, .media-library__select")]
+/** The tile or row controls whose soft background shows, as "path usage" or "path select". */
+const lit = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => [...grid.querySelectorAll<HTMLElement>(".media-library__usage, .media-library__select")]
   .filter(control => getComputedStyle(control, "::before").display !== "none")
   .map(control => `${control.closest<HTMLElement>(".media-library__card")!.dataset.path} ${control.classList.contains("media-library__usage") ? "usage" : "select"}`));
 
@@ -286,6 +286,59 @@ test("in the list a tap on a phone leaves no row lit, and a mouse lights only th
   // The background stays inside the control's own box, not the row's.
   expect(await row.locator(".media-library__usage").evaluate(control => getComputedStyle(control).position)).toBe("relative");
   await row.locator(".media-library__select").hover();
+  await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
+  await page.close();
+});
+
+/** What a tile shows beyond its picture: open usage words, selection rings, and names not fully shown. */
+const tileMarks = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => [...grid.querySelectorAll<HTMLElement>(".media-library__card")].flatMap(card => {
+  const path = card.dataset.path, marks: string[] = [];
+  if (getComputedStyle(card.querySelector(".media-library__usage-label")!).display !== "none") marks.push(`${path} words`);
+  if (getComputedStyle(card, "::after").boxShadow !== "none") marks.push(`${path} ring`);
+  if (getComputedStyle(card.querySelector(".media-library__name")!).opacity !== "1") marks.push(`${path} name hidden`);
+  return marks;
+}));
+
+test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboard lights only the control it is on", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const phone = await context.newPage();
+  await open(phone, baseURL);
+  const badge = tile(phone, "images/studio-desk.svg").getByRole("button", { name: "No uses found", exact: true });
+  await badge.tap();
+  const usage = phone.getByRole("dialog", { name: "studio-desk.svg", exact: true });
+  await usage.locator(".media-usage__close").tap();
+  await expect(usage).toHaveCount(0);
+  const select = tile(phone, "images/placeholder.svg").locator(".media-library__select");
+  await select.tap();
+  await expect(select.getByRole("checkbox")).toBeChecked();
+  // Selected: the ring shows, but no soft background stays on the tapped circle.
+  expect(await lit(phone)).toEqual([]);
+  expect(await tileMarks(phone)).toEqual(["images/placeholder.svg ring"]);
+  await select.tap();
+  await expect(select.getByRole("checkbox")).not.toBeChecked();
+  // Unticked: nothing stays lit, and names stay visible on touch screens.
+  expect(await lit(phone)).toEqual([]);
+  expect(await tileMarks(phone)).toEqual([]);
+  await context.close();
+
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await open(page, baseURL);
+  const card = tile(page, "images/studio-desk.svg");
+  await page.mouse.move(1270, 890);
+  expect(await lit(page)).toEqual([]);
+  await card.locator(".media-library__usage").hover();
+  await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
+  expect(await tileMarks(page)).toEqual(["images/placeholder.svg name hidden", "images/studio-desk.svg words"]);
+  await card.locator(".media-library__select").hover();
+  await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
+  await page.mouse.move(1270, 890);
+  await expect.poll(() => lit(page)).toEqual([]);
+  // Keyboard focus lights the focused control.
+  await card.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).focus();
+  await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+  await expect(card.locator(".media-library__usage")).toBeFocused();
+  await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
+  await card.getByRole("checkbox").focus();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
   await page.close();
 });
