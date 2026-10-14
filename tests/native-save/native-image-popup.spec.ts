@@ -500,6 +500,18 @@ test("zoom on a component's own shape saves a copy the component still crops; Re
   // Back to the component's shape, zoomed in: a trimmed copy, cropped by the component, with no shape of the place's own.
   await chooseShape(page, "Photo card's shape (4:3)");
   await expect(popup(page).getByRole("status").filter({ hasText: "will look different" })).toHaveCount(0);
+  // The large editor opens on the component's shape and always offers it back.
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  const largeShape = large(page).getByRole("combobox", { name: "Shape" });
+  await expect(largeShape).toHaveValue("component");
+  await expect(largeShape.locator("option").first()).toHaveText("Photo card's shape (4:3)");
+  await largeShape.selectOption("square");
+  await expect(largeShape).toHaveValue("square");
+  await largeShape.selectOption("component");
+  await expect(largeShape).toHaveValue("component");
+  await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(large(page)).toHaveCount(0);
+  await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
   await popup(page).getByRole("slider", { name: "Zoom" }).fill("200");
   await expect(popup(page).getByRole("status").filter({ hasText: "Saves a new picture for this spot" })).toBeVisible();
   await popup(page).getByRole("button", { name: "Done", exact: true }).click();
