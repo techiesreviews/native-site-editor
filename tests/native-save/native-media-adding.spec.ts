@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { publishButton, showPublish } from "./publish";
 import { effectiveSource, storedDraft, storedDrafts } from "./drafts";
 
 // Default native-save fixture. Real preparation worker, drafts and shared page history.
@@ -15,6 +16,50 @@ async function photo(page: Page) {
     return btoa(String.fromCharCode(...new Uint8Array(await blob.arrayBuffer())));
   });
 }
+
+test("Balanced adding saves a 2400px WebP main and three copies from a detailed 3000px JPEG", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 3000; canvas.height = 1500;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let seed = 123456;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = seed & 255; pixels.data[i + 1] = (seed >>> 8) & 255; pixels.data[i + 2] = (seed >>> 16) & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0); context.fillStyle = "#ad3456"; context.fillRect(400, 200, 1200, 800);
+    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/jpeg", 0.95));
+    return await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.readAsDataURL(blob); });
+  });
+  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Recipe.jpg", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") });
+  await expect(picker.getByRole("button", { name: "Choose Recipe.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect.poll(() => storedDraft(page, "images/recipe-1600w.webp")).toBeDefined();
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  let mainBytes = 0;
+  for (const width of [2400, 480, 960, 1600]) {
+    const path = `images/recipe${width === 2400 ? "" : `-${width}w`}.webp`;
+    const response = await page.request.get(`${baseURL}/__demo/file?${new URLSearchParams({ path })}`);
+    expect(response.ok(), path).toBe(true);
+    const saved = await response.body();
+    expect(saved.subarray(0, 4).toString()).toBe("RIFF"); expect(saved.subarray(8, 12).toString()).toBe("WEBP");
+    const dimensions = await page.evaluate(async base64 => {
+      const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/webp" }));
+      const dimensions = [bitmap.width, bitmap.height]; bitmap.close(); return dimensions;
+    }, saved.toString("base64"));
+    expect(dimensions).toEqual([width, width / 2]);
+    if (width === 2400) mainBytes = saved.length; else expect(saved.length).toBeLessThan(mainBytes);
+  }
+});
 async function undoAddition(page: Page, baseURL: string | undefined, before: string) {
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);

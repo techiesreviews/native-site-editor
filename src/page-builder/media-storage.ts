@@ -9,7 +9,7 @@ export const MEDIA_AUDIO_FOLDER = "media/audio";
 export const MEDIA_DOWNLOADS_FOLDER = "media/downloads";
 export const MEDIA_ORIGINALS_FOLDER = "media/originals";
 
-/** Raster pictures use stored Optimise settings; other files retain their bytes. */
+/** Raster pictures follow the image recipe (a still GIF too, checked by its bytes); other files retain their bytes. */
 export const mediaNeedsPreparation = (name: string) => /\.(?:jpe?g|png|webp|avif|bmp)$/i.test(name);
 
 /** No Files destination: new files go by the kind of the file stored, not the one dropped. */

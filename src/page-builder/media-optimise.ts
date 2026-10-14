@@ -1,23 +1,43 @@
+import { gifIsAnimated, webpIsAnimated, pngIsAnimated } from "./media-image-bytes";
 import { RESPONSIVE_COPY_WIDTHS } from "./media-families";
 export interface MediaOptimiseOptions {
-  maxWidth: number; quality: number; format: "webp" | "png" | "jpeg"; responsive: boolean; keepOriginal: boolean;
+  maxWidth: number | null; quality: number; format: "webp" | "png" | "jpeg" | "avif"; speed?: number; responsive: boolean; keepOriginal: boolean;
 }
 export const DEFAULT_MEDIA_OPTIMISE: MediaOptimiseOptions = { maxWidth: 2400, quality: 80, format: "webp", responsive: true, keepOriginal: false };
+export type MediaImageQuality = "smaller" | "balanced" | "higher" | "smallest";
+export function mediaImageRecipe(quality: MediaImageQuality = "balanced"): MediaOptimiseOptions {
+  const presets = {
+    smaller: { maxWidth: 1600, quality: 70, format: "webp" },
+    balanced: { maxWidth: 2400, quality: 80, format: "webp" },
+    higher: { maxWidth: null, quality: 90, format: "webp" },
+    smallest: { maxWidth: 2400, quality: 50, format: "avif", speed: 8 },
+  } as const;
+  return { ...presets[quality], responsive: true, keepOriginal: false };
+}
+export function mediaTransparentOptions(options: MediaOptimiseOptions) {
+  return options.format === "avif" ? mediaImageRecipe() : { ...options, format: "webp" as const };
+}
+export function mediaSmallestEligible<T extends { size: number; eligible: boolean }>(main: T, candidates: T[]): T {
+  return candidates.reduce((chosen, candidate) => candidate.eligible && candidate.size < chosen.size ? candidate : chosen, main);
+}
+export function mediaCopyIsSmaller(copy: Blob, main: Blob) { return copy.size < main.size; }
 export interface MediaOutput { blob: Blob; width?: number; height?: number; extension: string; variantWidth?: number }
 export interface MediaOptimiseResult { outputs: MediaOutput[]; before: number; after: number; note?: string }
 
-export function mediaDimensions(width: number, height: number, maxWidth: number) {
-  if (![width, height, maxWidth].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Image dimensions and maximum width must be positive finite numbers.");
-  const scale = Math.min(1, Math.max(1, maxWidth) / width);
+export function mediaDimensions(width: number, height: number, maxWidth: number | null) {
+  if (![width, height, maxWidth ?? width].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Image dimensions and maximum width must be positive finite numbers.");
+  const scale = Math.min(1, Math.max(1, maxWidth ?? width) / width);
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 export function mediaResponsiveWidths(width: number) { return RESPONSIVE_COPY_WIDTHS.filter((size) => size < width); }
 export function mediaChooseEncoding(webp: Blob, png: Blob | undefined) { return png && png.size < webp.size ? png : webp; }
 export function mediaSavings(before: number, after: number) { return before > 0 ? Math.round((1 - after / before) * 100) : 0; }
-export function mediaUntouched(name: string) { return /\.(?:svg|gif)$/i.test(name); }
+export function mediaUntouched(name: string, bytes = new Uint8Array()) {
+  return /\.svg$/i.test(name) || gifIsAnimated(bytes) || webpIsAnimated(bytes) || pngIsAnimated(bytes);
+}
 
 export function validateMediaOptimiseOptions(options: MediaOptimiseOptions) {
-  if (!Number.isInteger(options.maxWidth) || options.maxWidth < 1 || options.maxWidth > 10000 || !Number.isFinite(options.quality) || options.quality < 1 || options.quality > 100 || !["webp", "png", "jpeg"].includes(options.format) || typeof options.responsive !== "boolean" || typeof options.keepOriginal !== "boolean") throw new Error("Choose a width from 1 to 10000, quality from 1 to 100, and a supported image format.");
+  if ((options.maxWidth !== null && (!Number.isInteger(options.maxWidth) || options.maxWidth < 1 || options.maxWidth > 10000)) || !Number.isFinite(options.quality) || options.quality < 1 || options.quality > 100 || !["webp", "png", "jpeg", "avif"].includes(options.format) || (options.speed !== undefined && (!Number.isInteger(options.speed) || options.speed < 0 || options.speed > 10)) || typeof options.responsive !== "boolean" || typeof options.keepOriginal !== "boolean") throw new Error("Choose a width from 1 to 10000, quality from 1 to 100, and a supported image format.");
 }
 
 /** Vite emits a same-origin script; never a blob: worker under the editor CSP. */

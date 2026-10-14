@@ -1,4 +1,17 @@
-import { mediaChooseEncoding, mediaDimensions, mediaResponsiveWidths, mediaUntouched, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
+import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallestEligible, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
+
+import { strippedImageSource } from "./media-image-bytes";
+
+/** Slice 28 can supply an AVIF encoder here, including its speed setting. */
+async function encode(canvas: OffscreenCanvas, type: string, quality: number, _speed?: number) {
+  return canvas.convertToBlob({ type, quality: quality / 100 });
+}
+function sourceType(file: File, bytes: Uint8Array) {
+  if (bytes[0] === 255 && bytes[1] === 216) return "image/jpeg";
+  if (bytes[0] === 137 && bytes[1] === 80) return "image/png";
+  if (String.fromCharCode(...bytes.subarray(8, 12)) === "WEBP") return "image/webp";
+  return file.type;
+}
 
 self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions }>) => {
   const { file, options } = event.data;
@@ -9,8 +22,10 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
       return;
     }
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "png";
-    if (mediaUntouched(file.name)) {
-      self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: "SVG and animated GIF are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (mediaUntouched(file.name, bytes)) {
+      const note = /\.(?:svg|gif)$/i.test(file.name) ? "SVG and animated GIF are kept untouched, including their metadata." : "Animated images are kept untouched, including their metadata.";
+      self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note } satisfies MediaOptimiseResult });
       return;
     }
     let bitmap: ImageBitmap;
@@ -18,36 +33,46 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
     catch { throw new Error(`${file.name} cannot be decoded by this browser. For HEIC, export as JPEG or PNG first. You can also keep the original; unsupported files may not display on the web.`); }
     try {
       const size = mediaDimensions(bitmap.width, bitmap.height, options.maxWidth);
-      const encode = async (width: number): Promise<MediaOutput> => {
+      let settings = options, note: string | undefined;
+      const canvasAt = (width: number) => {
         const height = Math.max(1, Math.round(bitmap.height * width / bitmap.width));
-        const canvas = new OffscreenCanvas(width, height);
-        const ctx = canvas.getContext("2d");
+        const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas image encoding is unavailable. Keep the original instead.");
         ctx.drawImage(bitmap, 0, 0, width, height);
-        // Check the resized pixels, so transparent images can keep a smaller PNG.
-        const pixels = ctx.getImageData(0, 0, width, height).data;
-        let transparent = false;
-        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { transparent = true; break; }
-        const type = options.format === "jpeg" ? "image/jpeg" : `image/${options.format}`;
-        const encoded = await canvas.convertToBlob({ type, quality: options.quality / 100 });
-        const png = options.format === "webp" && transparent ? await canvas.convertToBlob({ type: "image/png" }) : undefined;
-        const blob = mediaChooseEncoding(encoded, png);
-        return { blob, width, height, extension: blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1] };
+        return { canvas, ctx, height };
       };
-      const primary = await encode(size.width);
-      const outputs = [primary];
-      if (options.responsive) for (const width of mediaResponsiveWidths(size.width)) {
-        const variant = await encode(width);
-        // All responsive sources share the primary format and a predictable name.
-        if (variant.extension !== primary.extension) {
-          const canvas = new OffscreenCanvas(width, variant.height!);
-          canvas.getContext("2d")!.drawImage(bitmap, 0, 0, width, variant.height!);
-          variant.blob = await canvas.convertToBlob({ type: primary.blob.type, quality: options.quality / 100 });
-          variant.extension = primary.extension;
-        }
-        outputs.push({ ...variant, variantWidth: width });
+      const { canvas, ctx, height } = canvasAt(size.width);
+      const pixels = ctx.getImageData(0, 0, size.width, height).data;
+      let transparent = false;
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { transparent = true; break; }
+      if (transparent) settings = mediaTransparentOptions(settings);
+      let blob = await encode(canvas, `image/${settings.format}`, settings.quality, settings.speed);
+      if (settings.format === "avif" && blob.type !== "image/avif") {
+        settings = mediaImageRecipe();
+        blob = await encode(canvas, "image/webp", settings.quality);
+        note = "AVIF is not available yet. Used Balanced WebP instead.";
       }
-      self.postMessage({ result: { outputs, before: file.size, after: primary.blob.size } satisfies MediaOptimiseResult });
+      // Slice 28 handles browsers returning PNG when WebP was requested.
+      const png = transparent ? await encode(canvas, "image/png", settings.quality) : undefined;
+      if (png) blob = mediaChooseEncoding(blob, png);
+      if (blob.size > file.size) {
+        const stripped = strippedImageSource(bytes, sourceType(file, bytes), bitmap.width === size.width && bitmap.height === height);
+        const source = stripped ? new Blob([new Uint8Array(stripped)], { type: sourceType(file, bytes) }) : undefined;
+        const fallback = transparent ? png! : await encode(canvas, "image/jpeg", settings.quality);
+        blob = mediaSmallestEligible({ blob, size: blob.size, eligible: true }, [
+          { blob: source ?? blob, size: source?.size ?? Infinity, eligible: !!source },
+          { blob: fallback, size: fallback.size, eligible: true },
+        ]).blob;
+      }
+      const output = (blob: Blob, width: number, height: number): MediaOutput => ({ blob, width, height,
+        extension: blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1] });
+      const primary = output(blob, size.width, height), outputs = [primary];
+      if (options.responsive) for (const width of mediaResponsiveWidths(size.width)) {
+        const copy = canvasAt(width), encoded = await encode(copy.canvas, blob.type, settings.quality, settings.speed);
+        // A family requires one actual format; unsupported encoders cannot supply a copy.
+        if (encoded.type === blob.type && mediaCopyIsSmaller(encoded, blob)) outputs.push({ ...output(encoded, width, copy.height), variantWidth: width });
+      }
+      self.postMessage({ result: { outputs, before: file.size, after: primary.blob.size, ...(note ? { note } : {}) } satisfies MediaOptimiseResult });
     } finally { bitmap.close(); }
   } catch (error) { self.postMessage({ error: error instanceof Error ? error.message : "This image could not be optimised." }); }
 };

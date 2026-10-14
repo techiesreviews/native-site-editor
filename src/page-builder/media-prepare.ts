@@ -3,12 +3,16 @@ import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName
 import { largeDownloadNote, preparationFailure } from "./media-limits";
 import { decodeImage } from "./media-byte-cache";
 import { mediaKind } from "./media-library-filter";
-import { optimiseMedia } from "./media-optimise";
-import { readMediaOptimiseDefaults } from "./media-library-optimise-rules";
+import { optimiseMedia, mediaImageRecipe, mediaUntouched, type MediaImageQuality } from "./media-optimise";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 
 export { mediaNeedsPreparation };
+/** By name, then a GIF's bytes: an animated GIF keeps its bytes until phase 5; a still one is prepared. */
+export async function mediaFileNeedsPreparation(file: File) {
+  if (mediaNeedsPreparation(file.name)) return true;
+  return /\.gif$/i.test(file.name) && !mediaUntouched(file.name, new Uint8Array(await file.arrayBuffer()));
+}
 export const mediaPreparationFolder = (folder?: string, path = "image.webp") => folder ?? mediaKindFolder(path);
 
 type Ask = (question: string) => Promise<boolean>;
@@ -22,12 +26,15 @@ export const browserShowsImage: Shown = async file => {
 export const askToAddUnchanged: Ask = async question =>
   (await import("./media-preparation-confirm")).askToAddUnchanged(question);
 
-export async function prepareMediaFile(file: File, key: string, folder?: string, signal?: AbortSignal,
-  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows: Shown = browserShowsImage): Promise<{ request: MediaImportRequest; warning?: string }> {
+export async function prepareMediaFile(file: File, _key: string, folder?: string, signal?: AbortSignal,
+  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows: Shown = browserShowsImage,
+  quality: MediaImageQuality = "balanced"): Promise<{ request: MediaImportRequest; warning?: string }> {
   signal?.throwIfAborted();
   let result;
-  if (mediaNeedsPreparation(file.name)) {
-    try { result = await encode(file, readMediaOptimiseDefaults(key), signal); }
+  const needed = await mediaFileNeedsPreparation(file);
+  signal?.throwIfAborted();
+  if (needed) {
+    try { result = await encode(file, mediaImageRecipe(quality), signal); }
     catch (error) {
       if (signal?.aborted || error instanceof Error && error.name === "AbortError") throw error;
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -56,11 +63,11 @@ export async function prepareMediaFile(file: File, key: string, folder?: string,
 
 /** One failed preparation leaves the other files available. */
 export async function prepareMedia(files: File[], key: string, folder?: string, signal?: AbortSignal,
-  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown) {
+  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown, quality: MediaImageQuality = "balanced") {
   const requests: MediaImportRequest[] = [], errors: string[] = [], warnings: string[] = [];
   for (const file of files) {
     try {
-      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows);
+      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows, quality);
       requests.push(prepared.request);
       if (prepared.warning) warnings.push(prepared.warning);
     } catch (error) {

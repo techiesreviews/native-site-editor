@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { importPreparedMedia, prepareMedia, prepareMediaFile, mediaNeedsPreparation, mediaPreparationFolder } from "../src/page-builder/media-prepare";
+import { importPreparedMedia, prepareMedia, prepareMediaFile, mediaNeedsPreparation, mediaFileNeedsPreparation, mediaPreparationFolder } from "../src/page-builder/media-prepare";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { DEFAULT_MEDIA_OPTIMISE, type optimiseMedia } from "../src/page-builder/media-optimise";
 import { MAX_UPLOAD_BYTES } from "../src/uploads";
@@ -64,7 +64,7 @@ test("Files folder wins, including root", async () => {
   }
 });
 test("as-is kinds retain their bytes and exact sanitised names, including no extension", async () => {
-  for (const name of ["Logo.SVG", "animation.gif", "favicon.ico", "CNAME", "Guide.PDF", "film.mp4", "photo.heic"]) {
+  for (const name of ["Logo.SVG", "favicon.ico", "CNAME", "Guide.PDF", "film.mp4", "photo.heic"]) {
     assert.equal(mediaNeedsPreparation(name), false);
     const file = new File([new Uint8Array([0, 255, 128, 7])], name);
     const { request } = await prepareMediaFile(file, "repo", "", undefined, async () => { throw new Error("must not encode"); });
@@ -81,8 +81,8 @@ test("cap checks stored outputs, keeps other files, and notes large downloads", 
   assert.equal(prepared.requests.length, 1); assert.match(prepared.errors[0], /uploads are limited to 20 MB per file/);
   const tooBig: typeof optimiseMedia = async () => ({ before: 1, after: huge.size, outputs: [{ blob: huge, extension: "webp" }] });
   await assert.rejects(prepareMediaFile(new File(["picture"], "large.png"), "repo", undefined, undefined, tooBig), /uploads are limited/);
-  const heavy = await prepareMediaFile(new File([new Uint8Array(3 * 1024 * 1024)], "heavy.gif"), "repo");
-  assert.match(heavy.warning!, /Large download: heavy.gif is 3.1 MB/);
+  const heavy = await prepareMediaFile(new File([new Uint8Array(3 * 1024 * 1024)], "heavy.svg"), "repo");
+  assert.match(heavy.warning!, /Large download: heavy.svg is 3.1 MB/);
   const failed = await prepareMedia([new File(["broken"], "broken.png"), new File(["ok"], "ok.pdf")], "repo", undefined, undefined, async () => { throw new Error("Cannot decode"); });
   assert.match(failed.errors[0], /Hidden personal details/); assert.equal(failed.requests.length, 1);
 });
@@ -138,15 +138,15 @@ test("file segments are refused and folder paths are reserved with conflict numb
   assert.deepEqual(await f.host.import(requests), ["media/images/photo-2.webp"]);
 });
 
-test("preparation reads settings for the repository and honours cancellation", async () => {
+test("preparation ignores stored Optimise settings, uses Balanced, and honours cancellation", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
   const stored = { ...DEFAULT_MEDIA_OPTIMISE, maxWidth: 960, quality: 60, responsive: false };
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
-    getItem(key: string) { assert.equal(key, "native-site-editor:media-optimise:chosen-repo"); return JSON.stringify(stored); },
+    getItem() { return JSON.stringify(stored); },
   } });
   try {
     await prepareMediaFile(new File(["picture"], "photo.png"), "chosen-repo", undefined, undefined, async (_file, settings) => {
-      assert.deepEqual(settings, stored);
+      assert.deepEqual(settings, DEFAULT_MEDIA_OPTIMISE);
       return { before: 7, after: 4, outputs: [{ blob: new Blob(["main"]), extension: "webp" }] };
     });
   } finally {
@@ -256,4 +256,19 @@ test("duplicate incoming photos reserve numbered families in one batch", async (
   assert.deepEqual(await f.host.import(requests), ["media/images/holiday-photo.webp", "media/images/holiday-photo-2.webp"]);
   assert.deepEqual(f.batches[0].uploads.map(upload => upload.path),
     ["holiday-photo", "holiday-photo-2"].flatMap(base => ["", "-480", "-960", "-1600"].map(suffix => `media/images/${base}${suffix}.webp`)));
+});
+
+test("animated GIF stays byte-identical; still GIF uses the recipe; quality can be supplied", async () => {
+  const header = Buffer.from("GIF89a\x01\0\x01\0\0\0\0", "latin1");
+  const frame = Buffer.from([44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 44, 44, 0]);
+  const bytes = Buffer.concat([header, frame, frame, Buffer.from([59])]), animated = new File([bytes], "animated.gif");
+  const untouched = await prepareMediaFile(animated, "repo", undefined, undefined, async () => { throw new Error("must not encode animation"); });
+  assert.equal(untouched.request.result, undefined); assert.equal(untouched.request.file, animated);
+  assert.deepEqual(new Uint8Array(await untouched.request.file.arrayBuffer()), new Uint8Array(bytes));
+  const still = new File([Buffer.concat([header, frame, Buffer.from([59])])], "still.gif");
+  assert.equal(await mediaFileNeedsPreparation(still), true);
+  const prepared = await prepareMediaFile(still, "repo", undefined, undefined, encode);
+  assert.equal(prepared.request.result?.outputs[0].extension, "webp");
+  const selected: typeof optimiseMedia = async (file, options) => { assert.equal(options.quality, 90); assert.equal(options.maxWidth, null); return encode(file, DEFAULT_MEDIA_OPTIMISE); };
+  assert.equal((await prepareMedia([still], "repo", undefined, undefined, selected, undefined, undefined, "higher")).requests.length, 1);
 });
