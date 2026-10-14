@@ -919,7 +919,8 @@ test("media tools list starter images with uses and preview a picture at most 51
     expect(dimensions.height).toBeGreaterThan(0);
     expect(Math.max(dimensions.width, dimensions.height)).toBeLessThanOrEqual(512);
     const decoded = await page.evaluate(async ({ data, mimeType }) => {
-      const image = await createImageBitmap(await (await fetch(`data:${mimeType};base64,${data}`)).blob());
+      // The editor's security policy blocks fetching data: addresses; decode the bytes directly.
+      const image = await createImageBitmap(new Blob([Uint8Array.from(atob(data!), (char) => char.charCodeAt(0))], { type: mimeType }));
       const dimensions = { width: image.width, height: image.height }; image.close(); return dimensions;
     }, { data: content[0].data, mimeType: content[0].mimeType });
     expect(decoded).toEqual({ width: dimensions.width, height: dimensions.height });
