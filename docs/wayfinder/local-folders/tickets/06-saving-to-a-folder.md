@@ -2,7 +2,7 @@
 title: Decide how saving to a folder works
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + Codex (grilling)
 blocked_by: [03-research-source-seam]
 ---
 
