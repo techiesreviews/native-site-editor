@@ -18,7 +18,7 @@ import eyeIcon from "@phosphor-icons/core/regular/eye.svg?raw";
 import checkCircleIcon from "@phosphor-icons/core/regular/check-circle.svg?raw";
 import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
 import { POPUP_SHAPES, popupMessage, shapeLabel, type PopupShape } from "./image-popup-rules";
-import { componentShapeEntry } from "./component-shapes";
+import { componentShapeEntry, componentShapeNotice } from "./component-shapes";
 import { cutArea, makesNewPicture, nudgeFree, shownTrim, turnBy, turnedSize, type TrimRect } from "./image-popup-trim";
 import { canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerValue, straightenEdit, zoomArea, type PopupEdit } from "./image-large-rules";
 import { mountPreviews, paintTrim, type ImagePopupState, type PreviewDevice } from "./image-popup-view";
@@ -231,10 +231,14 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     }
     phoneShape.title = `Shape: ${shapeLabel(state.shape)}`;
     const said = popupMessage({ newPicture: makesNewPicture(state.shape, state.cut), recrop: state.recrop });
+    // Another shape than a shaped component's own: this item will look different (slice 43).
+    const note = componentShapeNotice(state.shape, state.component);
     for (const message of [sideMessage, phoneMessage]) {
       message.classList.toggle("image-large__message--new", said.tone === "new");
       message.setAttribute("role", "status");
-      message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon, 18), node("span", "", said.text));
+      const text = node("span", "", said.text);
+      if (note) text.append(node("span", "image-large__note", note));
+      message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon, 18), text);
     }
     for (const zoomOut of [sideTools.zoomOut, phoneTools.zoomOut]) zoomOut.disabled = !canZoomOut(now);
     const degrees = state.cut.straighten ?? 0;

@@ -505,10 +505,24 @@ test("zoom on a component's own shape saves a copy the component still crops; Re
   const largeShape = large(page).getByRole("combobox", { name: "Shape" });
   await expect(largeShape).toHaveValue("component");
   await expect(largeShape.locator("option").first()).toHaveText("Photo card's shape (4:3)");
+  const largeNote = large(page).locator(".image-large__note").filter({ visible: true });
+  await expect(largeNote).toHaveCount(0);
   await largeShape.selectOption("square");
   await expect(largeShape).toHaveValue("square");
+  await expect(largeNote).toHaveText("This Photo card will look different from the others.");
+  // Undo and Redo keep the component's shape through the editor's history; Reset returns to it.
+  await large(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(largeShape).toHaveValue("component");
+  await expect(largeNote).toHaveCount(0);
+  await large(page).getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(largeShape).toHaveValue("square");
+  await large(page).getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(largeShape).toHaveValue("component");
+  await largeShape.selectOption("square");
   await largeShape.selectOption("component");
   await expect(largeShape).toHaveValue("component");
+  await largeShape.selectOption("square");
+  // Cancel with Square chosen: back to the popup as it was, on the component's shape.
   await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(large(page)).toHaveCount(0);
   await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
