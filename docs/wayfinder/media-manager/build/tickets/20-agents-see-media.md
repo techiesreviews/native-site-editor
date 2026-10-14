@@ -2,7 +2,7 @@
 title: Agents see media (list and preview tools)
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-20 runner)
 blocked_by: [11-usage-records, 13-descriptions-and-decorative]
 builder: sol
 phase: 1
