@@ -44,9 +44,10 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
   const byStem = new Map<string, string[]>();
   for (const path of images) byStem.set(stem(path), [...(byStem.get(stem(path)) ?? []), path]);
   const setFormats = new Map<string, string[]>();
+  // Every bare number from 100 counts toward a set, the copy widths included.
   for (const path of images) {
-    const member = adoptedCopyName(path);
-    if (member?.set) setFormats.set(member.stem, [...setFormats.get(member.stem) ?? [], format(path)]);
+    const bare = /^(.*)-([1-9][0-9]*)$/.exec(stem(path)), width = Number(bare?.[2]);
+    if (bare && width >= 100 && width <= 10000) setFormats.set(bare[1], [...setFormats.get(bare[1]) ?? [], format(path)]);
   }
   // Shorter stems are resolved first, so an attached copy cannot claim another copy.
   for (const path of [...images].sort((a, b) => stem(a).length - stem(b).length)) {

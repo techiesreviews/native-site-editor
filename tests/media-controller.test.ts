@@ -604,12 +604,13 @@ test("page slot placement batches older copies while component fallback stays un
     },
   } });
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
-  let requests = 0;
+  let requests = 0, during: () => void = () => {};
   class Worker {
     onmessage?: (event: { data: { result: import("../src/page-builder/media-optimise").MediaOptimiseResult } }) => void;
     onerror?: () => void;
     postMessage() {
       requests++;
+      queueMicrotask(() => during());
       queueMicrotask(() => this.onmessage?.({ data: { result: { before: 100, after: 3,
         outputs: [480, 960, 1600].map(width => ({ blob: new Blob(["x"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width / 2 })) } } }));
     }
@@ -627,6 +628,17 @@ test("page slot placement batches older copies while component fallback stays un
     assert.equal(place.placed, true); assert.equal(batches.length, 1); assert.equal(batches[0].uploads.length, 3);
     assert.match(batches[0].edits.get("index.html")!, /old-480.webp 480w/);
     assert.equal(batches[0].expectedSources.get(".editor/media.json"), f.sources.get(".editor/media.json"));
+    // Cancel while the copies are made: nothing placed or saved. A changed main refuses without saving copies.
+    let cancelled = false, resolved: string | undefined = "unset"; during = () => { cancelled = true; };
+    const stopped = { ...place, placed: false };
+    await placeMediaPath(f.ports, f.ports.stamp(), stopped, image, () => cancelled, undefined, value => { resolved = value; }, () => f.controller.workspaceContext());
+    assert.equal(stopped.placed, false); assert.equal(resolved, undefined); assert.equal(batches.length, 1); assert.equal(f.changes.length, 0);
+    during = () => { f.ports.entry = () => ({ sha: "changed", size: 12 }); };
+    const drifted = { ...place, placed: false };
+    await assert.rejects(async () => placeMediaPath(f.ports, f.ports.stamp(), drifted, image, () => false, undefined, () => {}, () => f.controller.workspaceContext()),
+      /changed while preparing placement/);
+    assert.equal(drifted.placed, false); assert.equal(batches.length, 1); assert.equal(f.changes.length, 0);
+    during = () => {};
     const before = requests;
     const component = { ...place, path: "components/card.html", placed: false };
     f.sources.set(component.path, source);

@@ -102,7 +102,7 @@ test("WordPress dimensions and cross-format handmade sets are adopted without wi
     const path = "photo" + suffix; assert.ok(mediaFamilyOf(path, ["photo.jpg", path]));
   }
   assert.ok(mediaFamilyOf("photo-400.jpeg", ["photo.jpg", "photo-400.jpeg", "photo-800.jpeg"]));
-  assert.ok(mediaFamilyOf("photo-400.webp", ["photo.jpg", "photo-400.webp", "photo-480.webp"]));
+  assert.deepEqual(mediaFamilyOf("photo.jpg", ["photo.jpg", "photo-400.webp", "photo-480.webp"])?.copies.map(copy => copy.width), [400, 480]);
 });
 
 import { olderCopyWidths, olderCopyPaths, olderCopyFormat } from "../src/page-builder/media-older-copies";
