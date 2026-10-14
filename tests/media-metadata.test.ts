@@ -1,22 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanMediaTags, mergeMediaMetadata, parseMediaMetadata } from "../src/page-builder/media-metadata";
 import { mediaImageMarkup, mediaSrcset, mediaVariantName, mediaVariants } from "../src/page-builder/media-markup";
 
-test("metadata validates, sorts tags, preserves unknown fields and deletes only selected entries", () => {
-  const source = '{"images/a.png":{"alt":"Old","tags":[" hero ","hero"],"credit":"Artist"},"images/b.png":{"alt":"Other"}}';
-  const next = JSON.parse(mergeMediaMetadata(source, { "images/a.png": { alt: "New", tags: ["z", "a", "z"] } }));
-  assert.equal(next["images/a.png"].credit, "Artist"); assert.deepEqual(next["images/a.png"].tags, ["a", "z"]);
-  assert.equal(next["images/b.png"].alt, "Other");
-  assert.equal(JSON.parse(mergeMediaMetadata(JSON.stringify(next), { "images/a.png": null }))["images/a.png"], undefined);
-  assert.deepEqual(cleanMediaTags(["a", " a ", ""]), ["a"]);
-  for (const invalid of ["null", "[]", "bad", '{"a":{"tags":[2]}}', '{"a":{"alt":2}}']) assert.throws(() => parseMediaMetadata(invalid));
-});
-test("metadata path keys cannot alter object prototypes", () => {
-  const changes = Object.fromEntries([["__proto__", { alt: "literal", tags: [] }]]);
-  const next = JSON.parse(mergeMediaMetadata(undefined, changes));
-  assert.equal(next.__proto__.alt, "literal"); assert.equal(Object.prototype.hasOwnProperty.call(next, "__proto__"), true);
-});
 test("image insertion preserves unrelated source and escapes alt while adding responsive dimensions", () => {
   const existing = '<img class="portrait" data-key="hero" src="old.png" alt="Old" width="99" style="object-fit:cover" slot="photo">';
   const next = mediaImageMarkup({ path: "images/tea & cake.png", width: 1200, height: 800, alt: 'Café & "tea" <cup>', variants: [{ path: "images/tea-480w.png", width: 480 }] }, existing, 700);

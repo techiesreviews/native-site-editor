@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyMediaWorkspaceBatch, createMediaWorkspace, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
-import { MEDIA_METADATA_PATH } from "../src/page-builder/media-metadata";
+import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
 
 function fixture() {
   const text = new Map<string, string>([
     ["index.html", '<head></head><body><img src="/images/a.png" alt="Keep this alt"></body>'],
     ["styles/site.css", '.hero { background:url(/images/a.png); }'],
-    [MEDIA_METADATA_PATH, '{"images/a.png":{"alt":"Default","tags":["hero"]}}'],
+    [MEDIA_RECORDS_PATH, '{"images/a.png":{"alt":"Default","tags":["hero"]}}'],
   ]);
   const paths = new Set([...text.keys(), "images/a.png", "images/unused.png"]);
   const bytes = new Map([ ["images/a.png", new Blob(["original"])], ["images/unused.png", new Blob(["unused"])] ]);
@@ -30,7 +30,7 @@ function fixture() {
     get items() { return [...bytes.keys()].map((path) => ({ path })); },
     pages: ["index.html"], components: {},
     assertLive() { if (!stamp.holds()) throw new Error("Repository scope changed"); },
-    async read(path) { const value = text.get(path); if (path === MEDIA_METADATA_PATH) afterRead?.(); return value; },
+    async read(path) { const value = text.get(path); if (path === MEDIA_RECORDS_PATH) afterRead?.(); return value; },
     async blob(path) { return bytes.get(path)!; },
     assetVersion(path) { return versions.get(path); },
     async write() { throw new Error("Legacy write"); }, changed() { throw new Error("Legacy refresh"); },
@@ -66,14 +66,15 @@ function fixture() {
 
 test("rename moves binary, HTML/CSS references and metadata in one undoable transaction", async () => {
   const f = fixture(); await f.host.load();
-  f.text.set(MEDIA_METADATA_PATH, '{"images/a.png":{"alt":"Default","tags":["hero"],"credit":"Artist"}}');
+  f.text.set(MEDIA_RECORDS_PATH, '{"images/a.png":{"alt":"Default","tags":["hero"],"credit":"Artist"}}');
   await f.host.rename("images/a.png", "garden.png");
   assert.equal(f.batches.length, 1);
   assert.deepEqual(f.batches[0].moves, [{ from: "images/a.png", to: "images/garden.png" }]);
   assert.ok(f.text.get("index.html")!.includes('/images/garden.png" alt="Keep this alt"'));
   assert.ok(f.text.get("styles/site.css")!.includes("/images/garden.png"));
-  assert.equal(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!)["images/garden.png"].alt, "Default");
-  assert.equal(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!)["images/garden.png"].credit, "Artist");
+  assert.equal(JSON.parse(f.text.get(MEDIA_RECORDS_PATH)!).version, 2);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/garden.png"].description?.text, "Default");
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/garden.png"].credit, "Artist");
   assert.equal(f.history.length, 1);
   f.history.pop()!();
   assert.equal(f.paths.has("images/garden.png"), false);
@@ -83,9 +84,9 @@ test("rename moves binary, HTML/CSS references and metadata in one undoable tran
 test("delete removes binary and metadata together; one Undo restores both", async () => {
   const f = fixture(); await f.host.load(); await f.host.remove(["images/a.png"]);
   assert.equal(f.batches.length, 1); assert.equal(f.bytes.has("images/a.png"), false);
-  assert.equal(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!)["images/a.png"], undefined);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"], undefined);
   f.history.pop()!(); assert.equal(f.bytes.has("images/a.png"), true);
-  assert.ok(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!)["images/a.png"]);
+  assert.ok(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"]);
 });
 test("async source and asset changes reject entire rename without erasing other edits", async () => {
   for (const asset of [false, true]) {
@@ -106,7 +107,7 @@ test("upload families, copied metadata and reference replacement share one trans
   assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
   assert.deepEqual(f.batches[0].uploads.map((item) => item.path), ["images/a.webp", "images/a-480w.webp", "images/a-2.webp"]);
   assert.ok(f.text.get("index.html")!.includes("/images/a.webp"));
-  assert.equal(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!)["images/a.webp"].alt, "Default");
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.webp"].description?.text, "Default");
   f.history.pop()!();
   assert.equal(f.bytes.has("images/a.webp"), false); assert.equal(f.paths.has("images/a-480w.webp"), false);
   assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
@@ -120,10 +121,10 @@ test("staging failure and commit failure restore owned bytes, paths and drafts w
   }
 });
 test("last guard after byte staging preserves an intervening source edit and removes owned bytes", async () => {
-  const f = fixture(); await f.host.load(); f.afterStage(() => f.text.set(MEDIA_METADATA_PATH, '{"other.png":{"alt":"User edit"}}'));
+  const f = fixture(); await f.host.load(); f.afterStage(() => f.text.set(MEDIA_RECORDS_PATH, '{"other.png":{"alt":"User edit"}}'));
   await assert.rejects(f.host.upload(new File(["bytes"], "new.png"), { outputs: [{ blob: new Blob(["new"]), extension: "png" }], before: 5, after: 3 }, "images"), /changed while preparing/);
   assert.equal(f.bytes.has("images/new.png"), false); assert.equal(f.paths.has("images/new.png"), false);
-  assert.equal(f.text.get(MEDIA_METADATA_PATH), '{"other.png":{"alt":"User edit"}}');
+  assert.equal(f.text.get(MEDIA_RECORDS_PATH), '{"other.png":{"alt":"User edit"}}');
 });
 test("used images cannot pass Delete unused and unread sources cannot be called unused", async () => {
   const f = fixture(); await f.host.load(); await assert.rejects(f.host.remove(["images/a.png"], true), /now referenced/);
@@ -184,10 +185,10 @@ test("family rename rewrites srcset, captures hidden originals and undoes in one
 
 test("family delete removes every member and metadata in one Undo", async () => {
   const f = fixture(), members = addFamily(f);
-  f.text.set(MEDIA_METADATA_PATH, JSON.stringify(Object.fromEntries(["images/a.png", ...members].map(path => [path, { alt: "Family" }]))));
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(Object.fromEntries(["images/a.png", ...members].map(path => [path, { alt: "Family" }]))));
   await f.host.load(); await f.host.remove(["images/a.png", members[0]]);
   assert.deepEqual(f.batches[0].deletes, ["images/a.png", ...members]);
-  assert.deepEqual(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!), {});
+  assert.deepEqual(Object.keys(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files), []);
   assert.equal(f.history.length, 1); f.history.pop()!();
   for (const path of members) assert.ok(f.bytes.has(path));
 });
@@ -215,11 +216,11 @@ test("taken copy destination refuses the entire Images rename", async () => {
 test("every family member's record follows the rename, and Undo restores the old keys", async () => {
   const f = fixture(), members = addFamily(f);
   const before = { "images/a.png": { alt: "Main" }, [members[0]]: { tags: ["copy"] }, [members[2]]: { tags: ["original"] } };
-  f.text.set(MEDIA_METADATA_PATH, JSON.stringify(before));
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(before));
   await f.host.load(); await f.host.rename("images/a.png", "garden.png");
-  assert.deepEqual(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!), {
-    "images/garden.png": { alt: "Main" }, "images/garden-480w.webp": { tags: ["copy"] }, "media/originals/garden.HEIC": { tags: ["original"] },
+  assert.deepEqual({ ...parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files }, {
+    "images/garden.png": { description: { text: "Main" } }, "images/garden-480w.webp": { collections: ["copy"] }, "media/originals/garden.HEIC": { collections: ["original"] },
   });
   assert.equal(f.history.length, 1); f.history.pop()!();
-  assert.deepEqual(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!), before);
+  assert.deepEqual(JSON.parse(f.text.get(MEDIA_RECORDS_PATH)!), before);
 });

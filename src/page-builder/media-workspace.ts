@@ -1,7 +1,8 @@
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { MEDIA_METADATA_PATH, mergeMediaMetadata, parseMediaMetadata, type MediaMetadata } from "./media-metadata";
+import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaVariantName } from "./media-markup";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
@@ -99,11 +100,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (ctx.assetVersion) for (const item of ctx.items) batch.expectedAssets.set(item.path, ctx.assetVersion(item.path));
     const text = usage ? await sources(ctx, batch.expectedPaths) : {};
     for (const [path, value] of Object.entries(text)) batch.expectedSources.set(path, value);
-    const metadata = await ctx.read(MEDIA_METADATA_PATH);
+    const metadata = await ctx.read(MEDIA_RECORDS_PATH);
     ctx.assertLive();
-    batch.expectedSources.set(MEDIA_METADATA_PATH, metadata);
-    parseMediaMetadata(metadata);
-    return { batch, text, metadata };
+    batch.expectedSources.set(MEDIA_RECORDS_PATH, metadata);
+    return { batch, text, metadata: parseMediaRecords(metadata) };
   };
   const assetGuard = (ctx: MediaWorkspaceContext, batch: MediaWorkspaceBatch, paths: string[]) => {
     if (!ctx.assetVersion) throw new Error("Image revision checks are unavailable. Refresh the editor and try again.");
@@ -118,10 +118,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     await ctx.applyBatch!(batch);
     // Refresh belongs to the transaction host, so no fallible second mutation follows it.
   };
-  const metadataEdit = (batch: MediaWorkspaceBatch, source: string | undefined, changes: Record<string, Partial<MediaMetadata> | null>) => {
-    if (!Object.keys(changes).length) return;
-    const next = mergeMediaMetadata(source, changes);
-    if (next !== source) batch.edits.set(MEDIA_METADATA_PATH, next);
+  const recordsEdit = (batch: MediaWorkspaceBatch, before: MediaRecords, records: MediaRecords) => {
+    const next = serializeMediaRecords(records);
+    if (next !== serializeMediaRecords(before)) batch.edits.set(MEDIA_RECORDS_PATH, next);
+  };
+  const metadataEdit = (batch: MediaWorkspaceBatch, records: MediaRecords, changes: Record<string, Partial<MediaMetadata> | null>) => {
+    recordsEdit(batch, records, applyMediaMetadata(records, changes));
   };
   const rewriteInto = (batch: MediaWorkspaceBatch, text: Record<string, string>, from: string, to: string) => {
     for (const [path, source] of Object.entries(text)) {
@@ -179,7 +181,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       session = await context();
       const ctx = active();
       const text = await sources(ctx);
-      const metadata = parseMediaMetadata(await ctx.read(MEDIA_METADATA_PATH)); ctx.assertLive();
+      const metadata = mediaMetadataView(parseMediaRecords(await ctx.read(MEDIA_RECORDS_PATH))); ctx.assertLive();
       return { key: ctx.key, items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion?.(item.path) })), metadata, usage: mediaUsageIndex(ctx.items.map((item) => item.path), text, ctx.pages, ctx.components) };
     },
     async blob(path) { return active().blob(path); },
@@ -209,16 +211,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       }
       batch.moves.push(...moves.filter(move => move.from !== move.to));
       for (const move of moves) rewriteInto(batch, text, move.from, move.to);
-      const recorded = parseMediaMetadata(metadata);
-      const followed = moves.filter(move => move.from !== move.to && recorded[move.from]);
-      if (followed.length) {
-        // Every member's record follows its file, in the same batch as the moves.
-        const moved = JSON.parse(metadata!);
-        const entries = followed.map(move => [move.to, moved[move.from]] as const);
-        for (const move of followed) delete moved[move.from];
-        for (const [key, value] of entries) Object.defineProperty(moved, key, { value, enumerable: true, configurable: true, writable: true });
-        batch.edits.set(MEDIA_METADATA_PATH, mergeMediaMetadata(JSON.stringify(moved), {}));
-      }
+      // Every member's record follows its file, in the same batch as the moves.
+      recordsEdit(batch, metadata, moves.reduce((records, move) => move.from === move.to ? records : renameMediaRecord(records, move.from, move.to), metadata));
       await commit(ctx, batch);
     },
     async remove(paths, unusedOnly = false) {
@@ -233,7 +227,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         if (unique.some((path) => usage[path].files.length)) throw new Error("Some selected images are now referenced. Refresh the library before deleting unused images.");
       }
       batch.deletes.push(...unique);
-      metadataEdit(batch, metadata, Object.fromEntries(unique.map((path) => [path, null])));
+      recordsEdit(batch, metadata, removeMediaRecords(metadata, unique));
       await commit(ctx, batch);
     },
     async rewrite(from, to) {

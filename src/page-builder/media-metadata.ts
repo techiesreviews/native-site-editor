@@ -1,33 +1,27 @@
-export const MEDIA_METADATA_PATH = ".editor/media.json";
+import { removeMediaRecords, setMediaCollections, setMediaDescription, type MediaRecords } from "../../shared/media-records";
+
 export interface MediaMetadata { tags: string[]; alt: string }
 export type MediaMetadataMap = Record<string, MediaMetadata>;
-
-/** Invalid metadata is reported, never silently overwritten. */
-export function parseMediaMetadata(source = "{}"): MediaMetadataMap {
-  const value: unknown = JSON.parse(source);
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("media.json must contain an object of image paths.");
-  const out: MediaMetadataMap = Object.create(null);
-  for (const [path, entry] of Object.entries(value)) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`Invalid image metadata for ${path}.`);
-    const item = entry as Partial<MediaMetadata>;
-    if (item.tags !== undefined && (!Array.isArray(item.tags) || item.tags.some((tag) => typeof tag !== "string"))) throw new Error(`Invalid tags for ${path}.`);
-    if (item.alt !== undefined && typeof item.alt !== "string") throw new Error(`Invalid alt text for ${path}.`);
-    out[path] = { tags: cleanMediaTags(item.tags ?? []), alt: item.alt ?? "" };
-  }
-  return out;
-}
 
 export function cleanMediaTags(tags: string[]) {
   return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
-export function mergeMediaMetadata(source: string | undefined, changes: Record<string, Partial<MediaMetadata> | null>): string {
-  const validated = parseMediaMetadata(source);
-  const merged = JSON.parse(source ?? "{}") as Record<string, Record<string, unknown>>;
+/** The current panel's vocabulary over the site's complete media records. */
+export function mediaMetadataView(records: MediaRecords): MediaMetadataMap {
+  const out: MediaMetadataMap = Object.create(null);
+  for (const [path, record] of Object.entries(records.files)) out[path] = { tags: [...record.collections ?? []], alt: record.description?.text ?? "" };
+  return out;
+}
+
+export function applyMediaMetadata(records: MediaRecords, changes: Record<string, Partial<MediaMetadata> | null>): MediaRecords {
+  let next = records;
   for (const [path, update] of Object.entries(changes)) {
-    if (update === null) { delete merged[path]; continue; }
-    const before = validated[path] ?? { tags: [], alt: "" };
-    Object.defineProperty(merged, path, { value: { ...merged[path], tags: cleanMediaTags(update.tags ?? before.tags), alt: update.alt ?? before.alt }, enumerable: true, configurable: true, writable: true });
+    if (update === null) { next = removeMediaRecords(next, [path]); continue; }
+    // Only changed fields are written, so an unchanged description keeps its by-agent mark.
+    const before = next.files[path];
+    if (update.tags !== undefined && cleanMediaTags(update.tags).join("\n") !== (before?.collections ?? []).join("\n")) next = setMediaCollections(next, path, update.tags);
+    if (update.alt !== undefined && update.alt !== (before?.description?.text ?? "")) next = setMediaDescription(next, path, update.alt);
   }
-  return `${JSON.stringify(Object.fromEntries(Object.entries(merged).sort(([a], [b]) => a.localeCompare(b))), null, 2)}\n`;
+  return next;
 }

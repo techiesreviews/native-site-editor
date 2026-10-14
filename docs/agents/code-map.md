@@ -64,6 +64,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Linked style rules and cascade | `src/styles-index.ts` — `findStyleRulesInSources`; `src/style-cascade.ts` — `resolveSelectedRules`; `src/main.ts` — `linkNativeStyles` |
 | Source editor CSS and variant suggestions | `src/page-builder/css-intelligence.ts` — `cssVariableCompletion`; `src/page-builder/variant-intelligence.ts` — `variantSuggestions`; `src/page-builder/variant-fields.ts` — `variantFields` |
 | Media manager and draft batches | `src/controllers/media-controller.ts` — `createMediaController`; `src/page-builder/media-workspace.ts` — `createMediaWorkspace`; `src/main.ts` — `applyMediaBatch` |
+| Media records, migration and serialization | `shared/media-records.ts` — `parseMediaRecords`, `serializeMediaRecords`, `renameMediaRecord`, `removeMediaRecords` |
 | Media uploads, optimise and responsive copies | `src/uploads.ts` — `addUpload`; `src/page-builder/guarded-upload.ts` — `addGuardedUpload`; `src/page-builder/media-optimise.ts` — `optimiseMedia` |
 
 ### Worker, test seams and agent scripts
