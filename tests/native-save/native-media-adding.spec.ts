@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openPickerOn } from "./open-picker";
+import { onePagePdf } from "./pdf-fixture";
 import { publishButton, showPublish } from "./publish";
 import { effectiveSource, storedDraft, storedDrafts } from "./drafts";
 
@@ -714,4 +715,61 @@ test("converted GIF cannot be chosen or used in an image picker; Close saves vid
   await picker.getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(() => storedDraft(page, "media/videos/loop.mp4")).toBeDefined();
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
+});
+
+/** Holds pdf.js's worker script, so a PDF's first-page preview waits until released. */
+async function holdPdfWorker(page: Page) {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let requested!: () => void;
+  const seen = new Promise<void>(resolve => { requested = resolve; });
+  await page.route("**/pdf.worker.min.mjs*", async route => { requested(); await held; await route.continue(); });
+  return { seen, release };
+}
+const reportPdf = () => [{ name: "Report.pdf", type: "application/pdf", base64: onePagePdf().toString("base64") }];
+
+test("a PDF preview released late but in time is added with its first-page picture", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const explorer = await filesTab(page), worker = await holdPdfWorker(page);
+  await dropOnFiles(page, reportPdf());
+  const summary = explorer.getByRole("region", { name: "Files being added" });
+  await worker.seen;
+  await expect(summary.locator(".media-library__adding-row").filter({ hasText: "Report.pdf" })).toContainText("Preparing…");
+  worker.release();
+  await expect(summary.getByRole("status")).toHaveText("Added 1 file");
+  await expect.poll(() => storedDraft(page, "report.pdf")).toBeDefined();
+  await expect.poll(() => storedDraft(page, "report.webp")).toBeDefined();
+});
+
+test("a PDF cancelled while its preview is held adds nothing, and the late preview writes nothing", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const explorer = await filesTab(page), worker = await holdPdfWorker(page);
+  await dropOnFiles(page, reportPdf());
+  const summary = explorer.getByRole("region", { name: "Files being added" });
+  await worker.seen;
+  await summary.getByRole("button", { name: "Cancel adding Report.pdf", exact: true }).click();
+  await expect(summary.locator(".media-library__adding-row").filter({ hasText: "Report.pdf" })).toHaveCount(0);
+  worker.release();
+  await page.waitForResponse("**/pdf.worker.min.mjs*").catch(() => undefined);
+  // fixed-wait: Asserts the released preview of a cancelled PDF never writes a file; nothing observable follows.
+  await page.waitForTimeout(1_500);
+  expect(await storedDraft(page, "report.pdf")).toBeUndefined();
+  expect(await storedDraft(page, "report.webp")).toBeUndefined();
+});
+
+test("a PDF whose preview passes the 30-second limit is added unchanged with a note; the late preview writes nothing", async ({ page, baseURL }) => {
+  test.setTimeout(120_000);
+  await open(page, baseURL);
+  const explorer = await filesTab(page), worker = await holdPdfWorker(page);
+  await dropOnFiles(page, reportPdf());
+  const summary = explorer.getByRole("region", { name: "Files being added" });
+  await worker.seen;
+  await expect(summary.getByRole("status")).toHaveText("Added 1 file", { timeout: 45_000 });
+  await expect(page.locator("#status")).toContainText("Report.pdf was added without a preview picture.");
+  await expect.poll(() => storedDraft(page, "report.pdf")).toBeDefined();
+  worker.release();
+  await page.waitForResponse("**/pdf.worker.min.mjs*").catch(() => undefined);
+  // fixed-wait: Asserts the preview released after the time limit never writes a picture; nothing observable follows.
+  await page.waitForTimeout(1_500);
+  expect(await storedDraft(page, "report.webp")).toBeUndefined();
 });
