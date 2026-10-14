@@ -41,8 +41,8 @@ export function mediaDimensions(width: number, height: number, maxWidth: number 
 export function mediaResponsiveWidths(width: number) { return RESPONSIVE_COPY_WIDTHS.filter((size) => size < width); }
 export function mediaChooseEncoding(webp: Blob, png: Blob | undefined) { return png && png.size < webp.size ? png : webp; }
 export function mediaSavings(before: number, after: number) { return before > 0 ? Math.round((1 - after / before) * 100) : 0; }
-/** SVG and animated GIF stay as they are until phase 5. */
-export function mediaUntouched(name: string, bytes = new Uint8Array()) { return /\.svg$/i.test(name) || gifIsAnimated(bytes); }
+/** Animated GIF stays as it is until phase 5. */
+export function mediaUntouched(_name: string, bytes = new Uint8Array()) { return gifIsAnimated(bytes); }
 /** Animated PNG and WebP keep their frames with location and camera details removed, or are refused. */
 export function mediaAnimatedOutput(name: string, bytes: Uint8Array): MediaOutput | undefined {
   const type = pngIsAnimated(bytes) ? "image/png" : webpIsAnimated(bytes) ? "image/webp" : undefined;

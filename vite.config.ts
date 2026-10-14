@@ -7,7 +7,9 @@ const monaco = monacoTrim();
 export default defineConfig({
   plugins: [monaco.plugin, previewRuntime()],
   worker: { format: "es" },
-  optimizeDeps: { ...monaco.optimizeDeps, exclude: ["@jsquash/webp", "@jsquash/avif"] },
+  // SVGO and oxipng are reached only from the optimise worker; prebundle them so the dev server never reloads
+  // mid-session. jSquash WebP/AVIF resolve their WASM next to their own files, so they stay unbundled.
+  optimizeDeps: { ...monaco.optimizeDeps, include: ["svgo/browser", "@jsquash/oxipng/codec/pkg/squoosh_oxipng.js"], exclude: ["@jsquash/webp", "@jsquash/avif"] },
   server: {
     proxy: {
       "/api": "http://127.0.0.1:8787",

@@ -64,7 +64,7 @@ test("Files folder wins, including root", async () => {
   }
 });
 test("as-is kinds retain their bytes and exact sanitised names, including no extension", async () => {
-  for (const name of ["Logo.SVG", "favicon.ico", "CNAME", "Guide.PDF", "film.mp4", "photo.heic"]) {
+  for (const name of ["favicon.ico", "CNAME", "Guide.PDF", "film.mp4"]) {
     assert.equal(mediaNeedsPreparation(name), false);
     const file = new File([new Uint8Array([0, 255, 128, 7])], name);
     const { request } = await prepareMediaFile(file, "repo", "", undefined, async () => { throw new Error("must not encode"); });
@@ -73,7 +73,7 @@ test("as-is kinds retain their bytes and exact sanitised names, including no ext
     assert.equal(f.batches[0].uploads[0].blob, file);
     assert.deepEqual([...new Uint8Array(await f.batches[0].uploads[0].blob.arrayBuffer())], [0, 255, 128, 7]);
   }
-  for (const ext of ["jpg", "jpeg", "png", "webp", "avif", "bmp"]) assert.equal(mediaNeedsPreparation(`picture.${ext}`), true);
+  for (const ext of ["jpg", "jpeg", "png", "webp", "avif", "bmp", "svg", "heic", "heif"]) assert.equal(mediaNeedsPreparation(`picture.${ext}`), true);
 });
 test("cap checks stored outputs, keeps other files, and notes large downloads", async () => {
   const huge = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], "huge.pdf");
@@ -81,7 +81,7 @@ test("cap checks stored outputs, keeps other files, and notes large downloads", 
   assert.equal(prepared.requests.length, 1); assert.match(prepared.errors[0], /uploads are limited to 20 MB per file/);
   const tooBig: typeof optimiseMedia = async () => ({ before: 1, after: huge.size, outputs: [{ blob: huge, extension: "webp" }] });
   await assert.rejects(prepareMediaFile(new File(["picture"], "large.png"), "repo", undefined, undefined, tooBig), /uploads are limited/);
-  const heavy = await prepareMediaFile(new File([new Uint8Array(3 * 1024 * 1024)], "heavy.svg"), "repo");
+  const heavy = await prepareMediaFile(new File([new Uint8Array(3 * 1024 * 1024)], "heavy.svg"), "repo", undefined, undefined, async file => ({ before: file.size, after: file.size, outputs: [{ blob: file, extension: "svg" }] }));
   assert.match(heavy.warning!, /Large download: heavy.svg is 3.1 MB/);
   const failed = await prepareMedia([new File(["broken"], "broken.png"), new File(["ok"], "ok.pdf")], "repo", undefined, undefined, async () => { throw new Error("Cannot decode"); });
   assert.match(failed.errors[0], /Hidden personal details/); assert.equal(failed.requests.length, 1);
@@ -278,4 +278,10 @@ test("encoder fallback notes reach the shared adding summary", async () => {
   const prepared = await prepareMediaFile(new File(["photo"], "photo.png"), "repo", undefined, undefined,
     async (file, settings) => ({ ...await encode(file, settings), note }));
   assert.equal(prepared.warning, note);
+});
+
+test("an SVG whose handler hides behind a quoted > is refused when preparation fails, never offered unchanged", async () => {
+  const source = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" data-note=">" onload="alert(1)"><rect width="10" height="10"/></svg>';
+  await assert.rejects(prepareMediaFile(new File([source], "trick.svg", { type: "image/svg+xml" }), "repo", undefined, undefined,
+    async () => { throw new Error("encoder failed"); }, async () => assert.fail("must never ask"), async () => true), /scripts that cannot be removed/);
 });

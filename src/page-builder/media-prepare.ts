@@ -1,4 +1,5 @@
 import { mediaOriginalCapQuestion, mediaOriginalIsDuplicate, mediaOriginalProblem } from "./media-originals";
+import { isHeic } from "./media-heic";
 import { uploadProblem } from "../uploads";
 import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
 import { largeDownloadNote, preparationFailure } from "./media-limits";
@@ -13,7 +14,9 @@ export { mediaNeedsPreparation };
  * Animated PNG and WebP go to the worker to lose their personal details. */
 export async function mediaFileNeedsPreparation(file: File) {
   if (mediaNeedsPreparation(file.name)) return true;
-  return /\.gif$/i.test(file.name) && !mediaUntouched(file.name, new Uint8Array(await file.arrayBuffer()));
+  if (/\.gif$/i.test(file.name)) return !mediaUntouched(file.name, new Uint8Array(await file.arrayBuffer()));
+  // A HEIC's `ftyp` box comes first: sniff its head, never a whole video or PDF.
+  return isHeic(file.name, file.type, new Uint8Array(await file.slice(0, 4096).arrayBuffer()));
 }
 export const mediaPreparationFolder = (folder?: string, path = "image.webp") => folder ?? mediaKindFolder(path);
 

@@ -1,5 +1,6 @@
 import { stripJpegMetadata, stripPngMetadata, stripWebpMetadata, strippedImageSource, gifIsAnimated, pngIsAnimated, webpIsAnimated } from "../src/page-builder/media-image-bytes";
 import { test } from "node:test";
+import * as svgCleaner from "../src/page-builder/media-svg";
 import assert from "node:assert/strict";
 import { DEFAULT_MEDIA_OPTIMISE, mediaImageRecipe, mediaTransparentOptions, mediaSmallerMain, mediaCopyIsSmaller, mediaChooseEncoding, mediaDimensions, mediaResponsiveWidths, mediaSavings, mediaUntouched, mediaAnimatedOutput, optimiseMedia, validateMediaOptimiseOptions } from "../src/page-builder/media-optimise";
 
@@ -10,7 +11,7 @@ test("optimisation retains aspect ratio, never upscales, and picks only smaller 
   const webp = new Blob(["large"]), png = new Blob(["a"]);
   assert.equal(mediaChooseEncoding(webp, png), png); assert.equal(mediaChooseEncoding(png, webp), png);
   assert.equal(mediaSavings(100, 60), 40); assert.equal(mediaSavings(100, 120), -20);
-  assert.equal(mediaUntouched("still.GIF"), false); assert.equal(mediaUntouched("logo.svg"), true);
+  assert.equal(mediaUntouched("still.GIF"), false); assert.equal(mediaUntouched("logo.svg"), false);
   assert.throws(() => mediaDimensions(0, 10, 20)); assert.throws(() => mediaDimensions(10, Infinity, 20));
 });
 test("invalid encoding options fail before launching a worker", async () => {
@@ -220,7 +221,8 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
   Object.defineProperty(globalThis, "OffscreenCanvas", { configurable: true, value: Canvas });
   Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: async () => ({ width: 2000, height: 1000, close() { closed++; } }) });
   try {
-    await import("../src/page-builder/image-optimise.worker");
+    const { installMediaOptimiser } = await import("../src/page-builder/image-optimise.worker");
+    installMediaOptimiser({ loadPngSqueezer: async () => async bytes => bytes, loadHeicDecoder: async () => { throw new Error("unused"); }, loadSvgCleaner: async () => svgCleaner });
     const run = async (file = new File([new Uint8Array(100)], "photo.jpg"), options = mediaImageRecipe(), trim?: import("../shared/media-records").MediaTrim): Promise<import("../src/page-builder/media-optimise").MediaOptimiseResult> => {
       calls.length = 0; result = undefined;
       await scope.onmessage!({ data: { file, options, trim } });
@@ -267,6 +269,75 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.deepEqual(draws[0], { width: 500, height: 1000, args: [0, 0] });
     assert.ok(turned.outputs.every(output => !output.variantWidth || output.variantWidth < 500));
     assert.equal(closed, 7);
+  } finally {
+    names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
+  }
+});
+
+test("worker squeezes final PNGs before copies gate, keeps larger or failed squeezes, cleans SVG and decodes HEIC", async () => {
+  const names = ["self", "OffscreenCanvas", "createImageBitmap"];
+  const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+  type Result = import("../src/page-builder/media-optimise").MediaOptimiseResult;
+  let result: Result | undefined, error: string | undefined, loads = 0, heicLoads = 0, nativeFails = false;
+  let squeeze: (bytes: Uint8Array) => Promise<Uint8Array> = async bytes => bytes;
+  let transparent = true;
+  const scope = {
+    onmessage: undefined as undefined | ((event: { data: { file: File; options: import("../src/page-builder/media-optimise").MediaOptimiseOptions } }) => Promise<void>),
+    postMessage(value: { result?: Result; error?: string }) { result = value.result; error = value.error; },
+  };
+  class Canvas {
+    constructor(readonly width: number, readonly height: number) {}
+    getContext() { return { drawImage() {}, getImageData() { return { data: new Uint8Array([0, 0, 0, transparent ? 128 : 255]) }; } }; }
+    async convertToBlob({ type }: { type: string }) { return new Blob([new Uint8Array(type === "image/png" ? this.width === 2000 ? 100 : 110 : 200)], { type }); }
+  }
+  const native = async (source: File | ImageData) => {
+    if (nativeFails && source instanceof File) throw new Error("native failed");
+    return { width: 2000, height: 1000, close() {} };
+  };
+  Object.defineProperty(globalThis, "self", { configurable: true, value: scope });
+  Object.defineProperty(globalThis, "OffscreenCanvas", { configurable: true, value: Canvas });
+  Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: native });
+  try {
+    const { installMediaOptimiser } = await import("../src/page-builder/image-optimise.worker");
+    const codecs = {
+      loadPngSqueezer: async () => { loads++; return squeeze; },
+      loadHeicDecoder: async () => { heicLoads++; return async () => {
+        // Deliberate ImageData fake: native stub uses only the source kind, never pixel methods.
+        return { width: 2000, height: 1000, data: new Uint8ClampedArray(), colorSpace: "srgb" } satisfies ImageData;
+      }; },
+      loadSvgCleaner: async () => svgCleaner,
+    } satisfies import("../src/page-builder/media-codecs").MediaCodecs;
+    installMediaOptimiser(codecs);
+    const run = async (file = new File([new Uint8Array(1000)], "picture.png"), options = mediaImageRecipe()) => {
+      result = undefined; error = undefined; loads = 0;
+      await scope.onmessage!({ data: { file, options } });
+      assert.equal(error, undefined); assert.ok(result); return result;
+    };
+    squeeze = async bytes => new Uint8Array(bytes.length === 100 ? 60 : 40);
+    const squeezed = await run();
+    assert.deepEqual(squeezed.outputs.map(output => output.blob.size), [60, 40, 40, 40]);
+    assert.equal(loads, 4);
+    squeeze = async bytes => new Uint8Array(bytes.length + 1);
+    assert.deepEqual((await run()).outputs.map(output => output.blob.size), [100]);
+    squeeze = async () => { throw new Error("WASM unavailable"); };
+    assert.equal((await run()).outputs[0].blob.size, 100);
+    // Source PNG stripped of metadata is also squeezed, rather than returned directly.
+    squeeze = async bytes => new Uint8Array(Math.max(1, bytes.length - 1));
+    const sourceBytes = png();
+    assert.equal((await run(new File([sourceBytes], "source.png"))).outputs[0].blob.size, sourceBytes.length - 1);
+    transparent = false;
+    await run(new File([new Uint8Array(1000)], "picture.jpg")); assert.equal(loads, 0);
+    await run(new File([png([pngChunk("acTL", new Uint8Array(8))])], "moving.png")); assert.equal(loads, 0);
+    const svg = await run(new File(['<svg width="80" height="40"><script>x()</script><path onload="x()" d="M0 0h10v10z"/></svg>'], "logo.svg"), { ...mediaImageRecipe(), keepOriginal: true });
+    assert.equal(svg.outputs.length, 1); assert.equal(svg.outputs[0].extension, "svg");
+    assert.equal(svg.outputs[0].width, 80); assert.equal(svg.outputs[0].height, 40);
+    assert.doesNotMatch(await svg.outputs[0].blob.text(), /script|onload/);
+    nativeFails = true;
+    assert.equal((await run(new File([new Uint8Array(1000)], "photo.heic"))).outputs[0].extension, "webp");
+    assert.equal(heicLoads, 1);
+    installMediaOptimiser({ ...codecs, loadHeicDecoder: async () => { throw new Error("unavailable"); } });
+    await scope.onmessage!({ data: { file: new File(["x"], "photo.heic"), options: mediaImageRecipe() } });
+    assert.match(error!, /photo.heic could not be prepared.*cannot open HEIC.*Save it as JPEG/);
   } finally {
     names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
   }

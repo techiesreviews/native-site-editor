@@ -41,7 +41,7 @@ test("large download thresholds and sizes use decimal bytes", () => {
   }
 });
 test("unsuitable formats give useful export advice", () => {
-  for (const ext of ["heic", "heif", "tif", "tiff", "bmp"]) advice(`photo.${ext}`, /JPEG or PNG/);
+  for (const ext of ["tif", "tiff", "bmp"]) advice(`photo.${ext}`, /JPEG or PNG/);
   for (const ext of ["mov", "mkv", "avi", "ogv"]) advice(`film.${ext}`, /MP4 \(H\.264\)/);
   for (const ext of ["flac", "aiff", "aif", "ogg", "oga", "opus", "wma"]) advice(`song.${ext}`, /MP3 or M4A/);
 });
@@ -88,13 +88,30 @@ test("hidden details and broken or unknown images cannot bypass preparation", ()
 });
 test("SVG executable content cannot bypass preparation", () => {
   for (const source of ['<svg><script/></svg>', '<svg onload="go()"/>', '<svg><a href="javascript:go()"/></svg>',
-    "<svg><FOREIGNOBJECT/></svg>", "<svg><iframe/></svg>", "<svg><embed/></svg>", "<svg><object/></svg>"]) {
+    '<svg><use href="java&#x73;cript:go()"/></svg>', '<svg><use href="java&#9;script:go()"/></svg>',
+    '<svg><use href="VBScript:go()"/></svg>', '<svg><use href="data:text/html,go()"/></svg>',
+    '<svg><animate attributeName="xlink:href" to="#safe"/></svg>', "<svg><s:script/></svg>",
+    "<svg><FOREIGNOBJECT/></svg>", "<svg><iframe/></svg>", "<svg><embed/></svg>", "<svg><object/></svg>",
+    '<?xml-stylesheet type="text/xsl" href="evil.xsl"?><svg/>',
+    // A quoted ">" is not the end of a tag; entities defined in a DOCTYPE can expand into markup; unreadable markup is unsafe.
+    '<svg xmlns="http://www.w3.org/2000/svg" data-note=">" onload="alert(1)"><rect width="10" height="10"/></svg>',
+    "<svg data-note='>' ONLOAD='go()'/>", '<!DOCTYPE svg [<!ENTITY run "x">]><svg>&run;</svg>', "<svg><a href=javascript:go()/></svg>",
+    "<svg>< script>go()</script></svg>", '<svg><path d="M0 0"', '<svg><use href="&#x6A;avascript&colon;go()"/></svg>',
+    '<svg><set attributeName="xlink:href" to="#x"/></svg>', '<svg><set attributeName="onclick" to="go()"/></svg>']) {
     const bytes = new TextEncoder().encode(source);
     assert.equal(svgHasExecutableContent(bytes), true);
     advice("logo.svg", /scripts that cannot be removed/, bytes);
   }
   const clean = new TextEncoder().encode('<svg><path d="M0 0"/></svg>');
   assert.equal(svgHasExecutableContent(clean), false);
+  // Displayed words are not code, even when they look like it.
+  for (const words of ["online=yes", "javascript: example", "&lt;script&gt;", "&#106;avascript:x", "a > b", "<![CDATA[online=yes]]>", "<![CDATA[<script>go()</script>]]>"])
+    assert.equal(svgHasExecutableContent(new TextEncoder().encode(`<svg><text>${words}</text></svg>`)), false, words);
+  // Plain attributes may say "javascript:" as words; names may be in any script.
+  for (const source of ['<svg><rect data-note="javascript: example"/></svg>', '<svg xmlns:\u56f3="http://www.w3.org/2000/svg"><\u56f3:rect width="10"/></svg>'])
+    assert.equal(svgHasExecutableContent(new TextEncoder().encode(source)), false, source);
+  for (const source of ['<svg><image src="javascript:go()"/></svg>', '<svg><a xml:base="javascript:go()//" href="x"/></svg>', '<svg><animate attributeName="href" values="javascript:go()"/></svg>'])
+    assert.equal(svgHasExecutableContent(new TextEncoder().encode(source)), true, source);
   assert.equal(failure("logo.svg", clean).kind, "ask");
   assert.equal(mayHoldHiddenDetails(clean, "logo.svg"), false);
 });

@@ -29,9 +29,9 @@ export function mediaAddingShown(library: Pick<MediaLibrary, "metadata" | "usage
   return filterMediaLibrary({ key: "", collections: [], items: [{ path }], metadata, usage: library.usage }, filter).length > 0;
 }
 
-/** Predict the automatic destination before raster preparation finishes. */
+/** Predict the automatic destination before image preparation finishes. */
 export function mediaAddingPath(name: string) {
-  const output = mediaStorageName(name, mediaNeedsPreparation(name) ? "webp" : undefined);
+  const output = mediaStorageName(name, /\.svg$/i.test(name) ? "svg" : mediaNeedsPreparation(name) ? "webp" : undefined);
   return mediaKindFolder(output) + "/" + output;
 }
 

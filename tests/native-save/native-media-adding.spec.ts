@@ -198,8 +198,12 @@ test("Close saves every ready file once, cancels unfinished preparation, and pla
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await page.evaluate(() => {
-    // Deliberately hold the encoder so Close races real in-flight preparation.
-    Worker.prototype.postMessage = function () {};
+    // Hold only PNG preparation; SVG now runs through the real worker too.
+    const original = Object.getOwnPropertyDescriptor(Worker.prototype, "postMessage")!;
+    const send: typeof Worker.prototype.postMessage = original.value;
+    Worker.prototype.postMessage = function (this: Worker, message: { file?: File }, ...args: [StructuredSerializeOptions?]) {
+      if (message.file?.name !== "unfinished.png") send.call(this, message, ...args);
+    };
   });
   await picker.locator('input[name="media-upload"]').setInputFiles([
     { name: "added.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') },
@@ -235,7 +239,7 @@ test("Use saves all ready files across picker additions with placement in one ba
   await expect.poll(() => storedDraft(page, "media/images/first.svg")).toBeDefined();
   await expect.poll(() => storedDraft(page, "media/images/second.svg")).toBeDefined();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('/media/images/second.svg');
-  // An SVG stored as it is still carries its own size into the placed markup.
+  // A cleaned SVG carries its dimensions into the placed markup.
   const placed = /<img\b[^>]*\/images\/second\.svg[^>]*>/.exec((await storedDraft(page, "index.html"))!.content)![0];
   expect(placed).toContain('width="12"'); expect(placed).toContain('height="12"');
   await page.locator(".code-editor__undo").first().click();
@@ -291,9 +295,9 @@ test("cancelling a held file while Use reads its size places nothing", async ({ 
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
-  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "held.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "held.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h12v12z"/></svg>') });
   await picker.getByRole("button", { name: "Choose held.svg", exact: true }).click();
-  // Hold the size read that Use starts, cancel the file, then let the read finish.
+  // Without SVG dimensions, Use reads the intrinsic size. Hold that read, cancel the file, then let the read finish.
   await page.evaluate(() => {
     const prototype = HTMLImageElement.prototype, original = Object.getOwnPropertyDescriptor(prototype, "decode")!;
     let release = () => {};
@@ -321,7 +325,13 @@ test("Use with a file still preparing saves the ready one and the placement in o
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   // The encoder never answers, so the PNG stays in preparation while the SVG is ready.
-  await page.evaluate(() => { Worker.prototype.postMessage = function () {}; });
+  await page.evaluate(() => {
+    const original = Object.getOwnPropertyDescriptor(Worker.prototype, "postMessage")!;
+    const send: typeof Worker.prototype.postMessage = original.value;
+    Worker.prototype.postMessage = function (this: Worker, message: { file?: File }, ...args: [StructuredSerializeOptions?]) {
+      if (message.file?.name !== "slow.png") send.call(this, message, ...args);
+    };
+  });
   await picker.locator('input[name="media-upload"]').setInputFiles([
     { name: "ready.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') },
     { name: "slow.png", mimeType: "image/png", buffer: Buffer.from("held by worker") },
@@ -552,4 +562,60 @@ test("Review… keeps the cleaned original when the site remembers Keep original
   await expect(picker).toBeHidden();
   await expect.poll(() => storedDraft(page, "media/images/reviewed.webp")).toBeDefined();
   await expect.poll(() => storedDraft(page, "media/originals/reviewed.jpg")).toBeDefined();
+});
+
+async function saveUploads(page: Page) {
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+}
+
+test("SVG worker removes scripts and onload, keeps artwork and places vector dimensions", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Clean.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60" onload="alert(1)"><script>alert(1)</script><path d="M0 0h120v60H0z" fill="red"/><text x="10" y="30">Artwork</text></svg>') });
+  await expect(picker.locator('.media-library__pending[data-state="ready"]')).toHaveCount(1);
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  const source = (await storedDraft(page, "index.html"))!.content;
+  const placed = /<img\b[^>]*\/media\/images\/clean\.svg[^>]*>/.exec(source)![0];
+  expect(placed).toContain('width="120"'); expect(placed).toContain('height="60"');
+  await saveUploads(page);
+  const saved = await (await page.request.get(`${baseURL}/__demo/file?path=media/images/clean.svg`)).text();
+  expect(saved).not.toMatch(/script|onload/i);
+  expect(saved).toContain("<path"); expect(saved).toContain("Artwork"); expect(saved).toContain('viewBox="0 0 120 60"');
+});
+
+test("transparent PNG stays valid and no larger; oxipng WASM loads under editor CSP", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 32; canvas.height = 32;
+    const context = canvas.getContext("2d")!; context.fillStyle = "#ff0000"; context.fillRect(4, 4, 24, 24);
+    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/png"));
+    return btoa(String.fromCharCode(...new Uint8Array(await blob.arrayBuffer())));
+  });
+  const loaded = page.waitForResponse(response => /squoosh_oxipng_bg.*\.wasm/.test(response.url()) && response.ok());
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const media = page.getByRole("region", { name: "Media", exact: true });
+  await media.locator('input[name="media-upload"]').setInputFiles({ name: "Alpha.png", mimeType: "image/png", buffer: Buffer.from(bytes, "base64") });
+  await expect.poll(() => storedDraft(page, "media/images/alpha.png")).toBeDefined();
+  await loaded;
+  await saveUploads(page);
+  const response = await page.request.get(`${baseURL}/__demo/file?path=media/images/alpha.png`);
+  expect(response.ok()).toBe(true);
+  const saved = await response.body();
+  expect(saved.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  expect(saved.length).toBeLessThanOrEqual(Buffer.from(bytes, "base64").length);
+  const pixels = await page.evaluate(async base64 => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], { type: "image/png" }));
+    const canvas = document.createElement("canvas"); canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext("2d")!; context.drawImage(bitmap, 0, 0); bitmap.close();
+    return [canvas.width, canvas.height, ...context.getImageData(0, 0, 1, 1).data, ...context.getImageData(8, 8, 1, 1).data];
+  }, saved.toString("base64"));
+  expect(pixels).toEqual([32, 32, 0, 0, 0, 0, 255, 0, 0, 255]);
 });

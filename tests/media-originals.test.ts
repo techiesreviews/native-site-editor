@@ -108,7 +108,8 @@ test("a same-named main in another folder numbers the new family, so its origina
   assert.deepEqual(mediaFamilyRows("images/holiday.webp", items), []);
 });
 test("unchanged files, accepted Add unchanged, and identical cleaned mains have no duplicate", async () => {
-  for (const name of ["logo.svg", "guide.pdf", "movie.mp4", "song.mp3"]) {
+  // SVGs are cleaned by the worker, which keeps no separate original (see the real-worker test below).
+  for (const name of ["guide.pdf", "movie.mp4", "song.mp3"]) {
     const prepared = await prepareMediaFile(new File(["source"], name), "repo", undefined, undefined, encoder, undefined, undefined, "balanced", true);
     assert.equal(prepared.request.original, undefined);
   }
@@ -184,7 +185,7 @@ test("worker retains decoded full source size and orientation; opaque JPEG 92 or
   // createImageBitmap supplies already-oriented dimensions, as the real browser does.
   Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: async () => ({ width: 3000, height: 6000, close() { closed++; } }) });
   try {
-    await import("../src/page-builder/image-optimise.worker");
+    const { installMediaOptimiser } = await import("../src/page-builder/image-optimise.worker");
     for (const alpha of [false, true]) {
       transparent = alpha; calls.length = 0; result = undefined;
       await scope.onmessage!({ data: { file: new File([photo(6)], "rotated.jpg", { type: "image/jpeg" }), options: mediaImageRecipe(), original: true } });
@@ -194,6 +195,16 @@ test("worker retains decoded full source size and orientation; opaque JPEG 92 or
       assert.deepEqual(calls.at(-1), { width: 3000, height: 6000, type: alpha ? "image/png" : "image/jpeg", quality: 0.92 });
     }
     assert.equal(closed, 2);
+    // SVGO's browser build needs the real worker globals this test replaces, so a stand-in cleaner is used.
+    const codecs = await import("../src/page-builder/media-codecs");
+    installMediaOptimiser({ ...codecs, loadSvgCleaner: async () => ({
+      cleanSvg: (bytes: Uint8Array) => new TextEncoder().encode(new TextDecoder().decode(bytes).replace(/ onload="[^"]*"/, "")),
+      svgDimensions: () => ({ width: 4, height: 4 }) }) });
+    result = undefined;
+    await scope.onmessage!({ data: { file: new File(['<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4" onload="go()"><rect width="4" height="4"/></svg>'], "logo.svg", { type: "image/svg+xml" }), options: mediaImageRecipe(), original: true } });
+    // An SVG's cleaned file is its website file; no second copy is kept as an original.
+    assert.ok(result); assert.equal(result.original, undefined);
+    assert.doesNotMatch(await result.outputs[0].blob.text(), /onload/);
   } finally {
     names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
   }

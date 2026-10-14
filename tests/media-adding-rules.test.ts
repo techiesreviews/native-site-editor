@@ -75,7 +75,7 @@ test("Review… from Files takes pictures not added yet, or that failed; other k
   assert.equal(mediaAddingReviewable("shot.png", "adding"), false);
   assert.equal(mediaAddingReviewable("shot.png", "added"), false);
   assert.equal(mediaAddingReviewable("guide.pdf", "failed"), false);
-  assert.equal(mediaAddingReviewable("logo.svg", "waiting"), false);
+  assert.equal(mediaAddingReviewable("logo.svg", "waiting"), true);
 });
 
 test("a failed file's line names it once", () => {

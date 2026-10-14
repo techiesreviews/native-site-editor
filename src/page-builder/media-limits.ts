@@ -1,3 +1,4 @@
+import { heicFailureMessage, isHeic } from "./media-heic";
 import { MAX_UPLOAD_BYTES } from "../uploads";
 import { mediaKind } from "./media-library-filter";
 
@@ -85,17 +86,86 @@ export function mayHoldHiddenDetails(bytes: Uint8Array, name: string): boolean {
   return true;
 }
 
+type SvgMarkup = { elements: { name: string; attributes: [string, string][] }[]; instructions: string[]; subset: boolean };
+/** The SVG's elements, attributes and processing instructions, skipping text, CDATA and comments (displayed words never
+ * run). Undefined when the markup cannot be read, so its safety cannot be established. */
+function svgMarkup(source: string): SvgMarkup | undefined {
+  const markup: SvgMarkup = { elements: [], instructions: [], subset: false };
+  const skipTo = (from: number, end: string) => { const at = source.indexOf(end, from); return at < 0 ? -1 : at + end.length; };
+  for (let at = source.indexOf("<"); at >= 0; at = source.indexOf("<", at)) {
+    if (source.startsWith("<!--", at)) at = skipTo(at + 4, "-->");
+    else if (source.startsWith("<![CDATA[", at)) at = skipTo(at + 9, "]]>");
+    else if (source.startsWith("<?", at)) {
+      markup.instructions.push((/^<\?([^\s?]*)/.exec(source.slice(at, at + 64))?.[1] ?? "").toLowerCase());
+      at = skipTo(at + 2, "?>");
+    } else if (source.startsWith("<!", at)) {
+      // A DOCTYPE: an internal subset can define entities that expand into markup.
+      let quote = "", depth = 0, index = at + 2;
+      for (; index < source.length; index++) {
+        const char = source[index];
+        if (quote) { if (char === quote) quote = ""; }
+        else if (char === '"' || char === "'") quote = char;
+        else if (char === "[") { depth++; markup.subset = true; }
+        else if (char === "]") depth--;
+        else if (char === ">" && depth <= 0) break;
+      }
+      at = index < source.length ? index + 1 : -1;
+    } else if (source[at + 1] === "/") at = skipTo(at, ">");
+    else {
+      const name = /[\p{L}_:][\p{L}\p{N}\p{M}_:.\-\u00b7]*/uy;
+      name.lastIndex = at + 1;
+      const element = name.exec(source);
+      if (!element) return;
+      const attributes: [string, string][] = [], attribute = /\s+([^\s=/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)')/y, close = /\s*\/?>/y;
+      let index = name.lastIndex;
+      for (;;) {
+        close.lastIndex = index;
+        if (close.exec(source)) { index = close.lastIndex; break; }
+        attribute.lastIndex = index;
+        const match = attribute.exec(source);
+        if (!match) return;
+        attributes.push([match[1], match[2] ?? match[3]]);
+        index = attribute.lastIndex;
+      }
+      markup.elements.push({ name: element[0], attributes });
+      at = index;
+    }
+    if (at < 0) return;
+  }
+  return markup;
+}
+const EXECUTABLE_SVG_ELEMENTS = new Set(["script", "foreignobject", "iframe", "embed", "object"]);
+const XML_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
+/** Attributes that hold a link or set one when animated; other attributes may say "javascript:" as plain words. */
+const LINK_ATTRIBUTES = new Set(["href", "src", "base", "action", "formaction", "data", "to", "from", "by", "values"]);
+const localName = (name: string) => name.slice(name.lastIndexOf(":") + 1).toLowerCase();
+/** An attribute value as the browser reads it: XML entities decoded, then spaces and control characters dropped. */
+const attributeValue = (raw: string) => raw.replace(/&(?:#x([0-9a-f]+)|#(\d+)|(\w+));/gi, (entity, hex?: string, decimal?: string, named?: string) => {
+  if (named) return XML_ENTITIES[named] ?? entity;
+  const code = Number.parseInt(hex ?? decimal!, hex ? 16 : 10);
+  return code <= 0x10ffff ? String.fromCodePoint(code) : entity;
+}).replace(/[\s\u0000-\u0020\u007f-\u009f]/g, "").toLowerCase();
+
+/** Scripts, event handlers, script links, embedded documents, link-retargeting animation, stylesheet instructions
+ * (XSLT) and DOCTYPE entities; markup that cannot be read counts as executable. */
 export function svgHasExecutableContent(bytes: Uint8Array): boolean {
-  const source = new TextDecoder().decode(bytes);
-  return /<\s*(?:script|foreignObject|iframe|embed|object)\b|\bon[^\s=<>]*\s*=|javascript\s*:/i.test(source);
+  const markup = svgMarkup(new TextDecoder().decode(bytes));
+  if (!markup || markup.subset || markup.instructions.some(name => name !== "xml")) return true;
+  return markup.elements.some(({ name, attributes }) => EXECUTABLE_SVG_ELEMENTS.has(localName(name)) || attributes.some(([key, raw]) => {
+    const attribute = localName(key), value = attributeValue(raw);
+    // XML knows only five named entities; anything else (`&colon;`, a bare `&`) is unreadable markup.
+    return /&(?!(?:lt|gt|amp|quot|apos|#\d+|#x[0-9a-f]+);)/i.test(raw) || attribute.startsWith("on") || LINK_ATTRIBUTES.has(attribute) && /javascript:|vbscript:|data:text\/html/.test(value)
+      || ["animate", "set"].includes(localName(name)) && attribute === "attributename" && (localName(value) === "href" || value.startsWith("on"));
+  }));
 }
 
 export type PreparationFailure = { kind: "ask"; question: string } | { kind: "advice"; message: string };
 /** `shown`: whether this browser can show the file as a picture (ignored for other kinds). */
-export function preparationFailure(file: { name: string; size: number }, bytes: Uint8Array, shown: boolean): PreparationFailure {
+export function preparationFailure(file: { name: string; size: number; type?: string }, bytes: Uint8Array, shown: boolean): PreparationFailure {
   const advice = (message: string): PreparationFailure => ({ kind: "advice", message: `${file.name} could not be prepared. ${message}` });
   if (file.size > MEDIA_FILE_CAP_BYTES) return advice(`It is ${decimalMB(file.size)} and the limit is 20 MB. Try a smaller export.`);
-  if (/\.(?:heic|heif|tiff?|bmp)$/i.test(file.name)) return advice("Save it as JPEG or PNG and add it again.");
+  if (isHeic(file.name, file.type ?? "", bytes)) return { kind: "advice", message: heicFailureMessage(file.name) };
+  if (/\.(?:tiff?|bmp)$/i.test(file.name)) return advice("Save it as JPEG or PNG and add it again.");
   if (/\.(?:mov|mkv|avi|ogv)$/i.test(file.name)) return advice("Export it as MP4 (H.264) and add it again.");
   if (/\.(?:flac|aiff?|ogg|oga|opus|wma)$/i.test(file.name)) return advice("Export it as MP3 or M4A and add it again.");
   const kind = mediaKind(file.name);
