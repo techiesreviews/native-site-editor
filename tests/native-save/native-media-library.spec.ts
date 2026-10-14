@@ -326,8 +326,11 @@ test("renaming an image family keeps responsive copies when placing it on a page
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   const image = page.frameLocator(".native-preview-frame").locator(".hero-image");
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/garden-family.svg"');
-  await expect(image).toHaveAttribute("srcset", /\/images\/garden-family-480w.svg 480w/);
-  await expect(image).toHaveAttribute("srcset", /\/images\/garden-family-960w.svg 960w/);
+  // The page names the renamed copies; the canvas shows them from the bytes it read (data URLs).
+  const placed = (await storedDraft(page, "index.html"))?.content ?? "";
+  expect(placed).toMatch(/srcset="[^"]*\/images\/garden-family-480w.svg 480w/);
+  expect(placed).toMatch(/srcset="[^"]*\/images\/garden-family-960w.svg 960w/);
+  await expect(image).toHaveAttribute("srcset", /^data:image\/svg\+xml;base64,\S+ 480w, data:image\/svg\+xml;base64,\S+ 960w/);
 });
 
 // Default fixture: wider text and forwarding travel with the Images rename's single history step.
