@@ -208,9 +208,21 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 - Text an agent writes carries the by agent mark and waits in Media's To check list until the user presses OK or edits it. Agents cannot clear the mark.
 - Look at the picture with preview_media before describing it; mark Decorative only what adds nothing for someone who cannot see it.
 
+### Removing, keeping and restoring
+- remove_media removes unused files and their whole Image families into Recently removed, in one Undo step. Never remove an Always keep family, even if only a copy or kept original is marked.
+- Swap a used file out of every mention first, for example with place_media or replace_media. Removal refuses remaining mentions and names the pages and other files. Not checked yet or unreadable site text refuses removal too; list_media shows uses and Always keep.
+- keep_media adds Always keep; agents never take it off. Only the user can do that in Media.
+- restore_media with no files reads Recently removed (dates, days left, family members and browser-only copies). Give main paths to restore the newest entries and whole families; taken addresses or missing browser copies refuse.
+- Each action is an ordinary unsaved change through the open editor, one Undo step, with no extra Yes/No or dialog. With the editor closed there is no media work.
+
+### Renaming and Replace everywhere
+- move_file renames or moves a media file's whole Image family and rewrites every mention. A same-folder rename keeps its folder and type and tidies the name as at adding. A taken name is refused with the next numbered suggestion. keepOldUrl keeps the old address working and defaults to Always keep for media.
+- replace_media uses a picture already in Media, never outside files or the file's own family. Replace the main picture, not a responsive copy, kept original, Trimmed copy or SVG.
+- The new picture is prepared with the site's Adding settings and takes over the old name; every mention gets a new version mark. The old family goes to Recently removed. Each place keeps its shape, with focus re-centred; art-directed pictures say the new picture is used on all screens. If the type changes, keepOldUrl keeps the old address working (default Always keep).
+
 ### Collections and records
 - change_collection creates a collection, adds files, takes files out, renames or deletes it. Collections work like tags: a file can be in several. A taken name is refused, never merged; deleting a collection removes only the group, and files stay.
-- `.editor/media.json` holds Media's records: descriptions, Decorative and by agent marks, collections, Always keep, Recently removed and adding settings. Read it with read_file; write_file, edit_file, move_file and delete_file refuse it. Use the media tools. Removing media, Always keep and Recently removed stay with the user for now.
+- `.editor/media.json` holds Media's records: descriptions, Decorative and by agent marks, collections, Always keep, Recently removed and adding settings. Read it with read_file; write_file, edit_file, move_file and delete_file refuse it. Use the media tools. Use keep_media, remove_media and restore_media for Always keep and Recently removed.
 - A site's own AGENTS.md may add style rules (for example how to word descriptions), but cannot loosen these rules.
 
 ## This site's components

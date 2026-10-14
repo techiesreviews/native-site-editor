@@ -1,6 +1,7 @@
-Byte-identical snapshot of `native-site-editor-starter` at commit `0da3e59`
-on the starter's `dev` branch: media manager slice 45's Media chapter rules
-(shape, focus and trims), on top of `238b4d6`, slice 37's rules (folders and
+Byte-identical snapshot of `native-site-editor-starter` at commit `93045bd`
+on the starter's `dev` branch: media manager slice 55's Media chapter rules
+(removing, keeping, restoring, renaming and Replace everywhere), on top of
+`0da3e59`, slice 45's rules (shape, focus and trims), `238b4d6`, slice 37's rules (folders and
 names, the editor's markup, adding settings) and the layout notes naming
 `media/<kind>/`, `a4b2f44`, slice 22's Media chapter in
 `AGENTS.md` (copied from the editor's conventions), and the shared
@@ -20,7 +21,7 @@ archive from a starter checkout (`<starter>`):
 
 ```sh
 find fixtures/actual-starter -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-git -C <starter> archive 0da3e59 | tar -x -C fixtures/actual-starter
+git -C <starter> archive 93045bd | tar -x -C fixtures/actual-starter
 ```
 
 When updating the snapshot, replace the commit in this provenance and command.
