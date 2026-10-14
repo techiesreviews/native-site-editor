@@ -27,6 +27,10 @@
   font: inherit;
   color: inherit;
 }
+/* Icons lead their text here (the shared .icon centres itself). */
+.image-popup .icon {
+  margin-inline: 0;
+}
 .image-popup__nub {
   position: absolute;
   width: 14px;
@@ -209,7 +213,7 @@
   text-align: left;
 }
 .image-popup__item:hover { background: var(--hover); }
-.image-popup__item .icon {
+.image-popup .image-popup__item .icon {
   margin-left: auto;
   visibility: hidden;
 }

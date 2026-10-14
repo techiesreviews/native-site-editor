@@ -40,6 +40,8 @@ export interface ImagePopupOptions {
   workspaceContext: () => Promise<MediaWorkspaceContext>;
   load: () => Promise<MediaModule>;
   target: { path: string; node: number[] };
+  /** The press that opened it still owns the popup (no later press, repository or page change). */
+  live(): boolean;
   closed(): void;
 }
 
@@ -59,7 +61,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     file, url: file ? await host.picture(file).catch(() => undefined) : undefined,
     shape: start.shape, focus: read.focus ? { ...read.focus } : { x: 50, y: 50 }, boxes: undefined, busy: false,
   };
-  if (!stamp.holds() || ports.source(target.path) !== source) return undefined;
+  if (!stamp.holds() || ports.source(target.path) !== source || !options.live()) return undefined;
   let replacement: MediaImage | undefined;
   let closed = false;
 
@@ -93,6 +95,8 @@ export async function openImagePopup(options: ImagePopupOptions) {
     view.remove();
     options.closed();
   }
+  // ✕, Escape or a press elsewhere; once Done is writing, it finishes (the window shows it busy).
+  const cancel = () => { if (!state.busy) close(); };
   async function done() {
     if (state.busy) return;
     const change = frameChange(start, state, Boolean(replacement));
@@ -140,9 +144,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
     focus: (focus: PlaceFocus) => { state.focus = focus; view.draw(); look(); },
     replace: () => { void replace(); },
     done: () => { void done(); },
-    cancel: () => close(),
+    cancel,
   });
   look();
   void measure();
-  return { cancel: () => close() };
+  return { cancel };
 }
