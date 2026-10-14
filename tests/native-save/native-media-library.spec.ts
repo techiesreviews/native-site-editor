@@ -178,6 +178,58 @@ test("real worker keeps a smaller source only without its personal details, with
   }
 });
 
+test("real worker keeps APNG frames, transparency in every copy, and turns rotated photos upright", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const result = await page.evaluate(async (modulePath) => {
+    const { optimiseMedia, mediaImageRecipe } = await import(modulePath) as typeof import("../../src/page-builder/media-optimise");
+    const latin = (text: string) => Uint8Array.from(text, char => char.charCodeAt(0));
+    const join = (...parts: Uint8Array[]) => { const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0)); let at = 0; for (const part of parts) { out.set(part, at); at += part.length; } return out; };
+    const crc = (bytes: Uint8Array) => { let c = ~0; for (const byte of bytes) { c ^= byte; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; } return ~c >>> 0; };
+    const chunk = (type: string, data: Uint8Array) => {
+      const typed = join(latin(type), data), out = new Uint8Array(12 + data.length), view = new DataView(out.buffer);
+      view.setUint32(0, data.length); out.set(typed, 4); view.setUint32(8 + data.length, crc(typed)); return out;
+    };
+    const canvasBytes = (width: number, height: number, paint: (ctx: CanvasRenderingContext2D) => void, type: string, quality?: number) => {
+      const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; paint(canvas.getContext("2d")!);
+      return new Promise<Uint8Array>(resolve => canvas.toBlob(async blob => resolve(new Uint8Array(await blob!.arrayBuffer())), type, quality));
+    };
+    const decode = async (blob: Blob) => {
+      const bitmap = await createImageBitmap(blob), canvas = new OffscreenCanvas(bitmap.width, bitmap.height), ctx = canvas.getContext("2d")!;
+      ctx.drawImage(bitmap, 0, 0); const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      let alpha = false; for (let i = 3; i < data.length; i += 4) if (data[i] < 255) { alpha = true; break; }
+      return { width: bitmap.width, height: bitmap.height, alpha, hash: crc(new Uint8Array(data.buffer)) };
+    };
+    const gps = async (blob: Blob) => new TextDecoder("latin1").decode(await blob.arrayBuffer()).includes("GPS");
+    // A one-frame APNG with a location note.
+    const plain = await canvasBytes(200, 100, ctx => { ctx.fillStyle = "#2a6"; ctx.fillRect(0, 0, 200, 100); ctx.fillStyle = "#fd4"; ctx.fillRect(40, 20, 60, 60); }, "image/png");
+    const actl = new Uint8Array(8); new DataView(actl.buffer).setUint32(0, 1);
+    const fctl = new Uint8Array(26); new DataView(fctl.buffer).setUint32(4, 200); new DataView(fctl.buffer).setUint32(8, 100);
+    const apng = new File([join(plain.subarray(0, 33), chunk("acTL", actl), chunk("fcTL", fctl), chunk("tEXt", latin("Comment\0GPS 51.5N")), plain.subarray(33))], "moving.png", { type: "image/png" });
+    const moving = await optimiseMedia(apng, mediaImageRecipe());
+    const movingText = new TextDecoder("latin1").decode(await moving.outputs[0].blob.arrayBuffer());
+    // A transparent 1000 px picture: the main and both copies keep their transparency.
+    const clear = new File([await canvasBytes(1000, 500, ctx => { for (let x = 0; x < 1000; x += 10) { ctx.fillStyle = `hsla(${x % 360} 80% 50% / ${0.3 + (x % 70) / 100})`; ctx.beginPath(); ctx.arc(x, 250 + Math.sin(x) * 200, 30, 0, 7); ctx.fill(); } }, "image/png")], "clear.png", { type: "image/png" });
+    const transparent = await optimiseMedia(clear, mediaImageRecipe());
+    // A photo stored sideways (EXIF orientation 6) with a location note.
+    const tiff = join(latin("Exif\0\0II*\0"), new Uint8Array([8, 0, 0, 0, 1, 0, 0x12, 1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0]), latin("GPS 51.5N camera serial"));
+    const app1 = join(new Uint8Array([255, 225, (tiff.length + 2) >> 8, (tiff.length + 2) & 255]), tiff);
+    const photo = await canvasBytes(400, 300, ctx => { ctx.fillStyle = "#468"; ctx.fillRect(0, 0, 400, 300); ctx.fillStyle = "#e52"; ctx.fillRect(0, 0, 100, 50); }, "image/jpeg", 0.9);
+    const sideways = new File([join(photo.subarray(0, 2), app1, photo.subarray(2))], "sideways.jpg", { type: "image/jpeg" });
+    const turned = await optimiseMedia(sideways, mediaImageRecipe());
+    return {
+      moving: { extension: moving.outputs[0].extension, frames: movingText.includes("acTL") && movingText.includes("fcTL"), gps: await gps(moving.outputs[0].blob), source: await decode(apng), output: await decode(moving.outputs[0].blob) },
+      transparent: await Promise.all(transparent.outputs.map(async output => ({ width: output.width, variant: output.variantWidth, ...(({ alpha }) => ({ alpha }))(await decode(output.blob)) }))),
+      turned: { source: await decode(sideways), output: await decode(turned.outputs[0].blob), gps: await gps(turned.outputs[0].blob) },
+    };
+  }, "/src/page-builder/media-optimise.ts");
+  expect(result.moving).toMatchObject({ extension: "png", frames: true, gps: false }); expect(result.moving.output).toEqual(result.moving.source);
+  // A copy is dropped when it is not smaller than the main (960 of a lossless 1000 may be); every kept one stays transparent.
+  expect(result.transparent[0]).toMatchObject({ width: 1000, variant: undefined }); expect(result.transparent.map(output => output.variant)).toContain(480);
+  expect(result.transparent.every(output => output.alpha)).toBe(true);
+  expect(result.turned.source).toMatchObject({ width: 300, height: 400 }); expect(result.turned.output).toMatchObject({ width: 300, height: 400 });
+  expect(result.turned.gps).toBe(false);
+});
+
 test("optimisation preview cannot replace a newer binary revision", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });

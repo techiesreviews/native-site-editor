@@ -8,7 +8,8 @@ import { createMediaWorkspace, type MediaWorkspaceContext } from "./media-worksp
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 
 export { mediaNeedsPreparation };
-/** By name, then a GIF's bytes: an animated GIF keeps its bytes until phase 5; a still one is prepared. */
+/** By name, then a GIF's bytes: an animated GIF keeps its bytes until phase 5; a still one is prepared.
+ * Animated PNG and WebP go to the worker to lose their personal details. */
 export async function mediaFileNeedsPreparation(file: File) {
   if (mediaNeedsPreparation(file.name)) return true;
   return /\.gif$/i.test(file.name) && !mediaUntouched(file.name, new Uint8Array(await file.arrayBuffer()));

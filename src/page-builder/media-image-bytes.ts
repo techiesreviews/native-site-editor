@@ -88,7 +88,7 @@ function webpChunks(bytes: Uint8Array) {
 }
 export function stripWebpMetadata(bytes: Uint8Array): Uint8Array | undefined {
   const chunks = webpChunks(bytes);
-  if (!chunks || !chunks.some(chunk => ["VP8 ", "VP8L"].includes(chunk.type)) || chunks.some(chunk => chunk.type === "EXIF" && !upright(bytes.subarray(chunk.start + 8, chunk.start + 8 + chunk.length)))) return;
+  if (!chunks || !chunks.some(chunk => ["VP8 ", "VP8L", "ANMF"].includes(chunk.type)) || chunks.some(chunk => chunk.type === "EXIF" && !upright(bytes.subarray(chunk.start + 8, chunk.start + 8 + chunk.length)))) return;
   const parts = chunks.filter(chunk => !["EXIF", "XMP "].includes(chunk.type)).map(chunk => {
     const part = bytes.slice(chunk.start, chunk.end);
     if (chunk.type === "VP8X") part[8] &= ~0x0c;

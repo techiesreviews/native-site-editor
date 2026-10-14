@@ -14,7 +14,7 @@ const OPTIMISER_SIDE = "The image optimisation worker endpoint replies to its ow
 const postAllowlist: AllowlistEntry[] = [
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
-  { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE, count: 4 },
+  { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE, count: 5 },
   { file: RUNTIME, match: "frame.contentWindow", reason: "The runtime sizes and requests its isolated measuring child; preview-wire.test.ts pins the child request shape." },
   { file: RUNTIME, match: "parent", reason: "The runtime's posts (emit and ready) are the frame side; preview-wire.test.ts pins their types and shapes.", count: 2 },
 ];

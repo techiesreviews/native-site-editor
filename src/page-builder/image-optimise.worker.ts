@@ -1,4 +1,4 @@
-import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
+import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, mediaAnimatedOutput, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
 
 import { strippedImageSource } from "./media-image-bytes";
 
@@ -24,8 +24,12 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "png";
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (mediaUntouched(file.name, bytes)) {
-      const note = /\.(?:svg|gif)$/i.test(file.name) ? "SVG and animated GIF are kept untouched, including their metadata." : "Animated images are kept untouched, including their metadata.";
-      self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note } satisfies MediaOptimiseResult });
+      self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: "SVG and animated GIF are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
+      return;
+    }
+    const animated = mediaAnimatedOutput(file.name, bytes);
+    if (animated) {
+      self.postMessage({ result: { outputs: [animated], before: file.size, after: animated.blob.size, note: "Animated images keep their frames; location and camera details are removed." } satisfies MediaOptimiseResult });
       return;
     }
     let bitmap: ImageBitmap;

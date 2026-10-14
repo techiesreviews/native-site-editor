@@ -1,7 +1,7 @@
 import { stripJpegMetadata, stripPngMetadata, stripWebpMetadata, strippedImageSource, gifIsAnimated, pngIsAnimated, webpIsAnimated } from "../src/page-builder/media-image-bytes";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_MEDIA_OPTIMISE, mediaImageRecipe, mediaTransparentOptions, mediaSmallerMain, mediaCopyIsSmaller, mediaChooseEncoding, mediaDimensions, mediaResponsiveWidths, mediaSavings, mediaUntouched, optimiseMedia, validateMediaOptimiseOptions } from "../src/page-builder/media-optimise";
+import { DEFAULT_MEDIA_OPTIMISE, mediaImageRecipe, mediaTransparentOptions, mediaSmallerMain, mediaCopyIsSmaller, mediaChooseEncoding, mediaDimensions, mediaResponsiveWidths, mediaSavings, mediaUntouched, mediaAnimatedOutput, optimiseMedia, validateMediaOptimiseOptions } from "../src/page-builder/media-optimise";
 
 test("optimisation retains aspect ratio, never upscales, and picks only smaller transparent PNG", () => {
   assert.deepEqual(mediaDimensions(4000, 3000, 2400), { width: 2400, height: 1800 });
@@ -172,6 +172,21 @@ test("animation detection walks GIF blocks and checks APNG and WebP container fl
   assert.equal(webpIsAnimated(webp([webpChunk("ANIM", new Uint8Array(6))])), true);
   assert.equal(webpIsAnimated(webp([webpChunk("VP8X", Uint8Array.from([2, 0, 0, 0, 0, 0, 0, 0, 0, 0]))])), true);
   assert.equal(pngIsAnimated(ascii("acTL")), false); assert.equal(webpIsAnimated(ascii("ANIM")), false);
+});
+
+test("animated PNG and WebP keep their frames without personal details, or are refused", async () => {
+  assert.equal(mediaUntouched("moving.png", png([pngChunk("acTL", new Uint8Array(8))])), false);
+  assert.equal(mediaAnimatedOutput("still.png", png()), undefined);
+  const apng = png([pngChunk("acTL", new Uint8Array(8)), pngChunk("fcTL", new Uint8Array(26)), pngChunk("eXIf", exif().subarray(6)), pngChunk("tEXt", ascii("GPS camera"))]);
+  const kept = mediaAnimatedOutput("moving.png", apng)!;
+  const value = Buffer.from(await kept.blob.arrayBuffer()).toString("latin1");
+  assert.equal(kept.extension, "png"); assert.ok(value.includes("acTL") && value.includes("fcTL")); assert.ok(!value.includes("GPS") && !value.includes("eXIf"));
+  const animatedWebp = webp([webpChunk("VP8X", Uint8Array.from([0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0])), webpChunk("ANIM", new Uint8Array(6)), webpChunk("ANMF", ascii("frame0")), webpChunk("EXIF", exif())]);
+  const keptWebp = mediaAnimatedOutput("moving.webp", animatedWebp)!;
+  const bytes = new Uint8Array(await keptWebp.blob.arrayBuffer()), text = Buffer.from(bytes).toString("latin1");
+  assert.equal(keptWebp.extension, "webp"); assert.ok(text.includes("ANIM") && text.includes("ANMF")); assert.ok(!text.includes("GPS"));
+  assert.equal(bytes[20], 0x02); // the animation flag stays; the EXIF flag is cleared
+  assert.throws(() => mediaAnimatedOutput("turned.png", png([pngChunk("acTL", new Uint8Array(8)), pngChunk("eXIf", exif(6).subarray(6))])), /animated, and its hidden location and camera details could not be removed/);
 });
 
 test("worker encodes only needed fallbacks, keeps copies in the chosen format, and falls back from AVIF", async () => {
