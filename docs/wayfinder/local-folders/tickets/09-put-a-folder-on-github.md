@@ -2,7 +2,7 @@
 title: Decide whether a folder can be put on GitHub
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + Codex (grilling)
 blocked_by: [08-github-only-features]
 ---
 
