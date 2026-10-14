@@ -2,7 +2,7 @@
 title: Online video records
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-67 runner)
 blocked_by: [61-starter-online-video-layer, 62-player-markup]
 builder: sol
 phase: 5
