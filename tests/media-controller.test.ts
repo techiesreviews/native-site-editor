@@ -183,6 +183,14 @@ test("a Decorative press refuses when the page is switched while records are rea
   // A press for a page that is not open does nothing at all.
   await f.controller.changePlace("index.html", [0, 0], true);
   assert.equal(writes, 0);
+  // Entering history view while records load refuses too.
+  let viewing = false;
+  const h = fixture({ viewingVersion: () => viewing });
+  h.ports.applyBatch = async () => { writes++; };
+  h.ports.readText = async () => { viewing = true; return '{"version":2,"collections":[],"files":{}}'; };
+  await h.controller.changePlace("index.html", [0, 0], true);
+  assert.equal(writes, 0);
+  assert.equal(h.errors.length, 1);
 });
 
 test("place marking refuses unreadable records, page drift during reads and repository changes", async () => {

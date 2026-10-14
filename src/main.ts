@@ -2523,9 +2523,12 @@ function chooseMediaForImage(target: { path: string; node: number[]; width?: num
 
 // Atomic staging, source receipts, upload rollback and one Undo remain host-owned.
 async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch) {
+  // Undo is recorded on the page open when the batch was asked for; a switch while loading refuses.
+  const openAtStart = appStore.openFile.value;
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }] = await loadMediaWorkspace();
   const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
   assertLive();
+  if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   const editor = editorModule;
   if (!editor || !appStore.openFile.value) throw new Error("Open a page before changing images.");
   const historyPath = appStore.openFile.value, historyHost = editor.captureHistoryHost(appStore.openFile.value);

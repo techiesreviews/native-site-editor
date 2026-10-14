@@ -152,7 +152,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     const stamp = ports.stamp(), source = ports.source(page);
     if (source === undefined || ports.viewingVersion() || ports.openFile() !== page) return;
     // The batch records Undo on the open page, so that page must still be the one marked.
-    const current = () => stamp.holds() && ports.openFile() === page && ports.source(page) === source;
+    const current = () => stamp.holds() && !ports.viewingVersion() && ports.openFile() === page && ports.source(page) === source;
     try {
       const [rules, io, references, html, entities, ctx] = await Promise.all([
         import("../page-builder/media-descriptions"), import("../../shared/media-records"),
