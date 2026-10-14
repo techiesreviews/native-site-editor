@@ -168,7 +168,10 @@ test("keyboard focus on a Media tile's checkbox shows its name at once, and the 
   const name = card.locator(".media-library__name");
   await page.mouse.move(1400, 900);
   await expect(name).toHaveCSS("opacity", "0");
+  // Arrive by keyboard (back one stop and forward again): a click's focus does not show the name.
   await card.getByRole("checkbox").focus();
+  await page.keyboard.press("Shift+Tab"); await page.keyboard.press("Tab");
+  await expect(card.getByRole("checkbox")).toBeFocused();
   await expect(name).toHaveCSS("opacity", "1");
   await card.getByRole("button", { name: /^Used on \d+ pages?$/ }).click();
   await expect(page.getByRole("dialog").getByText(/^Used on \d+ pages?$/)).toBeVisible();
