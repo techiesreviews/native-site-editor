@@ -2,7 +2,7 @@
 title: Decide what GitHub-only features do on a folder
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + Codex (grilling)
 blocked_by: []
 ---
 
