@@ -135,7 +135,7 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await page.evaluate(async (modulePaths) => {
-    const { configureMediaPicker, openMediaPicker } = await import(modulePaths.picker) as typeof import("../../src/page-builder/media-picker");
+    const { configureMediaPicker, mountMediaLibrary } = await import(modulePaths.picker) as typeof import("../../src/page-builder/media-picker");
     const { createMediaWorkspace } = await import(modulePaths.workspace) as typeof import("../../src/page-builder/media-workspace");
     let version = "binary-A", commits = 0;
     let bytes = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>'], { type: "image/svg+xml" });
@@ -151,9 +151,12 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
       replace() { version = "binary-B"; bytes = new Blob(["newer binary B"], { type: "image/svg+xml" }); },
       state() { return { version, commits }; },
     } });
-    await openMediaPicker();
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;right:0;top:60px;width:900px;height:calc(100vh - 60px);z-index:100;background:var(--surface)";
+    document.body.append(host);
+    await mountMediaLibrary(host).ready;
   }, { picker: "/src/page-builder/media-picker.ts", workspace: "/src/page-builder/media-workspace.ts" });
-  const panel = page.getByRole("dialog", { name: "Media", exact: true });
+  const panel = page.getByRole("region", { name: "Media", exact: true });
   await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
@@ -220,7 +223,7 @@ test("renaming an image family keeps responsive copies when placing it on a page
   await page.frameLocator(".native-preview-frame").locator(".hero-image").click();
   await page.getByRole("button", { name: "Choose image…", exact: true }).click();
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await chooser.getByRole("button", { name: "Details for images/garden-family.svg", exact: true }).click();
+  await chooser.getByRole("button", { name: "Choose images/garden-family.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   const image = page.frameLocator(".native-preview-frame").locator(".hero-image");
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/garden-family.svg"');

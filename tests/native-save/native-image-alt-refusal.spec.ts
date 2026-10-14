@@ -14,7 +14,7 @@ test("a source change while the picker is open refuses the replacement", async (
   await frame(page).locator(".hero img").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…" }).click();
   const chooser = page.getByRole("dialog", { name: "Choose image" });
-  await chooser.getByRole("button", { name: "Details for images/studio-desk.svg" }).click();
+  await chooser.getByRole("button", { name: "Choose images/studio-desk.svg" }).click();
   // The image's own tag changes under the open picker.
   const changed = await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");

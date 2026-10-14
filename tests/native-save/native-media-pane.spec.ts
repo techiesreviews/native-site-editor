@@ -313,3 +313,37 @@ test("a failed direct image load can be retried without refreshing the library",
   await expect(panel.getByLabel("Description", { exact: true })).toBeVisible();
   await page.evaluate(() => (window as any).directRetry.view.dispose());
 });
+
+// Slice 18: the Media picker is this pane in a smaller window; the same search, Collections, details and drafts.
+test("the picker searches, filters by collection, shows details and keeps drafts like the pane", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  const frame = page.frameLocator(".native-preview-frame");
+  const choose = async () => {
+    await frame.locator(".hero img").click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+    const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+    await expect(picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true })).toBeVisible();
+    return picker;
+  };
+  let picker = await choose();
+  await expect(page.getByRole("region", { name: "Media", exact: true })).toHaveCount(0);
+  await picker.getByLabel("Search media", { exact: true }).fill("studio-desk");
+  await expect(picker.locator(".media-library__card")).toHaveCount(1);
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "File details", exact: true }).click();
+  await expect(picker.locator("summary").filter({ hasText: "Usage" })).toBeVisible();
+  await picker.getByLabel("Description", { exact: true }).fill("Persistent studio");
+  await picker.getByLabel("New collection", { exact: true }).fill("picker-tag");
+  await picker.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Persistent studio");
+  await picker.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  // A new picker reads the same records: the collection filters, details keep the words.
+  picker = await choose();
+  await picker.getByLabel("Collections", { exact: true }).selectOption("picker-tag");
+  await expect(picker.locator(".media-library__card")).toHaveCount(1);
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "File details", exact: true }).click();
+  await expect(picker.getByLabel("Description", { exact: true })).toHaveValue("Persistent studio");
+});

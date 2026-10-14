@@ -84,11 +84,14 @@ async function editSlot(page: Page, name: string) {
 async function openSlotDetails(page: Page, name: string) {
   if (!await slot(page, name).count()) await editSlot(page, name);
 }
-async function uploadImage(page: Page) {
+/** Choose image… opens the Media picker for the slot; the file is chosen, not yet used. */
+async function chooseImage(page: Page, path = "images/studio-desk.svg") {
   await openSlotDetails(page, 'image');
-  const chooser = page.waitForEvent('filechooser');
-  await slot(page, 'image').getByRole('button', {name:'Upload image…',exact:true}).click();
-  await (await chooser).setFiles({ name: "Chosen.PNG", mimeType: "image/png", buffer: Buffer.from("PNGDATA") });
+  await slot(page, 'image').getByRole('button', {name:'Choose image…',exact:true}).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.locator(".media-library__place")).toHaveText("Media card · Image");
+  await picker.getByRole("button", { name: `Choose ${path}`, exact: true }).click();
+  return picker;
 }
 
 test("an instance wears the component accent in the bar, the page structure and the canvas", { tag: "@smoke" }, async ({ page }) => {
@@ -411,7 +414,7 @@ test("image and conditional slots: an address, alt text and a part shown only wh
   })).not.toBe("none");
 });
 
-test("image upload finishes on the instance that started it", async ({ page, baseURL }) => {
+test("Choose image… places the picked file on the instance that opened the picker", async ({ page, baseURL }) => {
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure class="media-card">\n  <slot name="image"><img src="/images/placeholder.svg" alt="Placeholder"></slot>\n</figure>\n` } });
   const about = await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`);
   const aboutSource = (await about.text()).replace(`<section class="prose" data-key="prose">`, `<media-card data-key="first"></media-card>\n  <media-card data-key="second"></media-card>\n  <section class="prose" data-key="prose">`);
@@ -419,31 +422,18 @@ test("image upload finishes on the instance that started it", async ({ page, bas
   await open(page, baseURL, "about/index.html");
   await row(page, "Media card").first().click();
   await expandInstance(row(page, "Media card").first());
-  await pauseUpload(page);
-  await uploadImage(page);
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
-  await row(page, "Media card").nth(1).click();
-  await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
-  await expect.poll(() => editorText(page)).toContain(`<media-card data-key="first">\n    <img slot="image" src="/images/chosen.png" alt="Placeholder">\n  </media-card>\n  <media-card data-key="second"></media-card>`);
+  const before = await editorText(page);
+  const picker = await chooseImage(page);
+  // Cancel keeps the slot as it was.
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  expect(await editorText(page)).toBe(before);
+  await (await chooseImage(page)).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect.poll(() => editorText(page)).toContain(`<media-card data-key="first">\n    <img slot="image" src="/images/studio-desk.svg" alt="Placeholder">\n  </media-card>\n  <media-card data-key="second"></media-card>`);
 });
 
-async function pauseUpload(page: Page) {
-  // Uploads stay in IndexedDB until Save; pause reading the file, not /api/blob.
-  await page.evaluate(() => {
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- saved to restore later; called with .call(this).
-    const original = File.prototype.arrayBuffer;
-    const state = window as typeof window & { uploadStarted?: boolean; releaseUpload?: () => void };
-    File.prototype.arrayBuffer = async function () {
-      state.uploadStarted = true;
-      await new Promise<void>((resolve) => { state.releaseUpload = resolve; });
-      File.prototype.arrayBuffer = original;
-      return original.call(this);
-    };
-  });
-}
-
 for (const action of ["delete", "reorder"] as const) {
-  test(`image upload rejects an instance ${action} while reading the file`, async ({ page, baseURL }) => {
+  test(`a chosen image is refused after an instance ${action} while the picker is open`, async ({ page, baseURL }) => {
     await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure><slot name="image"><img src="/images/placeholder.svg" alt="Placeholder"></slot></figure>\n` } });
     const about = await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`);
     const first = `<media-card data-key="first"></media-card>`;
@@ -453,22 +443,23 @@ for (const action of ["delete", "reorder"] as const) {
     await open(page, baseURL, "about/index.html");
     await row(page, "Media card").first().click();
     await expandInstance(row(page, "Media card").first());
-    await pauseUpload(page);
-    await uploadImage(page);
-    await expect.poll(() => page.evaluate(() => (window as typeof window & { uploadStarted?: boolean }).uploadStarted)).toBe(true);
-    const changed = source.replace(`${first}${second}`, action === "delete" ? second : `${second}${first}`);
-    await page.locator(`#content [role="textbox"]`).first().focus();
-    await page.keyboard.press("ControlOrMeta+A");
-    await page.keyboard.insertText(changed);
+    const picker = await chooseImage(page);
+    // An agent (or another tab) changes the page under the open picker.
+    await page.evaluate(([first, second, action]) => import("/src/components/code-editor.ts").then(editor => {
+      const before = editor.getMountedSource("about/index.html")!;
+      const text = before.replace(`${first}${second}`, action === "delete" ? second : `${second}${first}`);
+      editor.replaceActiveRange({ path: "about/index.html", start: 0, end: before.length, expected: before, text });
+      editor.closeActiveEditGroup("about/index.html");
+    }), [first, second, action]);
     await expect(frame(page).locator("media-card")).toHaveCount(action === "delete" ? 1 : 2);
     // Check complete source bytes independently of the clipboard reader, which
     // can copy only the current line instead of the editor's full selection.
     const draftText = async () => (await storedDraft(page, "about/index.html"))?.content;
     await expect.poll(draftText).toContain(action === "delete" ? second : `${second}${first}`);
-    const beforeUpload = await draftText();
-    await page.evaluate(() => (window as typeof window & { releaseUpload?: () => void }).releaseUpload?.());
-    await expect(status(page)).toHaveText("The instance changed while the image uploaded; it was not replaced.");
-    await expect.poll(draftText).toBe(beforeUpload);
+    const beforeUse = await draftText();
+    await picker.getByRole("button", { name: "Use image", exact: true }).click();
+    await expect(status(page)).toHaveText("The instance changed while the image was chosen; it was not replaced.");
+    await expect.poll(draftText).toBe(beforeUse);
   });
 }
 

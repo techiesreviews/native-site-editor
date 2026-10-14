@@ -79,7 +79,7 @@ test("placeholder Choose image replaces its source and dimensions, keeps the sit
   await expect(bar(page).getByRole("combobox", { name: "Variant", exact: true })).toHaveCount(0);
   await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await chooser.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await chooser.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(page.locator("#status")).toHaveText("Image replaced");
   await expect.poll(() => source(page)).toContain('src="/images/studio-desk.svg"');
@@ -90,7 +90,7 @@ test("placeholder Choose image replaces its source and dimensions, keeps the sit
   await expect.poll(() => source(page)).toBe(before);
   // The original asset remains available after replacement and undo.
   await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
-  await expect(chooser.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(chooser.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   // The fixture's alt="" is not marked Decorative, so the field reads Not described yet.
   await bar(page).getByRole("button", { name: "Not described yet", exact: true }).click();

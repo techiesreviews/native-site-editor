@@ -224,7 +224,7 @@ export function createMediaLibraryView(
     }
     name.textContent = chosen ? basename(chosen) : "Choose one image";
     thumb.replaceChildren(); details.hidden = !chosen;
-    use.disabled = !chosen || busyLock.busy;
+    use.disabled = !chosen;
     if (!chosen) return;
     const path = chosen;
     void cache.get(path).then(data => {

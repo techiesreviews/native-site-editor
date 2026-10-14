@@ -129,7 +129,7 @@ test("image slot keeps its chooser modal while manager query survives", async ({
   const frame = page.frameLocator(".native-preview-frame"); await frame.locator(".hero-image").click({ timeout: 10000 });
   await page.getByRole("button", { name: "Choose image…", exact: true }).click({ timeout: 10000 });
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true }); await expect(chooser).toBeVisible();
-  await chooser.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click({ timeout: 10000 });
+  await chooser.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click({ timeout: 10000 });
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/studio-desk.svg"');
   await expect(chooser).toHaveCount(0);

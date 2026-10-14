@@ -236,7 +236,7 @@ test("a click on an image selects it; a double-click opens Choose image", async 
   await expect(chooser).toBeHidden();
   await image.dblclick();
   await expect(chooser).toBeVisible();
-  await expect(chooser.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(chooser.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
 });
 
 test("a link is selected by a click and typed into on a double-click; Enter types into selected text", async ({ page }) => {

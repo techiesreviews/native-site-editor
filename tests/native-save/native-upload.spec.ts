@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { publishButton, showPublish } from "./publish";
 
-// Uploading images and other binary files (src/uploads.ts): the image
-// chooser's Upload images… and drop, the Files tab's Upload files… and drop
+// Uploading images and other binary files (src/uploads.ts): the Media
+// picker's Add new file and drop, the Files tab's Upload files… and drop
 // on a folder. An upload is an A draft whose bytes this browser keeps in
 // IndexedDB; the preview shows it at once; Save sends the bytes as a GitHub
 // blob (worker/blobs.ts) and commits it, byte for byte, to the fake GitHub
@@ -26,6 +26,8 @@ const png = Buffer.concat([
   Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
 ]);
 const pngUrl = `data:image/png;base64,${png.toString("base64")}`;
+// The picker adds files on the drop-to-add path, which keeps an SVG's bytes as they are.
+const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="#c03"/></svg>\n');
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
@@ -58,18 +60,16 @@ async function openChooser(page: Page) {
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
   await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
   await expect(chooser(page)).toBeVisible();
-  await expect(chooser(page).getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(chooser(page).getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
 }
 
-async function addOriginalAndUse(page: Page, path: string) {
-  // Byte-exact uploads explicitly retain the original instead of re-encoding it.
-  await chooser(page).getByRole("checkbox", { name: "Keep original", exact: true }).check();
-  await chooser(page).getByRole("button", { name: "Preview optimisation", exact: true }).click();
-  await expect(chooser(page).getByRole("button", { name: "Add to library", exact: true })).toBeEnabled();
-  await chooser(page).getByRole("button", { name: "Add to library", exact: true }).click();
-  await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
-  await chooser(page).getByRole("button", { name: `Details for ${path}`, exact: true }).click();
+/** The added file is chosen, not placed: the page is unchanged until Use. */
+async function addedThenUse(page: Page, path: string) {
+  await expect(chooser(page).locator(".media-library__adding-status")).toHaveText("Added 1 file");
+  await expect(chooser(page).getByRole("button", { name: `Choose ${path}`, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(chooser(page).locator(".media-library__chosen-text")).toHaveText(path.split("/").pop()!);
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).not.toContain(path);
   await chooser(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(chooser(page)).toBeHidden();
 }
@@ -104,55 +104,55 @@ async function committed(page: Page, path: string) {
   return response.ok() ? Buffer.from(await response.body()) : undefined;
 }
 
-test("Upload images… in the image chooser uploads to images/, shows it at once, survives a reload and saves byte for byte", async ({ page, baseURL }) => {
+test("Add new file in the Media picker adds to images/ and chooses it; Use places it; it survives a reload and saves byte for byte", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openChooser(page);
   const upload = page.waitForEvent("filechooser");
-  await chooser(page).getByRole("button", { name: "Upload images…", exact: true }).click();
-  await (await upload).setFiles({ name: "Team Photo.PNG", mimeType: "image/png", buffer: png });
-  await addOriginalAndUse(page, "images/team-photo.png");
+  await chooser(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await (await upload).setFiles({ name: "Team Photo.svg", mimeType: "image/svg+xml", buffer: svg });
+  await addedThenUse(page, "images/team-photo.svg");
 
   // The image points at the new file, its alt follows the name, and the preview shows the bytes.
-  await expect.poll(() => editorText(page)).toContain(`<img alt="team photo" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.png" data-key="hero-image">`);
-  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", pngUrl);
-  await expect(chooser(page)).toBeHidden();
+  await expect.poll(() => editorText(page)).toContain(`<img alt="team photo" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.svg" data-key="hero-image">`);
+  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", `data:image/svg+xml;base64,${svg.toString("base64")}`);
 
   // It is an A change, uploaded, with the page's edit beside it.
   await showPublish(page);
   await expect(panel(page)).toBeVisible();
   const files = panel(page).locator(".publish-menu__file");
-  await expect(files).toHaveText([/images\/team-photo\.png/, /index\.html/]);
+  await expect(files).toHaveText([/images\/team-photo\.svg/, /index\.html/]);
   await expect(files.first().locator(".publish-menu__status [aria-hidden]")).toHaveText("A");
-  await expect(panel(page).locator(".publish-menu__note").first()).toHaveText("Uploaded, 326 B");
+  await expect(panel(page).locator(".publish-menu__note").first()).toHaveText(`Uploaded, ${svg.length} B`);
   await page.keyboard.press("Escape");
   expect(await storedUploads(page)).toBe(1);
 
   // A reload keeps the draft, its bytes and the preview.
   await page.reload();
-  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", pngUrl, { timeout: 30_000 });
-  // The chooser now lists the draft image beside the repository's images.
+  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/, { timeout: 30_000 });
+  // The picker now lists the draft image beside the repository's images.
   await openChooser(page);
-  await chooser(page).getByRole("button", { name: "Details for images/team-photo.png", exact: true }).click();
-  await expect(chooser(page).getByRole("textbox", { name: "Alt text for insertion", exact: true })).toHaveValue("team photo");
-  await page.keyboard.press("Escape");
+  await chooser(page).getByRole("button", { name: "Choose images/team-photo.svg", exact: true }).click();
+  await expect(chooser(page).locator(".media-library__chosen-text")).toHaveText("team-photo.svg");
+  await chooser(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(chooser(page)).toBeHidden();
 
   // Saved: the bytes on GitHub are the file's, and the browser lets its copy go.
   await showPublish(page);
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  expect((await committed(page, "images/team-photo.png"))?.equals(png)).toBe(true);
-  expect((await committed(page, indexPath))?.toString()).toContain(`src="/images/team-photo.png"`);
+  expect((await committed(page, "images/team-photo.svg"))?.equals(svg)).toBe(true);
+  expect((await committed(page, indexPath))?.toString()).toContain(`src="/images/team-photo.svg"`);
   await expect.poll(() => storedUploads(page)).toBe(0);
-  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", pngUrl);
   await expect(saveTrigger(page)).toBeDisabled();
 });
 
-test("a file dropped on the image chooser uploads it; Discard in the Save panel removes it and its bytes", async ({ page, baseURL }) => {
+test("a file dropped on the Media picker is added and chosen; Discard in the Save panel removes it and its bytes", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openChooser(page);
-  await dropFiles(page, "dialog.media-library", [{ name: "placeholder.svg", type: "image/png", base64: png.toString("base64") }]);
-  await addOriginalAndUse(page, "images/placeholder-2.svg");
+  await dropFiles(page, "dialog.media-library", [{ name: "placeholder.svg", type: "image/svg+xml", base64: svg.toString("base64") }]);
+  await addedThenUse(page, "images/placeholder-2.svg");
   // The name is taken on the branch: a suffix, never an overwrite.
   await expect.poll(() => editorText(page)).toContain(`src="/images/placeholder-2.svg"`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
