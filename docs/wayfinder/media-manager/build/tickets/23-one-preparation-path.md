@@ -2,7 +2,7 @@
 title: One preparation for every way of adding
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-23 runner)
 blocked_by: [17-drop-to-add, 08-media-undo-without-page]
 builder: sol
 phase: 2
