@@ -98,7 +98,7 @@ test("delete keeps metadata and binary deletion together until Undo", async ({ p
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Restore me");
   await panel.getByRole("button", { name: "Remove file…", exact: true }).click();
-  await panel.getByRole("button", { name: "Delete images", exact: true }).click();
+  await panel.getByRole("button", { name: "Remove file", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toHaveCount(0);
   await expect.poll(async () => (await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
   await closeLibrary(page);

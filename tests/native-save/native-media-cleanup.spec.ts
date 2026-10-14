@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { publishButton } from "./publish";
 
-// Clean up: the Media tab's count, Dismiss, and the Always keep mark (slice 49).
+// Clean up: the Media tab's count, Dismiss, and the Always keep mark (slice 49); removing a used file
+// and restoring it from Recently removed (slice 51).
 // The starter's images/studio-desk.svg is used nowhere, so it is always counted.
 test.beforeEach(({ page }) => page.setDefaultTimeout(10_000));
 
@@ -102,4 +104,55 @@ test("using the unused file on a page takes it out of the count", async ({ page,
   const item = page.getByRole("menuitem", { name: /^Clean up/ });
   await expect(item).toHaveAttribute("aria-disabled", "true");
   await expect(item).toHaveAccessibleDescription("Nothing to clean up: every file is used or marked Always keep.");
+});
+
+test("removing a used file warns with its page, then allows; after publishing, Recently removed restores it and the page shows it again", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.locator("#explorer-toggle").click();
+  await tab(page).click();
+  const hero = page.frameLocator(".native-preview-frame").locator(".hero-image");
+  const shown = () => hero.evaluate(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth);
+  await expect.poll(shown).toBeGreaterThan(0);
+
+  // Remove file from details: the page using it is named, its picture will break, and it can be opened first.
+  await pane(page).getByRole("button", { name: "Details for images/placeholder.svg", exact: true }).click();
+  await pane(page).getByRole("button", { name: "Remove file…", exact: true }).click();
+  await expect(pane(page).getByRole("heading", { name: "Remove placeholder.svg?", exact: true })).toBeFocused();
+  await expect(pane(page).getByText(/^1 page uses this file\. The picture on it will break/)).toBeVisible();
+  await expect(pane(page).getByRole("button", { name: /^Open (Home|index\.html)$/ })).toBeVisible();
+  // Cancel goes back to the file's details.
+  await pane(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(pane(page).getByRole("button", { name: "Remove file…", exact: true })).toBeVisible();
+  await pane(page).getByRole("button", { name: "Remove file…", exact: true }).click();
+  await pane(page).getByRole("button", { name: "Remove file", exact: true }).click();
+  await expect(pane(page).locator(".media-library__message")).toContainText("Removed placeholder.svg. Restore it from More → Recently removed.");
+  await expect(pane(page).locator('.media-library__card[data-path="images/placeholder.svg"]')).toHaveCount(0);
+
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  expect((await page.request.get(`${baseURL}/__demo/file?path=images/placeholder.svg`)).status()).toBe(404);
+  // Publish closes the explorer; open Media again.
+  await page.mouse.move(0, 400);
+  await page.locator("#explorer-toggle").click();
+  await tab(page).click();
+
+  // Recently removed lists it with its date and picture; Restore brings it back to the same address.
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Recently removed", exact: true }).click();
+  await expect(pane(page).getByRole("heading", { name: "Recently removed", exact: true })).toBeFocused();
+  const row = pane(page).locator('.media-removed__list li[data-path="images/placeholder.svg"]');
+  await expect(row).toContainText("Removed today · 30 days left");
+  await expect.poll(() => row.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await row.getByRole("button", { name: "Restore placeholder.svg", exact: true }).click();
+  await expect(pane(page).locator(".media-library__message")).toContainText("Restored placeholder.svg to images/placeholder.svg.");
+  await expect(row).toHaveCount(0);
+  await expect(pane(page).getByText(/^Nothing removed in the last 30 days\./)).toBeVisible();
+  await expect.poll(shown).toBeGreaterThan(0);
+  await pane(page).getByRole("button", { name: "Back", exact: true }).click();
+  await expect(pane(page).locator('.media-library__card[data-path="images/placeholder.svg"]')).toBeVisible();
+
+  // Published again, the old file is back on GitHub without a new upload.
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  expect((await page.request.get(`${baseURL}/__demo/file?path=images/placeholder.svg`)).ok()).toBe(true);
 });

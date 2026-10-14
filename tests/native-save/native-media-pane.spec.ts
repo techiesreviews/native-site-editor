@@ -270,7 +270,7 @@ for (const lastImage of [false, true]) {
     const panel = pane(page);
     await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
     await panel.getByRole("button", { name: "Remove file…", exact: true }).click();
-    const confirm = panel.getByRole("button", { name: "Delete images", exact: true });
+    const confirm = panel.getByRole("button", { name: "Remove file", exact: true });
     await confirm.focus(); await page.keyboard.press("Enter");
     await expect.poll(() => page.evaluate(() => Boolean((window as any).releaseImageDelete))).toBe(true);
     await page.evaluate(async () => { await (window as any).deleteRace.view.refresh(); });
@@ -278,7 +278,7 @@ for (const lastImage of [false, true]) {
     await expect(panel.getByRole("status").last()).not.toContainText("Reopen Delete");
     expect(await page.evaluate(() => (window as any).deleteRace.loads())).toBe(1);
     await page.evaluate(() => (window as any).releaseImageDelete());
-    await expect(panel.getByRole("status").last()).toContainText("Images deleted as drafts.");
+    await expect(panel.getByRole("status").last()).toContainText("Removed a.svg. Restore it from More → Recently removed.");
     await expect(lastImage ? panel.locator(".media-library__grid") : panel.getByRole("button", { name: "Details for images/b.svg", exact: true })).toBeFocused();
     await expect(panel.getByRole("status").last()).not.toContainText("Reopen Delete");
     await page.evaluate(() => (window as any).deleteRace.view.dispose());

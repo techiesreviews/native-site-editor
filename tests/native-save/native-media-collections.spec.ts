@@ -264,7 +264,7 @@ test("New collection from the selection bar holds both files in one Undo step; R
   await collections.selectOption("Pair");
   await select(page, "images/placeholder.svg");
   await library.getByRole("button", { name: "Remove file", exact: true }).click();
-  await library.getByRole("button", { name: "Delete images", exact: true }).click();
+  await library.getByRole("button", { name: "Remove file", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.deleted).toBe(true);
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
   await collections.selectOption("");

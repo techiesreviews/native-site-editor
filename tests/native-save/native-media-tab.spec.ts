@@ -332,17 +332,17 @@ test("refresh refuses stale delete confirmations and requires fresh usage", asyn
   await page.evaluate(() => (window as any).focusProbe.refresh());
   await library.getByRole("button", { name: "Remove file…", exact: true }).click();
   await expect(library.locator(".media-library__message")).toContainText("Wait for them to finish before deleting");
-  await expect(library.getByRole("button", { name: "Delete images", exact: true })).toHaveCount(0);
+  await expect(library.getByRole("button", { name: "Remove file", exact: true })).toHaveCount(0);
   await page.evaluate(() => (window as any).releaseFocusLoad());
   await expect(library).not.toHaveAttribute("aria-busy", "true");
   await library.getByRole("button", { name: "Remove file…", exact: true }).click();
-  await expect(library.locator(".media-library__sheet")).toContainText("Used on 1 pages");
+  await expect(library.locator(".media-library__sheet")).toContainText("Used on 1 page");
   await library.getByRole("button", { name: "Cancel", exact: true }).focus();
   await page.evaluate(() => {
-    (window as any).staleImageDelete = [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button => button.textContent === "Delete images");
+    (window as any).staleImageDelete = [...document.querySelectorAll<HTMLButtonElement>(".media-library__sheet button")].find(button => button.textContent === "Remove file");
     (window as any).focusProbe.refresh();
   });
-  await expect(library.getByRole("button", { name: "Delete images", exact: true })).toBeHidden();
+  await expect(library.getByRole("button", { name: "Remove file", exact: true })).toBeHidden();
   await page.evaluate(() => (window as any).releaseFocusLoad());
   await expect(library).not.toHaveAttribute("aria-busy", "true");
   await expect(thumb).toBeFocused();
