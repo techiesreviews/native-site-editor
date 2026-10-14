@@ -167,3 +167,14 @@ test("a page or component template missing from the scan leaves every family unc
     assert.equal(mediaUsageState(mediaUsageFor(records, "images/photo.jpg")), "not-checked");
   }
 });
+
+test("a download link to a stylesheet applies none of its pictures, a stylesheet link and a style-block import do", () => {
+  const sources = {
+    "download.html": '<a href="/styles/theme.css">Download the stylesheet</a>',
+    "linked.html": '<link rel="stylesheet" href="/styles/theme.css">',
+    "imported.html": '<style>@import "/styles/theme.css";</style>',
+    "styles/theme.css": ".hero{background:url(/images/hero.jpg)}",
+  };
+  const records = mediaUsageRecords({ media: ["images/hero.jpg"], sources, pages: ["download.html", "linked.html", "imported.html"] });
+  assert.deepEqual(mediaUsageFor(records, "images/hero.jpg").pages, ["linked.html", "imported.html"]);
+});

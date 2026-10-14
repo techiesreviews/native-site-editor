@@ -3,7 +3,7 @@ import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaUrl } from "./media-markup";
 
-export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attribute?: "src" | "href" | "poster" | "content" | "srcset" | "style"; attributeQuote?: string; cssQuote?: string }
+export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attribute?: "src" | "href" | "poster" | "content" | "srcset" | "style"; tag?: string; attributeQuote?: string; cssQuote?: string }
 export interface MediaReference extends MediaUrlToken { path: string }
 export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 
@@ -131,8 +131,8 @@ function srcsetUrls(value: string, add: (url: string, start: number, end: number
 /** Every decoded URL token, including values that do not resolve to a repository file. */
 export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[] {
   const out: MediaUrlToken[] = [];
-  const add = (value: string, start: number, end: number, alt?: string, attributeQuote?: string, cssQuote?: string, attribute?: MediaUrlToken["attribute"]) => {
-    out.push({ file, start, end, value, alt, attribute, attributeQuote, cssQuote });
+  const add = (value: string, start: number, end: number, alt?: string, attributeQuote?: string, cssQuote?: string, attribute?: MediaUrlToken["attribute"], tag?: string) => {
+    out.push({ file, start, end, value, alt, attribute, tag, attributeQuote, cssQuote });
   };
   if (/\.css$/i.test(file)) { cssUrls(source, (value, start, end, quote) => add(value, start, end, undefined, undefined, quote)); return out; }
   let styleEnd = 0;
@@ -150,14 +150,14 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
       const quote = ["'", '"'].includes(source[attr.valueStart - 1]) ? source[attr.valueStart - 1] : "";
       if (name === "srcset") {
         const decoded = attributeText(attr.value);
-        srcsetUrls(decoded.text, (value, start, end) => add(value, attr.valueStart + decoded.starts[start], attr.valueStart + decoded.ends[end - 1], alt, quote, undefined, name));
-      } else add(decodeHtmlEntities(attr.value, true), attr.valueStart, attr.valueEnd, alt, quote, undefined, name);
+        srcsetUrls(decoded.text, (value, start, end) => add(value, attr.valueStart + decoded.starts[start], attr.valueStart + decoded.ends[end - 1], alt, quote, undefined, name, tag.name));
+      } else add(decodeHtmlEntities(attr.value, true), attr.valueStart, attr.valueEnd, alt, quote, undefined, name, tag.name);
     }
     const style = startTagAttribute(source, tag, "style");
     if (style) {
       const decoded = attributeText(style.value);
       const quote = ["'", '"'].includes(source[style.valueStart - 1]) ? source[style.valueStart - 1] : "";
-      cssUrls(decoded.text, (value, start, end, cssQuote) => add(value, style.valueStart + decoded.starts[start], style.valueStart + decoded.ends[end - 1], undefined, quote, cssQuote, "style"));
+      cssUrls(decoded.text, (value, start, end, cssQuote) => add(value, style.valueStart + decoded.starts[start], style.valueStart + decoded.ends[end - 1], undefined, quote, cssQuote, "style", tag.name));
     }
     if (tag.name === "style") {
       const closing = /<\/style(?=[\t\n\f\r />])/i.exec(source.slice(tag.end));
@@ -170,9 +170,9 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
 }
 
 export function scanMediaReferences(file: string, source: string): MediaReference[] {
-  return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attribute, attributeQuote, cssQuote }) => {
+  return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attribute, tag, attributeQuote, cssQuote }) => {
     const path = mediaResolvePath(value, file);
-    return path ? [{ file, start, end, value, path, alt, attribute, attributeQuote, cssQuote }] : [];
+    return path ? [{ file, start, end, value, path, alt, attribute, tag, attributeQuote, cssQuote }] : [];
   });
 }
 
@@ -186,8 +186,10 @@ export function walkMediaReferencePages(
 ): void {
   const dependencies = new Map<string, Set<string>>();
   for (const [file, refs] of references) {
-    // Only stylesheets and components place their pictures on a page; a link to another page does not.
-    const deps = new Set(refs.map((ref) => ref.path).filter((path) => /\.css$/i.test(path) && Object.hasOwn(sources, path)));
+    // Only stylesheets (<link>, CSS @import) and components place their pictures on a page;
+    // a link to another page or a download link to a stylesheet does not.
+    const applied = (ref: MediaReference) => ref.attribute === undefined || ref.attribute === "style" || ref.tag === "link";
+    const deps = new Set(refs.filter((ref) => applied(ref) && /\.css$/i.test(ref.path) && Object.hasOwn(sources, ref.path)).map((ref) => ref.path));
     if (/\.html$/i.test(file)) for (const tag of startTags(sources[file] ?? "")) if (components[tag.name]) {
       deps.add(components[tag.name]);
       const sheet = components[tag.name].replace(/\.html$/i, ".css");

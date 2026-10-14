@@ -5,6 +5,7 @@ import { mediaUsageIndex, rewriteMediaReferences, scanMediaReferences, scanMedia
 test("URL tokens and references retain attribute origin while CSS text has none", () => {
   const source = '<meta property="og:image" content="/images/share.png"><img src="/images/a.png" srcset="/images/b.png 2x"><a href="/file.pdf">File</a><video poster="/images/poster.png"></video><div style="background:url(/images/c.png)"></div><style>.a{background:url(/images/d.png)}</style>';
   const attributes = ["content", "src", "srcset", "href", "poster", "style", undefined];
+  assert.deepEqual(scanMediaUrlTokens("index.html", source).map(ref => ref.tag), ["meta", "img", "img", "a", "video", "div", undefined]);
   assert.deepEqual(scanMediaUrlTokens("index.html", source).map(ref => ref.attribute), attributes);
   assert.deepEqual(scanMediaReferences("index.html", source).map(ref => ref.attribute), attributes);
   assert.equal(scanMediaReferences("styles/site.css", '.a{background:url(/images/a.png)}')[0].attribute, undefined);
