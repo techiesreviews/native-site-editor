@@ -138,6 +138,12 @@ export function uploadBytes(): UploadBytes {
   return instance ??= indexedDbUploadBytes();
 }
 
+let removed: UploadBytes | undefined;
+/** Browser copies of removed files with no repository history to restore from (Recently removed, 30 days). */
+export function removedCopies(): UploadBytes {
+  return removed ??= indexedDbUploadBytes("native-site-editor-removed");
+}
+
 /** Bytes being added whose draft is not saved yet. */
 const adding = new Map<string, number>();
 /** Keep staged bytes from a sweep while any operation is still preparing them. */

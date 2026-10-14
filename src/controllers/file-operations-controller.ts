@@ -34,6 +34,8 @@ export interface FileOperationsPorts {
   readFile(repo: string, sha: string): Promise<string>;
   nativeFiles(scope?: DraftScope): string[];
   readMediaText?(path: string): Promise<string | undefined>;
+  /** Byte stores for Recently removed's browser copies (tests); the browser's IndexedDB by default. */
+  removalStores?: () => import("../page-builder/media-file-removal").RemovalStores;
   origins?(): string[];
   ensureNativeTextIndex(): Promise<string | undefined>;
   branchPathProblem(path: string): Promise<string | undefined>;
@@ -476,10 +478,10 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
           if (inUse) return { refuse: inUse };
         } catch (error) { return { refuse: error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted." }; }
       }
-      let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[] } = {};
+      let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } = {};
       if (found.some(file => isRenamableMedia(file.path))) {
         const { filesRemovalPlan } = await import("../page-builder/media-file-removal");
-        const plan = await filesRemovalPlan(ports, r, found, since);
+        const plan = await filesRemovalPlan(ports, r, found, since, ports.removalStores);
         if ("refuse" in plan) return plan;
         recordsPlan = plan;
       }
@@ -498,7 +500,10 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
           : count === 1 ? "It is not on GitHub yet, so this discards it." : "They are not on GitHub yet, so this discards them.",
       ], action: "Delete" });
       if (!ok) { cancelled = true; return { stayed: cancel }; }
-      return { ...recordsPlan, deletes: found.map(file => file.path),
+      // Browser copies for Recently removed are written only once Delete is confirmed.
+      const { keep, ...recorded } = recordsPlan;
+      try { await keep?.(); } catch { return { refuse: "This browser could not keep a copy for Recently removed, so nothing was deleted." }; }
+      return { ...recorded, deletes: found.map(file => file.path),
         done: target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`,
         undone: `Undid deleting ${target.path}.` };
     }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key && targetDrafts(target) === drafts && opaqueDrafts() === opaque });

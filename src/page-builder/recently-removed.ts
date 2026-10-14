@@ -16,8 +16,22 @@ export function recordRemoval(records: MediaRecords, removal: { main: string; fa
   ] };
 }
 
+/**
+ * Drops expired entries and entries whose file is back already (the Files tab's or Save's Restore of an
+ * unsaved deletion): their records return to the files, so a description or collection is never lost.
+ */
 export function pruneRemoved(records: MediaRecords, today: string, current?: (path: string) => string | undefined): MediaRecords {
-  return { ...records, removed: records.removed?.filter(entry => !expired(entry.date, today) && !(entry.sha && current?.(entry.path) === entry.sha)) };
+  let files = records.files;
+  const removed = records.removed?.filter(entry => {
+    if (expired(entry.date, today)) return false;
+    if (!entry.sha || current?.(entry.path) !== entry.sha) return true;
+    for (const member of [entry, ...entry.family ?? []]) {
+      if (!member.record || Object.hasOwn(files, member.path) || (member !== entry && current(member.path) === undefined)) continue;
+      files = Object.assign(Object.create(null), files, { [member.path]: member.record });
+    }
+    return false;
+  });
+  return { ...records, files, removed };
 }
 
 export function recentlyRemoved(records: MediaRecords, today: string, current: (path: string) => string | undefined): RemovedMedia[] {
@@ -50,10 +64,10 @@ export async function sweepRemovedCopies(store: UploadBytes, today: string): Pro
   }
 }
 
-/** Files discards unsaved bytes; only repository blobs can return after saving. */
-export function recordFileRemovals(records: MediaRecords, files: { path: string; sha?: string }[], paths: string[], today: string, current: (path: string) => string | undefined): MediaRecords {
+/** The Files tab's removals, one entry per family; a member without a blob SHA or browser key is not recorded. */
+export function recordFileRemovals(records: MediaRecords, files: RemovedPath[], paths: string[], today: string, current: (path: string) => string | undefined): MediaRecords {
   let next = pruneRemoved(records, today, current);
-  const members = new Map(files.filter(file => file.sha).map(file => [file.path, file]));
+  const members = new Map(files.filter(file => file.sha || file.browserKey).map(file => [file.path, file]));
   const familyPaths = (path: string) => {
     const family = mediaFamilyOf(path, paths);
     return [path, ...family?.copies.map(copy => copy.path) ?? [], ...family?.originals ?? []];

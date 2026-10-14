@@ -63,6 +63,18 @@ test("already-back entries hide only when the main has its recorded blob", () =>
   assert.equal(recentlyRemoved(removed, date, () => "another").length, 1);
 });
 
+test("an entry back already returns its records to the files that are back", () => {
+  const { records, removed } = fixture();
+  const back = pruneRemoved(removed, date, path => ({ "media/a.webp": "main", "media/a-480.webp": "copy" } as Record<string, string>)[path]);
+  assert.equal(back.removed?.length ?? 0, 0);
+  assert.deepEqual(back.files["media/a.webp"], records.files["media/a.webp"]);
+  assert.deepEqual(back.files["media/a-480.webp"], records.files["media/a-480.webp"]);
+  // A member that did not come back gets no record; a newer record at an address is kept.
+  assert.equal(back.files["media/originals/a.heic"], undefined);
+  const newer = { ...removed, files: Object.assign(Object.create(null), removed.files, { "media/a.webp": { collections: ["New"] } }) };
+  assert.deepEqual(pruneRemoved(newer, date, () => "main").files["media/a.webp"], { collections: ["New"] });
+});
+
 test("newest first includes removals on the same day; pruning keeps append order for future writes", () => {
   const { removed } = fixture();
   const next = recordRemoval(removed, { main: "newer.png", family: [{ path: "newer.png", sha: "newer" }], date });
@@ -116,6 +128,20 @@ test("repository families restore before saving by dropping deletion drafts, wit
   assert.equal(f.steps.length, 2); assert.equal((await f.workspace.load()).removed?.length, 0);
   assert.equal(f.steps[1].undo(), true); assert.equal((await f.workspace.load()).removed?.length, 1);
   assert.equal(await f.steps[1].redo(), true); assert.equal((await f.workspace.load()).removed?.length, 0);
+});
+
+test("a Restore outside Media (Files or Save) brings the records back with the files", async () => {
+  const f = engine(); await f.workspace.load();
+  await f.workspace.collections({ kind: "new", name: "Work", paths: ["a.png"] });
+  await f.workspace.remove(["a.png"]);
+  assert.deepEqual((await f.workspace.load()).metadata["a.png"], undefined);
+  // The Files tab's Restore drops the deletion drafts and leaves the records draft as it is.
+  for (const [path, draft] of f.drafts) if (draft.deleted) f.drafts.delete(path);
+  const library = await f.workspace.load();
+  assert.equal(library.removed?.length, 0); assert.deepEqual(library.metadata["a.png"]?.tags, ["Work"]);
+  await f.workspace.metadata({ "a-480.png": { alt: "Small" } });
+  const saved = parseMediaRecords(f.drafts.get(".editor/media.json")!.content);
+  assert.deepEqual(saved.files["a.png"].collections, ["Work"]); assert.equal(saved.removed, undefined);
 });
 
 test("after saving a removal, restore publishes the old blob without uploading bytes", async () => {

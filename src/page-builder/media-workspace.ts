@@ -21,6 +21,7 @@ import { mediaStorageName, mediaCopyName, chooseMediaPath } from "./media-storag
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
 import { resetMediaAddingSettings, setMediaAddingSettings } from "./media-settings";
+import { planRestore, pruneRemoved, recentlyRemoved, recordRemoval, sweepRemovedCopies } from "./recently-removed";
 
 /** Prepared mutations only. The host validates and commits this entire batch atomically. */
 export interface MediaWorkspaceBatch {
@@ -143,7 +144,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const metadata = await ctx.read(MEDIA_RECORDS_PATH);
     ctx.assertLive();
     batch.expectedSources.set(MEDIA_RECORDS_PATH, metadata);
-    return { batch, text, metadata: readSiteMediaRecords(metadata, ctx.items.map(item => item.path)) };
+    // Files already back (a Restore outside Media) get their records again before any change is planned.
+    const records = pruneRemoved(readSiteMediaRecords(metadata, ctx.items.map(item => item.path)), today(ctx), path => currentSha(ctx, path));
+    return { batch, text, metadata: records };
   };
   const assetGuard = (batch: MediaWorkspaceBatch, paths: string[]) => {
     for (const path of paths) {
@@ -164,8 +167,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     return draft ? draft.opaque && !draft.upload ? draft.sourceSha : undefined : ctx.assetVersion(path);
   };
   const removedRecords = async (ctx: MediaWorkspaceContext, records: MediaRecords, paths: string[]) => {
-    const { recordRemoval, pruneRemoved } = await import("./recently-removed");
-    ctx.assertLive();
     const date = today(ctx);
     let next = pruneRemoved(records, date, path => currentSha(ctx, path));
     const remaining = new Set(paths);
@@ -196,7 +197,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   const sweep = async (ctx: MediaWorkspaceContext) => {
     try {
       if (ctx.removedCopies) {
-        const { sweepRemovedCopies } = await import("./recently-removed");
         await sweepRemovedCopies(ctx.removedCopies, today(ctx));
       }
     } catch { /* Expired browser bytes can wait until the next successful batch. */ }
@@ -470,9 +470,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       session = await context();
       const ctx = active();
       const text = await sources(ctx);
-      const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
-      const { recentlyRemoved } = await import("./recently-removed"); ctx.assertLive();
-      const removed = recentlyRemoved(records, today(ctx), path => currentSha(ctx, path));
+      const current = (path: string) => currentSha(ctx, path);
+      const records = pruneRemoved(readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)), today(ctx), current); ctx.assertLive();
+      const removed = recentlyRemoved(records, today(ctx), current);
       const metadata = mediaMetadataView(records);
       return { key: ctx.key, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
@@ -579,8 +579,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     async restore(entries: { path: string; id: string }[]) {
       const ctx = active();
       const { batch, metadata } = await prepare(ctx, entries.length === 1 ? `Restore ${entries[0].path.split("/").pop()}` : "Restore files");
-      const { planRestore, pruneRemoved } = await import("./recently-removed");
-      ctx.assertLive();
       const date = today(ctx), paths = [...batch.expectedPaths];
       let next = pruneRemoved(metadata, date, path => currentSha(ctx, path));
       for (const entry of entries) {

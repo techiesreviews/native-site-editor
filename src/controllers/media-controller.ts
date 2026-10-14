@@ -9,10 +9,7 @@ type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")
 import { mediaExistingAlt, mediaUrl, type MediaImage } from "../page-builder/media-markup";
 import { locateNativeElementRange } from "../native-source-location";
 import { isImagePath } from "../native-structure";
-import { indexedDbUploadBytes, uploadImageType, type UploadBytes } from "../uploads";
-
-// Browser copies for Recently removed (files with no repository history to restore from); one handle per tab.
-let removedCopies: UploadBytes | undefined;
+import { removedCopies, uploadImageType } from "../uploads";
 
 export interface MediaWorkspaceSnapshot {
   repo: string;
@@ -153,7 +150,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     assertLive();
     return {
       key: `${scope.account}:${scope.repoId}`, scope, drafts, paths, repoSize, history: true,
-      removedCopies: removedCopies ??= indexedDbUploadBytes("native-site-editor-removed"),
+      removedCopies: removedCopies(),
       items: paths.filter(include).map((path) => {
         const draft = drafts.get(scope, path), entry = ports.entry(path);
         return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };

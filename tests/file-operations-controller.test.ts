@@ -7,6 +7,7 @@ import { DraftStore } from "../src/drafts";
 import { resolveNativeProject, nativePageMovedUrl, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
 import type { TreeEntry } from "../shared/types";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
+import { gitBlobSha, memoryUploadBytes, uploadKey } from "../src/uploads";
 
 function fixture(native = false, extra: Record<string, string> = {}) {
   const branch: Record<string, string> = native ? { "index.html": '<a href="/about/">About</a>', "about/index.html": '<h1>About</h1>', "style.css": "" } : { "open.txt": "open", "a.txt": "source" };
@@ -293,6 +294,48 @@ test("Files delete moves family records into Recently removed and Undo returns t
   assert.deepEqual(after.removed![0].family![0].record, { decorative: true });
   assert.equal(Object.keys(after.files).length, 0); assert.deepEqual(h.memory.steps(), ["operation"]);
   assert.equal(h.memory.undo(), true); assert.deepEqual(JSON.parse(h.memory.workspace.source(MEDIA_RECORDS_PATH)!), records);
+});
+
+test("Files delete keeps browser copies of unsaved family members once Delete is confirmed", async () => {
+  const h = fixture(true, imageFamily);
+  const uploads = memoryUploadBytes(), removed = memoryUploadBytes();
+  h.ports.removalStores = () => ({ uploads, removed });
+  const drafts = h.ports.draftStore.bind(h.ports);
+  h.ports.draftStore = () => Object.assign(drafts(), { get: (_: unknown, path: string) => h.memory.draft(path) });
+  // An unsaved responsive copy held as text, and an unsaved upload whose bytes only this browser has.
+  h.memory.writeDraft("images/photo-960w.webp", "unsaved copy");
+  h.memory.writeDraft("images/photo-1600w.webp", "");
+  Object.assign(h.memory.draft("images/photo-1600w.webp")!, { opaque: true, sourceSha: "upload-sha", upload: { size: 6, type: "image/webp" } });
+  await uploads.put(uploadKey(h.memory.scope, "upload-sha"), new Blob(["upload"]));
+  let asked = false;
+  h.ports.confirmDialog = () => ({ ask: async () => { asked = true; assert.equal(removed.map.size, 0); return true; }, choose: async () => ({ value: "go", option: false }) });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
+  assert.ok(asked);
+  const entry = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH)).removed![0];
+  const member = (path: string) => entry.family!.find(item => item.path === path)!;
+  assert.equal(member("images/photo-960w.webp").browserKey, `removed:${new Date().toISOString().slice(0, 10)}:${await gitBlobSha(new TextEncoder().encode("unsaved copy"))}`);
+  assert.equal(await removed.map.get(member("images/photo-960w.webp").browserKey!)!.text(), "unsaved copy");
+  assert.equal(await removed.map.get(member("images/photo-1600w.webp").browserKey!)!.text(), "upload");
+  assert.ok(member("images/photo-480w.webp").sha);
+});
+
+test("Files delete cancelled keeps no browser copies", async () => {
+  const h = fixture(true, imageFamily);
+  const removed = memoryUploadBytes();
+  h.ports.removalStores = () => ({ uploads: memoryUploadBytes(), removed });
+  h.memory.writeDraft("images/photo-960w.webp", "unsaved copy");
+  h.ports.confirmDialog = () => ({ ask: async () => false, choose: async () => ({ value: undefined, option: false }) });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), "Cancelled.");
+  assert.equal(removed.map.size, 0); assert.equal(h.memory.workspace.exists(MEDIA_RECORDS_PATH), false);
+});
+
+test("Files delete records a kept original of any format with its family", async () => {
+  const h = fixture(true, { "images/photo.webp": "main", "media/originals/photo.tiff": "original" });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
+  const entry = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH)).removed![0];
+  assert.equal(entry.path, imageTarget.path);
+  assert.deepEqual(entry.family?.map(member => member.path), ["media/originals/photo.tiff"]);
+  assert.ok(entry.family?.[0].sha);
 });
 
 test("Files media delete refuses malformed or unreadable records", async () => {
