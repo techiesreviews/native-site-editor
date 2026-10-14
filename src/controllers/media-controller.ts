@@ -56,6 +56,8 @@ export interface MediaControllerPorts {
   gallerySignature(): string;
   observeBusy?(element: HTMLElement, changed: () => void): { disconnect(): void };
   refreshDescriptions(): void;
+  /** The place's name in the picker's heading: the page as the Pages tab names it. */
+  placeLabel?(page: string): string | undefined;
   announce(message: string): void;
   error(error: unknown): void;
 }
@@ -256,6 +258,9 @@ export function createMediaController(ports: MediaControllerPorts) {
     } catch (error) { ports.error(error); }
   }
 
+  /** The Media picker for an image on a page (Edit bar, Structure, canvas double-click or drop). Use
+   * swaps the picture with today's markup; the place keeps its own words and its Decorative mark
+   * (`swapPlaceImage`), so a moved mark and the page change are one Undo step. */
   async function chooseImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
     const stamp = ports.stamp(), epoch = ports.generation();
     const source = ports.source(target.path);
@@ -266,15 +271,53 @@ export function createMediaController(ports: MediaControllerPorts) {
     const initialAlt = mediaExistingAlt(expected);
     const { openMediaPicker } = await load();
     if (!stamp.holds() || ports.source(target.path) !== source) return;
-    await openMediaPicker({ files, accept: "image/*", initialAlt, onPick: async (image: MediaImage) => {
+    // The place: its page, and the picture by its words ("Home · Studio desk").
+    const place = `${ports.placeLabel?.(target.path) ?? target.path} · ${initialAlt?.trim() || "Image"}`;
+    await openMediaPicker({ files, accept: "image/*", place, onPick: async (image: MediaImage) => {
+      const changed = "This image changed while the picker was open. Select it again.";
       if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
       if (ports.openFile() !== target.path) await ports.restoreFile(target.path, epoch);
+      const [rules, io, references, html, entities, ctx, collections] = await Promise.all([
+        import("../page-builder/media-descriptions"), import("../../shared/media-records"),
+        import("../page-builder/media-references"), import("../../shared/html-source"),
+        import("../page-builder/html-entities"), workspaceContext(), import("../page-builder/media-collections"),
+      ]);
+      const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
+      ctx.assertLive();
       const latest = ports.source(target.path);
       const range = latest === undefined ? undefined : locate(latest, target.node);
-      if (!stamp.holds() || latest !== source || !range || range.tag.name !== "img" || latest!.slice(range.tag.start, range.tag.end) !== expected) throw new Error("This image changed while the picker was open. Select it again.");
-      const markup = mediaImageMarkup(image, expected, target.width, initialAlt !== undefined && image.alt === initialAlt);
-      if (!ports.change(target.path, latest!, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
+      if (!stamp.holds() || latest === undefined || latest !== source || !range || range.tag.name !== "img" || latest.slice(range.tag.start, range.tag.end) !== expected) throw new Error(changed);
+      const tag = html.startTags(expected)[0], src = tag && html.startTagAttribute(expected, tag, "src");
+      const from = src ? references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), target.path) : undefined;
+      // Unreadable records never block a swap, and are never overwritten (slice 13).
+      let records = io.parseMediaRecords(undefined), readable = true;
+      try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
+      const swap = (alt: string | undefined) => {
+        const markup = mediaImageMarkup({ ...image, alt: alt ?? "" }, expected, target.width, alt === undefined);
+        return { markup, page: latest.slice(0, range.tag.start) + markup + latest.slice(range.tag.end) };
+      };
+      // Whether the old file stays on the page does not depend on the alt, only on the new src.
+      const after = rules.swapPlaceImage(records, target.path, from, image.path, initialAlt, swap(undefined).page);
+      const { markup, page } = swap(after.alt);
+      if (after.records === records || !readable) {
+        if (!ports.change(target.path, latest, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
+        return;
+      }
+      await ctx.applyBatch({ label: "Image replaced", expectedPaths: ctx.paths,
+        expectedSources: new Map([[target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets: new Map(),
+        edits: new Map([[target.path, page], [io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)]]), moves: [], deletes: [], uploads: [] });
+      ports.announce("Image replaced");
     } }).catch((error: unknown) => ports.error(error));
+  }
+
+  /** The Media picker for a value that holds an image's address (component fields, Site settings):
+   * resolves to the chosen file's root path on Use, or undefined on Cancel. */
+  async function choosePath(place: string): Promise<string | undefined> {
+    const { openMediaPicker } = await load();
+    return new Promise(resolve => {
+      openMediaPicker({ accept: "image/*", place, onPick: image => resolve(`/${image.path}`), onClose: () => resolve(undefined) })
+        .catch((error: unknown) => { ports.error(error); resolve(undefined); });
+    });
   }
 
   let gallery: MediaLibraryView | undefined;
@@ -335,6 +378,6 @@ export function createMediaController(ports: MediaControllerPorts) {
     onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {
       usageListeners.add(listener); return () => { usageListeners.delete(listener); };
     },
-    workspaceContext, chooseImage, placeState, changePlace, ensureGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, chooseImage, choosePath, placeState, changePlace, ensureGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

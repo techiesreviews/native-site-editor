@@ -9,7 +9,9 @@ import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
-import { mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, filterMediaLibrary, mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { mediaNameAlt, mediaVariants, type MediaImage } from "./media-markup";
+import { node } from "../ui/dom";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
 import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
 import { filesLabel } from "./media-collection-choices";
@@ -76,12 +78,16 @@ export function createMediaLibraryView(
       }) },
     ]),
     clear: () => { selected.clear(); draw(); },
+    details: () => { if (chosen) void details(chosen); },
+    use,
   }, modal);
   const { dialog, grid, collections, summary, message } = shell;
   let alive = true, kind: MediaKindChoice = "all", layout: "grid" | "list" = "grid", refreshVersion = 0, loadingLibrary = false;
   let usageDialog: ReturnType<typeof showUsageDialog> | undefined;
   /** The collection the grid shows; a rename it follows; empty for All collections. */
   let viewing = "", followed: string | undefined;
+  /** The picker's chosen file, placed by Use. */
+  let chosen: string | undefined;
   let library: MediaLibrary, refreshedKey: string | undefined;
   const sheet: LibrarySheet = { element: shell.sheet, version: 0 };
   // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
@@ -99,22 +105,28 @@ export function createMediaLibraryView(
     alive: () => alive, library: () => library, loading: () => loadingLibrary,
     tell, task, refresh, adapter, cache, sync: () => busyLock.sync(),
   };
-  const detailHost = { ...context, dialog, grid, modal: Boolean(modal), pick: options, close: shell.close, optimise, remove };
+  const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise, remove };
   // Each newer usage result repaints the badges and an open usage dialog.
   const stopUsage = adapter.usage?.onChange(() => {
     if (!alive) return;
     repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh(); sheet.repaint?.();
   });
-  // The pane adds dropped and chosen files at once; the chooser keeps Optimise until slice 18.
-  const adding = modal ? undefined : createMediaAdding(grid, shell.adding, {
+  // Dropped and chosen files are added at once, in the pane and in the picker (slice 17).
+  const adding = createMediaAdding(grid, shell.adding, {
     alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: collections.value, kind }),
     import: requests => adapter.import(requests), task: work => task(work), idle: () => busyLock.idle(),
     refresh: async () => { cache.clear(); await refresh(); }, show: recover, tell,
     review: (files, collection) => showMediaOptimise(sheet, context, "", files, false, new Map(), collection),
+    // In the picker a new file is chosen, never placed: Use still confirms it.
+    added: paths => {
+      const fits = paths.find(path => library.items.some(item => item.path === path) && filterMediaLibrary(
+        { ...library, items: [{ path }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length);
+      if (modal && fits) { chosen = fits; draw(); }
+    },
   });
   const collectionHost: CollectionScreensHost = {
     ...context, close: () => closeSheet(collections),
-    follow: (from, to) => { if (viewing === from) followed = to; adding?.renamed(from, to); },
+    follow: (from, to) => { if (viewing === from) followed = to; adding.renamed(from, to); },
   };
   /** Close a collection screen and return focus to what opened it (or to Collections). */
   function closeSheet(opener: HTMLElement) {
@@ -140,7 +152,7 @@ export function createMediaLibraryView(
   }
   function dispose() {
     if (!alive) return;
-    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close(); adding?.dispose();
+    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); cache.dispose();
     more.close(false); more.element.remove();
     modal?.removeEventListener("close", dispose); dialog.replaceChildren(); dialog.remove();
@@ -169,7 +181,7 @@ export function createMediaLibraryView(
     library = { ...next, usage: mediaFamilyUsage(next) };
     refreshedKey = inputKey;
     pruneLibrarySelection(library.items, selected);
-    rebuildLibraryCollections(collections, library.collections, !modal, followed ?? collections.value);
+    rebuildLibraryCollections(collections, library.collections, true, followed ?? collections.value);
     followed = undefined;
     draw();
     if (!shell.sheet.hidden && (shell.sheet.dataset.mode === "collections" || shell.sheet.dataset.mode === "to-check")) sheet.redraw?.();
@@ -190,12 +202,48 @@ export function createMediaLibraryView(
   function draw() {
     if (!alive || !library) return;
     viewing = collections.value;
-    drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout }, {
+    // A chosen file that is gone (removed, renamed) is no longer chosen.
+    if (chosen && !library.items.some(item => item.path === chosen)) chosen = undefined;
+    drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen }, {
       alive: () => alive, bytes: path => cache.get(path), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
       recover, restoreFocus: !sheet.focus,
+      choose: path => { chosen = path; paintChoice(); },
     });
-    adding?.paint();
+    adding.paint();
+    paintChoice();
+  }
+  /** The picker's status: the chosen file's picture and name, or what to do. Use waits for a choice. */
+  function paintChoice() {
+    if (!modal) return;
+    const { thumb, name, details, use } = shell.choice;
+    for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card")) {
+      const on = card.dataset.path === chosen;
+      card.classList.toggle("is-chosen", on);
+      card.querySelector(".media-library__thumbnail")?.setAttribute("aria-pressed", String(on));
+    }
+    name.textContent = chosen ? basename(chosen) : "Choose one image";
+    thumb.replaceChildren(); details.hidden = !chosen;
+    use.disabled = !chosen || busyLock.busy;
+    if (!chosen) return;
+    const path = chosen;
+    void cache.get(path).then(data => {
+      if (!alive || chosen !== path || !uploadImageType(path)) return;
+      const image = node("img"); image.alt = ""; image.src = data.url; thumb.replaceChildren(image);
+    }).catch(() => undefined);
+  }
+  /** Use: place the chosen file with today's markup; the picker closes once the place has it. */
+  function use() {
+    const path = chosen, pick = options.onPick;
+    if (!path || !pick) return;
+    void task(async () => {
+      const data = await cache.get(path);
+      const meta = library.metadata[path];
+      const image: MediaImage = { path, width: data.width, height: data.height, variants: mediaVariants(path, library.items.map(item => item.path)),
+        alt: meta?.decorative ? "" : meta?.alt || mediaNameAlt(path) };
+      await pick(image);
+      shell.close();
+    });
   }
   function usage(path: string) {
     usageDialog?.close();
@@ -230,7 +278,8 @@ export function createMediaLibraryView(
       ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
         if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
       } }] : [],
-      ...kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
+      // The picker shows only files that fit the place, so it has no kinds to choose.
+      ...modal ? [] : kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
         kind = value; draw(); shell.more.focus();
       } })),
       ...([["grid", "Grid"], ["list", "List"]] as const).map(([value, label]) => ({ label, section: "View", checked: layout === value, run: () => {
@@ -252,16 +301,12 @@ export function createMediaLibraryView(
   }
   wireMediaLibraryInput(shell, {
     draw, loaded: () => Boolean(library), tell,
-    add: files => {
-      if (adding) adding.start(files);
-      else if (busyLock.busy) tell("An image change is in progress. Wait for it to finish before uploading images.");
-      else optimise(files);
-    },
+    add: files => adding.start(files),
     viewing: () => viewing, manage: () => { if (library) showManageCollections(sheet, collectionHost); },
   }, listeners.signal);
   const ready = task(async () => {
     summary.textContent = "Reading repository images and references…";
-    await refresh(); if (options.files?.length && alive) optimise(options.files);
+    await refresh(); if (options.files?.length && alive) adding.start(options.files);
   }, false);
   return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose };
 }

@@ -15,6 +15,8 @@ export interface LibraryGridState {
   accept?: string; modal: boolean;
   /** Tiles, or the list (from More) with each file's size and usage. */
   layout: "grid" | "list";
+  /** The picker's chosen file. */
+  chosen?: string;
 }
 export interface LibraryGridHost {
   alive: () => boolean;
@@ -28,6 +30,8 @@ export interface LibraryGridHost {
   sync: () => void;
   /** False while a detail sheet waits to take focus. */
   restoreFocus: boolean;
+  /** The picker: a tile chooses its file (Use places it) rather than opening details. */
+  choose: (path: string) => void;
 }
 
 /** Draw the screen-reader count and one square tile (or list row) per Image family, or a way back when nothing matches. */
@@ -52,7 +56,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   if (!filtered.length) {
     const empty = node("div", "media-library__empty");
     if (!library.items.length) empty.textContent = state.modal
-      ? "Your images belong here. Upload an image or drop one into the library."
+      ? "Your images belong here. Drop one here, or choose Add new file in More."
       : "Your media belongs here. Drop files here, or choose Add new file in More.";
     else {
       const recovery = mediaLibraryRecovery(filter);
@@ -63,18 +67,24 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   }
   for (const item of filtered) {
     const card = node("article", "media-library__card"); card.dataset.path = item.path;
-    const thumb = button("", () => h.details(item.path), "media-library__thumbnail");
-    thumb.setAttribute("aria-label", `Details for ${item.path}`);
+    const thumb = button("", () => state.modal ? h.choose(item.path) : h.details(item.path), "media-library__thumbnail");
+    thumb.setAttribute("aria-label", `${state.modal ? "Choose" : "Details for"} ${item.path}`);
     // The tile crops the picture to a square; the stored file is untouched.
     const image = node("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
     thumb.append(image, node("span", "media-library__name", basename(item.path)));
-    const selectLabel = node("label", "media-library__select");
-    const checkbox = input(`Select ${item.path}`, "checkbox"); checkbox.checked = selected.has(item.path);
-    checkbox.addEventListener("change", () => {
-      checkbox.checked ? selected.add(item.path) : selected.delete(item.path);
-      syncSelectionBar(shell, selected.size, collections.value);
-    });
-    selectLabel.append(checkbox);
+    // The picker chooses one file: its round only shows the choice; the pane selects many.
+    const selectLabel = node(state.modal ? "span" : "label", "media-library__select");
+    if (state.modal) {
+      thumb.setAttribute("aria-pressed", String(item.path === state.chosen)); card.classList.toggle("is-chosen", item.path === state.chosen);
+      selectLabel.classList.add("media-library__pick"); selectLabel.setAttribute("aria-hidden", "true"); selectLabel.append(node("span"));
+    } else {
+      const checkbox = input(`Select ${item.path}`, "checkbox"); checkbox.checked = selected.has(item.path);
+      checkbox.addEventListener("change", () => {
+        checkbox.checked ? selected.add(item.path) : selected.delete(item.path);
+        syncSelectionBar(shell, selected.size, collections.value);
+      });
+      selectLabel.append(checkbox);
+    }
     // The number counts distinct pages; hover and focus show its words, a tap the page names.
     const used = button("", () => h.usage(item.path), "media-library__usage");
     used.setAttribute("aria-haspopup", "dialog"); paintUsageBadge(used, h.records(), item.path);

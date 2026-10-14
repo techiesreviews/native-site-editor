@@ -22,6 +22,8 @@ export interface MediaAddingHost {
   show(change: Partial<MediaLibraryFilter>): void;
   /** Today's Optimise sheet, with its before/after review, for files not added yet. */
   review(files: File[], collection: string): void;
+  /** The files one drop saved, once the library shows them (the picker chooses the first). */
+  added?(paths: string[]): void;
   tell(text: string): void;
 }
 interface Entry {
@@ -166,6 +168,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
         mine.collection = join;
         ready.forEach((entry, index) => { entry.path = paths[index]; set(entry, "added"); });
         await h.refresh();
+        h.added?.(paths);
       });
       if (ran) break;
       // A refresh began before the lock was free; try again once it has finished.

@@ -153,7 +153,6 @@
 /* One bar (media-manager ticket 06, tiles.html): search, Collections and More on one row,
    even on phones; 44 px high, 8 px apart. */
 .media-library__bar { display: grid; grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr) 44px; gap: 8px; align-items: center; padding: 16px 24px 4px; }
-dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr); }
 .media-library--pane .media-library__bar { padding: 12px 12px 0; }
 /* Phones: search and Collections share the row, so both stay readable; long names shorten. */
 @container (max-width: 540px) { .media-library--pane .media-library__bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 44px; } }
@@ -489,4 +488,42 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
   .media-check__row { grid-template-columns: 56px minmax(0, 1fr); }
   .media-check__preview { width: 56px; height: 56px; }
   .media-check__actions { grid-column: 2; }
+}
+
+/* The Media picker (media-manager ticket 06, tiles.html): the Media pane in a smaller window, with
+   only compatible files; full-screen on phones. A compact header names the place; the chosen
+   file's status sits above (phones) or beside one row of Cancel and Use, apart from the grid. */
+.media-library--picker { width: min(960px, calc(100vw - 40px)); height: min(820px, calc(100dvh - 32px)); }
+.media-library--picker .media-library__header { align-items: start; padding: 14px 12px 8px 24px; border-bottom: 0; }
+.media-library__place { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.media-library .media-library__close { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
+.media-library .media-library__close:hover { background: var(--hover); }
+.media-library--picker .media-library__bar { padding: 4px 24px; }
+.media-library--picker .media-library__browse { padding-top: 12px; }
+.media-library--picker .media-library__card.is-chosen::after { box-shadow: inset 0 0 0 3px var(--primary); }
+.media-library--picker .media-library__card.is-chosen .media-library__name { opacity: 1; }
+.media-library--picker .media-library__select { pointer-events: none; }
+.media-library .media-library__pick > span { width: 22px; height: 22px; box-sizing: border-box; border: 1.5px solid; border-radius: 50%; background: rgb(10 18 32 / .12); box-shadow: 0 1px 3px #0006; }
+.media-library__card.is-chosen .media-library__pick > span { border-color: #fff; background: var(--primary); }
+.media-library__card.is-chosen .media-library__pick::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat; }
+.media-library__card.is-file:not(.is-chosen) .media-library__pick > span { border-color: var(--muted); background: transparent; box-shadow: none; }
+.media-library__choice { display: flex; align-items: center; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); background: var(--surface); }
+.media-library__chosen { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 10px; }
+.media-library__chosen-thumb { flex: none; width: 44px; height: 44px; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); }
+.media-library__chosen-thumb:empty { display: none; }
+.media-library__chosen-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.media-library__chosen-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.media-library .media-library__chosen-details { flex: none; padding: 0 10px; border: 0; background: none; color: var(--link); }
+.media-library .media-library__chosen-details:hover { text-decoration: underline; }
+.media-library__choice-actions { flex: none; display: flex; gap: 8px; }
+.media-library .media-library__choice-actions button { min-width: 112px; min-height: 44px; border-radius: 22px; }
+/* Details, collections and adding screens use their own action rows. */
+.media-library:has(.media-library__sheet:not([hidden])) .media-library__choice { display: none; }
+@media (max-width: 580px) {
+  .media-library--picker { width: 100%; height: 100%; max-width: 100%; max-height: 100%; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .media-library--picker .media-library__header { padding: 8px 4px 4px 16px; }
+  .media-library--picker .media-library__bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 44px; padding: 4px 12px; }
+  .media-library--picker .media-library__browse { padding: 8px 12px; }
+  .media-library__choice { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
+  .media-library .media-library__choice-actions button { flex: 1; min-width: 0; }
 }

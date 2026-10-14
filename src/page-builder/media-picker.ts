@@ -53,9 +53,12 @@ export interface MediaCleanUpEntry { item(): { label: string; disabled?: string 
 /** The host draws Clean up into `slot`, above the grid; `closed` returns focus to More. */
 export type MediaCleanUpMount = (slot: HTMLElement, closed: () => void) => MediaCleanUpEntry;
 export interface MediaPickerOptions {
+  /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open. */
   onPick?: (image: MediaImage) => void | Promise<void>;
-  /** The alt offered for the picked image, before the image's own default: the replaced image's alt. */
-  initialAlt?: string;
+  /** The picker closed without Use (Cancel, Close or Escape): the existing placement stays. */
+  onClose?: () => void;
+  /** The place being filled, under the picker's title ("Home · Studio desk"). */
+  place?: string;
   /** MIME types, extensions or image/*, like a native file input's accept. */
   accept?: string;
   files?: File[];
@@ -84,14 +87,22 @@ export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOp
   return view;
 }
 
-/** Image slots retain modal selection; manager panes share the same view. */
+/** The Media picker (media-manager ticket 06): the Media pane's view in a smaller window, with only
+ * compatible files; Use confirms, Cancel keeps the existing placement. Files dropped onto a place
+ * (`files`) are added inside it and chosen, never placed without Use. */
 export async function openMediaPicker(options: MediaPickerOptions = {}): Promise<void> {
   closeActive?.();
   if (!host) throw new Error("Open a repository before choosing an image.");
-  const dialog = node("dialog", "media-library");
-  const view = createMediaLibraryView(document.body, host, options, dialog);
+  const dialog = node("dialog", "media-library media-library--picker");
+  let used = false;
+  const view = createMediaLibraryView(document.body, host, { ...options, onPick: options.onPick && (async image => {
+    await options.onPick!(image); used = true;
+  }) }, dialog);
   const close = () => { dialog.close(); view.dispose(); };
   closeActive = close;
-  dialog.addEventListener("close", () => { if (closeActive === close) closeActive = undefined; }, { once: true });
+  dialog.addEventListener("close", () => {
+    if (closeActive === close) closeActive = undefined;
+    if (!used) options.onClose?.();
+  }, { once: true });
   await view.ready;
 }

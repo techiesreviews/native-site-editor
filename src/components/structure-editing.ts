@@ -81,7 +81,6 @@ export function createStructureEditing(host: StructureEditingHost) {
   const { tree } = host;
   const fieldInputs = new Map<string, FieldControl>();
   const fieldClosers = new Map<FieldControl, () => void>();
-  const uploadClosers = new Map<HTMLInputElement, () => void>();
   const attributeForms = new Map<string, HTMLFormElement>();
   const formClosers = new Map<HTMLFormElement, () => void>();
 
@@ -282,22 +281,13 @@ export function createStructureEditing(host: StructureEditingHost) {
     if (slot.kind === "image") {
       const image = labelled("src", "Image", slot.value.src ?? "", false);
       suggest(image.field as HTMLInputElement, model.images.map(value => ({ value })), "Images of this site");
-      const file = document.createElement("input"); file.type = "file"; file.accept = "image/*"; file.hidden = true;
-      let pending: ReturnType<ComponentStructureModel["openImageUpload"]>;
-      uploadClosers.set(file, () => { if (pending) refuse("The image picker changed; reopen Upload image… before choosing a file."); pending?.close(); pending = undefined; });
-      const upload = button("Upload image…", () => {
-        // The upload is a step of its own: what was typed so far is kept first.
+      // The Media picker: the choice is a step of its own, for this instance; what was typed so
+      // far is kept first. The picker outlives this card's redraws; the session checks the instance.
+      const choose = button("Choose image…", () => {
         flush(current); current.session?.close(); current.session = undefined;
-        pending?.close();
-        pending = host.componentSlots(model.host.path, model.host.node)?.openImageUpload(slot.name);
-        if (pending) file.click();
+        void host.componentSlots(model.host.path, model.host.node)?.openImageChoice(slot.name)?.choose();
       }, "text-button");
-      file.addEventListener("cancel", () => { pending?.close(); pending = undefined; });
-      file.addEventListener("change", () => {
-        const captured = pending, files = [...(file.files ?? [])]; pending = undefined; file.value = "";
-        if (!files.length) captured?.close(); else void captured?.upload(files);
-      });
-      group.append(image.wrap, upload, file, labelled("alt", "Alt text", slot.value.alt ?? "", true).wrap);
+      group.append(image.wrap, choose, labelled("alt", "Alt text", slot.value.alt ?? "", true).wrap);
     } else {
       if (!slot.value.editable) group.append(node("span", "page-structure__slot-summary", "Content: select the page element to edit its text"));
       const link = labelled("href", "Link / URL", slot.value.href ?? "", false);
@@ -462,7 +452,6 @@ export function createStructureEditing(host: StructureEditingHost) {
     closeField(field: Element) { if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) fieldClosers.get(field)?.(); },
     /** Controls no longer in the tree end their sessions. */
     clean() {
-      for (const [input, close] of uploadClosers) if (!tree.contains(input)) { close(); uploadClosers.delete(input); }
       for (const [input, close] of fieldClosers) if (!tree.contains(input)) { close(); fieldClosers.delete(input); }
       for (const [input, list] of suggestionLists) if (!tree.contains(input)) { list.destroy(); suggestionLists.delete(input); }
       for (const [id, input] of fieldInputs) if (!tree.contains(input)) fieldInputs.delete(id);
@@ -472,10 +461,9 @@ export function createStructureEditing(host: StructureEditingHost) {
     destroy() {
       finish("commit", false, true);
       for (const close of fieldClosers.values()) close();
-      for (const close of uploadClosers.values()) close();
       for (const close of formClosers.values()) close();
       for (const list of suggestionLists.values()) list.destroy();
-      fieldClosers.clear(); uploadClosers.clear(); formClosers.clear(); suggestionLists.clear(); fieldInputs.clear(); attributeForms.clear();
+      fieldClosers.clear(); formClosers.clear(); suggestionLists.clear(); fieldInputs.clear(); attributeForms.clear();
       tree.removeEventListener("focusout", onFocusOut);
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("pointerup", onPointerUp, true);

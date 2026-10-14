@@ -1,6 +1,5 @@
 import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
-import { cancellation } from "./media-busy-lock";
 import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
 
@@ -9,14 +8,18 @@ export type LibraryShell = ReturnType<typeof createMediaLibraryShell>;
 /** The library's frame: header, the One bar, grid, selection bar, sheet and footer. */
 export function createMediaLibraryShell(
   container: HTMLElement, options: MediaPickerOptions, id: number,
-  actions: { addTo: (opener: HTMLButtonElement) => void; takeOut: () => void; remove: () => void; more: (opener: HTMLButtonElement) => void; clear: () => void },
+  actions: {
+    addTo: (opener: HTMLButtonElement) => void; takeOut: () => void; remove: () => void; more: (opener: HTMLButtonElement) => void; clear: () => void;
+    /** The picker's chosen file: its details, and Use. */
+    details: () => void; use: () => void;
+  },
   modal?: HTMLDialogElement,
 ) {
   const dialog = modal ?? node("section", "media-library media-library--pane");
   const close = () => { if (modal) modal.close(); };
   const header = node("header", "media-library__header");
   const heading = node("div");
-  const title = node("h2", "", options.onPick ? "Choose image" : "Media");
+  const title = node("h2", "", modal ? "Choose image" : "Media");
   title.id = `media-library-title-${id}`;
   dialog.setAttribute("aria-labelledby", title.id);
   if (!modal) dialog.setAttribute("role", "region");
@@ -26,11 +29,14 @@ export function createMediaLibraryShell(
   uploadInput.setAttribute("aria-label", "Upload images");
   heading.append(title);
   header.append(heading);
-  // The chooser keeps its own Upload and Close until the Media picker replaces it (slice 18);
-  // in the explorer, adding is the first action in More.
+  // The Media picker (ticket 06, tiles.html): a compact header naming the place, and Close.
+  // Adding is the first action in More, as in the Media pane.
   if (modal) {
-    heading.append(node("p", "media-library__muted", "Repository images · Changes stay as drafts until Publish."));
-    header.append(button("Upload images…", () => uploadInput.click()), cancellation("Close", close));
+    if (options.place) heading.append(node("p", "media-library__muted media-library__place", options.place));
+    // Close and Cancel stay usable while a change runs; neither places anything.
+    const shut = button("", close, "media-library__close"); shut.dataset.mediaCancel = "close";
+    shut.setAttribute("aria-label", "Close"); setIcon(shut, "x", 20);
+    header.append(shut);
   }
   header.append(uploadInput);
   // One bar (media-manager ticket 06, tiles.html): search, Collections and More on one row.
@@ -49,7 +55,7 @@ export function createMediaLibraryShell(
   const more = node("button", "media-library__more"); more.type = "button";
   more.setAttribute("aria-label", "More"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", "false");
   setIcon(more, "dots-three", 24);
-  if (!modal) toolbar.append(more);
+  toolbar.append(more);
   const body = node("div", "media-library__body");
   const browse = node("section", "media-library__browse");
   // The count is for screen readers; the tiles show it.
@@ -77,11 +83,28 @@ export function createMediaLibraryShell(
   const sheet = node("aside", "media-library__sheet"); sheet.hidden = true;
   browse.append(summary, adding, grid, bulk); body.append(browse, sheet);
   const message = node("p", "media-library__message"); message.setAttribute("role", "status");
-  const footer = node("footer", "media-library__footer", `Drop ${modal ? "images" : "files"} anywhere here · Enter opens details · Arrow keys browse${modal ? " · Esc closes" : ""}`);
+  const footer = modal ? node("footer", "media-library__choice") : node("footer", "media-library__footer", "Drop files anywhere here · Enter opens details · Arrow keys browse");
+  // The picker's status above one row of Cancel and Use (phones), beside it on wider screens.
+  const choice = node("div", "media-library__chosen"), chosenName = node("span", "media-library__chosen-name");
+  const chosenThumb = node("span", "media-library__chosen-thumb");
+  const detailsButton = button("File details", actions.details, "media-library__chosen-details");
+  const use = button("Use image", actions.use, "button primary media-library__use");
+  if (modal) {
+    const status = node("div", "media-library__chosen-text"); status.setAttribute("role", "status");
+    status.append(chosenName);
+    choice.append(chosenThumb, status, detailsButton);
+    const row = node("div", "media-library__choice-actions");
+    const cancel = button("Cancel", close); cancel.dataset.mediaCancel = "close";
+    row.append(cancel, use);
+    footer.append(choice, row);
+  }
   dialog.append(header, toolbar, body, message, footer);
   container.append(dialog);
   if (modal) { modal.showModal(); search.focus(); }
-  return { dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput };
+  return {
+    dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput,
+    choice: { thumb: chosenThumb, name: chosenName, details: detailsButton, use },
+  };
 }
 
 /** Show the selection bar while files are selected: Take out only inside a collection. */

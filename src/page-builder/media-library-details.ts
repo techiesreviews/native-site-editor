@@ -10,8 +10,6 @@ import { mediaUsageBadge, mediaUsageFor } from "./media-usage-text";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaMetadata } from "./media-metadata";
-import type { MediaPickerOptions } from "./media-picker";
-import { mediaImageMarkup, mediaVariants, type MediaImage } from "./media-markup";
 
 /** The view around File details, and the screens File details can open. */
 export interface DetailHost extends LibrarySheetContext {
@@ -19,7 +17,6 @@ export interface DetailHost extends LibrarySheetContext {
   grid: HTMLElement;
   /** The picker modal; the Media pane has none. */
   modal: boolean;
-  pick: Pick<MediaPickerOptions, "onPick" | "initialAlt">;
   close: () => void;
   optimise: (files: File[], existing: boolean, receipts: Map<string, string | undefined>) => void;
   remove: (paths: string[]) => void;
@@ -70,9 +67,8 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   back.setAttribute("aria-label", "Back"); back.append(icon("arrow-left", 20));
   head.append(back, node("h3", "", "File details"));
   const layout = node("div", "media-detail");
-  // The picker's insertion sits apart from the form, so Enter there never saves details.
+  // In the picker, Back returns to the grid with the file still chosen; Use places it.
   const info = node("div", "media-detail__info"), form = node("form", "media-detail__form"); form.dataset.detailForm = "";
-  if (h.pick.onPick) renderPickerInsertion(info, h, h.pick.onPick, path, data, meta, library.items.map((item) => item.path));
   info.append(form);
   layout.append(renderPreview(h, path, data, meta), info);
   element.replaceChildren(head, layout);
@@ -227,21 +223,4 @@ function renderInformation(
       tell("Details saved and the file renamed, with its uses updated, as drafts.");
     });
   });
-}
-
-/** The picker's alt for this insertion, the markup it writes, and Use image. */
-function renderPickerInsertion(
-  form: HTMLElement, { pick, task, close }: Pick<DetailHost, "pick" | "task" | "close">,
-  onPick: NonNullable<MediaPickerOptions["onPick"]>, path: string, data: MediaBytes, meta: MediaMetadata, paths: string[],
-) {
-  const insertionAlt = input("Alt text for insertion", "text");
-  insertionAlt.value = pick.initialAlt ??
-    (meta.decorative ? "" : meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
-  const image: MediaImage = { path, width: data.width, height: data.height, alt: insertionAlt.value, variants: mediaVariants(path, paths) };
-  const code = node("pre", "media-library__code", mediaImageMarkup(image));
-  insertionAlt.addEventListener("input", () => { image.alt = insertionAlt.value; code.textContent = mediaImageMarkup(image); });
-  const section = node("section", "media-detail__insert");
-  const use = button("Use image", () => void task(async () => { await onPick(image); close(); }), "button primary"); use.type = "button";
-  section.append(field("Alt text for this insertion", insertionAlt), code, use);
-  form.append(section);
 }

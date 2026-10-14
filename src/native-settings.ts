@@ -4,7 +4,6 @@ import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate } from "./native-create";
 import { NATIVE_HOME_UNREAD } from "./controllers/pages-controller";
-import { DEFAULT_IMAGE_FOLDER, pickFiles } from "./uploads";
 import { resolveImportPath } from "../shared/css-imports";
 import { isImagePath } from "./native-structure";
 import { NATIVE_CONFIG_PATH, type NativeSite } from "../shared/native-project";
@@ -24,7 +23,8 @@ interface SettingsPorts {
   changeNativeUrl: (path: string, value: string, keep: boolean, since?: Stamp, baseline?: Map<string, string | undefined>) => Promise<string | undefined>;
   restoreFile: (path: string, epoch: number) => Promise<void>;
   nativeSiteReadForCreate: () => Promise<string | undefined>;
-  uploadFilesTo: (folder: string, files: File[]) => Promise<string[]>;
+  /** The Media picker for an image setting; the chosen file's root path, or undefined on Cancel. */
+  choosePath: (place: string) => Promise<string | undefined>;
   nativeEffectiveSource: (path: string) => string | undefined;
   loadNativeAssets: (sources: Record<string, string>, changed: () => void) => Promise<void>;
 }
@@ -110,12 +110,10 @@ export function createNativeSettings(ports: SettingsPorts) {
           catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
         }, { since }));
       },
-      async uploadImage() {
-        const picked = await pickFiles({ accept: "image/*", multiple: false });
+      async chooseImage(place) {
+        const path = await ports.choosePath(`Site settings · ${place}`);
         if (stale()) throw new Error(changed);
-        const [path] = await ports.uploadFilesTo(DEFAULT_IMAGE_FOLDER, picked);
-        if (stale()) throw new Error(changed);
-        return path ? `/${path}` : undefined;
+        return path;
       },
       async imageUrl(value) {
         if (stale() || !value.trim()) return undefined;

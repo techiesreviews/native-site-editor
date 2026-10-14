@@ -2,7 +2,7 @@ import { startTags, startTagAttribute } from "../../shared/html-source";
 import { type MediaFileRecord, type MediaPlaceRecord, type MediaRecords } from "../../shared/media-records";
 import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
-import { mediaEscape } from "./media-markup";
+import { mediaEscape, mediaNameAlt } from "./media-markup";
 
 export function fileDescriptionState(record?: MediaFileRecord) {
   const text = record?.description?.text ?? "";
@@ -113,4 +113,39 @@ export function placeWordsEdits(source: string, file: string, page: string, from
     .map(image => ({ start: image.attribute!.start, end: image.attribute!.end, text: ` alt="${mediaEscape(to)}"` }));
   for (const edit of edits.reverse()) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   return source;
+}
+
+export { mediaNameAlt };
+
+/** Whether `page`'s source still shows `file` in one of its images. */
+export function pageUsesFile(source: string, page: string, file: string) {
+  return placeImages(source, file, page).length > 0;
+}
+
+/**
+ * Swapping the picture at a place (the Media picker's Use). The place keeps its own words and
+ * its Decorative mark, which moves to the new file on this page (map ticket 13: the mark can
+ * belong to a place); a place that followed the old file follows the new one, so the new
+ * file's description, or its own Decorative mark, applies there. An empty, unmarked alt stays a
+ * gap unless the new file is described. `alt` is undefined when the existing alt stays as written.
+ * `after` is the page's source once swapped: the old file's mark goes only if it left the page.
+ */
+export function swapPlaceImage(
+  records: MediaRecords, page: string, from: string | undefined, to: string, alt: string | undefined, after: string,
+): { alt: string | undefined; records: MediaRecords } {
+  const old = from ? records.files[from] : undefined, target = fileDescriptionState(records.files[to]);
+  if (from && old?.places?.[page]?.decorative) {
+    let next = records;
+    if (from !== to) {
+      next = setMediaPlaceDecorative(records, to, page, true);
+      if (!pageUsesFile(after, page, from)) next = setMediaPlaceDecorative(next, from, page, false);
+    }
+    return { alt: alt === undefined ? "" : undefined, records: next };
+  }
+  const own = target.state === "decorative" ? "" : target.text;
+  if (alt === undefined) return { alt: target.state === "decorative" ? "" : own || mediaNameAlt(to), records };
+  if (alt === "") return { alt: own || undefined, records };
+  // Words that were the old file's description describe the old picture, not this one.
+  if (from && from !== to && alt === old?.description?.text) return { alt: target.state === "decorative" ? "" : own || mediaNameAlt(to), records };
+  return { alt: undefined, records };
 }

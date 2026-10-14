@@ -72,7 +72,7 @@ import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import type { MenuItem } from "./components/row-menu";
 import { deleteFile, duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
-import { DEFAULT_IMAGE_FOLDER, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
+import { formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
@@ -208,7 +208,7 @@ const loadSiteSettings = lazyModule(async () => {
     get nativeSite() { return nativeSite; }, get generation() { return generation; },
     appStore, guardedEdits, nativeAssets, nativePageLabelOf, setupScope,
     nativeUrlPlan, changeNativeUrl, restoreFile, nativeSiteReadForCreate,
-    uploadFilesTo, nativeEffectiveSource, loadNativeAssets,
+    choosePath: place => mediaController.choosePath(place), nativeEffectiveSource, loadNativeAssets,
   });
 });
 // What agents are shown and how their commands run (src/agent-site.ts), loaded when one asks.
@@ -680,10 +680,7 @@ function mountComponentTools() {
     announce,
     error: errorMessage,
     images: nativeImagePaths,
-    upload: async (files) => {
-      const [uploaded] = await uploadFilesTo(DEFAULT_IMAGE_FOLDER, files);
-      return uploaded === undefined ? undefined : `/${uploaded}`;
-    },
+    chooseImage: place => mediaController.choosePath(place),
     links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title) : []),
     pageLabel: nativePageLabelOf,
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
@@ -2427,6 +2424,7 @@ const mediaController = createMediaController({
   readBlob,
   applyBatch: applyMediaBatch,
   refreshDescriptions: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+  placeLabel: nativePageLabelOf,
   openPage: openAfter,
   load: loadMedia,
   openFile: () => appStore.openFile.value,

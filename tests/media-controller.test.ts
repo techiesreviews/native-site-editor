@@ -45,14 +45,49 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
 }
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
-test("picker preserves existing alt and applies the exact captured image source", async () => {
-  const f = fixture();
+test("picker preserves the place's own words and applies the exact captured image source", async () => {
+  const f = fixture({ placeLabel: () => "Home" });
   await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
-  assert.equal(f.pick()?.initialAlt, "Old alt");
-  await f.pick()!.onPick!({ path: "images/new.png", alt: "Old alt" });
+  assert.equal(f.pick()?.place, "Home · Old alt");
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "New file's words" });
   assert.equal(f.changes.length, 1);
   assert.match(f.changes[0], /src="\/images\/new.png"/);
   assert.match(f.changes[0], /alt="Old alt"/);
+});
+
+test("swapping a Decorative place's picture moves the mark with the page change in one batch", async () => {
+  const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [], told: string[] = [];
+  const f = fixture({ applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); }, announce: text => { told.push(text); } });
+  f.sources.set("index.html", '<section><img src="/images/old.png" alt=""></section>');
+  f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { places: { "index.html": { decorative: true } } } } }));
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "new" });
+  assert.equal(f.changes.length, 0);
+  assert.equal(batches.length, 1);
+  const page = batches[0].edits.get("index.html")!, records = JSON.parse(batches[0].edits.get(".editor/media.json")!);
+  assert.match(page, /src="\/images\/new.png"/); assert.match(page, /alt=""/);
+  assert.deepEqual(records.files["images/new.png"].places, { "index.html": { decorative: true } });
+  assert.equal(records.files["images/old.png"]?.places, undefined);
+  assert.deepEqual(told, ["Image replaced"]);
+  // A file's own Decorative mark gives the place alt="" without a records change.
+  const own = fixture();
+  own.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { description: { text: "Old alt" } }, "images/new.png": { decorative: true } } }));
+  await own.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await own.pick()!.onPick!({ path: "images/new.png", alt: "" });
+  assert.match(own.changes[0], /alt=""/);
+});
+
+test("a value's picker resolves to the chosen root path on Use and to nothing on Cancel", async () => {
+  const f = fixture();
+  const used = f.controller.choosePath("Site settings · Favicon");
+  await tick(); await tick();
+  assert.equal(f.pick()?.place, "Site settings · Favicon");
+  await f.pick()!.onPick!({ path: "images/icon.png", alt: "" });
+  assert.equal(await used, "/images/icon.png");
+  const cancelled = f.controller.choosePath("Site settings · Favicon");
+  await tick(); await tick();
+  f.pick()!.onClose!();
+  assert.equal(await cancelled, undefined);
 });
 
 test("picker refuses navigation after lazy load and source drift during restore", async () => {

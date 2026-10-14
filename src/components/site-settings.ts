@@ -15,7 +15,8 @@ export interface SiteSettingsHandlers {
   applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
   open404: () => Promise<string | undefined>;
   applyNavigation: (path: string, source: string, links: NavigationLink[]) => Promise<string | undefined>;
-  uploadImage: () => Promise<string | undefined>;
+  /** The Media picker for an image setting; resolves to the chosen file's root path, or undefined on Cancel. */
+  chooseImage: (place: string) => Promise<string | undefined>;
   imageUrl: (path: string) => Promise<string | undefined>;
 }
 
@@ -164,11 +165,11 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
   dialog.actions.append(button("Cancel", () => dialog.root.close(), "button secondary"), apply);
 }
 
-async function uploadInto(input: HTMLInputElement | HTMLTextAreaElement, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
+async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
   const before = input.value;
   try {
-    const value = await handlers.uploadImage();
-    // A picker may outlive its dialog or edits made while the upload runs.
+    const value = await handlers.chooseImage(place);
+    // A picker may outlive its dialog or edits made while it is open.
     if (value && dialog.root.isConnected && input.value === before) {
       input.value = value;
       refresh?.();
@@ -232,7 +233,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const socialDescription = textField(social, "Social description", ownDescription ? values["og:description"] : values.description);
       const image = textField(social, "Social image", values["og:image"], "Choose a site image or paste a full image URL. Sharing services favour a 1200 × 630 image.");
       addImageChoices(image, options.images);
-      const upload = button("Upload social image…", () => uploadInto(image, dialog, handlers, refresh), "site-settings__link");
+      const upload = button("Choose social image…", () => chooseInto(image, "Social image", dialog, handlers, refresh), "site-settings__link");
       social.append(upload);
       const card = node("div", "site-settings__card");
       card.setAttribute("aria-label", "Share card preview");
@@ -318,11 +319,11 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const name = textField(general, "Site name", options.values.name, "Used for new page details and the site's social identity.");
       const favicon = textField(general, "Favicon", options.values.favicon, "Choose an image or paste its URL. Applied to every page's head.");
       addImageChoices(favicon, options.images);
-      general.append(button("Upload favicon…", () => uploadInto(favicon, dialog, handlers), "site-settings__link"));
+      general.append(button("Choose favicon…", () => chooseInto(favicon, "Favicon", dialog, handlers), "site-settings__link"));
       const social = section(socialPanel, "Default share image");
       const image = textField(social, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
       addImageChoices(image, options.images);
-      social.append(button("Upload default image…", () => uploadInto(image, dialog, handlers), "site-settings__link"));
+      social.append(button("Choose default image…", () => chooseInto(image, "Default social image", dialog, handlers), "site-settings__link"));
       const affected = section(pagesPanel, `Affected pages (${options.pages.length})`);
       affected.append(node("p", "site-settings__hint", "Favicon and social site name apply to these pages. Their title and description stay their own."));
       const list = node("ul", "site-settings__affected");

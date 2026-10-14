@@ -126,8 +126,8 @@ export interface ComponentDeps {
   error: (error: unknown) => void;
   /** Images of the repository, as root paths' suggestions. */
   images: () => string[];
-  /** Uploads an image from the computer; resolves to its root path. */
-  upload: (files: File[]) => Promise<string | undefined>;
+  /** The Media picker for `place`; resolves to the chosen file's root path, or undefined on Cancel. */
+  chooseImage: (place: string) => Promise<string | undefined>;
   /** Pages of the site for a link's address. */
   links: () => { label: string; value: string }[];
   /** A page's name as the Pages tab shows it. */
@@ -238,7 +238,8 @@ export interface ComponentStructureModel {
   openSlotEdit(name: string): ComponentSlotEditSession | undefined;
   images: readonly string[];
   links: readonly {label: string; value: string}[];
-  openImageUpload(name: string): { upload(files: File[]): Promise<boolean>; close(): void } | undefined;
+  /** The Media picker for an image slot: `choose` resolves once Use places the file (or not). */
+  openImageChoice(name: string): { choose(): Promise<boolean>; close(): void } | undefined;
   setVisible(name: string, on: boolean): boolean;
   selectSlot(name: string): void;
   opens?: boolean;
@@ -1169,7 +1170,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (value.kind === "image") {
       fields.append(
         textField(at, slot, "src", "Address", value.src ?? "", "Image in this repository or web address", deps.images().map((image) => `/${image}`)),
-        uploadButton(slot),
+        chooseButton(slot),
         textField(at, slot, "alt", "Alt text", value.alt ?? "", "What the image shows; empty for decorative"),
       );
     } else if (value.kind === "link" && (value.editable || !state.filled)) {
@@ -1222,23 +1223,16 @@ export function createComponentTools(deps: ComponentDeps) {
     return wrap;
   }
 
-  function uploadButton(slot: TemplateSlot) {
-    const file = node("input");
-    file.type = "file";
-    file.accept = "image/*";
-    file.hidden = true;
-    const pick = button("Upload image…", () => file.click(), "component-panel__text-button");
-    file.addEventListener("change", async () => {
-      const files = [...(file.files ?? [])];
-      file.value = "";
-      if (!files.length) return;
-      // The instance the upload is for, not whatever is selected when it finishes.
+  function chooseButton(slot: TemplateSlot) {
+    const pick = button("Choose image…", async () => {
+      // The instance the choice is for, not whatever is selected when Use places it.
       const target = shown && { path: shown.path, node: [...shown.node], tag: shown.tag, source: deps.sources()[shown.path] };
-      const path = await deps.upload(files.slice(0, 1));
-      if (path !== undefined && target) setImage(target, slot.name, path);
-    });
+      if (!target) return;
+      const path = await deps.chooseImage(`${componentLabel(target.tag)} · ${slotLabel(slot.name)}`);
+      if (path !== undefined) setImage(target, slot.name, path);
+    }, "component-panel__text-button");
     const row = node("div", "component-field__upload");
-    row.append(pick, file);
+    row.append(pick);
     return row;
   }
 
@@ -1887,7 +1881,7 @@ export function createComponentTools(deps: ComponentDeps) {
       },
       images: deps.images().map(image => `/${image}`),
       links: deps.links(),
-      openImageUpload(name) {
+      openImageChoice(name) {
         const at = read(), slot = at?.slots.find(item => item.name === name);
         if (!at || !slot || slotValue(at.source, at.template, at.instance, slot).kind !== "image") return;
         const proof = editor.prepareHistorySources([{ path, expectedSource: initial.source, text: initial.source }]);
@@ -1896,12 +1890,12 @@ export function createComponentTools(deps: ComponentDeps) {
         const close = () => { if (!closed) { closed = true; proof.dispose?.(); } };
         return {
           close,
-          async upload(files) {
+          async choose() {
             try {
-              if (closed || !files.length || !read(initial.source, proof)) return false;
-              const uploaded = await deps.upload(files.slice(0, 1));
+              if (closed || !read(initial.source, proof)) return false;
+              const uploaded = await deps.chooseImage(`${componentLabel(at.tag)} · ${slotLabel(name)}`);
               if (closed || uploaded === undefined) return false;
-              const current = read(initial.source, proof, "The instance changed while the image uploaded; it was not replaced.");
+              const current = read(initial.source, proof, "The instance changed while the image was chosen; it was not replaced.");
               if (!current) return false;
               const problem = nativeElementUrlProblem(uploaded, ["http", "https"], false);
               if (problem) { refuse(problem); return false; }
