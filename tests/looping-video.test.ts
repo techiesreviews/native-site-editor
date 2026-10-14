@@ -59,7 +59,7 @@ test("picture replacement keeps slot, identity, style, shape, focus, dimensions 
   const video = pictureSpotVideo(spot, { path: "v.mp4", name: "Ignored", width: 1280, height: 720 }).markup;
   assert.match(video, /slot='image' id="hero" class='photo'/);
   assert.match(video, /width="400" height='500' aria-label="A &amp; B"/);
-  assert.deepEqual(readPlaceFrame(video), { shape: "4:5", focus: { x: 22, y: 78 }, trimmed: false });
+  assert.deepEqual(readPlaceFrame(video), { shape: "4:5", focus: { x: 22, y: 78 }, trimmed: false, file: "v.mp4" });
   assert.equal(readLooping(video), true);
   assert.doesNotMatch(pictureSpotVideo('<img slot="image" alt="">', { path: "v.mp4", name: "Ignored" }).markup, /aria-label/);
 });

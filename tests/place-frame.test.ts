@@ -195,7 +195,7 @@ test("custom-property blocks keep their nested declarations; only top-level ones
 test("looping video start tags take and read the same shape and focus declarations", () => {
   const tag = '<video slot="image" src="/media/v.mp4" controls muted loop playsinline style="border-radius:12px">';
   const framed = writePlaceFrame(tag, { shape: "16:9", focus: { x: 27, y: 73 } });
-  assert.deepEqual(readPlaceFrame(framed), { shape: "16:9", focus: { x: 27, y: 73 }, trimmed: false });
+  assert.deepEqual(readPlaceFrame(framed), { shape: "16:9", focus: { x: 27, y: 73 }, trimmed: false, file: "media/v.mp4" });
   assert.match(framed, /border-radius:12px/);
   assert.match(framed, /controls muted loop playsinline/);
   assert.throws(() => writePlaceFrame('<video controls>', { shape: "square" }), /Choose an image place/);
