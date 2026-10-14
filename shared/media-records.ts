@@ -6,7 +6,8 @@ export interface MediaTrim {
   [key: string]: unknown;
 }
 export interface MediaPlaceRecord {
-  decorative?: true; byAgent?: true;
+  /** The own words an agent wrote here; the by-agent mark shows while the place's alt still equals them. */
+  decorative?: true; agentText?: string;
   [key: string]: unknown;
 }
 export interface MediaFileRecord {
@@ -101,7 +102,8 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     const places: Record<string, MediaPlaceRecord> = Object.create(null);
     for (const [page, value] of Object.entries(object(out.places, `${field}.places`))) {
       const place = { ...object(value, `${field}.places[${page}]`) };
-      flags(place, ["decorative", "byAgent"], `${field}.places[${page}]`);
+      flags(place, ["decorative"], `${field}.places[${page}]`);
+      optionalStrings(place, ["agentText"], `${field}.places[${page}]`);
       if (Object.keys(place).length) places[page] = place as MediaPlaceRecord;
     }
     if (Object.keys(places).length) out.places = places; else delete out.places;

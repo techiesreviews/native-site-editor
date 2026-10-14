@@ -13,7 +13,7 @@ export function placeDescriptionState(records: MediaRecords, file: string, page:
   const record = records.files[file], place = record?.places?.[page];
   const own = Boolean(alt && alt !== record?.description?.text);
   return { state: alt ? "described" as const : alt !== undefined && (record?.decorative || place?.decorative) ? "decorative" as const : "missing" as const,
-    own, byAgent: Boolean(own ? place?.byAgent : alt && record?.description?.byAgent) };
+    own, byAgent: own ? place?.agentText === alt : Boolean(alt && record?.description?.byAgent) };
 }
 export function newPlaceAlt(records: MediaRecords, file: string): string | undefined {
   const state = fileDescriptionState(records.files[file]);
@@ -29,23 +29,27 @@ export function setMediaFileDecorative(records: MediaRecords, file: string, deco
   else delete record.decorative;
   return updateFile(records, file, record);
 }
-function placeFlag(records: MediaRecords, file: string, page: string, key: "decorative" | "byAgent", value: boolean) {
+function placeField(records: MediaRecords, file: string, page: string, change: (place: MediaPlaceRecord) => void) {
   const record = { ...records.files[file] }, place: MediaPlaceRecord = { ...record.places?.[page] };
-  if (value) place[key] = true; else delete place[key];
+  change(place);
   const places: Record<string, MediaPlaceRecord> = Object.assign(Object.create(null), record.places);
   if (Object.keys(place).length) places[page] = place; else delete places[page];
   if (Object.keys(places).length) record.places = places; else delete record.places;
   return updateFile(records, file, record);
 }
 export function setMediaPlaceDecorative(records: MediaRecords, file: string, page: string, decorative: boolean) {
-  const next = placeFlag(records, file, page, "decorative", decorative);
-  return decorative ? setMediaPlaceByAgent(next, file, page, false) : next;
+  const next = placeField(records, file, page, place => { if (decorative) place.decorative = true; else delete place.decorative; });
+  return decorative ? setMediaPlaceAgentText(next, file, page, undefined) : next;
 }
-export function setMediaPlaceByAgent(records: MediaRecords, file: string, page: string, byAgent: boolean) {
-  return placeFlag(records, file, page, "byAgent", byAgent);
+/**
+ * Agent-written own words for a place. The mark is the text itself, so Lex's
+ * edit of the alt clears it without a second write (and Undo brings both back).
+ */
+export function setMediaPlaceAgentText(records: MediaRecords, file: string, page: string, text: string | undefined) {
+  return placeField(records, file, page, place => { if (text) place.agentText = text; else delete place.agentText; });
 }
 export function confirmMediaDescription(records: MediaRecords, file: string, page?: string) {
-  if (page !== undefined) return setMediaPlaceByAgent(records, file, page, false);
+  if (page !== undefined) return setMediaPlaceAgentText(records, file, page, undefined);
   const description = records.files[file]?.description;
   if (!description?.byAgent) return records;
   const confirmed = { ...description };

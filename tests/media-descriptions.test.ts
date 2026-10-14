@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMediaRecords, serializeMediaRecords, renameMediaRecord, setMediaDescription } from "../shared/media-records";
-import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceByAgent, confirmMediaDescription } from "../src/page-builder/media-descriptions";
+import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription } from "../src/page-builder/media-descriptions";
 
 const file = "images/a.png", page = "news/index.html";
 const empty = () => parseMediaRecords(undefined);
@@ -87,26 +87,28 @@ test("old empty alt is missing until explicitly marked; place mark survives save
 
 test("by-agent marks survive save and clear on confirmation or a non-agent text edit", () => {
   let records = setMediaDescription(empty(), file, "Agent text", true);
-  records = setMediaPlaceByAgent(records, file, page, true);
+  records = setMediaPlaceAgentText(records, file, page, "Own text");
   records = parseMediaRecords(serializeMediaRecords(records));
   assert.equal(fileDescriptionState(records.files[file]).byAgent, true);
   assert.equal(placeDescriptionState(records, file, page, "Own text").byAgent, true);
   assert.equal(placeDescriptionState(records, file, page, "Agent text").byAgent, true);
+  // Lex editing the place's words clears its mark with no records write; Undo of that edit brings it back.
+  assert.equal(placeDescriptionState(records, file, page, "Lex's own text").byAgent, false);
   assert.equal(confirmMediaDescription(records, file).files[file].description?.byAgent, undefined);
   assert.equal(confirmMediaDescription(records, file, page).files[file].places, undefined);
   assert.equal(setMediaDescription(records, file, "Lex text").files[file].description?.byAgent, undefined);
-  assert.equal(setMediaPlaceByAgent(records, file, page, false).files[file].places, undefined);
-  assert.equal(setMediaPlaceByAgent(records, file, page, true), records);
-  assert.equal(setMediaPlaceDecorative(records, file, page, true).files[file].places?.[page].byAgent, undefined);
+  assert.equal(setMediaPlaceAgentText(records, file, page, undefined).files[file].places, undefined);
+  assert.equal(setMediaPlaceAgentText(records, file, page, "Own text"), records);
+  assert.equal(setMediaPlaceDecorative(records, file, page, true).files[file].places?.[page].agentText, undefined);
   const missing = empty();
   assert.equal(confirmMediaDescription(missing, file), missing);
 });
 
 test("place validation rejects bad types, drops empty entries, preserves unknown and prototype keys, sorts pages", () => {
-  for (const places of [null, [], 2, { page: null }, { page: [] }, { page: { decorative: "yes" } }, { page: { byAgent: 1 } }]) {
+  for (const places of [null, [], 2, { page: null }, { page: [] }, { page: { decorative: "yes" } }, { page: { agentText: 1 } }]) {
     assert.throws(() => parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { a: { places } } })), /places/);
   }
-  const records = parseMediaRecords('{"version":2,"collections":[],"files":{"a":{"places":{"z.html":{"decorative":true,"future":1},"empty":{},"false":{"decorative":false,"byAgent":false},"a.html":{"byAgent":true},"__proto__":{"decorative":true}}}}}');
+  const records = parseMediaRecords('{"version":2,"collections":[],"files":{"a":{"places":{"z.html":{"decorative":true,"future":1},"empty":{},"false":{"decorative":false,"agentText":""},"a.html":{"agentText":"Words"},"__proto__":{"decorative":true}}}}}');
   const places = records.files.a.places!;
   assert.equal(Object.getPrototypeOf(places), null);
   assert.equal(places.empty, undefined); assert.equal(places.false, undefined);
@@ -114,7 +116,7 @@ test("place validation rejects bad types, drops empty entries, preserves unknown
   assert.deepEqual(Object.keys(JSON.parse(serializeMediaRecords(records)).files.a.places), ["__proto__", "a.html", "z.html"]);
   assert.deepEqual(parseMediaRecords(serializeMediaRecords(records)), records);
   assert.equal(parseMediaRecords('{"version":2,"collections":[],"files":{"a":{"places":{"empty":{}}}}}').files.a.places, undefined);
-  const next = setMediaPlaceByAgent(records, "a", "__proto__", true);
-  assert.equal(next.files.a.places?.__proto__.byAgent, true);
+  const next = setMediaPlaceAgentText(records, "a", "__proto__", "Words");
+  assert.equal(next.files.a.places?.__proto__.agentText, "Words");
   assert.equal(Object.getPrototypeOf(next.files.a.places), null);
 });

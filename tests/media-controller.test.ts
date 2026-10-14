@@ -169,22 +169,20 @@ test("place Decorative writes page and records atomically; unmark leaves empty a
   assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
 });
 
-test("place by-agent confirmation keeps description, Decorative mark and unknown metadata", async () => {
-  const f = fixture();
-  f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": {
-    description: { text: "Shared & familiar", byAgent: true }, places: { "index.html": { byAgent: true, decorative: true, future: "keep" } },
-  } } }));
-  f.ports.applyBatch = async (_scope, _stamp, batch) => {
-    assert.equal(batch.edits.size, 1);
-    assert.equal(batch.expectedSources.get("index.html"), f.sources.get("index.html"));
-    for (const [path, source] of batch.edits) f.sources.set(path, source);
-  };
-  await f.controller.changePlace("index.html", [0, 0]);
-  const record = JSON.parse(f.sources.get(".editor/media.json")!).files["images/old.png"];
-  assert.deepEqual(record.places["index.html"], { decorative: true, future: "keep" });
-  assert.equal(record.description.byAgent, true);
-  assert.equal(f.controller.placeState("index.html", "/images/old.png", "Shared &amp; familiar")?.own, false);
-  assert.deepEqual(f.errors, []);
+test("a Decorative press refuses when the page is switched while records are read", async () => {
+  let open = "index.html";
+  const f = fixture({ openFile: () => open });
+  let writes = 0;
+  f.ports.applyBatch = async () => { writes++; };
+  f.ports.readText = async () => { open = "about.html"; return '{"version":2,"collections":[],"files":{}}'; };
+  const original = f.sources.get("index.html");
+  await f.controller.changePlace("index.html", [0, 0], true);
+  assert.equal(writes, 0);
+  assert.equal(f.errors.length, 1);
+  assert.equal(f.sources.get("index.html"), original);
+  // A press for a page that is not open does nothing at all.
+  await f.controller.changePlace("index.html", [0, 0], true);
+  assert.equal(writes, 0);
 });
 
 test("place marking refuses unreadable records, page drift during reads and repository changes", async () => {

@@ -148,19 +148,21 @@ export function createMediaController(ports: MediaControllerPorts) {
   // Resolve through the same URL rules used by media references, loaded with the rules.
   let decodeAlt = (value: string) => value;
   let resolveFile = (_page: string, _src: string): string | undefined => undefined;
-  async function changePlace(page: string, node: number[], decorative?: boolean) {
+  async function changePlace(page: string, node: number[], decorative: boolean) {
     const stamp = ports.stamp(), source = ports.source(page);
-    if (source === undefined || ports.viewingVersion()) return;
+    if (source === undefined || ports.viewingVersion() || ports.openFile() !== page) return;
+    // The batch records Undo on the open page, so that page must still be the one marked.
+    const current = () => stamp.holds() && ports.openFile() === page && ports.source(page) === source;
     try {
       const [rules, io, references, html, entities, ctx] = await Promise.all([
         import("../page-builder/media-descriptions"), import("../../shared/media-records"),
         import("../page-builder/media-references"), import("../../shared/html-source"),
         import("../page-builder/html-entities"), workspaceContext(),
       ]);
-      if (!stamp.holds() || ports.source(page) !== source) throw new Error("This image changed. Select it again.");
+      if (!current()) throw new Error("This image changed. Select it again.");
       const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
       ctx.assertLive();
-      if (!stamp.holds() || ports.source(page) !== source) throw new Error("This image changed. Select it again.");
+      if (!current()) throw new Error("This image changed. Select it again.");
       const records = io.parseMediaRecords(metadata);
       const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
       if (!range || range.tag.name !== "img") return;
@@ -169,8 +171,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       const src = html.startTagAttribute(source, tag, "src");
       const file = src && references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), page);
       if (!file) throw new Error("Choose an image stored in this repository before marking it Decorative.");
-      const next = decorative === undefined ? rules.confirmMediaDescription(records, file, page) :
-        rules.setMediaPlaceDecorative(records, file, page, decorative);
+      const next = rules.setMediaPlaceDecorative(records, file, page, decorative);
       const edits = new Map<string, string>();
       if (next !== records) edits.set(io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(next));
       if (decorative) {
@@ -179,7 +180,7 @@ export function createMediaController(ports: MediaControllerPorts) {
         if (updated !== source) edits.set(page, updated);
       }
       if (!edits.size) return;
-      await ctx.applyBatch({ label: decorative === undefined ? "Confirm image description" : "Change Decorative image",
+      await ctx.applyBatch({ label: "Change Decorative image",
         expectedPaths: ctx.paths, expectedSources: new Map([[page, source], [io.MEDIA_RECORDS_PATH, metadata]]),
         expectedAssets: new Map(), edits, moves: [], deletes: [], uploads: [] });
       ctx.assertLive();

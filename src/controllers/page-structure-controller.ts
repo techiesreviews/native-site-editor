@@ -49,7 +49,7 @@ export interface PageStructurePorts {
   readonly nativeEffectiveSource: (path: string, scope?: { account: string; repoId: number; repo: string; branch: string; } | undefined) => string | undefined;
   readonly nativeNamedDescendant: (source: string, range: { start: number; end: number; }) => boolean;
   readonly mediaPlaceState?: (page: string, src: string, alt: string | undefined) => { state: "described" | "decorative" | "missing"; fileDecorative?: boolean } | undefined;
-  readonly changeMediaPlace?: (page: string, node: number[], decorative?: boolean) => Promise<void>;
+  readonly changeMediaPlace?: (page: string, node: number[], decorative: boolean) => Promise<void>;
   readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
   readonly nativePictureSources: (source: string, node: readonly number[]) => boolean;
   /** The card grid controls for a selection, move arrows already left out (cards controller). */
@@ -527,12 +527,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
         initial: alt ? undefined : altFromPath(src?.value ?? ""),
         placeholder: "What the image shows",
         onInput: (value) => { if (node) live(node, "img", (latest, tag) => [setAttributeEdit(latest, tag, "alt", value)], value ? "Alt text updated" : "Alt text removed"); },
-        onClose: () => {
-          editor.closeActiveEditGroup(path);
-          const latest = ports.nativeEffectiveSource(path);
-          const current = latest !== undefined && node ? ports.locateNativeElementRange(latest, node) : undefined;
-          if (latest !== undefined && current && ports.startTagAttribute(latest, current.tag, "alt")?.value !== alt?.value && node) void ports.changeMediaPlace?.(path, node);
-        },
+        // A place's by-agent mark is the agent's text, so editing it clears the mark in this same Undo step.
+        onClose: () => editor.closeActiveEditGroup(path),
       });
       controls.push({ kind: "button", label: "Decorative", pressed: description?.state === "decorative",
         disabled: description?.fileDecorative && description.state === "decorative",
