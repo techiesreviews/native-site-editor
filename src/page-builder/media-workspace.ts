@@ -1,15 +1,21 @@
+import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
+import { startTags, startTagAttribute } from "../../shared/html-source";
+import { locateNativeElementRange } from "../native-source-location";
+import { mediaResolvePath } from "./media-references";
+import { decodeHtmlEntities } from "./html-entities";
+import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
-import { confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
+import { pageUsesFile, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { MEDIA_RECORDS_PATH, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { alwaysKeptFiles, mediaFamilyOf, renamedFamily } from "./media-families";
-import { mediaVariantName } from "./media-markup";
+import { mediaEscape, mediaVariantName } from "./media-markup";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
-import type { MediaImportRequest, MediaLibraryItem, MediaPickerHost } from "./media-picker";
+import type { MediaImportRequest, MediaLibraryItem } from "./media-picker";
 
 /** Prepared mutations only. The host validates and commits this entire batch atomically. */
 export interface MediaWorkspaceBatch {
@@ -75,7 +81,7 @@ function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWork
 }
 
 /** Repository adapter; the panel never writes directly to drafts, bytes or source models. */
-export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>): MediaPickerHost {
+export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>) {
   let session: MediaWorkspaceContext | undefined;
   const active = () => {
     if (!session) throw new Error("Open the image library first.");
@@ -214,6 +220,42 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     return paths;
   };
   return {
+    async describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }) {
+      const ctx = active(), words = change.text?.trim();
+      if ((change.text !== undefined) === (change.decorative !== undefined)) throw new Error("Give exactly one of text or decorative.");
+      if (words === "") throw new Error("Use decorative: true for a picture that adds nothing to the page.");
+      if (!ctx.items.some(item => item.path === file)) throw new Error(OUTSIDE_MEDIA_REFUSED);
+      const { batch, metadata, text } = await prepare(ctx, words !== undefined ? `Agent described ${file.split("/").pop()}` : `Agent ${change.decorative ? "marked" : "unmarked"} ${file.split("/").pop()} Decorative`, true);
+      let next: MediaRecords;
+      if (!change.page) {
+        next = metadataInto(batch, text, metadata, { [file]: words !== undefined ? { alt: words, decorative: false } : { decorative: change.decorative } });
+        if (words !== undefined) next = setMediaDescription(next, file, words, true);
+        // An agent's Decorative toggle must not silently approve previously written words.
+        else if (metadata.files[file]?.description?.byAgent) next = { ...next, files: { ...next.files, [file]: { ...next.files[file], description: metadata.files[file].description } } };
+      } else {
+        const page = change.page, source = text[page];
+        if (source === undefined || !pageUsesFile(source, page, file)) throw new Error(`${file} is not used on ${page}.`);
+        const node = change.element === undefined ? undefined : parseOutlineId(change.element);
+        if (change.element !== undefined && !node) throw new Error("Give an image element id.");
+        const range = node && locateNativeElementRange(source, node);
+        const images = startTags(source).filter(tag => tag.name === "img" && mediaResolvePath(decodeHtmlEntities(startTagAttribute(source, tag, "src")?.value ?? "", true), page) === file);
+        if (node && (!range || range.tag.name !== "img" || !images.some(tag => tag.start === range.tag.start))) throw new Error("That element is not an image showing this file.");
+        let edited = source;
+        if (words !== undefined || change.decorative) {
+          for (const tag of images.filter(tag => !range || tag.start === range.tag.start).reverse()) {
+            const alt = startTagAttribute(source, tag, "alt");
+            edited = edited.slice(0, alt?.start ?? tag.nameEnd) + ` alt="${mediaEscape(words ?? "")}"` + edited.slice(alt?.end ?? tag.nameEnd);
+          }
+        }
+        next = words !== undefined ? setMediaPlaceAgentText(setMediaPlaceDecorative(metadata, file, page, false), file, page, words)
+          : setMediaPlaceDecorative(metadata, file, page, change.decorative!);
+        const agentText = metadata.files[file]?.places?.[page]?.agentText;
+        if (words === undefined && agentText) next = setMediaPlaceAgentText(next, file, page, agentText);
+        if (edited !== source) batch.edits.set(page, edited);
+      }
+      recordsEdit(batch, metadata, next);
+      await commit(ctx, batch);
+    },
     begin() { session = undefined; },
     async load() {
       if (session) session.assertLive();
@@ -315,5 +357,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     async openPage(path) { await active().openPage(path); },
-  };
+  } satisfies MediaPickerHost & { describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }

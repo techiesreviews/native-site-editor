@@ -133,3 +133,15 @@ test("workspace reports show starting collections before the first save, as the 
   assert.equal(byPath["images/2024/05/beach.jpg"].collections, undefined);
   assert.equal(byPath["files/menu.pdf"].collections, undefined);
 });
+
+
+test("tab refuses upload-like writes and placement outside Media before mutations", async () => {
+  const { applySiteCommand } = await import("../src/agent-site.ts");
+  const { applyAgentMedia } = await import("../src/agent-media-actions.ts");
+  const command = { id: "upload", operation: "write_file", path: "images/new.png", branch: "main", commit: "abc", content: "bytes", state: "pending", createdAt: 0 } satisfies import("../shared/agent.ts").AgentCommand;
+  // Refusals run before any action port is needed.
+  const ports = {} as import("../src/agent-site.ts").AgentSiteActions;
+  await assert.rejects(applySiteCommand(ports, command), /never upload, fetch or generate/);
+  const context = { items: [] } satisfies Pick<import("../src/page-builder/media-workspace.ts").MediaWorkspaceContext, "items">; // Membership refusal only reads items.
+  await assert.rejects(applyAgentMedia(context as import("../src/page-builder/media-workspace.ts").MediaWorkspaceContext, { ...command, operation: "place_media", path: "index.html", args: { file: "images/outside.png", element: "0" } }, () => { throw new Error("Placement must not start"); }), /never upload, fetch or generate/);
+});

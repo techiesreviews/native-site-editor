@@ -37,7 +37,7 @@ import {
 import { createSetupEntryController } from "./controllers/setup-entry-controller";
 import { createAgentController } from "./controllers/agent-controller";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
-import { type AgentCommand } from "../shared/agent";
+import { parseOutlineId, type AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
 import { draftKey } from "./drafts";
@@ -4528,6 +4528,15 @@ const agentSiteActions: AgentSiteActions = {
     const preview = await media.previewPicture(blob, path);
     ctx.assertLive();
     return preview;
+  },
+  async media(command) {
+    const since = guardedEdits.stamp("repository");
+    const place = command.operation === "place_media"
+      ? mediaController.preparePlacement({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
+    const [media, listing] = await Promise.all([import("./agent-media-actions"), import("./agent-media")]);
+    if (!since.holds()) throw new Error("The editor changed branch or revision.");
+    const ctx = await mediaController.workspaceContext(listing.isAgentMediaPath);
+    await media.applyAgentMedia(ctx, command, () => place!);
   },
   legacy: applyAgentCommand,
 };

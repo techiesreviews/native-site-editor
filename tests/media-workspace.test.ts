@@ -463,3 +463,87 @@ test("To check: saving the same words counts as OK for a file and a place; one U
   f.history.pop()!();
   assert.equal(f.text.get(MEDIA_RECORDS_PATH), records);
 });
+
+test("agent file descriptions flow to following places, mark To check, and undo with records", async () => {
+  const f = fixture(); await f.host.load();
+  f.text.set("index.html", '<body><img src="/images/a.png" alt="Default"><img src="/images/a.png" alt="Own"><img src="/images/a.png"></body>');
+  const before = f.text.get("index.html");
+  await f.host.describe("images/a.png", { text: "A garden & flowers" });
+  assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
+  assert.match(f.batches[0].label, /Agent described a.png/);
+  assert.equal((f.text.get("index.html")!.match(/alt="A garden &amp; flowers"/g) ?? []).length, 2);
+  assert.match(f.text.get("index.html")!, /alt="Own"/);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "A garden & flowers", byAgent: true });
+  assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", text: "A garden & flowers" }]);
+  f.history.pop()!();
+  assert.equal(f.text.get("index.html"), before);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description?.byAgent, undefined);
+});
+
+test("agent own words and place Decorative are one batch and one Undo, retaining unchecked marks", async () => {
+  const f = fixture(); await f.host.load();
+  const before = f.text.get("index.html");
+  await f.host.describe("images/a.png", { page: "index.html", text: "Own agent words" });
+  assert.match(f.text.get("index.html")!, /alt="Own agent words"/);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].places?.["index.html"].agentText, "Own agent words");
+  assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", page: "index.html", text: "Own agent words" }]);
+  assert.equal(f.history.length, 1);
+  await f.host.describe("images/a.png", { page: "index.html", decorative: true });
+  assert.match(f.text.get("index.html")!, /alt=""/);
+  const marked = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].places?.["index.html"];
+  assert.equal(marked?.decorative, true); assert.equal(marked?.agentText, "Own agent words");
+  f.history.pop()!(); assert.match(f.text.get("index.html")!, /alt="Own agent words"/);
+  f.history.pop()!(); assert.equal(f.text.get("index.html"), before);
+});
+
+test("agent file Decorative follows library rules and never clears an unchecked description", async () => {
+  const f = fixture(); await f.host.load();
+  f.text.set("index.html", '<body><img src="/images/a.png" alt="Default"><img src="/images/a.png" alt="Own"></body>');
+  await f.host.describe("images/a.png", { decorative: true });
+  assert.match(f.text.get("index.html")!, /alt=""/); assert.match(f.text.get("index.html")!, /alt="Own"/);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].decorative, true);
+  f.history.pop()!();
+  await f.host.describe("images/a.png", { text: "Default" });
+  await f.host.describe("images/a.png", { decorative: true });
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description?.byAgent, true);
+  assert.equal((await f.host.load()).toCheck.length, 1);
+  await f.host.describe("images/a.png", { decorative: false });
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].decorative, undefined);
+});
+
+test("agent descriptions refuse blanks, outside files and pages that do not use the file without writing", async () => {
+  const f = fixture(); await f.host.load();
+  await assert.rejects(f.host.describe("images/a.png", { text: "  " }), /Use decorative: true/);
+  await assert.rejects(f.host.describe("images/outside.png", { text: "Words" }), /never upload, fetch or generate/);
+  await assert.rejects(f.host.describe("images/unused.png", { page: "index.html", text: "Words" }), /not used on index.html/);
+  assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
+});
+
+test("agent collection actions call Media's rules, each undoable with no page open", async () => {
+  const { applyAgentMedia } = await import("../src/agent-media-actions");
+  const f = fixture();
+  const run = (args: import("../shared/agent").AgentCommandArgs) => applyAgentMedia(f.context, {
+    id: "collection", operation: "change_collection", path: "", branch: "main", commit: "abc", content: "", state: "pending", createdAt: 0, args,
+  }, () => { throw new Error("Collections must not open a page"); });
+  const records = () => parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  await run({ action: "new", name: "Trip", files: ["images/a.png"] });
+  assert.ok(records().files["images/a.png"].collections?.includes("Trip"));
+  await assert.rejects(run({ action: "new", name: "trip" }), /already exists/);
+  await run({ action: "add", name: "Trip", files: ["images/unused.png"] });
+  assert.ok(records().files["images/unused.png"].collections?.includes("Trip"));
+  f.history.pop()!(); assert.equal(records().files["images/unused.png"], undefined);
+  await run({ action: "take-out", name: "Trip", files: ["images/a.png"] });
+  assert.ok(!records().files["images/a.png"].collections?.includes("Trip"));
+  assert.ok(records().collections.includes("Trip")); assert.ok(f.bytes.has("images/a.png"));
+  f.history.pop()!(); assert.ok(records().files["images/a.png"].collections?.includes("Trip"));
+  await assert.rejects(run({ action: "rename", name: "Trip", to: "hero" }), /already exists/);
+  await run({ action: "rename", name: "Trip", to: "Holiday" });
+  assert.ok(records().files["images/a.png"].collections?.includes("Holiday"));
+  f.history.pop()!(); assert.ok(records().collections.includes("Trip"));
+  await run({ action: "delete", name: "Trip" });
+  assert.ok(!records().collections.includes("Trip")); assert.ok(f.bytes.has("images/a.png"));
+  assert.equal(records().files["images/a.png"].description?.text, "Default");
+  f.history.pop()!(); assert.ok(records().collections.includes("Trip"));
+  f.history.pop()!(); assert.deepEqual(records().collections, ["hero"]);
+  assert.ok(f.batches.every(batch => batch.edits.size === 1 && batch.edits.has(MEDIA_RECORDS_PATH)));
+});

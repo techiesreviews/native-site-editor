@@ -3,17 +3,18 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
+import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
-import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
+import { agentMediaArgsProblem, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
-import { locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
+import { startTagAttribute, locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
 import type { GuardedEdits, Outcome } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
@@ -356,6 +357,7 @@ export interface AgentSiteActions {
   inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
   listMedia(request: { folder?: string; offset: number; limit: number }): Promise<string>;
   previewMedia(path: string): Promise<{ data: string; mimeType: string; width: number; height: number; originalWidth: number; originalHeight: number }>;
+  media(command: AgentCommand): Promise<void>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
 }
@@ -453,12 +455,17 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   const path = command.path;
   // Last line of defence: nothing an agent queued may touch the workflows, as a
   // path, a move's destination, or a folder that holds them.
-  for (const candidate of [path, args.to, args.parent])
+  for (const candidate of [path, ...(command.operation === "change_collection" ? [] : [args.to]), args.parent, args.file, args.page, ...args.files ?? []])
     if (typeof candidate === "string" && touchesGithubConfig(candidate)) throw new Error(GITHUB_CONFIG_REFUSED);
   // edit_file queues write_file after applying its replacements.
   if (["write_file", "move_file", "delete_file"].includes(command.operation))
     for (const candidate of [path, args.to, args.parent])
       if (typeof candidate === "string" && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
+  if (command.operation === "write_file" && isMediaUploadWrite(path)) throw new Error(OUTSIDE_MEDIA_REFUSED);
+  const mediaProblem = agentMediaArgsProblem(command.operation, args);
+  if (mediaProblem) throw new Conflict(mediaProblem);
+  for (const candidate of [args.file, ...args.files ?? []])
+    if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
   switch (command.operation) {
     case "update_active_draft":
     case "create_file_draft":
@@ -576,6 +583,23 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     case "open_page":
       if (!(await actions.open(path))) throw new Error(`${path} could not be opened.`);
       return { message: `Opened ${path}.` };
+    case "place_media": {
+      const source = await openPage(actions, path, command.expectedHash);
+      const node = parseOutlineId(args.element!)!;
+      const range = locateNativeElementRange(source, node);
+      if (!range || range.tag.name !== "img") throw new Conflict("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
+      await actions.media(command);
+      const placedSource = await actions.text(path) ?? "";
+      const placed = locateNativeElement(placedSource, node);
+      return { message: `Placed ${args.file} in ${args.element} on ${path}, unsaved.`, result: { hash: await hashOf(actions, path), alt: decodeHtmlEntities(placed ? startTagAttribute(placedSource, placed, "alt")?.value ?? "" : "", true) } };
+    }
+    case "describe_media":
+      if (args.page) await openPage(actions, args.page, command.expectedHash);
+      await actions.media(command);
+      return { message: `Changed description of ${args.file}, unsaved.`, result: { hash: await hashOf(actions, args.page ?? ".editor/media.json") } };
+    case "change_collection":
+      await actions.media(command);
+      return { message: `Changed collection ${args.name}, unsaved.` };
     case "list_media": {
       const report = await actions.listMedia({ folder: args.folder, offset: args.offset ?? 0, limit: args.limit ?? 100 });
       const { count, total } = JSON.parse(report);

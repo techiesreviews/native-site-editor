@@ -295,3 +295,39 @@ test("a value's picker opens nothing when the repository changed while it loaded
   assert.equal(await f.controller.choosePath("Site settings · Favicon"), undefined);
   assert.equal(f.pick(), undefined);
 });
+
+test("agent placement uses the picker's exact markup and Decorative batch; refuses non-images", async () => {
+  const image = { path: "images/new.png", alt: "New", width: 960, height: 640, variants: [{ path: "images/new-480w.png", width: 480 }] };
+  const picked = fixture(), agent = fixture();
+  for (const f of [picked, agent]) f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { description: { text: "Old alt" } }, "images/new.png": { description: { text: "New" } } } }));
+  await picked.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await picked.pick()!.onPick!(image, () => false);
+  await agent.controller.preparePlacement({ path: "index.html", node: [0, 0] })(image);
+  assert.deepEqual(agent.changes, picked.changes);
+  assert.match(agent.changes[0], /srcset=.*480w.*960w/);
+  assert.match(agent.changes[0], /width="960"/); assert.match(agent.changes[0], /height="640"/);
+  assert.match(agent.changes[0], /loading="lazy"/); assert.match(agent.changes[0], /alt="New"/);
+  const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [];
+  const marked = fixture({ applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); } });
+  marked.sources.set("index.html", '<section><img src="/images/old.png" alt=""></section>');
+  marked.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { places: { "index.html": { decorative: true } } } } }));
+  await marked.controller.preparePlacement({ path: "index.html", node: [0, 0] })(image);
+  assert.equal(batches.length, 1);
+  assert.match(batches[0].edits.get("index.html")!, /alt=""/);
+  assert.equal(JSON.parse(batches[0].edits.get(".editor/media.json")!).files["images/new.png"].places["index.html"].decorative, true);
+  const invalid = fixture({ locateElement: source => ({ tag: startTags(source)[0] }) });
+  assert.throws(() => invalid.controller.preparePlacement({ path: "index.html", node: [0] }), /That element is not an image/);
+});
+
+test("agent placement holds its page and decoded file proof across lazy reads", async () => {
+  const f = fixture();
+  const place = f.controller.preparePlacement({ path: "index.html", node: [0, 0] });
+  f.sources.set("index.html", '<section><img src="/images/old.png" alt="Other words"></section>');
+  await assert.rejects(place({ path: "images/new.png", alt: "New" }), /This image changed/);
+  assert.equal(f.changes.length, 0);
+  const asset = fixture();
+  await assert.rejects(asset.controller.preparePlacement({ path: "index.html", node: [0, 0] })(
+    { path: "images/old.png", alt: "New" }, { path: "images/old.png", version: "previous-sha" },
+  ), /image changed while preparing/);
+  assert.equal(asset.changes.length, 0);
+});

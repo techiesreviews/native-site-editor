@@ -58,7 +58,7 @@ An agent watches for requests with `wait_for_requests` (the `watch_editor` promp
 
 ## Tools
 
-The server exposes 23 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
+The server exposes 26 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
 
 | Tool | What it does |
 | --- | --- |
@@ -66,6 +66,10 @@ The server exposes 23 tools. Start with `get_site`. Reads come from what the edi
 | `list_files` | Every file path (optionally under a folder), with drafts applied and marked. |
 | `list_media` | Media families with kind, size, copies and originals, page and other uses, description (by agent or Decorative), collections, Always keep, drafts and Not checked yet. Page with `offset`/`limit` (default 100, maximum 200) and `nextOffset`; answered by the open tab. |
 | `preview_media` | A picture preview at most 512 px on its longest side, with original and preview dimensions and encoded bytes; pictures only, with a clear refusal for documents, video and audio. Answered by the open tab. Both media tools follow the Media chapter of `native-site://conventions`. |
+| `place_media` | `path, element, file`: fill an existing page image with a file from Media, using the picker's markup and description rules. One unsaved Undo step. |
+| `describe_media` | `file` and exactly one of `text` / `decorative`; optional `page, element` for a place. Agent words carry the by-agent mark and appear in To check. One unsaved Undo step. |
+| `change_collection` | `action: new, add, take-out, rename, delete`, `name`, optional `to, files`. Uses Media's collection rules; taken names refuse, delete keeps files. One unsaved Undo step, even without a page open. These tools follow the Media chapter of `native-site://conventions`. |
+
 | `read_file` | Any text file: a draft up to 1 MB, else GitHub (up to 1 MB); with its content hash. |
 | `export_site` | The whole site, or one folder, in one call: every text file with drafts applied and its hash, binaries by path, SHA and size. Saved texts are read from GitHub in batched GraphQL queries (100 blobs each) and kept by SHA; text past about 4 MB is listed as `omitted`. |
 | `get_page` | A page by URL (`/about/`, `/about`, `/about/index.html`, `/404.html`) or file: route, title, description, source, hash, and the outline of its `<body>`: the containers that hold sections and each section's id (`1.2`: element-child indexes from `<body>`), tag, `data-key`, heading or text, and a section component's slot text. |

@@ -79,8 +79,8 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
-      "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
+      "add_section", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
+      "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
@@ -924,5 +924,53 @@ test("media tools ask the tab for family reports and picture previews and refuse
     const dropped = await call("preview_media", { path: media[0], requestId: "oversize-preview_media", waitSeconds: 0 });
     assert.equal(dropped.isError, true);
     assert.match(JSON.stringify(dropped), /too large to send/);
+  } finally { await client?.close(); await worker.dispose(); }
+});
+
+test("agent media editing tools validate before queueing and retain their command arguments", async () => {
+  const { worker } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker), tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    await tab.share(await siteContext());
+    client = new Client({ name: "media-edit-test", version: "1" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker),
+    }));
+    const call = (name: string, args: Record<string, unknown>) => client!.callTool({ name, arguments: { ...args, waitSeconds: 0 } });
+    const tools = (await client.listTools()).tools;
+    for (const name of ["place_media", "describe_media", "change_collection"]) {
+      assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, false);
+      assert.match(tools.find(tool => tool.name === name)!.description!, /Unsaved until the user saves.*Media chapter.*native-site:\/\/conventions/);
+    }
+    for (const file of ["https://example.com/a.png", "http://example.com/a.png", "//example.com/a.png", "data:image/png;base64,x", "blob:x", "files/menu.pdf", ".github/a.png", ".editor/media.json"]) {
+      const refused = await call("place_media", { path: "index.html", element: "1", file });
+      assert.equal(refused.isError, true);
+      if (/^(http|\/\/|data:|blob:)/.test(file)) assert.match(JSON.stringify(refused), /never upload, fetch or generate media/);
+    }
+    for (const args of [{ action: "rename", name: "Trip" }, { action: "add", name: "Trip" }, { action: "take-out", name: "Trip", files: [] }]) assert.equal((await call("change_collection", args)).isError, true);
+    for (const args of [{ file: "images/a.png", text: "" }, { file: "images/a.png", text: "Words", decorative: true }, { file: "images/a.png" }]) assert.equal((await call("describe_media", args)).isError, true);
+    assert.equal((await call("write_file", { path: "images/new.png", content: "bytes" })).isError, true);
+    assert.equal((await tab.hub()).commands?.length ?? 0, 0);
+    for (const name of ["describe_media", "change_collection", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
+    const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+      ["place_media", { path: "index.html", element: "1.0", file: "images/a.png" }, "index.html", { element: "1.0", file: "images/a.png" }],
+      ["describe_media", { file: "images/a.png", text: "A garden" }, "images/a.png", { file: "images/a.png", text: "A garden" }],
+      ["describe_media", { file: "images/a.png", page: "index.html", element: "1", decorative: false }, "index.html", { file: "images/a.png", page: "index.html", element: "1", decorative: false }],
+      ...(["new", "add", "take-out", "rename", "delete"] as const).map(action => {
+        const args = { action, name: "Trip", ...(action === "rename" ? { to: "Holiday" } : ["new", "add", "take-out"].includes(action) ? { files: ["images/a.png"] } : {}) };
+        return ["change_collection", args, "", args] as [string, Record<string, unknown>, string, Record<string, unknown>];
+      }),
+    ];
+    for (const [index, [name, args, path, expected]] of queued.entries()) {
+      const id = `media-edit-${index}`;
+      assert.equal(payload(await call(name, { ...args, requestId: id })).state, "pending");
+      const command = (await tab.hub()).commands.find((item: any) => item.id === id);
+      assert.equal(command.operation, name); assert.equal(command.path, path); assert.deepEqual(command.args, expected);
+      await tab.claim(id, command.grantId);
+      await tab.ack(id, command.grantId, "applied");
+    }
+    assert.equal(payload(await call("write_file", { path: "images/new.svg", content: '<svg xmlns="http://www.w3.org/2000/svg"/>', requestId: "svg-still-text" })).state, "pending");
   } finally { await client?.close(); await worker.dispose(); }
 });

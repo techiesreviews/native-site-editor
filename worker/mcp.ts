@@ -19,6 +19,7 @@ import { contextMaxAge } from "./agent-operations";
 import type { Env } from "./app";
 import {
   AGENT_TEXT_LIMIT,
+  agentMediaArgsProblem, isOutsideMediaAddress, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED,
   isPreviewablePicture,
   picturePreviewRefusal,
   QUESTION_TEXT_LIMIT,
@@ -523,6 +524,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ path, content, expectedHash, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path);
       if (problem) return failure(problem);
+      if (isMediaUploadWrite(path)) return failure(OUTSIDE_MEDIA_REFUSED);
       checkContent(content);
       const { context, files } = await current();
       const file = await files.read(path);
@@ -730,6 +732,44 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return queue("preview_media", context, { path, requestId, waitSeconds });
     },
   );
+
+
+  const mediaPath = z.string().min(1).max(1024);
+  server.registerTool("place_media", {
+    description: "Place a file already in Media into an existing image element on a page. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ path: mediaPath, element: mediaPath, file: mediaPath, requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ path, element, file, requestId, waitSeconds }) => {
+    const args = { element, file };
+    const problem = writablePathProblem(path) ?? (isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? agentMediaArgsProblem("place_media", args);
+    if (problem) return failure(problem);
+    if (!/\.html$/i.test(path)) return failure("Give a page path ending in .html.");
+    const { context } = await current();
+    return queue("place_media", context, { path, args, requestId, waitSeconds });
+  });
+  server.registerTool("describe_media", {
+    description: "Write a file description or a place's own words, or mark Decorative. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ file: mediaPath, text: z.string().max(2000).optional(), decorative: z.boolean().optional(), page: mediaPath.optional(), element: mediaPath.optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ file, text, decorative, page, element, requestId, waitSeconds }) => {
+    const args = { file, text, decorative, page, element };
+    const problem = (isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? (page ? writablePathProblem(page) : undefined) ?? agentMediaArgsProblem("describe_media", args);
+    if (problem) return failure(problem);
+    if (page && !/\.html$/i.test(page)) return failure("Give a page path ending in .html.");
+    const { context } = await current();
+    return queue("describe_media", context, { path: page ?? file, args, requestId, waitSeconds });
+  });
+  server.registerTool("change_collection", {
+    description: "Create, add to, take out of, rename or delete a Media collection. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ action: z.enum(["new", "add", "take-out", "rename", "delete"]), name: mediaPath, to: mediaPath.optional(), files: z.array(mediaPath).max(200).optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ action, name, to, files, requestId, waitSeconds }) => {
+    const args = { action, name, to, files };
+    const problem = agentMediaArgsProblem("change_collection", args) ?? files?.map(file => writablePathProblem(file)).find(Boolean);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("change_collection", context, { path: "", args, requestId, waitSeconds });
+  });
 
   // ---- Sections ----
 
