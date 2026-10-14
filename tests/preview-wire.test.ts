@@ -6,7 +6,7 @@ import { FRESHNESS, type FrameMessage, type HostMessage } from "../src/component
 const FRAME_TYPES = FRESHNESS satisfies Record<FrameMessage["type"], unknown>;
 const HOST_TYPES = {
   update: true, "drop-probe": true, "patch-text": true, "finish-typing": true,
-  inspect: true, theme: true, "component-focus": true, "edit-component": true,
+  inspect: true, "measure-image": true, theme: true, "component-focus": true, "edit-component": true,
   viewing: true, "scroll-by": true, pins: true, "show-pin": true, assets: true,
   "canvas-crumb": true, "canvas-avoid": true, "canvas-hint": true, "canvas-code-select": true,
   "clear-selection": true, "select-node": true, "select-parent": true, "item-grid-track": true,
@@ -20,8 +20,9 @@ function emittedTypes(source: string) {
   const literals = [...calls.matchAll(/\bemit\s*\(\s*(["'])([^"']+)\1\s*[,)]/g)];
   assert.equal([...calls.matchAll(/\bemit\s*\(/g)].length, literals.length, "emit calls must have a literal type");
   const direct = [...calls.matchAll(/\bparent\.postMessage\s*\(\s*\{\s*source:\s*FRAME_SOURCE,\s*type:\s*(["'])([^"']+)\1/g)];
-  // Besides `emit`'s own post, every post must be in the one shape read above.
-  assert.equal([...calls.matchAll(/\bpostMessage\s*\(/g)].length, direct.length + 1, "posts must go through emit or name their type first");
+  // The isolated measuring child receives only this literal host request.
+  const children = [...calls.matchAll(/\bframe\.contentWindow\.postMessage\s*\(\s*\{\s*source:\s*HOST_SOURCE,\s*type:\s*"measure-image"/g)];
+  assert.equal([...calls.matchAll(/\bpostMessage\s*\(/g)].length, direct.length + children.length + 1, "posts must go through emit or name their type first");
   return new Set([...literals, ...direct].map(match => match[2]));
 }
 
@@ -60,8 +61,8 @@ test("wire extractor rejects unknown and non-literal emit types", () => {
   assert.throws(() => emittedTypes(emit + 'parent.postMessage({ type: "bogus", source: FRAME_SOURCE }, "*");'), /name their type first/);
 });
 
-test("runtime shares wire sources and receives host messages through one listener", () => {
-  assert.equal([...runtime.matchAll(/\baddEventListener\s*\(\s*["']message["']/g)].length, 1);
+test("runtime shares wire sources and receives host messages through sender-checked listeners", () => {
+  assert.equal([...runtime.matchAll(/\baddEventListener\s*\(\s*["']message["']/g)].length, 3);
   assert.match(runtime, /import\s*\{\s*FRAME_SOURCE,\s*HOST_SOURCE\s*\}\s*from\s*"\.\/preview-wire\.ts"/);
   assert.match(runtime, /if\s*\(msg\.source\s*!==\s*HOST_SOURCE\)\s*return/);
   assert.match(runtime, /var base = \{ source: FRAME_SOURCE, type: type \}/);

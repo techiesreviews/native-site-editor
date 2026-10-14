@@ -6,6 +6,7 @@
 // and limit; checks against the editor's state (a path of the site, the page
 // on show, the current render) stay with the receiver.
 import type { AssetChanges, EditComponentFrameMode, NativeNodeRequest, NativePreviewSelection, NativeStructureItem, NativeTextSelection, UpdatePayload } from "./native-preview";
+import type { ImageReport } from "../page-builder/image-sizes";
 import type { SelectionRect } from "./edit-bar";
 import type { InsertPoint } from "./insert-controls";
 import type { ItemGridReport } from "./card-grid-controls";
@@ -41,6 +42,7 @@ export type FrameMessage =
   | Frame<"dismiss-context-menu">
   // Read against the editor's state (src/components/slot-ghosts.ts).
   | Frame<"slot-ghosts", { report: unknown }>
+  | Frame<"image-measured", { id: number; report: ImageReport }>
   | Frame<"inspect-result", { id: number; report: unknown }>
   | Frame<"ack", { id: number }>
   | Frame<"ready", { load: string | undefined }>
@@ -72,6 +74,7 @@ export type HostMessage =
   | Host<"drop-probe", { id: number; x: number; y: number; moving: number[] | undefined; bands: boolean | undefined }>
   | Host<"patch-text", PatchText>
   | Host<"finish-typing", { id: number }>
+  | Host<"measure-image", { id: number; request: NativeNodeRequest }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
   | Host<"theme", { focus: string; component: string }>
   | Host<"component-focus", { tag: string }>
@@ -110,7 +113,7 @@ export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? 
   "typing-finished": "reply", "image-drop": "render", "image-edit": "render", patched: "reply", "text-edit": "action",
   route: "action", format: "action", move: "action", "press-drag": { start: "render", move: "action", end: "action", cancel: "action" },
   "canvas-clear": "action", "pin-rects": "whole", "drop-containers": "reply", "dismiss-context-menu": "action",
-  "slot-ghosts": "render", "inspect-result": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
+  "slot-ghosts": "render", "inspect-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
   "insert-points": "render", "section-hover": "render", "text-selection": "render", "item-grids": "render", structure: "render",
   "selection-rect": "render", select: "render", "default-styles": "render", "component-styles": "render",
   shortcut: "action", "refusal-note-action": "action",
@@ -299,6 +302,19 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
       return { ...base(raw.type), id: typeof raw.id === "number" ? raw.id : undefined, report: typeof raw.path === "string" ? parseDropReport(raw, raw.path) : undefined };
     case "slot-ghosts":
       return { ...base(raw.type), report: raw.report };
+    case "image-measured": {
+      const report = object(raw.report);
+      if (!index(raw.id) || !report) return undefined;
+      if (typeof report.error === "string") return { ...base(raw.type), id: raw.id, report: { error: report.error.slice(0, 2000) } };
+      if (!Array.isArray(report.facts) || !report.facts.length || report.facts.length > 15) return undefined;
+      const facts = report.facts.map((entry) => {
+        const fact = object(entry);
+        if (!fact || !finite(fact.viewport) || fact.viewport < 320 || fact.viewport > 2560 || !finite(fact.viewportHeight) || fact.viewportHeight <= 0 || !finite(fact.top)) return undefined;
+        if (!finite(fact.width) || fact.width < 0 || !finite(fact.height) || fact.height < 0 || !finite(fact.naturalWidth) || fact.naturalWidth <= 0 || !finite(fact.naturalHeight) || fact.naturalHeight <= 0 || typeof fact.fit !== "string") return undefined;
+        return { viewport: fact.viewport, viewportHeight: fact.viewportHeight, top: fact.top, width: fact.width, height: fact.height, naturalWidth: fact.naturalWidth, naturalHeight: fact.naturalHeight, fit: fact.fit };
+      });
+      return facts.every((fact) => fact !== undefined) ? { ...base(raw.type), id: raw.id, report: { facts } } : undefined;
+    }
     case "inspect-result":
       return { ...base(raw.type), id: Number(raw.id), report: raw.report };
     case "ack":

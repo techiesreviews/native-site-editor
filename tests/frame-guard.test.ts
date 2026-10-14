@@ -15,13 +15,15 @@ const postAllowlist: AllowlistEntry[] = [
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
   { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE, count: 4 },
+  { file: RUNTIME, match: "frame.contentWindow", reason: "The runtime sizes and requests its isolated measuring child; preview-wire.test.ts pins the child request shape." },
   { file: RUNTIME, match: "parent", reason: "The runtime's posts (emit and ready) are the frame side; preview-wire.test.ts pins their types and shapes.", count: 2 },
 ];
 const listenerAllowlist: AllowlistEntry[] = [
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
   { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE },
-  { file: RUNTIME, match: "window", reason: "The runtime's one host listener is the frame side; preview-wire.test.ts pins its source and handled types." },
+  { file: RUNTIME, match: "window", reason: "The frame-side host listener, measurement-only child listener and scoped child reply listener all check their sender and wire source; preview-wire.test.ts pins them.", count: 3 },
+  { file: RUNTIME, match: "window.removeEventListener", reason: "Image measurement removes its scoped child reply listener on every settle path." },
 ];
 const copiedAllowlist: AllowlistEntry[] = [
   { file: "src/page-builder/native-operations.ts", match: { text: '["p", "h1", "h2", "h3", "h4", "h5", "h6", "span", "strong", "em", "code", "pre", "a", "button", "option"]', includes: true }, reason: "textNodes constrains source-tree content and insertion destinations, including pre and option, rather than canvas text editing or repeated items (slice 24)." },

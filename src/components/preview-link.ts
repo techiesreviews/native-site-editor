@@ -38,7 +38,7 @@ export function iframeFramePort(frame: HTMLIFrameElement): FramePort {
 }
 
 // Each request the frame answers, and its answer.
-const ANSWER = { "drop-probe": "drop-containers", inspect: "inspect-result", "finish-typing": "typing-finished", "patch-text": "patched" } as const;
+const ANSWER = { "drop-probe": "drop-containers", inspect: "inspect-result", "measure-image": "image-measured", "finish-typing": "typing-finished", "patch-text": "patched" } as const;
 export type AskType = keyof typeof ANSWER;
 type Without<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** A request as the asker writes it: the link numbers it. */
@@ -86,7 +86,7 @@ export function createPreviewLink(port: FramePort) {
       if (route !== undefined) for (const drawn of drawnHandlers) drawn(route);
       return;
     }
-    if (message.type === "typing-finished" || message.type === "patched" || message.type === "inspect-result" || message.type === "drop-containers") {
+    if (message.type === "typing-finished" || message.type === "patched" || message.type === "inspect-result" || message.type === "image-measured" || message.type === "drop-containers") {
       const entry = message.id === undefined ? undefined : pending.get(message.id);
       // A probe's answer describes the render it was asked in.
       if (entry && answers(entry.type, message)) entry.done(entry.token === undefined || message.context === entry.token ? message : undefined);
@@ -130,7 +130,7 @@ export function createPreviewLink(port: FramePort) {
         resolve(answers(type, answer) ? answer : undefined);
       };
       const timer = setTimeout(done, ms);
-      pending.set(id, { type, token: type === "drop-probe" ? token : undefined, done });
+      pending.set(id, { type, token: type === "drop-probe" || type === "measure-image" ? token : undefined, done });
       // A message the frame cannot take (not cloneable) rejects the ask and leaves nothing waiting.
       try { send({ ...message, id }); } catch (error) { clearTimeout(timer); pending.delete(id); throw error; }
     });

@@ -55,6 +55,10 @@ const cases: Record<FrameMessage["type"], Case> = {
   },
   "dismiss-context-menu": { valid: {}, malformed: [] },
   "slot-ghosts": { valid: { report: { tag: "x-card" } }, malformed: [] },
+  "image-measured": {
+    valid: { id: 8, report: { facts: [{ viewport: 390, viewportHeight: 844, top: 100, width: 342, height: 171, naturalWidth: 1200, naturalHeight: 600, fit: "cover" }] } },
+    malformed: [{ id: NaN }, { report: {} }, { report: { facts: [] } }, { report: { facts: [{ viewport: 390 }] } }],
+  },
   "inspect-result": { valid: { id: 7, report: { found: 1 } }, malformed: [] },
   ack: { valid: { id: 9 }, malformed: [] },
   ready: { valid: { load: "2" }, malformed: [{ load: 2 }] },

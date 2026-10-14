@@ -1,0 +1,83 @@
+/** Widths are CSS pixels, independent of the visitor's device pixel ratio. */
+export type ImageWidth = { viewport: number; width: number };
+export type ImageFact = { viewport: number; viewportHeight: number; top: number; width: number; height: number; naturalWidth: number; naturalHeight: number; fit: string };
+export type ImageReport = { facts: ImageFact[] } | { error: string };
+
+/** Return the first integer viewport on the upper side of each width query. */
+export function imageBreakpoints(conditions: readonly string[]): number[] {
+  const points = new Set<number>();
+  for (const condition of conditions) {
+    for (const match of condition.matchAll(/\(\s*(min|max)-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|em|rem)\s*\)/gi)) {
+      const width = Number(match[2]) * (match[3].toLowerCase() === "px" ? 1 : 16);
+      if (width > 0 && Number.isFinite(width)) points.add(match[1].toLowerCase() === "min" ? Math.ceil(width) : Math.floor(width) + 1);
+    }
+  }
+  return [...points].sort((a, b) => a - b);
+}
+
+/** Keep baseline devices and at most six breakpoint pairs (15 layouts). */
+export function imageViewports(points: readonly number[]): number[] {
+  const widths = new Set([390, 768, 1280]);
+  const valid = [...new Set(points)].filter((point) => Number.isInteger(point) && point > 320 && point <= 2560).sort((a, b) => a - b);
+  const count = Math.min(6, valid.length);
+  for (let i = 0; i < count; i++) {
+    // Sample the whole stylesheet's range when there are too many queries.
+    const point = valid[count === 1 ? 0 : Math.round(i * (valid.length - 1) / (count - 1))];
+    widths.add(point - 1);
+    widths.add(point);
+  }
+  return [...widths].sort((a, b) => a - b);
+}
+
+export function imageWidth(width: number, height: number, naturalWidth: number, naturalHeight: number, fit: string): number {
+  if (!Number.isFinite(width) || width <= 0) return 0;
+  // The box is a conservative hint for the other fit modes; only cover
+  // expands the decoded image to fill a box with a different aspect ratio.
+  return fit === "cover" && height > 0 && Number.isFinite(height) && naturalWidth > 0 && naturalHeight > 0 && Number.isFinite(naturalWidth) && Number.isFinite(naturalHeight)
+    ? naturalWidth * Math.max(width / naturalWidth, height / naturalHeight) : width;
+}
+
+/** Close ratios (within 1%) track the viewport; everything else uses a px upper bound. */
+export function imageSizes(measurements: readonly ImageWidth[]): string | undefined {
+  const widths = new Map<number, number>();
+  for (const { viewport, width } of measurements) {
+    if (Number.isFinite(viewport) && viewport > 0 && Number.isFinite(width) && width > 0 && width <= Number.MAX_SAFE_INTEGER) widths.set(viewport, Math.max(width, widths.get(viewport) ?? 0));
+  }
+  const samples = [...widths].map(([viewport, width]) => ({ viewport, width })).sort((a, b) => a.viewport - b.viewport);
+  if (!samples.length) return undefined;
+  const value = (a: ImageWidth, b: ImageWidth) => {
+    const low = Math.min(a.width / a.viewport, b.width / b.viewport), high = Math.max(a.width / a.viewport, b.width / b.viewport);
+    const percent = Math.ceil(high * 100);
+    return Number.isSafeInteger(percent) && a !== b && (Math.abs(a.width - b.width) > Math.max(a.width, b.width) * 0.01 || high - low <= high * 0.000001) && high - low <= high * 0.01 ? `${Math.max(1, percent)}vw` : `${Math.ceil(Math.max(a.width, b.width))}px`;
+  };
+  const ranges: { end: number; value: string }[] = [];
+  const add = (end: number, hint: string) => {
+    if (ranges.at(-1)?.value === hint) ranges[ranges.length - 1].end = end;
+    else ranges.push({ end, value: hint });
+  };
+  // A one-pixel breakpoint pair separates ranges; never interpolate across
+  // its jump. The lower measured width is the inclusive max-width. Thus
+  // 899.5px already uses the upper range when the boundary is 899px.
+  let start = 0;
+  for (let end = 0; end < samples.length; end++) {
+    if (end + 1 < samples.length && (samples[end + 1].viewport - samples[end].viewport > 1 || Math.abs(samples[end + 1].width - samples[end].width) <= Math.max(samples[end + 1].width, samples[end].width) * 0.01)) continue;
+    if (end === start) add(samples[end].viewport, value(samples[end], samples[end]));
+    else for (let i = start; i < end; i++) {
+      if (end > start + 1 && samples[i + 1].viewport - samples[i].viewport <= 1) continue;
+      add(samples[i + 1].viewport, value(samples[i], samples[i + 1]));
+    }
+    ranges[ranges.length - 1].end = samples[end].viewport;
+    start = end + 1;
+  }
+  return ranges.map((range, i) => i === ranges.length - 1 ? range.value : `(max-width: ${range.end}px) ${range.value}`).join(", ");
+}
+
+/** An image whose top is on either baseline device's first screen loads first. */
+export function imageFirstScreen(facts: readonly { viewport: number; viewportHeight: number; top: number }[]): boolean {
+  return facts.some(({ viewport, viewportHeight, top }) => (viewport === 390 || viewport === 1280) && Number.isFinite(top) && Number.isFinite(viewportHeight) && viewportHeight > 0 && top >= 0 && top < viewportHeight);
+}
+
+export function imageResult(facts: readonly ImageFact[]): { sizes: string | undefined; widths: ImageWidth[]; firstScreen: boolean } {
+  const widths = facts.map((fact) => ({ viewport: fact.viewport, width: imageWidth(fact.width, fact.height, fact.naturalWidth, fact.naturalHeight, fact.fit) }));
+  return { sizes: imageSizes(widths), widths, firstScreen: imageFirstScreen(facts) };
+}
