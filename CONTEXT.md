@@ -122,17 +122,14 @@ A folder on the user's computer opened as a project, where the browser allows it
 **Draft**:
 An unsaved file change in the editor, belonging to one project (for a GitHub repository: one account, repository, and branch).
 
-**Previous draft**:
-A read-only recovery copy of a draft removed when a local folder changed outside the editor, available until the project closes. It lets the user inspect or copy the removed content; it is not an active draft to save.
-
 **Save to GitHub**:
 Saving selected draft changes together as one commit on the selected branch, with overlapping upstream changes requiring review.
 
 **Save to folder**:
-Writing selected draft changes into a local folder's files, never committing or publishing; an outside change replaces the affected draft with the folder's version. If saving stops part way, files already written are saved and the remaining changes stay drafts.
+Writing selected draft changes into a local folder's files, never committing or publishing; an outside change replaces the affected draft with the folder's version. If a write fails part way, files already written are saved and the remaining changes stay drafts.
 
 **Outside change**:
-A change to a project's files made by something other than the editor, such as a commit on GitHub or another tool writing into a local folder. In a local folder the editor follows it and removes the affected draft; on GitHub a file without drafts follows it and a file with drafts shows a conflict.
+A change to a project's files made by something other than the editor, such as a commit on GitHub or another tool writing into a local folder. In a local folder the editor follows it and removes affected drafts without recovery; on GitHub a file without drafts follows it and a file with drafts shows a conflict.
 
 **Publish**:
 Making a saved version of the site available at its public address through the site's host.
