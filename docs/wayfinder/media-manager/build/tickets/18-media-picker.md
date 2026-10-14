@@ -2,7 +2,7 @@
 title: The shared Media picker
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-18 runner)
 blocked_by: [14-file-details, 16-collections-in-media]
 builder: claude
 phase: 1
