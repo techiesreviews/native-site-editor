@@ -2,7 +2,7 @@
 title: Measure how wide an image shows
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-32 runner)
 blocked_by: [01-bring-dev-level]
 builder: sol
 phase: 2
