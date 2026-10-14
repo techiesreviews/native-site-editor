@@ -1,6 +1,16 @@
+import type { AddingSettings } from "../../shared/media-records";
 import { parent } from "./media-library-filter";
+import { mediaImageRecipe, type MediaOptimiseOptions } from "./media-optimise";
+import { mediaAddingSettings } from "./media-settings";
 import type { MediaMetadataMap } from "./media-metadata";
 import type { MediaImportRequest } from "./media-picker";
+
+/** The Optimise sheet starts from the site's Adding settings (its image choice and Keep original);
+ * changes in the sheet are for its files only and are not remembered. */
+export function mediaOptimiseStart(adding: AddingSettings | undefined): MediaOptimiseOptions {
+  const site = mediaAddingSettings(adding);
+  return { ...mediaImageRecipe(site.image), keepOriginal: site.keepOriginal };
+}
 
 /** One import request per prepared file, refusing folders with . or .. segments;
  * new files join `collection` when one is viewed. */

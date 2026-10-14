@@ -1,7 +1,6 @@
 import { formatBytes } from "../uploads";
 import { basename } from "./media-library-filter";
-import { buildMediaImportRequests } from "./media-library-optimise-rules";
-import { mediaAddingSettings } from "./media-settings";
+import { buildMediaImportRequests, mediaOptimiseStart } from "./media-library-optimise-rules";
 import { button, node } from "../ui/dom";
 import { cancellation } from "./media-busy-lock";
 import { input, select, field, check } from "./media-library-fields";
@@ -20,9 +19,7 @@ export function showMediaOptimise(
   if (!c.alive()) return;
   takeSheet(sheet);
   delete element.dataset.mode;
-  // It starts from the site's Adding settings (More); changes here are for these files only.
-  const site = mediaAddingSettings(c.library().adding);
-  const defaults = { ...mediaImageRecipe(site.image), keepOriginal: site.keepOriginal };
+  const defaults = mediaOptimiseStart(c.library().adding);
   element.append(node("h3", "", "Optimise"), node("p", "media-library__muted",
     `${files.length} ${files.length === 1 ? "image" : "images"} · ${formatBytes(files.reduce((sum, file) => sum + file.size, 0))} before`));
   // Empty keeps the full size (Higher quality).

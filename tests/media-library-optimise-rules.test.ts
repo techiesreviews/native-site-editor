@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildMediaImportRequests } from "../src/page-builder/media-library-optimise-rules";
+import { buildMediaImportRequests, mediaOptimiseStart } from "../src/page-builder/media-library-optimise-rules";
 import type { MediaOptimiseResult } from "../src/page-builder/media-optimise";
 import type { MediaImportRequest } from "../src/page-builder/media-picker";
 import type { MediaMetadataMap } from "../src/page-builder/media-metadata";
@@ -51,4 +51,11 @@ test("new files join the viewed collection; existing files and All collections j
   assert.equal(buildMediaImportRequests(prepared, false, "images", metadata, true, new Map(), "Studio picks")[0].collection, "Studio picks");
   assert.equal("collection" in buildMediaImportRequests(prepared, false, "images", metadata, true, new Map(), "")[0], false);
   assert.equal("collection" in buildMediaImportRequests(prepared, true, "images", metadata, true, receipts, "Studio picks")[0], false);
+});
+
+test("the Optimise sheet starts from the site's Adding settings, not stored browser defaults", () => {
+  assert.deepEqual(mediaOptimiseStart(undefined), { maxWidth: 2400, quality: 80, format: "webp", responsive: true, keepOriginal: false });
+  assert.deepEqual(mediaOptimiseStart({ image: "higher", keepOriginal: true }), { maxWidth: null, quality: 90, format: "webp", responsive: true, keepOriginal: true });
+  assert.deepEqual(mediaOptimiseStart({ image: "smallest" }), { maxWidth: 2400, quality: 50, format: "avif", speed: 8, responsive: true, keepOriginal: false });
+  assert.deepEqual(mediaOptimiseStart({ image: "smaller", video: "higher", audio: "speech" }), { maxWidth: 1600, quality: 70, format: "webp", responsive: true, keepOriginal: false });
 });

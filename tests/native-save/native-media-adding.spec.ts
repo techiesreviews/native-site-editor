@@ -60,13 +60,32 @@ test("Balanced adding saves a 2400px WebP main and three copies from a detailed 
     if (width === 2400) mainBytes = saved.length; else expect(saved.length).toBeLessThan(mainBytes);
   }
 });
+/** A detailed 3000 × 1500 JPEG, base64. */
+function widePhoto(page: Page) {
+  return page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 3000; canvas.height = 1500;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let seed = 654321;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = seed & 255; pixels.data[i + 1] = (seed >>> 8) & 255; pixels.data[i + 2] = (seed >>> 16) & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/jpeg", 0.95));
+    return await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.readAsDataURL(blob); });
+  });
+}
 async function adding(page: Page) {
   const media = page.getByRole("region", { name: "Media", exact: true }), tab = page.getByRole("tab", { name: "Media", exact: true });
   if (!await tab.isVisible()) await page.locator("#explorer-toggle").click();
   await tab.click();
-  await media.getByRole("button", { name: "More", exact: true }).click();
+  // The pane keeps an open screen while the explorer is closed.
+  const heading = media.getByRole("heading", { name: "Adding settings", exact: true }), more = media.getByRole("button", { name: "More", exact: true });
+  await expect(heading.or(more)).toBeVisible();
+  if (await heading.isVisible()) return media;
+  await more.click();
   await page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: "Adding settings", exact: true }).click();
-  await expect(media.getByRole("heading", { name: "Adding settings", exact: true })).toBeFocused();
+  await expect(heading).toBeFocused();
   return media;
 }
 
@@ -90,18 +109,7 @@ test("Adding settings: Smaller files is remembered for the site and adds a photo
   await expect(media.getByRole("group", { name: "Images", exact: true }).getByRole("radio", { name: /^Smaller files/ })).toBeChecked();
   await media.getByRole("button", { name: "Back", exact: true }).click();
 
-  const bytes = await page.evaluate(async () => {
-    const canvas = document.createElement("canvas"); canvas.width = 3000; canvas.height = 1500;
-    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
-    let seed = 654321;
-    for (let i = 0; i < pixels.data.length; i += 4) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      pixels.data[i] = seed & 255; pixels.data[i + 1] = (seed >>> 8) & 255; pixels.data[i + 2] = (seed >>> 16) & 255; pixels.data[i + 3] = 255;
-    }
-    context.putImageData(pixels, 0, 0);
-    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/jpeg", 0.95));
-    return await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.readAsDataURL(blob); });
-  });
+  const bytes = await widePhoto(page);
   await media.locator('input[name="media-upload"]').setInputFiles({ name: "Smaller.jpg", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") });
   // Copies only below the main's width: a 1,600 px main has no -1600 copy.
   await expect.poll(async () => (await storedDrafts(page)).map(draft => draft.path).filter(path => path.startsWith("media/images/smaller")).sort(), { timeout: 30_000 })
@@ -424,4 +432,44 @@ test("Files: a picture that cannot be prepared asks first; Add unchanged adds it
   await expect(summary.getByRole("status")).toHaveText("1 file could not be added");
   await expect(summary.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
   expect(await storedDraft(page, "refused.png")).toBeUndefined();
+});
+
+test("Adding settings: each change and Reset undo as one step; a Files folder drop uses the remembered choice", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const remembered = async () => JSON.parse(await effectiveSource(page, baseURL, ".editor/media.json") ?? "{}").adding;
+  let media = await adding(page);
+  const higher = () => media.getByRole("group", { name: "Images", exact: true }).getByRole("radio", { name: /^Higher quality/ });
+  const keep = () => media.getByRole("checkbox", { name: /^Keep original/ });
+  await higher().check();
+  await expect.poll(remembered).toEqual({ image: "higher" });
+  await keep().check();
+  await expect.poll(remembered).toEqual({ image: "higher", keepOriginal: true });
+  await media.getByRole("button", { name: "Reset to defaults", exact: true }).click();
+  await expect.poll(remembered).toBeUndefined();
+  await expect(media.getByRole("heading", { name: "Adding settings", exact: true })).toBeFocused();
+  await expect(higher()).not.toBeChecked(); await expect(keep()).not.toBeChecked();
+  // One Undo brings back every choice Reset forgot; the next undoes Keep original alone.
+  await page.keyboard.press("Escape");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(remembered).toEqual({ image: "higher", keepOriginal: true });
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(remembered).toEqual({ image: "higher" });
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(remembered).toEqual({ image: "higher", keepOriginal: true });
+  media = await adding(page);
+  await expect(higher()).toBeChecked(); await expect(keep()).toBeChecked();
+
+  await media.getByRole("group", { name: "Images", exact: true }).getByRole("radio", { name: /^Smaller files/ }).check();
+  await expect.poll(remembered).toEqual({ image: "smaller", keepOriginal: true });
+  await page.keyboard.press("Escape");
+  await filesTab(page);
+  const bytes = await widePhoto(page);
+  await page.locator("#explorer .file-row[data-path='about']").first().evaluate((element, base64) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], "Wide.jpg", { type: "image/jpeg" }));
+    for (const type of ["dragenter", "dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, bytes);
+  // The folder chosen wins; a main of at most 1,600 px has copies at 480 and 960 only.
+  await expect.poll(async () => (await storedDrafts(page)).map(draft => draft.path).filter(path => /wide/.test(path)).sort(), { timeout: 30_000 })
+    .toEqual(["about/wide-480.webp", "about/wide-960.webp", "about/wide.webp"]);
 });
