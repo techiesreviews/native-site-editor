@@ -4,9 +4,13 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
   const { file, options } = event.data;
   try {
     validateMediaOptimiseOptions(options);
+    if (options.keepOriginal) {
+      self.postMessage({ result: { outputs: [{ blob: file, extension: file.name.split(".").pop()?.toLowerCase() ?? "bin" }], before: file.size, after: file.size, note: "Original bytes and metadata are kept. Unsupported formats may not display on the web." } satisfies MediaOptimiseResult });
+      return;
+    }
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "png";
-    if (mediaUntouched(file.name) || options.keepOriginal) {
-      self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: options.keepOriginal ? "Original bytes and metadata are kept." : "SVG and animated GIF are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
+    if (mediaUntouched(file.name)) {
+      self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: "SVG and animated GIF are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
       return;
     }
     let bitmap: ImageBitmap;

@@ -100,7 +100,7 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
       paths: ["index.html", "images/a.svg"], items: [{ path: "images/a.svg" }], pages: ["index.html"], components: {},
       assertLive() {}, async read(path) { return path === "index.html" ? '<img src="/images/a.svg">' : undefined; },
       async blob() { return bytes; }, assetVersion() { return version; }, async applyBatch() { commits++; },
-      async write() { throw new Error("Legacy mutation"); }, changed() { throw new Error("Legacy mutation"); }, async rename() { throw new Error("Legacy mutation"); }, async remove() { throw new Error("Legacy mutation"); }, async openPage() {},
+      async openPage() {},
     })));
     Object.assign(window, { mediaReceiptProbe: {
       replace() { version = "binary-B"; bytes = new Blob(["newer binary B"], { type: "image/svg+xml" }); },

@@ -73,8 +73,8 @@ test("adapter replacement invalidates old pane and disposal blocks late loads", 
     let mutations = 0;
     const adapter: import("../../src/page-builder/media-picker").MediaPickerHost = {
       load: () => new Promise(resolve => { release = resolve; }), blob: async () => new Blob(),
-      metadata: async () => { mutations++; }, upload: async () => "", rename: async () => { mutations++; },
-      remove: async () => { mutations++; }, rewrite: async () => {}, openPage: async () => {},
+      metadata: async () => { mutations++; }, import: async () => [], rename: async () => { mutations++; },
+      remove: async () => { mutations++; }, openPage: async () => {},
     };
     configureMediaPicker(adapter);
     const oldRemoved = host.childElementCount === 0;
@@ -149,8 +149,8 @@ for (const removed of [false, true]) {
       const adapter: import("../../src/page-builder/media-picker").MediaPickerHost = {
         load: async () => { if (++loads === 1) return library(false); await new Promise<void>(resolve => { releaseLoad = resolve; }); return library(true); },
         blob: () => new Promise(resolve => { releaseBlob = resolve; }),
-        metadata: async () => { mutations++; }, upload: async () => "", rename: async () => {},
-        remove: async () => {}, rewrite: async () => {}, openPage: async () => {},
+        metadata: async () => { mutations++; }, import: async () => [], rename: async () => {},
+        remove: async () => {}, openPage: async () => {},
       };
       const view = createMediaLibraryView(host, adapter); await view.ready;
       host.querySelector<HTMLButtonElement>(".media-library__thumbnail")!.click();
@@ -185,8 +185,8 @@ test("refresh preserves the visible form but rejects Save while metadata reload 
         return { key: "form-race", items: [{ path }], metadata: { [path]: { alt: loads === 1 ? "Old alt" : "Restored alt", tags: [] } }, usage: {} };
       },
       blob: async () => new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'], { type: "image/svg+xml" }),
-      metadata: async () => { mutations++; }, upload: async () => "", rename: async () => {},
-      remove: async () => {}, rewrite: async () => {}, openPage: async () => {},
+      metadata: async () => { mutations++; }, import: async () => [], rename: async () => {},
+      remove: async () => {}, openPage: async () => {},
     };
     const view = createMediaLibraryView(host, adapter); await view.ready;
     const rendered = new Promise<void>(resolve => {
@@ -227,7 +227,7 @@ for (const focusTarget of ["search", "outside", "detail"] as const) {
           if (loads > 1) return new Promise<Blob>((_resolve, reject) => { (window as any).rejectBackgroundBlob = () => reject(new Error("Background image failed")); });
           return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" });
         },
-        async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+        async metadata() {}, async import() { return []; }, async rename() {}, async remove() {}, async openPage() {},
       });
       Object.assign(window, { backgroundFailure: view }); await view.ready;
     });
@@ -258,9 +258,9 @@ for (const lastImage of [false, true]) {
       const view = createMediaLibraryView(host, {
         async load() { loads++; return { key: "delete-race", items: (deleted ? [] : [{ path: "images/a.svg" }]).concat(lastImage ? [] : [{ path: "images/b.svg" }]), metadata: {}, usage: {} }; },
         async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-        async metadata() {}, async upload() { return ""; }, async rename() {},
+        async metadata() {}, async import() { return []; }, async rename() {},
         async remove() { await new Promise<void>(resolve => { (window as any).releaseImageDelete = resolve; }); deleted = true; },
-        async rewrite() {}, async openPage() {},
+        async openPage() {},
       });
       Object.assign(window, { deleteRace: { view, loads: () => loads } }); await view.ready;
     }, lastImage);
@@ -295,7 +295,7 @@ test("a failed direct image load can be retried without refreshing the library",
         if (fail) throw new Error("Direct image failed");
         return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" });
       },
-      async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+      async metadata() {}, async import() { return []; }, async rename() {}, async remove() {}, async openPage() {},
     });
     Object.assign(window, { directRetry: { view, succeed: () => { fail = false; } } }); await view.ready;
   });

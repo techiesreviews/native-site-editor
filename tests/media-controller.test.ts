@@ -73,16 +73,16 @@ test("workspace read cannot populate host caches after navigation", async () => 
   f.ports.readText = async () => { f.navigate(); return "stale source"; };
   await assert.rejects(context.read("styles/site.css"), /repository changed/);
   assert.equal(f.sources.has("styles/site.css"), false);
-  assert.throws(() => context.assetVersion!("images/old.png"), /repository changed/);
+  assert.throws(() => context.assetVersion("images/old.png"), /repository changed/);
 });
 
 test("workspace asset versions and uploads stay scoped to captured drafts", async () => {
   const f = fixture();
   const context = await f.controller.workspaceContext();
-  assert.equal(context.assetVersion!("images/old.png"), "sha");
+  assert.equal(context.assetVersion("images/old.png"), "sha");
   const draft: SavedDraft = { ...f.scope, version: 1, path: "images/new.png", baseSha: null, original: "", content: "", updatedAt: 1, sourceSha: "upload-sha", upload: { size: 3, type: "image/png" } };
   f.records.push(draft);
-  assert.equal(context.assetVersion!(draft.path), JSON.stringify(draft));
+  assert.equal(context.assetVersion(draft.path), JSON.stringify(draft));
   const uploaded = new Blob(["new"], { type: "image/png" });
   f.ports.uploadedBlob = async (scope, sha) => { assert.equal(scope, f.scope); assert.equal(sha, "upload-sha"); return uploaded; };
   assert.equal(await context.blob(draft.path), uploaded);
@@ -125,7 +125,7 @@ test("Images holds its repository stamp across page changes and passes that same
   assert.doesNotThrow(() => context.assertLive());
   let applied = 0;
   f.ports.applyBatch = async (scope, proof) => { assert.equal(scope, f.scope); assert.equal(proof, held); applied++; };
-  await context.applyBatch!({ label: "images", edits: new Map(), moves: [], deletes: [], uploads: [], expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map() });
+  await context.applyBatch({ label: "images", edits: new Map(), moves: [], deletes: [], uploads: [], expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map() });
   assert.equal(applied, 1);
   f.bump();
   assert.throws(() => context.assertLive(), /repository changed/);

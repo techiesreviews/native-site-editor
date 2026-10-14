@@ -14,11 +14,9 @@ export interface MediaPickerHost {
   load(): Promise<MediaLibrary>;
   blob(path: string): Promise<Blob>;
   metadata(changes: Record<string, Partial<MediaMetadata> | null>): Promise<void>;
-  upload(file: File, result: MediaOptimiseResult, folder: string): Promise<string>;
   rename(path: string, name: string): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
-  import?(requests: MediaImportRequest[]): Promise<string[]>;
-  rewrite(from: string, to: string): Promise<void>;
+  import(requests: MediaImportRequest[]): Promise<string[]>;
   openPage(path: string): Promise<void>;
 }
 export interface MediaImportRequest {

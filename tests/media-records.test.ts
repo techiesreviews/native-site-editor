@@ -166,7 +166,7 @@ test("workspace leaves unchanged legacy metadata untouched, including batches ch
     drafts: { get: () => undefined, save: () => false, remove: () => false },
     paths: [MEDIA_RECORDS_PATH, "index.html", "images/a.png"], items: [{ path: "images/a.png" }], pages: ["index.html"], components: {},
     assertLive() {}, read: async path => text.get(path), blob: async () => new Blob(), assetVersion: () => "sha",
-    write: async () => {}, changed() {}, rename: async () => "", remove: async () => {}, openPage: async () => {},
+    openPage: async () => {},
     async applyBatch(batch) {
       batches++;
       assert.equal(batch.expectedSources.get(MEDIA_RECORDS_PATH), legacy);
@@ -178,7 +178,8 @@ test("workspace leaves unchanged legacy metadata untouched, including batches ch
   assert.deepEqual((await host.load()).metadata["images/a.png"], { tags: ["hero"], alt: "Old" });
   await host.metadata({ "images/a.png": { tags: ["hero"], alt: "Old" } });
   assert.equal(batches, 0);
-  await host.rewrite("images/a.png", "images/new.png");
+  // Replacing a.png rewrites the page reference and changes no records.
+  await host.import([{ file: new File(["new"], "new.png"), result: { outputs: [{ blob: new Blob(["new"]), extension: "png" }], before: 3, after: 3 }, folder: "images", replaceFrom: "images/a.png", expectedAssetVersion: "sha" }]);
   assert.equal(batches, 1);
   assert.equal(text.get(MEDIA_RECORDS_PATH), legacy);
   assert.ok(text.get("index.html")?.includes("/images/new.png"));

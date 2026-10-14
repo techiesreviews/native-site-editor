@@ -1,7 +1,7 @@
 ---
 title: Remove the legacy media-workspace members
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-02 runner)
 blocked_by: [01-bring-dev-level]
 builder: sol

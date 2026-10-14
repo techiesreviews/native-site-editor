@@ -430,7 +430,6 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         if (folder.split("/").some((part) => part === "." || part === "..") || folder.includes("\\")) throw new Error("Choose a repository folder without . or .. segments.");
         requests.push({ ...item, folder, metadata: existing ? library.metadata[item.file.name] : undefined, replaceFrom: existing && update.checked ? item.file.name : undefined, expectedAssetVersion: receipts.get(item.file.name) });
       }
-      if (!adapter.import) throw new Error("Atomic image imports are unavailable. Refresh the editor and try again.");
       await adapter.import(requests);
       assets.clear(); await refresh(); sheet.hidden = true; tell("Images added as drafts. Choose an image to use it on the page.");
     }), "button"); add.disabled = true;
@@ -443,11 +442,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       const controller = new AbortController(); optimisation = controller;
       const request = ++prepareVersion, panel = detailVersion;
       for (const file of files) {
-        let result: MediaOptimiseResult;
-        if (settings.keepOriginal) {
-          // Even formats the browser cannot decode can be retained explicitly.
-          result = { outputs: [{ blob: file, extension: file.name.split(".").pop()?.toLowerCase() ?? "bin" }], before: file.size, after: file.size, note: "Original bytes and metadata are kept. Unsupported formats may not display on the web." };
-        } else result = await optimiseMedia(file, settings, controller.signal);
+        const result = await optimiseMedia(file, settings, controller.signal);
         if (!alive || panel !== detailVersion || request !== prepareVersion) return;
         prepared.push({ file, result });
       }

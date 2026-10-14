@@ -108,10 +108,6 @@ export function createMediaController(ports: MediaControllerPorts) {
         return record ? JSON.stringify(record) : ports.entry(path)?.sha;
       },
       applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch); },
-      write: async () => { throw new Error("Use the atomic image transaction."); },
-      changed: () => {},
-      rename: async () => { throw new Error("Use the atomic image transaction."); },
-      remove: async () => { throw new Error("Use the atomic image transaction."); },
       openPage: async (path) => { assertLive(); await ports.openPage(path); },
     };
   }

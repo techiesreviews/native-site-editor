@@ -157,7 +157,7 @@ test("busy image action explains blocked controls and keeps Save focus after its
       async load(){return {key:"busy",items:[{path:"images/a.svg",version:"A"}],metadata:{"images/a.svg":metadata},usage:{}};},
       async blob(){return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'],{type:"image/svg+xml"});},
       async metadata(changes){await new Promise<void>(resolve => {(window as any).releaseImageWrite=resolve;});metadata={alt:changes["images/a.svg"]?.alt ?? "",tags:[]};},
-      async upload(){return "";},async rename(){renames++;},async remove(){},async rewrite(){},async openPage(){},
+      async rename(){renames++;},async remove(){},async openPage(){},
     });
     Object.assign(window,{busyImageProbe:{state:()=>renames,dispose:()=>{view.dispose();host.remove();}}});await view.ready;
   });
@@ -203,7 +203,7 @@ test("background image loads preserve typing, folders and details", async ({ pag
         return { key: "load", items: [{ path: "images/a.svg", version: "A" }], metadata: {}, usage: {} };
       },
       async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-      async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+      async metadata() {}, async rename() {}, async remove() {}, async openPage() {},
     });
     Object.assign(window, { loadImageProbe: { refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); }, instant: () => { delay = false; } } });
   });
@@ -281,7 +281,7 @@ async function mountDelayedReferences(page: Page, baseURL: string | undefined) {
         return { key: "focus", items: [{ path: "images/a.svg", version: "A" }], metadata: { "images/a.svg": { alt: "", tags: ["portrait"] } }, usage: fresh ? { "images/a.svg": { pages: ["index.html"], files: ["index.html"], alts: ["New reference"] } } : {} };
       },
       async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-      async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() { removed++; }, async rewrite() {}, async openPage() {},
+      async metadata() {}, async rename() {}, async remove() { removed++; }, async openPage() {},
     });
     Object.assign(window, { focusProbe: { refresh: () => { void view.refresh(); }, removed: () => removed, dispose: () => { view.dispose(); host.remove(); } } });
     await view.ready;
@@ -364,7 +364,7 @@ test("a failed detail image clears its focus request and later refresh preserves
     const host = document.createElement("div"); host.style.cssText = "position:fixed;right:0;top:60px;width:440px;height:600px;z-index:1000;background:var(--surface)"; document.body.append(host);
     const view = createMediaLibraryView(host, {
       async load() { return { key: "failure", items: [{ path: "images/broken.svg", version: "A" }], metadata: {}, usage: {} }; },
-      async blob() { throw new Error("Image fetch failed"); }, async metadata() {}, async upload() { return ""; }, async rename() {}, async remove() {}, async rewrite() {}, async openPage() {},
+      async blob() { throw new Error("Image fetch failed"); }, async metadata() {}, async rename() {}, async remove() {}, async openPage() {},
     });
     Object.assign(window, { failedFocusProbe: { refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); } } }); await view.ready;
   });
