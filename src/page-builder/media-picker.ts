@@ -26,8 +26,9 @@ export interface MediaPickerHost {
   /** File details' Save as one step: the file's fields and, when `name` is given, its rename. */
   details?(path: string, changes: Partial<MediaMetadata>, name?: string): Promise<void>;
   /** To check: without `text`, OK (the words stay, the by-agent mark goes); with it, Lex's words
-   * replace the agent's, which clears the mark too. One Undo step either way. */
-  check?(row: { file: string; page?: string }, text?: string): Promise<void>;
+   * replace the agent's, which clears the mark too. One Undo step either way. `row.text` is the
+   * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
+  check?(row: MediaToCheckRow, text?: string): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[]): Promise<string[]>;
   openPage(path: string): Promise<void>;

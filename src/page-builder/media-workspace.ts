@@ -274,13 +274,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, renameInto(batch, text, metadata, path, name));
       await commit(ctx, batch);
     },
-    async check({ file, page }, text) {
-      // To check: a row that is no longer there (checked elsewhere, words changed) refuses.
+    async check({ file, page, text: seen }, text) {
+      // To check: a row that is gone (checked elsewhere) or holds other words than Lex saw refuses.
       const ctx = active();
       const words = text?.trim();
       const { batch, text: sources, metadata } = await prepare(ctx, "Description checked", true);
       const row = mediaToCheck(metadata, [file], sources).find(entry => entry.page === page);
-      if (!row) throw new Error("These words changed meanwhile. Look at To check again.");
+      if (!row || row.text !== seen) throw new Error("These words changed meanwhile. Look at To check again.");
       if (words === "") throw new Error("Write the description, or press OK to keep these words.");
       const edit = words !== undefined && words !== row.text;
       if (edit) batch.label = "Edit description";

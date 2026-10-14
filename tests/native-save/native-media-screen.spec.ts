@@ -407,6 +407,16 @@ test("To check edits an agent's own words for a place on the page, in one Undo s
   await row.getByRole("button", { name: "Edit placeholder.svg on Home", exact: true }).click();
   const words = library.getByRole("textbox", { name: "Description for placeholder.svg on Home", exact: true });
   await expect(words).toBeFocused(); await expect(words).toHaveValue("Agent words for the hero");
+  // Blank words are refused and the field stays; Cancel writes nothing.
+  await words.fill(" ");
+  await library.getByRole("button", { name: "Save placeholder.svg on Home", exact: true }).click();
+  await expect(library.getByRole("status").last()).toContainText("Write the description, or press OK to keep these words.");
+  await expect(words).toBeFocused();
+  await library.getByRole("button", { name: "Cancel placeholder.svg on Home", exact: true }).click();
+  await expect(row.getByRole("button", { name: "Edit placeholder.svg on Home", exact: true })).toBeFocused();
+  await expect(row.locator(".media-check__words")).toHaveText("Agent words for the hero");
+  expect(await storedDraft(page, ".editor/media.json")).toBeUndefined();
+  await row.getByRole("button", { name: "Edit placeholder.svg on Home", exact: true }).click();
   await words.fill("A calm green hero picture");
   await library.getByRole("button", { name: "Save placeholder.svg on Home", exact: true }).click();
   await expect(library.getByText(/^Nothing to check\./)).toBeVisible();

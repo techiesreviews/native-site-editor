@@ -378,13 +378,14 @@ test("To check: load lists agent words; OK clears a file's mark and keeps its wo
   const f = fixture();
   f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { description: { text: "Agent alt", byAgent: true } } } }));
   assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", text: "Agent alt" }]);
-  await f.host.check!({ file: "images/a.png" });
+  const row = { file: "images/a.png", text: "Agent alt" };
+  await f.host.check!(row);
   assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Description checked");
   assert.deepEqual([...f.batches[0].edits.keys()], [MEDIA_RECORDS_PATH]);
   assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "Agent alt" });
   assert.deepEqual((await f.host.load()).toCheck, []);
   // A row that is already checked refuses and writes nothing.
-  await assert.rejects(f.host.check!({ file: "images/a.png" }), /changed meanwhile/);
+  await assert.rejects(f.host.check!(row), /changed meanwhile/);
   assert.equal(f.batches.length, 1);
   f.history.pop()!();
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description?.byAgent, true);
@@ -395,8 +396,9 @@ test("To check: Lex's edit of a file description updates the places using it and
   f.text.set("index.html", '<img src="/images/a.png" alt="Agent alt"><img src="/images/a.png" alt="Own">');
   f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { description: { text: "Agent alt", byAgent: true } } } }));
   await f.host.load();
-  await assert.rejects(f.host.check!({ file: "images/a.png" }, "  "), /Write the description/);
-  await f.host.check!({ file: "images/a.png" }, "Lex's words ");
+  const row = { file: "images/a.png", text: "Agent alt" };
+  await assert.rejects(f.host.check!(row, "  "), /Write the description/);
+  await f.host.check!(row, "Lex's words ");
   assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Edit description");
   assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Lex\'s words"><img src="/images/a.png" alt="Own">');
   assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "Lex's words" });
@@ -410,17 +412,54 @@ test("To check: a place's agent words clear on OK, or on Lex's words written int
   f.text.set("index.html", '<img src="/images/a.png" alt="Agent place">');
   f.text.set(MEDIA_RECORDS_PATH, records);
   assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", page: "index.html", text: "Agent place" }]);
-  await f.host.check!({ file: "images/a.png", page: "index.html" });
+  const row = { file: "images/a.png", page: "index.html", text: "Agent place" };
+  await f.host.check!(row);
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].places, undefined);
   assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Agent place">');
   f.history.pop()!();
   await f.host.load();
-  await f.host.check!({ file: "images/a.png", page: "index.html" }, "Lex place");
+  await f.host.check!(row, "Lex place");
   assert.equal(f.batches.length, 2);
   assert.deepEqual([...f.batches[1].edits.keys()].sort(), [MEDIA_RECORDS_PATH, "index.html"].sort());
   assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Lex place">');
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].places, undefined);
   f.history.pop()!();
   assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Agent place">');
+  assert.equal(f.text.get(MEDIA_RECORDS_PATH), records);
+});
+
+test("To check refuses OK or Save on words an agent changed after Lex saw them, writing nothing", async () => {
+  const f = fixture();
+  const records = (description: string, place: string) => JSON.stringify({ version: 2, collections: [], files: {
+    "images/a.png": { description: { text: description, byAgent: true }, places: { "index.html": { agentText: place } } } } });
+  f.text.set("index.html", '<img src="/images/a.png" alt="Place B">');
+  f.text.set(MEDIA_RECORDS_PATH, records("Words A", "Place A"));
+  await f.host.load();
+  // The agent writes B after Lex saw A.
+  f.text.set(MEDIA_RECORDS_PATH, records("Words B", "Place B"));
+  for (const [row, text] of [[{ file: "images/a.png", text: "Words A" }, undefined], [{ file: "images/a.png", text: "Words A" }, "Lex"],
+    [{ file: "images/a.png", page: "index.html", text: "Place A" }, undefined], [{ file: "images/a.png", page: "index.html", text: "Place A" }, "Lex"]] as const)
+    await assert.rejects(f.host.check!(row, text), /changed meanwhile/);
+  assert.equal(f.batches.length, 0);
+  assert.equal(f.text.get(MEDIA_RECORDS_PATH), records("Words B", "Place B"));
+  assert.equal((await f.host.load()).toCheck?.length, 2);
+});
+
+test("To check: saving the same words counts as OK for a file and a place; one Undo restores each mark", async () => {
+  const f = fixture();
+  const records = JSON.stringify({ version: 2, collections: [], files: {
+    "images/a.png": { description: { text: "Agent alt", byAgent: true }, places: { "index.html": { agentText: "Agent place" } } } } });
+  f.text.set("index.html", '<img src="/images/a.png" alt="Agent place">');
+  f.text.set(MEDIA_RECORDS_PATH, records);
+  await f.host.load();
+  await f.host.check!({ file: "images/a.png", text: "Agent alt" }, " Agent alt ");
+  await f.host.check!({ file: "images/a.png", page: "index.html", text: "Agent place" }, "Agent place");
+  assert.deepEqual(f.batches.map(batch => [batch.label, [...batch.edits.keys()]]), [["Description checked", [MEDIA_RECORDS_PATH]], ["Description checked", [MEDIA_RECORDS_PATH]]]);
+  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Agent place">');
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"], { description: { text: "Agent alt" } });
+  assert.deepEqual((await f.host.load()).toCheck, []);
+  f.history.pop()!();
+  assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", page: "index.html", text: "Agent place" }]);
+  f.history.pop()!();
   assert.equal(f.text.get(MEDIA_RECORDS_PATH), records);
 });

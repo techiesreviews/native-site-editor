@@ -21,7 +21,8 @@ export const toCheckLabel = (rows: MediaToCheckRow[] | undefined) => rows?.lengt
  * OK (the words stay, the mark goes) and Edit (Lex's words replace them, which clears it too).
  * Its own screen with Back, like File details; it redraws after every refresh, keeping open edits. */
 export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
-  const editing = new Map<string, string>();
+  /** Open edits: the agent's words Lex saw when pressing Edit, and the words typed so far. */
+  const editing = new Map<string, { seen: string; value: string }>();
   // `focus` names the control to focus; null leaves focus alone (a background refresh).
   const draw = (focus?: string | null) => {
     const { element } = sheet;
@@ -32,7 +33,10 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
     sheet.redraw = () => {
       const active = document.activeElement;
       // Unfinished words survive the redraw.
-      for (const area of element.querySelectorAll<HTMLTextAreaElement>("textarea[data-key]")) editing.set(area.dataset.key!, area.value);
+      for (const area of element.querySelectorAll<HTMLTextAreaElement>("textarea[data-key]")) {
+        const open = editing.get(area.dataset.key!);
+        if (open) open.value = area.value;
+      }
       draw(active instanceof HTMLElement && element.contains(active) ? active.getAttribute("aria-label") ?? active.textContent ?? "" : null);
     };
     const version = sheet.version;
@@ -66,8 +70,8 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
       const file = node("strong", "", name); file.title = row.file;
       text.append(file, node("span", "media-library__muted", row.page === undefined ? "Description" : `Own words${where}`));
       const actions = node("div", "media-check__actions");
-      const words = editing.get(key);
-      if (words === undefined) {
+      const open = editing.get(key);
+      if (!open) {
         text.append(node("p", "media-check__words", row.text));
         const ok = button("OK", () => void h.task(async () => {
           if (version !== sheet.version) return;
@@ -79,21 +83,22 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
         }), "button primary");
         ok.setAttribute("aria-label", `OK ${name}${where}`);
         const edit = button("Edit", () => {
-          editing.set(key, row.text);
+          editing.set(key, { seen: row.text, value: row.text });
           draw(`Description for ${name}${where}`);
         });
         edit.setAttribute("aria-label", `Edit ${name}${where}`);
         actions.append(ok, edit);
       } else {
-        const area = node("textarea", "media-check__field"); area.rows = 3; area.value = words; area.dataset.key = key;
+        const area = node("textarea", "media-check__field"); area.rows = 3; area.value = open.value; area.dataset.key = key;
         area.setAttribute("aria-label", `Description for ${name}${where}`);
-        area.addEventListener("input", () => editing.set(key, area.value));
+        area.addEventListener("input", () => { open.value = area.value; });
         text.append(area);
         const save = button("Save", () => {
           if (!area.value.trim()) { h.tell("Write the description, or press OK to keep these words."); area.focus(); return; }
           void h.task(async () => {
             if (version !== sheet.version) return;
-            await h.adapter.check!(row, area.value);
+            // The words Lex was editing: if an agent changed them meanwhile, the host refuses.
+            await h.adapter.check!({ ...row, text: open.seen }, area.value);
             editing.delete(key);
             await h.refresh();
             h.tell(`Saved the description of ${name}${where} as a draft.`);
