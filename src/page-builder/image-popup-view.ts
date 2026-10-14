@@ -3,6 +3,8 @@
 // the bar when there is no room), a bottom sheet with 44 px targets on phones. It does not trap
 // Tab (as Brizy's); Escape closes the shape menu first, then the popup. A picture that can be
 // trimmed gets Free (four corners), Zoom and Turn (slice 41), and Open large editor (slice 42).
+// Fixed to one shape (Settings' Social image, slice 44): its label instead of the shape menu, Zoom
+// only, a link card for the preview, under the button that opened it (inside its dialog).
 import "./image-popup.css";
 import { node } from "../ui/dom";
 import { icon } from "../icons";
@@ -18,7 +20,7 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { componentShapeEntry, componentShapeNotice, type ComponentPicture } from "./component-shapes";
-import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, placePopup, popupMessage, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
+import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, placePopup, placeUnder, popupMessage, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 
@@ -42,6 +44,12 @@ export interface ImagePopupState {
   /** The trimmed picture as shown before Done, and its size. */
   cutUrl?: string; cutSize?: PictureSize;
 }
+/** A popup fixed to one shape (Settings' Social image): its label, its one message and a link card. */
+export interface ImagePopupFixed {
+  label: string;
+  message: ReturnType<typeof popupMessage>;
+  card: { title: string; site: string };
+}
 export interface ImagePopupEvents {
   shape(shape: PopupShape): void;
   focus(focus: PlaceFocus): void;
@@ -63,13 +71,13 @@ const phone = () => matchMedia("(max-width: 700px)").matches;
 // The small previews: a phone and a computer screen at the widths the page is measured at.
 const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width: 58, height: 104 }, { name: "Computer", viewport: 1280, width: 150, height: 84 }];
 
-export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents) {
-  const root = node("div", "image-popup");
+export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents, fixed?: ImagePopupFixed) {
+  const root = node("div", fixed ? "image-popup image-popup--fixed" : "image-popup");
   root.setAttribute("role", "dialog");
   root.setAttribute("aria-labelledby", "image-popup-title");
   const nub = node("span", "image-popup__nub"); nub.setAttribute("aria-hidden", "true");
   const grab = node("span", "image-popup__grab"); grab.setAttribute("aria-hidden", "true");
-  const title = node("b", "", "Image"); title.id = "image-popup-title";
+  const title = node("b", "", fixed ? "Social image" : "Image"); title.id = "image-popup-title";
   const where = node("span", "image-popup__where");
   const head = node("div", "image-popup__head"); head.append(title, where);
   const close = actionButton("image-popup__icon image-popup__x", () => events.cancel());
@@ -104,7 +112,9 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   dot.tabIndex = 0; dot.setAttribute("role", "slider"); dot.setAttribute("aria-roledescription", "focus dot");
   dot.setAttribute("aria-label", "Focus dot"); dot.setAttribute("aria-valuemin", "0"); dot.setAttribute("aria-valuemax", "100");
   const picbox = node("div", "image-popup__picbox"); picbox.append(picture, turned, frame, dot);
-  const well = node("div", "image-popup__well"); well.append(shapeButton, menu, picbox);
+  // A fixed shape is named where the menu would be.
+  const shapeHead = fixed ? node("span", "image-popup__shape image-popup__shape--fixed", fixed.label) : shapeButton;
+  const well = node("div", "image-popup__well"); well.append(shapeHead, ...fixed ? [] : [menu], picbox);
   const hint = node("p", "image-popup__hint");
   const replace = actionButton("image-popup__link", () => events.replace());
   replace.append(svg(imageIcon, 14), "Replace"); replace.title = "Choose another picture for this spot";
@@ -112,7 +122,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   const pictureCell = node("div"); pictureCell.append(well, under);
   const pictureRow = row("Picture", pictureCell, "image-popup__row--picture");
 
-  const previews = mountPreviews(DEVICES);
+  const previews = fixed ? mountCard(fixed.card) : mountPreviews(DEVICES);
   // Zoom and Turn save a trimmed copy; they show when the picture can be trimmed.
   const zoom = node("input", "image-popup__range");
   Object.assign(zoom, { type: "range", min: "100", max: String(MAX_ZOOM * 100), step: "5", id: "image-popup-zoom" });
@@ -132,17 +142,19 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   turnCell.append(turnValue, turnButton("Turn left", turnLeftIcon, -1), turnButton("Turn right", turnRightIcon, 1));
   const turnRow = row("Turn", turnCell);
   turnCell.setAttribute("aria-label", "Turn");
-  const rows = node("div", "image-popup__rows"); rows.append(pictureRow, zoomRow, turnRow, row("Preview", previews.element));
+  const rows = node("div", "image-popup__rows"); rows.append(pictureRow, zoomRow, ...fixed ? [] : [turnRow], row("Preview", previews.element));
 
   const message = node("div", "image-popup__message"); message.setAttribute("role", "status");
   const doneButton = actionButton("image-popup__button image-popup__button--primary", () => events.done());
   doneButton.textContent = "Done";
   const largeButton = actionButton("image-popup__button", () => events.large());
   largeButton.textContent = "Open large editor";
-  const foot = node("div", "image-popup__foot"); foot.append(largeButton, doneButton);
+  const foot = node("div", "image-popup__foot"); foot.append(...fixed ? [] : [largeButton], doneButton);
   const bottom = node("div", "image-popup__bottom"); bottom.append(message, foot);
   root.append(nub, grab, head, notice, rows, bottom, close);
-  document.body.append(root);
+  // The edit bar's Image button, or the button that opened it; inside a modal dialog it lives in it (else it is inert).
+  const imageButton = () => host.button ? host.button() : host.bar()?.querySelector<HTMLButtonElement>(".edit-bar__image") ?? null;
+  (imageButton()?.closest("dialog") ?? document.body).append(root);
 
   let menuOpen = false;
   function toggleMenu(open: boolean) {
@@ -156,7 +168,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   let drawn = "";
   function layoutPicture() {
     const { width, height } = turnedSize(size(), state.cut.turn);
-    const pad = 8, top = shapeButton.offsetTop + shapeButton.offsetHeight + 6, ww = well.clientWidth, wh = well.clientHeight;
+    const pad = 8, top = shapeHead.offsetTop + shapeHead.offsetHeight + 6, ww = well.clientWidth, wh = well.clientHeight;
     if (!ww) return;
     const scale = Math.min((ww - 2 * pad) / width, (wh - top - pad) / height);
     const pw = Math.max(1, Math.round(width * scale)), ph = Math.max(1, Math.round(height * scale));
@@ -211,7 +223,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     zoomValue.textContent = `${percent} %`;
     turnValue.textContent = turnValue.title = turnText(state.cut);
     hint.textContent = pictureHint(state.shape, state.cut.zoom > 1.001);
-    const said = popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
+    const said = fixed?.message ?? popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
     message.className = `image-popup__message image-popup__message--${said.tone}`;
     message.title = said.tip;
     message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon), node("span", "", said.text));
@@ -224,9 +236,20 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   }
 
   // Beside the picture, level with the edit bar, its nub towards the Image button; a sheet on phones.
-  const imageButton = () => host.bar()?.querySelector<HTMLButtonElement>(".edit-bar__image") ?? null;
+  // Opened from another button, under (or above) it.
   function place() {
     if (phone()) { root.style.left = root.style.top = ""; return; }
+    const opener = host.button?.();
+    if (opener) {
+      const box = opener.getBoundingClientRect(), size = { width: root.offsetWidth, height: root.offsetHeight };
+      const at = placeUnder(box, size, { width: document.documentElement.clientWidth, height: innerHeight });
+      root.dataset.side = at.side;
+      root.style.left = `${at.left}px`; root.style.top = `${at.top}px`;
+      const nub = (value: number, high: number) => `${Math.round(Math.max(12, Math.min(high, value)))}px`;
+      if (at.side === "below" || at.side === "above") root.style.setProperty("--nub-x", nub(box.left + box.width / 2 - at.left - 7, size.width - 26));
+      else root.style.setProperty("--nub-y", nub(box.top + box.height / 2 - at.top - 7, size.height - 26));
+      return;
+    }
     const image = host.image(), bar = host.bar(), barBox = bar && !bar.hidden ? bar.getBoundingClientRect() : undefined;
     if (!image || !barBox?.width) return;
     const size = { width: root.offsetWidth, height: root.offsetHeight };
@@ -313,12 +336,14 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   // Leaving the popup without Done changes nothing: a press elsewhere, another selection, the bar gone.
   const outside = (event: PointerEvent) => {
     const target = event.target as Element;
-    if (root.contains(target) || target.closest?.("dialog, .edit-bar__image")) return;
+    // Another dialog (the Media picker from Replace) keeps it; its own dialog's other controls close it.
+    const dialog = target.closest?.("dialog");
+    if (root.contains(target) || imageButton()?.contains(target) || target.closest?.(".edit-bar__image") || dialog && dialog !== root.closest("dialog")) return;
     events.cancel();
   };
   document.addEventListener("pointerdown", outside, true);
   const still = () => { if (imageButton()?.getAttribute("aria-expanded") !== "true") events.cancel(); else place(); };
-  const bar = host.bar(), pane = bar?.parentElement;
+  const bar = host.button ? null : host.bar(), pane = bar?.parentElement;
   const watch = new MutationObserver(() => queueMicrotask(still));
   if (bar) watch.observe(bar, { childList: true });
   pane?.addEventListener("edit-bar-layout", place);
@@ -400,6 +425,37 @@ export function mountPreviews(devices: readonly PreviewDevice[]) {
     }
   }
   return { element, draw };
+}
+
+/** The link card a sharing service shows: the frame (the trimmed picture), the site and the title. */
+function mountCard(text: { title: string; site: string }) {
+  const element = node("figure", "image-popup__card");
+  const image = node("img", "image-popup__card-image"); image.alt = "";
+  const caption = node("figcaption");
+  caption.append(node("span", "image-popup__card-site", text.site), node("b", "", text.title));
+  element.append(image, caption);
+  function draw(state: ImagePopupState) {
+    const url = state.cutUrl ?? state.url;
+    if (url && image.getAttribute("src") !== url) image.src = url;
+  }
+  return { element, draw };
+}
+
+/** A picture's address for the editor and its decoded size (none for one that cannot be read). */
+export async function loadPicture(host: Pick<ImagePopupHost, "picture">, path: string): Promise<{ url: string; image?: HTMLImageElement; size?: PictureSize } | undefined> {
+  const url = await host.picture(path).catch(() => undefined);
+  if (!url) return undefined;
+  const image = new Image();
+  image.src = url;
+  try { await image.decode(); } catch { return { url }; }
+  return image.naturalWidth && image.naturalHeight ? { url, image, size: { width: image.naturalWidth, height: image.naturalHeight } } : { url };
+}
+
+/** The trimmed picture as the page and previews show it before Done (the saved copy is made by the image worker). */
+export function trimmedPreview(image: HTMLImageElement, trim: MediaTrim, longest = 1200) {
+  const canvas = document.createElement("canvas");
+  paintTrim(canvas, image, trim, longest);
+  return canvas.toDataURL("image/webp", 0.85);
 }
 
 /** Draws `trim` of `image` into `canvas`, its longer side at most `longest` pixels. */

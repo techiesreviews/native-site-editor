@@ -3,22 +3,30 @@ import { button, node } from "../ui/dom";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from "../page-builder/site-head";
 import type { NavigationLink } from "../page-builder/site-navigation";
+import type { MediaTrim } from "../../shared/media-records";
+import { SOCIAL_IMAGE_ACCEPT } from "../page-builder/social-image";
 import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string;
   /** The social image was chosen in the picker during this dialog (even the one already set): it gets a sharing copy. */
-  socialImageChosen?: boolean }
+  socialImageChosen?: boolean;
+  /** The sharing copy's frame chosen in the Social image popup; else it is centred. */
+  socialImageTrim?: MediaTrim }
+/** What the Social image popup opens on: the picture (a repository path, its link) and the frame its sharing copy had. */
+export interface SocialImageFrame { file: string; value: string; trim?: MediaTrim; site: string }
 export interface SitePageChoice { route: string; label: string; file: string }
 export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
-  applyPage: (path: string, fields: Partial<Record<HeadField, string>>) => Promise<string | undefined>;
+  applyPage: (path: string, fields: Partial<Record<HeadField, string>>, socialTrim?: MediaTrim) => Promise<string | undefined>;
   planUrl: (path: string, value: string) => UrlPlan;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
   applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
   open404: () => Promise<string | undefined>;
   applyNavigation: (path: string, source: string, links: NavigationLink[]) => Promise<string | undefined>;
-  /** The Media picker for an image setting; resolves to the chosen file's root path, or undefined on Cancel. */
-  chooseImage: (place: string) => Promise<string | undefined>;
+  /** The Media picker for an image setting (`accept`: which files fit); resolves to the chosen file's root path, or undefined on Cancel. */
+  chooseImage: (place: string, accept?: string) => Promise<string | undefined>;
+  /** A Social image value the popup can frame (a still picture in the site, or a sharing copy's picture); else undefined. */
+  socialFrame?: (value: string, page?: string) => SocialImageFrame | undefined;
   socialNote?: () => string | undefined;
   imageUrl: (path: string) => Promise<string | undefined>;
 }
@@ -168,10 +176,10 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
   dialog.actions.append(button("Cancel", () => dialog.root.close(), "button secondary"), apply);
 }
 
-async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void) {
+async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void, accept?: string) {
   const before = input.value;
   try {
-    const value = await handlers.chooseImage(place);
+    const value = await handlers.chooseImage(place, accept);
     // A picker may outlive its dialog or edits made while it is open.
     if (value && dialog.root.isConnected && input.value === before) {
       input.value = value;
@@ -181,6 +189,63 @@ async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: 
   } catch (error) {
     if (dialog.root.isConnected) dialog.status.textContent = error instanceof Error ? error.message : String(error);
   }
+}
+
+// The Social image popup's frame, kept with the field until Apply; typing another value drops it.
+const socialFrames = new WeakMap<HTMLInputElement | HTMLTextAreaElement, { value: string; file: string; trim: MediaTrim; preview?: string }>();
+const stagedFrame = (input: HTMLInputElement | HTMLTextAreaElement) => {
+  const frame = socialFrames.get(input);
+  return frame && frame.value === input.value && input.dataset.chosen === input.value ? frame : undefined;
+};
+
+/** The Social image's Image button (media build slice 44): the popup fixed to the sharing shape for a
+ * still picture in the site, else the picker for one. Done keeps the frame for Apply, which saves the copy. */
+function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers,
+  options: { page?: string; title: () => string; refresh?: () => void }) {
+  let popup: { cancel(): void } | undefined, opening = false;
+  const choose = () => chooseInto(input, place, dialog, handlers, options.refresh, SOCIAL_IMAGE_ACCEPT);
+  const press = async () => {
+    if (popup) { popup.cancel(); return; }
+    if (opening) return;
+    const frame = handlers.socialFrame?.(input.value, options.page);
+    if (!frame) { await choose(); return; }
+    opening = true;
+    const before = input.value, staged = stagedFrame(input), links = new Map([[frame.file, frame.value]]);
+    try {
+      const { openSocialImagePopup } = await import("../page-builder/social-image-popup");
+      if (!dialog.root.isConnected || input.value !== before) return;
+      popup = await openSocialImagePopup({ button: control, file: staged?.file ?? frame.file, trim: staged?.trim ?? frame.trim,
+        card: { title: options.title(), site: frame.site },
+        picture: path => handlers.imageUrl(links.get(path) ?? `/${path}`),
+        choose: async () => {
+          const value = await handlers.chooseImage(place, SOCIAL_IMAGE_ACCEPT);
+          const chosen = value ? handlers.socialFrame?.(value, options.page) : undefined;
+          if (chosen) links.set(chosen.file, chosen.value);
+          return chosen?.file;
+        },
+        done: result => {
+          // A dialog closed or a value typed meanwhile keeps what it has.
+          if (!dialog.root.isConnected || input.value !== before) return;
+          const value = links.get(result.file) ?? `/${result.file}`;
+          input.value = value;
+          input.dataset.chosen = value;
+          socialFrames.set(input, { value, ...result });
+          options.refresh?.();
+          dialog.status.textContent = "Sharing frame chosen. Apply to save it.";
+        },
+        closed: () => { popup = undefined; },
+      });
+      if (!popup && dialog.root.isConnected && input.value === before) await choose();
+    } catch (error) {
+      if (dialog.root.isConnected) dialog.status.textContent = error instanceof Error ? error.message : String(error);
+    } finally { opening = false; }
+  };
+  const control = button("", () => { void press(); }, "site-settings__link site-settings__image");
+  control.append(icon("image-square", 16), node("span", "", "Image"));
+  control.setAttribute("aria-label", `${place}: choose the picture and its sharing frame`);
+  control.title = "Choose the picture and the 1200 × 630 frame sharing services show";
+  control.setAttribute("aria-expanded", "false");
+  return control;
 }
 
 export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferences = new Map<string, SiteLinkPreference>()) {
@@ -239,8 +304,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const socialDescription = textField(social, "Social description", ownDescription ? values["og:description"] : values.description);
       const image = textField(social, "Social image", values["og:image"], "Choose a site image or paste a full image URL. Sharing services favour a 1200 × 630 image.");
       addImageChoices(image, options.images);
-      const upload = button("Choose social image…", () => chooseInto(image, "Social image", dialog, handlers, refresh), "site-settings__link");
-      social.append(upload);
+      social.append(socialImageButton(image, "Social image", dialog, handlers,
+        { page: options.path, title: () => socialTitle.value || title.value || "Your page title", refresh }));
       const card = node("div", "site-settings__card");
       card.setAttribute("aria-label", "Share card preview");
       const photo = node("img", "site-settings__card-image");
@@ -262,8 +327,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         if (descriptionLink.checked) socialDescription.value = description.value;
         cardTitle.textContent = socialTitle.value || "Your page title";
         cardDescription.textContent = socialDescription.value || "Your page description";
-        const request = ++imageRequest;
-        void handlers.imageUrl(image.value).then((src) => {
+        const request = ++imageRequest, framed = stagedFrame(image)?.preview;
+        void (framed ? Promise.resolve(framed) : handlers.imageUrl(image.value)).then((src) => {
           if (request !== imageRequest || !dialog.root.isConnected) return;
           photo.hidden = !src;
           placeholder.hidden = Boolean(src);
@@ -303,7 +368,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         if ((description.value !== values.description || descriptionLink.checked !== initialDescriptionLink || socialDescription.value !== initialSocialDescription) && socialDescription.value !== effectiveDescription) fields["og:description"] = socialDescription.value;
         const linked = { title: titleLink.checked, description: descriptionLink.checked };
         const submitted = { fields, socialTitle: socialTitle.value, socialDescription: socialDescription.value, titleLink: titleLink.checked, descriptionLink: descriptionLink.checked };
-        const error = await handlers.applyPage(options.path, fields);
+        const error = await handlers.applyPage(options.path, fields, fields["og:image"] !== undefined ? stagedFrame(image)?.trim : undefined);
         if (!error) { linkPreferences.set(options.path, linked); applied = submitted; }
         return error;
       }, () => true, () => {
@@ -333,7 +398,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       if (note) social.append(node("p", "site-settings__hint", note));
       const image = textField(social, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
       addImageChoices(image, options.images);
-      social.append(button("Choose default image…", () => chooseInto(image, "Default social image", dialog, handlers), "site-settings__link"));
+      social.append(socialImageButton(image, "Default social image", dialog, handlers, { title: () => name.value.trim() || "Your site" }));
       const affected = section(pagesPanel, `Affected pages (${options.pages.length})`);
       affected.append(node("p", "site-settings__hint", "Favicon and social site name apply to these pages. Their title and description stay their own."));
       const list = node("ul", "site-settings__affected");
@@ -345,8 +410,11 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         const error = await handlers.open404();
         if (error) dialog.status.textContent = error; else dialog.root.close();
       }, "site-settings__link"));
-      applyButton(dialog, "Apply site settings", () => handlers.applySite({ name: name.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim(),
-        ...image.dataset.chosen === image.value && image.value ? { socialImageChosen: true } : {} }));
+      applyButton(dialog, "Apply site settings", () => {
+        const trim = stagedFrame(image)?.trim;
+        return handlers.applySite({ name: name.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim(),
+          ...image.dataset.chosen === image.value && image.value ? { socialImageChosen: true } : {}, ...trim ? { socialImageTrim: trim } : {} });
+      });
       dialog.show();
     },
     navigation(options: { path: string; source: string; links: NavigationLink[]; pages: SitePageChoice[]; shared: boolean }) {

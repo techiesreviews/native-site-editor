@@ -19,11 +19,11 @@ import { mediaResolvePath } from "./media-references";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { frameChange, replaceNotice, shapeRatio, type PopupRect, type PopupShape } from "./image-popup-rules";
-import { makesNewPicture, placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type PictureSize, type TrimRect } from "./image-popup-trim";
+import { makesNewPicture, placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type TrimRect } from "./image-popup-trim";
 import { chooseShape, editKey, type PopupEdit } from "./image-large-rules";
 import { trimGeometry } from "./trim-geometry";
 import { componentFrame, componentPicture } from "./component-shapes";
-import { mountImagePopupView, paintTrim, type ImagePopupState } from "./image-popup-view";
+import { loadPicture, mountImagePopupView, trimmedPreview, type ImagePopupState } from "./image-popup-view";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
 export interface ImagePopupHost {
@@ -39,6 +39,8 @@ export interface ImagePopupHost {
   scroll(dy: number): void;
   /** A picture's bytes as an address the editor can show, also handed to the canvas. */
   picture(path: string): Promise<string | undefined>;
+  /** The button that opened a popup outside the edit bar (Settings' Social image): it stands under it. */
+  button?(): HTMLElement | null;
 }
 
 export interface ImagePopupOptions {
@@ -250,21 +252,4 @@ export async function openImagePopup(options: ImagePopupOptions) {
   look();
   void measure();
   return { cancel };
-}
-
-/** A picture's address for the editor and its decoded size (none for one that cannot be read). */
-async function loadPicture(host: ImagePopupHost, path: string): Promise<{ url: string; image?: HTMLImageElement; size?: PictureSize } | undefined> {
-  const url = await host.picture(path).catch(() => undefined);
-  if (!url) return undefined;
-  const image = new Image();
-  image.src = url;
-  try { await image.decode(); } catch { return { url }; }
-  return image.naturalWidth && image.naturalHeight ? { url, image, size: { width: image.naturalWidth, height: image.naturalHeight } } : { url };
-}
-
-/** The trimmed picture as the page and previews show it before Done (the saved copy is made by the image worker). */
-function trimmedPreview(image: HTMLImageElement, trim: NonNullable<ReturnType<typeof popupTrim>>) {
-  const canvas = document.createElement("canvas");
-  paintTrim(canvas, image, trim, 1200);
-  return canvas.toDataURL("image/webp", 0.85);
 }

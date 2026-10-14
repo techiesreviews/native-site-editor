@@ -127,6 +127,21 @@ export function placePopup(image: PopupRect, bar: PopupRect, size: { width: numb
   return { side, left, top };
 }
 
+/**
+ * Where a popup opened from a button (Settings' Social image) stands: under it, else above it,
+ * else beside it (right, then left) level with it, else under it; always inside the window.
+ */
+export function placeUnder(button: PopupRect, size: { width: number; height: number }, view: { width: number; height: number }, gap = 10) {
+  const inside = (side: "below" | "above" | "right" | "left", left: number, top: number) => ({ side,
+    left: Math.round(clamp(left, 8, Math.max(8, view.width - size.width - 8))), top: Math.round(clamp(top, 8, Math.max(8, view.height - size.height - 8))) });
+  if (button.bottom + gap + size.height <= view.height - 8) return inside("below", button.left, button.bottom + gap);
+  if (button.top - gap - size.height >= 8) return inside("above", button.left, button.top - gap - size.height);
+  const level = button.top - 24;
+  if (button.right + gap + size.width <= view.width - 8) return inside("right", button.right + gap, level);
+  if (button.left - gap - size.width >= 8) return inside("left", button.left - gap - size.width, level);
+  return inside("below", button.left, button.bottom + gap);
+}
+
 /** How far the page scrolls on a phone so the picture sits just above the bottom sheet (0: it already does). */
 export function sheetScroll(image: PopupRect, sheetTop: number, frameTop: number) {
   const room = sheetTop - 8;

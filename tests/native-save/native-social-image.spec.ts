@@ -1,4 +1,5 @@
-// Default fixture, nightly: real picker, image worker and one atomic settings draft batch.
+// Default fixture, nightly: real picker, image worker and one atomic settings draft batch; the
+// Social image popup (slice 44) frames the sharing copy.
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { openPageSettingsFromPages } from "./settings-entry";
@@ -33,16 +34,19 @@ async function chooseDefault(page: Page) {
   await pages(page);
   await page.getByRole("button", { name: "Site settings", exact: true }).click();
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
-  await panel(page).getByRole("button", { name: "Choose default image…", exact: true }).click();
+  // An empty Social image: its Image button opens the picker for still pictures.
+  await panel(page).getByRole("button", { name: "Default social image: choose the picture and its sharing frame", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/sharing-source.png", exact: true })).toBeVisible();
+  await expect(picker.getByRole("button", { name: /^Choose .*\.svg$/ })).toHaveCount(0);
   await picker.getByRole("button", { name: "Choose images/sharing-source.png", exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toHaveCount(0);
   await expect(panel(page).getByLabel("Default social image", { exact: true })).toHaveValue("/images/sharing-source.png");
 }
 
-async function output(page: Page, path: string) {
-  return page.evaluate(async path => {
+async function output(page: Page, path: string, at?: { x: number; y: number }) {
+  return page.evaluate(async ({ path, at }) => {
     const { draftStore } = await import("/src/drafts.ts");
     const { uploadBytes, uploadKey } = await import("/src/uploads.ts");
     const draft = draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, path);
@@ -50,9 +54,16 @@ async function output(page: Page, path: string) {
     const blob = await uploadBytes().get(uploadKey(draft, draft.sourceSha));
     if (!blob) throw new Error("No sharing copy bytes.");
     const bitmap = await createImageBitmap(blob);
-    const dimensions = { width: bitmap.width, height: bitmap.height, type: blob.type }; bitmap.close();
+    const dimensions: { width: number; height: number; type: string; green?: boolean } = { width: bitmap.width, height: bitmap.height, type: blob.type };
+    if (at) {
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height), ctx = canvas.getContext("2d")!;
+      ctx.drawImage(bitmap, 0, 0);
+      const [r, g, b] = ctx.getImageData(at.x, at.y, 1, 1).data;
+      dimensions.green = g > 100 && r < 80 && b < 120;
+    }
+    bitmap.close();
     return dimensions;
-  }, path);
+  }, { path, at });
 }
 
 for (const address of [true, false]) {
@@ -113,14 +124,90 @@ test("choosing the picture a page already links still makes its sharing copy", a
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(settings.getByLabel("Social image", { exact: true })).toHaveValue("/images/sharing-source.png");
-  await settings.getByRole("button", { name: "Choose social image…", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await picker.getByRole("button", { name: "Choose images/sharing-source.png", exact: true }).click();
-  await picker.getByRole("button", { name: "Use image", exact: true }).click();
-  await expect(picker).toHaveCount(0);
+  // A still picture opens the popup; Done with the frame left in the middle still makes its copy.
+  await settings.getByRole("button", { name: "Social image: choose the picture and its sharing frame", exact: true }).click();
+  const popup = page.getByRole("dialog", { name: "Social image", exact: true });
+  await expect(popup).toContainText("sharing-source.png");
+  await expect(popup.locator(".image-popup__card b")).toHaveText("Native Studio");
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup).toHaveCount(0);
   await settings.getByRole("button", { name: "Apply page settings", exact: true }).click();
   await expect(settings).not.toBeVisible();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content)
     .toContain('property="og:image" content="https://sharing.example/media/images/sharing-source-social.jpg"');
   expect(await output(page, "media/images/sharing-source-social.jpg")).toEqual({ width: 1200, height: 630, type: "image/jpeg" });
+});
+
+test("the Social image popup moves the sharing copy's frame; Apply writes a fresh copy", async ({ page, baseURL }) => {
+  await fixture(page, baseURL, true);
+  await chooseDefault(page);
+  await panel(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
+  await expect(panel(page)).not.toBeVisible();
+  const first = "https://sharing.example/media/images/sharing-source-social.jpg";
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain(`content="${first}"`);
+  // The centred copy cuts through the green square at its top middle.
+  expect(await output(page, "media/images/sharing-source-social.jpg", { x: 600, y: 2 })).toMatchObject({ width: 1200, height: 630, green: true });
+
+  await pages(page);
+  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
+  const field = panel(page).getByLabel("Default social image", { exact: true });
+  await expect(field).toHaveValue(first);
+  const image = panel(page).getByRole("button", { name: "Default social image: choose the picture and its sharing frame", exact: true });
+  await image.click();
+  // The copy re-opens on its picture, fixed to the sharing shape: no shape menu, Turn or large editor.
+  const popup = page.getByRole("dialog", { name: "Social image", exact: true });
+  await expect(popup.locator(".image-popup__where")).toHaveText("sharing-source.png");
+  await expect(popup.locator(".image-popup__shape")).toHaveText("Sharing 1200 × 630");
+  await expect(popup.getByRole("menu")).toHaveCount(0);
+  await expect(popup.getByRole("button", { name: "Open large editor" })).toHaveCount(0);
+  await expect(popup.getByRole("group", { name: "Turn" })).toHaveCount(0);
+  await expect(popup.locator(".image-popup__card-site")).toHaveText("sharing.example");
+  await expect(popup).toContainText("Saves a sharing copy of this frame");
+  const dot = popup.getByRole("slider", { name: "Focus dot" });
+  await expect(dot).toBeFocused();
+  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 50% down/);
+  // Escape leaves everything as it was, and the settings stay open.
+  await page.keyboard.press("Shift+ArrowUp");
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+  await expect(field).toHaveValue(first);
+  await expect(image).toBeFocused();
+
+  // Move the frame to the top, Done: the field holds the picture until Apply.
+  await image.click();
+  await expect(dot).toBeFocused();
+  for (let step = 0; step < 5; step++) await page.keyboard.press("Shift+ArrowUp");
+  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup).toHaveCount(0);
+  await expect(field).toHaveValue("/images/sharing-source.png");
+  await expect(panel(page)).toContainText("Sharing frame chosen. Apply to save it.");
+  // Re-opened before Apply, the moved frame is still there.
+  await image.click();
+  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  await popup.getByRole("button", { name: "Close without changes", exact: true }).click();
+  await panel(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
+  await expect(panel(page)).not.toBeVisible();
+
+  // A new copy under a fresh name, cut from the top: above the green square.
+  const second = "media/images/sharing-source-social-2.jpg";
+  for (const file of ["index.html", "about/index.html"]) await expect.poll(async () => (await storedDraft(page, file))?.content).toContain(`property="og:image" content="https://sharing.example/${second}"`);
+  expect((await storedDraft(page, ".editor/config.json"))?.content).toContain(`"socialImage": "https://sharing.example/${second}"`);
+  expect(await output(page, second, { x: 600, y: 2 })).toMatchObject({ width: 1200, height: 630, type: "image/jpeg", green: false });
+  const records = JSON.parse((await storedDraft(page, ".editor/media.json"))!.content);
+  expect(records.files[second]).toMatchObject({ sharing: true, trimmedFrom: { source: "images/sharing-source.png", trim: { x: 0, y: 0, width: 1 } } });
+  expect(records.files["media/images/sharing-source-social.jpg"]).toBeUndefined();
+  // Re-opened, the popup shows the copy's frame on its picture.
+  await pages(page);
+  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
+  await image.click();
+  await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 0% down/);
+  await page.keyboard.press("Escape");
+  await panel(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  // One Undo puts the first copy back.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain(`content="${first}"`);
 });

@@ -74,7 +74,11 @@ export const dotApplies = (shape: PopupShape, cut: PopupCut) => shape !== "free"
 
 /** The trim Done saves, in the records' form; nothing when only the place's shape or focus changes. */
 export function popupTrim(size: PictureSize, shape: PopupShape, focus: PlaceFocus, cut: PopupCut): MediaTrim | undefined {
-  if (!makesNewPicture(shape, cut)) return undefined;
+  return makesNewPicture(shape, cut) ? cutTrim(size, shape, focus, cut) : undefined;
+}
+
+/** The part a shape, focus and cut keep, as a trim, even when it is only the shape's own crop (the Social image's frame). */
+export function cutTrim(size: PictureSize, shape: PopupShape, focus: PlaceFocus, cut: PopupCut): MediaTrim {
   const area = cutArea(size, shape, focus, cut), box = shownBox(size, cut), round = (value: number) => Math.round(value * 1e6) / 1e6;
   const x = clamp(round(box.x + area.x * box.w)), y = clamp(round(box.y + area.y * box.h));
   return { x, y, width: Math.min(round(area.w * box.w), 1 - x), height: Math.min(round(area.h * box.h), 1 - y), ...transform(cut) };

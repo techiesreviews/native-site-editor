@@ -362,13 +362,13 @@ export function createMediaController(ports: MediaControllerPorts) {
 
   /** The Media picker for a value that holds an image's address (component fields, Site settings):
    * resolves to the chosen file's root path on Use, or undefined on Cancel. */
-  async function choosePath(place: string, placement?: MediaPathPlacement): Promise<string | undefined> {
+  async function choosePath(place: string, placement?: MediaPathPlacement, accept = "image/*"): Promise<string | undefined> {
     const stamp = ports.stamp();
     const { openMediaPicker } = await load();
     // A repository switched while the picker loaded: no picker opens for the old request.
     if (!stamp.holds()) return undefined;
     return new Promise(resolve => {
-      openMediaPicker({ accept: "image/*", place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
+      openMediaPicker({ accept, place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
         const { placeMediaPath } = await import("../page-builder/media-page-markup");
         await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext);
       } })

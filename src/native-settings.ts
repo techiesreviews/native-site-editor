@@ -9,6 +9,8 @@ import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite } from "../shar
 import type { Reads, Outcome, PlanResult, Stamp, GuardedEdits } from "./guarded-edit";
 import type { AppStore } from "./app-store";
 import { socialImageAddress, socialImagePath, SOCIAL_IMAGE_NOTE } from "./page-builder/social-image";
+import { mediaUrl } from "./page-builder/media-attributes";
+import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords, type MediaTrim } from "../shared/media-records";
 import type { SocialSharingRequest } from "./page-builder/social-sharing";
 import type { UrlPlan } from "./components/url-change";
 
@@ -24,8 +26,8 @@ interface SettingsPorts {
   changeNativeUrl: (path: string, value: string, keep: boolean, since?: Stamp, baseline?: Map<string, string | undefined>) => Promise<string | undefined>;
   restoreFile: (path: string, epoch: number) => Promise<void>;
   nativeSiteReadForCreate: () => Promise<string | undefined>;
-  /** The Media picker for an image setting; the chosen file's root path, or undefined on Cancel. */
-  choosePath: (place: string) => Promise<string | undefined>;
+  /** The Media picker for an image setting (`accept`: which files fit); the chosen file's root path, or undefined on Cancel. */
+  choosePath: (place: string, accept?: string) => Promise<string | undefined>;
   /** `reused`: the value is already a sharing copy; nothing was written, the caller writes `address`. */
   shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean; reused?: true; path?: string } | undefined>;
   nativeEffectiveSource: (path: string) => string | undefined;
@@ -61,11 +63,11 @@ export function createNativeSettings(ports: SettingsPorts) {
       baseline = new Map(shown.map(path => [path, ports.guardedEdits.peek.source(path)] as const));
     };
     // `depends`: every file the edits were planned from (Site settings: config and every page), proved through preparation.
-    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = []) => {
+    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim) => {
       if (stale() || sourcesChanged()) throw new Error(changed);
       const stamp = since, repository = ports.guardedEdits.stamp("repository");
       const expected = new Map([...baseline, ...[NATIVE_CONFIG_PATH, ...depends].map(path => [path, ports.guardedEdits.peek.source(path)] as const)]);
-      const result = await ports.shareImage({ value, previous, page,
+      const result = await ports.shareImage({ value, previous, page, ...trim ? { trim } : {},
         siteUrl: nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
         canonical: readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical,
         expectedSources: expected,
@@ -77,7 +79,7 @@ export function createNativeSettings(ports: SettingsPorts) {
     };
     return createSiteSettings({
       socialNote: () => socialImageAddress(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, "").missingAddress ? SOCIAL_IMAGE_NOTE : undefined,
-      async applyPage(path, fields) {
+      async applyPage(path, fields, socialTrim) {
         const source = ports.guardedEdits.peek.source(path);
         // A reused sharing copy must still be there when the page is written.
         let reused: string | undefined;
@@ -86,7 +88,7 @@ export function createNativeSettings(ports: SettingsPorts) {
             let next = source;
             for (const [field, value] of Object.entries({ ...fields, "og:image": address })) next = upsertHeadTag(next, field as HeadField, value);
             return new Map([[path, { source, text: next }]]);
-          });
+          }, [], socialTrim);
           if (shared?.reused) { fields["og:image"] = shared.address; reused = shared.path; }
           else if (shared) {
             fields["og:image"] = shared.address;
@@ -136,7 +138,7 @@ export function createNativeSettings(ports: SettingsPorts) {
                 if (text !== source) edits.set(path, { source, text });
               }
               return edits;
-            }, [...expected.keys()]);
+            }, [...expected.keys()], values.socialImageTrim);
             if (shared) values.socialImage = shared.address;
             if (shared && !shared.reused) return undefined;
             reused = shared?.path;
@@ -173,10 +175,24 @@ export function createNativeSettings(ports: SettingsPorts) {
           catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
         }, { since }));
       },
-      async chooseImage(place) {
-        const path = await ports.choosePath(`Site settings · ${place}`);
+      async chooseImage(place, accept) {
+        const path = await ports.choosePath(`Site settings · ${place}`, accept);
         if (stale()) throw new Error(changed);
         return path;
+      },
+      socialFrame(value, page = ports.nativeSite?.routes["/"] ?? "index.html") {
+        const config = nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH));
+        const path = socialImagePath(value, page, config.url, readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical);
+        if (!path || !/\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(path)) return undefined;
+        let records: MediaRecords | undefined;
+        try { records = parseMediaRecords(ports.nativeEffectiveSource(MEDIA_RECORDS_PATH)); } catch { /* Opened centred. */ }
+        let site = "";
+        try { site = config.url ? new URL(config.url).host : ""; } catch { /* No usable address. */ }
+        // A sharing copy re-opens on the picture it was made from, with its frame.
+        const record = records?.files[path];
+        if (!record?.sharing) return { file: path, value: mediaUrl(path), site };
+        const from = record.trimmedFrom;
+        return from && /\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(from.source) ? { file: from.source, value: mediaUrl(from.source), trim: from.trim, site } : undefined;
       },
       async imageUrl(value) {
         if (stale() || !value.trim()) return undefined;

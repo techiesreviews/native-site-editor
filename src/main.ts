@@ -208,7 +208,7 @@ const loadSiteSettings = lazyModule(async () => {
     get nativeSite() { return nativeSite; }, get generation() { return generation; },
     appStore, guardedEdits, nativeAssets, nativePageLabelOf, setupScope,
     nativeUrlPlan, changeNativeUrl, restoreFile, nativeSiteReadForCreate,
-    choosePath: place => mediaController.choosePath(place), nativeEffectiveSource, loadNativeAssets,
+    choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource, loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
   });
 });

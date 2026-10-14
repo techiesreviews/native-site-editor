@@ -42,6 +42,7 @@
 .image-popup[data-side="left"] .image-popup__nub { right: -6px; top: var(--nub-y, 20px); }
 .image-popup[data-side="right"] .image-popup__nub { left: -6px; top: var(--nub-y, 20px); }
 .image-popup[data-side="below"] .image-popup__nub { top: -6px; left: var(--nub-x, 24px); }
+.image-popup[data-side="above"] .image-popup__nub { bottom: -6px; left: var(--nub-x, 24px); }
 .image-popup:not([data-side]) .image-popup__nub,
 .image-popup__grab {
   display: none;
@@ -279,6 +280,9 @@
 }
 .image-popup .image-popup__shape { color: #fff; }
 .image-popup__shape:hover { background: rgb(1 9 37 / 0.9); }
+/* The Social image's fixed shape: named, not a menu. */
+.image-popup__shape--fixed { padding: 0 10px; }
+.image-popup__shape--fixed:hover { background: rgb(1 9 37 / 0.78); }
 .image-popup__menu {
   position: absolute;
   top: 40px;
@@ -379,6 +383,38 @@
   width: 100%;
   height: 100%;
 }
+/* The Social image's preview: the link card a sharing service shows. */
+.image-popup__card {
+  width: 100%;
+  max-width: 210px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--image-popup-line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.image-popup__card-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1200 / 630;
+  object-fit: cover;
+  background: var(--image-popup-well);
+}
+.image-popup__card figcaption {
+  display: grid;
+  gap: 1px;
+  padding: 6px 8px 7px;
+  font-size: var(--type-small);
+  line-height: 1.3;
+}
+.image-popup__card b,
+.image-popup__card-site {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.image-popup__card-site { color: var(--muted); }
+.image-popup__card-site:empty { display: none; }
 .image-popup__message {
   display: flex;
   align-items: center;
