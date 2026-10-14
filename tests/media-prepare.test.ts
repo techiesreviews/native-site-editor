@@ -179,15 +179,27 @@ test("failed preparation asks before adding unchanged bytes; refusal and missing
   const file = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg");
   const fail: typeof optimiseMedia = async () => { throw new Error("Cannot decode"); };
   const questions: string[] = [];
-  const yes = await prepareMedia([file], "repo", undefined, undefined, fail, async question => { questions.push(question); return true; });
+  const shown = async () => true;
+  const yes = await prepareMedia([file], "repo", undefined, undefined, fail, async question => { questions.push(question); return true; }, shown);
   assert.equal(questions.length, 1); assert.match(questions[0], /unchanged/);
   assert.equal(yes.requests[0].file, file); assert.equal(yes.requests[0].result, undefined);
   const f = fixture(); await f.host.import(yes.requests);
   assert.equal(f.batches[0].uploads[0].blob, file);
-  const no = await prepareMedia([file], "repo", undefined, undefined, fail, async () => false);
+  const no = await prepareMedia([file], "repo", undefined, undefined, fail, async () => false, shown);
   assert.deepEqual(no.requests, []); assert.deepEqual(no.errors, ["photo.jpg was not added."]);
-  const missing = await prepareMedia([file], "repo", undefined, undefined, fail);
+  const missing = await prepareMedia([file], "repo", undefined, undefined, fail, undefined, shown);
   assert.deepEqual(missing.requests, []); assert.match(missing.errors[0], /Try saving it as a new file/);
+});
+test("a failed picture the browser cannot show, or with a comment block, gets advice and no question", async () => {
+  const fail: typeof optimiseMedia = async () => { throw new Error("Cannot decode"); };
+  let asked = 0;
+  const ask = async () => { asked++; return true; };
+  const broken = await prepareMedia([new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg")], "repo", undefined, undefined, fail, ask, async () => false);
+  assert.deepEqual(broken.requests, []); assert.match(broken.errors[0], /cannot show it as a picture/);
+  const comment = new Uint8Array([0xff, 0xd8, 0xff, 0xfe, 0, 6, 0x48, 0x6f, 0x6d, 0x65, 0xff, 0xd9]);
+  const noted = await prepareMedia([new File([comment], "photo.jpg")], "repo", undefined, undefined, fail, ask, async () => true);
+  assert.deepEqual(noted.requests, []); assert.match(noted.errors[0], /Hidden personal details/);
+  assert.equal(asked, 0);
 });
 test("prepared files note only their largest output; large sources can prepare below the cap", async () => {
   const source = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], "photo.png");
@@ -204,7 +216,7 @@ test("prepared files note only their largest output; large sources can prepare b
 test("cancellation during failure consent never adds the unchanged file", async () => {
   const controller = new AbortController();
   await assert.rejects(prepareMedia([new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg")], "repo", undefined,
-    controller.signal, async () => { throw new Error("Cannot decode"); }, async () => { controller.abort(); return true; }), /abort/i);
+    controller.signal, async () => { throw new Error("Cannot decode"); }, async () => { controller.abort(); return true; }, async () => true), /abort/i);
 });
 
 test("failure cannot bypass personal-detail removal, and accepted unchanged files still get notes", async () => {
@@ -215,6 +227,6 @@ test("failure cannot bypass personal-detail removal, and accepted unchanged file
   assert.equal(asked, false); assert.deepEqual(unsafe.requests, []); assert.match(unsafe.errors[0], /Hidden personal details/);
   const bytes = new Uint8Array(1_000_001);
   bytes.set([0xff, 0xd8, 0xff, 0xda, 0, 2]); bytes.set([0xff, 0xd9], bytes.length - 2);
-  const clean = await prepareMedia([new File([bytes], "photo.jpg")], "repo", undefined, undefined, fail, async () => true);
+  const clean = await prepareMedia([new File([bytes], "photo.jpg")], "repo", undefined, undefined, fail, async () => true, async () => true);
   assert.equal(clean.requests.length, 1); assert.equal(clean.warnings.length, 1); assert.match(clean.warnings[0], /photo.jpg is 1.0 MB/);
 });

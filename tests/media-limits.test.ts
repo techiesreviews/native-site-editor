@@ -13,9 +13,10 @@ const png = (kind?: string) => new Uint8Array([
   ...kind ? pngChunk(kind) : [], ...pngChunk("IEND"),
 ]);
 const webp = (kind = "VP8 ") => new Uint8Array([...ascii("RIFF"), 12, 0, 0, 0, ...ascii("WEBP"), ...ascii(kind), 0, 0, 0, 0]);
-const failure = (name: string, bytes = new Uint8Array(), size = bytes.length) => preparationFailure({ name, size }, bytes);
-const advice = (name: string, pattern: RegExp, bytes = new Uint8Array(), size = bytes.length) => {
-  const result = failure(name, bytes, size);
+const jpegWith = (marker: number, data: number[]) => new Uint8Array([0xff, 0xd8, 0xff, marker, 0, data.length + 2, ...data, 0xff, 0xd9]);
+const failure = (name: string, bytes = new Uint8Array(), size = bytes.length, shown = true) => preparationFailure({ name, size }, bytes, shown);
+const advice = (name: string, pattern: RegExp, bytes = new Uint8Array(), size = bytes.length, shown = true) => {
+  const result = failure(name, bytes, size, shown);
   assert.equal(result.kind, "advice");
   if (result.kind === "advice") assert.match(result.message, pattern);
 };
@@ -49,10 +50,25 @@ test("clean suitable files can only be added after asking", () => {
   assert.equal(failure("photo.jpeg", jpeg(0xe0)).kind, "ask");
   assert.equal(failure("photo.png", png()).kind, "ask");
   assert.equal(failure("photo.webp", webp()).kind, "ask");
+  // Colour profiles and harmless layout blocks are not personal details.
+  assert.equal(failure("photo.jpg", jpegWith(0xe2, ascii("ICC_PROFILE\0\x01\x01"))).kind, "ask");
+  assert.equal(failure("photo.png", png("iCCP")).kind, "ask");
+  assert.equal(failure("photo.webp", new Uint8Array([...ascii("RIFF"), 20, 0, 0, 0, ...ascii("WEBP"), ...ascii("ICCP"), 0, 0, 0, 0, ...ascii("VP8 "), 0, 0, 0, 0])).kind, "ask");
+});
+test("a picture this browser cannot show is never offered unchanged", () => {
+  for (const [name, bytes] of [["photo.jpg", jpeg()], ["photo.png", png()], ["photo.webp", webp()], ["logo.svg", new TextEncoder().encode("<svg/>")]] as const)
+    advice(name, /cannot show it as a picture.*JPEG or PNG/, bytes, bytes.length, false);
+  // Other kinds are not pictures; showing them is not checked.
+  assert.equal(failure("guide.pdf", undefined, 0, false).kind, "ask");
 });
 test("hidden details and broken or unknown images cannot bypass preparation", () => {
   advice("photo.jpg", /Hidden personal details/, new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2, 1, 0xff, 0, 2, 0xff, 0xe1, 0, 2, 0xff, 0xd9]));
-  for (const marker of [0xe1, 0xed]) advice("photo.jpg", /Hidden personal details.*new JPEG or PNG/, jpeg(marker));
+  // Exif/XMP, IPTC, comments and any other unknown block may hold personal details.
+  for (const marker of [0xe1, 0xe3, 0xec, 0xed, 0xef, 0xfe]) advice("photo.jpg", /Hidden personal details.*new JPEG or PNG/, jpeg(marker));
+  advice("photo.jpg", /Hidden personal details/, jpegWith(0xfe, ascii("Taken at 12 Elm Street")));
+  advice("photo.jpg", /Hidden personal details/, jpegWith(0xe2, ascii("MPF\0")));
+  advice("photo.png", /Hidden personal details/, png("prVt"));
+  advice("photo.webp", /Hidden personal details/, webp("abcd"));
   for (const kind of ["tEXt", "eXIf", "iTXt", "zTXt"]) advice("photo.png", /Hidden personal details/, png(kind));
   for (const kind of ["EXIF", "XMP "]) advice("photo.webp", /Hidden personal details/, webp(kind));
   for (const name of ["photo.jpg", "photo.png", "photo.webp", "photo.avif"]) advice(name, /Hidden personal details/);
