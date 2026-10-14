@@ -1,8 +1,8 @@
 ---
 title: Limits, warnings and repo size
 type: task (AFK)
-status: open
-assignee:
+status: in progress
+assignee: claude (mm-30 runner)
 blocked_by: [23-one-preparation-path]
 builder: sol
 phase: 2
