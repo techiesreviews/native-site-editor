@@ -1314,6 +1314,27 @@ test("agent trims under a component keep the popup's Original, component and unc
   }
 }));
 
+test("a component's files changed while framing or trimming refuse the agent's change without writing", () => withTrimWorker(async () => {
+  for (const [args, change] of [
+    [{ shape: "component" as const }, "::slotted(img){object-fit:cover}"],
+    [{ shape: "original" as const, trim: { zoom: 2 } }, "::slotted(img){aspect-ratio:16/9;object-fit:cover}"],
+    [{ shape: "component" as const, trim: { zoom: 2 } }, undefined],
+  ] as const) {
+    const source = '<section><photo-card><img slot="media" src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:1/1;object-fit:cover"></photo-card></section>';
+    const f = agentMediaFixture(source), measure = f.ports.measureImage;
+    // The last case adds a flat component file the reader did not use: it still joins the proof.
+    f.ports.measureImage = async (...measured) => {
+      if (change) f.text.set("components/photo-card/photo-card.css", change); else f.text.set("components/photo-card.css", "");
+      return measure(...measured);
+    };
+    const before = f.text.get("index.html"), records = f.text.get(MEDIA_RECORDS_PATH);
+    await assert.rejects(applyAgentMedia(await f.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0.0", ...args }),
+      target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target)), /changed/);
+    assert.equal(f.text.get("index.html"), before); assert.equal(f.text.get(MEDIA_RECORDS_PATH), records);
+    assert.equal(f.history.length, 0); assert.equal(f.batches.length, 0);
+  }
+}));
+
 test("agent trims and re-crops original bytes in one batch with copies, records and Undo; read reports provenance", () => withTrimWorker(async requests => {
   const source = '<section><picture><source srcset="/media/images/photo.webp"><img src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:4/3;object-fit:cover;object-position:20% 70%"></picture><img src="/media/images/photo.webp" alt="Photo"></section>';
   const f = agentMediaFixture(source, true), original = f.bytes.get(f.file)!;

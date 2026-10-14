@@ -325,12 +325,18 @@ export function createMediaController(ports: MediaControllerPorts) {
     const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
     const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
     if (!range || range.tag.name !== "img" || source === undefined) throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
-    const expected = source.slice(range.tag.start, range.tag.end), proof = { stamp, epoch, source, expected };
-    // Under a component's own shape the agent writes and reads as the popup does (slice 92).
+    // Under a component's own shape the agent writes and reads as the popup does (slice 92). The
+    // component's files (folder and flat, present or not) join the proof before the first await.
+    const parent = (ports.locateElement ?? locateNativeElementRange)(source, target.node.slice(0, -1))?.tag.name ?? "";
+    const files = new Map(parent.includes("-") ? [`components/${parent}/${parent}`, `components/${parent}`]
+      .flatMap(base => [`${base}.html`, `${base}.css`]).map(path => [path, ports.source(path)]) : []);
+    const proof = { epoch, source, expected: source.slice(range.tag.start, range.tag.end),
+      stamp: { holds: () => stamp.holds() && [...files].every(([path, text]) => ports.source(path) === text), changed: () => stamp.changed() } };
+    const expected = proof.expected;
     const context = async () => {
       const shapes = await import("../page-builder/component-shapes");
-      if (!stamp.holds() || ports.viewingVersion() || ports.source(target.path) !== source) throw new Error("This image changed. Select it again.");
-      return { shapes, component: shapes.componentPicture(source, target.node, path => ports.source(path)) };
+      if (!proof.stamp.holds() || ports.viewingVersion() || ports.source(target.path) !== source) throw new Error("This image changed. Select it again.");
+      return { shapes, component: shapes.componentPicture(source, target.node, path => files.has(path) ? files.get(path) : ports.source(path)) };
     };
     return {
       async read(records?: import("../../shared/media-records").MediaRecords) {
