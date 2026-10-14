@@ -1,7 +1,7 @@
 ---
 title: Rename a file everywhere
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-52 runner)
 blocked_by: [46-wide-use-scanner, 06-image-families]
 builder: sol
