@@ -452,8 +452,6 @@
 .media-detail__foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
 .media-library .media-detail__foot button { min-width: 96px; border-radius: 22px; }
 @container media-detail (max-width: 479px) { .media-library .media-detail__foot button { flex: 1; } }
-.media-detail__insert { display: grid; gap: 10px; padding: 14px; border-radius: 10px; background: var(--surface-subtle); }
-.media-library .media-detail__insert button { justify-self: start; }
 @media (max-width: 700px) { .media-detail__form textarea, .media-check__field { font-size: 16px; } }
 
 /* By agent (ticket 13): a mark on the tile beside Always keep, and a line under Description. */
