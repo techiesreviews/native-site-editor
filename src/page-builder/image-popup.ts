@@ -167,10 +167,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
     try {
       if (trim && !same) {
         // The earlier trimmed copy is replaced when nothing else uses it.
-        const previous = records?.files[placed]?.trimmedFrom && placed !== state.file ? placed : undefined;
         const { trimPlace } = await import("./place-trim");
-        await trimPlace(ports, options.workspaceContext, target, { source: state.file, sourceVersion: state.version, trim, previous, ...shape, focus: trimFocus() },
-          { ...proof, initialAlt }, () => !closed);
+        await trimPlace(ports, options.workspaceContext, target,
+          { source: state.file, sourceVersion: state.version, trim, frame: { ...shape, focus: trimFocus() } }, proof);
       } else if (!same && swapped()) {
         const image = replacement ?? mediaImageForPlacement(state.file, state.size ?? {}, (await options.workspaceContext()).paths);
         await placeMediaImage(ports, options.workspaceContext, target, image, { ...proof, initialAlt }, () => false, undefined, change);

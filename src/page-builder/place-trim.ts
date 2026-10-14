@@ -14,7 +14,12 @@ import { mediaCopyName } from "./media-storage";
 import type { MediaImage, MediaMeasured } from "./media-markup";
 import { mediaExistingAlt } from "./media-attributes";
 
-export interface PlaceTrimRequest { trim: MediaTrim; frame?: PlaceFrameChange }
+export interface PlaceTrimRequest {
+  trim: MediaTrim; frame?: PlaceFrameChange;
+  /** The image popup (slice 41): a picture chosen with Replace to trim instead of the place's own,
+   * and the revision its preview showed (read before its bytes); another revision refuses. */
+  source?: string; sourceVersion?: string;
+}
 
 /** Lazy place-only trim: original pixels, shared placement markup, one media batch and Undo. */
 export async function trimPlace(
@@ -39,10 +44,15 @@ export async function trimPlace(
   const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
   const file = readPlaceFrame(proof.expected, records, target.path).file;
   if (!file || !ctx.items.some(item => item.path === file)) throw new Error("Choose a picture already in Media.");
-  const { source, previous } = trimStart(records, file, ctx.paths);
-  // A trimmed copy whose original is gone counts as the original (slice 40).
-  // The revision is captured before the first byte read, never refreshed after preparation.
-  const sourceVersion = ctx.assetVersion(source);
+  const start = trimStart(records, file, ctx.paths);
+  // A trimmed copy whose original is gone counts as the original (slice 40). A picture chosen in the
+  // popup replaces the place's: the place's own trimmed copy is then the previous one.
+  const source = request.source ?? start.source;
+  const previous = source === start.source ? start.previous : records.files[file]?.trimmedFrom && file !== source ? file : undefined;
+  if (!ctx.items.some(item => item.path === source)) throw new Error("Choose a picture already in Media.");
+  // The revision is captured before the first byte read (by the popup, before its preview), never refreshed after preparation.
+  const sourceVersion = "sourceVersion" in request ? request.sourceVersion : ctx.assetVersion(source);
+  if (sourceVersion === undefined || ctx.assetVersion(source) !== sourceVersion) throw new Error(stale);
   const check = () => {
     current(); ctx.assertLive();
     if (ports.openFile() !== target.path || ports.source(MEDIA_RECORDS_PATH) !== metadata
