@@ -76,6 +76,11 @@ export async function prepareMediaFile(file: File, _key: string, folder?: string
 export async function keptOriginal(file: File, result: MediaOptimiseResult, signal?: AbortSignal, ask?: Ask) {
   const original = result.original;
   if (!original) return;
+  // The cap question says the website version fits, so its files are checked first.
+  for (const output of result.outputs) {
+    const problem = uploadProblem({ name: file.name, size: output.blob.size });
+    if (problem) throw new Error(problem);
+  }
   const problem = mediaOriginalProblem(new Uint8Array(await original.blob.arrayBuffer()), original.extension);
   if (problem) throw new Error(`${file.name}: ${problem}`);
   if (await mediaOriginalIsDuplicate(original.blob, result.outputs[0].blob)) return;

@@ -2,7 +2,7 @@ import { mediaFamilyRows } from "../src/page-builder/media-file-details";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanedMediaOriginal, mediaOriginalCapQuestion, mediaOriginalIsDuplicate, mediaOriginalPath, mediaOriginalProblem } from "../src/page-builder/media-originals";
-import { prepareMedia, prepareMediaFile } from "../src/page-builder/media-prepare";
+import { keptOriginal, prepareMedia, prepareMediaFile } from "../src/page-builder/media-prepare";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { mediaImageRecipe, type optimiseMedia, type MediaOptimiseResult, type MediaOptimiseOptions } from "../src/page-builder/media-optimise";
 import { MEDIA_FILE_CAP_BYTES, mayHoldHiddenDetails } from "../src/page-builder/media-limits";
@@ -207,4 +207,12 @@ test("an original cannot overwrite its main in an explicit originals destination
     await assert.rejects(f.host.import([{ file, folder, original }]), /Choose a website folder/);
     assert.equal(f.batches.length, 0);
   }
+});
+
+test("Review… shares the cap rule: a website file over the cap is refused before any question", async () => {
+  const big = new Blob([new Uint8Array(MEDIA_FILE_CAP_BYTES + 1)]);
+  const result = { outputs: [{ blob: big, extension: "webp" }], original: { blob: big, extension: "jpg" }, before: 1, after: 1 } satisfies MediaOptimiseResult;
+  let asked = 0;
+  await assert.rejects(keptOriginal(new File([photo()], "huge.jpg"), result, undefined, async () => { asked++; return true; }), /20 MB|too large|limit/i);
+  assert.equal(asked, 0);
 });
