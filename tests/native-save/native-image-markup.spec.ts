@@ -387,9 +387,7 @@ test("placing an older 2000px JPEG adopts new copies in one Undo without changin
   await expect(page.locator("#status")).toContainText("Up to date with main");
   const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
   const before = await source(), hero = page.frameLocator(".native-preview-frame").locator("img.hero-image");
-  await hero.click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  const picker = await openPickerOn(page, hero);
   await picker.getByRole("button", { name: `Choose ${main}`, exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
