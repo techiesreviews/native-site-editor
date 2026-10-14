@@ -880,3 +880,70 @@ test("animated old pictures refuse prepared still replacements without a batch",
   await assert.rejects(f.host.replace({ path, result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] } }), /Animated pictures/);
   assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
 });
+
+function shareFixture() {
+  const f = fixture(), previous = "media/images/a-social.jpg";
+  f.paths.add(previous); f.bytes.set(previous, new Blob(["previous JPEG"], { type: "image/jpeg" })); f.versions.set(previous, "social-v1");
+  f.paths.add(".editor/config.json");
+  f.text.set(".editor/config.json", JSON.stringify({ site: { socialImage: "/" + previous } }));
+  f.text.set("index.html", `<meta property="og:image" content="/${previous}">`);
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: {
+    "images/a.png": { description: { text: "Original" }, decorative: true },
+    [previous]: { sharing: true, trimmedFrom: { source: "images/a.png", trim: rectangle } },
+  } }));
+  const request = (): import("../src/page-builder/media-workspace").MediaShareRequest => {
+    const expected = new Map(["index.html", ".editor/config.json"].map(path => [path, f.text.get(path)]));
+    return { source: "images/a.png", sourceVersion: f.versions.get("images/a.png"), previous,
+      trim: rectangle, result: { outputs: [{ blob: new Blob(["new JPEG"], { type: "image/jpeg" }), extension: "jpg" }], before: 8, after: 8 },
+      edits: path => new Map([...expected].map(([file, source]) => [file, { source, text: source!.replace(previous, path) }])),
+    };
+  };
+  return { ...f, previous, request };
+}
+
+test("sharing uploads one JPEG with provenance, updates page and config and removes unused previous copy in one Undo", async () => {
+  const f = shareFixture(), original = f.bytes.get("images/a.png"), before = new Map(f.text);
+  const originalRecord = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"];
+  const path = await f.host.share(f.request());
+  assert.equal(path, "media/images/a-social-2.jpg");
+  assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
+  assert.equal(f.batches[0].label, "Social image set");
+  assert.deepEqual(f.batches[0].uploads.map(item => item.path), [path]);
+  assert.deepEqual(f.batches[0].deletes, [f.previous]);
+  for (const file of ["index.html", ".editor/config.json"]) assert.ok(f.text.get(file)?.includes(path));
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  assert.deepEqual(records.files[path], { sharing: true, trimmedFrom: { source: "images/a.png", trim: rectangle } });
+  assert.deepEqual(records.files["images/a.png"], originalRecord); assert.equal(f.bytes.get("images/a.png"), original);
+  assert.equal(records.removed?.[0].path, f.previous); assert.match(records.removed![0].sha!, /^[a-f0-9]{40}$/);
+  assert.equal(records.removed?.[0].record?.sharing, true);
+  f.history.pop()!(); assert.deepEqual(f.text, before); assert.ok(f.bytes.has(f.previous)); assert.ok(!f.bytes.has(path));
+});
+
+test("sharing refuses stale page/config, changed source revision and edits racing upload staging without saving", async () => {
+  for (const stale of ["index.html", ".editor/config.json", "source", "stage", "cancel"]) {
+    const f = shareFixture(), request = f.request();
+    if (stale === "source") f.versions.set("images/a.png", "newer");
+    else if (stale === "stage") f.afterStage(() => f.text.set(".editor/config.json", "newer config"));
+    else if (stale === "cancel") request.live = () => false;
+    else f.text.set(stale, "newer text");
+    await assert.rejects(f.host.share(request), /changed|Cancelled/);
+    assert.equal(f.history.length, 0); assert.ok(f.bytes.has(f.previous)); assert.ok(!f.bytes.has("media/images/a-social-2.jpg"));
+  }
+});
+
+test("sharing keeps previous copies still mentioned anywhere or when text cannot be read", async () => {
+  for (const file of ["other.html", "data.json", "script.js", "_redirects", "unreadable.js", "index.html"]) {
+    const f = shareFixture(), request = f.request();
+    if (file === "index.html") {
+      const originalEdits = request.edits.bind(request);
+      const edits = (path: string) => originalEdits(path);
+      request.edits = path => { const next = edits(path); next.get(file)!.text += `<img src="/${f.previous}">`; return next; };
+    } else {
+      f.paths.add(file);
+      if (file !== "unreadable.js") f.text.set(file, `"/${f.previous}"`);
+    }
+    await f.host.share(request);
+    assert.deepEqual(f.batches[0].deletes, []); assert.ok(f.bytes.has(f.previous));
+    assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[f.previous].sharing, true);
+  }
+});

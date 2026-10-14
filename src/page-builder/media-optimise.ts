@@ -2,7 +2,7 @@ import type { MediaTrim } from "../../shared/media-records";
 import { gifIsAnimated, webpIsAnimated, pngIsAnimated, strippedImageSource } from "./media-image-bytes";
 import { RESPONSIVE_COPY_WIDTHS } from "./media-families";
 export interface MediaOptimiseOptions {
-  maxWidth: number | null; quality: number; format: "webp" | "png" | "jpeg" | "avif"; speed?: number; responsive: boolean; keepOriginal: boolean;
+  maxWidth: number | null; quality: number; format: "webp" | "png" | "jpeg" | "avif"; speed?: number; responsive: boolean; keepOriginal: boolean; sharing?: boolean;
 }
 export const DEFAULT_MEDIA_OPTIMISE: MediaOptimiseOptions = { maxWidth: 2400, quality: 80, format: "webp", responsive: true, keepOriginal: false };
 export type MediaImageQuality = "smaller" | "balanced" | "higher" | "smallest";
@@ -31,7 +31,7 @@ export async function mediaSmallerMain(main: Blob, source: { size: number; strip
 }
 export function mediaCopyIsSmaller(copy: Blob, main: Blob) { return copy.size < main.size; }
 export interface MediaOutput { blob: Blob; width?: number; height?: number; extension: string; variantWidth?: number }
-export interface MediaOptimiseResult { outputs: MediaOutput[]; before: number; after: number; note?: string; original?: MediaOutput }
+export interface MediaOptimiseResult { outputs: MediaOutput[]; trim?: MediaTrim; before: number; after: number; note?: string; original?: MediaOutput }
 
 export function mediaDimensions(width: number, height: number, maxWidth: number | null) {
   if (![width, height, maxWidth ?? width].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Image dimensions and maximum width must be positive finite numbers.");

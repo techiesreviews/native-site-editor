@@ -405,6 +405,8 @@ export function createMediaController(ports: MediaControllerPorts) {
     onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {
       usageListeners.add(listener); return () => { usageListeners.delete(listener); };
     },
+    shareImage: async (request: import("../page-builder/social-sharing").SocialSharingRequest) =>
+      (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
     workspaceContext, preparePlacement, chooseImage, choosePath, placeState, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

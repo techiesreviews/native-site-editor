@@ -1,5 +1,6 @@
 import type { MediaTrim } from "../../shared/media-records";
-import { trimGeometry, isTrim } from "./trim-geometry";
+import { socialImageTrim, socialImageSize } from "./social-geometry";
+import { trimGeometry, isTrim, validTrim } from "./trim-geometry";
 import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, mediaAnimatedOutput, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
 
 import { cleanedMediaOriginal } from "./media-originals";
@@ -36,7 +37,10 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
     const { file, options, trim, original } = event.data;
     try {
       validateMediaOptimiseOptions(options);
-      if (trim && !isTrim(trim)) throw new Error("The picture has not been trimmed.");
+      if (options.sharing && (options.keepOriginal || original || options.responsive || options.format !== "jpeg"))
+        throw new Error("A sharing copy must be one JPEG image.");
+      if (trim && options.sharing) validTrim(trim);
+      if (trim && !options.sharing && !isTrim(trim)) throw new Error("The picture has not been trimmed.");
       if (trim && options.keepOriginal) throw new Error("A trimmed copy cannot keep the original bytes.");
       if (trim && original) throw new Error("A trimmed copy has no kept original; its source is already in the site.");
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -48,20 +52,20 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
       }
       const extension = file.name.split(".").pop()?.toLowerCase() ?? "png";
       if (svg) {
-        if (trim) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
+        if (trim || options.sharing) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
         const { cleanSvg, svgDimensions } = await codecs.loadSvgCleaner();
         const cleaned = cleanSvg(bytes), blob = new Blob([new Uint8Array(cleaned)], { type: "image/svg+xml" });
         self.postMessage({ result: { outputs: [{ blob, extension: "svg", ...svgDimensions(cleaned) }], before: file.size, after: blob.size } satisfies MediaOptimiseResult });
         return;
       }
       if (mediaUntouched(file.name, bytes)) {
-        if (trim) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
+        if (trim || options.sharing) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
         self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: "Animated GIFs are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
         return;
       }
       const animated = mediaAnimatedOutput(file.name, bytes);
       if (animated) {
-        if (trim) throw new Error("Animated pictures cannot be trimmed. Use a still picture.");
+        if (trim || options.sharing) throw new Error("Animated pictures cannot be trimmed. Use a still picture.");
         self.postMessage({ result: { outputs: [animated], before: file.size, after: animated.blob.size, note: "Animated images keep their frames; location and camera details are removed." } satisfies MediaOptimiseResult });
         return;
       }
@@ -75,6 +79,23 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
         } catch { return blob; }
       };
       try {
+        if (options.sharing) {
+          const frame = trim ?? socialImageTrim(bitmap.width, bitmap.height);
+          const size = socialImageSize(bitmap.width, bitmap.height, frame);
+          const canvas = new OffscreenCanvas(size.width, size.height), ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("Canvas image encoding is unavailable.");
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(0, 0, size.width, size.height);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(bitmap, frame.x * bitmap.width, frame.y * bitmap.height,
+            frame.width * bitmap.width, frame.height * bitmap.height, 0, 0, size.width, size.height);
+          const blob = await encodeImage(canvas, "image/jpeg", 85);
+          if (blob.type !== "image/jpeg") throw new Error("The sharing image could not be saved as JPEG.");
+          self.postMessage({ result: { outputs: [{ blob, ...size, extension: "jpg" }],
+            trim: frame, before: file.size, after: blob.size } satisfies MediaOptimiseResult });
+          return;
+        }
         const picture = imagePixels(bitmap, trim);
         const size = mediaDimensions(picture.width, picture.height, options.maxWidth);
         let settings = options;

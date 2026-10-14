@@ -200,10 +200,13 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     onmessage: undefined as undefined | ((event: { data: { file: File; options: import("../src/page-builder/media-optimise").MediaOptimiseOptions; trim?: import("../shared/media-records").MediaTrim } }) => Promise<void>),
     postMessage(value: { result?: typeof result; error?: string }) { assert.equal(value.error, undefined); result = value.result; },
   };
+  const fills: { style: string; args: number[] }[] = [];
   const transforms: number[][] = [], draws: { width: number; height: number; args: number[] }[] = [];
   class Canvas {
     constructor(readonly width: number, readonly height: number) {}
     getContext() { return {
+      fillStyle: "",
+      fillRect(...args: number[]) { fills.push({ style: this.fillStyle, args }); },
       setTransform(...matrix: number[]) { transforms.push(matrix); },
       drawImage: (_picture: unknown, ...args: number[]) => { draws.push({ width: this.width, height: this.height, args }); },
       getImageData() {
@@ -213,7 +216,7 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
       } }; }
     async convertToBlob(options: { type: string; quality?: number }) {
       calls.push({ width: this.width, ...options });
-      const size = this.width === 2000 ? options.type === "image/png" ? pngSize : options.type === "image/jpeg" ? jpegSize : mainSize : this.width === 960 ? 200 : 20;
+      const size = this.width === 1200 ? 1000 : this.width === 2000 ? options.type === "image/png" ? pngSize : options.type === "image/jpeg" ? jpegSize : mainSize : this.width === 960 ? 200 : 20;
       return new Blob([new Uint8Array(size)], { type: options.type === "image/avif" ? "image/png" : options.type });
     }
   }
@@ -269,6 +272,20 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.deepEqual(draws[0], { width: 500, height: 1000, args: [0, 0] });
     assert.ok(turned.outputs.every(output => !output.variantWidth || output.variantWidth < 500));
     assert.equal(closed, 7);
+    transparent = true; draws.length = 0;
+    const { SOCIAL_IMAGE_OPTIONS } = await import("../src/page-builder/social-image");
+    const sharing = await run(new File([png()], "transparent.png", { type: "image/png" }), { ...SOCIAL_IMAGE_OPTIONS, sharing: true });
+    assert.deepEqual(calls, [{ width: 1200, type: "image/jpeg", quality: .85 }]);
+    assert.deepEqual(fills, [{ style: "#fff", args: [0, 0, 1200, 630] }]);
+    assert.ok(sharing.outputs[0].blob.size > png().length);
+    assert.equal(sharing.outputs.length, 1);
+    assert.equal(sharing.outputs[0].blob.type, "image/jpeg");
+    assert.deepEqual([sharing.outputs[0].width, sharing.outputs[0].height], [1200, 630]);
+    assert.deepEqual(draws[0], { width: 1200, height: 630, args: [47.61904761904767, 0, 1904.7619047619046, 1000, 0, 0, 1200, 630] });
+    assert.notDeepEqual(new Uint8Array(await sharing.outputs[0].blob.arrayBuffer()), strippedImageSource(png(), "image/png", true));
+    const full = await run(undefined, { ...SOCIAL_IMAGE_OPTIONS, sharing: true }, { x: 0, y: 0, width: 1, height: 1 });
+    assert.equal(full.outputs[0].extension, "jpg");
+
   } finally {
     names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
   }

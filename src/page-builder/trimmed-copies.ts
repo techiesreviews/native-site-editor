@@ -12,10 +12,10 @@ export function trimStart(records: MediaRecords, path: string, paths: Iterable<s
   return from && new Set(paths).has(from.source) ? { source: from.source, trim: structuredClone(from.trim), previous: path } : { source: path };
 }
 
-export function trimmedCopyPath(options: { source: string; extension: string; copies: number[]; paths: Iterable<string>; previous?: string }): string {
+export function trimmedCopyPath(options: { source: string; extension: string; copies: number[]; paths: Iterable<string>; previous?: string; suffix?: string }): string {
   if (!/^[a-z0-9]+$/i.test(options.extension)) throw new Error("Choose a supported image extension.");
   const source = mediaStorageName(options.source, options.extension).replace(/\.[^./]+$/, "");
-  const base = source + "-crop", name = mediaStorageName(base + "." + options.extension, options.extension);
+  const base = source + "-" + (options.suffix ?? "crop"), name = mediaStorageName(base + "." + options.extension, options.extension);
   const paths = [...options.paths];
   // The chain number of a -crop name for this source: 1 unnumbered, N for -crop-N; 0 otherwise.
   const chain = (path: string) => {

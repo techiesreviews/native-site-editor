@@ -14,7 +14,7 @@ export interface MediaFileRecord {
   places?: Record<string, MediaPlaceRecord>;
   collections?: string[];
   description?: { text: string; byAgent?: true; [key: string]: unknown };
-  decorative?: true; alwaysKeep?: true;
+  decorative?: true; alwaysKeep?: true; sharing?: true;
   trimmedFrom?: { source: string; trim: MediaTrim; [key: string]: unknown };
   still?: string; subtitles?: string;
   [key: string]: unknown;
@@ -108,7 +108,7 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     }
     if (Object.keys(places).length) out.places = places; else delete out.places;
   }
-  flags(out, ["decorative", "alwaysKeep"], field);
+  flags(out, ["decorative", "alwaysKeep", "sharing"], field);
   optionalStrings(out, ["still", "subtitles"], field);
   if (out.trimmedFrom !== undefined) {
     const from = { ...object(out.trimmedFrom, `${field}.trimmedFrom`) };

@@ -17,6 +17,7 @@ export interface SiteSettingsHandlers {
   applyNavigation: (path: string, source: string, links: NavigationLink[]) => Promise<string | undefined>;
   /** The Media picker for an image setting; resolves to the chosen file's root path, or undefined on Cancel. */
   chooseImage: (place: string) => Promise<string | undefined>;
+  socialNote?: () => string | undefined;
   imageUrl: (path: string) => Promise<string | undefined>;
 }
 
@@ -217,6 +218,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       search.append(node("p", "site-settings__hint", "Adds noindex for search engines. This does not make a page private."));
       const theme = textField(search, "Theme colour", values["theme-color"], "A CSS colour for supported browser chrome, for example #2f6d3a.");
       const social = section(socialPanel, "Share card");
+      const note = handlers.socialNote?.();
+      if (note) social.append(node("p", "site-settings__hint", note));
       // The page source is the authority: a share title or description written
       // there that differs from the page's own is shown unlinked, whatever was
       // chosen here before. A remembered choice only applies while the tag is
@@ -321,6 +324,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       addImageChoices(favicon, options.images);
       general.append(button("Choose favicon…", () => chooseInto(favicon, "Favicon", dialog, handlers), "site-settings__link"));
       const social = section(socialPanel, "Default share image");
+      const note = handlers.socialNote?.();
+      if (note) social.append(node("p", "site-settings__hint", note));
       const image = textField(social, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
       addImageChoices(image, options.images);
       social.append(button("Choose default image…", () => chooseInto(image, "Default social image", dialog, handlers), "site-settings__link"));

@@ -4,11 +4,12 @@ import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate } from "./native-create";
 import { NATIVE_HOME_UNREAD } from "./controllers/pages-controller";
-import { resolveImportPath } from "../shared/css-imports";
 import { isImagePath } from "./native-structure";
-import { NATIVE_CONFIG_PATH, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import type { Reads, Outcome, PlanResult, Stamp, GuardedEdits } from "./guarded-edit";
 import type { AppStore } from "./app-store";
+import { socialImageAddress, socialImagePath, SOCIAL_IMAGE_NOTE } from "./page-builder/social-image";
+import type { SocialSharingRequest } from "./page-builder/social-sharing";
 import type { UrlPlan } from "./components/url-change";
 
 interface SettingsPorts {
@@ -25,6 +26,7 @@ interface SettingsPorts {
   nativeSiteReadForCreate: () => Promise<string | undefined>;
   /** The Media picker for an image setting; the chosen file's root path, or undefined on Cancel. */
   choosePath: (place: string) => Promise<string | undefined>;
+  shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean } | undefined>;
   nativeEffectiveSource: (path: string) => string | undefined;
   loadNativeAssets: (sources: Record<string, string>, changed: () => void) => Promise<void>;
 }
@@ -53,8 +55,37 @@ export function createNativeSettings(ports: SettingsPorts) {
       baseline = new Map(shown.map(path => [path, ports.guardedEdits.peek.source(path)] as const));
       return outcome.message;
     };
+    const refreshProof = () => {
+      since = ports.guardedEdits.stamp();
+      baseline = new Map(shown.map(path => [path, ports.guardedEdits.peek.source(path)] as const));
+    };
+    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"]) => {
+      if (stale() || sourcesChanged()) throw new Error(changed);
+      const stamp = since;
+      const expected = new Map([...baseline, [NATIVE_CONFIG_PATH, ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH)]]);
+      const result = await ports.shareImage({ value, previous, page,
+        siteUrl: nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+        canonical: readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical,
+        expectedSources: expected,
+        live: () => stamp.holds() && [...expected].every(([path, source]) => ports.guardedEdits.peek.source(path) === source), edits });
+      if (result) refreshProof();
+      return result;
+    };
     return createSiteSettings({
+      socialNote: () => socialImageAddress(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, "").missingAddress ? SOCIAL_IMAGE_NOTE : undefined,
       async applyPage(path, fields) {
+        const source = ports.guardedEdits.peek.source(path);
+        if (fields["og:image"] !== undefined && source !== undefined && fields["og:image"] !== readHeadSettings(source)["og:image"]) {
+          const shared = await share(fields["og:image"], readHeadSettings(source)["og:image"], path, address => {
+            let next = source;
+            for (const [field, value] of Object.entries({ ...fields, "og:image": address })) next = upsertHeadTag(next, field as HeadField, value);
+            return new Map([[path, { source, text: next }]]);
+          });
+          if (shared) {
+            fields["og:image"] = shared.address;
+            return undefined;
+          }
+        }
         // The element selected on the page as it was applied: its Undo and Redo select it again.
         const selected = ports.appStore.selection.value;
         const at = selected?.path === path && selected.node ? { path, node: [...selected.node] } : undefined;
@@ -79,6 +110,31 @@ export function createNativeSettings(ports: SettingsPorts) {
         return error;
       },
       async applySite(values) {
+        const site = ports.nativeSite;
+        if (site) {
+          const home = site.routes["/"], config = ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH);
+          const before = readSiteIdentity(config, ports.guardedEdits.peek.source(home) ?? "");
+          if (values.socialImage !== before.socialImage) {
+            const expected = new Map([NATIVE_CONFIG_PATH, ...new Set(Object.values(site.routes))].map(path => [path, ports.guardedEdits.peek.source(path)] as const));
+            const shared = await share(values.socialImage, before.socialImage, home, address => {
+              const nextValues = { ...values, socialImage: address };
+              const edits = new Map<string, { source: string | undefined; text: string }>();
+              edits.set(NATIVE_CONFIG_PATH, { source: config, text: withSiteIdentityConfig(config, nextValues) });
+              for (const path of new Set(Object.values(site.routes))) {
+                const source = expected.get(path);
+                if (source === undefined) throw new Error(`${path} could not be read. No settings were applied.`);
+                const text = withSiteIdentityPage(source, before, nextValues);
+                // Pages keeping their own image stay out of the batch.
+                if (text !== source) edits.set(path, { source, text });
+              }
+              return edits;
+            });
+            if (shared) {
+              values.socialImage = shared.address;
+              return undefined;
+            }
+          }
+        }
         return applied(await ports.guardedEdits.run(r => checkShown(r) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));
       },
       async open404() {
@@ -126,10 +182,13 @@ export function createNativeSettings(ports: SettingsPorts) {
           // Another site's image is not loaded: the preview says it is unavailable (the dialog shows that for a refusal).
           const unavailable = () => { throw new Error("Images from other sites are not previewed."); };
           try { url = new URL(value.trim()); origin = new URL(readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical || "x:").origin; } catch { return unavailable(); }
-          if (!origin || origin === "null" || url.origin !== origin) return unavailable();
+          const siteAddress = nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url;
+          let siteOrigin: string | undefined;
+          try { siteOrigin = siteAddress ? new URL(siteAddress).origin : undefined; } catch { /* No usable publishing address. */ }
+          if (url.origin !== origin && url.origin !== siteOrigin) return unavailable();
           try { own = decodeURIComponent(url.pathname).replace(/^\//, ""); } catch { return unavailable(); }
         }
-        const path = own ?? resolveImportPath(page, value);
+        const path = own ?? socialImagePath(value, page);
         if (!path || !isImagePath(path)) return undefined;
         await ports.loadNativeAssets({ "index.html": `<img src="/${escapeText(path).replace(/"/g, "&quot;")}">` }, () => {});
         return stale() || sourcesChanged() ? undefined : ports.nativeAssets.get(path);

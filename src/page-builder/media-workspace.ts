@@ -121,6 +121,14 @@ export interface MediaTrimRequest {
   };
 }
 
+export interface MediaShareRequest {
+  source: string; sourceVersion: string | undefined; result: MediaOptimiseResult;
+  trim: MediaTrim; previous?: string; live?: () => boolean;
+  expectedSources?: Map<string, string | undefined>;
+  /** Each edited file carries the exact source the settings panel used. */
+  edits(path: string): Map<string, { source: string | undefined; text: string }>;
+}
+
 /** Repository adapter; the panel never writes directly to drafts, bytes or source models. */
 export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>) {
   let session: MediaWorkspaceContext | undefined;
@@ -517,6 +525,75 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     await sweep(ctx);
     return plan.main;
   };
+  const share = async (request: MediaShareRequest) => {
+    const ctx = await context();
+    ctx.assertLive();
+    const { source, sourceVersion, trim, result, previous } = request;
+    if (sourceVersion === undefined || ctx.assetVersion(source) !== sourceVersion)
+      throw new Error("The original picture changed meanwhile. Nothing was saved.");
+    const versions = familyVersions(ctx, [source, ...previous ? familyPaths(previous, ctx.paths) : []]);
+    const { batch, metadata } = await prepare(ctx, "Social image set");
+    for (const [path, version] of versions) batch.expectedAssets.set(path, version);
+    batch.expectedAssets.set(source, sourceVersion);
+    assetGuard(batch, [source]);
+    for (const [file, expected] of request.expectedSources ?? []) {
+      const current = await ctx.read(file);
+      ctx.assertLive();
+      if (current !== expected) throw new Error("The repository or source changed meanwhile. Nothing was saved.");
+      batch.expectedSources.set(file, expected);
+    }
+    const { socialCopyPath } = await import("./social-image");
+    const { validTrim } = await import("./trim-geometry");
+    ctx.assertLive();
+    validTrim(trim);
+    if (previous && (previous === source || !metadata.files[previous]?.sharing))
+      throw new Error("The previous image must be a sharing copy.");
+    const output = result.outputs[0];
+    if (result.outputs.length !== 1 || !output || output.variantWidth || output.extension !== "jpg" || output.blob.type !== "image/jpeg" || result.original)
+      throw new Error("A sharing copy must be one JPEG image.");
+    const problem = uploadProblem({ name: source, size: output.blob.size });
+    if (problem) throw new Error(problem);
+    for (const folder of ["media", "media/images"]) if (batch.expectedPaths.includes(folder))
+      throw new Error(folder + " is a file, so it cannot contain uploaded files.");
+    const path = socialCopyPath({ source, paths: batch.expectedPaths, records: metadata, previous });
+    batch.live = request.live;
+    for (const [file, edit] of request.edits(path)) {
+      const current = await ctx.read(file);
+      ctx.assertLive();
+      if (current !== edit.source) throw new Error("The repository or source changed meanwhile. Reopen settings and try again.");
+      batch.expectedSources.set(file, edit.source);
+      batch.edits.set(file, edit.text);
+    }
+    let next: MediaRecords = { ...metadata, files: { ...metadata.files,
+      [path]: { sharing: true, trimmedFrom: { source, trim: structuredClone(trim) } } } };
+    let removes: string[] = [];
+    if (previous && !metadata.files[previous]?.alwaysKeep) {
+      const members = familyPaths(previous, batch.expectedPaths), text: Record<string, string> = {};
+      let complete = true;
+      const files = batch.expectedPaths.filter(file => file !== MEDIA_RECORDS_PATH && isMediaTextFile(file));
+      for (let index = 0; index < files.length; index += 12) {
+        const values = await Promise.all(files.slice(index, index + 12).map(async file => [file, await ctx.read(file).catch(() => undefined)] as const));
+        ctx.assertLive();
+        for (const [file, value] of values) {
+          if (value === undefined) { complete = false; continue; }
+          text[file] = batch.edits.get(file) ?? value;
+          if (!batch.expectedAssets.has(file) && !batch.expectedSources.has(file)) batch.expectedSources.set(file, value);
+        }
+      }
+      for (const [file, value] of batch.edits) if (file !== MEDIA_RECORDS_PATH) text[file] = value;
+      const usage = wideUsage(members, text, ctx);
+      if (complete && !members.some(member => usage[member].files.length || metadata.files[member]?.alwaysKeep)) {
+        batch.deletes.push(...members);
+        removes = members;
+        next = await removedRecords(ctx, next, members);
+      }
+    }
+    recordsEdit(batch, metadata, next);
+    batch.uploads.push({ path, blob: output.blob });
+    await commit(ctx, batch);
+    if (removes.length) await sweep(ctx);
+    return path;
+  };
   return {
     async describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }) {
       const ctx = active(), words = change.text?.trim();
@@ -622,6 +699,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     },
     trim: trimCopy,
     replace,
+    share,
     async rename(path, name, options) {
       const ctx = active();
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));
@@ -706,5 +784,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { replace(request: MediaReplaceRequest): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }
