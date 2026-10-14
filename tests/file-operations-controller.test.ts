@@ -278,7 +278,7 @@ test("Files delete removes the family in one plan and explains the members", asy
 
 test("taken family destination refuses the whole Files rename", async () => {
   const h = fixture(true, { ...imageFamily, "images/garden-480w.webp": "taken" });
-  assert.match((await h.controller.moveFileTarget(imageTarget, "images/garden.webp", "rename"))!, /already exists/);
+  assert.match((await h.controller.moveFileTarget(imageTarget, "images/garden.webp", "rename"))!, /is taken. Try images\/garden-2.webp/);
   assert.deepEqual(h.memory.steps(), []); assert.ok(h.memory.workspace.exists(imageTarget.path));
 });
 
@@ -304,4 +304,44 @@ test("Restore on a deleted main brings back its deleted family, not members rena
   ]) });
   h.controller.restoreFileTarget({ ...imageTarget, gone: true });
   assert.deepEqual(h.restored, [["images/photo.webp", "images/photo-480w.webp", "media/originals/photo.HEIC"]]);
+});
+
+for (const keep of [undefined, false, true]) test(`Files media rename rewrites all text, follows records, forwarding ${keep}, one Undo without a page`, async () => {
+  const h = fixture(true, {
+    "images/a.webp": "binary", "images/a-480.webp": "copy",
+    "app.js": 'const image = "/images/a.webp";',
+    ".editor/media.json": '{"version":2,"collections":["Travel"],"files":{"images/a.webp":{"alwaysKeep":true,"collections":["Travel"],"description":{"text":"Tram"}}}}',
+  });
+  h.memory.close();
+  assert.equal(await h.controller.moveFileTarget({ path: "images/a.webp", name: "a.webp", folder: false }, "other/garden.webp", "move", { keepOldAddress: keep }), undefined);
+  assert.equal(h.memory.workspace.source("app.js"), 'const image = "/other/garden.webp";');
+  assert.equal(h.memory.workspace.source("_redirects"), keep === false ? undefined : '/images/a.webp /other/garden.webp 301\n/images/a-480.webp /other/garden-480.webp 301\n');
+  const records = JSON.parse(h.memory.workspace.source(".editor/media.json")!);
+  assert.equal(records.files["other/garden.webp"].alwaysKeep, true);
+  assert.deepEqual(records.files["other/garden.webp"].collections, ["Travel"]);
+  assert.equal(records.files["other/garden.webp"].description.text, "Tram");
+  assert.deepEqual(h.memory.steps(), ["operation"]);
+  assert.equal(h.memory.undo(), true);
+  assert.equal(h.memory.workspace.source("app.js"), 'const image = "/images/a.webp";');
+  assert.equal(h.memory.workspace.source("_redirects"), undefined);
+  assert.equal(await h.memory.redo(), true);
+  assert.equal(h.memory.workspace.source("app.js"), 'const image = "/other/garden.webp";');
+});
+
+test("a wider text read outside the preview baseline stays proved through structural Undo and Redo", async () => {
+  const h = fixture(true, { "images/a.webp": "binary", "images/untouched.svg": '<svg/>', "notes.md": 'No image mentions.' });
+  const base = h.memory.workspace.base.bind(h.memory.workspace);
+  h.memory.workspace.base = path => ["images/untouched.svg", "notes.md"].includes(path) ? undefined : base(path);
+  assert.equal(await h.controller.moveFileTarget({ path: "images/a.webp", name: "a.webp", folder: false }, "images/b.webp", "rename"), undefined);
+  assert.equal(h.memory.undo(), true);
+  assert.equal(h.memory.redo(), true);
+  h.memory.writeDraft("notes.md", "Changed meanwhile");
+  assert.equal(h.memory.undo(), false);
+});
+
+test("Files rename of a font is a plain file rename: no media tidying of its name", async () => {
+  const h = fixture(true, { "fonts/Inter-Bold.woff2": "binary", "app.js": 'const font = "/fonts/Inter-Bold.woff2";' });
+  assert.equal(await h.controller.moveFileTarget({ path: "fonts/Inter-Bold.woff2", name: "Inter-Bold.woff2", folder: false }, "fonts/Inter SemiBold.woff2", "rename"), undefined);
+  assert.ok(h.memory.workspace.exists("fonts/Inter SemiBold.woff2"));
+  assert.equal(h.memory.workspace.source("_redirects"), undefined);
 });

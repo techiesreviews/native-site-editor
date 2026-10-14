@@ -203,6 +203,8 @@ export function createCommit(ws: EditorWorkspace) {
     // Model proofs guard the text shown separately. During a deferred page reload, stored drafts
     // are the file graph's source truth.
     const storedSource = (path: string) => {
+      // Untouched reads can include the wider media text index, not just preview sources.
+      if (!after.has(path)) return ws.source(path);
       const record = store.get(scope, path);
       return record ? textOf(record) : baseSource(path);
     };

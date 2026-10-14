@@ -34,7 +34,7 @@ export function planNativeStructuralDrafts(input: {
   for (const [path, content] of input.edits) {
     const draft = after.get(path), base = bases.get(path);
     if (draft && !draft.deleted && draft.baseSha !== null && !draft.movedFrom && content === draft.original) after.set(path, undefined);
-    else if (draft && !draft.deleted) after.set(path, { ...draft, content, updatedAt: now });
+    else if (draft && !draft.deleted) after.set(path, { ...draft, ...(draft.opaque ? { opaque: undefined, sourceSha: undefined, upload: undefined } : {}), content, updatedAt: now });
     else if (base && content === base.text) continue;
     else if (draft?.deleted) after.set(path, { ...scope, version: 1, path, baseSha: draft.baseSha, original: draft.original, content, updatedAt: now });
     else if (base) after.set(path, { ...scope, version: 1, path, baseSha: base.sha, original: base.text, content, updatedAt: now });

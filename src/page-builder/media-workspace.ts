@@ -7,13 +7,14 @@ import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
-import { uploadProblem, uploadPath, uploadFileName, uploadImageType } from "../uploads";
+import { uploadProblem, uploadPath, uploadFileName } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
-import { alwaysKeptFiles, mediaFamilyOf, renamedFamily } from "./media-families";
+import { alwaysKeptFiles, mediaFamilyOf } from "./media-families";
 import { mediaEscape, mediaVariantName } from "./media-markup";
+import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-rename";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
 
@@ -160,21 +161,29 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     return next;
   };
   /** A family rename: the moves, every reference and the records follow; a refusal throws before any change. */
-  const renameInto = (batch: MediaWorkspaceBatch, text: Record<string, string>, records: MediaRecords, path: string, name: string) => {
-    const family = mediaFamilyOf(path, batch.expectedPaths);
+  // The rename plan (media-rename.ts): the whole family, every mention in every text file, records,
+  // and forwarding in `_redirects` (by default for Always keep files). A taken name suggests a free one.
+  const renameInto = async (ctx: MediaWorkspaceContext, batch: MediaWorkspaceBatch, text: Record<string, string>, records: MediaRecords, path: string, name: string, options?: { keepOldAddress?: boolean }) => {
     if (!name.trim() || /[\\/\u0000-\u001f]/.test(name)) throw new Error("Enter an image filename without a folder.");
-    const filename = uploadFileName(name);
-    if (!uploadImageType(filename) || uploadImageType(filename) !== uploadImageType(path)) throw new Error("Keep the image's file format when renaming it.");
-    const to = path.slice(0, path.lastIndexOf("/") + 1) + filename;
+    const extension = /\.[^./]+$/.exec(path)?.[0] ?? "";
+    const typed = /\.[^./]+$/.exec(name)?.[0];
+    if (typed && typed.toLowerCase() !== extension.toLowerCase()) throw new Error("Keep the image's file format when renaming it.");
+    const to = path.slice(0, path.lastIndexOf("/") + 1) + tidyMediaName((typed ? name.slice(0, -typed.length) : name) + extension);
     if (to === path) return records;
-    const moves = family ? renamedFamily(family, to) : [{ from: path, to }];
-    for (const move of moves) {
-      if (move.from !== move.to && batch.expectedPaths.includes(move.to)) throw new Error(`${move.to} already exists. Choose another filename.`);
-    }
-    batch.moves.push(...moves.filter(move => move.from !== move.to));
-    for (const move of moves) rewriteInto(batch, text, move.from, move.to);
-    // Every member's record follows its file, in the same batch as the moves.
-    return moves.reduce((next, move) => move.from === move.to ? next : renameMediaRecord(next, move.from, move.to), records);
+    const redirects = await ctx.read("_redirects");
+    ctx.assertLive();
+    batch.expectedSources.set("_redirects", redirects);
+    // Pages this batch already changed (details' description) are rewritten from their new text.
+    const sources: Record<string, string | undefined> = { ...text, _redirects: redirects };
+    for (const [file, source] of batch.edits) if (file !== MEDIA_RECORDS_PATH) sources[file] = source;
+    const plan = planMediaRename({ from: path, to, paths: batch.expectedPaths, sources, records,
+      site: { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components },
+      keepOldAddress: options?.keepOldAddress ?? Boolean(records.files[path]?.alwaysKeep) });
+    if ("taken" in plan) throw new MediaNameTakenError(plan.taken, plan.suggestion);
+    batch.moves.push(...plan.moves);
+    for (const [file, source] of plan.edits) batch.edits.set(file, source);
+    if (plan.redirects !== undefined) batch.edits.set("_redirects", plan.redirects);
+    return plan.records;
   };
   const familyPaths = (path: string, paths: string[]) => {
     const family = mediaFamilyOf(path, paths);
@@ -315,7 +324,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, metadataInto(batch, text, metadata, changes));
       await commit(ctx, batch);
     },
-    async details(path, changes, name) {
+    async details(path, changes, name, options) {
       // File details' Save: its fields and its rename succeed whole, fail whole and undo as one step.
       const ctx = active();
       const versions = name === undefined ? undefined : familyVersions(ctx, familyPaths(path, ctx.paths));
@@ -324,7 +333,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (name !== undefined) {
         for (const [member, version] of versions!) batch.expectedAssets.set(member, version);
         assetGuard(batch, [...versions!.keys()]);
-        next = renameInto(batch, text, next, path, name);
+        next = await renameInto(ctx, batch, text, next, path, name, options);
       }
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
@@ -346,13 +355,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     import: importMedia,
-    async rename(path, name) {
+    async rename(path, name, options) {
       const ctx = active();
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));
       const { batch, text, metadata } = await prepare(ctx, "Rename image", true);
       for (const [member, version] of versions) batch.expectedAssets.set(member, version);
       assetGuard(batch, [...versions.keys()]);
-      recordsEdit(batch, metadata, renameInto(batch, text, metadata, path, name));
+      recordsEdit(batch, metadata, await renameInto(ctx, batch, text, metadata, path, name, options));
       await commit(ctx, batch);
     },
     async check({ file, page, text: seen }, text) {

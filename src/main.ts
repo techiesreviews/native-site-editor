@@ -816,7 +816,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   site: () => nativeSite,
   files: () => nativeFiles(),
   store: draftStore,
-  source: path => nativeEffectiveSource(path),
+  source: path => mediaTextSource(path),
   exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   base: path => nativeBaseSources.get(path),
   branchText,
@@ -1725,6 +1725,7 @@ let nativeEngaged = false;
 const nativeBaseSources = new Map<string, string>();
 let mediaTextKey = "";
 const mediaText = new Map<string, string>();
+const mediaOpaqueText = new Map<string, { sha: string; text: string }>();
 const nativeComponentStyles = new Map<string, string>();
 const nativeMissingComponentStyles = new Set<string>();
 const nativeComponentStyleRequests = new Set<string>();
@@ -2342,10 +2343,15 @@ function discardUpload(path: string) {
 
 // Text read for usage (scripts, data, notes…) is kept out of the preview source map and out of
 // nativeEffectiveSource, whose readers (the draft store's commit check) know only HTML and CSS.
-// Only media readers and their batch guard see it.
+// Media batches and guarded file operations read it through mediaTextSource.
 function mediaTextSource(path: string, scope = draftScope()) {
   const held = nativeEffectiveSource(path, scope);
-  if (held !== undefined || (scope && draftStore().get(scope, path))) return held;
+  const draft = scope ? draftStore().get(scope, path) : undefined;
+  if (draft?.opaque && !draft.deleted && scope) {
+    const cached = mediaOpaqueText.get(draftKey(scope, path));
+    return cached?.sha === draft.sourceSha ? cached?.text : undefined;
+  }
+  if (held !== undefined || draft) return held;
   return mediaTextKey === nativeTextIndexScopeKey() ? mediaText.get(path) : undefined;
 }
 async function readMediaText(path: string) {
@@ -2358,7 +2364,9 @@ async function readMediaText(path: string) {
   // An uploaded or moved file (an SVG, say) holds no text in its draft: read its bytes.
   if (scope && draft?.opaque && draft.sourceSha) {
     const text = draft.upload ? await (await uploadBytes().get(uploadKey(scope, draft.sourceSha)))?.text() : await readFile(repo.full_name, draft.sourceSha);
-    return key === nativeTextIndexScopeKey() ? text : undefined;
+    if (key !== nativeTextIndexScopeKey() || draftStore().get(scope, path) !== draft) return undefined;
+    if (text !== undefined) mediaOpaqueText.set(draftKey(scope, path), { sha: draft.sourceSha, text });
+    return text;
   }
   const entry = await findEntry(path);
   if (key !== nativeTextIndexScopeKey() || !entry) return undefined;
@@ -2402,7 +2410,7 @@ const mediaController = createMediaController({
   entry: entryAt,
   readText: readFile,
   rememberSource: (path, source) => {
-    // Pages, styles and the media records are what media batches edit: the draft store checks them against this map.
+    // Native preview sources stay separate from the wider text index.
     if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) nativeBaseSources.set(path, source);
     else {
       const key = nativeTextIndexScopeKey();
@@ -2468,7 +2476,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
     scope, store: draftStore(), bytes: uploadBytes(), stamp,
     paths: batchPaths, source: path => mediaTextSource(path, scope),
     assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
-    entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
+    entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: mediaTextSource(path, scope) } : undefined; },
     modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
     history: (undo, redo) => {
@@ -2524,6 +2532,7 @@ function deactivateNative() {
   nativeBaseFiles = [];
   nativeEngaged = false;
   nativeBaseSources.clear();
+  mediaOpaqueText.clear();
   nativeComponentStyles.clear();
   nativeMissingComponentStyles.clear();
   nativeComponentStyleRequests.clear();
@@ -4496,7 +4505,7 @@ const agentSiteActions: AgentSiteActions = {
     withAgentAnswers({ option: keepOldUrl }, async () => {
       const target = agentFileTarget(path);
       if (!target) return `${path} does not exist.`;
-      return moveFileTarget(target, to, parentOf(path) === parentOf(to) ? "rename" : "move");
+      return moveFileTarget(target, to, parentOf(path) === parentOf(to) ? "rename" : "move", { keepOldAddress: keepOldUrl });
     }),
   deleteFile: (path) =>
     withAgentAnswers({}, async () => {

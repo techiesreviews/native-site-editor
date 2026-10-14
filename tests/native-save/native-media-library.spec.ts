@@ -230,3 +230,37 @@ test("renaming an image family keeps responsive copies when placing it on a page
   await expect(image).toHaveAttribute("srcset", /\/images\/garden-family-480w.svg 480w/);
   await expect(image).toHaveAttribute("srcset", /\/images\/garden-family-960w.svg 960w/);
 });
+
+// Default fixture: wider text and forwarding travel with the Images rename's single history step.
+test("rename rewrites scripts, data, notes and settings with forwarding through Undo and Redo", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const before = {
+    "app.js": 'const image="\\/images\\/studio-desk.svg?version=1#hero";',
+    "data.json": '{"image":"/images/studio-desk.svg"}',
+    "sitemap.xml": '<loc>/images/studio-desk.svg?a=1&amp;b=2</loc>',
+    "AGENTS.md": 'Use /images/studio-desk.svg.',
+    "_headers": '/images/studio-desk.svg\n  Cache-Control: max-age=10\n',
+    "_redirects": '/ancient /images/studio-desk.svg 301\n',
+  };
+  for (const [path, content] of Object.entries({ ...before,
+    ".editor/media.json": '{"version":2,"collections":[],"files":{"images/studio-desk.svg":{"alwaysKeep":true}}}',
+  })) expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  await open(page, baseURL);
+  const panel = library(page);
+  await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await panel.getByLabel("New image filename", { exact: true }).fill("garden-desk.svg");
+  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Details for images/garden-desk.svg", exact: true })).toBeVisible();
+  for (const [path, content] of Object.entries(before)) {
+    const after = content.replaceAll("studio-desk.svg", "garden-desk.svg") + (path === "_redirects" ? '/images/studio-desk.svg /images/garden-desk.svg 301\n' : "");
+    await expect.poll(async () => (await storedDraft(page, path))?.content).toBe(after);
+  }
+  await closeLibrary(page);
+  await page.locator(".code-editor__undo").first().click();
+  for (const path of Object.keys(before)) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
+  await page.locator(".code-editor__redo").first().click();
+  for (const [path, content] of Object.entries(before)) {
+    const after = content.replaceAll("studio-desk.svg", "garden-desk.svg") + (path === "_redirects" ? '/images/studio-desk.svg /images/garden-desk.svg 301\n' : "");
+    await expect.poll(async () => (await storedDraft(page, path))?.content).toBe(after);
+  }
+});

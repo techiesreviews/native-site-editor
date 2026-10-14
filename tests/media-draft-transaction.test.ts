@@ -176,3 +176,58 @@ test("a repository switch during the media workspace load writes nothing", async
   assert.equal(h.bytes.map.size, 0);
   assert.equal(h.steps(), 0);
 });
+
+test("wide text edits and a new redirects file stage, commit, Undo and Redo together", async () => {
+  const h = harness();
+  const base = new Map(["app.js", "data.json", "feed.xml", "AGENTS.md", "_headers", "_redirects"].map(path => [path, `before ${path}`]));
+  base.delete("_redirects");
+  h.batch.uploads = [];
+  h.batch.edits.clear();
+  h.batch.expectedSources.clear();
+  h.batch.expectedPaths = [...base.keys()];
+  h.host.paths = () => [...new Set([...base.keys(), ...h.records.keys()])];
+  h.host.source = path => h.records.get(path)?.content ?? base.get(path);
+  h.host.entry = async path => base.has(path) ? { path, sha: `sha-${path}`, mode: "100644", text: base.get(path) } : undefined;
+  for (const path of [...base.keys(), "_redirects"]) {
+    h.batch.edits.set(path, `after ${path}`);
+    h.batch.expectedSources.set(path, base.get(path));
+  }
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(h.steps(), 1);
+  for (const path of h.batch.edits.keys()) {
+    assert.equal(h.records.get(path)?.content, `after ${path}`);
+    assert.equal(h.records.get(path)?.original, base.get(path) ?? "");
+    assert.equal(h.records.get(path)?.baseSha, base.has(path) ? `sha-${path}` : null);
+  }
+  assert.equal(h.undo(), true);
+  assert.equal(h.records.size, 0);
+  for (const [path, source] of base) assert.equal(h.host.source(path), source);
+  assert.equal(h.host.source("_redirects"), undefined);
+  assert.equal(await h.redo(), true);
+  for (const [path, source] of h.batch.edits) assert.equal(h.host.source(path), source);
+});
+
+test("a wide text source changed during staging refuses the entire batch", async () => {
+  const h = harness(); let source = "before";
+  h.host.source = path => path === "app.js" ? source : h.records.get(path)?.content;
+  h.batch.expectedSources.set("app.js", source); h.batch.edits.set("app.js", "after");
+  const put = h.bytes.put.bind(h.bytes);
+  h.bytes.put = async (key, blob) => { await put(key, blob); source = "external"; };
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /app.js changed/);
+  assert.equal(h.records.size, 0); assert.equal(h.bytes.map.size, 0); assert.equal(source, "external");
+});
+
+test("an uploaded SVG edited as text publishes its rewritten content and restores its bytes on Undo", async () => {
+  const h = harness();
+  const before: SavedDraft = { ...h.host.scope, version: 1, path: "image.svg", baseSha: null, original: "", content: "", sourceSha: "svg-sha", opaque: true, upload: { size: 10, type: "image/svg+xml" }, updatedAt: 1 };
+  h.records.set(before.path, before);
+  h.batch.uploads = []; h.batch.edits = new Map([[before.path, '<image href="/new.webp"/>']]);
+  h.batch.expectedPaths = [before.path]; h.batch.expectedSources.clear();
+  h.host.source = path => { const draft = h.records.get(path); return draft?.opaque ? '<image href="/old.webp"/>' : draft?.content; };
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(h.records.get(before.path)?.opaque, undefined);
+  assert.equal(h.records.get(before.path)?.sourceSha, undefined);
+  assert.equal(h.records.get(before.path)?.content, '<image href="/new.webp"/>');
+  assert.equal(h.undo(), true); assert.equal(h.records.get(before.path), before);
+  assert.equal(await h.redo(), true); assert.equal(h.records.get(before.path)?.opaque, undefined);
+});

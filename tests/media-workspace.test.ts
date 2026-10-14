@@ -233,7 +233,7 @@ test("hidden original changes during preparation reject the whole family rename"
 
 test("taken copy destination refuses the entire Images rename", async () => {
   const f = fixture(); addFamily(f); f.paths.add("images/garden-480w.webp");
-  await f.host.load(); await assert.rejects(f.host.rename("images/a.png", "garden.png"), /already exists/);
+  await f.host.load(); await assert.rejects(f.host.rename("images/a.png", "garden.png"), /is taken. Try images\/garden-2.png/);
   assert.equal(f.batches.length, 0);
 });
 
@@ -273,7 +273,7 @@ test("description metadata rewrites shared and missing page alts with records in
   assert.equal(f.text.get("index.html"), decorated);
 });
 
-test("library load and Delete unused read scripts, notes and SVG text, while rename stays HTML/CSS", async () => {
+test("library load and Delete unused read scripts, notes and SVG text, and rename rewrites them", async () => {
   const f = fixture();
   f.context.origins = ["https://native.example"];
   for (const [file, source] of [
@@ -285,7 +285,7 @@ test("library load and Delete unused read scripts, notes and SVG text, while ren
   assert.deepEqual(loaded.usage["images/unused.png"].files, ["embedded.svg", "app.js", "AGENTS.md"]);
   await assert.rejects(() => f.host.remove!(["images/unused.png"], true), /now referenced/);
   await f.host.rename!("images/unused.png", "renamed.png");
-  assert.equal(f.text.get("app.js"), 'const image = "/images/unused.png"');
+  assert.equal(f.text.get("app.js"), 'const image = "/images/renamed.png"');
 });
 
 test("an uploaded SVG the host holds no source for is proved by its revision, so other renames still apply", async () => {
@@ -370,7 +370,7 @@ test("File details renames a whole family with its fields in one step; a taken c
   const taken = fixture(); addFamily(taken); taken.paths.add("images/garden-480w.webp");
   const untouched = new Map(taken.text);
   await taken.host.load();
-  await assert.rejects(taken.host.details!("images/a.png", { alt: "A garden", decorative: false, alwaysKeep: true }, "garden.png"), /already exists/);
+  await assert.rejects(taken.host.details!("images/a.png", { alt: "A garden", decorative: false, alwaysKeep: true }, "garden.png"), /images\/garden.png is taken. Try images\/garden-2.png/);
   assert.equal(taken.batches.length, 0); assert.deepEqual(taken.text, untouched);
 });
 
@@ -555,4 +555,20 @@ test("agent collection actions call Media's rules, each undoable with no page op
   f.history.pop()!(); assert.ok(records().collections.includes("Trip"));
   f.history.pop()!(); assert.deepEqual(records().collections, ["hero"]);
   assert.ok(f.batches.every(batch => batch.edits.size === 1 && batch.edits.has(MEDIA_RECORDS_PATH)));
+});
+
+test("Always keep forwards by default; explicit false overrides and suggestion is exposed", async () => {
+  for (const keep of [undefined, false, true]) {
+    const f = fixture();
+    f.text.set(MEDIA_RECORDS_PATH, '{"version":2,"collections":[],"files":{"images/a.png":{"alwaysKeep":true}}}');
+    await f.host.load();
+    await f.host.rename("images/a.png", "Garden", keep === undefined ? undefined : { keepOldAddress: keep });
+    assert.equal(f.text.get("_redirects"), keep === false ? undefined : '/images/a.png /images/garden.png 301\n');
+    assert.equal(f.history.length, 1);
+    f.history.pop()!();
+    assert.equal(f.text.has("_redirects"), false);
+  }
+  const f = fixture(); f.paths.add("images/garden.png"); await f.host.load();
+  await assert.rejects(f.host.rename("images/a.png", "Garden.png"), error => error instanceof Error && "suggestion" in error && error.suggestion === "images/garden-2.png");
+  await assert.rejects(f.host.rename("images/a.png", "Garden.webp"), /Keep the image's file format/);
 });

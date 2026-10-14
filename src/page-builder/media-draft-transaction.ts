@@ -125,7 +125,8 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       for (const path of batch.deletes) if (deleteFile(local, scope, state.entries.get(path) ?? { path }) === "none") throw new Error(`${path} cannot be deleted.`);
       for (const [path, content] of batch.edits) {
         const previous = planned.get(path), original = host.source(path) ?? "";
-        planned.set(path, previous ? { ...previous, content, updatedAt: Date.now() } : { ...scope, version: 1, path, baseSha: state.entries.get(path)?.sha ?? null, original, content, updatedAt: Date.now() });
+        const textDraft = previous?.opaque ? { ...previous, opaque: undefined, sourceSha: undefined, upload: undefined } : previous;
+        planned.set(path, textDraft ? { ...textDraft, content, updatedAt: Date.now() } : { ...scope, version: 1, path, baseSha: state.entries.get(path)?.sha ?? null, original, content, updatedAt: Date.now() });
       }
       for (const [path, upload] of state.staged) {
         if (host.paths().includes(path) || planned.get(path)) throw new Error(`${path} already exists.`);

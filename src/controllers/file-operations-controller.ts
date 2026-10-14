@@ -54,6 +54,8 @@ export interface FileOperationsPorts {
   filesTabOpen(): boolean;
 }
 
+const MEDIA_FILE = /\.(?:svg|png|jpe?g|gif|webp|avif|heic|heif|ico|bmp|mp4|m4v|webm|mov|ogv|mp3|m4a|aac|wav|ogg|oga|opus|flac|pdf)$/i;
+
 export function createFileOperationsController(ports: FileOperationsPorts) {
   function restoreFileTarget(target: FileRowTarget) {
     const state = ports.treeState();
@@ -178,12 +180,30 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
 
   // Renames or moves a file or folder to `to`: the pages among them that other
   // pages link to are named in a confirmation first.
-  async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move"): Promise<string | undefined> {
+  async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean }): Promise<string | undefined> {
     // The stamp, the file list and the target's drafts as the action began: held through the
     // index, the branch reads and the dialog (the guard is proved before the plan and at the write).
     const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source);
+    // Media files (what the Media screen lists) rename by the media plan; fonts, archives and the rest keep the file rename.
+    const media = !source.folder && (Boolean(targetFamily(source)) || MEDIA_FILE.test(source.path));
+    const [rename, { isMediaTextFile }] = media
+      ? await Promise.all([import("../page-builder/media-rename"), import("../page-builder/media-mentions")])
+      : [undefined, { isMediaTextFile: (_path: string) => false }];
+    if (!since.holds()) return "The repository changed meanwhile. Try again.";
+    if (rename) {
+      const extension = /\.[^./]+$/.exec(source.path)?.[0] ?? "";
+      const typed = /\.[^./]+$/.exec(to)?.[0] ?? "";
+      if (typed.toLowerCase() !== extension.toLowerCase()) return "Keep the image's file format when renaming it.";
+      if (operation === "rename") to = to.slice(0, to.lastIndexOf("/") + 1) + rename.tidyMediaName(to.split("/").at(-1)!);
+    }
+    const takenMessage = (destination: string) => {
+      const family = targetFamily(source);
+      const taken = (candidate: string) => (family ? renamedFamily(family, candidate) : [{ from: source.path, to: candidate }]).some(move => ports.nativeFiles().includes(move.to) && move.from !== move.to);
+      const suggestion = rename!.suggestMediaName(to, candidate => candidate === destination || taken(candidate));
+      return `${to} is taken. Try ${suggestion}.`;
+    };
     const problem = moveProblem(source, to, operation);
-    if (problem) return problem;
+    if (problem) return rename && ports.nativeFiles().includes(to) ? takenMessage(to) : problem;
     if (to === source.path) return undefined;
     const indexed = await ports.ensureNativeTextIndex();
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
@@ -195,15 +215,24 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       for (const move of familyMoves ?? [{ from: source.path, to }]) {
         const target = { path: move.from, name: move.from, folder: source.folder };
         const problem = moveProblem(target, move.to, operation);
-        if (problem) return problem;
+        if (problem) return rename && ports.nativeFiles().includes(move.to) ? takenMessage(move.to) : problem;
         const taken = await ports.branchPathProblem(move.to);
         if (!since.holds()) return "The repository changed meanwhile. Try again.";
-        if (taken) return taken;
+        if (taken) return rename ? takenMessage(move.to) : taken;
       }
       found = await familyFiles(source, true);
     } catch (error) { return error instanceof Error ? error.message : "The files could not be read."; }
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     if (!found.length) return `${source.path} has no files to ${operation}.`;
+    if (rename && ports.readMediaText) {
+      try {
+        const textFiles = [...new Set([...ports.nativeFiles().filter(isMediaTextFile), ".editor/media.json"])];
+        for (let at = 0; at < textFiles.length; at += 12) {
+          await Promise.all(textFiles.slice(at, at + 12).map(path => ports.readMediaText!(path)));
+          if (!since.holds()) return "The repository changed meanwhile. Try again.";
+        }
+      } catch (error) { return error instanceof Error ? error.message : "The files that use this could not be read."; }
+    }
     const destinations = new Map(familyMoves?.map(move => [move.from, move.to]));
     const ops = found.filter(file => !familyMoves || destinations.has(file.path))
       .map(file => ({ file, to: destinations.get(file.path) ?? movedPath(file.path, source.path, to) }));
@@ -211,6 +240,32 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     let cancelled = false, urlDialog = false;
     const outcome = await ports.edits.run(async r => {
       for (const file of found) { r.exists(file.path); r.source(file.path); }
+      if (rename) {
+        const { parseMediaRecords, serializeMediaRecords, MEDIA_RECORDS_PATH } = await import("../../shared/media-records");
+        const sources = Object.fromEntries(ports.nativeFiles().filter(isMediaTextFile).map(path => [path, r.source(path)]));
+        const missing = Object.keys(sources).find(path => sources[path] === undefined);
+        if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was moved.` };
+        const records = parseMediaRecords(r.source(MEDIA_RECORDS_PATH));
+        sources._redirects = r.source(NATIVE_REDIRECTS_PATH);
+        const site = r.site();
+        const plan = rename.planMediaRename({ from: source.path, to, paths: ports.nativeFiles(), sources, records,
+          site: { origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components },
+          keepOldAddress: options?.keepOldAddress ?? Boolean(records.files[source.path]?.alwaysKeep) });
+        if ("taken" in plan) return { refuse: `${plan.taken} is taken. Try ${plan.suggestion}.` };
+        if (serializeMediaRecords(records) !== serializeMediaRecords(plan.records)) plan.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(plan.records));
+        const creates: { path: string; content: string }[] = [];
+        if (plan.redirects !== undefined) {
+          if (sources._redirects === undefined) creates.push({ path: NATIVE_REDIRECTS_PATH, content: plan.redirects });
+          else plan.edits.set(NATIVE_REDIRECTS_PATH, plan.redirects);
+        }
+        if (plan.edits.has(MEDIA_RECORDS_PATH) && !r.exists(MEDIA_RECORDS_PATH)) {
+          creates.push({ path: MEDIA_RECORDS_PATH, content: plan.edits.get(MEDIA_RECORDS_PATH)! });
+          plan.edits.delete(MEDIA_RECORDS_PATH);
+        }
+        return { moves: plan.moves, edits: plan.edits, creates,
+          done: `${operation === "rename" ? "Renamed" : "Moved"} ${source.path} to ${to}.`,
+          undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${source.path} to ${to}.` };
+      }
       const urls = planFileMoveUrls(ops, r);
       if (urls && ports.confirmDialog()) {
         // Fill the branch cache before the plan's tracked redirects read.

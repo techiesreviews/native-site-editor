@@ -23,9 +23,10 @@ export interface MediaPickerHost {
   blob(path: string): Promise<Blob>;
   metadata(changes: Record<string, Partial<MediaMetadata> | null>): Promise<void>;
   collections(change: MediaCollectionChange): Promise<void>;
-  rename(path: string, name: string): Promise<void>;
+  /** `keepOldAddress` forwards the old addresses (default: when the file is Always keep). */
+  rename(path: string, name: string, options?: { keepOldAddress?: boolean }): Promise<void>;
   /** File details' Save as one step: the file's fields and, when `name` is given, its rename. */
-  details?(path: string, changes: Partial<MediaMetadata>, name?: string): Promise<void>;
+  details?(path: string, changes: Partial<MediaMetadata>, name?: string, options?: { keepOldAddress?: boolean }): Promise<void>;
   /** To check: without `text`, OK (the words stay, the by-agent mark goes); with it, Lex's words
    * replace the agent's, which clears the mark too. One Undo step either way. `row.text` is the
    * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
