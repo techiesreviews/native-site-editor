@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mediaUsageFor, mediaUsageRecords, mediaUsageState } from "../src/page-builder/media-usage";
+import { mediaUsageIndex } from "../src/page-builder/media-references";
 
 test("distinct pages count repeated mentions and responsive members once, in input order", () => {
   const records = mediaUsageRecords({
@@ -142,4 +143,27 @@ test("reach is html-css; scripts, settings and node_modules are ignored even whe
   assert.equal(records.reach, "html-css");
   assert.deepEqual(records.unreadable, []);
   assert.equal(mediaUsageState(mediaUsageFor(records, "images/a.png")), "no-uses-found");
+});
+
+test("a link to another page does not place that page's pictures on the linking page", () => {
+  const sources = {
+    "index.html": '<a href="/about.html">About</a><link rel="stylesheet" href="/styles/site.css">',
+    "about.html": '<img src="/images/photo.jpg">',
+    "styles/site.css": ".a{color:red}",
+  };
+  const records = mediaUsageRecords({ media: ["images/photo.jpg"], sources, pages: ["index.html", "about.html"] });
+  assert.deepEqual(mediaUsageFor(records, "images/photo.jpg").pages, ["about.html"]);
+  assert.deepEqual(mediaUsageIndex(["images/photo.jpg"], sources, ["index.html", "about.html"])["images/photo.jpg"].pages, ["about.html"]);
+});
+
+test("a page or component template missing from the scan leaves every family unchecked", () => {
+  const cases = [
+    { sources: {}, components: {} },
+    { sources: { "index.html": "<site-card></site-card>" }, components: { "site-card": "components/card.html" } },
+  ];
+  for (const { sources, components } of cases) {
+    const records = mediaUsageRecords({ media: ["images/photo.jpg"], sources, pages: ["index.html"], components });
+    assert.deepEqual(records.unreadable, Object.keys(sources).length ? ["components/card.html"] : ["index.html"]);
+    assert.equal(mediaUsageState(mediaUsageFor(records, "images/photo.jpg")), "not-checked");
+  }
 });

@@ -19,7 +19,12 @@ export function mediaUsageRecords(input: {
   pages: string[];
   components?: Record<string, string>;
 }): MediaUsageRecords {
-  const unreadable = Object.keys(input.sources).filter(file => input.sources[file] === undefined);
+  // A page or component template the scan never read is as incomplete as one that failed to read.
+  const required = [...input.pages, ...Object.values(input.components ?? {})];
+  const unreadable = [...new Set([
+    ...Object.keys(input.sources).filter(file => input.sources[file] === undefined),
+    ...required.filter(file => !Object.hasOwn(input.sources, file)),
+  ])];
   const families: MediaUsageRecord[] = mediaFamilies(input.media).map(family => ({
     main: family.main,
     members: [family.main, ...family.copies.map(copy => copy.path), ...family.originals],

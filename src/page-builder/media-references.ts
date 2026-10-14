@@ -176,7 +176,7 @@ export function scanMediaReferences(file: string, source: string): MediaReferenc
   });
 }
 
-/** Shared dependency walk over already scanned references, including cycles and component styles. */
+/** Shared page walk over scanned references: linked and imported stylesheets, nested components and their styles, cycles once. */
 export function walkMediaReferencePages(
   sources: Record<string, string | undefined>,
   references: Map<string, MediaReference[]>,
@@ -186,7 +186,8 @@ export function walkMediaReferencePages(
 ): void {
   const dependencies = new Map<string, Set<string>>();
   for (const [file, refs] of references) {
-    const deps = new Set(refs.map((ref) => ref.path).filter((path) => Object.hasOwn(sources, path)));
+    // Only stylesheets and components place their pictures on a page; a link to another page does not.
+    const deps = new Set(refs.map((ref) => ref.path).filter((path) => /\.css$/i.test(path) && Object.hasOwn(sources, path)));
     if (/\.html$/i.test(file)) for (const tag of startTags(sources[file] ?? "")) if (components[tag.name]) {
       deps.add(components[tag.name]);
       const sheet = components[tag.name].replace(/\.html$/i, ".css");
