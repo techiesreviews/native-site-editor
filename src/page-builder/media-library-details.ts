@@ -90,6 +90,7 @@ function renderMetadataForm(
   group.append(node("legend", "", "Collections"));
   const ticks = collections.map(name => {
     const box = input(name, "checkbox"); box.checked = meta.tags.includes(name); box.name = "media-collection-member";
+    box.value = name; box.dataset.formKey = `collection:${name}`;
     group.append(check(name, box)); return box;
   });
   if (!collections.length) group.append(node("p", "media-library__muted", "No collections yet."));

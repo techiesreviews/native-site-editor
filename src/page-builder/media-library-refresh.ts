@@ -23,14 +23,18 @@ export function rebuildLibraryCollections(select: HTMLSelectElement, collections
   select.value = collections.includes(chosen) ? chosen : "";
 }
 
+/** A control's identity across redraws: membership boxes carry their own key, since a collection
+ * may share its name with a field ("Decorative"). */
+const formKey = (control: Element) => control.getAttribute("data-form-key") ?? control.getAttribute("aria-label");
+
 export function captureDetailForm(sheet: HTMLElement, preserve: boolean) {
   const inputs = preserve ? [...sheet.querySelectorAll<HTMLInputElement>("input")].map(input => ({
-    label: input.getAttribute("aria-label"), value: input.value, checked: input.checked,
+    label: formKey(input), value: input.value, checked: input.checked,
     focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd,
   })) : [];
   const active = document.activeElement;
   const focus = active instanceof HTMLElement && sheet.contains(active) ? {
-    label: active.getAttribute("aria-label"), text: active instanceof HTMLButtonElement ? active.textContent : undefined,
+    label: formKey(active), text: active instanceof HTMLButtonElement ? active.textContent : undefined,
     start: active instanceof HTMLInputElement ? active.selectionStart : null,
     end: active instanceof HTMLInputElement ? active.selectionEnd : null,
   } : undefined;
@@ -40,7 +44,7 @@ export function captureDetailForm(sheet: HTMLElement, preserve: boolean) {
 export function restoreDetailForm(sheet: HTMLElement, savedForm: ReturnType<typeof captureDetailForm>) {
   const { inputs, active, focus } = savedForm;
   for (const saved of inputs) {
-    const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => input.getAttribute("aria-label") === saved.label);
+    const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => formKey(input) === saved.label);
     if (!input) continue;
     if (input.type === "checkbox") input.checked = saved.checked; else input.value = saved.value;
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -50,7 +54,7 @@ export function restoreDetailForm(sheet: HTMLElement, savedForm: ReturnType<type
   if (focus && document.activeElement === document.body && !active?.isConnected) {
     const controls = [...sheet.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button")];
     const control = controls.find(control => focus.label
-      ? control.getAttribute("aria-label") === focus.label
+      ? formKey(control) === focus.label
       : control instanceof HTMLButtonElement && control.textContent === focus.text) ?? controls[0];
     control?.focus();
     if (control instanceof HTMLInputElement && focus.start !== null && focus.end !== null) control.setSelectionRange(focus.start, focus.end);

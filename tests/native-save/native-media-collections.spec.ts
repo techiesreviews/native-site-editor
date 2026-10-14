@@ -197,3 +197,77 @@ test("starting collections from named folders appear in Collections; dated and s
   await expect(library.locator(".media-library__collection-row")).toHaveText([/Logos\s*1 file/, /Brand assets\s*1 file/]);
   await page.evaluate(() => (window as any).startingProbe.dispose());
 });
+
+test("collections named like the details fields keep their own ticks across a refresh", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
+    document.body.append(host);
+    let loads = 0; const saved: unknown[] = [];
+    const view = createMediaLibraryView(host, {
+      async load() {
+        loads++;
+        return { key: "names", items: [{ path: "images/a.svg", version: "A" }], collections: ["Default alt text", "Decorative", "New collection"],
+          metadata: { "images/a.svg": { alt: "Stored alt", tags: ["Decorative"] } },
+          // Only usage changes, so the unfinished form is kept.
+          usage: loads > 1 ? { "images/a.svg": { pages: ["index.html"], files: ["index.html"], alts: [] } } : {} };
+      },
+      async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
+      async metadata(changes) { saved.push(changes); }, async collections() {}, async rename() {}, async remove() {}, async openPage() {}, async import() { return []; },
+    });
+    Object.assign(window, { namesProbe: { saved, refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); } } });
+    await view.ready;
+  });
+  const library = pane(page);
+  await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+  const alt = library.locator('input[name="default-alt-text"]'), decorative = library.locator('input[name="decorative"]');
+  const member = (name: string) => library.locator(`[data-form-key="collection:${name}"]`);
+  await alt.fill("Unfinished alt");
+  await member("Default alt text").check(); await member("Decorative").uncheck(); await member("New collection").check();
+  await alt.focus();
+  await page.evaluate(() => (window as any).namesProbe.refresh());
+  await expect(library.getByRole("heading", { name: "Used on 1 pages", exact: true })).toBeVisible();
+  await expect(alt).toHaveValue("Unfinished alt"); await expect(alt).toBeFocused();
+  await expect(decorative).not.toBeChecked();
+  await expect(member("Default alt text")).toBeChecked(); await expect(member("Decorative")).not.toBeChecked(); await expect(member("New collection")).toBeChecked();
+  await expect(library.locator('input[name="new-collection"]')).toHaveValue("");
+  await library.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).namesProbe.saved)).toEqual([
+    { "images/a.svg": { alt: "Unfinished alt", tags: ["Default alt text", "New collection"], decorative: false } },
+  ]);
+  await page.evaluate(() => (window as any).namesProbe.dispose());
+});
+
+test("New collection from the selection bar holds both files in one Undo step; Remove file inside a collection removes the file", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const undo = () => page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"); });
+  await select(page, "images/placeholder.svg"); await select(page, "images/studio-desk.svg");
+  await library.getByRole("button", { name: "Add to collection", exact: true }).click();
+  await page.getByRole("menu", { name: "Add to collection", exact: true }).getByRole("menuitem", { name: "New collection…", exact: true }).click();
+  await expect(library.locator(".media-library__sheet")).toContainText("The 2 files you selected go into it.");
+  await library.getByLabel("Collection name", { exact: true }).fill("Pair");
+  await library.getByRole("button", { name: "Create", exact: true }).click();
+  await expect.poll(() => members(page, "Pair")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
+  await expect(library.getByRole("group", { name: "Selected files", exact: true })).toBeHidden();
+  await undo();
+  await expect.poll(async () => (await records(page)).collections ?? []).toEqual([]);
+  await expect(collections.locator("option")).toHaveText(["All collections", "Manage collections…"]);
+  await page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("redo", "index.html"); });
+  await expect.poll(() => members(page, "Pair")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
+  // Inside the collection, Remove file is today's delete: the file itself goes (as a draft).
+  await collections.selectOption("Pair");
+  await select(page, "images/placeholder.svg");
+  await library.getByRole("button", { name: "Remove file", exact: true }).click();
+  await library.getByRole("button", { name: "Delete images", exact: true }).click();
+  await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.deleted).toBe(true);
+  await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
+  await collections.selectOption("");
+  await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
+  await undo();
+  await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.deleted).toBeUndefined();
+  await expect.poll(() => members(page, "Pair")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
+});
