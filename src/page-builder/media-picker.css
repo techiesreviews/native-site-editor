@@ -445,6 +445,7 @@
 .media-detail__uses .media-library__page { min-height: 44px; padding: 0; text-align: left; overflow-wrap: anywhere; }
 .media-detail__row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: var(--type-small); }
 .media-detail__row > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.media-detail__original { padding: 0; font-size: inherit; text-decoration: underline; }
 .media-detail__row > :last-child { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
 .media-detail__group { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .media-detail__group h4 { font-size: var(--type-base); font-weight: 600; }

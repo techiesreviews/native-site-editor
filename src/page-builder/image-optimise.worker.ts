@@ -2,6 +2,7 @@ import type { MediaTrim } from "../../shared/media-records";
 import { trimGeometry, isTrim } from "./trim-geometry";
 import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, mediaAnimatedOutput, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
 
+import { cleanedMediaOriginal } from "./media-originals";
 import { strippedImageSource } from "./media-image-bytes";
 
 import { createMediaEncoder } from "./media-encoders";
@@ -27,12 +28,13 @@ function imagePixels(bitmap: ImageBitmap, trim?: MediaTrim): ImageBitmap | Offsc
   return canvas;
 }
 
-self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions; trim?: MediaTrim }>) => {
-  const { file, options, trim } = event.data;
+self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions; trim?: MediaTrim; original?: boolean }>) => {
+  const { file, options, trim, original } = event.data;
   try {
     validateMediaOptimiseOptions(options);
     if (trim && !isTrim(trim)) throw new Error("The picture has not been trimmed.");
     if (trim && options.keepOriginal) throw new Error("A trimmed copy cannot keep the original bytes.");
+    if (trim && original) throw new Error("A trimmed copy has no kept original; its source is already in the site.");
     if (options.keepOriginal) {
       self.postMessage({ result: { outputs: [{ blob: file, extension: file.name.split(".").pop()?.toLowerCase() ?? "bin" }], before: file.size, after: file.size, note: "Original bytes and metadata are kept. Unsupported formats may not display on the web." } satisfies MediaOptimiseResult });
       return;
@@ -94,7 +96,16 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
         // A family requires one actual format; unsupported encoders cannot supply a copy.
         if (encoded.type === blob.type && mediaCopyIsSmaller(encoded, blob)) outputs.push({ ...output(encoded, width, copy.height), variantWidth: width });
       }
-      self.postMessage({ result: { outputs, before: file.size, after: primary.blob.size, ...(notes.size ? { note: [...notes].join(" ") } : {}) } satisfies MediaOptimiseResult });
+      let retained: MediaOutput | undefined;
+      if (original) {
+        // The full-size source picture (Keep original): never trimmed, so `picture` is the bitmap itself.
+        const full = canvasAt(bitmap.width);
+        const pixels = full.ctx.getImageData(0, 0, bitmap.width, full.height).data;
+        let fullTransparent = false;
+        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { fullTransparent = true; break; }
+        retained = await cleanedMediaOriginal(bytes, type, fullTransparent, (type, quality) => encode(full.canvas, type, quality));
+      }
+      self.postMessage({ result: { outputs, ...retained ? { original: retained } : {}, before: file.size, after: primary.blob.size, ...(notes.size ? { note: [...notes].join(" ") } : {}) } satisfies MediaOptimiseResult });
     } finally { bitmap.close(); }
   } catch (error) { self.postMessage({ error: error instanceof Error ? error.message : "This image could not be optimised." }); }
 };

@@ -127,11 +127,11 @@ test("Files adding reads the site's image quality once per addition and prepares
   const reads: string[] = [], used: (MediaImageQuality | undefined)[] = [];
   const runs = createFilesAdding({
     prepare: async (file, _key, folder, _signal, quality) => { used.push(quality); return { request: { file, folder } }; },
-    quality: async ctx => { reads.push(ctx.key); return "smaller"; },
+    settings: async ctx => { reads.push(ctx.key); return { image: "smaller", keepOriginal: false }; },
     save: async (_ctx, _context, requests) => requests.map(request => `${request.folder}/${request.file.name}`),
     paint: () => {},
   });
-  const ctx = { key: "repo" } as MediaWorkspaceContext;
+  const ctx = { key: "repo", assertLive() {} } as MediaWorkspaceContext;
   const added = await runs.start("media", [new File(["a"], "a.jpg"), new File(["b"], "b.jpg")], {
     context: async () => ctx, live: () => true, announce: () => {}, error: error => { throw error; },
   });

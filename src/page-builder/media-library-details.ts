@@ -151,7 +151,19 @@ function renderInformation(
   if (family?.length) {
     const rows = family.map(row => {
       const line = node("div", "media-detail__row");
-      line.append(node("span", "", `${basename(row.path)} · ${row.label}`), node("span", "", row.size ?? ""));
+      const label = node("span", "", `${basename(row.path)} · ${row.label}`);
+      if (row.original) {
+        // The kept original (ticket 07): fetched only when asked for, then saved under its own name.
+        const name = basename(row.path);
+        const open = button(name, () => void task(async () => {
+          const blob = await adapter.blob(row.path);
+          if (!h.alive()) return;
+          const link = node("a"); link.href = cache.objectUrl(blob); link.download = name; link.click();
+        }), "text-button media-detail__original");
+        open.setAttribute("aria-label", `Download original ${name}`);
+        label.replaceChildren(open, document.createTextNode(` · ${row.label}`));
+      }
+      line.append(label, node("span", "", row.size ?? ""));
       return line;
     });
     form.append(disclosure("family", "Copies and original", node("span", "", String(family.length)), rows));

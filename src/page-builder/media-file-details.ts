@@ -24,7 +24,7 @@ export function mediaMadeFrom(record: Pick<MediaMetadata, "trimmedFrom">): Media
   return record.trimmedFrom ? [{ label: "Made from", value: basename(record.trimmedFrom.source) }] : [];
 }
 
-export interface MediaFamilyRow { path: string; label: string; size?: string }
+export interface MediaFamilyRow { path: string; label: string; size?: string; original?: true }
 
 /** The responsive copies (narrowest first) and kept originals of the image whose main is
  * `path`; undefined for anything that is not an image family's main. */
@@ -38,7 +38,7 @@ export function mediaFamilyRows(path: string, items: { path: string; size?: numb
   };
   return [
     ...family.copies.map(copy => ({ path: copy.path, label: `Smaller copy · ${copy.width} px wide`, ...size(copy.path) })),
-    ...family.originals.map(original => ({ path: original, label: "Original, kept", ...size(original) })),
+    ...family.originals.map(original => ({ path: original, label: "Original, kept", original: true as const, ...size(original) })),
   ];
 }
 

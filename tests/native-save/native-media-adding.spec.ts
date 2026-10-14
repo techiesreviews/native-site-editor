@@ -17,9 +17,8 @@ async function photo(page: Page) {
   });
 }
 
-test("Balanced adding saves a 2400px WebP main and three copies from a detailed 3000px JPEG", async ({ page, baseURL }) => {
-  await open(page, baseURL);
-  const bytes = await page.evaluate(async () => {
+async function detailedPhoto(page: Page) {
+  return page.evaluate(async () => {
     const canvas = document.createElement("canvas"); canvas.width = 3000; canvas.height = 1500;
     const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
     let seed = 123456;
@@ -31,6 +30,11 @@ test("Balanced adding saves a 2400px WebP main and three copies from a detailed 
     const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/jpeg", 0.95));
     return await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.readAsDataURL(blob); });
   });
+}
+
+test("Balanced adding saves a 2400px WebP main and three copies from a detailed 3000px JPEG", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const bytes = await detailedPhoto(page);
   await page.frameLocator(".native-preview-frame").locator(".hero img").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
@@ -469,7 +473,61 @@ test("Adding settings: each change and Reset undo as one step; a Files folder dr
     transfer.items.add(new File([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], "Wide.jpg", { type: "image/jpeg" }));
     for (const type of ["dragenter", "dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
   }, bytes);
-  // The folder chosen wins; a main of at most 1,600 px has copies at 480 and 960 only.
+  // The folder chosen wins; a main of at most 1,600 px has copies at 480 and 960 only. Keep original
+  // (slice 27) keeps the cleaned original in media/originals/ even for a Files folder.
   await expect.poll(async () => (await storedDrafts(page)).map(draft => draft.path).filter(path => /wide/.test(path)).sort(), { timeout: 30_000 })
-    .toEqual(["about/wide-480.webp", "about/wide-960.webp", "about/wide.webp"]);
+    .toEqual(["about/wide-480.webp", "about/wide-960.webp", "about/wide.webp", "media/originals/wide.jpg"]);
+});
+
+/** `source` with an Exif APP1 block holding an orientation and personal text. */
+function withExif(source: Buffer, orientation: number) {
+  const exif = Buffer.alloc(32); exif.write("Exif\0\0"); exif.write("II", 6); exif.writeUInt16LE(42, 8); exif.writeUInt32LE(8, 10);
+  exif.writeUInt16LE(1, 14); exif.writeUInt16LE(0x112, 16); exif.writeUInt16LE(3, 18); exif.writeUInt32LE(1, 20); exif.writeUInt16LE(orientation, 24);
+  const payload = Buffer.concat([exif, Buffer.from("GPS camera location")]);
+  const header = Buffer.from([255, 225, 0, 0]); header.writeUInt16BE(payload.length + 2, 2);
+  return Buffer.concat([source.subarray(0, 2), header, payload, source.subarray(2)]);
+}
+
+test("Keep original saves a full-size JPEG without Exif/GPS and links it from the main's details", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".editor/media.json", content: '{"version":2,"collections":[],"files":{},"adding":{"keepOriginal":true}}' } })).status()).toBe(204);
+  await page.reload();
+  await open(page, baseURL);
+  const source = Buffer.from(await detailedPhoto(page), "base64");
+  const bytes = withExif(source, 1), turned = withExif(source, 6);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const media = page.getByRole("region", { name: "Media", exact: true });
+  await expect(media.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  await media.locator('input[name="media-upload"]').setInputFiles({ name: "Holiday.jpg", mimeType: "image/jpeg", buffer: bytes });
+  await expect(media.getByRole("button", { name: "Details for media/images/holiday.webp", exact: true })).toBeVisible();
+  await media.locator('input[name="media-upload"]').setInputFiles({ name: "Turned.jpg", mimeType: "image/jpeg", buffer: turned });
+  await expect(media.getByRole("button", { name: "Details for media/images/turned.webp", exact: true })).toBeVisible();
+  await expect(media.getByRole("button", { name: "Details for media/originals/holiday.jpg", exact: true })).toHaveCount(0);
+  await media.getByRole("button", { name: "Details for media/images/holiday.webp", exact: true }).click();
+  await media.getByText("Copies and original", { exact: true }).click();
+  const link = media.getByRole("button", { name: "Download original holiday.jpg", exact: true });
+  await expect(link).toBeVisible();
+  const downloadEvent = page.waitForEvent("download"); await link.click();
+  const download = await downloadEvent; expect(download.suggestedFilename()).toBe("holiday.jpg");
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  const response = await page.request.get(`${baseURL}/__demo/file?path=media/originals/holiday.jpg`);
+  expect(response.ok()).toBe(true);
+  const saved = await response.body();
+  expect(saved.equals(source)).toBe(true); // Only the APP1 personal details were removed; no full-size re-encode.
+  expect(saved.includes(Buffer.from("Exif"))).toBe(false); expect(saved.includes(Buffer.from("GPS"))).toBe(false);
+  // A turned photo cannot lose its Exif losslessly: its original is the upright picture, re-encoded at full size.
+  const kept = await (await page.request.get(`${baseURL}/__demo/file?path=media/originals/turned.jpg`)).body();
+  expect(kept.subarray(0, 2).equals(Buffer.from([255, 216]))).toBe(true);
+  expect(kept.includes(Buffer.from("Exif"))).toBe(false); expect(kept.includes(Buffer.from("GPS"))).toBe(false);
+  expect(await page.evaluate(async base64 => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], { type: "image/jpeg" }));
+    const size = [bitmap.width, bitmap.height]; bitmap.close(); return size;
+  }, kept.toString("base64"))).toEqual([1500, 3000]);
+  const website = await page.request.get(`${baseURL}/__demo/file?path=media/images/holiday.webp`);
+  expect(website.ok()).toBe(true);
+  expect((await website.body()).subarray(8, 12).toString()).toBe("WEBP");
 });

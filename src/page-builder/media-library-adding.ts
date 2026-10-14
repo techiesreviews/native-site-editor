@@ -153,8 +153,8 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     });
   }
   async function prepare(mine: typeof run) {
-    // The site's remembered image quality when this addition starts preparing.
-    const { key, adding } = h.library(), quality = mediaAddingSettings(adding).image;
+    // The site's remembered image quality and Keep original when this addition starts preparing.
+    const { key, adding } = h.library(), { image: quality, keepOriginal } = mediaAddingSettings(adding);
     for (const entry of mine.entries) {
       if (!h.alive()) return;
       if (entry.state !== "waiting") continue;
@@ -162,7 +162,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       entry.quality = quality;
       set(entry, "preparing");
       try {
-        const prepared = await prepareMediaFile(entry.file, key, undefined, work.signal, undefined, askToAddUnchanged, undefined, quality);
+        const prepared = await prepareMediaFile(entry.file, key, undefined, work.signal, undefined, askToAddUnchanged, undefined, quality, keepOriginal);
         // Cancelling (or Review…) aborts the work and leaves the file alone.
         if (!work.signal.aborted) {
           entry.request = { ...prepared.request, ...entry.collection ? { collection: entry.collection } : {} };

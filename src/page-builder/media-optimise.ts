@@ -31,7 +31,7 @@ export async function mediaSmallerMain(main: Blob, source: { size: number; strip
 }
 export function mediaCopyIsSmaller(copy: Blob, main: Blob) { return copy.size < main.size; }
 export interface MediaOutput { blob: Blob; width?: number; height?: number; extension: string; variantWidth?: number }
-export interface MediaOptimiseResult { outputs: MediaOutput[]; before: number; after: number; note?: string }
+export interface MediaOptimiseResult { outputs: MediaOutput[]; before: number; after: number; note?: string; original?: MediaOutput }
 
 export function mediaDimensions(width: number, height: number, maxWidth: number | null) {
   if (![width, height, maxWidth ?? width].every((value) => Number.isFinite(value) && value > 0)) throw new Error("Image dimensions and maximum width must be positive finite numbers.");
@@ -57,7 +57,7 @@ export function validateMediaOptimiseOptions(options: MediaOptimiseOptions) {
 }
 
 /** Vite emits a same-origin script; never a blob: worker under the editor CSP. */
-export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?: AbortSignal, trim?: MediaTrim): Promise<MediaOptimiseResult> {
+export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?: AbortSignal, trim?: MediaTrim, original = false): Promise<MediaOptimiseResult> {
   return new Promise((resolve, reject) => {
     validateMediaOptimiseOptions(options);
     if (signal?.aborted) { reject(new DOMException("Image optimisation cancelled.", "AbortError")); return; }
@@ -75,6 +75,6 @@ export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?
     }
     worker.onmessage = (event: MessageEvent<{ error?: string; result?: MediaOptimiseResult }>) => finish(event.data.error ? new Error(event.data.error) : undefined, event.data.result);
     worker.onerror = () => finish(new Error("Image optimisation is unavailable in this browser. Keep the original to upload it."));
-    worker.postMessage({ file, options, ...(trim ? { trim } : {}) });
+    worker.postMessage({ file, options, ...(trim ? { trim } : {}), ...(original ? { original } : {}) });
   });
 }

@@ -31,8 +31,8 @@ export function addFilesTo(mount: HTMLElement, folder: string, files: File[], ho
     section = node("section", "media-library__adding media-files-adding"); section.hidden = true;
     section.setAttribute("aria-label", "Files being added");
     runs = createFilesAdding({
-      prepare: (file, key, into, signal, quality) => prepareMediaFile(file, key, into, signal, undefined, askToAddUnchanged, undefined, quality),
-      quality: async ctx => (await readMediaAddingSettings(path => ctx.read(path))).image,
+      prepare: (file, key, into, signal, quality, keepOriginal) => prepareMediaFile(file, key, into, signal, undefined, askToAddUnchanged, undefined, quality, keepOriginal),
+      settings: ctx => readMediaAddingSettings(path => ctx.read(path)),
       save: (ctx, context, requests) => importPreparedMedia(ctx, context, requests),
       paint,
     });

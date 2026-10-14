@@ -4,7 +4,7 @@ import { createFilesAdding, type FilesAddingHost } from "../src/page-builder/med
 import type { MediaImportRequest } from "../src/page-builder/media-picker";
 import type { MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 
-const ctx = { key: "repo" } as MediaWorkspaceContext;
+const ctx = { key: "repo", assertLive() {} } as MediaWorkspaceContext;
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /** Preparation each test releases by hand, so files can be cancelled on the way. */

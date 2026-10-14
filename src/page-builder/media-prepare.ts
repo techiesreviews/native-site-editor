@@ -1,3 +1,4 @@
+import { mediaOriginalCapQuestion, mediaOriginalIsDuplicate, mediaOriginalProblem } from "./media-originals";
 import { uploadProblem } from "../uploads";
 import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
 import { largeDownloadNote, preparationFailure } from "./media-limits";
@@ -16,7 +17,7 @@ export async function mediaFileNeedsPreparation(file: File) {
 }
 export const mediaPreparationFolder = (folder?: string, path = "image.webp") => folder ?? mediaKindFolder(path);
 
-type Ask = (question: string) => Promise<boolean>;
+type Ask = (question: string, kind?: "original") => Promise<boolean>;
 type Shown = (file: Blob) => Promise<boolean>;
 /** Whether this browser can show `file` as a picture: an unchanged file is only offered then. */
 export const browserShowsImage: Shown = async file => {
@@ -24,18 +25,20 @@ export const browserShowsImage: Shown = async file => {
   const url = URL.createObjectURL(file);
   try { return Boolean((await decodeImage(url)).width); } finally { URL.revokeObjectURL(url); }
 };
-export const askToAddUnchanged: Ask = async question =>
-  (await import("./media-preparation-confirm")).askToAddUnchanged(question);
+export const askToAddUnchanged: Ask = async (question, kind) => {
+  const dialog = await import("./media-preparation-confirm");
+  return kind === "original" ? dialog.askToAddWithoutOriginal(question) : dialog.askToAddUnchanged(question);
+};
 
 export async function prepareMediaFile(file: File, _key: string, folder?: string, signal?: AbortSignal,
   encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows: Shown = browserShowsImage,
-  quality: MediaImageQuality = "balanced"): Promise<{ request: MediaImportRequest; warning?: string }> {
+  quality: MediaImageQuality = "balanced", keepOriginal = false): Promise<{ request: MediaImportRequest; warning?: string }> {
   signal?.throwIfAborted();
   let result;
   const needed = await mediaFileNeedsPreparation(file);
   signal?.throwIfAborted();
   if (needed) {
-    try { result = await encode(file, mediaImageRecipe(quality), signal); }
+    try { result = await encode(file, mediaImageRecipe(quality), signal, undefined, keepOriginal === true); }
     catch (error) {
       if (signal?.aborted || error instanceof Error && error.name === "AbortError") throw error;
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -55,20 +58,39 @@ export async function prepareMediaFile(file: File, _key: string, folder?: string
     const problem = uploadProblem({ name: file.name, size: blob.size });
     if (problem) throw new Error(problem);
   }
+  let original = keepOriginal === true ? result?.original : undefined;
+  if (original) {
+    const problem = mediaOriginalProblem(new Uint8Array(await original.blob.arrayBuffer()), original.extension);
+    if (problem) throw new Error(`${file.name}: ${problem}`);
+    if (await mediaOriginalIsDuplicate(original.blob, result!.outputs[0].blob)) original = undefined;
+    if (original) {
+      const question = mediaOriginalCapQuestion(file.name, original.blob.size);
+      if (question) {
+        const accepted = ask ? await ask(question, "original") : false;
+        signal?.throwIfAborted();
+        if (!accepted) throw new Error(`${file.name} was not added.`);
+        original = undefined;
+      }
+    }
+  }
+  signal?.throwIfAborted();
+  if (original && /^media\/originals(?:\/|$)/i.test(folder?.replace(/^\/+|\/+$/g, "") ?? "")) {
+    throw new Error(`${file.name}: Choose a website folder outside media/originals when keeping an original.`);
+  }
   const name = mediaStorageName(file.name, result?.outputs[0]?.extension);
   const outputs = result ? result.outputs.map(output =>
     ({ name: output.variantWidth ? mediaCopyName(name, output.variantWidth) : name, size: output.blob.size })) : [{ name, size: file.size }];
   const largest = outputs.reduce((a, b) => a.size >= b.size ? a : b);
-  return { request: { file, result, folder: mediaPreparationFolder(folder, name) }, warning: [result?.note, largeDownloadNote(largest)].filter(Boolean).join(" ") || undefined };
+  return { request: { file, result, ...original ? { original } : {}, folder: mediaPreparationFolder(folder, name) }, warning: [result?.note, largeDownloadNote(largest)].filter(Boolean).join(" ") || undefined };
 }
 
 /** One failed preparation leaves the other files available. */
 export async function prepareMedia(files: File[], key: string, folder?: string, signal?: AbortSignal,
-  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown, quality: MediaImageQuality = "balanced") {
+  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown, quality: MediaImageQuality = "balanced", keepOriginal = false) {
   const requests: MediaImportRequest[] = [], errors: string[] = [], warnings: string[] = [];
   for (const file of files) {
     try {
-      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows, quality);
+      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows, quality, keepOriginal);
       requests.push(prepared.request);
       if (prepared.warning) warnings.push(prepared.warning);
     } catch (error) {

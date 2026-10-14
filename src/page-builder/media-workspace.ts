@@ -16,6 +16,7 @@ import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./med
 import { alwaysKeptFiles, mediaFamilyOf } from "./media-families";
 import { mediaEscape } from "./media-markup";
 import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-rename";
+import { mediaOriginalPath, mediaOriginalProblem } from "./media-originals";
 import { mediaStorageName, mediaCopyName, chooseMediaPath } from "./media-storage";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
@@ -221,11 +222,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const { file, result, folder, replaceFrom } = request;
       if (folder.split("/").some((part) => part === "." || part === "..") || /[\\\u0000-\u001f]/.test(folder)) throw new Error("Choose a repository folder without . or .. segments.");
       const dir = folder.replace(/^\/+|\/+$/g, "");
+      if (request.original && /^media\/originals(?:\/|$)/i.test(dir)) throw new Error(`${file.name}: Choose a website folder outside media/originals when keeping an original.`);
       const segments = dir.split("/");
       for (let index = 1; index <= segments.length; index++) {
         const parent = segments.slice(0, index).join("/");
         if (parent && reserved.has(parent)) throw new Error(`${parent} is a file, so it cannot contain uploaded files.`);
       }
+      if (request.original && !/^[a-z0-9]+$/i.test(request.original.extension)) throw new Error("The original must use a supported file extension.");
       const first = result?.outputs[0];
       if (result && (!first || first.variantWidth)) throw new Error("No primary image was encoded.");
       if (result?.outputs.some(output => !/^[a-z0-9]+$/i.test(output.extension) || output.extension !== first!.extension)) throw new Error("All responsive images must use the primary image format.");
@@ -239,13 +242,23 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const encoded = mediaStorageName(file.name, first?.extension);
       const family = (primary: string) => outputs.map(output => output.variantWidth ? mediaCopyName(primary, output.variantWidth) : primary);
       const primary = chooseMediaPath({ folder: dir, name: encoded,
-        copies: widths, paths: reserved });
+        copies: widths, original: request.original?.extension, paths: reserved });
       ctx.assertLive();
       const familyPaths = family(primary);
       if (new Set(familyPaths).size !== familyPaths.length) throw new Error("Responsive image widths must be unique.");
       outputs.forEach((output, index) => {
         const path = familyPaths[index]; reserved.add(path); batch.uploads.push({ path, blob: output.blob });
       });
+      if (request.original) {
+        const { blob, extension } = request.original;
+        const problem = uploadProblem({ name: file.name, size: blob.size }) ??
+          mediaOriginalProblem(new Uint8Array(await blob.arrayBuffer()), extension);
+        ctx.assertLive();
+        if (problem) throw new Error(`${file.name}: ${problem}`);
+        for (const folder of ["media", "media/originals"]) if (reserved.has(folder)) throw new Error(`${folder} is a file, so it cannot contain originals.`);
+        const path = mediaOriginalPath(primary, extension);
+        reserved.add(path); batch.uploads.push({ path, blob });
+      }
       if (request.metadata) changes[primary] = request.metadata;
       if (request.collection) joins.set(request.collection, [...joins.get(request.collection) ?? [], primary]);
       if (replaceFrom) {
@@ -407,7 +420,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const text = await sources(ctx);
       const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
       const metadata = mediaMetadataView(records);
-      return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
+      return { key: ctx.key, ...records.adding ? { adding: records.adding } : {}, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
         toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text),

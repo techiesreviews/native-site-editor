@@ -22,7 +22,7 @@ test("the Image family lists copies narrowest first, then kept originals, with k
   assert.deepEqual(mediaFamilyRows("images/tram.webp", items), [
     { path: "images/tram-480w.webp", label: "Smaller copy · 480 px wide" },
     { path: "images/tram-960w.webp", label: "Smaller copy · 960 px wide", size: "1 KB" },
-    { path: "media/originals/tram.jpg", label: "Original, kept", size: "3 MB" },
+    { path: "media/originals/tram.jpg", label: "Original, kept", original: true, size: "3 MB" },
   ]);
   assert.deepEqual(mediaFamilyRows("images/other.png", items), []);
   // A copy is not a family's main; other kinds have no Image family.
