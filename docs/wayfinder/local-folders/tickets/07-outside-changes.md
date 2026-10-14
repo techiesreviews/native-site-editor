@@ -2,7 +2,7 @@
 title: Decide how changes made outside the editor show up
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Codex
 blocked_by: [01-research-browser-support, 02-research-skip-and-limits]
 ---
 
