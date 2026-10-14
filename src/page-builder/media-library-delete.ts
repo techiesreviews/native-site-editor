@@ -54,7 +54,7 @@ export function confirmMediaDelete(sheet: LibrarySheet, grid: HTMLElement, c: De
       text.append(node("strong", "", label ?? page), ...label && label !== page ? [node("span", "media-library__muted", page)] : []);
       item.append(text);
       if (c.openPage) {
-        const open = button("Open page", () => c.openPage!(page), "button");
+        const open = button("Open page", () => c.openPage!(page));
         open.setAttribute("aria-label", `Open ${label ?? page}`);
         item.append(open);
       }
