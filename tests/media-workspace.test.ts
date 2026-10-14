@@ -914,7 +914,7 @@ test("sharing uploads one JPEG with provenance, updates page and config and remo
   const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
   assert.deepEqual(records.files[path], { sharing: true, trimmedFrom: { source: "images/a.png", trim: rectangle } });
   assert.deepEqual(records.files["images/a.png"], originalRecord); assert.equal(f.bytes.get("images/a.png"), original);
-  assert.equal(records.removed?.[0].path, f.previous); assert.match(records.removed![0].sha!, /^[a-f0-9]{40}$/);
+  assert.equal(records.removed?.[0].path, f.previous); assert.equal(records.removed![0].sha, "social-v1"); // committed revision (slice 48)
   assert.equal(records.removed?.[0].record?.sharing, true);
   f.history.pop()!(); assert.deepEqual(f.text, before); assert.ok(f.bytes.has(f.previous)); assert.ok(!f.bytes.has(path));
 });
