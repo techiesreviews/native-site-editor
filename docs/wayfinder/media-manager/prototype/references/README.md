@@ -2,6 +2,8 @@
 
 Downloaded from the media manager's Mobbin research on 2026-10-11 and the photo-app follow-ups on 2026-10-12. These files keep the prototype independent of the short image links, which expire around 2026-11-10. The screenshots are design research, not files to add to a user's site.
 
+The screenshots (and the demo pictures in `../demo-media/`) are third-party or of unknown origin, so they are kept on Lex's computer only and are not in the public repository (Lex, 2026-10-14). The mockups show them only on that computer.
+
 | Saved screen | Permanent source | Pattern used |
 | --- | --- | --- |
 | [Squarespace library](squarespace-library.webp) | [Mobbin screen](https://mobbin.com/screens/3168d383-2323-47e9-ae48-7cd906d92027) | Folders above a calm thumbnail grid |
