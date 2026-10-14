@@ -23,9 +23,10 @@ function responsiveCopyName(path: string): { stem: string; width: number } | und
   return { stem: match[1], width };
 }
 
-/** An image outside `media/originals/` named like a responsive copy, whether or not its main exists. */
-export function isResponsiveCopyName(path: string): boolean {
-  return imageExtension.test(path) && !originalPath(path) && responsiveCopyName(path) !== undefined;
+/** A responsive copy whose main image is gone: no other image outside `media/originals/` has its base name. */
+export function isLeftoverCopy(path: string, paths: readonly string[]): boolean {
+  const copy = imageExtension.test(path) && !originalPath(path) ? responsiveCopyName(path) : undefined;
+  return !!copy && !paths.some(other => other !== path && !originalPath(other) && imageExtension.test(other) && stem(other) === copy.stem);
 }
 
 export function mediaFamilies(paths: string[]): MediaFamily[] {

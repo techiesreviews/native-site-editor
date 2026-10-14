@@ -1,15 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isResponsiveCopyName, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
+import { isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
 import { mediaVariants } from "../src/page-builder/media-markup";
 
-test("responsive copy names share the family width rule", () => {
+test("a leftover copy is a responsive copy name with no image at its base name", () => {
   for (const path of ["images/photo-480w.webp", "photo-1w.jpg", "photo-1200w.png", "photo-480.webp", "photo-960.webp", "photo-1600.webp"]) {
-    assert.equal(isResponsiveCopyName(path), true, path);
+    assert.equal(isLeftoverCopy(path, [path, "other.jpg", "media/originals/photo.png", "photo.pdf"]), true, path);
   }
   for (const path of ["photo.jpg", "photo-2.webp", "report-2024.png", "photo-0w.jpg", "photo-0480.jpg", "photo-0480w.jpg", "photo-9007199254740992w.jpg", "folder-480w/photo.jpg", "docs/report-480.pdf", "media/originals/photo-480w.webp"]) {
-    assert.equal(isResponsiveCopyName(path), false, path);
+    assert.equal(isLeftoverCopy(path, [path]), false, path);
   }
+  // Two possible mains leave the copy outside any family, but its main is not gone.
+  const paths = ["a/photo.jpg", "a/photo.webp", "a/photo-480.png"];
+  assert.equal(mediaFamilies(paths).some(family => family.main === "a/photo-480.png"), true);
+  assert.equal(isLeftoverCopy("a/photo-480.png", paths), false);
+  assert.equal(isLeftoverCopy("a/photo-480.png", ["b/photo.jpg", "a/photo-480.png"]), true);
 });
 
 test("both responsive names join a main and sort by width", () => {

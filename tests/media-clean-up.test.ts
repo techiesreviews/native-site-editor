@@ -150,3 +150,32 @@ test("a Trimmed copy takes precedence over its responsive-looking name", () => {
   assert.equal(result.groups[0].kind, "trimmed");
   assert.equal(result.count, 1);
 });
+
+test("a copy with two possible mains is unused, not a leftover", () => {
+  const usage = mediaUsageRecords({
+    media: ["a/photo.jpg", "a/photo.webp", "a/photo-480.png"],
+    sources: { "index.html": '<img src="/a/photo.jpg"><img src="/a/photo.webp">' }, pages: ["index.html"],
+  });
+  const result = mediaCleanUpSuggestions({ usage, records: emptyRecords() });
+  assert.deepEqual(result.groups.map(group => [group.kind, group.items.map(item => item.main)]), [["unused", ["a/photo-480.png"]]]);
+});
+
+test("a Trimmed copy family is apart from its source: each is suggested only when unused", () => {
+  const media = ["media/studio.jpg", "media/studio-480.jpg", "media/studio-crop.webp", "media/studio-crop-480.webp"];
+  const records = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: {
+    "media/studio-crop.webp": { trimmedFrom: { source: "media/studio.jpg", trim: { x: 0, y: 0, width: 1, height: 1 } } },
+  } }));
+  const sizes = { "media/studio.jpg": 1000, "media/studio-480.jpg": 100, "media/studio-crop.webp": 50, "media/studio-crop-480.webp": 5 };
+  const usedOn = (src: string) => mediaUsageRecords({ media, sources: { "index.html": `<img src="/${src}">` }, pages: ["index.html"] });
+
+  const trimUsed = mediaCleanUpSuggestions({ usage: usedOn("media/studio-crop.webp"), records, sizes });
+  assert.deepEqual(trimUsed.groups, [{ kind: "unused", count: 1, size: 1100, items: [
+    { main: "media/studio.jpg", members: ["media/studio.jpg", "media/studio-480.jpg"], size: 1100 },
+  ] }]);
+
+  const sourceUsed = mediaCleanUpSuggestions({ usage: usedOn("media/studio.jpg"), records, sizes });
+  assert.deepEqual(sourceUsed.groups, [{ kind: "trimmed", count: 1, size: 55, items: [
+    { main: "media/studio-crop.webp", members: ["media/studio-crop.webp", "media/studio-crop-480.webp"], size: 55 },
+  ] }]);
+  assert.equal(sourceUsed.count, 1);
+});
