@@ -107,8 +107,12 @@ A site open in the editor, from one source: a GitHub repository on a branch, or 
 _Avoid_: workspace (in user-facing text)
 
 **Project overview**:
-The screen the editor opens on: every project as a card (a picture of its home page from the last visit, its name, where it lives, when it was last edited, its unsaved changes), latest edited first, with Add project offering On this computer or On GitHub. With no projects yet it is an empty state guiding the first one. It replaces the sign-in screen and Get started; a direct link to a project skips it, and All projects in the project selector returns to it. (Planned in ADR 0002.)
+The screen the editor opens on: every project, newest first, as a list (the default, remembered if the user switches: the project edited last shown large with Continue editing, the others as rows) or as a grid of picture cards. Each project shows a picture of its home page from the last visit, its name, where it lives, when it was last edited and its unsaved changes; one click opens it, and a problem (access refused, folder missing) shows on the project itself. With no projects yet it is an empty state offering On this computer or On GitHub. It replaces the sign-in screen and Get started; a direct link to a project skips it, and All projects in the project selector returns to it. (Planned in ADR 0002.)
 _Avoid_: dashboard, home, recent folders
+
+**Project selector**:
+The button at the top left, the same on the project overview (where it reads All projects) and in the editor (where it shows the open project), opening one menu: All projects, Add project (On this computer or On GitHub), then every project grouped by where it lives, the open project's kind first. It grows out of today's project menu. (Planned in ADR 0002.)
+_Avoid_: repository menu
 
 **Local folder**:
 A folder on the user's computer opened as a project, where the browser allows it. It needs no GitHub account; the user commits it with their own tools if it is a git clone.
