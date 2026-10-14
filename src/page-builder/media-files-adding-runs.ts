@@ -99,6 +99,8 @@ export function createFilesAdding(deps: FilesAddingDeps) {
     /** Files dropped into `folder`; resolves to the paths added. A finished summary is replaced. */
     start(folder: string, files: File[], host: FilesAddingHost) {
       if (!running()) additions = [];
+      // Another repository's additions go, and their preparation stops so this one starts at once.
+      for (const addition of additions) if (!addition.host.live()) addition.entries.forEach(stop);
       additions = additions.filter(addition => addition.host.live());
       const addition: FilesAddition = { folder, host, entries: files.map(file => ({ file, state: "waiting" })) };
       additions.push(addition); deps.paint();

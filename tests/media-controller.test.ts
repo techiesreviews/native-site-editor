@@ -125,6 +125,24 @@ test("workspace asset versions and uploads stay scoped to captured drafts", asyn
   assert.equal(await context.blob(draft.path), uploaded);
 });
 
+test("Files' Review… opens the Optimise sheet only in the repository it came from", async () => {
+  const f = fixture(), reviewed: string[] = [];
+  let ready!: () => void;
+  f.module.mountMediaLibrary = () => ({ element: {} as HTMLElement, ready: new Promise<void>(resolve => { ready = resolve; }), refreshedKey: undefined,
+    refresh: async () => {}, dispose: () => {}, review: (files: File[], folder: string) => { reviewed.push(`${folder}:${files.map(file => file.name).join(",")}`); } });
+  const pending = f.controller.reviewInGallery([new File(["x"], "a.png")], "about");
+  await tick(); await tick();
+  f.navigate();
+  ready();
+  await pending;
+  assert.deepEqual(reviewed, []);
+  const g = fixture(), done: string[] = [];
+  g.module.mountMediaLibrary = () => ({ element: {} as HTMLElement, ready: Promise.resolve(), refreshedKey: undefined,
+    refresh: async () => {}, dispose: () => {}, review: (files: File[], folder: string) => { done.push(`${folder}:${files.map(file => file.name).join(",")}`); } });
+  await g.controller.reviewInGallery([new File(["x"], "a.png")], "about");
+  assert.deepEqual(done, ["about:a.png"]);
+});
+
 test("disposed gallery cannot mount from a pending lazy load", async () => {
   const f = fixture();
   let release!: (module: MediaModule) => void;

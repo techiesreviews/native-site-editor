@@ -137,3 +137,32 @@ test("Review… hands the pictures not added yet to the Optimise sheet with thei
   void g.runs.start("", files("a.png"), g.host);
   assert.equal(g.runs.reviewable(), undefined);
 });
+
+test("a drop after a repository switch stops the old addition's preparation and starts at once", async () => {
+  const old = fixture();
+  let oldAborted = false;
+  const prepared: string[] = [];
+  let live = true;
+  const runs = createFilesAdding({
+    prepare: (file, _key, folder, signal) => new Promise((resolve, reject) => {
+      prepared.push(file.name);
+      // The old repository's picture never finishes unless it is stopped.
+      if (file.name === "old.png") signal.addEventListener("abort", () => { oldAborted = true; reject(new DOMException("Cancelled.", "AbortError")); }, { once: true });
+      else resolve({ request: { file, folder } });
+    }),
+    save: async (_ctx, _context, requests) => requests.map(request => `${request.folder}/${request.file.name}`),
+    paint: () => {},
+  });
+  const errors: string[] = [];
+  const stale = { ...old.host, live: () => live, error: (error: unknown) => errors.push((error as Error).message) };
+  const first = runs.start("a", files("old.png"), stale);
+  await settle();
+  live = false;
+  const second = runs.start("b", files("new.pdf"), old.host);
+  assert.equal(oldAborted, true);
+  assert.deepEqual(await first, []);
+  assert.deepEqual(await second, ["b/new.pdf"]);
+  assert.deepEqual(prepared, ["old.png", "new.pdf"]);
+  assert.deepEqual(runs.entries().map(entry => `${entry.file.name}:${entry.state}`), ["new.pdf:added"]);
+  assert.deepEqual(errors, ["The repository or branch changed while adding files. Nothing was added."]);
+});
