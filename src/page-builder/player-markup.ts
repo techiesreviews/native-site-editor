@@ -48,13 +48,19 @@ export function pageMediaLanguage(source: string): string | undefined {
   return html?.type === "element" ? attribute(source, html, "lang")?.trim() || undefined : undefined;
 }
 
+/** A well-formed language tag in its usual spelling ("en-gb" → "en-GB"), else nothing. */
+function languageTag(value?: string): string | undefined {
+  try { return value?.trim() ? Intl.getCanonicalLocales(value.trim())[0] : undefined; } catch { return undefined; }
+}
+
 function subtitleMarkup(subtitles?: PlayerSubtitles, pageLanguage?: string): PlayerMarkup {
   if (!subtitles) return { markup: "", notes: [] };
   if (!/\.vtt$/i.test(subtitles.path)) return { markup: "", notes: ["Subtitles need a WebVTT (.vtt) file; this subtitles file was left out."] };
-  const lang = subtitles.lang || pageLanguage;
+  // A malformed language falls back to the page's; with neither, browsers still use the track.
+  const page = languageTag(pageLanguage), lang = languageTag(subtitles.lang) ?? page;
   let label = subtitles.label;
   if (!label && lang) {
-    try { label = new Intl.DisplayNames([pageLanguage || "en"], { type: "language", fallback: "none" }).of(lang); }
+    try { label = new Intl.DisplayNames([page || "en"], { type: "language", fallback: "none" }).of(lang); }
     catch { /* An unsupported language or browser still gets a useful label. */ }
   }
   return { markup: `<track kind="subtitles"${attr("src", mediaUrl(subtitles.path))}${attr("srclang", lang)}${attr("label", label || "Subtitles")}>`, notes: [] };

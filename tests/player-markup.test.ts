@@ -74,7 +74,9 @@ test("subtitles explicit language wins, labels escape, missing or invalid langua
   assert.ok(videoMarkup({ path: "media/a.mp4", subtitles }, "en").markup.includes('<track kind="subtitles" src="/media/a%20%26%22.vtt" srclang="nl" label="Dutch &amp; &quot;more&quot;">'));
   assert.match(audioMarkup({ path: "media/a.m4a", subtitles: { path: "media/a.vtt", lang: "nl" } }, "en").markup, /srclang="nl" label="Dutch"/);
   assert.match(videoMarkup({ path: "media/a.mp4", subtitles: { path: "media/a.vtt" } }).markup, /<track kind="subtitles" src="\/media\/a.vtt" label="Subtitles">/);
-  assert.match(videoMarkup({ path: "media/a.mp4", subtitles: { path: "media/a.vtt", lang: 'invalid &"' } }).markup, /srclang="invalid &amp;&quot;" label="Subtitles"/);
+  assert.match(videoMarkup({ path: "media/a.mp4", subtitles: { path: "media/a.vtt", lang: 'invalid &"' } }).markup, /<track kind="subtitles" src="\/media\/a.vtt" label="Subtitles">/);
+  assert.match(videoMarkup({ path: "media/a.mp4", subtitles: { path: "media/a.vtt", lang: "not a tag" } }, "en-gb").markup, /srclang="en-GB" label="British English"/);
+  assert.match(videoMarkup({ path: "media/a.mp4", subtitles: { path: "media/a.vtt" } }, "x y").markup, /<track kind="subtitles" src="\/media\/a.vtt" label="Subtitles">/);
   assert.equal(pageMediaLanguage('<HTML LANG="nl"><head></head></HTML>'), "nl");
   assert.equal(pageMediaLanguage('<html><body></body></html>'), undefined);
   assert.equal(pageMediaLanguage('<template><html lang="fr"></html></template>'), undefined);
