@@ -4,7 +4,8 @@
 // at once (an `image-look` on the canvas), but nothing is written until Done, which is one Undo
 // step; ✕ or Escape put everything back, a replacement included. Zoom, Turn and Free trimming
 // (slice 41) save a Trimmed copy for this spot only; a trimmed spot re-opens on the full original
-// with its trim put back. The large editor comes with slice 42.
+// with its trim put back. Open large editor (slice 42) edits the same state in a large window:
+// its Done is this Done; its Cancel puts the popup back as it was.
 import type { MediaControllerPorts, MediaModule } from "../controllers/media-controller";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaBox, MediaImage } from "./media-markup";
@@ -18,7 +19,8 @@ import { mediaResolvePath } from "./media-references";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { frameChange, replaceNotice, shapeRatio, type PopupRect, type PopupShape } from "./image-popup-rules";
-import { cutArea, makesNewPicture, placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type PictureSize, type TrimRect } from "./image-popup-trim";
+import { makesNewPicture, placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type PictureSize, type TrimRect } from "./image-popup-trim";
+import { chooseShape, editKey, type PopupEdit } from "./image-large-rules";
 import { trimGeometry } from "./trim-geometry";
 import { mountImagePopupView, paintTrim, type ImagePopupState } from "./image-popup-view";
 
@@ -84,6 +86,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
   if (restored) Object.assign(state, restoreCut(restored.trim, start.shape, picture!.size!));
   if (state.around && read.focus) state.aroundFocus = { ...read.focus };
   if (!stamp.holds() || ports.source(target.path) !== source || !options.live()) return undefined;
+  const edit = (): PopupEdit => structuredClone({ shape: state.shape, focus: state.focus, cut: state.cut, around: state.around, aroundFocus: state.aroundFocus });
+  // A re-opened trim left as it was saves nothing, even where converting it back is not exact.
+  const opened = editKey(edit());
   let replacement: MediaImage | undefined;
   let closed = false;
   // A trimmed copy is saved when the result is one; the place shows another picture when it is not
@@ -139,6 +144,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
   };
   const update = () => {
     view.draw();
+    large?.draw();
     clearTimeout(pause);
     pause = setTimeout(() => { if (!closed) void measure(); }, 150);
     if (painting) return;
@@ -151,6 +157,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     cancelAnimationFrame(painting); clearTimeout(pause);
     // Done leaves the look until the page draws the change; then the image's own attributes are right.
     host.look(target);
+    large?.remove(); large = undefined;
     view.remove();
     options.closed();
   }
@@ -160,7 +167,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     if (state.busy) return;
     const trim = trimNow(), proof = { stamp, epoch, source: source!, expected }, initialAlt = mediaExistingAlt(expected);
     // A re-crop left as it was keeps its copy; at most the place's shape changes.
-    const same = restored && !replacement && trim && sameTrim(trim, restored.trim);
+    const same = restored && !replacement && trim && (sameTrim(trim, restored.trim) || editKey(edit()) === opened);
     const shape = kept(), change = same ? (shape.shape && shape.shape !== start.shape ? shape : undefined) : frameNow();
     if (!trim && !swapped() && !change || same && !change) { close(); return; }
     state.busy = true; view.draw();
@@ -207,20 +214,30 @@ export async function openImagePopup(options: ImagePopupOptions) {
       } }).catch((error: unknown) => ports.error(error));
   }
 
+  // The large editor (loaded on demand): it changes this state; Cancel puts back what the popup had.
+  let large: { draw(): void; remove(): void } | undefined, opening = false;
+  async function openLarge() {
+    if (large || opening || closed || !state.size || !state.trimmable) return;
+    opening = true;
+    const { mountLargeEditor } = await import("./image-large-editor").finally(() => { opening = false; });
+    if (closed || large) return;
+    const before = edit();
+    const back = () => { large?.remove(); large = undefined; view.draw(); view.focusLarge(); };
+    large = mountLargeEditor(state, start.shape, {
+      change: (next: PopupEdit) => { Object.assign(state, { around: undefined, aroundFocus: undefined }, structuredClone(next)); update(); },
+      done: () => { void done(); },
+      cancel: () => { if (state.busy) return; Object.assign(state, before); back(); update(); },
+    });
+  }
+
   const view = mountImagePopupView(state, host, {
-    shape: (shape: PopupShape) => {
-      // Free starts from what the place shows now; a shape starts unzoomed.
-      if (shape === "free" && state.shape !== "free" && state.size) state.cut = { ...state.cut, rect: cutArea(state.size, state.shape, state.focus, state.cut) };
-      else if (shape !== "free") state.cut = { ...state.cut, zoom: 1 };
-      // A shape chosen here replaces the one a re-opened Free trim kept.
-      if (shape !== state.shape) state.around = state.aroundFocus = undefined;
-      state.shape = shape; update();
-    },
+    shape: (shape: PopupShape) => { Object.assign(state, chooseShape(state.size, edit(), shape)); update(); },
     focus: (focus: PlaceFocus) => { state.focus = focus; update(); },
     zoom: (percent: number) => { state.cut = zoomTo(state.shape, state.cut, percent); update(); },
     turn: (direction: 1 | -1) => { state.cut = turnBy(state.cut, direction); state.focus = { ...centred }; update(); },
     rect: (rect: TrimRect) => { state.cut = { ...state.cut, rect }; update(); },
     replace: () => { void replace(); },
+    large: () => { void openLarge().catch((error: unknown) => ports.error(error)); },
     done: () => { void done(); },
     cancel,
   });

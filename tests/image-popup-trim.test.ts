@@ -45,8 +45,8 @@ test("the trim Done saves: fractions of the turned picture, the turn and flips, 
   assert.deepEqual(zoomed, { x: 0.375, y: 0.25, width: 0.25, height: 0.5 });
   const turned = popupTrim(wide, "original", { x: 50, y: 50 }, { ...uncut(), turn: 90 })!;
   assert.deepEqual(turned, { x: 0, y: 0, width: 1, height: 1, turn: 90 });
-  const kept = popupTrim(wide, "free", { x: 50, y: 50 }, { turn: 180, zoom: 1, rect: { x: 1 / 3, y: 0.1, w: 2 / 3, h: 0.5 }, straighten: 4, flipY: true })!;
-  assert.deepEqual(kept, { x: 0.333333, y: 0.1, width: 0.666667, height: 0.5, turn: 180, straighten: 4, flipY: true });
+  const kept = popupTrim(wide, "free", { x: 50, y: 50 }, { turn: 180, zoom: 1, rect: { x: 1 / 3, y: 0.1, w: 2 / 3, h: 0.5 }, flipY: true })!;
+  assert.deepEqual(kept, { x: 0.333333, y: 0.1, width: 0.666667, height: 0.5, turn: 180, flipY: true });
   // Every trim the popup makes is one the worker takes.
   for (const trim of [zoomed, turned, kept]) assert.ok(validTrim(trim) && isTrim(trim));
   assert.ok(kept.x + kept.width <= 1);

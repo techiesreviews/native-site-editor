@@ -456,7 +456,7 @@
   .image-popup__link { min-height: 44px; }
   .image-popup__range { height: 44px; }
   .image-popup__frame--free .image-popup__corner { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
-  .image-popup__device--phone { display: none; }
+  .image-popup .image-popup__device--phone { display: none; }
   .image-popup__bottom { border-top: 1px solid var(--image-popup-line); }
   .image-popup__foot { padding: 10px 14px 14px; }
   .image-popup__button--primary { flex: 1; }

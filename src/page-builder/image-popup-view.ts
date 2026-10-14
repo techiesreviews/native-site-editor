@@ -2,7 +2,7 @@
 // edit bar's colours, light or dark with the editor. Beside the picture on wide screens (below
 // the bar when there is no room), a bottom sheet with 44 px targets on phones. It does not trap
 // Tab (as Brizy's); Escape closes the shape menu first, then the popup. A picture that can be
-// trimmed gets Free (four corners), Zoom and Turn (slice 41).
+// trimmed gets Free (four corners), Zoom and Turn (slice 41), and Open large editor (slice 42).
 import "./image-popup.css";
 import { node } from "../ui/dom";
 import { icon } from "../icons";
@@ -18,7 +18,7 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, placePopup, popupMessage, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
-import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
+import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 
 export interface ImagePopupState {
@@ -47,6 +47,7 @@ export interface ImagePopupEvents {
   turn(direction: 1 | -1): void;
   rect(rect: TrimRect): void;
   replace(): void;
+  large(): void;
   done(): void;
   cancel(): void;
 }
@@ -58,7 +59,7 @@ const svg = (raw: string, size = 16) => {
 };
 const phone = () => matchMedia("(max-width: 700px)").matches;
 // The small previews: a phone and a computer screen at the widths the page is measured at.
-const DEVICES = [{ name: "Phone", viewport: 390, width: 58, height: 104, icon: mobileIcon }, { name: "Computer", viewport: 1280, width: 150, height: 84, icon: desktopIcon }];
+const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width: 58, height: 104 }, { name: "Computer", viewport: 1280, width: 150, height: 84 }];
 
 export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents) {
   const root = node("div", "image-popup");
@@ -108,16 +109,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   const pictureCell = node("div"); pictureCell.append(well, under);
   const pictureRow = row("Picture", pictureCell, "image-popup__row--picture");
 
-  const previews = node("div", "image-popup__previews");
-  const shown = DEVICES.map(device => {
-    const figure = node("figure", `image-popup__device image-popup__device--${device.name.toLowerCase()}`);
-    const caption = node("figcaption"); caption.append(svg(device.icon, 12), device.name);
-    const screen = node("div", "image-popup__screen");
-    screen.style.width = `${device.width}px`; screen.style.height = `${device.height}px`;
-    const spot = node("div", "image-popup__spot"), image = node("img"); image.alt = "";
-    spot.append(image); screen.append(spot); figure.append(caption, screen); previews.append(figure);
-    return { device, spot, image };
-  });
+  const previews = mountPreviews(DEVICES);
   // Zoom and Turn save a trimmed copy; they show when the picture can be trimmed.
   const zoom = node("input", "image-popup__range");
   Object.assign(zoom, { type: "range", min: "100", max: String(MAX_ZOOM * 100), step: "5", id: "image-popup-zoom" });
@@ -137,12 +129,14 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   turnCell.append(turnValue, turnButton("Turn left", turnLeftIcon, -1), turnButton("Turn right", turnRightIcon, 1));
   const turnRow = row("Turn", turnCell);
   turnCell.setAttribute("aria-label", "Turn");
-  const rows = node("div", "image-popup__rows"); rows.append(pictureRow, zoomRow, turnRow, row("Preview", previews));
+  const rows = node("div", "image-popup__rows"); rows.append(pictureRow, zoomRow, turnRow, row("Preview", previews.element));
 
   const message = node("div", "image-popup__message"); message.setAttribute("role", "status");
   const doneButton = actionButton("image-popup__button image-popup__button--primary", () => events.done());
   doneButton.textContent = "Done";
-  const foot = node("div", "image-popup__foot"); foot.append(doneButton);
+  const largeButton = actionButton("image-popup__button", () => events.large());
+  largeButton.textContent = "Open large editor";
+  const foot = node("div", "image-popup__foot"); foot.append(largeButton, doneButton);
   const bottom = node("div", "image-popup__bottom"); bottom.append(message, foot);
   root.append(nub, grab, head, notice, rows, bottom, close);
   document.body.append(root);
@@ -169,30 +163,13 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     const key = `${state.url}|${turn}|${straighten}|${flipX}|${flipY}|${pw}x${ph}@${devicePixelRatio}`;
     if (drawing && key !== drawn) {
       drawn = key;
-      const whole = { x: 0, y: 0, width: 1, height: 1, ...turn ? { turn } : {}, ...straighten ? { straighten } : {}, ...flipX ? { flipX } : {}, ...flipY ? { flipY } : {} };
-      paintTrim(turned, state.image!, whole, Math.max(pw, ph) * (devicePixelRatio || 1));
+      paintTrim(turned, state.image!, shownTrim(size(), state.cut), Math.max(pw, ph) * (devicePixelRatio || 1));
     }
     const area = cutArea(size(), state.shape, state.focus, state.cut);
     Object.assign(frame.style, { left: `${area.x * pw}px`, top: `${area.y * ph}px`, width: `${area.w * pw}px`, height: `${area.h * ph}px` });
     dot.style.left = `${state.focus.x}%`; dot.style.top = `${state.focus.y}%`;
   }
-  function drawPreviews() {
-    // A trim shows the trimmed picture, which already has its shape.
-    const cut = state.cutUrl && state.cutSize, url = cut ? state.cutUrl : state.url;
-    const { width, height } = cut ? state.cutSize! : size(), ratio = cut ? shapeRatio(placeShape(state.shape, state.around)) ?? width / height : shapeRatio(state.shape);
-    for (const { device, spot, image } of shown) {
-      const box = state.boxes?.find(item => item.viewport === device.viewport), scale = device.width / device.viewport;
-      let w = box ? box.width * scale : device.width * 0.8;
-      let h = box ? box.height * scale : ratio ? w / ratio : w * height / width;
-      const fit = Math.min(1, (device.width - 6) / w, (device.height - 6) / h);
-      w = Math.max(2, w * fit); h = Math.max(2, h * fit);
-      spot.style.width = `${w}px`; spot.style.height = `${h}px`;
-      if (url && image.getAttribute("src") !== url) image.src = url;
-      image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
-      image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""
-        : dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
-    }
-  }
+  const drawPreviews = () => previews.draw(state, size());
   picture.addEventListener("load", () => { layoutPicture(); drawPreviews(); });
 
   function draw(focusDot = false) {
@@ -221,7 +198,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       frame.removeAttribute("tabindex"); frame.removeAttribute("role"); frame.removeAttribute("aria-roledescription"); frame.removeAttribute("aria-label");
       frame.setAttribute("aria-hidden", "true");
     }
-    zoomRow.hidden = turnRow.hidden = !state.trimmable;
+    zoomRow.hidden = turnRow.hidden = largeButton.hidden = !state.trimmable;
     const percent = zoomPercent(state.shape, state.cut);
     if (Number(zoom.value) !== percent) zoom.value = String(percent);
     zoom.style.setProperty("--fill", `${(percent - 100) / (MAX_ZOOM - 1)}%`);
@@ -233,7 +210,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     message.className = `image-popup__message image-popup__message--${said.tone}`;
     message.title = said.tip;
     message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon), node("span", "", said.text));
-    doneButton.disabled = zoom.disabled = state.busy;
+    doneButton.disabled = largeButton.disabled = zoom.disabled = state.busy;
     root.setAttribute("aria-busy", String(state.busy));
     layoutPicture();
     drawPreviews();
@@ -358,6 +335,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
 
   return {
     draw,
+    /** Back from the large editor: its button has the focus again. */
+    focusLarge: () => largeButton.focus({ preventScroll: true }),
     remove() {
       document.removeEventListener("pointerdown", outside, true);
       document.removeEventListener("keydown", stray);
@@ -383,6 +362,39 @@ function row(label: string, content: HTMLElement, className = "") {
   const item = node("div", `image-popup__row ${className}`.trim());
   item.append(node("span", "image-popup__label", label), content);
   return item;
+}
+
+export interface PreviewDevice { name: "Phone" | "Computer"; viewport: number; width: number; height: number }
+/** The live previews: the spot in a phone's and a computer's screen at the widths the page is measured at. */
+export function mountPreviews(devices: readonly PreviewDevice[]) {
+  const element = node("div", "image-popup__previews");
+  const shown = devices.map(device => {
+    const figure = node("figure", `image-popup__device image-popup__device--${device.name.toLowerCase()}`);
+    const caption = node("figcaption"); caption.append(svg(device.name === "Phone" ? mobileIcon : desktopIcon, 12), device.name);
+    const screen = node("div", "image-popup__screen");
+    screen.style.width = `${device.width}px`; screen.style.height = `${device.height}px`;
+    const spot = node("div", "image-popup__spot"), image = node("img"); image.alt = "";
+    spot.append(image); screen.append(spot); figure.append(caption, screen); element.append(figure);
+    return { device, spot, image };
+  });
+  function draw(state: ImagePopupState, size: PictureSize) {
+    // A trim shows the trimmed picture, which already has its shape.
+    const cut = state.cutUrl && state.cutSize, url = cut ? state.cutUrl : state.url;
+    const { width, height } = cut ? state.cutSize! : size, ratio = cut ? shapeRatio(placeShape(state.shape, state.around)) ?? width / height : shapeRatio(state.shape);
+    for (const { device, spot, image } of shown) {
+      const box = state.boxes?.find(item => item.viewport === device.viewport), scale = device.width / device.viewport;
+      let w = box ? box.width * scale : device.width * 0.8;
+      let h = box ? box.height * scale : ratio ? w / ratio : w * height / width;
+      const fit = Math.min(1, (device.width - 6) / w, (device.height - 6) / h);
+      w = Math.max(2, w * fit); h = Math.max(2, h * fit);
+      spot.style.width = `${w}px`; spot.style.height = `${h}px`;
+      if (url && image.getAttribute("src") !== url) image.src = url;
+      image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
+      image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""
+        : dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
+    }
+  }
+  return { element, draw };
 }
 
 /** Draws `trim` of `image` into `canvas`, its longer side at most `longest` pixels. */

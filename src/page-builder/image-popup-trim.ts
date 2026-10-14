@@ -1,8 +1,10 @@
 // Trim, zoom and turn in the image popup (media build slice 41; ticket 09 "Shapes and what gets
 // saved" and "Replacing and re-cropping"): the part of the turned picture a shape and zoom keep,
 // Free trimming's four corners, when the result saves a Trimmed copy, and a re-crop starting from
-// the full original with the earlier trim put back. Fractions are of the turned picture, as a
-// trim's are (trim-geometry.ts). No DOM here.
+// the full original with the earlier trim put back. Fractions are of the picture as the popup
+// shows it: turned, flipped and straightened, a straightened picture enlarged until it fills its
+// frame (no empty corners). A trim's fractions (trim-geometry.ts) are of the frame before that
+// enlargement: `popupTrim` and `restoreCut` convert. No DOM here.
 import type { MediaTrim } from "../../shared/media-records";
 import { shapeRatio, type PopupShape } from "./image-popup-rules";
 import type { PlaceFocus } from "./place-frame";
@@ -22,6 +24,29 @@ export const uncut = (): PopupCut => ({ turn: 0, zoom: 1, rect: { x: 0, y: 0, w:
 export function turnedSize(size: PictureSize, turn: Turn): PictureSize {
   return turn === 90 || turn === 270 ? { width: size.height, height: size.width } : { width: size.width, height: size.height };
 }
+
+/** How much a straightened picture is enlarged to fill its frame: 1 when it is not straightened. */
+export function coverScale(size: PictureSize, cut: Pick<PopupCut, "turn" | "straighten">) {
+  const { width, height } = turnedSize(size, cut.turn), angle = Math.abs(cut.straighten ?? 0) * Math.PI / 180;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  return Math.max((width * cos + height * sin) / width, (width * sin + height * cos) / height);
+}
+
+/** The part of a trim's frame the enlarged picture shows: the whole frame unless straightened. */
+function shownBox(size: PictureSize, cut: PopupCut): TrimRect {
+  const side = 1 / coverScale(size, cut), at = (1 - side) / 2;
+  return { x: at, y: at, w: side, h: side };
+}
+
+/** The whole picture as the popup shows it, as a trim (to draw it). */
+export function shownTrim(size: PictureSize, cut: PopupCut): MediaTrim {
+  const box = shownBox(size, cut);
+  return { x: box.x, y: box.y, width: box.w, height: box.h, ...transform(cut) };
+}
+const transform = (cut: PopupCut) => ({
+  ...(cut.turn ? { turn: cut.turn } : {}), ...(cut.straighten ? { straighten: cut.straighten } : {}),
+  ...(cut.flipX ? { flipX: true as const } : {}), ...(cut.flipY ? { flipY: true as const } : {}),
+});
 
 /**
  * The part of the turned picture the place shows: Free's rectangle; otherwise the shape's ratio
@@ -50,13 +75,9 @@ export const dotApplies = (shape: PopupShape, cut: PopupCut) => shape !== "free"
 /** The trim Done saves, in the records' form; nothing when only the place's shape or focus changes. */
 export function popupTrim(size: PictureSize, shape: PopupShape, focus: PlaceFocus, cut: PopupCut): MediaTrim | undefined {
   if (!makesNewPicture(shape, cut)) return undefined;
-  const area = cutArea(size, shape, focus, cut), round = (value: number) => Math.round(value * 1e6) / 1e6;
-  const x = clamp(round(area.x)), y = clamp(round(area.y));
-  return {
-    x, y, width: Math.min(round(area.w), 1 - x), height: Math.min(round(area.h), 1 - y),
-    ...(cut.turn ? { turn: cut.turn } : {}), ...(cut.straighten ? { straighten: cut.straighten } : {}),
-    ...(cut.flipX ? { flipX: true as const } : {}), ...(cut.flipY ? { flipY: true as const } : {}),
-  };
+  const area = cutArea(size, shape, focus, cut), box = shownBox(size, cut), round = (value: number) => Math.round(value * 1e6) / 1e6;
+  const x = clamp(round(box.x + area.x * box.w)), y = clamp(round(box.y + area.y * box.h));
+  return { x, y, width: Math.min(round(area.w * box.w), 1 - x), height: Math.min(round(area.h * box.h), 1 - y), ...transform(cut) };
 }
 
 /** Two trims cut the same picture (a re-opened trim left as it was saves nothing). */
@@ -74,16 +95,19 @@ export function sameTrim(a: MediaTrim | undefined, b: MediaTrim | undefined) {
  */
 export function restoreCut(trim: MediaTrim, shape: PopupShape, size: PictureSize): { shape: PopupShape; focus: PlaceFocus; cut: PopupCut; around?: PopupShape } {
   const turn = ([0, 90, 180, 270] as const).find(value => value === (trim.turn ?? 0)) ?? 0;
-  const cut: PopupCut = { turn, zoom: 1, rect: { x: trim.x, y: trim.y, w: trim.width, h: trim.height },
+  const cut: PopupCut = { turn, zoom: 1, rect: { x: 0, y: 0, w: 1, h: 1 },
     ...(trim.straighten ? { straighten: trim.straighten } : {}), ...(trim.flipX ? { flipX: true as const } : {}), ...(trim.flipY ? { flipY: true as const } : {}) };
-  const { width, height } = turnedSize(size, turn), aspect = (trim.width * width) / (trim.height * height);
+  // The trim's rectangle on the picture as shown (a part of a straightened frame's empty corners is left out).
+  const box = shownBox(size, cut), w0 = clamp(trim.width / box.w, MIN_FREE), h0 = clamp(trim.height / box.h, MIN_FREE);
+  const rect = cut.rect = { x: clamp((trim.x - box.x) / box.w, 0, 1 - w0), y: clamp((trim.y - box.y) / box.h, 0, 1 - h0), w: w0, h: h0 };
+  const { width, height } = turnedSize(size, turn), aspect = (rect.w * width) / (rect.h * height);
   const kept = shape === "free" ? "original" : shape, ratio = shapeRatio(kept) ?? width / height;
-  const base = cutArea(size, kept, { x: 50, y: 50 }, { ...cut, zoom: 1 }), zoom = base.w / trim.width;
+  const base = cutArea(size, kept, { x: 50, y: 50 }, { ...cut, zoom: 1 }), zoom = base.w / rect.w;
   const free = { shape: "free" as const, focus: { x: 50, y: 50 }, cut, ...kept === "original" ? {} : { around: kept } };
   if (Math.abs(aspect / ratio - 1) > 0.01 || zoom < 0.99 || zoom > MAX_ZOOM + 0.01) return free;
   const z = clamp(zoom, 1, MAX_ZOOM), w = base.w / z, h = base.h / z;
   const at = (offset: number, room: number) => room > 1e-6 ? clamp(offset / room) * 100 : 50;
-  const shaped = { shape: kept, focus: { x: at(trim.x, 1 - w), y: at(trim.y, 1 - h) }, cut: { ...cut, zoom: z, rect: { x: 0, y: 0, w: 1, h: 1 } } };
+  const shaped = { shape: kept, focus: { x: at(rect.x, 1 - w), y: at(rect.y, 1 - h) }, cut: { ...cut, zoom: z, rect: { x: 0, y: 0, w: 1, h: 1 } } };
   // A trim that is only the shape's own crop would read as no trim: it stays a trim, as Free.
   return makesNewPicture(shaped.shape, shaped.cut) ? shaped : free;
 }

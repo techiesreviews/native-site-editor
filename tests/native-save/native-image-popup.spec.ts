@@ -1,7 +1,8 @@
 // The Image button and the image popup (media-manager build slice 39, ticket 09 "Entry point and
 // popup"): one Image button with a state badge; the popup's shape menu, focus dot and Replace show
 // on the page at once but are kept only by Done (one Undo step); ✕ or Escape put everything back.
-// Trim, zoom and turn (slice 41) save a trimmed copy for this spot only.
+// Trim, zoom and turn (slice 41) save a trimmed copy for this spot only; so do straighten and flip
+// in the large editor (slice 42), whose Cancel goes back to the popup as it was.
 // Default fixture: index.html's hero image is images/placeholder.svg (no alt); images/studio-desk.svg is unused.
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -296,6 +297,64 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   const saved = (await records(page)).files["media/images/turned-crop.webp"].trimmedFrom;
   expect(saved.source).toBe("media/images/turned.webp");
   expect(saved.trim).toMatchObject({ x: 0.25, y: 0.25, width: 0.5, height: 0.5, turn: 90 });
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
+});
+
+const large = (page: Page) => page.getByRole("dialog", { name: "Edit image", exact: true });
+
+test("the large editor carries the popup's state; Cancel returns to the popup unchanged; straighten and flip save a trimmed copy", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await openPopup(page);
+  // An SVG cannot be trimmed: no large editor.
+  await expect(popup(page).getByRole("button", { name: "Open large editor", exact: true })).toBeHidden();
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Level.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Level.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/level\.webp"/);
+
+  // The popup's shape is carried into the large window.
+  await openPopup(page);
+  await chooseShape(page, "16:9");
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  await expect(large(page)).toBeVisible();
+  await expect(large(page).getByRole("combobox", { name: "Shape" })).toHaveValue("16:9");
+  const message = large(page).getByRole("status");
+  await expect(message).toHaveText("Only changes this spot");
+  // Flip and Cancel: back to the popup as it was.
+  await large(page).getByRole("button", { name: "Flip side to side", exact: true }).click();
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(large(page)).toHaveCount(0);
+  await expect(popup(page)).toBeVisible();
+  await expect(popup(page).getByRole("button", { name: "Shape: 16:9", exact: true })).toBeVisible();
+  await expect(popup(page).locator(".image-popup__turned")).toHaveText("0°");
+  await expect(popup(page).locator(".image-popup__message")).toHaveText("Only changes this spot");
+  await expect(popup(page).getByRole("button", { name: "Open large editor", exact: true })).toBeFocused();
+
+  // Straighten 4° on the ruler, flip, Done: one trimmed copy, both windows closed.
+  const before = await source(page);
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  const ruler = large(page).getByRole("slider", { name: "Straighten" });
+  await ruler.focus();
+  for (let press = 0; press < 8; press++) await page.keyboard.press("ArrowRight");
+  await expect(ruler).toHaveAttribute("aria-valuetext", "4 degrees");
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  await large(page).getByRole("button", { name: "Flip side to side", exact: true }).click();
+  await large(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/level-crop.webp.", { timeout: 30_000 });
+  await expect(large(page)).toHaveCount(0);
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/level-crop\.webp"/);
+  // Flipping a straightened picture mirrors its straighten too; the copy has the place's 16:9 shape.
+  const saved = (await records(page)).files["media/images/level-crop.webp"].trimmedFrom;
+  expect(saved.source).toBe("media/images/level.webp");
+  expect(saved.trim).toMatchObject({ straighten: -4, flipX: true });
+  expect(saved.trim.width * 800 / (saved.trim.height * 400)).toBeCloseTo(16 / 9, 2);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
