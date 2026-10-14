@@ -2,7 +2,7 @@
 title: Starter - the shared player
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-60 runner)
 blocked_by: []
 builder: claude
 phase: 5
