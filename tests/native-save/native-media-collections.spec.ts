@@ -345,7 +345,7 @@ test("cancelling one file mid-way keeps the other; the grid stays usable while f
   hold.free();
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "media/images/quick.svg"]);
-  expect(await storedDraft(page, "media/images/slow.webp")).toBeUndefined();
+  for (const path of ["media/images/slow.webp", "media/images/slow.png"]) expect(await storedDraft(page, path)).toBeUndefined();
   // Dismiss closes the tray.
   await tray(page).getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(tray(page)).toBeHidden();
@@ -387,8 +387,8 @@ test("renaming the collection while its files are prepared: they join it under i
   await expect(collections).toHaveValue("Picks");
   hold.free();
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
-  await expect.poll(() => members(page, "Picks")).toEqual(["media/images/late.webp"]);
-  await expect.poll(() => tileNames(page)).toEqual(["media/images/late.webp"]);
+  await expect.poll(() => members(page, "Picks")).toEqual(["media/images/late.png"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/late.png"]);
 });
 
 test("Review… stops automatic adding and opens Optimise for the files not added yet, in the same collection", async ({ page, baseURL }) => {
@@ -409,8 +409,8 @@ test("Review… stops automatic adding and opens Optimise for the files not adde
   // Nothing is added behind the sheet's back; its own Add to library adds them once.
   await library.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await library.getByRole("button", { name: "Add to library", exact: true }).click();
-  await expect.poll(() => members(page, "Studio picks")).toEqual(["media/images/first.webp", "media/images/second.svg"]);
-  await expect.poll(() => tileNames(page)).toEqual(["media/images/first.webp", "media/images/second.svg"]);
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["media/images/first.png", "media/images/second.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/first.png", "media/images/second.svg"]);
   expect(await storedDraft(page, "media/images/first-2.svg")).toBeUndefined();
 });
 
