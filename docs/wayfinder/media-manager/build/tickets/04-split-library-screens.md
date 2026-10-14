@@ -2,7 +2,7 @@
 title: Split the library view - shell, grid, details, delete, Optimise, input
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-04 runner)
 blocked_by: [03-split-library-state]
 builder: sol
 phase: 0
