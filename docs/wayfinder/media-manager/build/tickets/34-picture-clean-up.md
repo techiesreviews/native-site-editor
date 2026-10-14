@@ -1,8 +1,8 @@
 ---
 title: Replacing inside picture cleans it up
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-34 runner)
 blocked_by: [33-placed-image-markup]
 builder: sol
 phase: 2
