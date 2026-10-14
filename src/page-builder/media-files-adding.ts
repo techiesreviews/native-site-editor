@@ -12,7 +12,7 @@ let runs: ReturnType<typeof createFilesAdding> | undefined;
 function paint() {
   if (!summary || !runs) return;
   summary.paint({
-    entries: runs.entries().map(entry => ({ key: entry, name: entry.file.name, state: entry.state, error: entry.error, note: entry.note, cancel: () => cancel(entry) })),
+    entries: runs.entries().map(entry => ({ quality: entry.quality, key: entry, name: entry.file.name, state: entry.state, error: entry.error, note: entry.note, cancel: () => cancel(entry) })),
     review: Boolean(runs.reviewable()),
   });
 }

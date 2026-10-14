@@ -6,7 +6,8 @@ const monaco = monacoTrim();
 
 export default defineConfig({
   plugins: [monaco.plugin, previewRuntime()],
-  optimizeDeps: monaco.optimizeDeps,
+  worker: { format: "es" },
+  optimizeDeps: { ...monaco.optimizeDeps, exclude: ["@jsquash/webp", "@jsquash/avif"] },
   server: {
     proxy: {
       "/api": "http://127.0.0.1:8787",

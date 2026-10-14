@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
+  mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
 } from "../src/page-builder/media-adding-rules";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -82,4 +82,10 @@ test("a failed file's line names it once", () => {
   assert.equal(mediaAddingFailedLine("huge.pdf", "huge.pdf is 20 MB; uploads are limited to 20 MB per file."), "huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
   assert.equal(mediaAddingFailedLine("a.png", "This folder changed. Try again."), "a.png: This folder changed. Try again.");
   assert.equal(mediaAddingFailedLine("a.png"), "a.png: The file could not be added.");
+});
+
+test("Smallest files preparing words say slower; ordinary and settled words stay the same", () => {
+  assert.equal(mediaAddingWords("preparing", "smallest"), "Preparing (slower)…");
+  assert.equal(mediaAddingWords("preparing", "balanced"), "Preparing…");
+  assert.equal(mediaAddingWords("ready", "smallest"), "Ready");
 });

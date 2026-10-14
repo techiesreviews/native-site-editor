@@ -24,7 +24,8 @@
     "test:browser:all": "playwright test",
     "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\"",
     "test:budget": "tsx tests/perf/byte-budget.ts",
-    "lint": "eslint && node scripts/agents/tickets.mjs check"
+    "lint": "eslint && node scripts/agents/tickets.mjs check",
+    "test:media-encoders-csp": "tsx tests/perf/media-encoders-csp.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",
@@ -44,6 +45,8 @@
     "wrangler": "^4.146.0"
   },
   "dependencies": {
+    "@jsquash/avif": "2.1.1",
+    "@jsquash/webp": "1.5.0",
     "@modelcontextprotocol/server": "^2.2.0",
     "@preact/signals-core": "^1.14.4",
     "blakejs": "^1.2.1",

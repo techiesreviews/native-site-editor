@@ -1116,10 +1116,8 @@ function workerMiddleware(): Connect.NextHandleFunction {
   return async (req, res, next) => {
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${appPort}`);
     const path = url.pathname;
-    res.setHeader(
-      "Content-Security-Policy",
-      testCsp,
-    );
+    // Dist mode already applied public/_headers; do not weaken its worker policy.
+    if (!distMode) res.setHeader("Content-Security-Policy", testCsp);
 
     // Test control channel (never part of the real product, never public demo).
     if (path.startsWith("/__demo/")) {
@@ -1481,7 +1479,8 @@ async function main() {
       } },
       demoBannerPlugin(),
     ],
-    optimizeDeps: monaco.optimizeDeps,
+    worker: { format: "es" },
+    optimizeDeps: { ...monaco.optimizeDeps, exclude: ["@jsquash/webp", "@jsquash/avif"] },
     server: {
       host: "127.0.0.1",
       port: appPort,

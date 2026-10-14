@@ -1,3 +1,4 @@
+import type { MediaImageQuality } from "./media-optimise";
 import { filterMediaLibrary, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
 import type { MediaLibrary } from "./media-picker";
@@ -41,6 +42,10 @@ export function mediaAddingReveal(filter: MediaLibraryFilter, collection: string
 
 /** A file's words while it is being added: on its tile, or on its row where there are no tiles. */
 export const MEDIA_ADDING_WORDS: Partial<Record<MediaAddingState, string>> = { waiting: "Waiting", preparing: "Preparing…", ready: "Ready", adding: "Adding…", added: "Adding…" };
+
+/** Smallest files takes longer, including the encoder download and responsive copies. */
+export const mediaAddingWords = (state: MediaAddingState, quality?: MediaImageQuality) =>
+  state === "preparing" && quality === "smallest" ? "Preparing (slower)…" : MEDIA_ADDING_WORDS[state] ?? "";
 
 /** A file that can still be stopped: it is not being saved yet. */
 export const mediaAddingCancellable = (state: MediaAddingState) => state === "waiting" || state === "preparing" || state === "ready";

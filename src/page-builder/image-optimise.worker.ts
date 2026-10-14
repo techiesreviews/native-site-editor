@@ -4,10 +4,9 @@ import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTranspa
 
 import { strippedImageSource } from "./media-image-bytes";
 
-/** Slice 28 can supply an AVIF encoder here, including its speed setting. */
-async function encode(canvas: OffscreenCanvas, type: string, quality: number, _speed?: number) {
-  return canvas.convertToBlob({ type, quality: quality / 100 });
-}
+import { createMediaEncoder } from "./media-encoders";
+
+const encodeImage = createMediaEncoder();
 function sourceType(file: File, bytes: Uint8Array) {
   if (bytes[0] === 255 && bytes[1] === 216) return "image/jpeg";
   if (bytes[0] === 137 && bytes[1] === 80) return "image/png";
@@ -57,7 +56,10 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
     try {
       const picture = imagePixels(bitmap, trim);
       const size = mediaDimensions(picture.width, picture.height, options.maxWidth);
-      let settings = options, note: string | undefined;
+      let settings = options;
+      const notes = new Set<string>();
+      const encode = (canvas: OffscreenCanvas, type: string, quality: number, speed?: number) =>
+        encodeImage(canvas, type, quality, speed, text => notes.add(text));
       const canvasAt = (width: number) => {
         const height = Math.max(1, Math.round(picture.height * width / picture.width));
         const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext("2d");
@@ -73,12 +75,9 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
       for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { transparent = true; break; }
       if (transparent) settings = mediaTransparentOptions(settings);
       let blob = await encode(canvas, `image/${settings.format}`, settings.quality, settings.speed);
-      if (settings.format === "avif" && blob.type !== "image/avif") {
-        settings = mediaImageRecipe();
-        blob = await encode(canvas, "image/webp", settings.quality);
-        note = "AVIF is not available yet. Used Balanced WebP instead.";
-      }
-      // Slice 28 handles browsers returning PNG when WebP was requested.
+      // A failed AVIF encoder used Balanced; its copies must use that recipe too.
+      if (settings.format === "avif" && blob.type !== "image/avif") settings = mediaImageRecipe();
+      // Native WebP or its on-demand encoder shares the same comparison and copy path.
       const png = transparent ? await encode(canvas, "image/png", settings.quality) : undefined;
       if (png) blob = mediaChooseEncoding(blob, png);
       // Transparent pictures already compared WebP with lossless PNG above.
@@ -95,7 +94,7 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
         // A family requires one actual format; unsupported encoders cannot supply a copy.
         if (encoded.type === blob.type && mediaCopyIsSmaller(encoded, blob)) outputs.push({ ...output(encoded, width, copy.height), variantWidth: width });
       }
-      self.postMessage({ result: { outputs, before: file.size, after: primary.blob.size, ...(note ? { note } : {}) } satisfies MediaOptimiseResult });
+      self.postMessage({ result: { outputs, before: file.size, after: primary.blob.size, ...(notes.size ? { note: [...notes].join(" ") } : {}) } satisfies MediaOptimiseResult });
     } finally { bitmap.close(); }
   } catch (error) { self.postMessage({ error: error instanceof Error ? error.message : "This image could not be optimised." }); }
 };

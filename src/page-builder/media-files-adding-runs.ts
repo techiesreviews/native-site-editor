@@ -4,7 +4,7 @@ import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImageQuality } from "./media-optimise";
 
 export interface FilesAddingEntry {
-  file: File; state: MediaAddingState; error?: string; note?: string; path?: string;
+  quality?: MediaImageQuality; file: File; state: MediaAddingState; error?: string; note?: string; path?: string;
   request?: MediaImportRequest; work?: AbortController;
 }
 /** One drop on Files (or one Upload files…): the repository it was made in and where it goes. */
@@ -66,6 +66,7 @@ export function createFilesAdding(deps: FilesAddingDeps) {
       if (entry.state !== "waiting") continue;
       if (!host.live()) { drop(addition, new Error(CHANGED)); return []; }
       const work = entry.work = new AbortController();
+      entry.quality = quality;
       set(entry, "preparing");
       try {
         const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal, quality);

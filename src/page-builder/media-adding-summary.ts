@@ -1,13 +1,14 @@
+import type { MediaImageQuality } from "./media-optimise";
 import "./media-adding-summary.css";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename } from "./media-library-filter";
-import { MEDIA_ADDING_WORDS, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingStatus, type MediaAddingState } from "./media-adding-rules";
+import { mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingStatus, type MediaAddingState } from "./media-adding-rules";
 
 /** One file as the summary shows it. `cancel` is offered on its row while it can be stopped;
  * `key` keeps the row (and its focus) from one paint to the next. */
 export interface MediaAddingSummaryEntry {
-  key?: object; name: string; state: MediaAddingState; error?: string; note?: string; cancel?: () => void;
+  quality?: MediaImageQuality; key?: object; name: string; state: MediaAddingState; error?: string; note?: string; cancel?: () => void;
 }
 export interface MediaAddingSummaryActions {
   cancel(): void; retry(): void; dismiss(): void;
@@ -55,7 +56,7 @@ export function createMediaAddingSummary(root: HTMLElement, actions: MediaAdding
       rowOf.set(key, item);
     }
     item.dataset.state = entry.state;
-    item.querySelector(".media-library__adding-row-state")!.textContent = MEDIA_ADDING_WORDS[entry.state] ?? "";
+    item.querySelector(".media-library__adding-row-state")!.textContent = mediaAddingWords(entry.state, entry.quality);
     item.querySelector<HTMLButtonElement>(".media-library__adding-row-cancel")!.hidden = !entry.cancel || !mediaAddingCancellable(entry.state);
     return item;
   }
@@ -63,7 +64,8 @@ export function createMediaAddingSummary(root: HTMLElement, actions: MediaAdding
     paint(view: MediaAddingSummaryView) {
       const states = view.entries.map(entry => entry.state);
       const { text, running, done, total } = mediaAddingStatus(states), offers = mediaAddingOffers(states, view.hold);
-      root.hidden = !text; status.textContent = view.text ?? text;
+      root.hidden = !text; status.textContent = view.entries.some(entry => entry.state === "preparing" && entry.quality === "smallest")
+        ? `${view.text ?? text} · Preparing (slower)…` : view.text ?? text;
       bar.hidden = !running; bar.max = Math.max(1, total); bar.value = done;
       if (rows) {
         const current = view.entries.filter(entry => mediaAddingCancellable(entry.state) || entry.state === "adding");

@@ -59,7 +59,7 @@ export async function prepareMediaFile(file: File, _key: string, folder?: string
   const outputs = result ? result.outputs.map(output =>
     ({ name: output.variantWidth ? mediaCopyName(name, output.variantWidth) : name, size: output.blob.size })) : [{ name, size: file.size }];
   const largest = outputs.reduce((a, b) => a.size >= b.size ? a : b);
-  return { request: { file, result, folder: mediaPreparationFolder(folder, name) }, warning: largeDownloadNote(largest) };
+  return { request: { file, result, folder: mediaPreparationFolder(folder, name) }, warning: [result?.note, largeDownloadNote(largest)].filter(Boolean).join(" ") || undefined };
 }
 
 /** One failed preparation leaves the other files available. */

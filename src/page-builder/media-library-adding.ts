@@ -1,3 +1,4 @@
+import type { MediaImageQuality } from "./media-optimise";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename, type MediaLibraryFilter } from "./media-library-filter";
@@ -5,7 +6,7 @@ import { prepareMediaFile, askToAddUnchanged } from "./media-prepare";
 import { mediaAddingSettings } from "./media-settings";
 import type { MediaImportRequest } from "./media-picker";
 import {
-  MEDIA_ADDING_WORDS as WORDS, mediaAddingBusy, mediaAddingCancellable, mediaAddingPath, mediaAddingReveal, mediaAddingShown,
+  MEDIA_ADDING_WORDS as WORDS, mediaAddingWords, mediaAddingBusy, mediaAddingCancellable, mediaAddingPath, mediaAddingReveal, mediaAddingShown,
   mediaAddingStatus, type MediaAddingState,
 } from "./media-adding-rules";
 import { createMediaAddingSummary } from "./media-adding-summary";
@@ -33,7 +34,7 @@ export interface MediaAddingHost {
   tell(text: string): void;
 }
 interface Entry {
-  file: File; collection: string; state: MediaAddingState; tile: HTMLElement; words: HTMLElement;
+  quality?: MediaImageQuality; file: File; collection: string; state: MediaAddingState; tile: HTMLElement; words: HTMLElement;
   error?: string; note?: string; request?: MediaImportRequest; id: string; work?: AbortController; path?: string; url?: string;
 }
 let nextEntry = 0;
@@ -103,7 +104,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
   function set(entry: Entry, state: MediaAddingState) {
     entry.state = state; entry.tile.dataset.state = state;
     const choose = entry.tile.querySelector<HTMLButtonElement>(".media-library__pending-select");
-    if (choose) choose.disabled = state !== "ready"; entry.words.textContent = WORDS[state] ?? "";
+    if (choose) choose.disabled = state !== "ready"; entry.words.textContent = mediaAddingWords(state, entry.quality);
     paint();
   }
   function stop(entry: Entry) {
@@ -143,7 +144,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     }
     const { text, running } = mediaAddingStatus(entries.map(entry => entry.state));
     summary.paint({
-      entries: entries.map(entry => ({ name: entry.file.name, state: entry.state, error: entry.error, note: entry.note })),
+      entries: entries.map(entry => ({ quality: entry.quality, name: entry.file.name, state: entry.state, error: entry.error, note: entry.note })),
       hold: h.hold,
       text: h.hold && !entries.some(entry => entry.state === "waiting" || entry.state === "preparing")
         ? `${entries.filter(entry => entry.state === "ready").length} ready · Use saves and places; Close saves without placing.` : text,
@@ -158,6 +159,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       if (!h.alive()) return;
       if (entry.state !== "waiting") continue;
       const work = entry.work = new AbortController();
+      entry.quality = quality;
       set(entry, "preparing");
       try {
         const prepared = await prepareMediaFile(entry.file, key, undefined, work.signal, undefined, askToAddUnchanged, undefined, quality);

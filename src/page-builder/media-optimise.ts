@@ -62,7 +62,7 @@ export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?
     validateMediaOptimiseOptions(options);
     if (signal?.aborted) { reject(new DOMException("Image optimisation cancelled.", "AbortError")); return; }
     const worker = new Worker(new URL("./image-optimise.worker.ts", import.meta.url), { type: "module" });
-    const timer = setTimeout(() => finish(new Error("This image took too long to decode. Try a smaller image or keep the original.")), 60_000);
+    const timer = setTimeout(() => finish(new Error("This image took too long to prepare. Try a smaller image or keep the original.")), options.format === "avif" ? 300_000 : 60_000);
     let finished = false;
     const abort = () => finish(new DOMException("Image optimisation cancelled.", "AbortError"));
     signal?.addEventListener("abort", abort, { once: true });

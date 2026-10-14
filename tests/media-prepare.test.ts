@@ -272,3 +272,10 @@ test("animated GIF stays byte-identical; still GIF uses the recipe; quality can 
   const selected: typeof optimiseMedia = async (file, options) => { assert.equal(options.quality, 90); assert.equal(options.maxWidth, null); return encode(file, DEFAULT_MEDIA_OPTIMISE); };
   assert.equal((await prepareMedia([still], "repo", undefined, undefined, selected, undefined, undefined, "higher")).requests.length, 1);
 });
+
+test("encoder fallback notes reach the shared adding summary", async () => {
+  const note = "WebP could not be used in this browser. Used PNG instead.";
+  const prepared = await prepareMediaFile(new File(["photo"], "photo.png"), "repo", undefined, undefined,
+    async (file, settings) => ({ ...await encode(file, settings), note }));
+  assert.equal(prepared.warning, note);
+});
