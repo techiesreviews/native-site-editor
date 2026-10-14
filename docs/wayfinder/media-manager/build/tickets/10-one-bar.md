@@ -2,7 +2,7 @@
 title: One bar - search, Collections dropdown, More
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-10 runner)
 blocked_by: [09-media-tab-and-tiles]
 builder: claude
 phase: 1
