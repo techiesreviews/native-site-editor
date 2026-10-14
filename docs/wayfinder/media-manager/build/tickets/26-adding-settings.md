@@ -2,7 +2,7 @@
 title: Adding settings in More, remembered per site
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-26 runner)
 blocked_by: [25-image-recipe]
 builder: claude
 phase: 2
