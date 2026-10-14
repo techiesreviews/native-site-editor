@@ -68,6 +68,7 @@ function flags(out: Record<string, unknown>, keys: string[], field: string) {
     if (!out[key]) delete out[key];
   }
 }
+const hasUnknown = (description: Record<string, unknown>) => Object.keys(description).some(key => key !== "text" && key !== "byAgent");
 function trimRecord(value: unknown, field: string): MediaTrim {
   const out = { ...object(value, field) };
   for (const key of ["x", "y", "width", "height", "straighten"]) {
@@ -88,7 +89,8 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     const description = { ...object(out.description, `${field}.description`) };
     string(description.text, `${field}.description.text`);
     flags(description, ["byAgent"], `${field}.description`);
-    if (description.text) out.description = description; else delete out.description;
+    // An empty description is dropped unless it carries unknown keys, which are kept.
+    if (description.text || hasUnknown(description)) out.description = description; else delete out.description;
   }
   flags(out, ["decorative", "alwaysKeep"], field);
   optionalStrings(out, ["still", "subtitles"], field);
@@ -225,7 +227,7 @@ export function setMediaCollections(records: MediaRecords, path: string, names: 
 }
 export function setMediaDescription(records: MediaRecords, path: string, text: string, byAgent = false): MediaRecords {
   const record = { ...records.files[path] };
-  if (text) record.description = { ...record.description, text, ...(byAgent ? { byAgent: true as const } : {}) };
+  if (text || (record.description && hasUnknown(record.description))) record.description = { ...record.description, text, ...(byAgent ? { byAgent: true as const } : {}) };
   else delete record.description;
   if (!byAgent && record.description) delete record.description.byAgent;
   return { ...records, files: Object.assign(Object.create(null), records.files, { [path]: record }) };

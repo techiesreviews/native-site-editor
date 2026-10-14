@@ -198,3 +198,11 @@ test("the panel's tags-and-alt save writes only changed fields, so an unchanged 
 test("migrated old entries are validated as new fields, so a written file always reads back", () => {
   assert.throws(() => parseMediaRecords('{"a.png":{"alt":"x","decorative":"yes"}}'), /decorative/);
 });
+test("an empty description with unknown keys survives a round trip and unrelated edits", () => {
+  const records = parseMediaRecords('{"version":2,"collections":[],"files":{"a.png":{"description":{"text":"","future":"must survive"}}}}');
+  assert.deepEqual(parseMediaRecords(serializeMediaRecords(records)).files["a.png"].description, { text: "", future: "must survive" });
+  const tagged = applyMediaMetadata(records, { "a.png": { alt: "", tags: ["Hero"] } });
+  assert.deepEqual(tagged.files["a.png"].description, { text: "", future: "must survive" });
+  assert.deepEqual(setMediaDescription(records, "a.png", "").files["a.png"].description, { text: "", future: "must survive" });
+  assert.equal(parseMediaRecords('{"version":2,"collections":[],"files":{"a.png":{"description":{"text":""}}}}').files["a.png"].description, undefined);
+});
