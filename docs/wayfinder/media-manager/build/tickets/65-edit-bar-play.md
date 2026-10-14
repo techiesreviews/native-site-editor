@@ -2,7 +2,7 @@
 title: The edit bar's play button
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-65 runner)
 blocked_by: [62-player-markup]
 builder: claude
 phase: 5
