@@ -2,7 +2,7 @@
 title: The Media chapter for agents; docs/mcp.md fixed
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-22 runner)
 blocked_by: [21-agents-place-describe-collect]
 builder: sol
 phase: 1
