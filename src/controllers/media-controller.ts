@@ -303,10 +303,12 @@ export function createMediaController(ports: MediaControllerPorts) {
         if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
         if (cancelled() || !held) { resolve(cancelled() ? undefined : mediaUrl(image.path)); return; }
         // Files added in the picker are saved with the value's placement, when it has one: one Undo step.
-        const paths = await held.save(placement && { path: placement.path, source: placement.source, stale: placement.stale,
-          apply: paths => placement.edit(mediaUrl(held.image(paths).path)) });
-        if (placement) placement.placed = true;
-        resolve(mediaUrl(held.image(paths).path));
+        const saved = await held.save(placement && { path: placement.path, source: placement.source, stale: placement.stale,
+          live: () => !cancelled(), apply: paths => placement.edit(mediaUrl(held.image(paths).path)) });
+        if (placement && saved.placed) placement.placed = true;
+        if (saved.note) ports.announce(saved.note.trim());
+        // Cancelled while saving: the files are added, the value keeps what it had.
+        resolve(cancelled() && !saved.placed ? undefined : mediaUrl(held.image(saved.paths).path));
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });

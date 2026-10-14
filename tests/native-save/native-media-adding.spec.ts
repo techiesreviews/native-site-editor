@@ -196,3 +196,28 @@ test("cancelling a held file while Use reads its size places nothing", async ({ 
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
   expect((await storedDraft(page, "index.html"))?.content ?? "").not.toContain("pending");
 });
+
+test("Use with a file still preparing saves the ready one and the placement in one Undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const before = (await effectiveSource(page, baseURL, "index.html"))!;
+  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  // The encoder never answers, so the PNG stays in preparation while the SVG is ready.
+  await page.evaluate(() => { Worker.prototype.postMessage = function () {}; });
+  await picker.locator('input[name="media-upload"]').setInputFiles([
+    { name: "ready.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') },
+    { name: "slow.png", mimeType: "image/png", buffer: Buffer.from("held by worker") },
+  ]);
+  await expect(picker.getByRole("button", { name: "Choose ready.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.locator('.media-library__pending[data-state="preparing"]')).toHaveCount(1);
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect(page.locator("#status")).toHaveText("Image replaced. 1 file still being prepared was not added.");
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("/images/ready.svg");
+  expect(await storedDraft(page, "images/slow.webp")).toBeUndefined();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
+  await expect.poll(() => storedDraft(page, "images/ready.svg")).toBeUndefined();
+});

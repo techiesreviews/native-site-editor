@@ -49,6 +49,10 @@ export interface MediaPlacement {
   /** The refusal when the page changed before the batch; a generic one otherwise. */
   stale?: string;
   apply(paths: string[], requests: MediaImportRequest[], records: MediaRecords): string | { page: string; records?: MediaRecords };
+  /** False once the placement is no longer wanted (Cancel): checked just before the batch commits. */
+  live?: () => boolean;
+  /** The records text the placement was decided on; the batch refuses newer records. */
+  records?: { text: string | undefined };
 }
 /** A value placed by its address (a component's image slot): `edit` returns the page's text with
  * `url` in it. When new files are saved with it, `placed` turns true: the caller writes nothing more. */
@@ -62,7 +66,9 @@ export interface MediaPathPlacement {
 export interface MediaHeldFiles {
   /** The chosen image once saved: a held file's final path, copies and size, or the chosen existing file. */
   image(paths: string[]): MediaImage;
-  save(place?: MediaPlacement): Promise<string[]>;
+  /** Saves every ready file (files still preparing stop: `note` says so), with `place` unless it was
+   * cancelled meanwhile: then the files are still saved, once, and `placed` is false. */
+  save(place?: MediaPlacement): Promise<{ paths: string[]; placed: boolean; note: string }>;
 }
 export interface MediaImportRequest {
   file: File; result?: MediaOptimiseResult; folder: string;

@@ -22,7 +22,7 @@ import {
   dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
 } from "./media-library-refresh";
 import "./media-picker.css";
-import type { MediaCleanUpMount, MediaHeldFiles, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
+import type { MediaCleanUpMount, MediaHeldFiles, MediaImportRequest, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 const CANCELLED = "This file was cancelled. Choose another image.";
 
 export interface MediaLibraryView {
@@ -287,19 +287,30 @@ export function createMediaLibraryView(
   }
   /** The ready held files, saved with Use's placement in one batch; undefined when there are none. */
   function heldFiles(image: MediaImage): MediaHeldFiles | undefined {
-    const ready = adding.held(), ids = ready.map(entry => entry.id), index = ids.indexOf(image.path);
-    if (!ready.length) return undefined;
+    if (!adding.held().length) return undefined;
+    let taken: { id: string; request: MediaImportRequest }[] = [];
+    const index = () => taken.findIndex(entry => entry.id === image.path);
     const outputs = (paths: string[]) => paths.flatMap((path, at) =>
-      ready[at].request.result?.outputs.map(output => output.variantWidth ? mediaVariantName(path, output.variantWidth) : path) ?? [path]);
+      taken[at].request.result?.outputs.map(output => output.variantWidth ? mediaVariantName(path, output.variantWidth) : path) ?? [path]);
     return {
-      image: paths => index < 0 ? image : { ...image, path: paths[index], alt: mediaNameAlt(paths[index]), variants: mediaVariants(paths[index], outputs(paths)) },
+      image: paths => index() < 0 ? image : { ...image, path: paths[index()], alt: mediaNameAlt(paths[index()]), variants: mediaVariants(paths[index()], outputs(paths)) },
       async save(place) {
-        const taken = adding.take();
-        // A held file cancelled (or a new one ready) since Use began: nothing is saved or placed.
-        if (taken.map(entry => entry.id).join() !== ids.join()) { adding.settle(taken.map(entry => entry.id)); throw new Error(CANCELLED); }
+        // Use takes the whole addition: files still being prepared stop, and every ready one is saved here.
+        const unfinished = adding.cancelPending();
+        taken = adding.take();
+        const ids = taken.map(entry => entry.id), requests = taken.map(entry => entry.request);
+        const note = unfinished ? ` ${filesLabel(unfinished)} still being prepared ${unfinished === 1 ? "was" : "were"} not added.` : "";
         try {
-          const paths = await adapter.import(taken.map(entry => entry.request), place);
-          adding.settle(ids, paths); return paths;
+          if (image.path.startsWith("pending:") && index() < 0) throw new Error(CANCELLED);
+          try {
+            const paths = await adapter.import(requests, place);
+            adding.settle(ids, paths); return { paths, placed: Boolean(place), note };
+          } catch (error) {
+            // Cancelled while saving: the files are still added, once, without the placement.
+            if (!place?.live || place.live()) throw error;
+            const paths = await adapter.import(requests);
+            adding.settle(ids, paths); return { paths, placed: false, note };
+          }
         } catch (error) { adding.settle(ids); throw error; }
       },
     };

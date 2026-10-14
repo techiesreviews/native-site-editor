@@ -27,6 +27,8 @@ export interface MediaWorkspaceBatch {
   moves: { from: string; to: string }[];
   deletes: string[];
   uploads: { path: string; blob: Blob }[];
+  /** Whether the batch is still wanted (a picker's Use not cancelled); checked again just before commit. */
+  live?: () => boolean;
 }
 export interface MediaBatchTransaction<State> {
   assertLive(): void;
@@ -45,6 +47,7 @@ export interface MediaBatchTransaction<State> {
 export async function applyMediaWorkspaceBatch<State>(batch: MediaWorkspaceBatch, host: MediaBatchTransaction<State>): Promise<void> {
   const guard = () => {
     host.assertLive();
+    if (batch.live && !batch.live()) throw new Error("Cancelled before the change was saved. Nothing was placed.");
     if (JSON.stringify([...host.paths()].sort()) !== JSON.stringify([...batch.expectedPaths].sort())) throw new Error("Repository files changed while preparing image changes. Refresh and try again.");
     for (const [path, source] of batch.expectedSources) if (host.source(path) !== source) throw new Error(`${path} changed while preparing image changes. No image changes were applied.`);
     for (const [path, version] of batch.expectedAssets) if (host.assetVersion(path) !== version) throw new Error(`${path} changed while preparing image changes. No image changes were applied.`);
@@ -239,6 +242,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       ctx.assertLive();
       if (source !== place.source) throw new Error(place.stale ?? `${place.path} changed while the file was being added. Nothing was added or placed.`);
       batch.expectedSources.set(place.path, place.source);
+      // The records the placement was decided on: newer ones refuse, as a newer page does.
+      if (place.records && batch.expectedSources.get(MEDIA_RECORDS_PATH) !== place.records.text) throw new Error(place.stale ?? `${MEDIA_RECORDS_PATH} changed while the file was being added. Nothing was added or placed.`);
+      if (place.live) batch.live = place.live;
       // The placement sees the records as this addition leaves them, and may change them (a moved mark).
       const placed = place.apply(paths, requests, next);
       batch.edits.set(place.path, typeof placed === "string" ? placed : placed.page);

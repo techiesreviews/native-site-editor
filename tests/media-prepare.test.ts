@@ -152,3 +152,24 @@ test("preparation reads settings for the repository and honours cancellation", a
   const controller = new AbortController(); controller.abort();
   await assert.rejects(prepareMedia([new File(["bytes"], "photo.png")], "repo", undefined, controller.signal, encode), /abort/i);
 });
+
+test("a placement cancelled before commit saves nothing; the files can then be saved alone", async () => {
+  const f = fixture(), source = f.text().get("index.html")!;
+  const { requests } = await prepareMedia([new File(["picture"], "photo.png")], "repo", undefined, undefined, encode);
+  let wanted = true;
+  // Cancel lands while the batch is prepared: after apply, before the final guard.
+  await assert.rejects(f.host.import(requests, { path: "index.html", source, live: () => wanted, apply: paths => { wanted = false; return `<img src="/${paths[0]}">`; } }), /Cancelled before the change was saved/);
+  assert.equal(f.history.length, 0); assert.equal(f.text().get("index.html"), source); assert.equal(f.bytes().size, 0);
+  await f.host.import(requests);
+  assert.equal(f.history.length, 1); assert.equal(f.text().get("index.html"), source); assert.equal(f.paths().has("images/photo.webp"), true);
+});
+
+test("a placement decided on older records refuses newer ones", async () => {
+  const records = serializeMediaRecords({ version: 2, collections: [], files: {} });
+  const f = fixture({ "index.html": '<img src="/images/old.png">', [MEDIA_RECORDS_PATH]: records }), source = f.text().get("index.html")!;
+  const { requests } = await prepareMedia([new File(["picture"], "photo.png")], "repo", undefined, undefined, encode);
+  await assert.rejects(f.host.import(requests, { path: "index.html", source, records: { text: undefined }, apply: () => "new" }), /media\.json changed/);
+  assert.equal(f.history.length, 0);
+  await f.host.import(requests, { path: "index.html", source, records: { text: records }, apply: () => "new" });
+  assert.equal(f.history.length, 1); assert.equal(f.text().get("index.html"), "new");
+});
