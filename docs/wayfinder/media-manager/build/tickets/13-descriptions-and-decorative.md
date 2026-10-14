@@ -2,7 +2,7 @@
 title: Descriptions and Decorative
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-13 runner)
 blocked_by: [05-media-records]
 builder: sol
 phase: 1
