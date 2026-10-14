@@ -2,7 +2,7 @@
 title: WebP in Safari and the AVIF option, loaded on demand
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-28 runner)
 blocked_by: [25-image-recipe]
 builder: sol
 phase: 2
