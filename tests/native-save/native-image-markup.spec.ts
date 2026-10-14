@@ -3,7 +3,7 @@ import { imageResult } from "../../src/page-builder/image-sizes";
 import { readFrameMessage } from "../../src/components/preview-protocol";
 import { HOST_SOURCE, FRAME_SOURCE } from "../../src/components/preview-wire";
 
-async function measure(page: Page, request: { path: string; node: number[]; image?: { width: number; height: number } }) {
+async function measure(page: Page, request: { path: string; node: number[]; image?: { width: number; height: number }; style?: string }) {
   // fixed-wait: Timeout bounds a missing protocol reply; the test resolves on the observable message, with no sleep.
   const raw = await page.evaluate(({ host, frame, request }) => new Promise<unknown>((resolve, reject) => {
     const preview = document.querySelector<HTMLIFrameElement>(".native-preview-frame");
@@ -229,4 +229,32 @@ test("measurement uses a new natural size and lists only the page's light DOM im
   expect(imageResult(report.facts).sizes).toBe("1600px");
   expect(report.images).toEqual([{ node: [1, 0, 2], firstScreen: true, large: true }]);
   expect(await hero.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(visibleSize);
+});
+
+// Default fixture group. Shape stand-ins change only the hidden measuring copy.
+test("a 16:9 cover style stand-in measures its new shape without changing the visible image", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const hero = page.frameLocator(".native-preview-frame").locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await expect.poll(() => hero.evaluate(image => image instanceof HTMLImageElement && image.naturalWidth)).toBeGreaterThan(0);
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource("index.html") ?? "";
+    const at = source.indexOf('<img class="hero-image"');
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at + 4, expected: "<img", text: '<img style="width:160px;height:auto;aspect-ratio:1;object-fit:cover"' });
+  });
+  await expect.poll(() => hero.evaluate(image => getComputedStyle(image).aspectRatio)).toBe("1 / 1");
+  const before = await hero.evaluate(image => ({ style: image.getAttribute("style"), width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height, viewport: innerWidth }));
+  const original = await measure(page, { path: "index.html", node: [1, 0, 2] });
+  const shaped = await measure(page, { path: "index.html", node: [1, 0, 2], style: "width:160px;height:auto;aspect-ratio:16 / 9;object-fit:cover" });
+  if ("error" in original) throw new Error(original.error);
+  if ("error" in shaped) throw new Error(shaped.error);
+  expect(shaped.facts.every(fact => fact.width === 160 && fact.height === 90 && fact.fit === "cover")).toBe(true);
+  // The starter's natural 320:180 image has a square displayed box (cover needs 285px).
+  // A 16:9 stand-in needs only 160px of source pixels.
+  expect(imageResult(shaped.facts).widths[0].width).toBeLessThan(imageResult(original.facts).widths[0].width);
+  expect(await hero.evaluate(image => ({ style: image.getAttribute("style"), width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height, viewport: innerWidth }))).toEqual(before);
+  expect(await measure(page, { path: "index.html", node: [1, 0, 2], style: "x".repeat(16385) })).toEqual({ error: "Invalid image style." });
+  await expect(page.frameLocator(".native-preview-frame").locator("iframe")).toHaveCount(0);
 });

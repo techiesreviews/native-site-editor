@@ -244,3 +244,10 @@ test("image measurement carries the target's rendered-box priority flag, a boole
   assert.equal(reply?.type === "image-measured" && "facts" in reply.report && reply.report.large, true);
   assert.equal(readFrameMessage(message("image-measured", { id: 1, report: { facts, large: "yes" } })), undefined);
 });
+
+
+test("measurement style stand-in is optional, bounded and accepts an empty reset", async () => {
+  const { validImageStyle } = await import("../src/components/preview-protocol");
+  for (const value of [undefined, "", "aspect-ratio: 16 / 9; object-fit: cover", "x".repeat(16384)]) assert.equal(validImageStyle(value), true);
+  for (const value of [null, false, 12, {}, [], "x".repeat(16385)]) assert.equal(validImageStyle(value), false);
+});

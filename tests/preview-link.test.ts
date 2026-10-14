@@ -263,9 +263,9 @@ test("updates and asks are numbered by one counter", () => {
 
 test("image measurements match request and render, and settle when the render changes", async () => {
   const { frame, link, render } = setup();
-  const answer = link.ask({ type: "measure-image", request: { path: "index.html", node: [1, 0, 2], image: { width: 1800, height: 900 } } }, 1000);
+  const answer = link.ask({ type: "measure-image", request: { path: "index.html", node: [1, 0, 2], image: { width: 1800, height: 900 }, style: "aspect-ratio: 16 / 9; object-fit: cover" } }, 1000);
   const asked = frame.last("measure-image")!;
-  assert.deepEqual(asked.request, { path: "index.html", node: [1, 0, 2], image: { width: 1800, height: 900 } });
+  assert.deepEqual(asked.request, { path: "index.html", node: [1, 0, 2], image: { width: 1800, height: 900 }, style: "aspect-ratio: 16 / 9; object-fit: cover" });
   frame.emit("image-measured", { id: asked.id, report: { error: "No image" } });
   assert.deepEqual((await answer)?.report, { error: "No image" });
   const stale = link.ask({ type: "measure-image", request: { path: "index.html", node: [1, 0, 2] } }, 1000);

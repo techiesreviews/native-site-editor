@@ -74,7 +74,7 @@ export type HostMessage =
   | Host<"drop-probe", { id: number; x: number; y: number; moving: number[] | undefined; bands: boolean | undefined }>
   | Host<"patch-text", PatchText>
   | Host<"finish-typing", { id: number }>
-  | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string } }>
+  | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
   | Host<"theme", { focus: string; component: string }>
   | Host<"component-focus", { tag: string }>
@@ -393,4 +393,9 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
 export function validImageSize(image: unknown): boolean {
   const size = object(image);
   return image === undefined || !!size && [size.width, size.height].every(value => finite(value) && value > 0 && value <= 100000);
+}
+
+/** Inline style for the hidden measuring copy; empty removes its old declarations. */
+export function validImageStyle(style: unknown): boolean {
+  return style === undefined || typeof style === "string" && style.length <= 16384;
 }

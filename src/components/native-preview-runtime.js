@@ -3365,6 +3365,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (!target) throw new Error("The image could not be cloned.");
       // A first slot fill shows the slot and its wrappers, which the preview hides while unfilled.
       if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
+      if (config.style !== undefined) target.setAttribute("style", config.style);
       if (config.image) {
         if (target.parentElement.localName === "picture") target.parentElement.querySelectorAll("source").forEach(function (source) { source.remove(); });
         target.removeAttribute("srcset"); target.removeAttribute("sizes");
@@ -3447,7 +3448,8 @@ import { domView } from "../page-builder/rules/tree.ts";
       else next();
     }
     try {
-      var standin = msg.request.image;
+      var standin = msg.request.image, standinStyle = msg.request.style;
+      if (standinStyle !== undefined && (typeof standinStyle !== "string" || standinStyle.length > 16384)) throw new Error("Invalid image style.");
       if (standin !== undefined && (!standin || Array.isArray(standin) || !Number.isFinite(standin.width) || standin.width <= 0 || standin.width > 100000 || !Number.isFinite(standin.height) || standin.height <= 0 || standin.height > 100000)) throw new Error("Invalid image size.");
       var target = resolveNodePath(msg.request), slotName = msg.request.slot;
       // A first slot fill: the instance's fallback image in that slot stands where the new image will.
@@ -3540,7 +3542,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       var config = doc.createElement("script");
       config.id = "ase-image-measure";
       config.type = "application/json";
-      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin, slot: typeof slotName === "string" }).replace(/</g, "\\u003c");
+      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin, style: standinStyle, slot: typeof slotName === "string" }).replace(/</g, "\\u003c");
       doc.head.appendChild(config);
       var script = doc.createElement("script");
       script.src = runtimeUrl;

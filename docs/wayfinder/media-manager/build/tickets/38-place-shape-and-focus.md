@@ -1,7 +1,7 @@
 ---
 title: Shape and focus point per place
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-38 runner)
 blocked_by: [33-placed-image-markup]
 builder: sol
