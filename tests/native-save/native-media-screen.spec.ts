@@ -161,20 +161,40 @@ test("Not checked yet and other uses show apart, and newer results repaint the b
   await page.evaluate(() => (window as any).usageProbe.dispose());
 });
 
-test("the list shows a long name in full on a phone, apart from its selection and usage", async ({ page, baseURL }) => {
+/** A phone list row: 44 px selection and usage targets, the selection left of the name, the usage below it. */
+async function phoneRowApart(page: Page, path: string) {
+  const row = tile(page, path), name = row.locator(".media-library__name");
+  const [select, usage, box] = await Promise.all([row.locator(".media-library__select").boundingBox(), row.locator(".media-library__usage").boundingBox(), name.boundingBox()]);
+  for (const target of [select!, usage!]) expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
+  expect(select!.x + select!.width).toBeLessThanOrEqual(box!.x);
+  expect(select!.x + select!.width).toBeLessThanOrEqual(usage!.x);
+  expect(usage!.y).toBeGreaterThanOrEqual(box!.y + box!.height - 1);
+  // One line: never broken in the middle of a word.
+  expect(box!.height).toBeLessThan(30);
+}
+const clipped = (page: Page, path: string) => tile(page, path).locator(".media-library__name-head").evaluate(head => head.scrollWidth > head.clientWidth + 1);
+
+test("on a phone the list shortens a long name in the middle, keeping its end; the full name is its tooltip and in details", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mountUsage(page, baseURL);
   await page.evaluate(() => (window as any).usageProbe.checked());
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
-  const row = tile(page, LONG), name = row.locator(".media-library__name");
-  await expect(name).toHaveText(LONG.split("/").pop()!);
+  const full = LONG.split("/").pop()!, row = tile(page, LONG), name = row.locator(".media-library__name");
+  await expect(name).toHaveText(full);
+  await expect(name).toHaveAttribute("title", full);
+  await expect(row.getByRole("button", { name: `Details for ${LONG}`, exact: true })).toBeVisible();
+  expect(await clipped(page, LONG)).toBe(true);
+  await expect(row.locator(".media-library__name-tail")).toHaveText("ober.png");
+  await expect(row.locator(".media-library__name-tail")).toBeInViewport({ ratio: 1 });
   expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await expect(row.locator(".media-library__size")).toHaveText(/^\d+ (B|KB)$/);
-  const [select, usage, box] = await Promise.all([row.locator(".media-library__select").boundingBox(), row.locator(".media-library__usage").boundingBox(), name.boundingBox()]);
-  for (const target of [select!, usage!]) expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
-  expect(select!.x + select!.width).toBeLessThanOrEqual(box!.x);
-  expect(box!.x + box!.width).toBeLessThanOrEqual(usage!.x);
+  await phoneRowApart(page, LONG);
+  // Short names stay whole, and the usage words keep one line.
+  expect(await clipped(page, "images/feed.png")).toBe(false);
+  const words = tile(page, "images/feed.png").locator(".media-library__usage-label");
+  await expect(words).toHaveText("Used on 1 page");
+  expect((await words.boundingBox())!.height).toBeLessThan(24);
   await page.evaluate(() => (window as any).usageProbe.dispose());
 });
 
@@ -182,19 +202,52 @@ test("the list keeps 44 px selection and usage targets apart on a phone, without
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, baseURL);
   await view(page, "List");
-  for (const path of ["images/placeholder.svg", "images/studio-desk.svg"]) {
-    const row = tile(page, path);
-    await expect(row.locator(".media-library__size")).toHaveText(/\d/);
-    const [select, usage, name] = await Promise.all([row.locator(".media-library__select").boundingBox(), row.locator(".media-library__usage").boundingBox(), row.locator(".media-library__name").boundingBox()]);
-    for (const target of [select!, usage!]) expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
-    expect(select!.x + select!.width).toBeLessThanOrEqual(name!.x);
-    expect(name!.x + name!.width).toBeLessThanOrEqual(usage!.x);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const path of ["images/placeholder.svg", "images/studio-desk.svg"]) {
+      await expect(tile(page, path).locator(".media-library__size")).toHaveText(/\d/);
+      await phoneRowApart(page, path);
+      expect(await clipped(page, path)).toBe(false);
+    }
+    await expect(tile(page, "images/studio-desk.svg").locator(".media-library__usage")).toContainText("No uses found");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
-  await expect(tile(page, "images/studio-desk.svg").locator(".media-library__usage")).toContainText("No uses found");
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   // Back to the grid from More.
   await view(page, "Grid");
   await expect(pane(page).locator(".media-library__grid--list")).toHaveCount(0);
+});
+
+/** The list controls whose soft background shows, as "path usage" or "path select". */
+const lit = (page: Page) => pane(page).locator(".media-library__grid--list").evaluate(list => [...list.querySelectorAll<HTMLElement>(".media-library__usage, .media-library__select")]
+  .filter(control => getComputedStyle(control, "::before").display !== "none")
+  .map(control => `${control.closest<HTMLElement>(".media-library__card")!.dataset.path} ${control.classList.contains("media-library__usage") ? "usage" : "select"}`));
+
+test("in the list a tap on a phone leaves no row lit, and a mouse lights only the control it is over", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const phone = await context.newPage();
+  await open(phone, baseURL);
+  await view(phone, "List");
+  const badge = tile(phone, "images/studio-desk.svg").getByRole("button", { name: "No uses found", exact: true });
+  await badge.tap();
+  const usage = phone.getByRole("dialog", { name: "studio-desk.svg", exact: true });
+  await usage.locator(".media-usage__close").tap();
+  await expect(usage).toHaveCount(0);
+  await tile(phone, "images/placeholder.svg").locator(".media-library__select").tap();
+  await expect(tile(phone, "images/placeholder.svg").getByRole("checkbox")).toBeChecked();
+  expect(await lit(phone)).toEqual([]);
+  await context.close();
+
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await open(page, baseURL);
+  await view(page, "List");
+  const row = tile(page, "images/studio-desk.svg");
+  await row.locator(".media-library__usage").hover();
+  await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
+  // The background stays inside the control's own box, not the row's.
+  expect(await row.locator(".media-library__usage").evaluate(control => getComputedStyle(control).position)).toBe("relative");
+  await row.locator(".media-library__select").hover();
+  await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
+  await page.close();
 });
 
 // File details (slice 14): its own screen with Back, Save details after the fields.

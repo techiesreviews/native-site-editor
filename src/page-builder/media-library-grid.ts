@@ -1,6 +1,6 @@
 import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
-import { basename, filterMediaLibrary, mediaLibraryRecovery, mediaLibraryTiles, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, filterMediaLibrary, mediaLibraryRecovery, mediaLibraryTiles, nameEnds, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import type { MediaBytes } from "./media-byte-cache";
 import { syncSelectionBar, type LibraryShell } from "./media-library-shell";
 import type { MediaLibrary } from "./media-picker";
@@ -71,7 +71,11 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     thumb.setAttribute("aria-label", `${state.modal ? "Choose" : "Details for"} ${item.path}`);
     // The tile crops the picture to a square; the stored file is untouched.
     const image = node("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
-    thumb.append(image, node("span", "media-library__name", basename(item.path)));
+    // The name's two ends: where the phone list shortens a name, it keeps the end and extension.
+    const fileName = basename(item.path), name = node("span", "media-library__name"), [head, tail] = nameEnds(fileName);
+    name.append(node("span", "media-library__name-head", head), node("span", "media-library__name-tail", tail));
+    if (list) name.title = fileName;
+    thumb.append(image, name);
     // The picker chooses one file: its round only shows the choice; the pane selects many.
     const selectLabel = node(state.modal ? "span" : "label", "media-library__select");
     if (state.modal) {

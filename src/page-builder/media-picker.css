@@ -231,15 +231,19 @@
 .media-usage .media-library__muted, .media-usage .media-library__hint { color: var(--muted); font-size: var(--type-small); }
 .media-usage__foot { display: flex; justify-content: end; gap: 8px; flex-wrap: wrap; }
 
-/* The list (More → View → List): each file's name, size and usage on one row. */
-.media-library__grid.media-library__grid--list { grid-template-columns: minmax(0, 1fr); gap: 0; }
+/* The list (More → View → List): each file's selection, picture, name, size and usage.
+   Every row shares the list's columns (subgrid), so sizes and usage numbers line up. */
+.media-library__grid.media-library__grid--list { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 0 8px; }
+.media-library__grid--list > * { grid-column: 1 / -1; }
 .media-library__grid--list .media-library__card {
-  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; column-gap: 8px;
+  display: grid; grid-template-columns: subgrid; align-items: center;
   aspect-ratio: auto; overflow: visible; min-height: 56px; border-radius: 0; background: none; color: var(--text);
   border-bottom: 1px solid var(--line); container-type: normal;
 }
 .media-library__grid--list .media-library__shade { display: none; }
-.media-library .media-library__grid--list :is(.media-library__select, .media-library__thumbnail, .media-library__usage) { position: static; }
+/* Each control is its own box, so its soft background covers the control, never the row. */
+.media-library .media-library__grid--list :is(.media-library__select, .media-library__usage) { position: relative; inset: auto; }
+.media-library .media-library__grid--list .media-library__thumbnail { position: static; }
 .media-library__grid--list .media-library__select { grid-column: 1; grid-row: 1; }
 .media-library .media-library__grid--list .media-library__thumbnail {
   grid-column: 2; grid-row: 1; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; column-gap: 10px;
@@ -250,7 +254,7 @@
 .media-library__grid--list .media-library__card.is-file .media-library__thumbnail { color: var(--text); }
 .media-library__grid--list .media-library__card.is-file .media-library__thumbnail > svg { color: var(--muted); }
 .media-library__grid--list .media-library__format { display: none; }
-/* The list shows complete names (ticket 06): they wrap instead of shortening. */
+/* Wider screens show complete names, wrapping only if they must. */
 .media-library__grid--list .media-library__name {
   position: static; grid-column: 2; grid-row: 1 / span 2; min-width: 0; padding: 0; opacity: 1; font-weight: 500; font-size: var(--type-base); text-shadow: none;
   white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
@@ -258,20 +262,35 @@
 .media-library__grid--list .media-library__name::before, .media-library__grid--list .media-library__name::after { display: none; }
 .media-library__size { grid-column: 3; grid-row: 1 / span 2; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .media-library .media-library__grid--list .media-library__usage {
-  grid-column: 3; grid-row: 1; width: auto; height: auto; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+  grid-column: 3; grid-row: 1; justify-self: start; width: auto; height: auto; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 8px;
   border-radius: 22px; color: var(--text); text-shadow: none; font-size: var(--type-small); font-weight: 600; text-align: left;
 }
 .media-library__grid--list .media-library__count { flex: none; min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 12px; background: var(--surface-subtle); font-variant-numeric: tabular-nums; }
-.media-library__grid--list .media-library__usage-label { display: block; max-width: 11em; font-weight: 500; }
+.media-library__grid--list .media-library__usage-label { display: block; font-weight: 500; white-space: nowrap; }
 .media-library__grid--list .media-library__select input:not(:checked) { border-color: var(--muted); background: transparent; box-shadow: none; }
-.media-library__grid--list :is(.media-library__usage, .media-library__select)::before { background: var(--hover); backdrop-filter: none; mask-image: none; border-radius: 22px; }
-.media-library .media-library__grid--list .media-library__usage:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-/* Phones: the size goes under the name, so the name keeps its room beside the usage words. */
-@container media-browse (max-width: 520px) {
-  .media-library__grid--list .media-library__name { grid-row: 1; align-self: end; }
-  .media-library__grid--list .media-library__size { grid-column: 2; grid-row: 2; align-self: start; text-align: left; }
-  .media-library__grid--list .media-library__usage-label { max-width: 6.5em; }
+/* The soft background shows for a mouse or keyboard focus only, so a tap leaves nothing lit. */
+.media-library .media-library__grid--list :is(.media-library__usage, .media-library__select)::before { display: none; background: var(--hover); backdrop-filter: none; mask-image: none; border-radius: 22px; }
+.media-library .media-library__grid--list :is(.media-library__usage:focus-visible, .media-library__select:has(:focus-visible))::before { display: block; }
+@media (hover: hover) and (pointer: fine) {
+  .media-library .media-library__grid--list :is(.media-library__usage, .media-library__select):hover::before { display: block; }
 }
+.media-library .media-library__grid--list .media-library__usage:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Phones: two lines. The name keeps one line, shortening in the middle with its end and
+   extension kept (details has it in full); the size sits beside it and the usage below it. */
+@container media-browse (max-width: 520px) {
+  .media-library__grid.media-library__grid--list { grid-template-columns: 44px 44px minmax(0, 1fr) auto; }
+  .media-library__grid--list .media-library__card { grid-template-rows: auto auto; padding-block: 4px; }
+  .media-library__grid--list .media-library__select { grid-row: 1 / span 2; }
+  .media-library .media-library__grid--list .media-library__thumbnail {
+    grid-column: 2 / -1; grid-row: 1 / span 2; grid-template-columns: subgrid; grid-template-rows: subgrid; min-height: 0; padding: 0;
+  }
+  .media-library__grid--list .media-library__name { display: flex; grid-row: 1; align-self: last baseline; white-space: nowrap; }
+  .media-library__grid--list .media-library__size { grid-row: 1; align-self: last baseline; }
+  .media-library .media-library__grid--list .media-library__usage { grid-column: 3 / -1; grid-row: 2; margin-inline-start: -8px; }
+  .media-library__grid--list .media-library__usage-label { white-space: normal; text-wrap: balance; }
+}
+.media-library__name-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.media-library__name-tail { flex: none; }
 
 /* Selection bar (research 01, ticket 15): after the grid and sticky at the bottom, so its
    actions stay in reach however far the grid scrolls. Phones put the actions on their own row. */
@@ -311,8 +330,8 @@
 .media-library__keep { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: rgb(10 18 32 / .62); pointer-events: none; }
 .media-library__keep::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/push-pin.svg") center / contain no-repeat; }
 .media-library__card.is-kept .media-library__name { padding-right: 34px; }
-/* In the list the pin sits on the thumbnail's corner, clear of the usage. */
-.media-library__grid--list .media-library__keep { right: auto; bottom: 4px; left: 78px; width: 20px; height: 20px; }
+/* In the list the pin sits on the thumbnail's lower corner (the row's middle less 24 px), clear of the usage. */
+.media-library__grid--list .media-library__keep { right: auto; bottom: calc(50% - 24px); left: 78px; width: 20px; height: 20px; }
 .media-library__grid--list .media-library__keep::after { width: 12px; height: 12px; }
 .media-library__grid--list .media-library__card.is-kept .media-library__name { padding-right: 0; }
 .media-library__keep-note { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; }
@@ -460,7 +479,7 @@
 .media-library__card.is-kept .media-library__agent { right: 34px; }
 .media-library__card.is-by-agent .media-library__name { padding-right: 34px; }
 .media-library__card.is-kept.is-by-agent .media-library__name { padding-right: 62px; }
-.media-library__grid--list .media-library__agent { right: auto; bottom: 4px; left: 78px; width: 20px; height: 20px; }
+.media-library__grid--list .media-library__agent { right: auto; bottom: calc(50% - 24px); left: 78px; width: 20px; height: 20px; }
 .media-library__grid--list .media-library__card.is-kept .media-library__agent { left: 54px; }
 .media-library__grid--list .media-library__agent::after { width: 12px; height: 12px; }
 .media-library__grid--list .media-library__card.is-by-agent .media-library__name { padding-right: 0; }

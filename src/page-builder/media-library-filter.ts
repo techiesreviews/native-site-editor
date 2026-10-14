@@ -75,3 +75,13 @@ export function mediaFamilyUsage(library: Pick<MediaLibrary, "items" | "usage">)
 
 export const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
 export const basename = (path: string) => path.split("/").pop()!;
+
+/** A file name's two ends, for shortening it in the middle: the head may shorten; the tail (an
+ *  extension of up to 5 letters, after the last 4 letters of a stem longer than 8) always shows,
+ *  so "summer-workshop-poster.png" can read "summer-work…ster.png". */
+export function nameEnds(name: string): [head: string, tail: string] {
+  const letters = [...name], dot = letters.lastIndexOf(".");
+  const extension = dot > 0 && letters.length - dot <= 6 ? letters.length - dot : 0;
+  const stem = letters.length - extension, kept = stem > 8 ? 4 : 0;
+  return [letters.slice(0, stem - kept).join(""), letters.slice(stem - kept).join("")];
+}

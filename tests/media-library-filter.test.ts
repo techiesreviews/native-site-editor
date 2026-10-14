@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accepts, filterMediaLibrary, mediaFamilyUsage, mediaKind, mediaLibraryRecovery, mediaLibraryTiles } from "../src/page-builder/media-library-filter";
+import { accepts, filterMediaLibrary, mediaFamilyUsage, mediaKind, mediaLibraryRecovery, mediaLibraryTiles, nameEnds } from "../src/page-builder/media-library-filter";
 import type { MediaLibrary, MediaLibraryItem } from "../src/page-builder/media-picker";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -133,4 +133,24 @@ test("a family's main counts the pages of all its members, each once", () => {
   assert.deepEqual(both["images/photo-480w.webp"], use(["index.html", "work/index.html"], ["Desk"]));
   const unused = { "images/solo.png": use([]) };
   assert.deepEqual(mediaFamilyUsage({ items, usage: unused }), unused);
+});
+
+test("nameEnds keeps a long name's end and extension for shortening in the middle", () => {
+  assert.deepEqual(nameEnds("summer-workshop-poster.png"), ["summer-workshop-po", "ster.png"]);
+  assert.deepEqual(nameEnds("portrait-maya.jpg"), ["portrait-", "maya.jpg"]);
+  // Short stems keep only the extension; nothing is lost when joined.
+  assert.deepEqual(nameEnds("favicon.svg"), ["favicon", ".svg"]);
+  assert.deepEqual(nameEnds("a.svg"), ["a", ".svg"]);
+  for (const name of ["summer-workshop-poster.png", "favicon.svg", "README", ".htaccess", "café-crème-brûlée.jpeg"]) assert.equal(nameEnds(name).join(""), name);
+});
+
+test("nameEnds treats dot files, long extensions and no extension as stems", () => {
+  assert.deepEqual(nameEnds(".htaccess"), [".htac", "cess"]);
+  assert.deepEqual(nameEnds("backup.archive-2026"), ["backup.archive-", "2026"]);
+  assert.deepEqual(nameEnds("README"), ["README", ""]);
+  assert.deepEqual(nameEnds("CHANGELOG"), ["CHANG", "ELOG"]);
+});
+
+test("nameEnds never splits a character made of two code units", () => {
+  assert.deepEqual(nameEnds("holiday-🎉🎉🎉🎉.png"), ["holiday-", "🎉🎉🎉🎉.png"]);
 });
