@@ -124,13 +124,13 @@ export async function openImagePopup(options: ImagePopupOptions) {
     measured = key;
     // The new box until the measurement answers: the same widths, the shape's (or trim's) height.
     const ratio = trim && state.cutSize ? (shapeRatio(shapeNow()) ?? state.cutSize.width / state.cutSize.height) : shapeRatio(state.shape);
-    if (ratio && state.boxes) { state.boxes = state.boxes.map(box => ({ ...box, height: box.width / ratio, fit: "cover" })); view.draw(); }
+    if (ratio && state.boxes) { state.boxes = state.boxes.map(box => ({ ...box, height: box.width / ratio, fit: "cover" })); redraw(); }
     let boxes: MediaBox[] | undefined;
     try { boxes = (await (style === undefined && !swapped() ? ports.measureImage?.(target.path, target.node, image) : ports.measureImage?.(target.path, target.node, image, undefined, style)))?.boxes; }
     catch { /* The previews keep their estimate. */ }
     if (asked !== measuring || closed || !boxes?.length) return;
     state.boxes = boxes;
-    view.draw();
+    redraw();
   };
   // The trimmed picture is drawn once a frame at most (a drag moves it often); the measurement waits for a pause.
   let painting = 0, pause: ReturnType<typeof setTimeout> | undefined, painted = "";
@@ -142,13 +142,14 @@ export async function openImagePopup(options: ImagePopupOptions) {
     state.cutSize = size && { width: size.width, height: size.height };
     state.cutUrl = trim && state.image ? trimmedPreview(state.image, trim) : undefined;
   };
+  // The popup and, when open, the large editor show the same state.
+  const redraw = () => { view.draw(); large?.draw(); };
   const update = () => {
-    view.draw();
-    large?.draw();
+    redraw();
     clearTimeout(pause);
     pause = setTimeout(() => { if (!closed) void measure(); }, 150);
     if (painting) return;
-    painting = requestAnimationFrame(() => { painting = 0; if (closed) return; paint(); view.draw(); look(); });
+    painting = requestAnimationFrame(() => { painting = 0; if (closed) return; paint(); redraw(); look(); });
   };
 
   function close() {
@@ -170,7 +171,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     const same = restored && !replacement && trim && (sameTrim(trim, restored.trim) || editKey(edit()) === opened);
     const shape = kept(), change = same ? (shape.shape && shape.shape !== start.shape ? shape : undefined) : frameNow();
     if (!trim && !swapped() && !change || same && !change) { close(); return; }
-    state.busy = true; view.draw();
+    state.busy = true; redraw();
     try {
       if (trim && !same) {
         // The earlier trimmed copy is replaced when nothing else uses it.

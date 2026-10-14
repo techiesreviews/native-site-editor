@@ -326,7 +326,24 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   const message = large(page).getByRole("status");
   await expect(message).toHaveText("Only changes this spot");
   // Flip and Cancel: back to the popup as it was.
+  const previews = large(page).locator(".image-popup__spot img");
+  const unflipped = (await previews.first().getAttribute("src"))!;
   await large(page).getByRole("button", { name: "Flip side to side", exact: true }).click();
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  // Both previews show the flipped picture at once.
+  for (const index of [0, 1]) await expect(previews.nth(index)).not.toHaveAttribute("src", unflipped);
+  // Undo, Redo and Reset (the whole original in the place's own shape, Original).
+  const shape = large(page).getByRole("combobox", { name: "Shape" });
+  await large(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(message).toHaveText("Only changes this spot");
+  await expect(previews.first()).toHaveAttribute("src", unflipped);
+  await large(page).getByRole("button", { name: "Redo", exact: true }).click();
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  await large(page).getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(message).toHaveText("Only changes this spot");
+  await expect(shape).toHaveValue("original");
+  await large(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await expect(shape).toHaveValue("16:9");
   await expect(message).toHaveText("Saves a new picture for this spot");
   await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(large(page)).toHaveCount(0);
