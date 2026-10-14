@@ -2,7 +2,7 @@
 title: Video, audio and download markup
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-62 runner)
 blocked_by: [60-starter-player, 56-media-security-policy, 33-placed-image-markup]
 builder: sol
 phase: 5
