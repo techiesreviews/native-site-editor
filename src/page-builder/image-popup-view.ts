@@ -18,7 +18,7 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, placePopup, popupMessage, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
-import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, nudgeFree, resizeFree, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
+import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 
 export interface ImagePopupState {
@@ -31,6 +31,10 @@ export interface ImagePopupState {
   trimmable: boolean; cut: PopupCut;
   /** The spot already has a trimmed copy, re-cropped from its original. */
   recrop: boolean;
+  /** The place's shape kept around a re-opened Free trim (else Original). */
+  around?: PopupShape;
+  /** The picture's revision, read before its bytes: Done trims that revision or refuses. */
+  version?: string;
   /** The trimmed picture as shown before Done, and its size. */
   cutUrl?: string; cutSize?: PictureSize;
 }
@@ -173,7 +177,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   function drawPreviews() {
     // A trim shows the trimmed picture, which already has its shape.
     const cut = state.cutUrl && state.cutSize, url = cut ? state.cutUrl : state.url;
-    const { width, height } = cut ? state.cutSize! : size(), ratio = cut ? shapeRatio(state.shape) ?? width / height : shapeRatio(state.shape);
+    const { width, height } = cut ? state.cutSize! : size(), ratio = cut ? shapeRatio(placeShape(state.shape, state.around)) ?? width / height : shapeRatio(state.shape);
     for (const { device, spot, image } of shown) {
       const box = state.boxes?.find(item => item.viewport === device.viewport), scale = device.width / device.viewport;
       let w = box ? box.width * scale : device.width * 0.8;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, nudgeFree, popupTrim, resizeFree, restoreCut, sameTrim,
+  MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, nudgeFree, placeShape, popupTrim, resizeFree, restoreCut, sameTrim,
   trimmable, turnBy, turnText, turnedSize, uncut, zoomPercent, zoomTo, type PopupCut,
 } from "../src/page-builder/image-popup-trim";
 import { isTrim, validTrim } from "../src/page-builder/trim-geometry";
@@ -73,6 +73,15 @@ test("a re-crop starts from the original with the earlier trim put back", () => 
   assert.equal(back.shape, "free");
   assert.deepEqual(back.cut, { turn: 90, zoom: 1, rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.7 }, flipX: true });
   assert.ok(sameTrim(popupTrim(wide, back.shape, back.focus, back.cut), free));
+  // A square copy in a 16:9 place (shaped after trimming): Free, keeping the place's 16:9 around it.
+  const square = popupTrim(wide, "square", { x: 50, y: 50 }, { ...uncut(), zoom: 2 })!;
+  const kept = restoreCut(square, "16:9", wide);
+  assert.equal(kept.shape, "free");
+  assert.equal(kept.around, "16:9");
+  assert.equal(placeShape(kept.shape, kept.around), "16:9");
+  assert.equal(placeShape("free"), "original");
+  assert.equal(placeShape("square", "16:9"), "square");
+  assert.equal(restoreCut(free, "original", wide).around, undefined);
   // Further in than the slider reaches: Free.
   assert.equal(restoreCut({ x: 0.45, y: 0.45, width: 0.05, height: 0.1 }, "square", wide).shape, "free");
 });

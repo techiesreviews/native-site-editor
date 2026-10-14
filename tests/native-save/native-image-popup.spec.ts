@@ -257,7 +257,19 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   await popup(page).getByRole("button", { name: "Turn left", exact: true }).click();
   await expect(popup(page).locator(".image-popup__turned")).toHaveText("0°");
   await expect(message).toHaveText("Only changes this spot");
-  // ✕ keeps nothing, the replacement included.
-  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
-  await expect.poll(() => heroTag(page)).toContain("placeholder.svg");
+  // Turned and zoomed in, Done saves one trimmed copy with the picture: one Undo step puts the SVG back.
+  const before = await source(page);
+  await popup(page).getByRole("button", { name: "Turn right", exact: true }).click();
+  await zoom.fill("200");
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: turned-crop.webp is used only here.", { timeout: 30_000 });
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/turned-crop\.webp"/);
+  // The 800 × 400 picture turned is 400 × 800; at 200 % half of each side stays.
+  expect(await heroTag(page)).toMatch(/width="200"[^>]*height="400"|height="400"[^>]*width="200"/);
+  const saved = (await records(page)).files["media/images/turned-crop.webp"].trimmedFrom;
+  expect(saved.source).toBe("media/images/turned.webp");
+  expect(saved.trim).toMatchObject({ x: 0.25, y: 0.25, width: 0.5, height: 0.5, turn: 90 });
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
 });
