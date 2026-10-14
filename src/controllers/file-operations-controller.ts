@@ -413,15 +413,13 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     };
     const opaque = opaqueDrafts();
     const readTexts = new Map<string, string | undefined>();
-    if (ports.readMediaText) {
+    // A change meanwhile stops the reading; the guarded run below then refuses it as stale.
+    if (ports.readMediaText && since.holds()) {
       const { isMediaTextFile } = await import("../page-builder/media-mentions");
-      if (!since.holds()) return changed;
-      const textFiles = ports.nativeFiles().filter(isMediaTextFile);
+      const textFiles = since.holds() ? ports.nativeFiles().filter(isMediaTextFile) : [];
       try {
-        for (let at = 0; at < textFiles.length; at += 12) {
+        for (let at = 0; at < textFiles.length && since.holds(); at += 12)
           await Promise.all(textFiles.slice(at, at + 12).map(async path => { readTexts.set(path, await ports.readMediaText!(path)); }));
-          if (!since.holds()) return changed;
-        }
       } catch (error) { ports.errorMessage(error); return "The files that use this could not be read."; }
     }
     const outcome = await ports.edits.run(async r => {

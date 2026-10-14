@@ -1,3 +1,4 @@
+import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
@@ -2053,7 +2054,7 @@ function nativeMoveItems() {
 }
 
 function nativeEffectiveSource(path: string, scope = draftScope()) {
-  let content = nativeBaseSources.get(path) ?? (mediaTextKey === nativeTextIndexScopeKey() ? mediaText.get(path) : undefined);
+  let content = nativeBaseSources.get(path);
   const draft = scope ? draftStore().get(scope, path) : undefined;
   // A file deleted in the drafts has no source; a binary one moved has none to show.
   if (draft?.deleted || draft?.opaque) return undefined;
@@ -2486,10 +2487,17 @@ function discardUpload(path: string) {
   announce(`Discarded ${path}.`);
 }
 
-// Text read for usage is kept out of the preview source map.
+// Text read for usage (scripts, data, notes…) is kept out of the preview source map and out of
+// nativeEffectiveSource, whose readers (the draft store's commit check) know only HTML and CSS.
+// Only media readers and their batch guard see it.
+function mediaTextSource(path: string, scope = draftScope()) {
+  const held = nativeEffectiveSource(path, scope);
+  if (held !== undefined || (scope && draftStore().get(scope, path))) return held;
+  return mediaTextKey === nativeTextIndexScopeKey() ? mediaText.get(path) : undefined;
+}
 async function readMediaText(path: string) {
   const key = nativeTextIndexScopeKey(), repo = appStore.repository.value;
-  const held = nativeEffectiveSource(path);
+  const held = mediaTextSource(path);
   if (held !== undefined) return held;
   if (!repo || !key) return undefined;
   const scope = draftScope(), draft = scope ? draftStore().get(scope, path) : undefined;
@@ -2508,7 +2516,7 @@ async function readMediaText(path: string) {
   return source;
 }
 function mediaOrigins() {
-  return mediaOwnOrigins(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, nativeEffectiveSource("CNAME"));
+  return mediaOwnOrigins(nativeSiteSettings(mediaTextSource(NATIVE_CONFIG_PATH)).url, mediaTextSource("CNAME"));
 }
 
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
@@ -2517,8 +2525,8 @@ const mediaController = createMediaController({
   usage: {
     key: () => nativeTextIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: nativeFiles,
     pages: () => Object.values(nativeSite?.routes ?? {}), components: () => nativeSite?.components ?? {},
-    source: nativeEffectiveSource, read: readMediaText,
-    url: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+    source: path => mediaTextSource(path), read: readMediaText,
+    url: () => nativeSiteSettings(mediaTextSource(NATIVE_CONFIG_PATH)).url,
     settled: () => nativeTextIndexing ?? Promise.resolve(), changed: () => {},
   },
   workspace: () => {
@@ -2530,7 +2538,7 @@ const mediaController = createMediaController({
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
   generation: () => generation,
-  source: nativeEffectiveSource,
+  source: (path, scope) => mediaTextSource(path, scope),
   listPaths: async () => {
     const repo = appStore.repository.value, snapshot = appStore.snapshot.value;
     if (!repo || !snapshot) throw new Error("Choose a repository before opening Images.");
@@ -2540,7 +2548,8 @@ const mediaController = createMediaController({
   entry: entryAt,
   readText: readFile,
   rememberSource: (path, source) => {
-    if (/\.(?:html|css)$/i.test(path)) nativeBaseSources.set(path, source);
+    // Pages, styles and the media records are what media batches edit: the draft store checks them against this map.
+    if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) nativeBaseSources.set(path, source);
     else {
       const key = nativeTextIndexScopeKey();
       if (mediaTextKey !== key) { mediaText.clear(); mediaTextKey = key; }
@@ -2594,7 +2603,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   const recordOn = (path: string, undo: () => boolean, redo: () => boolean | Promise<boolean>) => editor.recordHistoryAction(path, undo, redo);
   await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
     scope, store: draftStore(), bytes: uploadBytes(), stamp,
-    paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
+    paths: () => nativeFiles(scope), source: path => mediaTextSource(path, scope),
     assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
     entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
     modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
