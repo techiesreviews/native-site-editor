@@ -74,7 +74,7 @@ export type HostMessage =
   | Host<"drop-probe", { id: number; x: number; y: number; moving: number[] | undefined; bands: boolean | undefined }>
   | Host<"patch-text", PatchText>
   | Host<"finish-typing", { id: number }>
-  | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number } } }>
+  | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
   | Host<"theme", { focus: string; component: string }>
   | Host<"component-focus", { tag: string }>

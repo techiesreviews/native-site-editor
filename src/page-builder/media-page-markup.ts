@@ -7,7 +7,10 @@ import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { Stamp } from "../guarded-edit";
 import type { MediaHeldFiles, MediaPathPlacement } from "./media-picker";
 
-/** Other page images only change priority; a new holder also becomes eager. */
+/**
+ * Other page images: one priority holder (made eager). Placed images (with `sizes`) also follow
+ * their own first-screen fact, since a new size can move them across the fold; others keep their loading.
+ */
 export function mediaPageEdits(source: string, measured: MediaMeasured | undefined, target: number[], locate: NonNullable<MediaControllerPorts["locateElement"]> = locateNativeElementRange) {
   // The page list uses the rendered border box; download sizing uses the content box.
   const own = measured?.images.find(image => JSON.stringify(image.node) === JSON.stringify(target));
@@ -22,10 +25,12 @@ export function mediaPageEdits(source: string, measured: MediaMeasured | undefin
     if (!other || other.tag.name !== "img") return [];
     const existing = source.slice(other.tag.start, other.tag.end);
     const attrs: Record<string, string | undefined> = { fetchpriority: high(item.node) ? "high" : undefined };
-    if (high(item.node)) {
-      attrs.loading = undefined;
-      const sizes = mediaAttribute(existing, startTags(existing)[0], "sizes");
-      if (sizes) attrs.sizes = decodeHtmlEntities(sizes.value, true).replace(/^\s*auto\s*,\s*/i, "");
+    const sizes = mediaAttribute(existing, startTags(existing)[0], "sizes");
+    const eager = high(item.node) || (sizes ? item.firstScreen : undefined);
+    if (eager !== undefined) {
+      const bare = sizes && decodeHtmlEntities(sizes.value, true).replace(/^\s*auto\s*,\s*/i, "");
+      attrs.loading = eager ? undefined : "lazy";
+      if (bare) attrs.sizes = eager ? bare : `auto, ${bare}`;
     }
     const text = mediaAttributes(existing, attrs);
     return text === existing ? [] : [{ start: other.tag.start, end: other.tag.end, text }];
@@ -46,8 +51,15 @@ export async function prepareMediaPath(ports: Pick<MediaControllerPorts, "measur
     })());
   if (!target) return (picked: MediaImage) => place.edit(mediaUrl(picked.path));
   const node = tree.path(target);
+  // A slot filled for the first time has no page image yet: measure the instance's fallback in that slot.
+  const slot = tree.attribute(target, "slot")?.value, old = previous.at(node), instance = place.node;
+  const fresh = !!instance && slot !== undefined && node.length === instance.length + 1 && instance.every((step, i) => node[i] === step)
+    && (!old || previous.view.name(old) !== "img" || previous.attribute(old, "slot")?.value !== slot);
   let measured: MediaMeasured | undefined;
-  try { measured = await ports.measureImage?.(place.path, node, image); } catch { /* A newly filled slot may have no image to measure yet. */ }
+  try { measured = await ports.measureImage?.(place.path, fresh ? instance : node, image, fresh ? slot : undefined); } catch { /* No image to measure: the fallback markup. */ }
+  // The new fill shifts its later siblings inside the instance by one.
+  if (measured && fresh) measured = { ...measured, images: measured.images.map(item => item.node.length > instance.length && instance.every((step, i) => item.node[i] === step) && item.node[instance.length] >= node[instance.length]
+    ? { ...item, node: [...instance, item.node[instance.length] + 1, ...item.node.slice(instance.length + 1)] } : item) };
   return (picked: MediaImage) => {
     const page = place.edit(mediaUrl(picked.path)), range = locateNativeElementRange(page, node);
     if (!range || range.tag.name !== "img") throw new Error(place.stale ?? "The image place changed.");

@@ -3445,7 +3445,9 @@ import { domView } from "../page-builder/rules/tree.ts";
     try {
       var standin = msg.request.image;
       if (standin !== undefined && (!standin || Array.isArray(standin) || !Number.isFinite(standin.width) || standin.width <= 0 || standin.width > 100000 || !Number.isFinite(standin.height) || standin.height <= 0 || standin.height > 100000)) throw new Error("Invalid image size.");
-      var target = resolveNodePath(msg.request);
+      var target = resolveNodePath(msg.request), slotName = msg.request.slot;
+      // A first slot fill: the instance's fallback image in that slot stands where the new image will.
+      if (target && typeof slotName === "string") target = target.shadowRoot && Array.prototype.slice.call(target.shadowRoot.querySelectorAll("slot")).filter(function (slot) { return (slot.getAttribute("name") || "") === slotName; }).map(function (slot) { return slot.querySelector("img"); })[0];
       if (!target || target.localName !== "img") throw new Error("No image at the requested node.");
       var conditions = [], seen = new Set(), ruleCount = 0;
       function rules(list) {

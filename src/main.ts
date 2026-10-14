@@ -2383,8 +2383,8 @@ function mediaOrigins() {
 
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
 const mediaController = createMediaController({
-  measureImage: (path, node, image) => nativePreview && nativeSite?.routes[nativePreview.shownRoute() ?? ""] === path
-    ? nativePreview.measureImage({ path, node, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
+  measureImage: (path, node, image, slot) => nativePreview && nativeSite?.routes[nativePreview.shownRoute() ?? ""] === path
+    ? nativePreview.measureImage({ path, node, slot, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
   origins: mediaOrigins,
   usage: {
     key: () => nativeTextIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: nativeFiles,

@@ -1158,8 +1158,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return answer.report;
     },
     /** Measure a rendered image without resizing the visible preview. */
-    async measureImage(request: NativeNodeRequest & { image?: { width: number; height: number } }) {
-      if (!validImageSize(request.image)) throw new Error("Invalid image size.");
+    async measureImage(request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string }) {
+      if (!validImageSize(request.image) || (request.slot !== undefined && (typeof request.slot !== "string" || request.slot.length > 200))) throw new Error("Invalid image measurement.");
       if (!frameState.active || !site || !frameState.ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
       const answer = await link.ask({ type: "measure-image", request }, 8000);

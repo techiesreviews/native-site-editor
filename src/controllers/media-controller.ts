@@ -28,7 +28,8 @@ export interface MediaModule {
   mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: import("../page-builder/media-picker").MediaCleanUpMount }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
-  measureImage?(path: string, node: number[], image: { width?: number; height?: number }): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
+  /** `slot`: `node` is a component instance; measure its fallback image in that slot (a first fill). */
+  measureImage?(path: string, node: number[], image: { width?: number; height?: number }, slot?: string): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
   usage?: MediaUsageCheckPorts;
   /** The clean-up count: where it is remembered (repository and branch) and the controls that show it. */
   cleanUp?: { place(): string; marks(): HTMLElement[] };

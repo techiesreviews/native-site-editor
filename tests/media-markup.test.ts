@@ -65,3 +65,16 @@ test("a component template's own fallback keeps a plain address; slot images on 
   assert.equal(fallback(picked), '<article><slot name="image"><img src="/media/images/desk.webp" alt=""></slot></article>');
   assert.equal(measured, 0);
 });
+
+test("a placement re-checks other placed images across the fold both ways; hand-written images keep their loading", () => {
+  const source = '<img sizes="auto, 50vw" loading="lazy" class="up"><img sizes="40vw" class="down"><img class="plain" loading="lazy"><img class="target">';
+  const tree = readSource(source, { page: true });
+  const locate = (_source: string, node: number[]) => { const element = tree.at(node); return element && tree.range(element); };
+  const images = [{ node: [0], firstScreen: true, large: false }, { node: [1], firstScreen: false, large: false }, { node: [2], firstScreen: true, large: false }];
+  const result = mediaPageEdits(source, { sizes: "400px", firstScreen: false, large: false, images }, [3], locate);
+  let after = source;
+  for (const edit of [...result.edits].sort((a, b) => b.start - a.start)) after = after.slice(0, edit.start) + edit.text + after.slice(edit.end);
+  assert.match(after, /<img sizes="50vw" class="up">/);
+  assert.match(after, /<img sizes="auto, 40vw" class="down" loading="lazy">|<img loading="lazy" sizes="auto, 40vw" class="down">/);
+  assert.match(after, /<img class="plain" loading="lazy">/);
+});

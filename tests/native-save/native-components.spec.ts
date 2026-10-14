@@ -432,6 +432,8 @@ test("Choose image… places the picked file on the instance that opened the pic
   await expect.poll(() => editorText(page)).toMatch(/<media-card data-key="first">\s*<img\b[^>]*slot="image"[^>]*src="\/images\/studio-desk.svg"[^>]*alt="Placeholder"[^>]*>\s*<\/media-card>\s*<media-card data-key="second"><\/media-card>/);
   await expect(frame(page).locator('media-card[data-key="first"] > img')).toHaveAttribute("width", "320");
   await expect(frame(page).locator('media-card[data-key="first"] > img')).toHaveAttribute("height", "180");
+  // A first fill is measured on the instance's fallback image: on the first screen, it loads straight away.
+  await expect(frame(page).locator('media-card[data-key="first"] > img')).not.toHaveAttribute("loading", /./);
   expect(await storedDraft(page, "components/media-card/media-card.html")).toBeUndefined();
 });
 
