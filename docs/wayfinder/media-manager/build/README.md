@@ -78,6 +78,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [35 Copies for older images; adopt existing sizes](tickets/35-copies-for-older-images.md) | sol | 33, 24 |
 | [36 The Social image sharing copy](tickets/36-social-sharing-copy.md) | sol | 25 |
 | [37 Agents place with the same markup and may change settings](tickets/37-agents-adding.md) | sol | 33, 26, 22 |
+| [88 Images are re-checked after a move, in the move's own Undo step](tickets/88-recheck-after-move.md) | sol | 33 |
 
 ### Phase 3: The image popup
 
