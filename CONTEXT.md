@@ -132,10 +132,19 @@ Writing selected draft changes into a local folder's files, never committing or 
 A change to a project's files made by something other than the editor, such as a commit on GitHub or another tool writing into a local folder. In a local folder the editor follows it and removes affected drafts without recovery; on GitHub a file without drafts follows it and a file with drafts shows a conflict.
 
 **Publish**:
-Making a saved version of the site available at its public address through the site's host.
+Making a saved version of a GitHub project's site available at its public address through the site's host. Hidden for local folder projects in ADR 0002's plan.
 
 **Change status**:
-The state of a saved change: Saved, Building, Live, or Failed, according to the available deployment information.
+The deployment state of a saved change in a GitHub project: Saved, Building, Live, or Failed. Hidden for local folder projects; Saved to folder describes a disk write instead.
+
+**Put on GitHub…**:
+A planned secondary action in a local folder project's overview menu leading to a GitHub transfer flow. The entry is decided; the transfer flow remains open in [Decide whether a folder can be put on GitHub](docs/wayfinder/local-folders/tickets/09-put-a-folder-on-github.md).
+
+**Local site address**:
+A user-supplied address of the user's own local server, such as `http://localhost:3000`. Separate from the public address in Site settings; it does not change generated links. (Planned in ADR 0002.)
+
+**Open local site**:
+A planned folder action that opens its supplied local site address in a new tab. Hidden without an address; it does not run a server, publish the site or export drafts.
 
 **Site settings**:
 The site's name and public address used by the editor when creating and updating page details. When the address includes a sub-folder (for example `https://yourname.github.io/my-site/`), the editor writes every link and picture address under that sub-folder, and changing the address updates them all. (Planned in the media-manager build, stage 7.)
@@ -154,10 +163,10 @@ The numbered marker on the element of an agent request in the preview, showing w
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
 
 **Get started**:
-A screen shown to a signed-in user with no repository in the editor yet who left the Setup wizard (or reaches it from the wizard's fallback). It offers two paths: create a new repository through the editor (or on GitHub if the editor's App has no Administration permission), optionally from the Starter site template; or authorize an existing repository. A third section copies a prompt for an MCP agent to create the repository and build the site through the editor. Planned to fold into the project overview (ADR 0002).
+The current fallback screen for a signed-in user with no repository, offering repository creation, authorization or an agent prompt. Replaced by the project overview in ADR 0002's plan.
 
 **Setup wizard**:
-A full-screen guide for a signed-in account with no repository, in three numbered steps: Connect GitHub (done for an account whose App is installed; for one that came back from GitHub's install page without installing, a retry with screenshots of what GitHub asks), Create your site (the repository, with the chosen starting point committed as its first commit), and Your site is ready (a celebration: the site's name, a live miniature of its home page, a short confetti burst, and Open the editor). Connecting an agent is done after sign-up from the Setup checklist, and putting the site online comes later, when publishing works properly. It replaces Get started for an account with no repository. The sign-in screen has one button; the Worker sends a new sign-in without the App to GitHub's install page by itself and reports what is left to do as `onboarding` in `/api/session`. The Setup checklist takes over once the editor opens.
+The current guide for a signed-in account with no repository: Connect GitHub, Create your site and Your site is ready; it creates a GitHub site without publishing it, then hands over to the Setup checklist. In ADR 0002's plan it belongs only to an explicit GitHub route, with the overview handoff details still open.
 
 **Setup checklist**:
 A small checklist that guides a new site through Start your site, Save to GitHub or Save to folder, Name your site, and optional Connect an agent. It follows the project's state, appears after choosing a starting point until dismissed or done, and is available through Set up your site; it has no Put it online item yet.
