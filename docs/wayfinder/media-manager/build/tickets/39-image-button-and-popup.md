@@ -1,8 +1,8 @@
 ---
 title: The Image button and the image popup
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-39 runner)
 blocked_by: [38-place-shape-and-focus, 18-media-picker]
 builder: claude
 phase: 3
