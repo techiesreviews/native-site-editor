@@ -38,18 +38,21 @@ const problem = (error: unknown) => error instanceof Error ? error.message : "Th
  * saved together, joining the collection viewed at the drop: one Undo step. The tray keeps the
  * total, Cancel, files that could not be added, and Show new files when the view hides them. */
 export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: MediaAddingHost) {
-  let entries: Entry[] = [], collection = "", focused: Entry | undefined;
+  /** The latest drop: its files and the collection they join. An older drop's late steps see
+   * their own run, never a newer one, so each drop saves as one batch. */
+  let run: { entries: Entry[]; collection: string } = { entries: [], collection: "" }, focused: Entry | undefined;
+  const live = (entries: Entry[]) => entries.some(entry => cancellable(entry) || entry.state === "adding");
   const status = node("p", "media-library__adding-status"); status.setAttribute("role", "status");
   const bar = node("progress", "media-library__adding-bar"); bar.setAttribute("aria-label", "Files added");
   const failed = node("ul", "media-library__adding-failed");
-  const showNew = button("Show new files", () => h.show(mediaAddingReveal(h.filter(), collection)));
+  const showNew = button("Show new files", () => h.show(mediaAddingReveal(h.filter(), run.collection)));
   const review = button("Review…", () => {
-    const rest = entries.filter(entry => cancellable(entry) || entry.state === "failed");
+    const rest = run.entries.filter(entry => cancellable(entry) || entry.state === "failed");
     rest.forEach(stop);
-    h.review(rest.map(entry => entry.file), collection);
+    h.review(rest.map(entry => entry.file), run.collection);
     paint();
   });
-  const cancelAll = button("Cancel", () => { entries.filter(cancellable).forEach(stop); paint(); tray.querySelector<HTMLElement>("button:not([hidden])")?.focus(); });
+  const cancelAll = button("Cancel", () => { run.entries.filter(cancellable).forEach(stop); paint(); tray.querySelector<HTMLElement>("button:not([hidden])")?.focus(); });
   const dismiss = button("", () => { clear(); paint(); h.show({}); }, "media-library__adding-dismiss");
   dismiss.setAttribute("aria-label", "Dismiss"); dismiss.append(icon("x", 20));
   for (const control of [cancelAll, dismiss, showNew]) control.dataset.mediaCancel = "adding";
@@ -65,7 +68,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       preview.append(image);
     } else preview.append(icon("file", 28));
     const cancel = button("", () => {
-      const next = entries.filter(other => other === entry || cancellable(other) && visible(other));
+      const next = run.entries.filter(other => other === entry || cancellable(other) && visible(other));
       stop(entry); paint();
       // Focus moves to the next tile being added, or to the tray.
       const after = next[next.indexOf(entry) + 1] ?? next[next.indexOf(entry) - 1];
@@ -85,7 +88,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     if (entry.url) URL.revokeObjectURL(entry.url);
     entry.url = undefined;
   }
-  function clear() { entries.forEach(stop); entries = []; }
+  function clear() { run.entries.forEach(stop); run = { entries: [], collection: "" }; }
   /** A tile shows until the redrawn grid has the saved file, and only where the view would show the file. */
   function onGrid(entry: Entry) {
     return cancellable(entry) || entry.state === "adding"
@@ -94,12 +97,13 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
   function visible(entry: Entry) {
     const library = h.library();
     return entry.path && library.items.some(item => item.path === entry.path)
-      ? mediaAddingShown(library, h.filter(), entry.path, collection)
-      : mediaAddingShown({ metadata: {}, usage: {} }, h.filter(), entry.path ?? mediaAddingPath(entry.file.name), collection);
+      ? mediaAddingShown(library, h.filter(), entry.path, run.collection)
+      : mediaAddingShown({ metadata: {}, usage: {} }, h.filter(), entry.path ?? mediaAddingPath(entry.file.name), run.collection);
   }
   /** Tiles first in the grid, then the tray; the view calls it after each draw. */
   function paint() {
     if (!h.alive()) return;
+    const { entries } = run;
     const shown = entries.filter(entry => onGrid(entry) && visible(entry));
     for (const entry of entries) {
       if (shown.includes(entry)) continue;
@@ -123,9 +127,9 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     review.hidden = !entries.some(entry => entry.state === "failed" || running && cancellable(entry));
     cancelAll.hidden = !entries.some(cancellable); dismiss.hidden = running;
   }
-  async function prepare() {
+  async function prepare(mine: typeof run) {
     const settings = readMediaOptimiseDefaults(h.library().key);
-    for (const entry of entries) {
+    for (const entry of mine.entries) {
       if (!h.alive()) return;
       if (entry.state !== "waiting") continue;
       const work = entry.work = new AbortController();
@@ -138,17 +142,17 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
         if (!work.signal.aborted) { entry.error = problem(error); set(entry, "failed"); }
       }
     }
-    await save();
+    await save(mine);
   }
-  async function save() {
+  async function save(mine: typeof run) {
     while (h.alive()) {
       await h.idle();
-      const ready = entries.filter(entry => entry.state === "ready");
+      const ready = mine.entries.filter(entry => entry.state === "ready");
       if (!ready.length || !h.alive()) break;
       let ran = false;
       await h.task(async () => {
         ran = true;
-        const library = h.library(), join = collection && library.collections.includes(collection) ? collection : "";
+        const library = h.library(), { collection } = mine, join = collection && library.collections.includes(collection) ? collection : "";
         ready.forEach(entry => set(entry, "adding"));
         let paths: string[];
         try {
@@ -159,7 +163,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
           return;
         }
         if (collection !== join) h.tell(`The collection "${collection}" no longer exists, so the new files are under All collections.`);
-        collection = join;
+        mine.collection = join;
         ready.forEach((entry, index) => { entry.path = paths[index]; set(entry, "added"); });
         await h.refresh();
       });
@@ -171,17 +175,18 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
   }
   return {
     start(files: File[]) {
-      if (entries.some(entry => cancellable(entry) || entry.state === "adding")) {
-        h.tell("Files are still being added. Try again when they finish."); return;
-      }
-      clear(); collection = h.filter().collection;
-      entries = files.map(file => {
+      if (live(run.entries)) { h.tell("Files are still being added. Try again when they finish."); return; }
+      clear();
+      const mine = run = { entries: [] as Entry[], collection: h.filter().collection };
+      mine.entries = files.map(file => {
         const entry: Entry = { file, state: "waiting", tile: node("article", "media-library__pending"), words: node("span", "media-library__pending-state") };
         tile(entry); entry.tile.dataset.state = "waiting"; entry.words.textContent = WORDS.waiting!;
         return entry;
       });
-      paint(); void prepare();
+      paint(); void prepare(mine);
     },
+    /** The collection the files join follows its rename. */
+    renamed(from: string, to: string) { if (run.collection === from) run.collection = to; },
     paint,
     dispose: clear,
   };

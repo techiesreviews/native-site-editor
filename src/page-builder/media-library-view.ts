@@ -113,7 +113,7 @@ export function createMediaLibraryView(
   });
   const collectionHost: CollectionScreensHost = {
     ...context, close: () => closeSheet(collections),
-    follow: (from, to) => { if (viewing === from) followed = to; },
+    follow: (from, to) => { if (viewing === from) followed = to; adding?.renamed(from, to); },
   };
   /** Close a collection screen and return focus to what opened it (or to Collections). */
   function closeSheet(opener: HTMLElement) {

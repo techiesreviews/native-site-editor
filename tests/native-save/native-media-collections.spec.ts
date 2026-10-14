@@ -361,3 +361,88 @@ test("files added while a search hides them offer Show new files; Add new file f
   // Under All collections, nothing joins a collection: the records are as before.
   expect(await storedDraft(page, ".editor/media.json")).toEqual(recordsBefore);
 });
+
+test("renaming the collection while its files are prepared: they join it under its new name", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  await newCollectionFromManage(page, "Studio");
+  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await collections.selectOption("Studio");
+  const hold = await holdFirstPreparation(page);
+  await dropOnMedia(page, [{ name: "late.svg", text: svg("green") }]);
+  await hold.started();
+  await library.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: "Rename collection", exact: true }).click();
+  await library.getByLabel("Collection name", { exact: true }).fill("Picks");
+  await library.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(collections).toHaveValue("Picks");
+  hold.free();
+  await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
+  await expect.poll(() => members(page, "Picks")).toEqual(["images/late.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["images/late.svg"]);
+});
+
+test("Review… stops automatic adding and opens Optimise for the files not added yet, in the same collection", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page);
+  const hold = await holdFirstPreparation(page);
+  await dropOnMedia(page, [{ name: "first.svg", text: svg("red") }, { name: "second.svg", text: svg("blue") }]);
+  await hold.started();
+  await tray(page).getByRole("button", { name: "Review…", exact: true }).click();
+  await expect(library.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible();
+  await expect(library.locator(".media-library__sheet")).toContainText("2 images");
+  await expect(library.locator(".media-library__pending")).toHaveCount(0);
+  await expect(tray(page)).toBeHidden();
+  hold.free();
+  // Nothing is added behind the sheet's back; its own Add to library adds them once.
+  await library.getByRole("button", { name: "Preview optimisation", exact: true }).click();
+  await library.getByRole("button", { name: "Add to library", exact: true }).click();
+  await expect.poll(() => tileNames(page)).toEqual(["images/first.svg", "images/placeholder.svg", "images/second.svg", "images/studio-desk.svg"]);
+  expect(await storedDraft(page, "images/first-2.svg")).toBeUndefined();
+});
+
+test("a cancelled drop whose save was waiting never takes a later drop's files: each drop saves once", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  // The third preparation (the later drop's second file) waits until released.
+  let releaseWorker: (() => void) | undefined, workers = 0;
+  await page.route("**/src/page-builder/image-optimise.worker.ts*", async route => {
+    if (++workers === 3) await new Promise<void>(resolve => { releaseWorker = resolve; });
+    await route.continue().catch(() => undefined);
+  });
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const host = document.createElement("div"); host.style.cssText = "position:fixed;inset:20px;z-index:1000;background:var(--surface)";
+    document.body.append(host);
+    const imports: string[][] = [];
+    let hold: Promise<void> | undefined, release = () => {};
+    const library = { key: "adding-race", collections: [], items: [{ path: "images/a.svg", version: "1" }], metadata: {}, usage: {} };
+    const view = createMediaLibraryView(host, {
+      load: async () => { await hold; return library; },
+      blob: async () => new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'], { type: "image/svg+xml" }),
+      metadata: async () => {}, collections: async () => {}, rename: async () => {}, remove: async () => {}, openPage: async () => {},
+      import: async requests => { imports.push(requests.map(request => request.file.name)); return requests.map(request => `images/${request.file.name}`); },
+    });
+    await view.ready;
+    Object.assign(window, { addingRace: {
+      imports, holdLoad() { hold = new Promise(resolve => { release = resolve; }); void view.refresh(); },
+      releaseLoad() { hold = undefined; release(); },
+    } });
+  });
+  type Race = { imports: string[][]; holdLoad(): void; releaseLoad(): void };
+  // A library refresh holds the lock, so drop A's ready file waits to be saved.
+  await page.evaluate(() => (window as typeof window & { addingRace: Race }).addingRace.holdLoad());
+  await dropOnMedia(page, [{ name: "a1.svg", text: svg("red") }]);
+  await expect(pane(page).locator(".media-library__pending", { hasText: "a1.svg" })).toContainText("Ready");
+  await tray(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  // Drop B: one file ready, one still being prepared, when the lock frees.
+  await dropOnMedia(page, [{ name: "b1.svg", text: svg("blue") }, { name: "b2.svg", text: svg("green") }]);
+  await expect(pane(page).locator(".media-library__pending", { hasText: "b1.svg" })).toContainText("Ready");
+  await expect.poll(() => Boolean(releaseWorker)).toBe(true);
+  await page.evaluate(() => (window as typeof window & { addingRace: Race }).addingRace.releaseLoad());
+  await expect(pane(page).locator(".media-library__pending", { hasText: "b2.svg" })).toContainText("Preparing…");
+  expect(await page.evaluate(() => (window as typeof window & { addingRace: Race }).addingRace.imports)).toEqual([]);
+  releaseWorker!();
+  await expect(tray(page).getByRole("status")).toHaveText("Added 2 files");
+  expect(await page.evaluate(() => (window as typeof window & { addingRace: Race }).addingRace.imports)).toEqual([["b1.svg", "b2.svg"]]);
+});
