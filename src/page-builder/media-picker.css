@@ -526,3 +526,13 @@
   .media-library__choice { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px max(10px, env(safe-area-inset-bottom)); }
   .media-library .media-library__choice-actions button { flex: 1; min-width: 0; }
 }
+
+/* Held picker files can be chosen across the tile; Cancel keeps its own target. */
+.media-library__pending-select { position: absolute; inset: 0; z-index: 1; border: 0; border-radius: inherit; background: none; cursor: pointer; }
+.media-library__pending-select:disabled { cursor: default; }
+.media-library__pending-select:focus-visible { outline: 2px solid oklch(1 0 none); outline-offset: -3px; }
+.media-library__pending-select:active { background: color-mix(in oklch, oklch(1 0 none) 12%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  .media-library__pending-select:enabled:hover { background: color-mix(in oklch, oklch(1 0 none) 8%, transparent); }
+}
+.media-library__pending:has(.media-library__pending-select) .media-library__pending-cancel { z-index: 2; }

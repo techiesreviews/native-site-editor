@@ -21,7 +21,7 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
   const element: Partial<HTMLElement> = { getAttribute: () => busy ? "true" : "false" };
   const module: MediaModule = {
     openMediaPicker: async (options) => { pick = options; }, closeMediaPicker: () => { closes++; },
-    mountMediaLibrary: () => { mounts++; return { element: element as HTMLElement, ready: Promise.resolve(), refreshedKey: undefined, refresh: async () => { refreshes++; }, dispose: () => { disposed++; } }; },
+    mountMediaLibrary: () => { mounts++; return { element: element as HTMLElement, ready: Promise.resolve(), refreshedKey: undefined, refresh: async () => { refreshes++; }, close: () => {}, dispose: () => { disposed++; } }; },
   };
   const ports: MediaControllerPorts = {
     workspace: () => ({ repo: scope.repo, scope, identity, site: { routes: { "/": "index.html" }, components: {} }, nativePaths: ["index.html", "images/old.png"], drafts: store }),

@@ -1,14 +1,17 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename, type MediaLibraryFilter } from "./media-library-filter";
-import { buildMediaImportRequests, readMediaOptimiseDefaults } from "./media-library-optimise-rules";
-import { optimiseMedia, type MediaOptimiseResult } from "./media-optimise";
+import { prepareMediaFile } from "./media-prepare";
+import type { MediaImportRequest } from "./media-picker";
 import {
   MEDIA_ADDING_FOLDER, mediaAddingPath, mediaAddingReveal, mediaAddingShown, mediaAddingStatus, type MediaAddingState,
 } from "./media-adding-rules";
 import type { MediaLibrary, MediaPickerHost } from "./media-picker";
 
 export interface MediaAddingHost {
+  hold?: boolean;
+  ready?(id: string, request: MediaImportRequest): void;
+  select?(id: string, request: MediaImportRequest): void;
   alive(): boolean;
   library(): MediaLibrary;
   /** The grid's search, kind and collection right now. */
@@ -27,9 +30,10 @@ export interface MediaAddingHost {
   tell(text: string): void;
 }
 interface Entry {
-  file: File; state: MediaAddingState; tile: HTMLElement; words: HTMLElement;
-  error?: string; result?: MediaOptimiseResult; work?: AbortController; path?: string; url?: string;
+  file: File; collection: string; state: MediaAddingState; tile: HTMLElement; words: HTMLElement;
+  error?: string; request?: MediaImportRequest; id: string; work?: AbortController; path?: string; url?: string;
 }
+let nextEntry = 0;
 const WORDS: Partial<Record<MediaAddingState, string>> = { waiting: "Waiting", preparing: "Preparing…", ready: "Ready", adding: "Adding…", added: "Adding…" };
 const cancellable = (entry: Entry) => entry.state === "waiting" || entry.state === "preparing" || entry.state === "ready";
 const problem = (error: unknown) => error instanceof Error ? error.message : "The file could not be added.";
@@ -63,6 +67,11 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
   head.append(status, actions); tray.append(head, bar, failed);
 
   function tile(entry: Entry) {
+    if (h.hold) {
+      const choose = button("", () => { if (entry.state === "ready" && entry.request) h.select?.(entry.id, entry.request); }, "media-library__pending-select");
+      choose.setAttribute("aria-label", `Details for ${entry.file.name}`); choose.disabled = true;
+      entry.tile.append(choose);
+    }
     const name = basename(entry.file.name), preview = node("span", "media-library__pending-preview");
     if (entry.file.type.startsWith("image/")) {
       const image = node("img"); image.alt = ""; image.src = entry.url = URL.createObjectURL(entry.file);
@@ -82,7 +91,9 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     entry.tile.addEventListener("focusout", event => { if (event.relatedTarget) focused = undefined; });
   }
   function set(entry: Entry, state: MediaAddingState) {
-    entry.state = state; entry.tile.dataset.state = state; entry.words.textContent = WORDS[state] ?? "";
+    entry.state = state; entry.tile.dataset.state = state;
+    const choose = entry.tile.querySelector<HTMLButtonElement>(".media-library__pending-select");
+    if (choose) choose.disabled = state !== "ready"; entry.words.textContent = WORDS[state] ?? "";
     paint();
   }
   function stop(entry: Entry) {
@@ -127,24 +138,32 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       node("li", "", `${basename(entry.file.name)}: ${entry.error}`)));
     showNew.hidden = !entries.some(entry => entry.state !== "cancelled" && entry.state !== "failed" && !visible(entry));
     review.hidden = !entries.some(entry => entry.state === "failed" || running && cancellable(entry));
-    cancelAll.hidden = !entries.some(cancellable); dismiss.hidden = running;
+    cancelAll.hidden = !entries.some(cancellable); dismiss.hidden = running || Boolean(h.hold);
+    if (h.hold) {
+      status.textContent = entries.some(entry => entry.state === "waiting" || entry.state === "preparing") ? text : `${entries.filter(entry => entry.state === "ready").length} ready · Use saves and places; Close saves without placing.`;
+    }
   }
   async function prepare(mine: typeof run) {
-    const settings = readMediaOptimiseDefaults(h.library().key);
+    const key = h.library().key;
     for (const entry of mine.entries) {
       if (!h.alive()) return;
       if (entry.state !== "waiting") continue;
       const work = entry.work = new AbortController();
       set(entry, "preparing");
       try {
-        const result = await optimiseMedia(entry.file, settings, work.signal);
+        const prepared = await prepareMediaFile(entry.file, key, MEDIA_ADDING_FOLDER, work.signal);
         // Cancelling (or Review…) aborts the work and leaves the file alone.
-        if (!work.signal.aborted) { entry.result = result; set(entry, "ready"); }
+        if (!work.signal.aborted) {
+          entry.request = { ...prepared.request, ...entry.collection ? { collection: entry.collection } : {} };
+          set(entry, "ready");
+          if (prepared.warning) h.tell(prepared.warning);
+          h.ready?.(entry.id, entry.request);
+        }
       } catch (error) {
         if (!work.signal.aborted) { entry.error = problem(error); set(entry, "failed"); }
       }
     }
-    await save(mine);
+    if (!h.hold) await save(mine);
   }
   async function save(mine: typeof run) {
     while (h.alive()) {
@@ -158,8 +177,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
         ready.forEach(entry => set(entry, "adding"));
         let paths: string[];
         try {
-          paths = await h.import(buildMediaImportRequests(ready.map(({ file, result }) => ({ file, result: result! })),
-            false, MEDIA_ADDING_FOLDER, library.metadata, true, new Map(), join));
+          paths = await h.import(ready.map(entry => ({ ...entry.request!, collection: join || undefined })));
         } catch (error) {
           ready.forEach(entry => { entry.error = problem(error); set(entry, "failed"); });
           return;
@@ -178,18 +196,40 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
   }
   return {
     start(files: File[]) {
-      if (live(run.entries)) { h.tell("Files are still being added. Try again when they finish."); return; }
-      clear();
-      const mine = run = { entries: [] as Entry[], collection: h.filter().collection };
+      if (run.entries.some(entry => h.hold ? ["waiting", "preparing", "adding"].includes(entry.state) : live([entry]))) { h.tell("Files are still being added. Try again when they finish."); return; }
+      const previous = h.hold ? run.entries : [];
+      if (!h.hold) clear();
+      const mine = { entries: [] as Entry[], collection: h.filter().collection };
       mine.entries = files.map(file => {
-        const entry: Entry = { file, state: "waiting", tile: node("article", "media-library__pending"), words: node("span", "media-library__pending-state") };
+        const entry: Entry = { file, collection: mine.collection, id: `pending:${++nextEntry}`, state: "waiting", tile: node("article", "media-library__pending"), words: node("span", "media-library__pending-state") };
         tile(entry); entry.tile.dataset.state = "waiting"; entry.words.textContent = WORDS.waiting!;
         return entry;
       });
+      run = h.hold ? { entries: [...previous, ...mine.entries], collection: mine.collection } : mine;
       paint(); void prepare(mine);
     },
+    reviewed(requests: MediaImportRequest[]) {
+      const entries = requests.map(request => {
+        const entry: Entry = { file: request.file, collection: request.collection ?? "", request, id: `pending:${++nextEntry}`, state: "ready", tile: node("article", "media-library__pending"), words: node("span", "media-library__pending-state") };
+        tile(entry); set(entry, "ready"); return entry;
+      });
+      run.entries.push(...entries); paint();
+      return entries.map(entry => entry.id);
+    },
+    held() { return run.entries.filter(entry => entry.state === "ready" && entry.request).map(entry => ({ id: entry.id, request: entry.request! })); },
+    cancelPending() {
+      const pending = run.entries.filter(entry => entry.state === "waiting" || entry.state === "preparing");
+      pending.forEach(stop); paint(); return pending.length;
+    },
+    saved() { run.entries.filter(entry => entry.state === "ready").forEach(entry => set(entry, "added")); },
     /** The collection the files join follows its rename. */
-    renamed(from: string, to: string) { if (run.collection === from) run.collection = to; },
+    renamed(from: string, to: string) {
+      if (run.collection === from) run.collection = to;
+      for (const entry of run.entries) if (entry.collection === from) {
+        entry.collection = to;
+        if (entry.request) entry.request.collection = to;
+      }
+    },
     paint,
     dispose: clear,
   };

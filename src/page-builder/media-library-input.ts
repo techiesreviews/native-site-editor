@@ -5,7 +5,7 @@ export interface LibraryInputHost {
   draw: () => void;
   /** True once the library has loaded. */
   loaded: () => boolean;
-  /** Files dropped or chosen: the pane adds them at once, the chooser opens Optimise. */
+  /** Files dropped or chosen: the pane saves them at once, the chooser holds them until Use or Close. */
   add: (files: File[]) => void;
   tell: (text: string) => void;
   /** The collection the grid shows, which Manage collections leaves chosen. */

@@ -30,7 +30,7 @@ export interface MediaPickerHost {
    * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
   check?(row: MediaToCheckRow, text?: string): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
-  import(requests: MediaImportRequest[]): Promise<string[]>;
+  import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]>;
   openPage(path: string): Promise<void>;
   /** The site's usage check (checked on open); without it every file is Not checked yet. */
   usage?: MediaUsageSource;
@@ -42,8 +42,15 @@ export interface MediaUsageSource {
   /** A page's title in the Pages tab; usage lists show it above the page's path. */
   pageLabel?(page: string): string | undefined;
 }
+/** A captured page source transformed inside the upload transaction. */
+export interface MediaPlacement {
+  path: string; source: string;
+  /** The refusal when the page changed before the batch; a generic one otherwise. */
+  stale?: string;
+  apply(paths: string[], requests: MediaImportRequest[]): string;
+}
 export interface MediaImportRequest {
-  file: File; result: MediaOptimiseResult; folder: string;
+  file: File; result?: MediaOptimiseResult; folder: string;
   replaceFrom?: string; metadata?: MediaMetadata; expectedAssetVersion?: string;
   /** A new file joins this collection in the same Undo step (adding while viewing it). */
   collection?: string;

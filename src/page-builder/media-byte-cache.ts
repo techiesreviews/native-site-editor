@@ -10,7 +10,7 @@ export interface MediaByteCachePorts {
   decode?(url: string): Promise<{ width?: number; height?: number }>;
 }
 
-async function decodeImage(url: string) {
+export async function decodeImage(url: string) {
   const image = new Image(); image.src = url;
   await image.decode().catch(() => undefined);
   return { width: image.naturalWidth || undefined, height: image.naturalHeight || undefined };

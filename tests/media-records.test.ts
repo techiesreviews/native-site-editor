@@ -170,7 +170,7 @@ test("workspace leaves unchanged legacy metadata untouched, including batches ch
     async applyBatch(batch) {
       batches++;
       assert.equal(batch.expectedSources.get(MEDIA_RECORDS_PATH), legacy);
-      assert.equal(batch.edits.has(MEDIA_RECORDS_PATH), false);
+      assert.equal(batch.edits.has(MEDIA_RECORDS_PATH), batch.uploads.length > 0);
       for (const [path, value] of batch.edits) text.set(path, value);
     },
   };
@@ -178,10 +178,10 @@ test("workspace leaves unchanged legacy metadata untouched, including batches ch
   assert.deepEqual((await host.load()).metadata["images/a.png"], { tags: ["hero"], alt: "Old" });
   await host.metadata({ "images/a.png": { tags: ["hero"], alt: "Old" } });
   assert.equal(batches, 0);
-  // Replacing a.png rewrites the page reference and changes no records.
+  // Replacing a.png rewrites the page reference and copies its complete record.
   await host.import([{ file: new File(["new"], "new.png"), result: { outputs: [{ blob: new Blob(["new"]), extension: "png" }], before: 3, after: 3 }, folder: "images", replaceFrom: "images/a.png", expectedAssetVersion: "sha" }]);
   assert.equal(batches, 1);
-  assert.equal(text.get(MEDIA_RECORDS_PATH), legacy);
+  assert.deepEqual(parseMediaRecords(text.get(MEDIA_RECORDS_PATH)).files["images/new.png"], parseMediaRecords(legacy).files["images/a.png"]);
   assert.ok(text.get("index.html")?.includes("/images/new.png"));
   text.set(MEDIA_RECORDS_PATH, "bad");
   await assert.rejects(host.metadata({ "images/a.png": { alt: "Changed" } }), /media.json.*malformed/);

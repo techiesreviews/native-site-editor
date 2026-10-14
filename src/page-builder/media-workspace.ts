@@ -7,7 +7,7 @@ import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
-import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
+import { uploadProblem, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
@@ -15,7 +15,7 @@ import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./med
 import { alwaysKeptFiles, mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaEscape, mediaVariantName } from "./media-markup";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
-import type { MediaImportRequest, MediaLibraryItem } from "./media-picker";
+import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
 
 /** Prepared mutations only. The host validates and commits this entire batch atomically. */
 export interface MediaWorkspaceBatch {
@@ -179,26 +179,42 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
     new Map(paths.map(path => [path, ctx.assetVersion(path)]));
-  const importMedia = async (requests: MediaImportRequest[]) => {
-    const ctx = active();
+  const importMedia = async (requests: MediaImportRequest[], place?: MediaPlacement) => {
+    session?.assertLive();
+    const ctx = await context();
+    session?.assertLive();
+    ctx.assertLive();
     const { batch, text, metadata } = await prepare(ctx, "Add images", requests.some((item) => item.replaceFrom));
     const reserved = new Set(batch.expectedPaths);
     const changes: Record<string, Partial<MediaMetadata>> = {};
+    const inherited: MediaRecords["files"] = {};
     const paths: string[] = [], joins = new Map<string, string[]>();
     for (const request of requests) {
       const { file, result, folder, replaceFrom } = request;
       if (folder.split("/").some((part) => part === "." || part === "..") || /[\\\u0000-\u001f]/.test(folder)) throw new Error("Choose a repository folder without . or .. segments.");
-      const first = result.outputs[0];
-      if (!first || first.variantWidth) throw new Error("No primary image was encoded.");
-      if (result.outputs.some((output) => !/^[a-z0-9]+$/i.test(output.extension) || output.extension !== first.extension)) throw new Error("All responsive images must use the primary image format.");
-      if (result.outputs.some((output) => output.blob.size > MAX_UPLOAD_BYTES)) throw new Error("An encoded image exceeds the 20 MB upload limit.");
-      const stem = uploadFileName(file.name).replace(/\.[^.]+$/, "");
-      const family = (primary: string) => result.outputs.map((output) => output.variantWidth ? mediaVariantName(primary, output.variantWidth) : primary);
-      const primary = await uploadPath(folder, `${stem}.${first.extension}`, (path) => family(path).some((candidate) => reserved.has(candidate)));
+      const dir = folder.replace(/^\/+|\/+$/g, "");
+      const segments = dir.split("/");
+      for (let index = 1; index <= segments.length; index++) {
+        const parent = segments.slice(0, index).join("/");
+        if (parent && reserved.has(parent)) throw new Error(`${parent} is a file, so it cannot contain uploaded files.`);
+      }
+      const first = result?.outputs[0];
+      if (result && (!first || first.variantWidth)) throw new Error("No primary image was encoded.");
+      if (result?.outputs.some(output => !/^[a-z0-9]+$/i.test(output.extension) || output.extension !== first!.extension)) throw new Error("All responsive images must use the primary image format.");
+      const outputs = result?.outputs ?? [{ blob: file, extension: "" }];
+      for (const output of outputs) {
+        const problem = uploadProblem({ name: file.name, size: output.blob.size });
+        if (problem) throw new Error(problem);
+      }
+      const name = uploadFileName(file.name);
+      const encoded = first ? `${name.replace(/\.[^.]+$/, "")}.${first.extension}` : name;
+      const family = (primary: string) => outputs.map(output => output.variantWidth ? mediaVariantName(primary, output.variantWidth) : primary);
+      const primary = await uploadPath(dir, encoded, path => family(path).some(candidate =>
+        reserved.has(candidate) || [...reserved].some(existing => existing.startsWith(`${candidate}/`))));
       ctx.assertLive();
       const familyPaths = family(primary);
       if (new Set(familyPaths).size !== familyPaths.length) throw new Error("Responsive image widths must be unique.");
-      result.outputs.forEach((output, index) => {
+      outputs.forEach((output, index) => {
         const path = familyPaths[index]; reserved.add(path); batch.uploads.push({ path, blob: output.blob });
       });
       if (request.metadata) changes[primary] = request.metadata;
@@ -208,14 +224,24 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         if (!request.expectedAssetVersion) throw new Error("The original image revision was not captured. Reopen its optimisation preview.");
         if (ctx.assetVersion(replaceFrom) !== request.expectedAssetVersion) throw new Error(`${replaceFrom} changed since its optimisation preview. Reopen the preview before adding copies.`);
         batch.expectedAssets.set(replaceFrom, request.expectedAssetVersion);
+        if (metadata.files[replaceFrom]) inherited[primary] = structuredClone(metadata.files[replaceFrom]);
+        // Preserve agent marks and unknown record fields, rather than the metadata view.
+        delete changes[primary];
         rewriteInto(batch, text, replaceFrom, primary);
       }
       paths.push(primary);
     }
     // New files join the viewed collection in the same batch: one Undo step.
-    let next = applyMediaMetadata(metadata, changes);
+    let next = applyMediaMetadata({ ...metadata, files: { ...metadata.files, ...inherited } }, changes);
     for (const [name, members] of joins) next = addToMediaCollection(next, name, members);
     recordsEdit(batch, metadata, next);
+    if (place) {
+      const source = await ctx.read(place.path);
+      ctx.assertLive();
+      if (source !== place.source) throw new Error(place.stale ?? `${place.path} changed while the file was being added. Nothing was added or placed.`);
+      batch.expectedSources.set(place.path, place.source);
+      batch.edits.set(place.path, place.apply(paths, requests));
+    }
     await commit(ctx, batch);
     return paths;
   };

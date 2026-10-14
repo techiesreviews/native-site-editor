@@ -5,8 +5,7 @@ import { button, node } from "../ui/dom";
 import { cancellation } from "./media-busy-lock";
 import { input, select, field, check } from "./media-library-fields";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
-import { mediaSavings, optimiseMedia, type MediaOptimiseOptions } from "./media-optimise";
-import type { MediaImportRequest } from "./media-picker";
+import { mediaSavings, optimiseMedia, type MediaOptimiseResult, type MediaOptimiseOptions } from "./media-optimise";
 
 type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell">;
 
@@ -39,7 +38,7 @@ export function showMediaOptimise(
     "Optimised copies are new files. Originals stay available. Existing alt text and classes stay intact."));
   else element.append(field("Destination folder", destination));
   const results = node("div", "media-library__results");
-  let prepared: Pick<MediaImportRequest, "file" | "result">[] = [];
+  let prepared: { file: File; result: MediaOptimiseResult }[] = [];
   let prepareVersion = 0;
   const add = button(existing ? "Add optimised copies" : "Add to library", () => void task(async () => {
     const requests = buildMediaImportRequests(

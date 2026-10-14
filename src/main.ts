@@ -87,7 +87,6 @@ import { createMediaHistoryHome } from "./page-builder/media-history-home";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
-import { addGuardedUpload } from "./page-builder/guarded-upload";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
@@ -2253,7 +2252,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
   const scope = draftScope();
   const live = () => epoch === generation && request === nativeSourcesRequest;
-  const load = async ({ path, type }: { path: string; type: string }) => {
+  const load = async ({ path, type }: { path: string; type: string }): Promise<string | undefined> => {
     // A drafted image: an upload's bytes from this browser, a moved or
     // copied one's blob; a deleted one is missing.
     const draft = scope ? draftStore().get(scope, path) : undefined;
@@ -2262,7 +2261,10 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
     // An SVG written as text here (the block placeholder, an edited one) shows its draft.
     if (draft && !draft.deleted && !draft.opaque && !draft.sourceSha && type === "image/svg+xml") return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(draft.content)}`;
     const entry = draft?.deleted ? undefined : draft?.sourceSha ? { sha: draft.sourceSha } : await findEntry(path);
-    if (!live() || !entry) return undefined;
+    if (!live()) return undefined;
+    // A batch can place an image just before its upload draft becomes visible.
+    if (scope && draftStore().get(scope, path) !== draft) return load({ path, type });
+    if (!entry) return undefined;
     try {
       return await dataUrlOf(await readBlob(repo, entry.sha, path), type);
     } catch {
@@ -2314,31 +2316,19 @@ function nativeImagePaths() {
 
 // Files from the computer as new-file drafts in `folder` (src/uploads.ts),
 // never over something that is there; resolves to the paths added.
-async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
-  const captured = draftScope();
-  if (!captured || !files.length) return [];
-  const scope = { ...captured }, epoch = generation, key = setupScope(), drafts = draftStore(), bytes = uploadBytes();
-  const isCurrent = () => epoch === generation && key === setupScope();
-  const receipts: { undo(): Promise<boolean> }[] = [];
-  const added: string[] = [], errors: string[] = [], warnings: string[] = [];
-  const cleanup = async () => { for (const receipt of receipts) await receipt.undo(); };
-  for (const file of files) {
-    const result = await addGuardedUpload({
-      drafts, bytes, scope, folder, file, isCurrent,
-      exists: path => added.includes(path) || pathNow(path) !== undefined,
-      checkPath: branchPathProblem,
-    });
-    if (!isCurrent()) { if (result.receipt) await result.receipt.undo(); await cleanup(); return []; }
-    if (result.error !== undefined) { errors.push(result.error); continue; }
-    receipts.push(result.receipt!);
-    added.push(result.path!);
-    if (result.warning) warnings.push(result.warning);
-  }
-  if (!isCurrent()) { await cleanup(); return []; }
-  if (added.length) afterFileChanges();
-  if (errors.length) errorMessage(new Error(errors.join(" ")));
-  if (added.length) announce([`Uploaded ${added.join(", ")}.`, ...warnings].join(" "));
-  return added;
+async function uploadFilesTo(folder: string, files: File[], place?: import("./page-builder/media-picker").MediaPlacement): Promise<string[]> {
+  const epoch = generation, key = setupScope();
+  if (!draftScope() || !files.length) return [];
+  // The repository and branch of the drop; a switch while loading or preparing adds nothing.
+  const current = () => epoch === generation && key === setupScope();
+  try {
+    const { addPreparedMedia } = await import("./page-builder/media-prepare");
+    if (!current()) return [];
+    return await addPreparedMedia(() => {
+      if (!current()) throw new Error("The repository or branch changed while adding files. Nothing was added.");
+      return mediaController.workspaceContext();
+    }, folder, files, place, { error: errorMessage, announce });
+  } catch (error) { errorMessage(error); return []; }
 }
 
 // An upload's Discard: its draft goes, and its bytes with it.
@@ -2457,6 +2447,9 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   const openAtStart = appStore.openFile.value;
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = await loadMediaWorkspace();
   const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
+  const repo = appStore.repository.value, snapshot = appStore.snapshot.value;
+  // Without a native site (no root index.html) the batch is proved against the repository's listing.
+  const listed = nativeSite || !repo || !snapshot ? undefined : await listRepositoryFiles(repo, snapshot);
   assertLive();
   if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   const editor = editorModule;
@@ -2465,10 +2458,15 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   const historyPath = appStore.openFile.value, historyHost = historyPath ? editor.captureHistoryHost(historyPath) : undefined;
   if (!historyHost && [...batch.edits.keys()].some(path => path !== MEDIA_RECORDS_PATH)) throw new Error("Open a page before changing images that pages use.");
   const identity = mediaIdentity();
+  const batchPaths = () => {
+    if (!listed) return nativeFiles(scope);
+    const drafts = draftStore().list(scope), gone = new Set(drafts.filter(draft => draft.deleted).map(draft => draft.path));
+    return [...new Set([...listed, ...drafts.filter(draft => !draft.deleted).map(draft => draft.path)])].filter(path => !gone.has(path));
+  };
   const recordOn = (path: string, undo: () => boolean, redo: () => boolean | Promise<boolean>) => editor.recordHistoryAction(path, undo, redo);
   await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
     scope, store: draftStore(), bytes: uploadBytes(), stamp,
-    paths: () => nativeFiles(scope), source: path => mediaTextSource(path, scope),
+    paths: batchPaths, source: path => mediaTextSource(path, scope),
     assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
     entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
     modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
