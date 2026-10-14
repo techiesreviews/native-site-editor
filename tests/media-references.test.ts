@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaUsageIndex, rewriteMediaReferences, scanMediaReferences } from "../src/page-builder/media-references";
+import { mediaUsageIndex, rewriteMediaReferences, scanMediaReferences, scanMediaUrlTokens } from "../src/page-builder/media-references";
+
+test("URL tokens and references retain attribute origin while CSS text has none", () => {
+  const source = '<meta property="og:image" content="/images/share.png"><img src="/images/a.png" srcset="/images/b.png 2x"><a href="/file.pdf">File</a><video poster="/images/poster.png"></video><div style="background:url(/images/c.png)"></div><style>.a{background:url(/images/d.png)}</style>';
+  const attributes = ["content", "src", "srcset", "href", "poster", "style", undefined];
+  assert.deepEqual(scanMediaUrlTokens("index.html", source).map(ref => ref.attribute), attributes);
+  assert.deepEqual(scanMediaReferences("index.html", source).map(ref => ref.attribute), attributes);
+  assert.equal(scanMediaReferences("styles/site.css", '.a{background:url(/images/a.png)}')[0].attribute, undefined);
+  // The existing index still includes sharing pictures in its page traversal.
+  assert.deepEqual(mediaUsageIndex(["images/share.png"], { "index.html": source }, ["index.html"])["images/share.png"].pages, ["index.html"]);
+});
 
 test("HTML references ignore comments and script strings and decode complete entities", () => {
   const source = '<!-- <img src="/images/fake.png"> --><script>const html = \'<img src="/images/fake.png">\';</script><img src="/images/caf&eacute;.png?x=1&amp;y=2" alt="Caf&eacute; &copy;">';

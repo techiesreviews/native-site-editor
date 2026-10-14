@@ -3,7 +3,7 @@ import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaUrl } from "./media-markup";
 
-export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attributeQuote?: string; cssQuote?: string }
+export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attribute?: "src" | "href" | "poster" | "content" | "srcset" | "style"; attributeQuote?: string; cssQuote?: string }
 export interface MediaReference extends MediaUrlToken { path: string }
 export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 
@@ -131,8 +131,8 @@ function srcsetUrls(value: string, add: (url: string, start: number, end: number
 /** Every decoded URL token, including values that do not resolve to a repository file. */
 export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[] {
   const out: MediaUrlToken[] = [];
-  const add = (value: string, start: number, end: number, alt?: string, attributeQuote?: string, cssQuote?: string) => {
-    out.push({ file, start, end, value, alt, attributeQuote, cssQuote });
+  const add = (value: string, start: number, end: number, alt?: string, attributeQuote?: string, cssQuote?: string, attribute?: MediaUrlToken["attribute"]) => {
+    out.push({ file, start, end, value, alt, attribute, attributeQuote, cssQuote });
   };
   if (/\.css$/i.test(file)) { cssUrls(source, (value, start, end, quote) => add(value, start, end, undefined, undefined, quote)); return out; }
   let styleEnd = 0;
@@ -140,7 +140,7 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
     if (tag.start < styleEnd) continue;
     const rawAlt = startTagAttribute(source, tag, "alt")?.value;
     const alt = rawAlt === undefined ? undefined : decodeHtmlEntities(rawAlt, true);
-    for (const name of ["src", "href", "poster", "content", "srcset"]) {
+    for (const name of ["src", "href", "poster", "content", "srcset"] as const) {
       if (name === "content") {
         const key = startTagAttribute(source, tag, "property") ?? startTagAttribute(source, tag, "name") ?? startTagAttribute(source, tag, "itemprop");
         if (tag.name !== "meta" || !/^(?:og:image(?::url|:secure_url)?|twitter:image(?::src)?|msapplication-tileimage|image)$/i.test(decodeHtmlEntities(key?.value ?? "", true))) continue;
@@ -150,14 +150,14 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
       const quote = ["'", '"'].includes(source[attr.valueStart - 1]) ? source[attr.valueStart - 1] : "";
       if (name === "srcset") {
         const decoded = attributeText(attr.value);
-        srcsetUrls(decoded.text, (value, start, end) => add(value, attr.valueStart + decoded.starts[start], attr.valueStart + decoded.ends[end - 1], alt, quote));
-      } else add(decodeHtmlEntities(attr.value, true), attr.valueStart, attr.valueEnd, alt, quote);
+        srcsetUrls(decoded.text, (value, start, end) => add(value, attr.valueStart + decoded.starts[start], attr.valueStart + decoded.ends[end - 1], alt, quote, undefined, name));
+      } else add(decodeHtmlEntities(attr.value, true), attr.valueStart, attr.valueEnd, alt, quote, undefined, name);
     }
     const style = startTagAttribute(source, tag, "style");
     if (style) {
       const decoded = attributeText(style.value);
       const quote = ["'", '"'].includes(source[style.valueStart - 1]) ? source[style.valueStart - 1] : "";
-      cssUrls(decoded.text, (value, start, end, cssQuote) => add(value, style.valueStart + decoded.starts[start], style.valueStart + decoded.ends[end - 1], undefined, quote, cssQuote));
+      cssUrls(decoded.text, (value, start, end, cssQuote) => add(value, style.valueStart + decoded.starts[start], style.valueStart + decoded.ends[end - 1], undefined, quote, cssQuote, "style"));
     }
     if (tag.name === "style") {
       const closing = /<\/style(?=[\t\n\f\r />])/i.exec(source.slice(tag.end));
@@ -170,46 +170,61 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
 }
 
 export function scanMediaReferences(file: string, source: string): MediaReference[] {
-  return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attributeQuote, cssQuote }) => {
+  return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attribute, attributeQuote, cssQuote }) => {
     const path = mediaResolvePath(value, file);
-    return path ? [{ file, start, end, value, path, alt, attributeQuote, cssQuote }] : [];
+    return path ? [{ file, start, end, value, path, alt, attribute, attributeQuote, cssQuote }] : [];
   });
 }
 
-/** Page usage includes nested components, linked styles and CSS imports, once per page. */
-export function mediaUsageIndex(paths: string[], sources: Record<string, string | undefined>, pages: string[], components: Record<string, string> = {}): Record<string, MediaUsage> {
-  const images = new Set(paths);
-  const out: Record<string, MediaUsage> = Object.create(null);
+/** Shared dependency walk over already scanned references, including cycles and component styles. */
+export function walkMediaReferencePages(
+  sources: Record<string, string | undefined>,
+  references: Map<string, MediaReference[]>,
+  pages: string[],
+  components: Record<string, string>,
+  visitReference: (page: string, reference: MediaReference) => void,
+): void {
   const dependencies = new Map<string, Set<string>>();
-  const references = new Map<string, MediaReference[]>();
-  for (const path of paths) out[path] = { files: [], pages: [], alts: [] };
-  for (const [file, source] of Object.entries(sources)) {
-    if (source === undefined) continue;
-    const refs = scanMediaReferences(file, source);
-    references.set(file, refs);
+  for (const [file, refs] of references) {
     const deps = new Set(refs.map((ref) => ref.path).filter((path) => Object.hasOwn(sources, path)));
-    if (/\.html$/i.test(file)) for (const tag of startTags(source)) if (components[tag.name]) {
+    if (/\.html$/i.test(file)) for (const tag of startTags(sources[file] ?? "")) if (components[tag.name]) {
       deps.add(components[tag.name]);
       const sheet = components[tag.name].replace(/\.html$/i, ".css");
       if (Object.hasOwn(sources, sheet)) deps.add(sheet);
     }
     dependencies.set(file, deps);
-    for (const ref of refs) if (images.has(ref.path)) {
-      const item = out[ref.path];
-      if (!item.files.includes(file)) item.files.push(file);
-      if (ref.alt && !item.alts.includes(ref.alt)) item.alts.push(ref.alt);
-    }
   }
   for (const page of pages) {
     const visited = new Set<string>();
     const visit = (file: string) => {
       if (visited.has(file)) return;
       visited.add(file);
-      for (const ref of references.get(file) ?? []) if (images.has(ref.path) && !out[ref.path].pages.includes(page)) out[ref.path].pages.push(page);
+      for (const ref of references.get(file) ?? []) visitReference(page, ref);
       for (const dependency of dependencies.get(file) ?? []) visit(dependency);
     };
     visit(page);
   }
+}
+
+/** Page usage includes nested components, linked styles and CSS imports, once per page. */
+export function mediaUsageIndex(paths: string[], sources: Record<string, string | undefined>, pages: string[], components: Record<string, string> = {}): Record<string, MediaUsage> {
+  const images = new Set(paths);
+  const out: Record<string, MediaUsage> = Object.create(null);
+  const references = new Map<string, MediaReference[]>();
+  for (const path of paths) out[path] = { files: [], pages: [], alts: [] };
+  for (const [file, source] of Object.entries(sources)) {
+    if (source === undefined) continue;
+    const refs = scanMediaReferences(file, source);
+    references.set(file, refs);
+    for (const ref of refs) if (images.has(ref.path)) {
+      const item = out[ref.path];
+      if (!item.files.includes(file)) item.files.push(file);
+      if (ref.alt && !item.alts.includes(ref.alt)) item.alts.push(ref.alt);
+    }
+  }
+  walkMediaReferencePages(sources, references, pages, components, (page, ref) => {
+    if (images.has(ref.path) && !out[ref.path].pages.includes(page)) out[ref.path].pages.push(page);
+  });
   return out;
 }
 

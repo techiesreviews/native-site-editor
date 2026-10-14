@@ -1,0 +1,145 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mediaUsageFor, mediaUsageRecords, mediaUsageState } from "../src/page-builder/media-usage";
+
+test("distinct pages count repeated mentions and responsive members once, in input order", () => {
+  const records = mediaUsageRecords({
+    media: ["media/photo.jpg", "media/photo-480w.webp", "media/photo-960.webp", "media/originals/photo.png"],
+    sources: {
+      "index.html": '<img src="/media/photo.jpg"><img src="/media/photo.jpg" srcset="/media/photo-480w.webp 480w">',
+      "small.html": '<img srcset="/media/photo-480w.webp 480w">',
+      "large.html": '<img srcset="/media/photo-960.webp 960w">',
+      "original.html": '<a href="/media/originals/photo.png">Download</a>',
+    },
+    pages: ["large.html", "small.html", "index.html", "original.html", "index.html"],
+  });
+  assert.equal(records.families.length, 1);
+  const family = mediaUsageFor(records, "media/photo-480w.webp");
+  assert.equal(family.main, "media/photo.jpg");
+  assert.deepEqual(family.members, ["media/photo.jpg", "media/photo-480w.webp", "media/photo-960.webp", "media/originals/photo.png"]);
+  assert.equal(mediaUsageFor(records, "media/originals/photo.png"), family);
+  assert.deepEqual(family.pages, ["large.html", "small.html", "index.html", "original.html"]);
+  assert.deepEqual(family.otherUses, []);
+  assert.equal(mediaUsageState(family), "used-on-pages");
+});
+
+test("unlinked stylesheet mentions are other uses only, deduplicated across family members", () => {
+  const records = mediaUsageRecords({
+    media: ["images/photo.jpg", "images/photo-480w.webp"],
+    sources: {
+      "index.html": "<p>No pictures</p>",
+      "styles/unused.css": '.a{background:url(/images/photo.jpg)} .b{background:url(/images/photo-480w.webp)}',
+    },
+    pages: ["index.html"],
+  });
+  const family = mediaUsageFor(records, "images/photo.jpg");
+  assert.deepEqual(family.pages, []);
+  assert.deepEqual(family.otherUses, [{ file: "styles/unused.css", kind: "stylesheet" }]);
+  assert.equal(mediaUsageState(family), "other-uses-only");
+});
+
+test("nested components, sibling styles, linked sheets and cyclic imports reach pages and retain each mention location", () => {
+  const records = mediaUsageRecords({
+    media: ["assets/logo.svg"],
+    sources: {
+      "index.html": "<site-header></site-header><site-header></site-header>",
+      "about.html": '<link rel="stylesheet" href="/styles/a.css">',
+      "components/header.html": "<brand-image></brand-image>",
+      "components/header.css": '@import "/styles/a.css";',
+      "components/brand.html": '<img src="/assets/logo.svg"><img src="/assets/logo.svg">',
+      "styles/a.css": '@import "b.css"; .a{background:url(/assets/logo.svg)}',
+      "styles/b.css": '@import "a.css"; .b{background:url(/assets/logo.svg)}',
+      "fragment.html": '<img src="/assets/logo.svg">',
+    },
+    pages: ["about.html", "index.html"],
+    components: { "site-header": "components/header.html", "brand-image": "components/brand.html" },
+  });
+  const family = mediaUsageFor(records, "assets/logo.svg");
+  assert.deepEqual(family.pages, ["about.html", "index.html"]);
+  assert.deepEqual(family.otherUses, [
+    { file: "components/brand.html", kind: "component" },
+    { file: "styles/a.css", kind: "stylesheet" },
+    { file: "styles/b.css", kind: "stylesheet" },
+    { file: "fragment.html", kind: "file" },
+  ]);
+});
+
+test("sharing tags are other uses even on pages and placed components", () => {
+  const records = mediaUsageRecords({
+    media: ["images/share.png", "images/visible.png"],
+    sources: {
+      "index.html": '<meta property="og:image" content="/images/share.png"><meta name="twitter:image" content="/images/share.png"><share-card></share-card>',
+      "components/share.html": '<meta itemprop="image" content="/images/share.png"><meta property="og:image" content="/images/visible.png"><img src="/images/visible.png">',
+    },
+    pages: ["index.html"],
+    components: { "share-card": "components/share.html" },
+  });
+  const sharing = mediaUsageFor(records, "images/share.png");
+  assert.deepEqual(sharing.pages, []);
+  assert.deepEqual(sharing.otherUses, [
+    { file: "index.html", kind: "sharing" },
+    { file: "components/share.html", kind: "sharing" },
+  ]);
+  assert.equal(mediaUsageState(sharing), "other-uses-only");
+  const visible = mediaUsageFor(records, "images/visible.png");
+  assert.deepEqual(visible.pages, ["index.html"]);
+  assert.deepEqual(visible.otherUses, [
+    { file: "components/share.html", kind: "sharing" },
+    { file: "components/share.html", kind: "component" },
+  ]);
+});
+
+test("any unreadable source makes every family unchecked, including ignored source types", () => {
+  for (const file of ["missing.html", "settings.json", "node_modules/missing.css"]) {
+    const records = mediaUsageRecords({
+      media: ["images/photo.jpg", "images/photo-480w.webp", "media/brochure.pdf"],
+      sources: { "index.html": '<img src="/images/photo.jpg">', [file]: undefined, "also-missing.css": undefined },
+      pages: ["index.html"],
+    });
+    assert.deepEqual(records.unreadable, [file, "also-missing.css"]);
+    assert.equal(records.families.length, 2);
+    for (const family of records.families) {
+      assert.equal(family.checked, false);
+      assert.deepEqual(family.pages, []);
+      assert.deepEqual(family.otherUses, []);
+      assert.equal(mediaUsageState(family), "not-checked");
+    }
+  }
+});
+
+test("downloads, videos, root images and paths filtered from image families remain represented", () => {
+  const media = ["media/brochure.pdf", "assets/logo.svg", "clip.mp4", "media/custom.bin", "media/brochure.pdf"];
+  const records = mediaUsageRecords({
+    media,
+    sources: { "index.html": '<a href="/media/brochure.pdf">Download</a><img src="/assets/logo.svg"><video src="/clip.mp4"></video><a href="/media/custom.bin">File</a>' },
+    pages: ["index.html"],
+  });
+  assert.equal(records.families.length, 4);
+  for (const path of media) assert.deepEqual(mediaUsageFor(records, path).pages, ["index.html"]);
+});
+
+test("unknown paths are not checked while checked files without mentions have no uses found", () => {
+  const records = mediaUsageRecords({ media: ["unused.png"], sources: { "index.html": "<p>Hello</p>" }, pages: ["index.html"] });
+  const unknown = mediaUsageFor(records, "new.png");
+  assert.deepEqual(unknown, { main: "new.png", members: ["new.png"], checked: false, pages: [], otherUses: [] });
+  assert.equal(mediaUsageState(unknown), "not-checked");
+  assert.equal(mediaUsageState(mediaUsageFor(records, "unused.png")), "no-uses-found");
+  assert.equal(records.families.length, 1);
+});
+
+test("reach is html-css; scripts, settings and node_modules are ignored even when linked", () => {
+  const records = mediaUsageRecords({
+    media: ["images/a.png"],
+    sources: {
+      "index.html": '<script src="/script.js"></script><link href="/node_modules/site.css"><a href="/settings.json">Settings</a>',
+      "script.js": '<img src="/images/a.png">',
+      "settings.json": '<img src="/images/a.png">',
+      "node_modules/site.css": '.a{background:url(/images/a.png)}',
+      "node_modules/template.html": '<img src="/images/a.png">',
+    },
+    pages: ["index.html"],
+  });
+  assert.equal(records.reach, "html-css");
+  assert.deepEqual(records.unreadable, []);
+  assert.equal(mediaUsageState(mediaUsageFor(records, "images/a.png")), "no-uses-found");
+});

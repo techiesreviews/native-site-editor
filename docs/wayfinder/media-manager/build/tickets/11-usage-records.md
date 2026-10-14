@@ -1,7 +1,7 @@
 ---
 title: Usage records per media file
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-11 runner)
 blocked_by: [05-media-records, 06-image-families]
 builder: sol
