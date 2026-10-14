@@ -2,7 +2,7 @@
 title: Keep original
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-27 runner)
 blocked_by: [24-media-folders-and-names, 25-image-recipe]
 builder: sol
 phase: 2
