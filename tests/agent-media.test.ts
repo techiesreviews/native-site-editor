@@ -118,3 +118,18 @@ test("tab commands return reports and previews and refuse documents before readi
   await assert.rejects(applySiteCommand(ports, { ...command, operation: "preview_media", path: "files/menu.pdf" }), /document \(PDF\)/);
   await assert.rejects(applySiteCommand(ports, { ...command, operation: "preview_media", path: "files/notes" }), /files\/notes is not a picture; preview_media/);
 });
+
+test("workspace reports show starting collections before the first save, as the editor reads them", async () => {
+  const { listWorkspaceMedia } = await import("../src/agent-media.ts");
+  const media = [{ path: "images/logos/mark.png", size: 5 }, { path: "images/2024/05/beach.jpg", size: 9 }, { path: "files/menu.pdf", size: 3 }];
+  const ctx = {
+    paths: [...media.map(item => item.path), "index.html"], items: media, pages: ["index.html"], components: {}, assertLive: () => {},
+    read: async (path: string) => path === "index.html" ? '<img src="/images/logos/mark.png">' : undefined,
+  } satisfies Pick<import("../src/page-builder/media-workspace.ts").MediaWorkspaceContext, "paths" | "items" | "pages" | "components" | "assertLive" | "read">;
+  const report = JSON.parse(await listWorkspaceMedia(ctx as import("../src/page-builder/media-workspace.ts").MediaWorkspaceContext, { offset: 0, limit: 100 }));
+  assert.equal(report.note, undefined);
+  const byPath = Object.fromEntries(report.media.map((item: { path: string }) => [item.path, item]));
+  assert.deepEqual(byPath["images/logos/mark.png"].collections, ["Logos"]);
+  assert.equal(byPath["images/2024/05/beach.jpg"].collections, undefined);
+  assert.equal(byPath["files/menu.pdf"].collections, undefined);
+});

@@ -1,5 +1,7 @@
 import { MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, MEDIA_PREVIEW_SIZE, TEXT_PATH, isPreviewablePicture, mediaKind, picturePreviewRefusal, textBytes } from "../shared/agent";
-import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../shared/media-records";
+import { MEDIA_RECORDS_PATH, type MediaRecords } from "../shared/media-records";
+import { isImagePath } from "./native-structure";
+import { readSiteMediaRecords } from "./page-builder/media-collections";
 import { mediaFamilies } from "./page-builder/media-families";
 import { fileDescriptionState } from "./page-builder/media-descriptions";
 import { mediaUsageFor, mediaUsageRecords, mediaUsageState, type MediaUsageRecords } from "./page-builder/media-usage";
@@ -69,7 +71,8 @@ export async function listWorkspaceMedia(ctx: MediaWorkspaceContext, request: { 
     const source = await ctx.read(MEDIA_RECORDS_PATH);
     ctx.assertLive();
     if (source === undefined && ctx.paths.includes(MEDIA_RECORDS_PATH)) throw new Error("Media records are unreadable.");
-    records = parseMediaRecords(source);
+    // The editor's own reader: before the first save, starting collections come from the library's folders and old tags.
+    records = readSiteMediaRecords(source, ctx.items.map(item => item.path).filter(isImagePath));
   } catch {
     ctx.assertLive();
     note = `${MEDIA_RECORDS_PATH} could not be read or is malformed; descriptions, collections and Always keep are unknown.`;
