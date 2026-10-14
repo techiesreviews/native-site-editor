@@ -2,7 +2,7 @@
 title: Media changes work without an open page
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-08 runner)
 blocked_by: [02-remove-legacy-workspace-members]
 builder: sol
 phase: 0
