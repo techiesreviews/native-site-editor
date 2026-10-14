@@ -271,6 +271,12 @@ for (const alt of [mediaNameAlt(other), "b-photo_2", "b-photo_2.png"]) {
     assert.deepEqual(placeDescriptionState(records, other, page, alt), { state: "described", own: true, byAgent: true });
     for (const next of [{ text: "New description", decorative: false }, { text: "", decorative: true }, { text: "", decorative: false }])
       assert.equal(descriptionPlaceEdits(records, other, page, source, { text: "Old description", decorative: false }, next), source);
+    // Also when the file's description is that same name: the recorded words stay the agent's.
+    const same = setMediaPlaceAgentText(setMediaDescription(empty(), other, alt), other, page, alt);
+    assert.deepEqual(placeDescriptionState(same, other, page, alt), { state: "described", own: true, byAgent: true });
+    for (const next of [{ text: "New description", decorative: false }, { text: "", decorative: true }, { text: "", decorative: false }])
+      assert.equal(descriptionPlaceEdits(same, other, page, source, { text: alt, decorative: false }, next), source);
+    assert.deepEqual(mediaToCheck(same, [other], { [page]: source }), [{ file: other, page, text: alt }]);
     const swapped = swapPlaceImage(records, page, other, file, alt, `<img src="/images/a.png" alt="${alt}">`);
     assert.equal(swapped.alt, undefined);
     assert.equal(swapped.records.files[file]?.places?.[page]?.agentText, alt);

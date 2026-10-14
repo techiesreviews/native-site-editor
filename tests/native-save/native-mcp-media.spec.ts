@@ -38,7 +38,7 @@ function result(value: unknown): any {
   return JSON.parse(text);
 }
 
-test("an agent places an undescribed file, then describes the file and fills the place", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("an agent places an undescribed file, then describes the file and fills the place", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
   const call = async (name: string, args: Record<string, unknown>) => {

@@ -11,8 +11,10 @@ export function fileDescriptionState(record?: MediaFileRecord) {
 }
 export function placeDescriptionState(records: MediaRecords, file: string, page: string, alt: string | undefined) {
   const record = records.files[file], place = record?.places?.[page];
-  // A name alt that is also the file's description simply follows that description.
-  const name = alt !== record?.description?.text && followsFileName(file, alt), agentName = name && place?.agentText === alt;
+  // Name words an agent recorded are its own words; otherwise a name alt that is also the
+  // file's description simply follows that description.
+  const agentName = followsFileName(file, alt) && place?.agentText === alt;
+  const name = agentName || alt !== record?.description?.text && followsFileName(file, alt);
   if (name && !agentName) return { state: "missing" as const, own: false, byAgent: false };
   const own = Boolean(alt && (agentName || alt !== record?.description?.text));
   return { state: alt ? "described" as const : alt !== undefined && (record?.decorative || place?.decorative) ? "decorative" as const : "missing" as const,
@@ -74,8 +76,9 @@ export function descriptionPlaceEdits(records: MediaRecords, file: string, page:
     // Places using the description follow it; own words and Decorative places stay.
     // Not described yet (absent, or empty without a Decorative mark) takes new text;
     // an emptied, undecorated description never writes alt="" over an absent alt.
-    const name = alt !== before.text && followsFileName(file, alt);
-    const follows = name ? records.files[file]?.places?.[page]?.agentText !== alt && (Boolean(target) || after.decorative)
+    const agentWords = records.files[file]?.places?.[page]?.agentText === alt;
+    const name = followsFileName(file, alt) && (agentWords || alt !== before.text);
+    const follows = name ? !agentWords && (Boolean(target) || after.decorative)
       : alt ? alt === before.text && !before.decorative : alt === "" ? !placeDecorative && !(before.decorative && after.decorative) : Boolean(target) || after.decorative;
     if (!follows || alt === target) return [];
     const text = ` alt="${mediaEscape(target)}"`;
