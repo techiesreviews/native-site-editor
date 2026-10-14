@@ -41,30 +41,44 @@ export interface MoveRecheckPorts {
  * ends with the group closed, the timer cleared and the move a complete step of its own):
  * - the moved bytes paint, every measurement resolves while nothing else changed: one rewrite joins the move's step;
  * - they never paint, or a measurement never settles: the 10 s timeout ends it, no rewrite, a late reply writes nothing;
- * - a measurement rejects: no rewrite;
+ * - a measurement rejects (or the preview renders again during the pass): measured again from the next paint of the
+ *   moved bytes, three passes at most, then no rewrite;
  * - another edit, Undo or Redo, a page or scope change, or other bytes painted before the rewrite: no rewrite.
  */
 export async function recheckMove(ports: MoveRecheckPorts, path: string, source: string, root: number[], tag: string) {
   let ended = false, timer: ReturnType<typeof setTimeout> | undefined;
   const current = () => !ended && ports.current();
-  const work = async () => {
-    // Rendering may still be waiting for styles or media. Only the moved bytes count.
-    while (current() && ports.painted() !== source) await new Promise(resolve => setTimeout(resolve, 16));
-    if (!current()) return;
-    const tree = readSource(source, { page: true });
-    const images = tree.elements().filter(element => tree.view.name(element) === "img"), placed = images.filter(element => tree.attribute(element, "sizes"));
-    const targets = placed.filter(element => within(tree.path(element), root));
-    // Moved placed images each get their own sizes; any page image carries the page list.
-    const nodes = (targets.length ? targets : [placed[0] ?? images[0]].filter(Boolean)).map(element => tree.path(element));
+  const tree = readSource(source, { page: true });
+  const images = tree.elements().filter(element => tree.view.name(element) === "img"), placed = images.filter(element => tree.attribute(element, "sizes"));
+  const targets = placed.filter(element => within(tree.path(element), root));
+  // Moved placed images each get their own sizes; any page image carries the page list.
+  const nodes = (targets.length ? targets : [placed[0] ?? images[0]].filter(Boolean)).map(element => tree.path(element));
+  /** One pass over the moved bytes as painted; throws when the preview rendered again meanwhile. */
+  const measureAll = async () => {
     let page: MediaMeasured | undefined;
     const moved: { node: number[]; sizes?: string }[] = [];
     for (const node of nodes) {
       const measured = await ports.measure(node);
-      if (!current() || ports.painted() !== source) return;
+      if (!current()) return undefined;
+      if (ports.painted() !== source) throw new Error("The preview rendered again.");
       page ??= measured;
       if (targets.length) moved.push({ node, sizes: measured.sizes });
     }
-    if (!page || !current()) return;
+    return page && { page, moved };
+  };
+  const work = async () => {
+    let result: Awaited<ReturnType<typeof measureAll>>;
+    // A new render forgets what was painted until it is posted, even of the same bytes: a pass
+    // that lands in that gap fails, so the next paint of the moved bytes is measured again.
+    for (let attempt = 1; ; attempt++) {
+      // Rendering may still be waiting for styles or media. Only the moved bytes count.
+      while (current() && ports.painted() !== source) await new Promise(resolve => setTimeout(resolve, 16));
+      if (!current()) return;
+      try { result = await measureAll(); break; }
+      catch (error) { if (attempt === 3 || !current()) throw error; }
+    }
+    if (!result || !current()) return;
+    const { page, moved } = result;
     const edits = mediaMoveEdits(source, page, moved);
     if (edits.length) ports.edits.now(r => {
       if (r.source(path) !== source) return { refuse: "The moved page changed." };

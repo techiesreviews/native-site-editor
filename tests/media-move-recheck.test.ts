@@ -68,7 +68,7 @@ test("re-check joins the move: one Undo and Redo restore both; group closes", as
   assert.equal(f.store.text(f.scope, f.path), after);
 });
 
-for (const action of ["edit", "undo", "failure", "route", "render"] as const) test(`re-check skips ${action} during measurement and closes its group`, async () => {
+for (const action of ["edit", "undo", "failure", "route"] as const) test(`re-check skips ${action} during measurement and closes its group`, async () => {
   const f = setup();
   let release!: (value: MediaMeasured) => void, fail!: (error: Error) => void;
   f.ports.measure = () => new Promise((resolve, reject) => { release = resolve; fail = reject; });
@@ -76,8 +76,9 @@ for (const action of ["edit", "undo", "failure", "route", "render"] as const) te
   if (action === "edit") f.store.edit({ scope: f.scope, path: f.path, history: "h", text: source + "!", group: true });
   if (action === "undo") await f.store.undo("h");
   if (action === "route") f.ports.current = () => false;
-  if (action === "render") f.ports.painted = () => "other bytes";
   if (action === "failure") {
+    // Every later pass fails too: three passes, then no rewrite.
+    f.ports.measure = () => Promise.reject(new Error("measurement failed"));
     fail(new Error("measurement failed"));
   } else release(measured);
   const before = f.store.text(f.scope, f.path);
@@ -149,4 +150,46 @@ test("a move measures each moved placed image or, with none, one page image for 
   g.ports.measure = async node => { many.push(node); return measured; };
   await recheckMove(g.ports, g.path, source, [0], g.tag);
   assert.deepEqual(many, [[0, 0, 0], [0, 1, 0]]);
+});
+
+test("a pass that lands in a new render is measured again from the next paint", async () => {
+  const f = setup();
+  let calls = 0, painted: string | undefined = source;
+  f.ports.painted = () => painted;
+  f.ports.measure = async () => {
+    calls++;
+    // The first reply comes while the preview has started another render of the same bytes.
+    if (calls === 1) { painted = undefined; setTimeout(() => { painted = source; }, 20); }
+    return measured;
+  };
+  await recheckMove(f.ports, f.path, source, [0, 0], f.tag);
+  assert.equal(calls, 2);
+  assert.match(f.store.text(f.scope, f.path)!, /<img fetchpriority="high" sizes="90vw" src="new.jpg">/);
+  assert.equal(f.closed(), 1);
+});
+
+test("three failed passes end the re-check without a rewrite", async () => {
+  const f = setup();
+  let calls = 0;
+  f.ports.measure = async () => { calls++; throw new Error("The preview did not answer."); };
+  await recheckMove(f.ports, f.path, source, [0, 0], f.tag);
+  assert.equal(calls, 3);
+  assert.equal(f.store.text(f.scope, f.path), source);
+  assert.equal(f.closed(), 1);
+  assert.equal(f.store.hasOpenGroup("h"), false);
+});
+
+test("other bytes painted for good during a pass: no second measurement, the deadline ends it without a rewrite", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = setup();
+  let calls = 0;
+  f.ports.measure = async () => { calls++; f.ports.painted = () => "other bytes"; return measured; };
+  const pending = recheckMove(f.ports, f.path, source, [0, 0], f.tag);
+  for (let i = 0; i < 5 && calls === 0; i++) await Promise.resolve();
+  context.mock.timers.tick(10000);
+  await pending;
+  assert.equal(calls, 1);
+  assert.equal(f.store.text(f.scope, f.path), source);
+  assert.equal(f.closed(), 1);
+  assert.equal(f.store.hasOpenGroup("h"), false);
 });
