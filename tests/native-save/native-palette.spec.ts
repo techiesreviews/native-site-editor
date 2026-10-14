@@ -296,6 +296,35 @@ test("New page command retains focus after the palette close event", async ({ pa
   await expect(title).toHaveValue("Palette focus");
 });
 
+test("New page from the palette waits for the Pages tree's first load, then focuses its title", async ({ page }) => {
+  // The Pages tree loads when the Pages dropdown first opens (slice 84); held here until after the command runs.
+  let releaseChunk!: () => void;
+  const chunkGate = new Promise<void>((resolve) => { releaseChunk = resolve; });
+  const chunkRoute = /\/(?:src\/components\/pages-tree\.ts|assets\/pages-tree-[^/]+\.js)(?:\?|$)/;
+  let held = 0;
+  await page.route(chunkRoute, async (route) => {
+    held++;
+    await chunkGate;
+    await route.continue();
+  });
+  try {
+    await page.locator("#explorer-toggle").focus();
+    await page.keyboard.press("ControlOrMeta+K");
+    await search(page).fill("new page");
+    await option(page, /^New page$/).click();
+    await expect.poll(() => held).toBeGreaterThan(0);
+    const title = page.getByRole("textbox", { name: "New page title", exact: true });
+    await expect(title).toHaveCount(0);
+    releaseChunk();
+    await expect(title).toBeFocused();
+    await page.keyboard.type("Held tree");
+    await expect(title).toHaveValue("Held tree");
+  } finally {
+    releaseChunk();
+    await page.unroute(chunkRoute);
+  }
+});
+
 test("IME navigation keys leave the palette highlight and native key handling alone", async ({ page }) => {
   await page.locator("#explorer-toggle").focus();
   await page.keyboard.press("ControlOrMeta+K");
