@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { createGuardedEdits, STALE_MESSAGE, type PlanResult, type Reads, type RunOptions } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred, type MemoryWorkspace } from "./fakes/memory-workspace";
 
+import { memoryUploadBytes, sweepUploads, uploadKey, uploadKeyHeld } from "../src/uploads";
+
 const PAGE = "<main><h1>Home</h1><p>Hello</p></main>";
 const ABOUT = "<main><h1>About</h1></main>";
 const CARD = "<template><article><slot></slot></article></template>";
@@ -535,4 +537,41 @@ for (const key of ["scope", "generation"] as const) test(`a repository stamp bre
   if (key === "scope") m.setScope("other/repo@dev"); else m.bumpGeneration();
   assert.equal(stamp.holds(), false);
   assert.equal(stamp.changed(), key);
+});
+
+for (const registration of ["accepted", "refused", "absent", "store", "opening"]) test(`structural upload delete: ${registration} history owns byte retention`, async t => {
+  const { m, edits } = setup(), bytes = memoryUploadBytes(), path = "unsaved.png", sha = `structural-${registration}`;
+  const key = uploadKey(m.scope, sha), blob = new Blob(["picture"]);
+  const old = { ...m.scope, version: 1 as const, path, baseSha: null, original: "", content: "", sourceSha: sha, opaque: true, upload: { size: blob.size, type: "image/png" }, updatedAt: 1 };
+  m.workspace.store.save(old); await bytes.put(key, blob);
+  let dispose = () => {};
+  const record = m.workspace.recordHistory.bind(m.workspace);
+  m.workspace.recordHistory = (file, undo, redo, release) => {
+    dispose = release ?? (() => {});
+    return registration === "refused" ? false : record(file, undo, redo, release);
+  };
+  if (registration === "absent" || registration === "opening") m.close();
+  const remove = m.workspace.store.remove.bind(m.workspace.store);
+  let fail = registration === "store";
+  m.workspace.store.remove = (scope, file) => {
+    if (file === path) assert.equal(uploadKeyHeld(key), true, "hold precedes draft writes");
+    if (fail && file === path) { fail = false; return false; }
+    return remove(scope, file);
+  };
+  if (registration === "opening") m.workspace.openAfter = () => { throw new Error("opening failed"); };
+  t.after(() => dispose());
+  const pending = edits.run(r => { r.source(path); return { deletes: [path], done: "Deleted", undone: "Restored" }; });
+  if (registration === "opening") await assert.rejects(pending, /opening failed/);
+  const outcome = await pending.catch(() => undefined);
+  if (registration === "accepted") {
+    assert.equal(outcome?.ok, true);
+    await sweepUploads(bytes, m.scope, []);
+    assert.equal(m.undo(), true); assert.equal(m.draft(path), old);
+    assert.equal(await (await bytes.get(key))?.text(), "picture");
+    assert.equal(m.redo(), true);
+    dispose();
+  }
+  assert.equal(uploadKeyHeld(key), false);
+  await sweepUploads(bytes, m.scope, []);
+  assert.equal(await bytes.get(key), undefined);
 });

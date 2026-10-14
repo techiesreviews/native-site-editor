@@ -258,6 +258,45 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
 });
 
+test("Undo of a re-trim keeps the unsaved picture available to trim again", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await openPopup(page);
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters\.webp"/);
+
+  await openPopup(page);
+  await chooseShape(page, "Free");
+  await dragCorner(page, "se", -0.5, -0.3);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+
+  await openPopup(page);
+  await dragCorner(page, "nw", 0.2, 0.2);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop-2.webp.", { timeout: 30_000 });
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
+  // Each completed file change sweeps unreferenced upload bytes, including the removed first trim.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+
+  await openPopup(page);
+  await dragCorner(page, "se", -0.1, -0.1);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop-2.webp.", { timeout: 30_000 });
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
+  await expect(page.locator("#status")).not.toContainText("missing from this browser's storage");
+});
+
 test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spot changes", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openPopup(page);

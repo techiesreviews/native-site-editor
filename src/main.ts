@@ -278,7 +278,7 @@ function openCodeEditor(
   );
   const historyHost = editorModule.captureHistoryHost(file.path), liveScope = draftScope();
   if (appStore.openFile.value === file.path && historyHost) {
-    mediaHistoryHome.adopt(mediaIdentity(), (undo, redo) => editorModule.recordHistoryAction(file.path, undo, redo));
+    mediaHistoryHome.adopt(mediaIdentity(), (undo, redo, dispose) => editorModule.recordHistoryAction(file.path, undo, redo, dispose));
   }
   primaryHistoryScope = file.scope && historyScope && appStore.openFile.value === file.path && historyHost && liveScope &&
     draftKey(liveScope, file.path) === draftKey(file.scope, file.path)
@@ -2504,7 +2504,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
     const drafts = draftStore().list(scope), gone = new Set(drafts.filter(draft => draft.deleted).map(draft => draft.path));
     return [...new Set([...listed, ...drafts.filter(draft => !draft.deleted).map(draft => draft.path)])].filter(path => !gone.has(path));
   };
-  const recordOn = (path: string, undo: () => boolean, redo: () => boolean | Promise<boolean>) => editor.recordHistoryAction(path, undo, redo);
+  const recordOn = (path: string, undo: () => boolean, redo: () => boolean | Promise<boolean>, dispose: () => void) => editor.recordHistoryAction(path, undo, redo, dispose);
   await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
     scope, store: draftStore(), bytes: uploadBytes(), stamp,
     paths: batchPaths, source: path => mediaTextSource(path, scope),
@@ -2512,11 +2512,11 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
     entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: mediaTextSource(path, scope) } : undefined; },
     modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
-    history: (undo, redo) => {
-      if (historyHost && historyPath) return recordOn(historyPath, undo, redo);
+    history: (undo, redo, dispose) => {
+      if (historyHost && historyPath) return recordOn(historyPath, undo, redo, dispose);
       // A file that opened while the change was prepared takes it now.
       const opened = appStore.openFile.value;
-      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo) : mediaHistoryHome.hold(identity, undo, redo);
+      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo, dispose) : mediaHistoryHome.hold(identity, undo, redo, dispose);
     },
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
     announce,
@@ -3212,6 +3212,7 @@ function renderLogin(
   nativePreview = undefined;
   linkedStyleSourceByPath.clear();
   editorModule?.clearDrafts();
+  mediaHistoryHome.clear();
   generation++;
   fileGeneration++;
   repositoryMenu?.destroy();
@@ -4802,6 +4803,7 @@ async function loadSnapshot(
     (appStore.snapshot.value?.branch === appStore.branch.value ? appStore.openFile.value : undefined);
   // The head this tab saw on the branch: a lagging read never steps back from it.
   const known = appStore.snapshot.value && appStore.snapshot.value.branch === appStore.branch.value ? savePublish.trustedHead() : undefined;
+  mediaHistoryHome.clear();
   const epoch = ++generation;
   fileGeneration++;
   clearError();
@@ -4983,6 +4985,7 @@ function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Sn
 }
 
 async function chooseRepository(resume?: WorkspaceLocation) {
+  mediaHistoryHome.clear();
   const epoch = ++generation;
   fileGeneration++;
   appStore.reset(repositories.find(
@@ -5289,6 +5292,7 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
   boot.loading();
   removeFinishStarter();
   waitingForRepositories = false;
+  mediaHistoryHome.clear();
   const epoch = ++generation;
   hooks?.onStarted(epoch);
   fileGeneration++;

@@ -2,7 +2,7 @@ import { refuse as showRefusal } from "../components/refusal-note";
 import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { deleteFile, moveFile, type DraftAccess, type MovableFile } from "../file-changes";
-import { gitBlobSha, holdUploadKey, uploadKey, uploadKeyHeld, type UploadBytes } from "../uploads";
+import { gitBlobSha, holdUploadDrafts, holdUploadKey, uploadKey, uploadKeyHeld, type UploadBytes } from "../uploads";
 import type { MediaWorkspaceBatch, MediaBatchTransaction } from "./media-workspace";
 
 interface SourceReceipt { apply(): boolean; undo(): boolean; redo(): boolean; isCurrent(): boolean }
@@ -20,7 +20,7 @@ export interface MediaDraftHost {
   modelState(path: string): { isCurrent(): boolean };
   evictModel(path: string, proof: { isCurrent(): boolean }): { isCurrent(): boolean } | undefined;
   historyCurrent(): boolean;
-  history(undo: () => boolean, redo: () => boolean | Promise<boolean>): boolean;
+  history(undo: () => boolean, redo: () => boolean | Promise<boolean>, dispose: () => void): boolean;
   refresh(): void;
   announce(message: string): void;
 }
@@ -34,6 +34,7 @@ interface State {
   staged: Map<string, { sha: string; blob: Blob; text?: string }>;
   ownedKeys: Set<string>;
   releases: (() => void)[];
+  dispose?: () => void;
   committed: boolean;
 }
 
@@ -52,6 +53,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
   };
   const release = (state: State) => { for (const done of state.releases.splice(0)) done(); };
   const cleanup = async (state: State) => {
+    state.dispose?.();
     release(state);
     for (const key of state.ownedKeys) {
       if (uploadKeyHeld(key) || host.store.list(scope).some(record => record.sourceSha && uploadKey(scope, record.sourceSha) === key)) continue;
@@ -156,6 +158,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         else if (previous) throw new Error(`${path} already exists.`);
         else planned.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: upload.sha, opaque: true, upload: { size: upload.blob.size, type: upload.blob.type }, updatedAt: Date.now() });
       }
+      state.dispose = holdUploadDrafts(scope, [...state.before.values(), ...planned.values()]);
       if (!state.sources.apply()) throw new Error("The editor source changed before image changes could be applied.");
       advanceOwnedSources(batch, state);
       state.after = capture(state.before);
@@ -205,7 +208,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       };
       evictOwnedCaches(batch, state);
       const registered = host.history(() => moveHistory(true), async () => {
-        const restaged = { ...state, ownedKeys: new Set<string>(), releases: [] as (() => void)[] };
+        const restaged = { ...state, dispose: undefined, ownedKeys: new Set<string>(), releases: [] as (() => void)[] };
         try {
           assertLive();
           if (applied || !unchanged(state.before) || !state.sources.isCurrent() || !modelsCurrent(state) || !host.historyCurrent()) { refuse(changedSince, "redo"); return false; }
@@ -226,7 +229,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
           refuse(error instanceof Error ? error.message : "The image history action could not be restored.");
           return false;
         } finally { release(restaged); }
-      });
+      }, state.dispose);
       if (!registered || !host.historyCurrent()) {
         state.committed = false;
         const restored = state.sources.undo();

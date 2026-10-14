@@ -41,3 +41,23 @@ test("a refused step stays held with every later one, in order", () => {
   home.adopt("site", undo => { second.push(undo); return true; });
   assert.deepEqual(second, [actions[1], actions[2]]);
 });
+
+test("disposal travels with adopted steps; discarded identities release their steps", () => {
+  const home = createMediaHistoryHome(), released: string[] = [];
+  home.hold("old", () => true, () => true, () => { released.push("old"); });
+  home.hold("site", () => true, () => true, () => { released.push("site"); });
+  assert.deepEqual(released, ["old"]);
+  home.adopt("site", () => false);
+  assert.deepEqual(released, ["old"]);
+  let dispose = () => {};
+  home.adopt("site", (_undo, _redo, release) => { dispose = release!; return true; });
+  assert.deepEqual(released, ["old"]);
+  dispose();
+  assert.deepEqual(released, ["old", "site"]);
+  home.hold("other", () => true, () => true, () => { released.push("other"); });
+  home.adopt("site", () => { assert.fail("wrong identity"); });
+  assert.deepEqual(released, ["old", "site", "other"]);
+  home.hold("site", () => true, () => true, () => { released.push("cleared"); });
+  home.clear();
+  assert.deepEqual(released, ["old", "site", "other", "cleared"]);
+});

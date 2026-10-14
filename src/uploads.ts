@@ -144,9 +144,9 @@ export function removedCopies(): UploadBytes {
   return removed ??= indexedDbUploadBytes("native-site-editor-removed");
 }
 
-/** Bytes being added whose draft is not saved yet. */
+/** Bytes being staged or retained by Undo/Redo history. */
 const adding = new Map<string, number>();
-/** Keep staged bytes from a sweep while any operation is still preparing them. */
+/** Keep bytes from a sweep while an operation or history step owns them. */
 export function holdUploadKey(key: string) {
   adding.set(key, (adding.get(key) ?? 0) + 1);
   let held = true;
@@ -158,6 +158,16 @@ export function holdUploadKey(key: string) {
   };
 }
 export const uploadKeyHeld = (key: string) => adding.has(key);
+
+/**
+ * Retain both sides of a history step before it writes drafts; release when the step leaves history.
+ * As in `sweepUploads`, a deletion holding replaced bytes keeps them for Restore.
+ */
+export function holdUploadDrafts(scope: DraftScope, records: Iterable<SavedDraft | undefined>) {
+  const releases = [...new Set([...records].filter(record => record?.upload && record.sourceSha)
+    .map(record => uploadKey(scope, record!.sourceSha!)))].map(holdUploadKey);
+  return () => { for (const release of releases.splice(0)) release(); };
+}
 
 export type UploadResult = { ok: true; path: string; warning?: string } | { ok: false; error: string };
 

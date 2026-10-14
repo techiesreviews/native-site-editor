@@ -10,6 +10,8 @@ import {
   base64Of,
   formatBytes,
   gitBlobSha,
+  holdUploadDrafts,
+  uploadKeyHeld,
   memoryUploadBytes,
   sendUploads,
   sweepUploads,
@@ -185,4 +187,21 @@ test("the worker reads the body as bytes and refuses too much", async () => {
   const request = (body: Uint8Array) => new Request("https://editor.test/api/blob", { method: "POST", body });
   assert.deepEqual(await requestBytes(request(png)), png);
   await assert.rejects(requestBytes(request(png), 10), (error: HttpError) => error.status === 413);
+});
+
+test("history upload holds share keys, keep a deletion's replaced bytes, ignore non-upload records, and release idempotently", async () => {
+  const bytes = memoryUploadBytes(), sha = "history-helper", key = uploadKey(scope, sha);
+  const draft: SavedDraft = { ...scope, version: 1, path: "picture.png", baseSha: null, original: "", content: "", sourceSha: sha, upload: { size: 3, type: "image/png" }, updatedAt: 1 };
+  await bytes.put(key, new Blob(["png"]));
+  const first = holdUploadDrafts(scope, [draft, draft, undefined, { ...draft, deleted: true, sourceSha: "deleted" }, { ...draft, upload: undefined, sourceSha: "remote" }]);
+  const second = holdUploadDrafts(scope, [draft]);
+  try {
+    assert.equal(uploadKeyHeld(uploadKey(scope, "deleted")), true);
+    assert.equal(uploadKeyHeld(uploadKey(scope, "remote")), false);
+    await sweepUploads(bytes, scope, []); assert.ok(await bytes.get(key));
+    first(); first();
+    await sweepUploads(bytes, scope, []); assert.ok(await bytes.get(key));
+    second();
+    await sweepUploads(bytes, scope, []); assert.equal(await bytes.get(key), undefined);
+  } finally { first(); second(); }
 });

@@ -19,6 +19,7 @@
 import { GITHUB_CONFIG_REFUSED, splitProtectedEdits, touchesGithubConfig } from "../../shared/protected-paths";
 import { prepareNativeTextHistory } from "../page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "../page-builder/native-structural-history";
+import { holdUploadDrafts } from "../uploads";
 import type { SavedDraft } from "../drafts";
 import type { MovableFile } from "../file-changes";
 import type { EditorWorkspace, NodeRef } from "../guarded-edit";
@@ -228,7 +229,8 @@ export function createCommit(ws: EditorWorkspace) {
     }, { before, after, beforeSources, afterSources, retainPaths: retainedPaths });
     let releaseRefresh: (() => void) | undefined = anchor === undefined ? undefined : ws.holdRefresh(anchor);
     const release = () => { releaseRefresh?.(); releaseRefresh = undefined; };
-    if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); release(); return error; }
+    const releaseUploads = holdUploadDrafts(scope, [...before.values(), ...after.values()]);
+    if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return error; }
     // Files created or moved in keep the anchor's history while the step lives.
     let unshare = anchor === undefined ? () => {} : ws.shareHistory([...creates.map(file => file.path), ...moves.map(move => move.to)], anchor);
     const moved = new Map(moves.map(move => [move.from, move.to]));
@@ -246,7 +248,7 @@ export function createCommit(ws: EditorWorkspace) {
     // Undo and Redo (a page left for the other one is proved again as it returns).
     const kept = new Map<string, () => void>();
     const keep = () => { for (const path of [home, next]) if (path !== undefined && !kept.has(path) && ws.mounted(path)) kept.set(path, ws.retainModel(path)); };
-    const dispose = () => { adopters.delete(adoptPane); receipt.dispose(); unshare(); for (const release of kept.values()) release(); kept.clear(); };
+    const dispose = () => { adopters.delete(adoptPane); receipt.dispose(); releaseUploads(); unshare(); for (const release of kept.values()) release(); kept.clear(); };
 
     /** Opens `path` after the step, its Undo or its Redo, proving the step's files through the opening. */
     const refresh = (path: string | undefined, initial: boolean, message?: string, previousStatus = ws.status()): boolean | Promise<boolean> => {
@@ -323,13 +325,16 @@ export function createCommit(ws: EditorWorkspace) {
     }
     // No page was open: the drafts are written; the page opened after takes the step (none: no
     // undo step, as a deletion's Restore brings the files back).
-    op.recorded();
-    refreshPending = true;
-    ws.afterFileChanges();
-    const opened = await refresh(next, true, done);
-    if (next === undefined || ws.openFile() !== next || !ws.mounted(next) || !ws.recordHistory(next, undo, redo, dispose)) dispose();
-    // The file where it was, reopened by Undo, keeps that history for Redo.
-    else if (home !== undefined) unshare = ws.shareHistory([home], next);
-    return opened ? undefined : receipt.error() ?? OPENING_FAILED;
+    let registered = false;
+    try {
+      op.recorded();
+      refreshPending = true;
+      ws.afterFileChanges();
+      const opened = await refresh(next, true, done);
+      registered = next !== undefined && ws.openFile() === next && ws.mounted(next) && ws.recordHistory(next, undo, redo, dispose);
+      // The file where it was, reopened by Undo, keeps that history for Redo.
+      if (registered && home !== undefined) unshare = ws.shareHistory([home], next!);
+      return opened ? undefined : receipt.error() ?? OPENING_FAILED;
+    } finally { if (!registered) dispose(); }
   };
 }

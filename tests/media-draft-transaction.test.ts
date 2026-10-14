@@ -5,14 +5,18 @@ import { createGuardedEdits, type Stamp } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import { applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
-import { memoryUploadBytes, uploadKey } from "../src/uploads";
+import { memoryUploadBytes, sweepUploads, uploadKey, uploadKeyHeld } from "../src/uploads";
 import { createMediaHistoryHome } from "../src/page-builder/media-history-home";
+
+const disposals: (() => void)[] = [];
+test.afterEach(() => { for (const dispose of disposals.splice(0)) dispose(); });
 
 function harness(stamp?: Stamp) {
   const scope: DraftScope = { account: "a", repoId: 1, repo: "a/r", branch: "main" };
   const records = new Map<string, SavedDraft>(), bytes = memoryUploadBytes();
   let current = true, steps = 0, undo: () => boolean = () => false, redo: () => boolean | Promise<boolean> = () => false;
-  let fail = "", failAfterWrite = false;
+  let fail = "", failAfterWrite = false, dispose = () => {};
+  disposals.push(() => dispose());
   const store = { get: (_: DraftScope, path: string) => records.get(path), list: () => [...records.values()], error: "store failure",
     save: (record: SavedDraft) => { if (record.path === fail) { fail = ""; if (failAfterWrite) records.set(record.path, record); return false; } records.set(record.path, record); return true; },
     remove: (_: DraftScope, path: string) => { records.delete(path); return true; } };
@@ -22,9 +26,9 @@ function harness(stamp?: Stamp) {
     entry: async () => undefined, mounted: () => false,
     prepareSources: () => ({ apply: () => true, undo: () => true, redo: () => true, isCurrent: () => true }),
     modelState: () => ({ isCurrent: () => true }), evictModel: (_: string, proof: { isCurrent(): boolean }) => proof.isCurrent() ? proof : undefined, historyCurrent: () => true,
-    history: (u: typeof undo, r: typeof redo) => { steps++; undo = u; redo = r; return true; }, refresh: () => {}, announce: () => {} } satisfies MediaDraftHost;
+    history: (u: typeof undo, r: typeof redo, d?: () => void) => { steps++; undo = u; redo = r; dispose = d ?? (() => {}); return true; }, refresh: () => {}, announce: () => {} } satisfies MediaDraftHost;
   const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"version":2,"collections":[],"files":{"images":{}}}']]), moves: [], deletes: [], restores: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
-  return { host, batch, records, bytes, steps: () => steps, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
+  return { host, batch, records, bytes, steps: () => steps, dispose: () => dispose(), undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
 }
 
 test("restore an existing blob without upload; Undo/Redo owns one step", async () => {
@@ -71,12 +75,12 @@ test("a metadata change with no page open applies and undoes", async () => {
   h.batch.expectedPaths = [previous.path];
   h.batch.expectedSources.set(previous.path, previous.content);
   h.host.historyCurrent = () => h.host.stamp.holds();
-  h.host.history = (undo, redo) => home.hold("site", undo, redo);
+  h.host.history = (undo, redo, dispose) => home.hold("site", undo, redo, dispose);
   await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
   assert.equal(h.records.get(previous.path)?.content, h.batch.edits.get(previous.path));
   assert.notEqual(h.records.get(previous.path), previous);
   let undo: () => boolean | Promise<boolean> = () => false, redo: typeof undo = () => false, steps = 0;
-  home.adopt("site", (u, r) => { undo = u; redo = r; steps++; return true; });
+  home.adopt("site", (u, r, dispose) => { if (dispose) disposals.push(dispose); undo = u; redo = r; steps++; return true; });
   assert.equal(steps, 1);
   assert.equal(await undo(), true);
   assert.equal(h.records.get(previous.path), previous);
@@ -323,4 +327,43 @@ test("ordinary uploads still refuse taken paths; replacement requires revision a
     await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /already exists|captured image revision/);
     assert.equal(h.records.size, 0); assert.equal(h.steps(), 0); assert.equal(h.bytes.map.size, 0);
   }
+});
+
+for (const mode of ["delete", "overwrite"]) test(`${mode} of an unsaved upload keeps Undo bytes until disposal`, async t => {
+  const h = harness(), path = "images/a.png", sha = `retained-${mode}`, blob = new Blob(["old picture"]);
+  const old: SavedDraft = { ...h.host.scope, version: 1, path, baseSha: null, original: "", content: "", opaque: true, sourceSha: sha, upload: { size: blob.size, type: "image/png" }, updatedAt: 1 };
+  const key = uploadKey(h.host.scope, sha);
+  h.records.set(path, old); await h.bytes.put(key, blob);
+  h.batch.expectedPaths = [path]; h.batch.expectedAssets.set(path, sha);
+  if (mode === "delete") { h.batch.uploads = []; h.batch.deletes = [path]; }
+  else h.batch.overwrites = [path];
+  t.after(() => h.dispose());
+  // Store callbacks can start a sweep as soon as a record disappears.
+  const remove = h.host.store.remove.bind(h.host.store);
+  h.host.store.remove = (scope, file) => {
+    if (file === path) assert.equal(uploadKeyHeld(key), true, "hold precedes draft writes");
+    return remove(scope, file);
+  };
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  await sweepUploads(h.bytes, h.host.scope, h.host.store.list(h.host.scope));
+  assert.equal(h.undo(), true); assert.equal(h.records.get(path), old);
+  assert.equal(await (await h.bytes.get(key))?.text(), "old picture");
+  assert.equal(await h.redo(), true);
+  h.dispose(); h.dispose();
+  await sweepUploads(h.bytes, h.host.scope, h.host.store.list(h.host.scope));
+  assert.equal(await h.bytes.get(key), undefined);
+});
+
+for (const failure of ["store", "registration"]) test(`${failure} refusal releases old upload holds`, async () => {
+  const h = harness(), path = "images/a.png", sha = `refused-${failure}`, blob = new Blob(["old"]);
+  const old: SavedDraft = { ...h.host.scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: sha, opaque: true, upload: { size: 3, type: "image/png" }, updatedAt: 1 };
+  const key = uploadKey(h.host.scope, sha);
+  h.records.set(path, old); await h.bytes.put(key, blob);
+  h.batch.expectedPaths = [path]; h.batch.uploads = []; h.batch.deletes = [path];
+  if (failure === "store") h.fail(".editor/media.json"); else h.host.history = () => false;
+  await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)));
+  assert.equal(h.records.get(path), old); assert.equal(h.steps(), 0);
+  assert.equal(uploadKeyHeld(key), false);
+  h.records.clear(); await sweepUploads(h.bytes, h.host.scope, []);
+  assert.equal(await h.bytes.get(key), undefined);
 });
