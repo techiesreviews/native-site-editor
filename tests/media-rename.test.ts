@@ -121,3 +121,18 @@ test("forwarding encodes names with spaces and reserved characters, for every fa
   assert.ok(!("taken" in result));
   assert.equal(result.redirects, "/media/My%20Photo%20(1).webp /media/new.webp 301\n/media/My%20Photo%20(1)-480w.webp /media/new-480w.webp 301\n");
 });
+
+test("a named reference without its semicolon is decoded like the scanner does", () => {
+  const old = "media/©.webp";
+  const result = planMediaRename({ from: old, to: "media/new.webp", paths: [old], sources: { "index.html": '<img src="/media/&copy.webp">' }, records });
+  assert.ok(!("taken" in result));
+  assert.equal(result.edits.get("index.html"), '<img src="/media/new.webp">');
+});
+
+test("redirect destinations in literal Unicode or lowercase escapes follow without forwarding", () => {
+  const old = "media/京都.webp";
+  const result = planMediaRename({ from: old, to: "media/kyoto.webp", paths: [old], records,
+    sources: { _redirects: "/a /media/京都.webp 301\n/b /media/%e4%ba%ac%e9%83%bd.webp?x=1 301\n" } });
+  assert.ok(!("taken" in result));
+  assert.equal(result.redirects, "/a /media/kyoto.webp 301\n/b /media/kyoto.webp?x=1 301\n");
+});

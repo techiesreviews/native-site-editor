@@ -4,7 +4,7 @@ import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { isMediaTextFile } from "./media-mentions";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { mediaResolvePath, scanMediaUrlTokens, walkMediaReferencePages, scanMediaReferences } from "./media-references";
-import { decodeHtmlEntities } from "./html-entities";
+import { decodeHtmlEntity } from "./html-entities";
 import { suggestMediaName } from "./media-names";
 export { isRenamableMedia, mediaFileName, MediaNameTakenError, suggestMediaName, tidyMediaName } from "./media-names";
 
@@ -19,16 +19,16 @@ interface RenameInput {
 interface OffsetEdit { start: number; end: number; text: string }
 
 /** Decoding keeps original offsets: edits leave query strings and escaping outside the path intact. */
-function decodedSource(source: string, markup: boolean, css = false) {
+function decodedSource(source: string, markup: boolean, css = false, attribute = false) {
   let text = "";
   const starts: number[] = [], ends: number[] = [];
   for (let at = 0; at < source.length;) {
-    // Numeric references decode without their semicolon too, as browsers read them (`&#105mages`).
-    const entity = markup && source[at] === "&" ? /^&(?:#(?:x[\da-f]+|\d+);?|[a-z][\da-z]*;)/i.exec(source.slice(at))?.[0] : undefined;
+    // The scanner's own reader: references without a semicolon (`&#105mages`, `&copy`) and the attribute rule.
+    const entity = markup && source[at] === "&" ? decodeHtmlEntity(source, at, attribute) : undefined;
     const escaped = css && source[at] === "\\" ? /^\\(?:([\da-f]{1,6})(?:\r\n|[\t\n\r\f ])?|(\r\n|[\n\r\f])|([^\n\r\f]))/i.exec(source.slice(at)) : undefined;
-    const raw = escaped?.[0] ?? (source.startsWith("\\/", at) ? "\\/" : entity ?? source[at]);
+    const raw = escaped?.[0] ?? (source.startsWith("\\/", at) ? "\\/" : entity ? source.slice(at, at + entity.length) : source[at]);
     const code = escaped?.[1] ? parseInt(escaped[1], 16) : 0;
-    const value = escaped ? escaped[1] ? String.fromCodePoint(code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? code : 0xfffd) : escaped[2] ? "" : escaped[3] : raw === "\\/" ? "/" : entity ? decodeHtmlEntities(entity.endsWith(";") ? entity : `${entity};`) : raw;
+    const value = escaped ? escaped[1] ? String.fromCodePoint(code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? code : 0xfffd) : escaped[2] ? "" : escaped[3] : raw === "\\/" ? "/" : entity ? entity.text : raw;
     for (let i = 0; i < value.length; i++) { starts.push(at); ends.push(at + raw.length); }
     text += value; at += raw.length;
   }
@@ -71,7 +71,7 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     const to = moves.get(path);
     if (!to) return;
     const raw = source.slice(start, end);
-    const mapped = decodedSource(raw, /\.(?:html?|xml|rss|atom|svg)$/i.test(file), css);
+    const mapped = decodedSource(raw, /\.(?:html?|xml|rss|atom|svg)$/i.test(file), css, structuredStart !== undefined);
     const pathStart = mapped.starts[prefix.length], pathEnd = mapped.ends[prefix.length + address.length - 1];
     if (pathStart === undefined || pathEnd === undefined) return;
     const rawPath = raw.slice(pathStart, pathEnd);
@@ -138,10 +138,10 @@ export function planMediaRename(input: RenameInput): { taken: string; suggestion
     const text = rewriteText(file, source, input, mapping, templates.get(file) ?? new Map());
     if (text !== source) edits.set(mapping.get(file) ?? file, text);
   }
-  // A destination that is a full address on the site's own host follows like any mention; sources
-  // are old addresses and stay. Root-relative destinations are retargeted by editNativeRedirects.
+  // A destination follows like any mention, in whatever spelling (literal letters, any percent case, a
+  // full address on the site's own host); sources are old addresses and stay.
   let redirects = sources._redirects?.split(/(\r?\n)/).map(line => {
-    const match = /^(\s*[^#\s]\S*\s+)((?:https?:)?\/\/\S+)/i.exec(line);
+    const match = /^(\s*[^#\s]\S*\s+)((?:https?:)?\/\S+)/i.exec(line);
     return match ? match[1] + rewriteText("_redirects", match[2], input, mapping, new Map()) + line.slice(match[0].length) : line;
   }).join("");
   // Forwarding lines name addresses as browsers request them: spaces and other characters encoded.
