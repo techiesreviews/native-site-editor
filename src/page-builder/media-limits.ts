@@ -42,8 +42,13 @@ export function mayHoldHiddenDetails(bytes: Uint8Array, name: string): boolean {
       const length = bytes[offset] * 256 + bytes[offset + 1];
       if (length < 2 || offset + length > bytes.length) return true;
       if (!JPEG_MARKERS.has(marker)) return true;
+      // Application blocks pass only in their standard shape; any other payload may hold text.
+      const data = offset + 2, size = length - 2;
+      // JFIF: 14 header bytes, then an uncompressed thumbnail of 3 bytes per pixel.
+      if (marker === 0xe0 && (text(bytes, data, 5) !== "JFIF\0" || size < 14 || size !== 14 + 3 * bytes[data + 12] * bytes[data + 13])) return true;
       // APP2 also carries multi-picture data; only a colour profile is known to be harmless.
-      if (marker === 0xe2 && text(bytes, offset + 2, 12) !== "ICC_PROFILE\0") return true;
+      if (marker === 0xe2 && text(bytes, data, 12) !== "ICC_PROFILE\0") return true;
+      if (marker === 0xee && (text(bytes, data, 5) !== "Adobe" || size !== 12)) return true;
       // Skip compressed picture bytes, but still inspect segments between scans.
       scanning = marker === 0xda;
       offset += length;

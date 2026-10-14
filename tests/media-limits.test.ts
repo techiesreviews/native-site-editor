@@ -14,6 +14,8 @@ const png = (kind?: string) => new Uint8Array([
 ]);
 const webp = (kind = "VP8 ") => new Uint8Array([...ascii("RIFF"), 12, 0, 0, 0, ...ascii("WEBP"), ...ascii(kind), 0, 0, 0, 0]);
 const jpegWith = (marker: number, data: number[]) => new Uint8Array([0xff, 0xd8, 0xff, marker, 0, data.length + 2, ...data, 0xff, 0xd9]);
+const jfif = [...ascii("JFIF\0"), 1, 1, 0, 0, 1, 0, 1, 0, 0];
+const adobe = [...ascii("Adobe"), 0, 100, 0, 0, 0, 0, 1];
 const failure = (name: string, bytes = new Uint8Array(), size = bytes.length, shown = true) => preparationFailure({ name, size }, bytes, shown);
 const advice = (name: string, pattern: RegExp, bytes = new Uint8Array(), size = bytes.length, shown = true) => {
   const result = failure(name, bytes, size, shown);
@@ -47,7 +49,9 @@ test("clean suitable files can only be added after asking", () => {
   for (const name of ["guide.pdf", "files.zip", "film.mp4", "film.m4v", "film.webm", "song.mp3", "song.m4a", "song.aac", "song.wav", "animation.gif", "icon.ico"])
     assert.equal(failure(name).kind, "ask", name);
   assert.equal(failure("photo.jpg", jpeg()).kind, "ask");
-  assert.equal(failure("photo.jpeg", jpeg(0xe0)).kind, "ask");
+  assert.equal(failure("photo.jpeg", jpegWith(0xe0, jfif)).kind, "ask");
+  assert.equal(failure("photo.jpeg", jpegWith(0xe0, [...jfif.slice(0, 12), 1, 1, 9, 9, 9])).kind, "ask");
+  assert.equal(failure("photo.jpg", jpegWith(0xee, adobe)).kind, "ask");
   assert.equal(failure("photo.png", png()).kind, "ask");
   assert.equal(failure("photo.webp", webp()).kind, "ask");
   // Colour profiles and harmless layout blocks are not personal details.
@@ -67,6 +71,12 @@ test("hidden details and broken or unknown images cannot bypass preparation", ()
   for (const marker of [0xe1, 0xe3, 0xec, 0xed, 0xef, 0xfe]) advice("photo.jpg", /Hidden personal details.*new JPEG or PNG/, jpeg(marker));
   advice("photo.jpg", /Hidden personal details/, jpegWith(0xfe, ascii("Taken at 12 Elm Street")));
   advice("photo.jpg", /Hidden personal details/, jpegWith(0xe2, ascii("MPF\0")));
+  // APP0 and APP14 pass only in their standard shape.
+  const address = ascii("Taken at 12 Elm Street");
+  for (const data of [[...ascii("JFIF\0"), ...address], [...jfif, ...address], [...jfif.slice(0, 12), 1, 1], [...ascii("JFXX\0"), 0x10, 0xff, 0xd8], address])
+    advice("photo.jpg", /Hidden personal details/, jpegWith(0xe0, data));
+  for (const data of [[...adobe, ...address], [...ascii("Adobe"), ...address], address])
+    advice("photo.jpg", /Hidden personal details/, jpegWith(0xee, data));
   advice("photo.png", /Hidden personal details/, png("prVt"));
   advice("photo.webp", /Hidden personal details/, webp("abcd"));
   for (const kind of ["tEXt", "eXIf", "iTXt", "zTXt"]) advice("photo.png", /Hidden personal details/, png(kind));

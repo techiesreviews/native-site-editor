@@ -196,9 +196,12 @@ test("a failed picture the browser cannot show, or with a comment block, gets ad
   const ask = async () => { asked++; return true; };
   const broken = await prepareMedia([new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg")], "repo", undefined, undefined, fail, ask, async () => false);
   assert.deepEqual(broken.requests, []); assert.match(broken.errors[0], /cannot show it as a picture/);
-  const comment = new Uint8Array([0xff, 0xd8, 0xff, 0xfe, 0, 6, 0x48, 0x6f, 0x6d, 0x65, 0xff, 0xd9]);
-  const noted = await prepareMedia([new File([comment], "photo.jpg")], "repo", undefined, undefined, fail, ask, async () => true);
-  assert.deepEqual(noted.requests, []); assert.match(noted.errors[0], /Hidden personal details/);
+  for (const marker of [0xfe, 0xe0, 0xee]) {
+    // A comment, or a JFIF/Adobe block carrying text instead of its standard header.
+    const block = new Uint8Array([0xff, 0xd8, 0xff, marker, 0, 6, 0x48, 0x6f, 0x6d, 0x65, 0xff, 0xd9]);
+    const noted = await prepareMedia([new File([block], "photo.jpg")], "repo", undefined, undefined, fail, ask, async () => true);
+    assert.deepEqual(noted.requests, []); assert.match(noted.errors[0], /Hidden personal details/);
+  }
   assert.equal(asked, 0);
 });
 test("prepared files note only their largest output; large sources can prepare below the cap", async () => {
