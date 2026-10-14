@@ -1,8 +1,8 @@
 ---
 title: The Social image sharing copy
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-36 runner)
 blocked_by: [25-image-recipe]
 builder: sol
 phase: 2
