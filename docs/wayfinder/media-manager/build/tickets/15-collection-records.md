@@ -2,7 +2,7 @@
 title: Collection records and starting collections
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-15 runner)
 blocked_by: [05-media-records, 08-media-undo-without-page]
 builder: sol
 phase: 1
