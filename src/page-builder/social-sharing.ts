@@ -22,7 +22,7 @@ export async function shareImage(context: () => Promise<MediaWorkspaceContext>, 
   const records = parseMediaRecords(recordText);
   const options = { ...request, paths: ctx.paths, records };
   // An existing sharing copy is linked at the site's full address as it is: no new copy.
-  if (records.files[candidate]?.sharing) return { ...socialImageAddress(request.siteUrl, candidate), reused: true as const };
+  if (records.files[candidate]?.sharing) return { ...socialImageAddress(request.siteUrl, candidate), reused: true as const, path: candidate };
   const source = socialImageSource(options);
   if (!source) return undefined;
   const sourceVersion = ctx.assetVersion(source);

@@ -27,7 +27,7 @@ interface SettingsPorts {
   /** The Media picker for an image setting; the chosen file's root path, or undefined on Cancel. */
   choosePath: (place: string) => Promise<string | undefined>;
   /** `reused`: the value is already a sharing copy; nothing was written, the caller writes `address`. */
-  shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean; reused?: true } | undefined>;
+  shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean; reused?: true; path?: string } | undefined>;
   nativeEffectiveSource: (path: string) => string | undefined;
   loadNativeAssets: (sources: Record<string, string>, changed: () => void) => Promise<void>;
 }
@@ -79,13 +79,15 @@ export function createNativeSettings(ports: SettingsPorts) {
       socialNote: () => socialImageAddress(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, "").missingAddress ? SOCIAL_IMAGE_NOTE : undefined,
       async applyPage(path, fields) {
         const source = ports.guardedEdits.peek.source(path);
+        // A reused sharing copy must still be there when the page is written.
+        let reused: string | undefined;
         if (fields["og:image"] !== undefined && source !== undefined) {
           const shared = await share(fields["og:image"], readHeadSettings(source)["og:image"], path, address => {
             let next = source;
             for (const [field, value] of Object.entries({ ...fields, "og:image": address })) next = upsertHeadTag(next, field as HeadField, value);
             return new Map([[path, { source, text: next }]]);
           });
-          if (shared?.reused) fields["og:image"] = shared.address;
+          if (shared?.reused) { fields["og:image"] = shared.address; reused = shared.path; }
           else if (shared) {
             fields["og:image"] = shared.address;
             return undefined;
@@ -95,7 +97,7 @@ export function createNativeSettings(ports: SettingsPorts) {
         const selected = ports.appStore.selection.value;
         const at = selected?.path === path && selected.node ? { path, node: [...selected.node] } : undefined;
         return applied(await ports.guardedEdits.run(r => {
-          if (checkShown(r)) return { refuse: changed };
+          if (checkShown(r) || reused && !r.exists(reused)) return { refuse: changed };
           const source = r.source(path), site = r.site();
           if (source === undefined || !site || !Object.values(site.routes).includes(path)) return { refuse: "The page could not be read." };
           let next = source;
@@ -116,6 +118,7 @@ export function createNativeSettings(ports: SettingsPorts) {
       },
       async applySite(values) {
         const site = ports.nativeSite;
+        let reused: string | undefined;
         if (site) {
           const home = site.routes["/"], config = ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH);
           const before = readSiteIdentity(config, ports.guardedEdits.peek.source(home) ?? "");
@@ -136,9 +139,10 @@ export function createNativeSettings(ports: SettingsPorts) {
             }, [...expected.keys()]);
             if (shared) values.socialImage = shared.address;
             if (shared && !shared.reused) return undefined;
+            reused = shared?.path;
           }
         }
-        return applied(await ports.guardedEdits.run(r => checkShown(r) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));
+        return applied(await ports.guardedEdits.run(r => checkShown(r) || reused && !r.exists(reused) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));
       },
       async open404() {
         if (stale() || sourcesChanged() || !ports.nativeSite) return changed;

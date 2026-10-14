@@ -95,8 +95,9 @@ test("an existing sharing copy is linked at the full address without a new copy"
   } satisfies MediaWorkspaceContext);
   const request = { value: "/" + path, previous: "", page: "index.html", expectedSources: new Map(), live: () => true, edits: never };
   assert.deepEqual(await shareImage(context, { ...request, siteUrl: "https://site.example/" }, never),
-    { address: "https://site.example/" + path, missingAddress: false, reused: true });
+    { address: "https://site.example/" + path, missingAddress: false, reused: true, path });
   // Saved earlier without an address: once the site has one, choosing it again links it fully.
   assert.equal((await shareImage(context, { ...request, value: "https://site.example/" + path, siteUrl: "https://site.example" }, never))?.address, "https://site.example/" + path);
   assert.equal((await shareImage(context, request, never))?.missingAddress, true);
 });
+
