@@ -31,7 +31,7 @@ interface State {
   sources: SourceReceipt;
   modelStates: Map<string, { isCurrent(): boolean }>;
   mountedStates: Map<string, boolean>;
-  staged: Map<string, { sha: string; blob: Blob }>;
+  staged: Map<string, { sha: string; blob: Blob; text?: string }>;
   ownedKeys: Set<string>;
   releases: (() => void)[];
   committed: boolean;
@@ -44,7 +44,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
   const changedSince = "The images or pages of this change were edited since; edit them directly instead.";
   const scope = { ...host.scope };
   const pathsOf = (batch: MediaWorkspaceBatch) => [...new Set([
-    ...batch.edits.keys(), ...batch.moves.flatMap(move => [move.from, move.to]), ...batch.deletes, ...batch.uploads.map(upload => upload.path),
+    ...batch.edits.keys(), ...batch.moves.flatMap(move => [move.from, move.to]), ...batch.deletes, ...batch.restores.map(restore => restore.path), ...batch.uploads.map(upload => upload.path),
   ])];
   const unchanged = (records: Map<string, SavedDraft | undefined>) => [...records].every(([path, record]) => host.store.get(scope, path) === record);
   const write = (path: string, record: SavedDraft | undefined) => {
@@ -110,7 +110,11 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         assertLive();
         if (!existing) { state.ownedKeys.add(key); await host.bytes.put(key, upload.blob); }
         assertLive();
-        state.staged.set(upload.path, { sha, blob: upload.blob });
+        const previous = state.before.get(upload.path);
+        // A removed text draft keeps its edited text. Recover it as an edit when Save has not removed its branch blob yet.
+        const text = previous?.deleted && await gitBlobSha(new TextEncoder().encode(previous.content)) === sha ? previous.content : undefined;
+        assertLive();
+        state.staged.set(upload.path, { sha, blob: upload.blob, text });
       }
     },
     commit(batch, state) {
@@ -123,14 +127,26 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         if (moveFile(local, scope, state.entries.get(move.from) ?? { path: move.from }, move.to) === "none") throw new Error(`${move.from} cannot be moved.`);
       }
       for (const path of batch.deletes) if (deleteFile(local, scope, state.entries.get(path) ?? { path }) === "none") throw new Error(`${path} cannot be deleted.`);
+      for (const { path, sha } of batch.restores) {
+        const previous = planned.get(path);
+        if (previous?.deleted && !previous.movedTo && previous.baseSha === sha) planned.set(path, undefined);
+        else if (!host.paths().includes(path) && !previous) planned.set(path, {
+          ...scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: sha, opaque: true, updatedAt: Date.now(),
+        });
+        else throw new Error(`${path} already exists.`);
+      }
       for (const [path, content] of batch.edits) {
         const previous = planned.get(path), original = host.source(path) ?? "";
         const textDraft = previous?.opaque ? { ...previous, opaque: undefined, sourceSha: undefined, upload: undefined } : previous;
         planned.set(path, textDraft ? { ...textDraft, content, updatedAt: Date.now() } : { ...scope, version: 1, path, baseSha: state.entries.get(path)?.sha ?? null, original, content, updatedAt: Date.now() });
       }
       for (const [path, upload] of state.staged) {
-        if (host.paths().includes(path) || planned.get(path)) throw new Error(`${path} already exists.`);
-        planned.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: upload.sha, opaque: true, upload: { size: upload.blob.size, type: upload.blob.type }, updatedAt: Date.now() });
+        const previous = planned.get(path);
+        if (host.paths().includes(path) || previous && (!previous.deleted || previous.movedTo)) throw new Error(`${path} already exists.`);
+        if (previous?.deleted && previous.baseSha === upload.sha) planned.set(path, undefined);
+        else if (previous?.deleted && upload.text !== undefined) planned.set(path, { ...previous, deleted: undefined, content: upload.text, updatedAt: Date.now() });
+        else if (previous) throw new Error(`${path} already exists.`);
+        else planned.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: upload.sha, opaque: true, upload: { size: upload.blob.size, type: upload.blob.type }, updatedAt: Date.now() });
       }
       if (!state.sources.apply()) throw new Error("The editor source changed before image changes could be applied.");
       advanceOwnedSources(batch, state);

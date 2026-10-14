@@ -180,7 +180,7 @@ test("Images holds its repository stamp across page changes and passes that same
   assert.doesNotThrow(() => context.assertLive());
   let applied = 0;
   f.ports.applyBatch = async (scope, proof) => { assert.equal(scope, f.scope); assert.equal(proof, held); applied++; };
-  await context.applyBatch({ label: "images", edits: new Map(), moves: [], deletes: [], uploads: [], expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map() });
+  await context.applyBatch({ label: "images", edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map() });
   assert.equal(applied, 1);
   f.bump();
   assert.throws(() => context.assertLive(), /repository changed/);

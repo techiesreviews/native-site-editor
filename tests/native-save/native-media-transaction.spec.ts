@@ -51,7 +51,7 @@ for (const change of ["mount affected source", "unmount history host"] as const)
       const put = bytes.put;
       if (change === "unmount history host") bytes.put = async (key: string, blob: Blob) => { await put(key, blob); await pause(); };
       const batch = { label: "media", expectedPaths: ["affected.html"], expectedSources: new Map([["affected.html", "before"]]), expectedAssets: new Map(),
-        edits: new Map([["affected.html", "after"]]), moves: [], deletes: [], uploads: change === "unmount history host" ? [{ path: "images/new.png", blob: new Blob(["png"], { type: "image/png" }) }] : [] };
+        edits: new Map([["affected.html", "after"]]), moves: [], deletes: [], restores: [], uploads: change === "unmount history host" ? [{ path: "images/new.png", blob: new Blob(["png"], { type: "image/png" }) }] : [] };
       let historyCalls = 0;
       const pending = applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
         scope, store, bytes, stamp: { holds: () => true, changed: () => undefined }, paths: () => ["affected.html"], source: path => api.getMountedSource(path) ?? (path === "affected.html" ? "before" : undefined), assetVersion: () => undefined,

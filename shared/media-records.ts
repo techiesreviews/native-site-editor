@@ -23,8 +23,8 @@ export interface OnlineVideoRecord {
   service: "youtube" | "vimeo"; id: string; title?: string; still?: string;
   [key: string]: unknown;
 }
-interface RemovedPath {
-  path: string; sha?: string; browserKey?: string;
+export interface RemovedPath {
+  path: string; sha?: string; browserKey?: string; record?: MediaFileRecord;
   [key: string]: unknown;
 }
 export interface RemovedMedia extends RemovedPath {
@@ -123,6 +123,7 @@ function removedPath(value: unknown, field: string): RemovedPath {
   string(out.path, `${field}.path`);
   optionalStrings(out, ["sha", "browserKey"], field);
   if ((out.sha === undefined) === (out.browserKey === undefined)) invalid(field, "must have exactly one of sha or browserKey");
+  if (out.record !== undefined) out.record = fileRecord(out.record, `${field}.record`);
   return out as RemovedPath;
 }
 function readRecords(value: Record<string, unknown>): MediaRecords {

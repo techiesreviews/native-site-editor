@@ -8,10 +8,10 @@ import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
-import { uploadProblem } from "../uploads";
+import { gitBlobSha, type UploadBytes, uploadProblem } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, removeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
+import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { alwaysKeptFiles, mediaFamilyOf } from "./media-families";
 import { mediaEscape } from "./media-markup";
@@ -31,6 +31,7 @@ export interface MediaWorkspaceBatch {
   edits: Map<string, string>;
   moves: { from: string; to: string }[];
   deletes: string[];
+  restores: { path: string; sha: string }[];
   uploads: { path: string; blob: Blob }[];
   /** Whether the batch is still wanted (a picker's Use not cancelled); checked again just before commit. */
   live?: () => boolean;
@@ -74,6 +75,12 @@ export interface MediaWorkspaceContext {
   pages: string[]; components: Record<string, string>; origins?: string[];
   /** The repository's size in KiB (GitHub); absent for local folders. */
   repoSize?: number;
+  /** Repository history to restore removed files from (GitHub); without it, Recently removed keeps a browser copy. */
+  history: boolean;
+  /** Browser copies for Recently removed, kept 30 days. */
+  removedCopies?: UploadBytes;
+  /** Clock for Recently removed dates (tests). */
+  now?: () => number;
   assertLive(): void;
   read(path: string): Promise<string | undefined>;
   blob(path: string): Promise<Blob>;
@@ -125,7 +132,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   const prepare = async (ctx: MediaWorkspaceContext, label: string, usage = false) => {
     const batch: MediaWorkspaceBatch = {
       label, expectedPaths: [...ctx.paths], expectedSources: new Map(), expectedAssets: new Map(),
-      edits: new Map(), moves: [], deletes: [], uploads: [],
+      edits: new Map(), moves: [], deletes: [], restores: [], uploads: [],
     };
     for (const item of ctx.items) batch.expectedAssets.set(item.path, ctx.assetVersion(item.path));
     const text = usage ? await sources(ctx, batch.expectedPaths) : {};
@@ -146,9 +153,53 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const commit = async (ctx: MediaWorkspaceContext, batch: MediaWorkspaceBatch) => {
     ctx.assertLive();
-    if (!batch.edits.size && !batch.moves.length && !batch.deletes.length && !batch.uploads.length) return;
+    if (!batch.edits.size && !batch.moves.length && !batch.deletes.length && !batch.restores.length && !batch.uploads.length) return;
     await ctx.applyBatch(batch);
     // Refresh belongs to the transaction host, so no fallible second mutation follows it.
+  };
+  const today = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString().slice(0, 10);
+  const currentSha = (ctx: MediaWorkspaceContext, path: string) => {
+    if (!ctx.paths.includes(path)) return undefined;
+    const draft = ctx.drafts.get(ctx.scope, path);
+    return draft ? draft.opaque && !draft.upload ? draft.sourceSha : undefined : ctx.assetVersion(path);
+  };
+  const removedRecords = async (ctx: MediaWorkspaceContext, records: MediaRecords, paths: string[]) => {
+    const { recordRemoval, pruneRemoved } = await import("./recently-removed");
+    ctx.assertLive();
+    const date = today(ctx);
+    let next = pruneRemoved(records, date, path => currentSha(ctx, path));
+    const remaining = new Set(paths);
+    for (const path of [...paths].sort((a, b) => familyPaths(b, ctx.paths).length - familyPaths(a, ctx.paths).length)) {
+      if (!remaining.has(path)) continue;
+      const members = familyPaths(path, ctx.paths).filter(member => remaining.has(member));
+      const family = [];
+      for (const member of members) {
+        const sha = ctx.history ? currentSha(ctx, member) : undefined;
+        if (sha) family.push({ path: member, sha });
+        else {
+          if (!ctx.removedCopies) throw new Error("Recently removed browser storage is unavailable.");
+          const draft = ctx.drafts.get(ctx.scope, member);
+          const blob = draft && !draft.opaque ? new Blob([draft.content]) : await ctx.blob(member);
+          ctx.assertLive();
+          const browserKey = `removed:${date}:${await gitBlobSha(new Uint8Array(await blob.arrayBuffer()))}`;
+          ctx.assertLive();
+          await ctx.removedCopies.put(browserKey, blob);
+          ctx.assertLive();
+          family.push({ path: member, browserKey });
+        }
+        remaining.delete(member);
+      }
+      next = recordRemoval(next, { main: path, family, date });
+    }
+    return next;
+  };
+  const sweep = async (ctx: MediaWorkspaceContext) => {
+    try {
+      if (ctx.removedCopies) {
+        const { sweepRemovedCopies } = await import("./recently-removed");
+        await sweepRemovedCopies(ctx.removedCopies, today(ctx));
+      }
+    } catch { /* Expired browser bytes can wait until the next successful batch. */ }
   };
   const recordsEdit = (batch: MediaWorkspaceBatch, before: MediaRecords, records: MediaRecords) => {
     const next = serializeMediaRecords(records);
@@ -363,12 +414,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     }
     const plan = planTrimmedCopy({ records: metadata, source, trim, path, previous, previousStillUsed, paths: batch.expectedPaths });
     batch.deletes.push(...plan.removes);
-    next = removeMediaRecords(next, plan.removes);
+    next = plan.removes.length ? await removedRecords(ctx, next, plan.removes) : next;
     recordsEdit(batch, metadata, next);
     for (const output of outputs) batch.uploads.push({
       path: output.variantWidth ? mediaCopyName(path, output.variantWidth) : path, blob: output.blob,
     });
     await commit(ctx, batch);
+    if (plan.removes.length) await sweep(ctx);
     return path;
   };
   return {
@@ -419,8 +471,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const ctx = active();
       const text = await sources(ctx);
       const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
+      const { recentlyRemoved } = await import("./recently-removed"); ctx.assertLive();
+      const removed = recentlyRemoved(records, today(ctx), path => currentSha(ctx, path));
       const metadata = mediaMetadataView(records);
-      return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
+      return { key: ctx.key, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
         toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text),
@@ -518,8 +572,35 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         if (unique.some((path) => usage[path].files.length)) throw new Error("Some selected images are now referenced. Refresh the library before deleting unused images.");
       }
       batch.deletes.push(...unique);
-      recordsEdit(batch, metadata, removeMediaRecords(metadata, unique));
+      recordsEdit(batch, metadata, await removedRecords(ctx, metadata, unique));
       await commit(ctx, batch);
+      await sweep(ctx);
+    },
+    async restore(entries: { path: string; id: string }[]) {
+      const ctx = active();
+      const { batch, metadata } = await prepare(ctx, entries.length === 1 ? `Restore ${entries[0].path.split("/").pop()}` : "Restore files");
+      const { planRestore, pruneRemoved } = await import("./recently-removed");
+      ctx.assertLive();
+      const date = today(ctx), paths = [...batch.expectedPaths];
+      let next = pruneRemoved(metadata, date, path => currentSha(ctx, path));
+      for (const entry of entries) {
+        const plan = planRestore(next, entry, paths, date);
+        next = plan.records;
+        for (const member of plan.members) {
+          paths.push(member.path);
+          batch.expectedAssets.set(member.path, ctx.assetVersion(member.path));
+          if (member.sha) batch.restores.push({ path: member.path, sha: member.sha });
+          else {
+            const blob = await ctx.removedCopies?.get(member.browserKey!);
+            ctx.assertLive();
+            if (!blob) throw new Error(`${member.path.split("/").pop()} was kept in this browser only and its copy is gone (browser data cleared or another browser). It cannot be restored.`);
+            batch.uploads.push({ path: member.path, blob });
+          }
+        }
+      }
+      recordsEdit(batch, metadata, next);
+      await commit(ctx, batch);
+      await sweep(ctx);
     },
     async openPage(path) { await active().openPage(path); },
   } satisfies MediaPickerHost & { trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };

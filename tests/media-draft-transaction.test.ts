@@ -23,9 +23,45 @@ function harness(stamp?: Stamp) {
     prepareSources: () => ({ apply: () => true, undo: () => true, redo: () => true, isCurrent: () => true }),
     modelState: () => ({ isCurrent: () => true }), evictModel: (_: string, proof: { isCurrent(): boolean }) => proof.isCurrent() ? proof : undefined, historyCurrent: () => true,
     history: (u: typeof undo, r: typeof redo) => { steps++; undo = u; redo = r; return true; }, refresh: () => {}, announce: () => {} } satisfies MediaDraftHost;
-  const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"version":2,"collections":[],"files":{"images":{}}}']]), moves: [], deletes: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
+  const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"version":2,"collections":[],"files":{"images":{}}}']]), moves: [], deletes: [], restores: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
   return { host, batch, records, bytes, steps: () => steps, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
 }
+
+test("restore an existing blob without upload; Undo/Redo owns one step", async () => {
+  const h = harness();
+  h.batch.uploads = []; h.batch.edits.clear(); h.batch.expectedSources.clear();
+  h.batch.restores = [{ path: "images/a.png", sha: "old-blob" }];
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  const restored = h.records.get("images/a.png")!;
+  assert.equal(restored.baseSha, null); assert.equal(restored.sourceSha, "old-blob");
+  assert.equal(restored.opaque, true); assert.equal(restored.upload, undefined);
+  assert.equal(h.bytes.map.size, 0); assert.equal(h.steps(), 1);
+  assert.equal(h.undo(), true); assert.equal(h.records.size, 0);
+  assert.equal(await h.redo(), true); assert.equal(h.records.get("images/a.png"), restored);
+});
+
+test("restore before saving drops the matching deletion; Undo/Redo brings it back", async () => {
+  const h = harness();
+  const deletion: SavedDraft = { ...h.host.scope, version: 1, path: "images/a.png", baseSha: "old-blob", original: "", content: "", deleted: true, updatedAt: 1 };
+  h.records.set(deletion.path, deletion);
+  h.batch.uploads = []; h.batch.edits.clear(); h.batch.expectedSources.clear();
+  h.batch.restores = [{ path: deletion.path, sha: "old-blob" }];
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(h.records.get(deletion.path), undefined);
+  assert.equal(h.undo(), true); assert.equal(h.records.get(deletion.path), deletion);
+  assert.equal(await h.redo(), true); assert.equal(h.records.get(deletion.path), undefined);
+});
+
+test("a moved-away deletion or another blob refuses a restore without partial edits", async () => {
+  for (const movedTo of [undefined, "elsewhere.png"]) {
+    const h = harness();
+    const deletion: SavedDraft = { ...h.host.scope, version: 1, path: "images/a.png", baseSha: movedTo ? "old-blob" : "different", original: "", content: "", deleted: true, movedTo, updatedAt: 1 };
+    h.records.set(deletion.path, deletion);
+    h.batch.uploads = []; h.batch.restores = [{ path: deletion.path, sha: "old-blob" }];
+    await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /already exists/);
+    assert.equal(h.records.get(deletion.path), deletion); assert.equal(h.records.size, 1); assert.equal(h.steps(), 0);
+  }
+});
 
 test("a metadata change with no page open applies and undoes", async () => {
   const h = harness(), home = createMediaHistoryHome();

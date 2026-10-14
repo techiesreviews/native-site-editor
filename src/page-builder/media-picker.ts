@@ -1,4 +1,4 @@
-import type { AddingSettings, MediaRecords } from "../../shared/media-records";
+import type { AddingSettings, MediaRecords, RemovedMedia } from "../../shared/media-records";
 import type { MediaCollectionChange } from "./media-collections";
 import { node } from "../ui/dom";
 import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
@@ -15,6 +15,7 @@ export interface MediaLibrary {
   key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
   /** Files that show the Always keep mark: each kept file and the main of each family with a kept member. */
   keep?: string[];
+  removed?: RemovedMedia[];
   /** To check: agent-written words Lex has not checked, in file order. */
   toCheck?: MediaToCheckRow[];
   /** The site's Adding settings: its remembered choices over the defaults (`media-settings.ts`). */
@@ -36,6 +37,7 @@ export interface MediaPickerHost {
    * replace the agent's, which clears the mark too. One Undo step either way. `row.text` is the
    * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
   check?(row: MediaToCheckRow, text?: string): Promise<void>;
+  restore?(entries: { path: string; id: string }[]): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]>;
   /** Adding settings: remember changed choices for this site, or "reset" to the defaults. One Undo step. */

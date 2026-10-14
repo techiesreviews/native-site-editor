@@ -63,6 +63,6 @@ export async function placeMediaImage(
   }
   await ctx.applyBatch({ label: "Image replaced", expectedPaths: ctx.paths,
     expectedSources: new Map([[target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets: proof.asset ? new Map([[proof.asset.path, proof.asset.version]]) : new Map(),
-    edits: new Map([[target.path, page], [io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)]]), moves: [], deletes: [], uploads: [] });
+    edits: new Map([[target.path, page], [io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)]]), moves: [], deletes: [], restores: [], uploads: [] });
   ports.announce("Image replaced");
 }

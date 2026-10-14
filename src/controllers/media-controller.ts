@@ -9,7 +9,10 @@ type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")
 import { mediaExistingAlt, mediaUrl, type MediaImage } from "../page-builder/media-markup";
 import { locateNativeElementRange } from "../native-source-location";
 import { isImagePath } from "../native-structure";
-import { uploadImageType } from "../uploads";
+import { indexedDbUploadBytes, uploadImageType, type UploadBytes } from "../uploads";
+
+// Browser copies for Recently removed (files with no repository history to restore from); one handle per tab.
+let removedCopies: UploadBytes | undefined;
 
 export interface MediaWorkspaceSnapshot {
   repo: string;
@@ -149,7 +152,8 @@ export function createMediaController(ports: MediaControllerPorts) {
     for (const path of [".editor/config.json", "CNAME"]) if (paths.includes(path)) await read(path);
     assertLive();
     return {
-      key: `${scope.account}:${scope.repoId}`, scope, drafts, paths, repoSize,
+      key: `${scope.account}:${scope.repoId}`, scope, drafts, paths, repoSize, history: true,
+      removedCopies: removedCopies ??= indexedDbUploadBytes("native-site-editor-removed"),
       items: paths.filter(include).map((path) => {
         const draft = drafts.get(scope, path), entry = ports.entry(path);
         return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };
@@ -250,7 +254,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       if (!edits.size) return;
       await ctx.applyBatch({ label: "Change Decorative image",
         expectedPaths: ctx.paths, expectedSources: new Map([[page, source], [io.MEDIA_RECORDS_PATH, metadata]]),
-        expectedAssets: new Map(), edits, moves: [], deletes: [], uploads: [] });
+        expectedAssets: new Map(), edits, moves: [], deletes: [], restores: [], uploads: [] });
       ctx.assertLive();
       decodeAlt = value => entities.decodeHtmlEntities(value, true);
       descriptions = rules; recordIO = io;

@@ -6,6 +6,7 @@ import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { DraftStore } from "../src/drafts";
 import { resolveNativeProject, nativePageMovedUrl, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
 import type { TreeEntry } from "../shared/types";
+import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
 
 function fixture(native = false, extra: Record<string, string> = {}) {
   const branch: Record<string, string> = native ? { "index.html": '<a href="/about/">About</a>', "about/index.html": '<h1>About</h1>', "style.css": "" } : { "open.txt": "open", "a.txt": "source" };
@@ -272,8 +273,36 @@ test("Files delete removes the family in one plan and explains the members", asy
   assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
   assert.match(notes.join(" "), /1 smaller copy and 1 kept original/);
   for (const path of Object.keys(imageFamily)) assert.equal(h.memory.workspace.exists(path), false);
+  const entry = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH)).removed![0];
+  assert.equal(entry.path, imageTarget.path); assert.ok(entry.sha);
+  assert.deepEqual(entry.family?.map(member => member.path), ["images/photo-480w.webp", "media/originals/photo.HEIC"]);
   assert.deepEqual(h.memory.steps(), ["operation"]); assert.equal(h.memory.undo(), true);
+  assert.equal(h.memory.workspace.exists(MEDIA_RECORDS_PATH), false);
   for (const path of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(path));
+});
+
+test("Files delete moves family records into Recently removed and Undo returns them", async () => {
+  const records = { version: 2, collections: ["Work"], files: {
+    [imageTarget.path]: { collections: ["Work"], alwaysKeep: true },
+    "images/photo-480w.webp": { decorative: true },
+  } };
+  const h = fixture(true, { ...imageFamily, [MEDIA_RECORDS_PATH]: JSON.stringify(records) });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
+  const after = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH));
+  assert.deepEqual(after.removed![0].record, records.files[imageTarget.path]);
+  assert.deepEqual(after.removed![0].family![0].record, { decorative: true });
+  assert.equal(Object.keys(after.files).length, 0); assert.deepEqual(h.memory.steps(), ["operation"]);
+  assert.equal(h.memory.undo(), true); assert.deepEqual(JSON.parse(h.memory.workspace.source(MEDIA_RECORDS_PATH)!), records);
+});
+
+test("Files media delete refuses malformed or unreadable records", async () => {
+  for (const unreadable of [false, true]) {
+    const h = fixture(true, { ...imageFamily, [MEDIA_RECORDS_PATH]: "malformed" });
+    const source = h.memory.workspace.source.bind(h.memory.workspace);
+    if (unreadable) h.memory.workspace.source = path => path === MEDIA_RECORDS_PATH ? undefined : source(path);
+    assert.match(await h.controller.deleteFileTarget(imageTarget) ?? "", /media.json/);
+    assert.deepEqual(h.memory.steps(), []); assert.ok(h.memory.workspace.exists(imageTarget.path));
+  }
 });
 
 test("taken family destination refuses the whole Files rename", async () => {

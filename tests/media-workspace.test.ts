@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyMediaWorkspaceBatch, createMediaWorkspace, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
+import { memoryUploadBytes, gitBlobSha } from "../src/uploads";
 
 function fixture() {
   const text = new Map<string, string>([
@@ -24,7 +25,7 @@ function fixture() {
   };
   const stamp = { holds: () => live, changed: () => live ? undefined : "scope" as const };
   const context: MediaWorkspaceContext = {
-    key: "owner/repo:main", scope: { account: "owner", repoId: 1, repo: "owner/repo", branch: "main" },
+    history: true, removedCopies: memoryUploadBytes(), now: () => Date.parse("2026-10-14T12:00:00Z"), key: "owner/repo:main", scope: { account: "owner", repoId: 1, repo: "owner/repo", branch: "main" },
     drafts: { get() { return undefined; }, save() { throw new Error("Legacy draft mutation"); }, remove() { throw new Error("Legacy draft mutation"); } },
     get paths() { return [...paths]; },
     get items() { return [...bytes.keys()].map((path) => ({ path })); },
@@ -47,6 +48,7 @@ function fixture() {
           state.committed = true;
           for (const move of batch.moves) { bytes.set(move.to, bytes.get(move.from)!); bytes.delete(move.from); paths.delete(move.from); paths.add(move.to); versions.set(move.to, versions.get(move.from)!); versions.delete(move.from); }
           for (const path of batch.deletes) { bytes.delete(path); paths.delete(path); versions.delete(path); }
+          for (const { path, sha } of batch.restores) { paths.add(path); versions.set(path, sha); }
           for (const [path, value] of batch.edits) { text.set(path, value); paths.add(path); }
           for (const upload of batch.uploads) { paths.add(upload.path); versions.set(upload.path, `upload:${upload.path}`); }
           if (failCommit) throw new Error("Draft storage failed");
@@ -86,6 +88,69 @@ test("delete removes binary and metadata together; one Undo restores both", asyn
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"], undefined);
   f.history.pop()!(); assert.equal(f.bytes.has("images/a.png"), true);
   assert.ok(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"]);
+});
+
+test("several families remove and restore in one batch each; Undo of restore returns the list", async () => {
+  const f = fixture();
+  for (const path of ["images/a-480.webp", "media/originals/a.heic", "images/a-crop.webp"]) {
+    f.paths.add(path); f.bytes.set(path, new Blob([path])); f.versions.set(path, path + "-sha");
+  }
+  await f.host.load();
+  await f.host.remove(["images/a.png", "images/unused.png"]);
+  const removed = (await f.host.load()).removed!;
+  assert.equal(removed.length, 2); assert.equal(f.history.length, 1);
+  assert.equal(removed[0].date, "2026-10-14");
+  assert.deepEqual(removed.find(entry => entry.path === "images/a.png")?.family?.map(member => member.path), ["images/a-480.webp", "media/originals/a.heic"]);
+  assert.ok(f.paths.has("images/a-crop.webp"));
+  await f.host.restore(removed.map(entry => ({ path: entry.path, id: entry.sha! })));
+  assert.equal(f.batches.length, 2); assert.equal(f.history.length, 2);
+  assert.equal(f.batches[1].label, "Restore files"); assert.equal(f.batches[1].restores.length, 4);
+  assert.equal(f.batches[1].uploads.length, 0); assert.equal((await f.host.load()).removed?.length, 0);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description?.text, "Default");
+  f.history.pop()!();
+  assert.equal((await f.host.load()).removed?.length, 2); assert.equal(f.paths.has("images/a.png"), false);
+  f.history.pop()!(); assert.ok(f.paths.has("images/a.png"));
+});
+
+test("local removals store current bytes; missing browser copies refuse the whole restore", async () => {
+  const f = fixture(), store = memoryUploadBytes();
+  f.context.history = false; f.context.removedCopies = store;
+  await f.host.load(); await f.host.remove(["images/unused.png"]);
+  const entry = (await f.host.load()).removed![0], key = entry.browserKey!;
+  assert.equal(key, `removed:2026-10-14:${await gitBlobSha(new TextEncoder().encode("unused"))}`);
+  assert.equal(entry.sha, undefined); assert.equal(await (await store.get(key))?.text(), "unused");
+  await store.delete(key);
+  await assert.rejects(f.host.restore([{ path: entry.path, id: key }]), /unused.png was kept in this browser only and its copy is gone/);
+  assert.equal(f.batches.length, 1); assert.equal((await f.host.load()).removed?.length, 1);
+  await store.put(key, new Blob(["unused"]));
+  await f.host.restore([{ path: entry.path, id: key }]);
+  assert.equal(f.batches[1].restores.length, 0); assert.equal(await f.batches[1].uploads[0].blob.text(), "unused");
+  assert.equal(f.batches[1].label, "Restore unused.png"); assert.equal((await f.host.load()).removed?.length, 0);
+});
+
+test("a conflict in the last selected family refuses every restore", async () => {
+  const f = fixture(); await f.host.load(); await f.host.remove(["images/a.png", "images/unused.png"]);
+  const entries = (await f.host.load()).removed!.map(entry => ({ path: entry.path, id: entry.sha! }));
+  f.paths.add("images/unused.png"); f.versions.set("images/unused.png", "different");
+  await assert.rejects(f.host.restore(entries), /images\/unused.png already exists/);
+  assert.equal(f.batches.length, 1); assert.equal(f.paths.has("images/a.png"), false);
+  assert.equal((await f.host.load()).removed?.length, 2);
+});
+
+test("removal and restore writes prune expired and already-back entries", async () => {
+  const f = fixture();
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  records.removed = [
+    { path: "expired.png", sha: "expired", date: "2026-09-13" },
+    { path: "images/a.png", sha: "a-v1", date: "2026-10-14" },
+    { path: "retained.png", sha: "retained", date: "2026-09-14" },
+  ];
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  await f.host.load(); await f.host.remove(["images/unused.png"]);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).removed?.map(entry => entry.path), ["retained.png", "images/unused.png"]);
+  f.context.now = () => Date.parse("2026-10-15T12:00:00Z");
+  await f.host.restore([{ path: "images/unused.png", id: "unused-v1" }]);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).removed?.length ?? 0, 0);
 });
 test("async source and asset changes reject entire rename without erasing other edits", async () => {
   for (const asset of [false, true]) {
@@ -618,6 +683,10 @@ test("trim uploads, page swap, records and unused family deletion share one Undo
   const next = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
   assert.deepEqual(next.files[path], { description: { text: "Trim", byAgent: true }, trimmedFrom: { source: "images/a.png", trim: rectangle } });
   assert.equal(next.files[oldTrim], undefined); assert.equal(next.files[oldSmall], undefined);
+  assert.equal(next.removed?.[0].path, oldTrim);
+  assert.deepEqual(next.removed?.[0].record?.trimmedFrom, { source: "images/a.png", trim: rectangle });
+  assert.equal(next.removed?.[0].family?.[0].path, oldSmall);
+  assert.deepEqual(next.removed?.[0].family?.[0].record, { decorative: true });
   assert.deepEqual(next.files["images/a.png"], originalRecord); assert.equal(f.bytes.get("images/a.png"), original);
   f.history.pop()!();
   assert.deepEqual(f.text, before); assert.ok(f.bytes.has(oldTrim)); assert.ok(f.bytes.has(oldSmall)); assert.ok(!f.bytes.has(path));

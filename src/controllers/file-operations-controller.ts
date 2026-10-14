@@ -449,7 +449,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     // A change meanwhile stops the reading; the guarded run below then refuses it as stale.
     if (ports.readMediaText && since.holds()) {
       const { isMediaTextFile } = await import("../page-builder/media-mentions");
-      const textFiles = since.holds() ? ports.nativeFiles().filter(isMediaTextFile) : [];
+      const textFiles = since.holds() ? [...ports.nativeFiles().filter(isMediaTextFile), ...(target.folder || isRenamableMedia(target.path)) && ports.nativeFiles().includes(".editor/media.json") ? [".editor/media.json"] : []] : [];
       try {
         for (let at = 0; at < textFiles.length && since.holds(); at += 12)
           await Promise.all(textFiles.slice(at, at + 12).map(async path => { readTexts.set(path, await ports.readMediaText!(path)); }));
@@ -476,6 +476,13 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
           if (inUse) return { refuse: inUse };
         } catch (error) { return { refuse: error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted." }; }
       }
+      let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[] } = {};
+      if (found.some(file => isRenamableMedia(file.path))) {
+        const { filesRemovalPlan } = await import("../page-builder/media-file-removal");
+        const plan = await filesRemovalPlan(ports, r, found, since);
+        if ("refuse" in plan) return plan;
+        recordsPlan = plan;
+      }
       const count = found.length, onGitHub = found.some(file => file.sha);
       const links = pageLinks(found.map(file => file.path), new Map(), "deleted", r);
       const title = wording?.title ?? (target.folder ? `Delete the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}?` : `Delete ${target.path}?`);
@@ -491,7 +498,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
           : count === 1 ? "It is not on GitHub yet, so this discards it." : "They are not on GitHub yet, so this discards them.",
       ], action: "Delete" });
       if (!ok) { cancelled = true; return { stayed: cancel }; }
-      return { deletes: found.map(file => file.path),
+      return { ...recordsPlan, deletes: found.map(file => file.path),
         done: target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`,
         undone: `Undid deleting ${target.path}.` };
     }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key && targetDrafts(target) === drafts && opaqueDrafts() === opaque });
