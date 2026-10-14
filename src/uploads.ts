@@ -160,7 +160,7 @@ export function holdUploadKey(key: string) {
 export const uploadKeyHeld = (key: string) => adding.has(key);
 
 /**
- * Retain both sides of a history step before it writes drafts; release when the step leaves history.
+ * Retain the upload bytes an Undo step can write back, taken before the step writes drafts; release when the step leaves history.
  * As in `sweepUploads`, a deletion holding replaced bytes keeps them for Restore.
  */
 export function holdUploadDrafts(scope: DraftScope, records: Iterable<SavedDraft | undefined>) {

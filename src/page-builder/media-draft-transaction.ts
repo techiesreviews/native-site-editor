@@ -158,7 +158,8 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         else if (previous) throw new Error(`${path} already exists.`);
         else planned.set(path, { ...scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: upload.sha, opaque: true, upload: { size: upload.blob.size, type: upload.blob.type }, updatedAt: Date.now() });
       }
-      state.dispose = holdUploadDrafts(scope, [...state.before.values(), ...planned.values()]);
+      // Undo writes `before` back: its uploads' bytes stay while the step lives (Redo re-stages its own).
+      state.dispose = holdUploadDrafts(scope, state.before.values());
       if (!state.sources.apply()) throw new Error("The editor source changed before image changes could be applied.");
       advanceOwnedSources(batch, state);
       state.after = capture(state.before);

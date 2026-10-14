@@ -229,7 +229,8 @@ export function createCommit(ws: EditorWorkspace) {
     }, { before, after, beforeSources, afterSources, retainPaths: retainedPaths });
     let releaseRefresh: (() => void) | undefined = anchor === undefined ? undefined : ws.holdRefresh(anchor);
     const release = () => { releaseRefresh?.(); releaseRefresh = undefined; };
-    const releaseUploads = holdUploadDrafts(scope, [...before.values(), ...after.values()]);
+    // Undo writes `before` back: its uploads' bytes stay while the step lives (after-side uploads are the same bytes, moved).
+    const releaseUploads = holdUploadDrafts(scope, before.values());
     if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return error; }
     // Files created or moved in keep the anchor's history while the step lives.
     let unshare = anchor === undefined ? () => {} : ws.shareHistory([...creates.map(file => file.path), ...moves.map(move => move.to)], anchor);

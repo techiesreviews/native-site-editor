@@ -5,7 +5,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createGuardedEdits, STALE_MESSAGE, type PlanResult, type Reads, type RunOptions } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred, type MemoryWorkspace } from "./fakes/memory-workspace";
-
 import { memoryUploadBytes, sweepUploads, uploadKey, uploadKeyHeld } from "../src/uploads";
 
 const PAGE = "<main><h1>Home</h1><p>Hello</p></main>";

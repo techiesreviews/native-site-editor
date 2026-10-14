@@ -93,6 +93,14 @@ test("metadata and upload undo together; redo restages swept bytes", async () =>
   assert.equal(h.records.size, 2); assert.equal(h.undo(), true); assert.equal(h.records.size, 0);
   h.bytes.map.clear(); assert.equal(await h.redo(), true); assert.equal(h.records.size, 2); assert.equal(h.bytes.map.size, 1);
 });
+test("a step's new upload is not held: discarding its draft lets the sweep remove its bytes", async () => {
+  const h = harness(); await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  const added = h.records.get("images/a.png")!, key = uploadKey(h.host.scope, added.sourceSha!);
+  assert.equal(uploadKeyHeld(key), false);
+  h.records.delete(added.path);
+  await sweepUploads(h.bytes, h.host.scope, h.host.store.list(h.host.scope));
+  assert.equal(await h.bytes.get(key), undefined);
+});
 test("scope change after byte staging removes only owned bytes without drafts", async () => {
   const h = harness(), put = h.bytes.put.bind(h.bytes);
   h.bytes.put = async (key, blob) => { await put(key, blob); h.stale(); };
