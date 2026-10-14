@@ -55,6 +55,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [22 The Media chapter for agents; docs/mcp.md fixed](tickets/22-media-chapter-and-mcp-docs.md) | sol | 21 |
 | [83 Alt text specs after Descriptions and Decorative](tickets/83-alt-text-spec-fix.md) | claude | 13 |
 | [84 Win back boot budget headroom](tickets/84-boot-budget-headroom.md) | sol | 49 |
+| [85 Placing an undescribed file leaves it not described yet](tickets/85-placed-undescribed-alt.md) | sol | 21 |
 
 ### Phase 2: Adding, and pictures on pages
 
