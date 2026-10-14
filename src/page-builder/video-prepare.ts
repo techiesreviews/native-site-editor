@@ -41,7 +41,9 @@ function unchanged(file: File, gif: boolean): MediaOptimiseResult {
   const failure = preparationFailure(file, new Uint8Array(), true);
   if (failure.kind === "advice") throw new Error(failure.message);
   return { outputs: [{ blob: file, extension: file.name.split(".").pop()!.toLowerCase() }], before: file.size, after: file.size,
-    ...gif ? {} : { note: `This browser cannot prepare videos, so ${file.name} was added as it is.` } };
+    // The browser-cannot-encode exception (research 02): no question, but never silent.
+    note: gif ? `This browser cannot turn animated GIFs into videos, so ${file.name} was added as it is.`
+      : `This browser cannot prepare videos, so ${file.name} was added as it is.` };
 }
 async function still(canvas: OffscreenCanvas, deps: VideoPrepareDeps): Promise<MediaOutput> {
   const blob = await deps.encode(canvas, "image/webp", 80);

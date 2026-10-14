@@ -630,20 +630,28 @@ function animatedGif() {
 async function shortVideo(page: Page) {
   return page.evaluate(async () => {
     const { loadVideoTools } = await import("/src/page-builder/video-prepare.ts");
-    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, QUALITY_MEDIUM } = await loadVideoTools();
+    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, EncodedAudioPacketSource, EncodedPacket, QUALITY_MEDIUM } = await loadVideoTools();
     const canvas = new OffscreenCanvas(64, 32), context = canvas.getContext("2d")!;
     const target = new BufferTarget(), output = new Output({ format: new Mp4OutputFormat(), target });
     const source = new CanvasSource(canvas, { codec: "avc", quality: QUALITY_MEDIUM });
-    output.addVideoTrack(source); await output.start();
+    // A real AAC-LC sound track without an AAC encoder (Playwright's Chromium has none): the standard
+    // silent stereo 44.1 kHz frame, 1,024 samples each, with its AudioSpecificConfig.
+    const sound = new EncodedAudioPacketSource("aac"), frame = new Uint8Array([0x21, 0x00, 0x49, 0x90, 0x02, 0x19, 0x00, 0x23, 0x80]);
+    output.addVideoTrack(source); output.addAudioTrack(sound); await output.start();
     for (let index = 0; index < 3; index++) {
       context.fillStyle = ["red", "green", "blue"][index]; context.fillRect(0, 0, 64, 32);
       await source.add(index * 0.5, 0.5);
     }
-    source.close(); await output.finalize();
+    const seconds = 1024 / 44_100;
+    for (let index = 0; index * seconds < 1.5; index++) {
+      await sound.add(new EncodedPacket(frame, "key", index * seconds, seconds),
+        index ? undefined : { decoderConfig: { codec: "mp4a.40.2", numberOfChannels: 2, sampleRate: 44_100, description: new Uint8Array([0x12, 0x10]) } });
+    }
+    source.close(); sound.close(); await output.finalize();
     return btoa(String.fromCharCode(...new Uint8Array(target.buffer!)));
   });
 }
-test("Media prepares a silent MP4 and animated GIF as H.264 MP4 with recorded WebP stills", async ({ page, baseURL }) => {
+test("Media prepares an MP4 with AAC sound and an animated GIF as H.264 MP4 with recorded WebP stills; sound kept, none invented", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const video = await shortVideo(page);
   await page.locator("#explorer-toggle").click();
@@ -671,6 +679,20 @@ test("Media prepares a silent MP4 and animated GIF as H.264 MP4 with recorded We
     const webp = await (await page.request.get(`${baseURL}/__demo/file?path=media/videos/${name}.webp`)).body();
     expect(webp.subarray(0, 4).toString()).toBe("RIFF"); expect(webp.subarray(8, 12).toString()).toBe("WEBP");
   }
+  // Without a native AAC encoder the existing AAC track is copied and still decodes; the GIF's video stays silent.
+  const sound = await page.evaluate(async base => {
+    const { Input, BufferSource, ALL_FORMATS, AudioSampleSink } = await (await import("/src/page-builder/video-prepare.ts")).loadVideoTools();
+    const read = async (name: string) => {
+      const input = new Input({ source: new BufferSource(await (await fetch(`${base}/__demo/file?path=media/videos/${name}.mp4`)).arrayBuffer()), formats: ALL_FORMATS });
+      const track = await input.getPrimaryAudioTrack();
+      if (!track) return null;
+      const sample = await new AudioSampleSink(track).getSample(0.5);
+      const result = { codec: await track.getCodec(), channels: sample?.numberOfChannels, decoded: Boolean(sample?.numberOfFrames) };
+      sample?.close(); return result;
+    };
+    return { clip: await read("clip"), loop: await read("loop") };
+  }, baseURL);
+  expect(sound).toEqual({ clip: { codec: "aac", channels: 2, decoded: true }, loop: null });
 });
 test("converted GIF cannot be chosen or used in an image picker; Close saves video without placement", async ({ page, baseURL }) => {
   await open(page, baseURL);

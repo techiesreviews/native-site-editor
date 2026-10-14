@@ -102,9 +102,11 @@ test("unsupported encoding retains suitable bytes with a note, advises MOV; GIF 
   const result = await prepareVideo(source, "balanced", undefined, false, f.deps);
   assert.equal(result.outputs[0].blob, source); assert.match(result.note!, /cannot prepare videos/);
   await assert.rejects(prepareVideo(file("clip.mov"), "balanced", undefined, false, f.deps), /Export it as MP4/);
-  const gif = file("loop.gif"); assert.equal((await prepareVideo(gif, "balanced", undefined, true, f.deps)).outputs[0].blob, gif);
+  const gif = file("loop.gif"), kept = await prepareVideo(gif, "balanced", undefined, true, f.deps);
+  assert.equal(kept.outputs[0].blob, gif); assert.match(kept.note!, /cannot turn animated GIFs into videos, so loop\.gif was added as it is/);
   const missing = fake(); missing.deps.gif = undefined;
-  assert.equal((await prepareVideo(gif, "balanced", undefined, true, missing.deps)).outputs[0].extension, "gif");
+  const undecoded = await prepareVideo(gif, "balanced", undefined, true, missing.deps);
+  assert.equal(undecoded.outputs[0].extension, "gif"); assert.match(undecoded.note!, /animated GIFs/);
   f.deps.supported = () => false;
   assert.equal((await prepareVideo(source, "balanced", undefined, false, f.deps)).outputs[0].blob, source);
   await assert.rejects(prepareVideo(new File([new Uint8Array(20 * 1024 * 1024 + 1)], "big.mp4"), "balanced", undefined, false, f.deps), /limit is 20 MB/);
