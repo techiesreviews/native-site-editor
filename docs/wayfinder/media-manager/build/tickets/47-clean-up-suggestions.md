@@ -2,7 +2,7 @@
 title: Clean-up suggestions and Always keep
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-47 runner)
 blocked_by: [46-wide-use-scanner]
 builder: sol
 phase: 4
