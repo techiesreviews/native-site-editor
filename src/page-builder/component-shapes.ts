@@ -3,7 +3,7 @@ import { resolveCascade, specificity, type CascadeRule } from "../../shared/casc
 import { slottedTwin } from "../../shared/slotted-css";
 import { componentLabel } from "../native-insert";
 import { startTagAttributes } from "./component-model";
-import { compoundsOf, flatRules, matches, type Match } from "./component-css";
+import { compoundsOf, flatRulesWithLayers, hasStatePseudo, matches, type Match } from "./component-css";
 import { parseSource, readSource, tagAttribute, type SourceElement, type SourceNode } from "./source-tree";
 import { POPUP_SHAPES, type PopupShape } from "./image-popup-rules";
 import { hasPlaceShape, readPlaceFrame } from "./place-frame";
@@ -14,46 +14,50 @@ const elements = (nodes: SourceNode[]): SourceElement[] => nodes.filter((node): 
 const attributes = (html: string, element: SourceElement) =>
   new Map(startTagAttributes(html, element.tag).map(attr => [attr.name, attr.value]));
 
-/** Interpret the twin's slotted subject at the slot's position, reusing the source matcher. */
-function slottedSelector(selector: string) {
+/**
+ * A `::slotted()` selector split into the part the `<slot>` itself must match (`*` when nothing
+ * names it, as in `.media ::slotted(img)`) and the compound the assigned image must match.
+ */
+function slottedParts(selector: string) {
   const compounds = compoundsOf(selector);
   if (!compounds) return undefined;
-  const edits = compounds.flatMap(compound => compound.simples.flatMap(simple =>
-    simple.type === "pseudo" && simple.element && simple.name === "slotted"
-      ? [{ start: simple.start, end: simple.end, text: `:is(${simple.argument ?? ""})` }] : []));
-  if (edits.length !== 1 || edits[0].end !== selector.length) return undefined;
-  const edit = edits[0];
-  return selector.slice(0, edit.start) + edit.text;
+  const found = compounds.flatMap(compound => compound.simples).filter(simple => simple.type === "pseudo" && simple.element && simple.name === "slotted");
+  if (found.length !== 1 || found[0].end !== selector.length || found[0].type !== "pseudo") return undefined;
+  const before = selector.slice(0, found[0].start);
+  return { slot: !before.trim() || /[\s>+~]$/.test(before) ? `${before}*` : before, image: found[0].argument ?? "" };
 }
 
-/** Winning plain ratio and cover on the page image standing where its slot stands. */
+/**
+ * Winning plain ratio and cover on the page image assigned to `slotName`, as the browser resolves
+ * the component's own rules: each selector's `::slotted()` twin (shared/slotted-css.ts) or its own
+ * `::slotted()`, the slot's side matched in the template, the argument on the image. Resting
+ * styles only: conditional rules (`@media` …) and state rules (`:hover` …) are left out.
+ */
 export function readComponentShape(css: string, template: string, slotName: string, imageTag: string, instanceTag: string): ComponentPictureShape | undefined {
   const tree = readSource(template), slot = tree.elements().find(node => node.type === "element" && node.name === "slot" && (tree.attribute(node, "name")?.value ?? "") === slotName);
   const image = elements(parseSource(imageTag))[0], host = elements(parseSource(instanceTag))[0];
   if (!slot || slot.type !== "element" || !image || !host) return undefined;
-  // Use the same parsed template for the subject and its ancestors.
   const roots = tree.children().filter((node): node is SourceElement => node.type === "element");
-  const parents = new Map(roots.map(root => [root, host]));
-  const match: Match = { html: template, top: roots, host, boundary: host, parents,
-    names: new Map([[slot, image.name]]), attributes: new Map([[slot, attributes(imageTag, image)], [host, attributes(instanceTag, host)]]) };
+  const inTemplate: Match = { html: template, top: roots, host, boundary: host, parents: new Map(roots.map(root => [root, host])), attributes: new Map([[host, attributes(instanceTag, host)]]) };
+  const onImage: Match = { html: imageTag, top: [image], boundary: image };
+  const { rules: flat, layers: layerOf, order } = flatRulesWithLayers(css, "");
   const rules: CascadeRule[] = [];
-  for (const rule of flatRules(css, "")) {
-    if (rule.wrappers.length) continue;
+  flat.forEach((rule, index) => {
+    if (rule.wrappers.length) return;
     for (const selector of rule.selectors) {
       const twin = selector.includes("::slotted(") ? selector : slottedTwin(selector);
-      const subject = twin && slottedSelector(twin);
-      if (!subject || !matches(match, slot, subject)) continue;
-      // The loader adds the twin to this same rule; use its actual specificity.
+      const parts = twin ? slottedParts(twin) : undefined;
+      if (!parts || !matches(inTemplate, slot, parts.slot) || !matches(onImage, image, `:is(${parts.image})`)) continue;
       const declarations = rule.declarations.flatMap(text => {
         const found = /^\s*(aspect-ratio|object-fit)\s*:\s*(.*?)\s*$/i.exec(text);
         if (!found) return [];
         return [{ property: found[1].toLowerCase(), value: found[2].replace(/!\s*important\s*$/i, "").trim(), important: /!\s*important\s*$/i.test(found[2]) }];
       });
       // Each declaration gets its own order, so duplicate properties resolve to the last one.
-      for (const declaration of declarations) rules.push({ context: 0, specificity: specificity(twin!), order: rules.length, declarations: [declaration] });
+      for (const declaration of declarations) rules.push({ context: 0, layer: layerOf[index], state: hasStatePseudo(twin!), specificity: specificity(twin!), order: rules.length, declarations: [declaration] });
     }
-  }
-  const winners = resolveCascade({ rules }).winners;
+  });
+  const winners = resolveCascade({ rules, layers: { 0: order } }).winners;
   const value = (property: string) => {
     const winner = winners[property];
     return winner && rules[winner.rule].declarations[winner.declaration].value;

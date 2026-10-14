@@ -59,13 +59,24 @@ const KEPT = new Set(["media", "supports", "container", "starting-style"]);
  * `@font-face`, `@scope` and other at-rules are left out.
  */
 export function flatRules(css: string, path: string): FlatRule[] {
-  const out: FlatRule[] = [];
-  const read = (start: number, end: number, wrappers: string[], parent?: string[]) => {
+  return flatRulesWithLayers(css, path).rules;
+}
+
+/**
+ * `flatRules` with each rule's cascade layer (a name path; empty when unlayered, an anonymous
+ * layer gets a unique name) and the layers in the order the sheet first meets them, for
+ * `layerRanks` (shared/cascade.ts).
+ */
+export function flatRulesWithLayers(css: string, path: string) {
+  const out: FlatRule[] = [], layers: string[][] = [], order: string[][] = [];
+  let anonymous = 0;
+  const meet = (layer: string[]) => { if (!order.some(known => known.join("\n") === layer.join("\n"))) order.push(layer); };
+  const read = (start: number, end: number, wrappers: string[], parent?: string[], layer: string[] = []) => {
     // The rule the declarations read now go to: a new one after each nested block.
     let own: FlatRule | undefined;
     const declare = (text: string) => {
       if (!parent) return;
-      if (!own) out.push(own = { path, selectors: parent, declarations: [], wrappers });
+      if (!own) { out.push(own = { path, selectors: parent, declarations: [], wrappers }); layers.push(layer); }
       own.declarations.push(text);
     };
     let pos = start;
@@ -77,6 +88,7 @@ export function flatRules(css: string, path: string): FlatRule[] {
         // A declaration, or a statement at-rule (`@import`, `@layer a, b;`).
         const text = clean(css.slice(pos, stop));
         if (!text.startsWith("@") && /^[\w-]+\s*:/.test(text)) declare(text);
+        else if (/^@layer\s/i.test(text)) for (const name of text.slice(6).split(",")) if (name.trim()) meet([...layer, ...name.trim().split(".")]);
         pos = stop + 1;
         continue;
       }
@@ -90,15 +102,19 @@ export function flatRules(css: string, path: string): FlatRule[] {
       }
       if (prelude.startsWith("@")) {
         const name = /^@([\w-]+)/.exec(prelude)?.[1].toLowerCase() ?? "";
-        if (KEPT.has(name)) read(stop + 1, close - 1, [...wrappers, prelude], parent);
-        else if (name === "layer") read(stop + 1, close - 1, wrappers, parent);
-      } else read(stop + 1, close - 1, wrappers, nested(prelude, parent));
+        if (KEPT.has(name)) read(stop + 1, close - 1, [...wrappers, prelude], parent, layer);
+        else if (name === "layer") {
+          const named = prelude.slice(6).trim(), inner = [...layer, ...(named ? named.split(".").map(part => part.trim()) : [`\0${anonymous++}`])];
+          for (let depth = layer.length + 1; depth <= inner.length; depth++) meet(inner.slice(0, depth));
+          read(stop + 1, close - 1, wrappers, parent, inner);
+        }
+      } else read(stop + 1, close - 1, wrappers, nested(prelude, parent), layer);
       own = undefined;
       pos = close;
     }
   };
   read(0, css.length, []);
-  return out;
+  return { rules: out, layers, order };
 }
 
 /** `text` without comments and trimmed; `collapse`: runs of white space made one space. Strings stay as written. */
@@ -314,6 +330,8 @@ const siblingsOf = (m: Match, el: SourceElement) =>
 
 // Pseudo-classes matched exactly; any other (`:hover`, `:focus-visible`, `:checked`, `:lang()` …) is a
 // state or condition the page may be in, so it counts as matching.
+/** Whether `selector` holds a pseudo-class the matcher cannot decide (a state such as `:hover`), which it counts as matching. */
+export const hasStatePseudo = (selector: string) => [...selector.matchAll(/(?<!:):([\w-]+)/g)].some(([, name]) => !EXACT.has(name.toLowerCase()));
 const EXACT = new Set(["is", "where", "matches", "-webkit-any", "not", "has", "root", "scope", "empty", "link", "any-link", "host", "host-context",
   "first-child", "last-child", "only-child", "first-of-type", "last-of-type", "only-of-type", "nth-child", "nth-last-child", "nth-of-type", "nth-last-of-type"]);
 
