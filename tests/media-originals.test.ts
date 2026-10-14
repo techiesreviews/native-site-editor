@@ -110,7 +110,7 @@ test("a same-named main in another folder numbers the new family, so its origina
 test("unchanged files, accepted Add unchanged, and identical cleaned mains have no duplicate", async () => {
   // SVGs are cleaned by the worker, which keeps no separate original (see the real-worker test below).
   for (const name of ["guide.pdf", "movie.mp4", "song.mp3"]) {
-    const prepared = await prepareMediaFile(new File(["source"], name), "repo", undefined, undefined, encoder, undefined, undefined, "balanced", true);
+    const prepared = await prepareMediaFile(new File(["source"], name), "repo", undefined, undefined, encoder, undefined, undefined, "balanced", true, "balanced", undefined, "balanced", { audio: async () => undefined });
     assert.equal(prepared.request.original, undefined);
   }
   const fail: typeof optimiseMedia = async () => { throw new Error("encoding failed"); };

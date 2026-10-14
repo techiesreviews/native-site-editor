@@ -124,10 +124,10 @@ test("the workspace saves a change or a reset as one step and loads the choices 
 });
 
 test("Files adding reads the site's image quality once per addition and prepares every file with it", async () => {
-  const reads: string[] = [], used: (MediaImageQuality | undefined)[] = [];
+  const reads: string[] = [], used: (MediaImageQuality | undefined)[] = [], audioUsed: unknown[] = [];
   const runs = createFilesAdding({
-    prepare: async (file, _key, folder, _signal, quality) => { used.push(quality); return { request: { file, folder } }; },
-    settings: async ctx => { reads.push(ctx.key); return { image: "smaller", keepOriginal: false }; },
+    prepare: async (file, _key, folder, _signal, quality, _keepOriginal, _video, audio) => { used.push(quality); audioUsed.push(audio); return { request: { file, folder } }; },
+    settings: async ctx => { reads.push(ctx.key); return { image: "smaller", keepOriginal: false, audio: "speech" }; },
     save: async (_ctx, _context, requests) => requests.map(request => `${request.folder}/${request.file.name}`),
     paint: () => {},
   });
@@ -138,6 +138,7 @@ test("Files adding reads the site's image quality once per addition and prepares
   assert.deepEqual(added, ["media/a.jpg", "media/b.jpg"]);
   assert.deepEqual(reads, ["repo"]);
   assert.deepEqual(used, ["smaller", "smaller"]);
+  assert.deepEqual(audioUsed, ["speech", "speech"]);
 });
 
 

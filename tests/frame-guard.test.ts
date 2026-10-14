@@ -11,10 +11,14 @@ const RULES = "src/page-builder/rules/";
 const DRAFTS = "BroadcastChannel announces draft changes between editor tabs, not to the preview frame.";
 const OPTIMISER = "The image optimisation Worker receives jobs and returns results independently of the preview.";
 const OPTIMISER_SIDE = "The image optimisation worker endpoint replies to its owner, not to the preview frame.";
+const AUDIO = "The audio preparation Worker receives one file and returns its result independently of the preview.";
+const AUDIO_SIDE = "The audio preparation worker endpoint replies to its owner, not to the preview frame.";
 const postAllowlist: AllowlistEntry[] = [
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
   { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE, count: 9 },
+  { file: "src/page-builder/media-prepare.ts", match: "worker", reason: AUDIO },
+  { file: "src/page-builder/audio-prepare.worker.ts", match: "self", reason: AUDIO_SIDE, count: 2 },
   { file: RUNTIME, match: "frame.contentWindow", reason: "The runtime sizes and requests its isolated measuring child; preview-wire.test.ts pins the child request shape." },
   { file: RUNTIME, match: "parent", reason: "The runtime's posts (emit and ready) are the frame side; preview-wire.test.ts pins their types and shapes.", count: 2 },
 ];
@@ -22,6 +26,8 @@ const listenerAllowlist: AllowlistEntry[] = [
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
   { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE },
+  { file: "src/page-builder/media-prepare.ts", match: "worker", reason: AUDIO },
+  { file: "src/page-builder/audio-prepare.worker.ts", match: "self", reason: AUDIO_SIDE },
   { file: RUNTIME, match: "window", reason: "The frame-side host listener, measurement-only child listener and scoped child reply listener all check their sender and wire source; preview-wire.test.ts pins them.", count: 3 },
   { file: RUNTIME, match: "window.removeEventListener", reason: "Image measurement removes its scoped child reply listener on every settle path." },
 ];

@@ -68,7 +68,9 @@ async function openChooser(page: Page) {
 async function addedThenUse(page: Page, name: string, path: string) {
   await expect(chooser(page).getByRole("button", { name: `Choose ${name}`, exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(chooser(page).locator(".media-library__chosen-text")).toHaveText(name);
-  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).not.toContain(path);
+  const code = page.locator(".code-editor .monaco-editor .view-lines").first();
+  await expect(code).toContainText("src=");
+  await expect(code).not.toContainText(path);
   expect(await storedUploads(page)).toBe(0);
   await chooser(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(chooser(page)).toBeHidden();
@@ -191,7 +193,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
     { name: "Logo.PNG", mimeType: "image/png", buffer: png },
     { name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nÿþ") },
   ]);
-  await expect(status(page)).toHaveText("Added images/logo.png, images/notes.pdf.");
+  await expect(status(page)).toHaveText("Added images/logo.png, images/notes.pdf. notes.pdf was added without a preview picture.");
   const logo = explorer(page).locator(".file-row[data-path='images/logo.png']");
   await expect(logo).toHaveAttribute("aria-description", "added, not saved to GitHub yet");
 
@@ -234,4 +236,67 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   expect((await committed(page, "images/logo.png"))?.subarray(1, 4).toString()).toBe("PNG");
   expect((await committed(page, "about/photo.png"))?.subarray(1, 4).toString()).toBe("PNG");
   expect((await committed(page, "images/notes.pdf"))?.equals(Buffer.from("%PDF-1.4\nÿþ"))).toBe(true);
+});
+
+// Nightly default fixture: real pdf.js and Mediabunny, outside the smoke group.
+function onePagePdf() {
+  const drawing = "0.2 0.4 0.7 rg 20 20 160 260 re f\n";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 300] /Resources << >> /Contents 4 0 R >>",
+    `<< /Length ${Buffer.byteLength(drawing)} >>\nstream\n${drawing}endstream`,
+  ];
+  let source = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(source));
+    source += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(source);
+  source += `xref\n0 5\n0000000000 65535 f \n${offsets.slice(1).map(offset => String(offset).padStart(10, "0") + " 00000 n \n").join("")}trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(source);
+}
+async function addInMedia(page: Page, name: string, mimeType: string, buffer: Buffer) {
+  if (!await explorer(page).isVisible()) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const media = page.getByRole("region", { name: "Media", exact: true });
+  await expect(media.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  await media.locator('input[name="media-upload"]').setInputFiles({ name, mimeType, buffer });
+  await expect(media.getByRole("region", { name: "Files being added", exact: true }).getByRole("status")).toHaveText("Added 1 file");
+}
+async function saveAll(page: Page) {
+  await showPublish(page);
+  for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+}
+
+test("a valid one-page PDF keeps its bytes and commits a matching WebP first-page preview", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const pdf = onePagePdf();
+  await addInMedia(page, "Report.PDF", "application/pdf", pdf);
+  await showPublish(page);
+  await expect(panel(page).locator(".publish-menu__file")).toHaveText([
+    /\.editor\/media.json/, /media\/downloads\/report.pdf/, /media\/downloads\/report.webp/,
+  ]);
+  await page.keyboard.press("Escape");
+  await saveAll(page);
+  expect((await committed(page, "media/downloads/report.pdf"))?.equals(pdf)).toBe(true);
+  const preview = await committed(page, "media/downloads/report.webp");
+  expect(preview?.subarray(0, 4).toString()).toBe("RIFF");
+  expect(preview?.subarray(8, 12).toString()).toBe("WEBP");
+  const records = JSON.parse((await committed(page, ".editor/media.json"))!.toString());
+  expect(records.files["media/downloads/report.pdf"].still).toBe("media/downloads/report.webp");
+});
+
+test("a small 128 kbps MP3 is committed unchanged in media/audio", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  // MPEG-1 Layer III, 128 kbps, 44.1 kHz, stereo: 417-byte frames with zero side info and silent data.
+  const frame = Buffer.alloc(417);
+  frame.set([0xff, 0xfb, 0x90, 0x00]);
+  const mp3 = Buffer.concat(Array.from({ length: 12 }, () => frame));
+  await addInMedia(page, "Small Track.MP3", "audio/mpeg", mp3);
+  await saveAll(page);
+  expect((await committed(page, "media/audio/small-track.mp3"))?.equals(mp3)).toBe(true);
 });

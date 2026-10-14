@@ -53,6 +53,7 @@
     "blakejs": "^1.2.1",
     "mediabunny": "1.61.4",
     "monaco-editor": "^0.56.0",
+    "pdfjs-dist": "6.4.299",
     "svgo": "4.1.0",
     "tweetnacl": "^1.0.3",
     "zod": "^4.6.5"

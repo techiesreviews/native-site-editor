@@ -242,8 +242,8 @@ test("automatic folders follow each output kind; explicit Files folders win", as
   for (const [name, folder] of [["picture.jpg", "media/images"], ["logo.svg", "media/images"], ["movie.mp4", "media/videos"],
     ["song.m4a", "media/audio"], ["guide.pdf", "media/downloads"], ["archive.zip", "media/downloads"]]) {
     const file = new File(["bytes"], name);
-    assert.equal((await prepareMediaFile(file, "repo", undefined, undefined, encode)).request.folder, folder);
-    for (const explicit of ["", "chosen/folder"]) assert.equal((await prepareMediaFile(file, "repo", explicit, undefined, encode)).request.folder, explicit);
+    assert.equal((await prepareMediaFile(file, "repo", undefined, undefined, encode, undefined, undefined, "balanced", false, "balanced", undefined, "balanced", { audio: async () => undefined })).request.folder, folder);
+    for (const explicit of ["", "chosen/folder"]) assert.equal((await prepareMediaFile(file, "repo", explicit, undefined, encode, undefined, undefined, "balanced", false, "balanced", undefined, "balanced", { audio: async () => undefined })).request.folder, explicit);
   }
 });
 

@@ -281,7 +281,7 @@ test("Files drop in a repository without a home page adds the file", async ({ pa
     transfer.items.add(new File(["%PDF-1.4"], "Guide.pdf", { type: "application/pdf" }));
     for (const type of ["dragenter", "dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
   });
-  await expect(page.locator("#status")).toHaveText("Added guide.pdf.");
+  await expect(page.locator("#status")).toHaveText("Added guide.pdf. Guide.pdf was added without a preview picture.");
   await expect(explorer.locator(".file-row[data-path='guide.pdf']")).toBeVisible();
 });
 
@@ -383,7 +383,14 @@ test("Files: three files start adding at once with progress; one is cancelled; a
   await open(page, baseURL);
   const explorer = await filesTab(page);
   // The encoder never answers, so the picture stays in preparation until it is cancelled.
-  await page.evaluate(() => { Worker.prototype.postMessage = function () {}; });
+  await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Preserve the method, then call it with the original Worker receiver.
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message, options) {
+      if (message?.file instanceof File) return;
+      post.call(this, message, options ?? []);
+    };
+  });
   await dropOnFiles(page, [
     { name: "big.pdf", type: "application/pdf", size: 12_000_000 },
     { name: "notes.pdf", type: "application/pdf", base64: btoa("%PDF-1.4") },
@@ -398,7 +405,7 @@ test("Files: three files start adding at once with progress; one is cancelled; a
   await summary.getByRole("button", { name: "Cancel adding slow.png", exact: true }).click();
   await expect(summary.getByRole("status")).toHaveText("Added 2 files");
   await expect(summary).toContainText("Large download: big.pdf is 12.0 MB");
-  await expect(page.locator("#status")).toHaveText("Added big.pdf, notes.pdf. Large download: big.pdf is 12.0 MB, which can be slow to load on phones.");
+  await expect(page.locator("#status")).toHaveText("Added big.pdf, notes.pdf. Large download: big.pdf is 12.0 MB, which can be slow to load on phones. notes.pdf was added without a preview picture.");
   await expect.poll(() => storedDraft(page, "big.pdf")).toBeDefined();
   await expect.poll(() => storedDraft(page, "notes.pdf")).toBeDefined();
   expect(await storedDraft(page, "slow.webp")).toBeUndefined();

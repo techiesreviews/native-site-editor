@@ -323,7 +323,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       }
       if (request.original && !/^[a-z0-9]+$/i.test(request.original.extension)) throw new Error("The original must use a supported file extension.");
       const first = result?.outputs[0];
-      if (result && (!first || first.variantWidth)) throw new Error("No primary image was encoded.");
+      if (result && (!first || first.variantWidth)) throw new Error("No primary media file was encoded.");
       if (result?.outputs.some(output => !/^[a-z0-9]+$/i.test(output.extension) || output.extension !== first!.extension)) throw new Error("All responsive images must use the primary image format.");
       const outputs = result?.outputs ?? [{ blob: file, extension: "" }];
       for (const output of [...outputs, ...result?.still ? [result.still] : []]) {
@@ -343,7 +343,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         const path = familyPaths[index]; reserved.add(path); batch.uploads.push({ path, blob: output.blob });
       });
       if (result?.still) {
-        if (mediaKind(primary) !== "video" || result.still.extension !== "webp" || result.still.variantWidth) throw new Error("The video still must be WebP.");
+        // A video's still (slice 57) or a PDF's first page (slice 58), beside it with the same base.
+        if (!(mediaKind(primary) === "video" || /\.pdf$/i.test(primary)) || result.still.extension !== "webp" || result.still.variantWidth) throw new Error("The still picture must be a WebP beside a video or PDF.");
         const path = primary.replace(/\.[^./]+$/, ".webp");
         reserved.add(path); batch.uploads.push({ path, blob: result.still.blob });
         previews[primary] = { still: path };

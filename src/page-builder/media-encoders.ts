@@ -12,7 +12,9 @@ export interface MediaEncoderLoaders {
   webp(): Promise<Encoder>;
   avif(): Promise<Encoder>;
 }
-type Canvas = Pick<OffscreenCanvas, "width" | "height" | "getContext" | "convertToBlob">;
+type Canvas = Pick<OffscreenCanvas, "width" | "height" | "convertToBlob"> & {
+  getContext(type: "2d"): Pick<CanvasRenderingContext2D, "getImageData"> | null;
+};
 
 /** One instance per worker: copies reuse imports and the failed native WebP check. */
 export function createMediaEncoder(loaders: MediaEncoderLoaders = {

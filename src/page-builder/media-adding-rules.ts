@@ -31,7 +31,7 @@ export function mediaAddingShown(library: Pick<MediaLibrary, "metadata" | "usage
 
 /** Predict the automatic destination before image preparation finishes. */
 export function mediaAddingPath(name: string) {
-  const output = mediaStorageName(name, mediaVideoNeedsPreparation(name) ? "mp4" : /\.svg$/i.test(name) ? "svg" : mediaNeedsPreparation(name) ? "webp" : undefined);
+  const output = mediaStorageName(name, mediaVideoNeedsPreparation(name) ? "mp4" : /\.(?:wav|ogg|oga|opus|flac)$/i.test(name) ? "m4a" : /\.svg$/i.test(name) ? "svg" : mediaNeedsPreparation(name) ? "webp" : undefined);
   return mediaKindFolder(output) + "/" + output;
 }
 
