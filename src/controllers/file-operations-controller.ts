@@ -1,4 +1,5 @@
 import { mediaFamilyOf, renamedFamily } from "../page-builder/media-families";
+import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
 import type { GuardedEdits, Reads, PlanResult } from "../guarded-edit";
 import { pageLinkSources } from "./pages-controller";
 import type { FileRowTarget } from "../components/file-row-actions";
@@ -53,8 +54,6 @@ export interface FileOperationsPorts {
   renderFileTree(): void;
   filesTabOpen(): boolean;
 }
-
-const MEDIA_FILE = /\.(?:svg|png|jpe?g|gif|webp|avif|heic|heif|ico|bmp|mp4|m4v|webm|mov|ogv|mp3|m4a|aac|wav|ogg|oga|opus|flac|pdf)$/i;
 
 export function createFileOperationsController(ports: FileOperationsPorts) {
   function restoreFileTarget(target: FileRowTarget) {
@@ -178,6 +177,26 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     return linkNote(filesLinkingTo(pageLinkSources(ports.nativeFiles(), path => r.source(path)), routes, new Set(paths)), routes, action);
   }
 
+  function isMediaTarget(target: FileRowTarget) {
+    return !target.folder && (isRenamableMedia(target.path) || Boolean(targetFamily(target)));
+  }
+
+  // Whether any member of the media file's family would land on a file or folder already there.
+  function mediaTaken(source: FileRowTarget, to: string) {
+    const family = targetFamily(source), state = ports.treeState();
+    return (family ? renamedFamily(family, to) : [{ from: source.path, to }])
+      .some(move => move.from !== move.to && ["file", "folder"].includes(ports.pathNow(move.to, state) ?? ""));
+  }
+
+  // A move's problem as the Files tab shows it while typing: a media file keeps its format, and a
+  // name taken by any family member is refused with the next free numbered one.
+  function fileMoveProblem(source: FileRowTarget, to: string, operation: FileOperation): string | undefined {
+    if (!isMediaTarget(source) || to === source.path) return moveProblem(source, to, operation);
+    if ((/\.[^./]+$/.exec(to)?.[0] ?? "").toLowerCase() !== (/\.[^./]+$/.exec(source.path)?.[0] ?? "").toLowerCase()) return "Keep the image's file format when renaming it.";
+    if (mediaTaken(source, to)) return `${to} is taken. Try ${suggestMediaName(to, candidate => mediaTaken(source, candidate))}.`;
+    return moveProblem(source, to, operation);
+  }
+
   // Renames or moves a file or folder to `to`: the pages among them that other
   // pages link to are named in a confirmation first.
   async function moveFileTarget(source: FileRowTarget, to: string, operation: "rename" | "move", options?: { keepOldAddress?: boolean }): Promise<string | undefined> {
@@ -185,26 +204,16 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     // index, the branch reads and the dialog (the guard is proved before the plan and at the write).
     const since = ports.edits.stamp(), key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(source);
     // Media files (what the Media screen lists) rename by the media plan; fonts, archives and the rest keep the file rename.
-    const media = !source.folder && (Boolean(targetFamily(source)) || MEDIA_FILE.test(source.path));
+    const media = isMediaTarget(source);
+    if (media && operation === "rename") to = to.slice(0, to.lastIndexOf("/") + 1) + mediaFileName(source.path, to.split("/").at(-1)!);
+    const problem = fileMoveProblem(source, to, operation);
+    if (problem) return problem;
+    if (to === source.path) return undefined;
     const [rename, { isMediaTextFile }] = media
       ? await Promise.all([import("../page-builder/media-rename"), import("../page-builder/media-mentions")])
       : [undefined, { isMediaTextFile: (_path: string) => false }];
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
-    if (rename) {
-      const extension = /\.[^./]+$/.exec(source.path)?.[0] ?? "";
-      const typed = /\.[^./]+$/.exec(to)?.[0] ?? "";
-      if (typed.toLowerCase() !== extension.toLowerCase()) return "Keep the image's file format when renaming it.";
-      if (operation === "rename") to = to.slice(0, to.lastIndexOf("/") + 1) + rename.tidyMediaName(to.split("/").at(-1)!);
-    }
-    const takenMessage = (destination: string) => {
-      const family = targetFamily(source);
-      const taken = (candidate: string) => (family ? renamedFamily(family, candidate) : [{ from: source.path, to: candidate }]).some(move => ports.nativeFiles().includes(move.to) && move.from !== move.to);
-      const suggestion = rename!.suggestMediaName(to, candidate => candidate === destination || taken(candidate));
-      return `${to} is taken. Try ${suggestion}.`;
-    };
-    const problem = moveProblem(source, to, operation);
-    if (problem) return rename && ports.nativeFiles().includes(to) ? takenMessage(to) : problem;
-    if (to === source.path) return undefined;
+    const takenMessage = (destination: string) => `${to} is taken. Try ${suggestMediaName(to, candidate => candidate === destination || mediaTaken(source, candidate))}.`;
     const indexed = await ports.ensureNativeTextIndex();
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     if (indexed) return indexed;
@@ -215,7 +224,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       for (const move of familyMoves ?? [{ from: source.path, to }]) {
         const target = { path: move.from, name: move.from, folder: source.folder };
         const problem = moveProblem(target, move.to, operation);
-        if (problem) return rename && ports.nativeFiles().includes(move.to) ? takenMessage(move.to) : problem;
+        if (problem) return problem;
         const taken = await ports.branchPathProblem(move.to);
         if (!since.holds()) return "The repository changed meanwhile. Try again.";
         if (taken) return rename ? takenMessage(move.to) : taken;
@@ -548,7 +557,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     ports.requestAnimationFrame(() => ports.fileRow(to)?.focus());
   }
 
-  return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, targetFiles, pageLinks, moveFileTarget, nativeAssetSnapshot, nativeAssetReferences, planFileMoveUrls, moveFilesWithUrls };
+  return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, fileMoveProblem, targetFiles, pageLinks, moveFileTarget, nativeAssetSnapshot, nativeAssetReferences, planFileMoveUrls, moveFilesWithUrls };
 }
 
 export type FileOperationsController = ReturnType<typeof createFileOperationsController>;

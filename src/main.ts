@@ -84,6 +84,7 @@ import { gridOfItem } from "./page-builder/card-source";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import * as sourceEditor from "./components/source-editor";
 import { createMediaHistoryHome } from "./page-builder/media-history-home";
+import { isRenamableMedia, mediaFileName } from "./page-builder/media-names";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
@@ -3886,13 +3887,21 @@ const fileOperationsController = createFileOperationsController({
   openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
   filesTabOpen: () => filesTreeController.visible(),
 });
-const { moveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
+const { moveProblem, fileMoveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
 function pageLinks(...args: Parameters<typeof fileOperationsController.pageLinks>) { return fileOperationsController.pageLinks(...args); }
 function targetFiles(...args: Parameters<typeof fileOperationsController.targetFiles>) { return fileOperationsController.targetFiles(...args); }
 
+// A media file's new name is tidied by the media rules (any language, its own format); a folder typed before it is checked as usual.
+function renameTarget(target: FileRowTarget, name: string): Checked<string> {
+  const parent = parentOf(target.path), at = name.lastIndexOf("/"), file = name.slice(at + 1);
+  if (target.folder || !isRenamableMedia(target.path) || !file.trim()) return renamedPath(parent, name, target.folder ? "folder" : "file");
+  const folder = at < 0 ? { ok: true as const, value: parent } : renamedPath(parent, name.slice(0, at), "folder");
+  return folder.ok ? { ok: true, value: `${folder.value ? `${folder.value}/` : ""}${mediaFileName(target.path, file)}` } : folder;
+}
+
 function renameProblem(target: FileRowTarget, name: string) {
-  const to = renamedPath(parentOf(target.path), name, target.folder ? "folder" : "file");
-  return to.ok ? moveProblem(target, to.value, "rename") : to.error;
+  const to = renameTarget(target, name);
+  return to.ok ? fileMoveProblem(target, to.value, "rename") : to.error;
 }
 
 function dropProblem(source: FileRowTarget, folder: string) {
@@ -4096,7 +4105,7 @@ const savePublish = createSavePublishController({
 });
 
 async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
-  const to = renamedPath(parentOf(target.path), name, target.folder ? "folder" : "file");
+  const to = renameTarget(target, name);
   if (!to.ok) return to.error;
   return moveFileTarget(target, to.value, "rename");
 }

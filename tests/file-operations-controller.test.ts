@@ -345,3 +345,11 @@ test("Files rename of a font is a plain file rename: no media tidying of its nam
   assert.ok(h.memory.workspace.exists("fonts/Inter SemiBold.woff2"));
   assert.equal(h.memory.workspace.source("_redirects"), undefined);
 });
+
+test("Files rename of a media file tidies any language and suggests a free name for a taken one", async () => {
+  const h = fixture(true, { ...imageFamily, "images/my-photo.webp": "taken" });
+  assert.match(h.controller.fileMoveProblem(imageTarget, "images/my-photo.webp", "rename")!, /images\/my-photo.webp is taken. Try images\/my-photo-2.webp/);
+  assert.equal(h.controller.fileMoveProblem(imageTarget, "images/京都.webp", "rename"), undefined);
+  assert.equal(await h.controller.moveFileTarget(imageTarget, "images/Kyoto Night 京都!.webp", "rename"), undefined);
+  assert.ok(h.memory.workspace.exists("images/kyoto-night-京都.webp"));
+});

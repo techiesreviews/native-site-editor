@@ -5,32 +5,9 @@ import { isMediaTextFile } from "./media-mentions";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { mediaResolvePath, scanMediaUrlTokens, walkMediaReferencePages, scanMediaReferences } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
+import { suggestMediaName } from "./media-names";
+export { isRenamableMedia, mediaFileName, MediaNameTakenError, suggestMediaName, tidyMediaName } from "./media-names";
 
-const stem = (path: string) => path.replace(/\.[^./]+$/, "");
-const extension = (path: string) => path.slice(stem(path).length);
-
-/** Basename only; the caller supplies the actual file format. */
-export function tidyMediaName(name: string): string {
-  const base = name.split(/[\\/]/).at(-1) ?? "";
-  const tidy = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
-  const ext = extension(base).slice(1).toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-  return (tidy(stem(base)) || "media") + (ext ? "." + ext : "");
-}
-
-export class MediaNameTakenError extends Error {
-  constructor(public taken: string, public suggestion: string) {
-    super(`${taken} is taken. Try ${suggestion}.`);
-    this.name = "MediaNameTakenError";
-  }
-}
-
-/** The candidates describe the entire destination family, not just its main. */
-export function suggestMediaName(to: string, taken: (candidate: string) => boolean): string {
-  for (let number = 2; ; number++) {
-    const candidate = `${stem(to)}-${number}${extension(to)}`;
-    if (!taken(candidate)) return candidate;
-  }
-}
 
 interface RenameInput {
   from: string; to: string; paths: string[];
@@ -46,11 +23,12 @@ function decodedSource(source: string, markup: boolean, css = false) {
   let text = "";
   const starts: number[] = [], ends: number[] = [];
   for (let at = 0; at < source.length;) {
-    const entity = markup && source[at] === "&" ? /^&(?:#(?:x[\da-f]+|\d+)|[a-z][\da-z]*);/i.exec(source.slice(at))?.[0] : undefined;
+    // Numeric references decode without their semicolon too, as browsers read them (`&#105mages`).
+    const entity = markup && source[at] === "&" ? /^&(?:#(?:x[\da-f]+|\d+);?|[a-z][\da-z]*;)/i.exec(source.slice(at))?.[0] : undefined;
     const escaped = css && source[at] === "\\" ? /^\\(?:([\da-f]{1,6})(?:\r\n|[\t\n\r\f ])?|(\r\n|[\n\r\f])|([^\n\r\f]))/i.exec(source.slice(at)) : undefined;
     const raw = escaped?.[0] ?? (source.startsWith("\\/", at) ? "\\/" : entity ?? source[at]);
     const code = escaped?.[1] ? parseInt(escaped[1], 16) : 0;
-    const value = escaped ? escaped[1] ? String.fromCodePoint(code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? code : 0xfffd) : escaped[2] ? "" : escaped[3] : raw === "\\/" ? "/" : entity ? decodeHtmlEntities(entity) : raw;
+    const value = escaped ? escaped[1] ? String.fromCodePoint(code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? code : 0xfffd) : escaped[2] ? "" : escaped[3] : raw === "\\/" ? "/" : entity ? decodeHtmlEntities(entity.endsWith(";") ? entity : `${entity};`) : raw;
     for (let i = 0; i < value.length; i++) { starts.push(at); ends.push(at + raw.length); }
     text += value; at += raw.length;
   }
@@ -160,8 +138,15 @@ export function planMediaRename(input: RenameInput): { taken: string; suggestion
     const text = rewriteText(file, source, input, mapping, templates.get(file) ?? new Map());
     if (text !== source) edits.set(mapping.get(file) ?? file, text);
   }
-  let redirects = sources._redirects;
-  for (const move of moves) redirects = editNativeRedirects(redirects, "/" + move.from, "/" + move.to, input.keepOldAddress ? ["/" + move.from] : [], false);
+  // A destination that is a full address on the site's own host follows like any mention; sources
+  // are old addresses and stay. Root-relative destinations are retargeted by editNativeRedirects.
+  let redirects = sources._redirects?.split(/(\r?\n)/).map(line => {
+    const match = /^(\s*[^#\s]\S*\s+)((?:https?:)?\/\/\S+)/i.exec(line);
+    return match ? match[1] + rewriteText("_redirects", match[2], input, mapping, new Map()) + line.slice(match[0].length) : line;
+  }).join("");
+  // Forwarding lines name addresses as browsers request them: spaces and other characters encoded.
+  const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
+  for (const move of moves) redirects = editNativeRedirects(redirects, address(move.from), address(move.to), input.keepOldAddress ? [address(move.from)] : [], false);
   if (redirects === (sources._redirects ?? "")) redirects = undefined;
   const records = moves.reduce((records, move) => renameMediaRecord(records, move.from, move.to), input.records);
   return { moves, edits, records, redirects };

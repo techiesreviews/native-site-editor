@@ -104,3 +104,20 @@ test("with no configured own host, full addresses stay untouched", () => {
   const result = plan({ "index.html": '<img src="https://other.test/media/images/photo.webp"><img src="/media/images/photo.webp">' }, { site: { origins: [] } });
   assert.equal(result.edits.get("index.html"), '<img src="https://other.test/media/images/photo.webp"><img src="/media/images/b-photo.webp">');
 });
+
+test("an own-domain redirect destination follows, keeping its query and hash; its source stays", () => {
+  const result = plan({ _redirects: `/old https://site.test/${from}?v=2#top 301\n/${from} https://other.test/${from} 302\n` });
+  assert.equal(result.redirects, `/old https://site.test/${to}?v=2#top 301\n/${from} https://other.test/${from} 302\n`);
+});
+
+test("a numeric entity without its semicolon is decoded, so the replacement lands on the name", () => {
+  const result = plan({ "index.html": '<img src="/&#109edia/images/photo.webp">' });
+  assert.equal(result.edits.get("index.html"), '<img src="/&#109edia/images/b-photo.webp">');
+});
+
+test("forwarding encodes names with spaces and reserved characters, for every family member", () => {
+  const old = "media/My Photo (1).webp";
+  const result = planMediaRename({ from: old, to: "media/new.webp", paths: [old, "media/My Photo (1)-480w.webp"], sources: {}, records, keepOldAddress: true });
+  assert.ok(!("taken" in result));
+  assert.equal(result.redirects, "/media/My%20Photo%20(1).webp /media/new.webp 301\n/media/My%20Photo%20(1)-480w.webp /media/new-480w.webp 301\n");
+});
