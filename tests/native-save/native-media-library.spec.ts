@@ -85,7 +85,7 @@ test("a taken name refuses the whole Save details", async ({ page, baseURL }) =>
   await panel.getByLabel("Description", { exact: true }).fill("Never saved");
   await panel.getByLabel("File name", { exact: true }).fill("placeholder.svg");
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
-  await expect(panel.locator(".media-library__message")).toContainText("already exists");
+  await expect(panel.locator(".media-library__message")).toContainText("images/placeholder.svg is taken. Try images/placeholder-2.svg.");
   expect(await storedDraft(page, ".editor/media.json")).toBeUndefined();
   await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Never saved");
 });
@@ -248,8 +248,11 @@ test("rename rewrites scripts, data, notes and settings with forwarding through 
   await open(page, baseURL);
   const panel = library(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await panel.getByLabel("New image filename", { exact: true }).fill("garden-desk.svg");
-  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await panel.getByLabel("File name", { exact: true }).fill("garden-desk.svg");
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
+  // File details reopens on the renamed file; Back shows its tile.
+  await expect(panel.getByLabel("File name", { exact: true })).toHaveValue("garden-desk.svg");
+  await panel.getByRole("button", { name: "Back", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/garden-desk.svg", exact: true })).toBeVisible();
   for (const [path, content] of Object.entries(before)) {
     const after = content.replaceAll("studio-desk.svg", "garden-desk.svg") + (path === "_redirects" ? '/images/studio-desk.svg /images/garden-desk.svg 301\n' : "");
