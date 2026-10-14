@@ -5,7 +5,7 @@ import { createGuardedEdits, type Stamp } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import { applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
-import { memoryUploadBytes } from "../src/uploads";
+import { memoryUploadBytes, uploadKey } from "../src/uploads";
 import { createMediaHistoryHome } from "../src/page-builder/media-history-home";
 
 function harness(stamp?: Stamp) {
@@ -266,4 +266,41 @@ test("an uploaded SVG edited as text publishes its rewritten content and restore
   assert.equal(h.records.get(before.path)?.content, '<image href="/new.webp"/>');
   assert.equal(h.undo(), true); assert.equal(h.records.get(before.path), before);
   assert.equal(await h.redo(), true); assert.equal(h.records.get(before.path)?.opaque, undefined);
+});
+
+test("explicit replacement stages new bytes over an existing branch path, preserves base SHA and undoes/redoes once", async () => {
+  const h = harness(), path = "images/a.png";
+  h.host.paths = () => [path, ...h.records.keys()];
+  h.host.assetVersion = file => file === path ? "old-sha" : undefined;
+  h.host.entry = async file => file === path ? { path, sha: "old-sha" } : undefined;
+  h.batch.expectedPaths = [path]; h.batch.expectedAssets.set(path, "old-sha"); h.batch.overwrites = [path];
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  const draft = h.records.get(path)!;
+  assert.equal(draft.baseSha, "old-sha"); assert.equal(draft.opaque, true); assert.ok(draft.upload);
+  assert.notEqual(draft.sourceSha, "old-sha"); assert.equal(h.steps(), 1);
+  assert.equal(await (await h.bytes.get(uploadKey(h.host.scope, draft.sourceSha!)))?.text(), "png");
+  assert.equal(h.undo(), true); assert.equal(h.records.size, 0);
+  h.bytes.map.clear(); assert.equal(await h.redo(), true);
+  assert.equal(h.records.get(path)?.sourceSha, draft.sourceSha); assert.equal(h.steps(), 1); assert.equal(h.bytes.map.size, 1);
+});
+
+test("replacement of an existing upload preserves its base and exact draft on Undo", async () => {
+  const h = harness(), path = "images/a.png";
+  const old: SavedDraft = { ...h.host.scope, version: 1, path, baseSha: "branch-sha", original: "", content: "", opaque: true, sourceSha: "old-upload", upload: { size: 3, type: "image/png" }, updatedAt: 1 };
+  h.records.set(path, old); h.batch.expectedPaths = [path]; h.batch.expectedAssets.set(path, "old-upload"); h.batch.overwrites = [path];
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(h.records.get(path)?.baseSha, "branch-sha"); assert.notEqual(h.records.get(path)?.sourceSha, "old-upload");
+  assert.equal(h.undo(), true); assert.equal(h.records.get(path), old); assert.equal(await h.redo(), true);
+});
+
+test("ordinary uploads still refuse taken paths; replacement requires revision and no overlapping delete", async () => {
+  for (const mode of ["ordinary", "no-proof", "delete"]) {
+    const h = harness(), path = "images/a.png";
+    h.host.paths = () => [path]; h.host.entry = async () => ({ path, sha: "branch-sha" });
+    h.batch.expectedPaths = [path];
+    if (mode !== "ordinary") h.batch.overwrites = [path];
+    if (mode === "delete") { h.batch.expectedAssets.set(path, undefined); h.batch.deletes = [path]; }
+    await assert.rejects(applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host)), /already exists|captured image revision/);
+    assert.equal(h.records.size, 0); assert.equal(h.steps(), 0); assert.equal(h.bytes.map.size, 0);
+  }
 });

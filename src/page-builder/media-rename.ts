@@ -9,7 +9,7 @@ import { suggestMediaName } from "./media-names";
 export { isRenamableMedia, mediaFileName, MediaNameTakenError, suggestMediaName, tidyMediaName } from "./media-names";
 
 
-interface RenameInput {
+export interface RenameInput {
   from: string; to: string; paths: string[];
   sources: Readonly<Record<string, string | undefined>>;
   records: MediaRecords;
@@ -39,7 +39,11 @@ function relativePath(file: string, to: string): string {
   while (folder.length && target.length && folder[0] === target[0]) { folder.shift(); target.shift(); }
   return "../".repeat(folder.length) + target.join("/");
 }
-function rewriteText(file: string, source: string, input: RenameInput, moves: Map<string, string>, templatePaths: Map<number, Set<string>>): string {
+export interface MediaRewriteOptions {
+  versions?: ReadonlyMap<string, string>;
+  reference?: (file: string, start: number, end: number, path: string, attribute?: string) => void;
+}
+function rewriteText(file: string, source: string, input: RenameInput, moves: Map<string, string>, templatePaths: Map<number, Set<string>>, options: MediaRewriteOptions = {}): string {
   const edits: OffsetEdit[] = [];
   const structured = /\.(?:html?|css)$/i.test(file) ? scanMediaUrlTokens(file, source) : [];
   const decoded = decodedSource(source, /\.(?:html?|xml|rss|atom|svg)$/i.test(file));
@@ -70,17 +74,18 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     }
     const to = moves.get(path);
     if (!to) return;
+    options.reference?.(file, start, end, path, structured.find(token => token.start === structuredStart)?.attribute);
     const raw = source.slice(start, end);
     const mapped = decodedSource(raw, /\.(?:html?|xml|rss|atom|svg)$/i.test(file), css, structuredStart !== undefined);
     const pathStart = mapped.starts[prefix.length], pathEnd = mapped.ends[prefix.length + address.length - 1];
     if (pathStart === undefined || pathEnd === undefined) return;
     const rawPath = raw.slice(pathStart, pathEnd);
-    let next = full || address.startsWith("/") || template ? "/" + to : relativePath(file, to);
+    let next = path === to && !template ? address : full || address.startsWith("/") || template ? "/" + to : relativePath(file, to);
     // A unique unresolved suffix keeps its abbreviated spelling when its folder is unchanged.
-    if (!known.has(mediaResolvePath(value, file, input.site ?? { origins: [] }) ?? "") && !full && !template && !address.startsWith("/") && path.slice(0, path.lastIndexOf("/")) === to.slice(0, to.lastIndexOf("/"))) {
+    if (path !== to && !known.has(mediaResolvePath(value, file, input.site ?? { origins: [] }) ?? "") && !full && !template && !address.startsWith("/") && path.slice(0, path.lastIndexOf("/")) === to.slice(0, to.lastIndexOf("/"))) {
       next = address.slice(0, address.lastIndexOf("/") + 1) + to.split("/").at(-1)!;
     } else if (address.startsWith("./") && !next.startsWith(".")) next = "./" + next;
-    if (/%[\da-f]{2}/i.test(rawPath)) next = next.split("/").map(part => encodeURIComponent(part)).join("/");
+    if (path !== to && /%[\da-f]{2}/i.test(rawPath)) next = next.split("/").map(part => encodeURIComponent(part)).join("/");
     // Keep every unchanged character's original spelling, including mixed literal and escaped slashes.
     let left = 0, right = 0;
     while (left < address.length && left < next.length && address[left] === next[left]) left++;
@@ -91,7 +96,24 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     const slash = /\\\/|&#(?:47|x2f);|&sol;/i.exec(rawPath)?.[0];
     if (slash) replacement = replacement.replaceAll("/", slash);
     if (rawPath.includes("&")) replacement = replacement.replace(/&(?!#\d+;|#x[\da-f]+;|[a-z]+;)/gi, "&amp;");
-    edits.push({ start: start + begin, end: start + finish, text: replacement });
+    if (begin !== finish || replacement) edits.push({ start: start + begin, end: start + finish, text: replacement });
+    const version = options.versions?.get(to);
+    if (version) {
+      const queryStart = value.indexOf("?"), hashStart = value.indexOf("#");
+      const queryEnd = hashStart < 0 ? value.length : hashStart;
+      const query = queryStart >= 0 && queryStart < queryEnd ? value.slice(queryStart + 1, queryEnd) : undefined;
+      const parameter = query === undefined ? undefined : /(?:^|&)v=([^&]*)/.exec(query);
+      if (parameter && queryStart >= 0) {
+        const offset = queryStart + 1 + parameter.index + parameter[0].indexOf("v=") + 2;
+        const from = mapped.starts[offset] ?? mapped.ends[offset - 1];
+        const until = parameter[1].length ? mapped.ends[offset + parameter[1].length - 1] : from;
+        edits.push({ start: start + from, end: start + until, text: version });
+      } else {
+        const at = mapped.starts[queryEnd] ?? raw.length;
+        const separator = query === undefined ? "?" : query === "" || query.endsWith("&") ? "" : raw.includes("&amp;") ? "&amp;" : "&";
+        edits.push({ start: start + at, end: start + at, text: separator + "v=" + version });
+      }
+    }
   };
   // Structured tokens own their ranges (srcset, CSS escapes and component page-relative URLs).
   for (const token of structured) add(token.value, token.start, token.end, token.start, token.cssQuote !== undefined);
@@ -100,7 +122,7 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     if (!/[\s"'`<>()[\]{},;=]/.test(name)) continue;
     searchable = searchable.replaceAll(name, name.replace(/[\s"'`<>()[\]{},;=]/g, "\uE000"));
   }
-  for (const match of searchable.matchAll(/(?:https?:\/\/|\/\/)?[^\s"'`<>()[\]{},;=]+/g)) {
+  for (const match of searchable.matchAll(options.versions ? /(?:https?:\/\/|\/\/)?[^\s"'`<>()[\]{},;=?]+(?:\?[^\s"'`<>()[\]{},;]*)?/g : /(?:https?:\/\/|\/\/)?[^\s"'`<>()[\]{},;=]+/g)) {
     const value = decoded.text.slice(match.index!, match.index! + match[0].length).replace(/[.!:]+$/, "");
     const start = decoded.starts[match.index!], end = decoded.ends[match.index! + value.length - 1];
     if (structured.some(token => start < token.end && end > token.start)) continue;
@@ -115,15 +137,10 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
   return text;
 }
 
-export function planMediaRename(input: RenameInput): { taken: string; suggestion: string } | { moves: { from: string; to: string }[]; edits: Map<string, string>; records: MediaRecords; redirects?: string } {
-  const { from, to, paths, sources, site } = input;
-  const family = mediaFamilyOf(from, paths);
-  const familyMoves = (target: string) => family ? renamedFamily(family, target) : [{ from, to: target }];
-  const taken = (target: string) => familyMoves(target).some(move => move.from !== move.to && paths.includes(move.to));
-  if (taken(to)) return { taken: to, suggestion: suggestMediaName(to, taken) };
-  const moves = familyMoves(to).filter(move => move.from !== move.to);
-  const mapping = new Map(moves.map(move => [move.from, move.to]));
+/** One scanner for renaming and replacing; callbacks see resolved paths before spelling changes. */
+export function rewriteMediaMentions(input: RenameInput, mapping: Map<string, string>, options: MediaRewriteOptions = {}): Map<string, string> {
   const edits = new Map<string, string>();
+  const { sources, site } = input;
   const templates = new Map<string, Map<number, Set<string>>>();
   if (site?.pages && site.components) {
     const refs = new Map(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined).map(([file, source]) => [file, scanMediaReferences(file, source, site)]));
@@ -135,15 +152,33 @@ export function planMediaRename(input: RenameInput): { taken: string; suggestion
   }
   for (const [file, source] of Object.entries(sources)) {
     if (source === undefined || file === "_redirects" || !isMediaTextFile(file)) continue;
-    const text = rewriteText(file, source, input, mapping, templates.get(file) ?? new Map());
+    const text = rewriteText(file, source, input, mapping, templates.get(file) ?? new Map(), file === "_headers" ? {} : options);
     if (text !== source) edits.set(mapping.get(file) ?? file, text);
   }
-  // A destination follows like any mention, in whatever spelling (literal letters, any percent case, a
-  // full address on the site's own host); sources are old addresses and stay.
-  let redirects = sources._redirects?.split(/(\r?\n)/).map(line => {
+  return edits;
+}
+
+/** Redirect sources remain request paths; only destinations follow, without version marks. */
+export function rewriteMediaRedirects(input: RenameInput, mapping: Map<string, string>): string | undefined {
+  const redirects = input.sources._redirects?.split(/(\r?\n)/).map(line => {
     const match = /^(\s*[^#\s]\S*\s+)((?:https?:)?\/\S+)/i.exec(line);
     return match ? match[1] + rewriteText("_redirects", match[2], input, mapping, new Map()) + line.slice(match[0].length) : line;
   }).join("");
+  return redirects;
+}
+
+export function planMediaRename(input: RenameInput): { taken: string; suggestion: string } | { moves: { from: string; to: string }[]; edits: Map<string, string>; records: MediaRecords; redirects?: string } {
+  const { from, to, paths, sources } = input;
+  const family = mediaFamilyOf(from, paths);
+  const familyMoves = (target: string) => family ? renamedFamily(family, target) : [{ from, to: target }];
+  const taken = (target: string) => familyMoves(target).some(move => move.from !== move.to && paths.includes(move.to));
+  if (taken(to)) return { taken: to, suggestion: suggestMediaName(to, taken) };
+  const moves = familyMoves(to).filter(move => move.from !== move.to);
+  const mapping = new Map(moves.map(move => [move.from, move.to]));
+  const edits = rewriteMediaMentions(input, mapping);
+  // A destination follows like any mention, in whatever spelling (literal letters, any percent case, a
+  // full address on the site's own host); sources are old addresses and stay.
+  let redirects = rewriteMediaRedirects(input, mapping);
   // Forwarding lines name addresses as browsers request them: spaces and other characters encoded.
   const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
   for (const move of moves) redirects = editNativeRedirects(redirects, address(move.from), address(move.to), input.keepOldAddress ? [address(move.from)] : [], false);

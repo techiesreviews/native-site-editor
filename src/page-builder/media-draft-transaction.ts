@@ -142,6 +142,14 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
       }
       for (const [path, upload] of state.staged) {
         const previous = planned.get(path);
+        if (batch.overwrites?.includes(path)) {
+          if (!batch.expectedAssets.has(path) || !batch.expectedPaths.includes(path) || batch.deletes.includes(path) || previous?.deleted)
+            throw new Error(`${path} cannot be replaced without its captured image revision.`);
+          planned.set(path, { ...previous, ...scope, version: 1, path, baseSha: previous?.baseSha ?? state.entries.get(path)?.sha ?? null,
+            original: previous?.original ?? "", content: "", sourceSha: upload.sha, opaque: true,
+            upload: { size: upload.blob.size, type: upload.blob.type }, updatedAt: Date.now() });
+          continue;
+        }
         if (host.paths().includes(path) || previous && (!previous.deleted || previous.movedTo)) throw new Error(`${path} already exists.`);
         if (previous?.deleted && previous.baseSha === upload.sha) planned.set(path, undefined);
         else if (previous?.deleted && upload.text !== undefined) planned.set(path, { ...previous, deleted: undefined, content: upload.text, updatedAt: Date.now() });

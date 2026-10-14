@@ -782,3 +782,70 @@ test("pixels prepared from an older original refuse without saving anything", as
     assert.ok(f.bytes.has(oldTrim));
   }
 });
+
+test("replace is one batch and Undo step, preserves old family SHA and record, uploads over occupied addresses", async () => {
+  const f = fixture();
+  const copy = "images/a-480.png", original = "media/originals/a.jpg";
+  for (const path of [copy, original]) { f.paths.add(path); f.bytes.set(path, new Blob(["old " + path])); f.versions.set(path, "sha:" + path); }
+  await f.host.load();
+  const oldRecord = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"];
+  const main = new Blob(["new main"], { type: "image/png" }), small = new Blob(["new copy"], { type: "image/png" });
+  const next = await f.host.replace({ path: "images/a.png", result: { before: 10, after: 8, outputs: [
+    { blob: main, extension: "png", width: 800, height: 400 }, { blob: small, extension: "png", width: 480, height: 240, variantWidth: 480 },
+  ] } });
+  assert.equal(next, "images/a.png"); assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
+  const batch = f.batches[0]; assert.equal(batch.label, "Replace everywhere");
+  assert.deepEqual(batch.overwrites, ["images/a.png", copy]);
+  assert.ok(batch.deletes.every(path => !batch.uploads.some(upload => upload.path === path)));
+  assert.equal(await f.bytes.get(next)!.text(), "new main");
+  const data = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), entry = data.removed![0];
+  assert.equal(entry.path, next); assert.equal(entry.sha, "a-v1");
+  assert.deepEqual(entry.family?.map(member => [member.path, member.sha]), [[copy, "sha:" + copy], [original, "sha:" + original]]);
+  assert.deepEqual(data.files[next], oldRecord); assert.deepEqual(entry.record, oldRecord);
+  await assert.rejects(f.host.restore([{ path: entry.path, id: entry.sha! }]), /already exists/);
+  assert.equal(f.history.length, 1);
+  f.history.pop()!();
+  assert.equal(await f.bytes.get(next)!.text(), "original");
+  assert.equal(await f.bytes.get(copy)!.text(), "old " + copy);
+  assert.ok(f.paths.has(original)); assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).removed, undefined);
+});
+
+test("replace captures old family and trimmed revisions before preparation; stale member refuses", async () => {
+  for (const member of ["images/a.png", "media/originals/a.jpg", "images/trim.png"]) {
+    const f = fixture();
+    for (const extra of ["media/originals/a.jpg", "images/trim.png"]) { f.paths.add(extra); f.bytes.set(extra, new Blob(["old"])); f.versions.set(extra, "old"); }
+    f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: {
+      "images/trim.png": { trimmedFrom: { source: "images/a.png", trim: { x: 0, y: 0, width: .5, height: .5 } } },
+    } }));
+    await f.host.load(); f.afterRead(() => f.versions.set(member, "newer"));
+    await assert.rejects(f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] } }), /changed while preparing/);
+    assert.equal(f.history.length, 0); assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
+  }
+});
+
+test("replace refuses unreadable text and cancelled requests without a mutation", async () => {
+  for (const unreadable of [true, false]) {
+    const f = fixture(); await f.host.load();
+    if (unreadable) f.paths.add("missing.json");
+    await assert.rejects(f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] }, live: () => false }), unreadable ? /Could not read missing.json/ : /Cancelled/);
+    assert.equal(f.history.length, 0); assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
+  }
+});
+
+test("browser-only replacement preserves old bytes at their occupied address", async () => {
+  const f = fixture(); f.context.history = false; await f.host.load();
+  await f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] } });
+  const entry = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).removed![0];
+  assert.equal(entry.sha, undefined); assert.ok(entry.browserKey);
+  assert.equal(await (await f.context.removedCopies!.get(entry.browserKey))!.text(), "original");
+});
+
+test("animated old pictures refuse prepared still replacements without a batch", async () => {
+  const f = fixture(), path = "images/moving.gif";
+  const header = new TextEncoder().encode("GIF89a\x01\0\x01\0\0\0\0");
+  const frame = new Uint8Array([44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 44, 44, 0]);
+  f.paths.add(path); f.bytes.set(path, new Blob([header, frame, frame, new Uint8Array([59])])); f.versions.set(path, "animated-sha");
+  await f.host.load();
+  await assert.rejects(f.host.replace({ path, result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] } }), /Animated pictures/);
+  assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
+});

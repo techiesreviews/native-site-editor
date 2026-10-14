@@ -34,6 +34,8 @@ export interface MediaWorkspaceBatch {
   deletes: string[];
   restores: { path: string; sha: string }[];
   uploads: { path: string; blob: Blob }[];
+  /** Explicit replacements of existing files; each requires a captured asset revision. */
+  overwrites?: string[];
   /** Whether the batch is still wanted (a picker's Use not cancelled); checked again just before commit. */
   live?: () => boolean;
 }
@@ -98,6 +100,14 @@ function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWork
   const usage = mediaUsageIndex(paths, text, ctx.pages, ctx.components, site);
   for (const [path, mentions] of mediaMentions({ media: paths, sources: text, site })) for (const { file } of mentions) if (!usage[path].files.includes(file)) usage[path].files.push(file);
   return usage;
+}
+
+export interface MediaReplaceRequest {
+  path: string;
+  result: MediaOptimiseResult;
+  original?: { blob: Blob; extension: string };
+  keepOldAddress?: boolean;
+  live?: () => boolean;
 }
 
 export interface MediaTrimRequest {
@@ -439,6 +449,71 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (plan.removes.length) await sweep(ctx);
     return path;
   };
+  const replace = async (request: MediaReplaceRequest) => {
+    const ctx = active();
+    if (!ctx.items.some(item => item.path === request.path)) throw new Error("Choose an image Media file to replace.");
+    // Capture every binary proof before the first read, including trims discovered in records later.
+    const versions = familyVersions(ctx, ctx.paths);
+    const { batch, metadata, text } = await prepare(ctx, "Replace everywhere", true);
+    batch.live = request.live;
+    const { replacementFamilies, replacementImageSize, planMediaReplace } = await import("./replace-everywhere");
+    ctx.assertLive();
+    const affected = replacementFamilies(request.path, batch.expectedPaths, metadata);
+    const members = [...affected.family, ...affected.trims.flatMap(affected.members)];
+    for (const member of members) batch.expectedAssets.set(member, versions.get(member));
+    assetGuard(batch, members);
+    const { gifIsAnimated, pngIsAnimated, webpIsAnimated } = await import("./media-image-bytes");
+    ctx.assertLive();
+    const bytes = new Uint8Array(await (await ctx.blob(request.path)).arrayBuffer());
+    ctx.assertLive();
+    if (gifIsAnimated(bytes) || pngIsAnimated(bytes) || webpIsAnimated(bytes)) throw new Error("Animated pictures cannot be replaced with a prepared still picture.");
+    const redirects = await ctx.read("_redirects");
+    ctx.assertLive();
+    batch.expectedSources.set("_redirects", redirects);
+    const dimensions = new Map<string, { width: number; height: number }>();
+    for (const trim of affected.trims) {
+      const size = replacementImageSize(new Uint8Array(await (await ctx.blob(trim)).arrayBuffer()));
+      ctx.assertLive();
+      if (size) dimensions.set(trim, size);
+    }
+    // A provisional pure plan validates names and outputs before hashing or preserving browser bytes.
+    const input = { request, paths: batch.expectedPaths, sources: { ...text, _redirects: redirects }, records: metadata,
+      dimensions, site: { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components } };
+    const provisional = planMediaReplace({ ...input, versions: new Map() });
+    const hashes = new Map<string, string>();
+    for (const upload of provisional.uploads) {
+      if (request.original && upload.blob === request.original.blob) {
+        const problem = mediaOriginalProblem(new Uint8Array(await upload.blob.arrayBuffer()), request.original.extension);
+        ctx.assertLive();
+        if (problem) throw new Error(problem);
+      }
+      hashes.set(upload.path, (await gitBlobSha(new Uint8Array(await upload.blob.arrayBuffer()))).slice(0, 8));
+      ctx.assertLive();
+    }
+    const plan = planMediaReplace({ ...input, versions: hashes });
+    for (const [file, source] of plan.edits) batch.edits.set(file, source);
+    const edited = { ...text, ...Object.fromEntries(plan.edits) };
+    const removed = [...plan.family];
+    for (const trim of plan.trims) {
+      const usage = wideUsage(trim.members, edited, ctx);
+      if (!trim.kept && !trim.members.some(member => usage[member].files.length)) {
+        removed.push(...trim.members); batch.deletes.push(...trim.members);
+      }
+    }
+    let next = await removedRecords(ctx, metadata, removed);
+    // Removal owns the old records. Copy the replacement record back from the independent plan.
+    next = { ...next, files: { ...next.files } };
+    if (plan.records.files[plan.main]) next.files[plan.main] = plan.records.files[plan.main];
+    for (const trim of plan.trims) if (next.files[trim.main]) next.files[trim.main] = plan.records.files[trim.main];
+    recordsEdit(batch, metadata, next);
+    batch.uploads.push(...plan.uploads);
+    batch.deletes.push(...plan.deletes);
+    batch.overwrites = plan.uploads.filter(upload => batch.expectedPaths.includes(upload.path)).map(upload => upload.path);
+    for (const upload of plan.uploads) if (!batch.expectedAssets.has(upload.path)) batch.expectedAssets.set(upload.path, versions.get(upload.path));
+    await commit(ctx, batch);
+    await sweep(ctx);
+    return plan.main;
+  };
   return {
     async describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }) {
       const ctx = active(), words = change.text?.trim();
@@ -543,6 +618,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     trim: trimCopy,
+    replace,
     async rename(path, name, options) {
       const ctx = active();
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));
@@ -627,5 +703,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { replace(request: MediaReplaceRequest): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }
