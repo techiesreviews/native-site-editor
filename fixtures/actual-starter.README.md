@@ -1,7 +1,8 @@
-Byte-identical snapshot of `native-site-editor-starter` at commit `238b4d6`
-on the starter's `dev` branch: media manager slice 37's Media chapter rules
-(folders and names, the editor's markup, adding settings) and the layout
-notes naming `media/<kind>/`, on top of `a4b2f44`, slice 22's Media chapter in
+Byte-identical snapshot of `native-site-editor-starter` at commit `0da3e59`
+on the starter's `dev` branch: media manager slice 45's Media chapter rules
+(shape, focus and trims), on top of `238b4d6`, slice 37's rules (folders and
+names, the editor's markup, adding settings) and the layout notes naming
+`media/<kind>/`, `a4b2f44`, slice 22's Media chapter in
 `AGENTS.md` (copied from the editor's conventions), and the shared
 media player and online video layer (`e51c83a`…`293a454`, media manager
 slices 60 and 61) and `3c3cce5`, the chapter's items-slot rule (an items slot
@@ -19,7 +20,7 @@ archive from a starter checkout (`<starter>`):
 
 ```sh
 find fixtures/actual-starter -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-git -C <starter> archive 238b4d6 | tar -x -C fixtures/actual-starter
+git -C <starter> archive 0da3e59 | tar -x -C fixtures/actual-starter
 ```
 
 When updating the snapshot, replace the commit in this provenance and command.

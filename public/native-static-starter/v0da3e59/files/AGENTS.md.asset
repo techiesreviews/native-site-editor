@@ -190,10 +190,17 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 - First-screen images are eager; the first large one gets `fetchpriority="high"`. Others get `loading="lazy"` with `sizes` starting `auto`. Replacing inside a `<picture>` removes its wrapper and sources.
 - Do not write or edit these attributes by hand on placed images, or hand-write `<img>` markup for a file in Media. Use place_media, which also keeps descriptions right.
 
+### Shape, focus and trims
+- frame_image with no changes reads a place's file, shape, focus point and trim.
+- A shape (Original, Square, 4:3, 16:9, Tall 4:5) and a focus point change only that place: inline `aspect-ratio`, `object-fit: cover` and `object-position`; nothing new is saved. Never hand-write these declarations on placed images; use frame_image.
+- Trim, zoom, turn, straighten or flip saves a Trimmed copy for that place only: a new file `<name>-crop.<ext>` (numbered) with its own copies, made from the site's own picture. Other places keep the original; the original never changes.
+- Re-cropping starts from the original with the earlier trim: give the whole new trim, not a delta. The earlier copy is removed when nothing else uses it. To show the whole original again, place_media the original file.
+- Trimmed copies are the only new pictures agents make; still never upload, fetch or generate.
+
 ### Adding settings
 - adding_settings reads and changes the site's Adding settings: picture, video and audio quality, and Keep original, remembered in `.editor/media.json` under `adding`.
 - Each change is an ordinary unsaved change the user can undo, listed as the agent's. Change settings only when the user asks or the task clearly needs it.
-- Settings apply to files the user adds later, never to files already in Media. Agents still never add media.
+- Settings apply to files the user adds later and to Trimmed copies; they never re-prepare files already in Media. Agents never bring in new media.
 
 ### Descriptions and Decorative
 - A file's Description (alt text) is written once and used by every new place; a place can have its own words. Changing the file's Description updates places that follow it, not places with their own words.
