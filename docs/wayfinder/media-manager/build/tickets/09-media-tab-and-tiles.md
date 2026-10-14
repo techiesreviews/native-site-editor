@@ -2,7 +2,7 @@
 title: Media tab replaces Images, with the Tiles grid
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-09 runner)
 blocked_by: [04-split-library-screens, 06-image-families]
 builder: claude
 phase: 1
