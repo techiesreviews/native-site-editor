@@ -127,6 +127,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [67 Online video records](tickets/67-online-video-records.md) | sol | 61, 62 |
 | [68 Online videos in the picker and Media](tickets/68-online-videos-in-picker.md) | claude | 67, 63 |
 | [69 Agents place video, loop, stills, subtitles](tickets/69-agents-video-audio.md) | sol | 64, 66, 68, 55 |
+| [91 The @actual "image in a selected Div drags itself" spec passes again](tickets/91-section-drop-actual.md) | claude | 55 |
 
 ### Phase 6: Improve images
 
