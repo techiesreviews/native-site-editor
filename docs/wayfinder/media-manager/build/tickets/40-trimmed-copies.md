@@ -1,7 +1,7 @@
 ---
 title: Trimmed copies
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-40 runner)
 blocked_by: [24-media-folders-and-names, 25-image-recipe, 05-media-records]
 builder: sol
