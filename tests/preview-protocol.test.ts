@@ -221,3 +221,20 @@ test("freshness: a press drag's start is a render, its later steps actions", () 
   assert.equal(FRESHNESS.ready, "lifecycle");
   assert.equal(Object.keys(FRESHNESS).length, Object.keys(cases).length);
 });
+
+test("image measurement validates the bounded page image list", () => {
+  const facts = cases["image-measured"].valid.report.facts;
+  const images = [{ node: [1, 0, 2], firstScreen: true, large: true }];
+  const reply = readFrameMessage(message("image-measured", { id: 1, report: { facts, images } }));
+  assert.deepEqual(reply?.type === "image-measured" && "facts" in reply.report && reply.report.images, images);
+  for (const bad of [[{ ...images[0], node: [-1] }], [{ ...images[0], large: "true" }], Array(1001).fill(images[0]), [{ ...images[0], node: Array(41).fill(0) }]]) {
+    assert.equal(readFrameMessage(message("image-measured", { id: 1, report: { facts, images: bad } })), undefined);
+  }
+});
+test("stand-in dimensions are positive finite bounded CSS dimensions", async () => {
+  const { validImageSize } = await import("../src/components/preview-protocol");
+  assert.equal(validImageSize(undefined), true);
+  assert.equal(validImageSize({ width: 1200, height: 600 }), true);
+  for (const bad of [null, false, "1200x600", [], {}]) assert.equal(validImageSize(bad), false);
+  for (const width of [0, -1, NaN, Infinity, 100001]) assert.equal(validImageSize({ width, height: 600 }), false);
+});

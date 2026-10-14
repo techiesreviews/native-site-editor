@@ -68,6 +68,8 @@ export interface MediaPlacement {
  * `url` in it. When new files are saved with it, `placed` turns true: the caller writes nothing more. */
 export interface MediaPathPlacement {
   path: string; source: string; stale?: string;
+  /** Keeps the instance selected after a page image is replaced. */
+  node?: number[];
   edit(url: string): string;
   placed?: boolean;
 }

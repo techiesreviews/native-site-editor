@@ -3,7 +3,7 @@ import { imageResult } from "../../src/page-builder/image-sizes";
 import { readFrameMessage } from "../../src/components/preview-protocol";
 import { HOST_SOURCE, FRAME_SOURCE } from "../../src/components/preview-wire";
 
-async function measure(page: Page, request: { path: string; node: number[] }) {
+async function measure(page: Page, request: { path: string; node: number[]; image?: { width: number; height: number } }) {
   // fixed-wait: Timeout bounds a missing protocol reply; the test resolves on the observable message, with no sleep.
   const raw = await page.evaluate(({ host, frame, request }) => new Promise<unknown>((resolve, reject) => {
     const preview = document.querySelector<HTMLIFrameElement>(".native-preview-frame");
@@ -150,4 +150,83 @@ test("the measuring copy places the image where the preview does, with an unfill
   await expect(card).toHaveCount(1);
   await expect.poll(() => card.evaluate((el) => Boolean(el.shadowRoot?.querySelector("[data-native-empty]")))).toBe(true);
   await matches([1, 0, 3]);
+});
+
+// Default fixture group. The picker prepares a raster with real responsive copies.
+test("placed hero and lower image use measured responsive markup and load on the canvas", { tag: "@smoke" }, async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const preview = page.frameLocator(".native-preview-frame"), hero = preview.locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html")!;
+    const at = source.indexOf("</body>");
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<style>#page .hero-image{box-sizing:content-box;width:200px;height:200px;padding:20px;object-fit:cover}.lower-image{width:80%;height:auto}</style><section style="margin-top:1500px"><img class="lower-image" src="/images/placeholder.svg"></section>' });
+  });
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 1800; canvas.height = 900;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let seed = 123;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = seed & 255; pixels.data[i + 1] = seed >>> 8 & 255; pixels.data[i + 2] = seed >>> 16 & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+  });
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  const choose = async (selector: string) => {
+    await preview.locator(selector).click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+    await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  };
+  await choose("img.hero-image");
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Markup.jpg", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") });
+  await expect(picker.getByRole("button", { name: "Choose Markup.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
+  const heroMarkup = () => source().then(text => text.match(/<img\b[^>]*class="hero-image"[^>]*>/)![0]);
+  // The content is 40,000px²; its rendered box including padding is 57,600px².
+  await expect.poll(heroMarkup).toContain('fetchpriority="high"');
+  expect(await heroMarkup()).toMatch(/srcset="[^"]+480w/);
+  expect(await heroMarkup()).toMatch(/sizes="(?!auto)[^"]+"/);
+  expect(await heroMarkup()).toContain('width="1800"'); expect(await heroMarkup()).toContain('height="900"');
+  expect(await heroMarkup()).not.toContain('loading=');
+  await expect.poll(() => hero.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const beforeLower = await source();
+  await choose("img.lower-image");
+  await picker.getByRole("button", { name: "Choose media/images/markup.webp", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  const lower = preview.locator("img.lower-image");
+  await expect(lower).toHaveAttribute("loading", "lazy"); await expect(lower).toHaveAttribute("sizes", /^auto, /);
+  await expect(lower).not.toHaveAttribute("fetchpriority");
+  await expect.poll(() => lower.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  // The browser selects a loaded responsive copy, rather than a failed repository URL.
+  await expect.poll(() => hero.evaluate(image => (image as HTMLImageElement).currentSrc)).toMatch(/^data:/);
+  await expect.poll(() => lower.evaluate(image => (image as HTMLImageElement).currentSrc)).toMatch(/^data:/);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(source).toBe(beforeLower);
+});
+
+
+test("measurement uses a new natural size and lists only the page's light DOM images", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const hero = page.frameLocator(".native-preview-frame").locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts"), text = editor.getMountedSource("index.html")!;
+    const at = text.indexOf("</body>");
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<style>#page .hero-image{width:300px;height:400px;object-fit:cover}</style>' });
+  });
+  await expect.poll(() => hero.evaluate(image => getComputedStyle(image).height)).toBe("400px");
+  const visibleSize = await hero.evaluate(image => (image as HTMLImageElement).naturalWidth);
+  const report = await measure(page, { path: "index.html", node: [1, 0, 2], image: { width: 1200, height: 300 } });
+  if ("error" in report) throw new Error(report.error);
+  expect(report.facts.every(fact => fact.naturalWidth === 1200 && fact.naturalHeight === 300)).toBe(true);
+  expect(imageResult(report.facts).sizes).toBe("1600px");
+  expect(report.images).toEqual([{ node: [1, 0, 2], firstScreen: true, large: true }]);
+  expect(await hero.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(visibleSize);
 });

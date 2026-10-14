@@ -74,7 +74,7 @@ export type HostMessage =
   | Host<"drop-probe", { id: number; x: number; y: number; moving: number[] | undefined; bands: boolean | undefined }>
   | Host<"patch-text", PatchText>
   | Host<"finish-typing", { id: number }>
-  | Host<"measure-image", { id: number; request: NativeNodeRequest }>
+  | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number } } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
   | Host<"theme", { focus: string; component: string }>
   | Host<"component-focus", { tag: string }>
@@ -313,7 +313,17 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
         if (!finite(fact.width) || fact.width < 0 || !finite(fact.height) || fact.height < 0 || !finite(fact.naturalWidth) || fact.naturalWidth <= 0 || !finite(fact.naturalHeight) || fact.naturalHeight <= 0 || typeof fact.fit !== "string") return undefined;
         return { viewport: fact.viewport, viewportHeight: fact.viewportHeight, top: fact.top, width: fact.width, height: fact.height, naturalWidth: fact.naturalWidth, naturalHeight: fact.naturalHeight, fit: fact.fit };
       });
-      return facts.every((fact) => fact !== undefined) ? { ...base(raw.type), id: raw.id, report: { facts } } : undefined;
+      let images: { node: number[]; firstScreen: boolean; large: boolean }[] | undefined;
+      if (report.images !== undefined) {
+        if (!Array.isArray(report.images) || report.images.length > 1000) return undefined;
+        images = [];
+        for (const entry of report.images) {
+          const item = object(entry);
+          if (!item || !Array.isArray(item.node) || !item.node.length || item.node.length > 40 || !item.node.every(index) || typeof item.firstScreen !== "boolean" || typeof item.large !== "boolean") return undefined;
+          images.push({ node: item.node, firstScreen: item.firstScreen, large: item.large });
+        }
+      }
+      return facts.every((fact) => fact !== undefined) ? { ...base(raw.type), id: raw.id, report: { facts, ...(images ? { images } : {}) } } : undefined;
     }
     case "inspect-result":
       return { ...base(raw.type), id: Number(raw.id), report: raw.report };
@@ -376,4 +386,10 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
     default:
       return undefined;
   }
+}
+
+/** A stand-in is optional; invalid dimensions must never enter the measuring document. */
+export function validImageSize(image: unknown): boolean {
+  const size = object(image);
+  return image === undefined || !!size && [size.width, size.height].every(value => finite(value) && value > 0 && value <= 100000);
 }

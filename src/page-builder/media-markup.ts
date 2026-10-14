@@ -1,33 +1,33 @@
 import { mediaFamilyOf, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
-import { decodeHtmlEntities } from "./html-entities";
 
 export interface MediaVariant { path: string; width: number }
 export interface MediaImage {
   path: string; width?: number; height?: number; alt: string; variants?: MediaVariant[];
 }
-export const DEFAULT_MEDIA_SIZES = "(max-width: 768px) 100vw, 960px";
-export const mediaEscape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-export const mediaUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join("/")}`;
+export interface MediaMeasured { sizes?: string; firstScreen: boolean; large: boolean; images: MediaPageImage[] }
+export interface MediaPageImage { node: number[]; firstScreen: boolean; large: boolean }
+export function mediaPriority(images: readonly MediaPageImage[]): number[] | undefined {
+  return [...images].sort((a, b) => {
+    for (let i = 0; i < Math.min(a.node.length, b.node.length); i++) if (a.node[i] !== b.node[i]) return a.node[i] - b.node[i];
+    return a.node.length - b.node.length;
+  }).find(image => image.firstScreen && image.large)?.node;
+}
+export function mediaPlacement(measured?: Pick<MediaMeasured, "sizes" | "firstScreen">, priority = false) {
+  const lazy = !measured?.firstScreen;
+  return { sizes: `${lazy ? "auto, " : ""}${measured?.sizes || "100vw"}`, lazy, priority: !lazy && priority };
+}
+export type MediaPlacement = ReturnType<typeof mediaPlacement>;
+export { mediaEscape, mediaUrl, mediaExistingAlt } from "./media-attributes";
+import { mediaEscape, mediaUrl } from "./media-attributes";
 
 export function mediaSrcset(image: MediaImage): string | undefined {
-  const variants = new Map((image.variants ?? []).filter((variant) => variant.width > 0 && (!image.width || variant.width < image.width)).map((variant) => [variant.width, variant.path]));
+  if (image.path.startsWith("media/originals/")) return undefined;
+  const variants = new Map((image.variants ?? []).filter((variant) => !variant.path.startsWith("media/originals/") && variant.width > 0 && !!image.width && variant.width < image.width).map((variant) => [variant.width, variant.path]));
   if (!variants.size) return undefined;
   if (image.width) variants.set(image.width, image.path);
   return [...variants].sort(([a], [b]) => a - b).map(([width, path]) => `${mediaUrl(path)} ${width}w`).join(", ");
-}
-
-/**
- * The alt text an existing `<img>` start tag holds, decoded (including an empty
- * value), or undefined when it has no alt attribute. A picker
- * replacing that image offers it first, so a written alt survives.
- */
-export function mediaExistingAlt(existing: string): string | undefined {
-  const tag = startTags(existing)[0];
-  if (!tag || tag.name !== "img") return undefined;
-  const attribute = startTagAttribute(existing, tag, "alt");
-  return attribute ? decodeHtmlEntities(attribute.value, true) : undefined;
 }
 
 /**
@@ -35,17 +35,21 @@ export function mediaExistingAlt(existing: string): string | undefined {
  * `keepAlt` leaves an existing alt attribute exactly as written (the picker
  * kept the page's alt unchanged), so its source is not re-escaped.
  */
-export function mediaImageMarkup(image: MediaImage, existing = "<img>", renderedWidth?: number, keepAlt = false): string {
+export function mediaImageMarkup(image: MediaImage, existing = "<img>", placement = mediaPlacement(), keepAlt = false): string {
   const tag = startTags(existing)[0];
   if (!tag || tag.name !== "img") throw new Error("Choose an image element to replace.");
   if (existing[tag.end - 1] !== ">") throw new Error("This image's opening tag is incomplete.");
   const srcset = mediaSrcset(image);
-  const sizes = renderedWidth && renderedWidth > 0 ? `(max-width: 768px) 100vw, ${Math.round(renderedWidth)}px` : DEFAULT_MEDIA_SIZES;
   const attributes: Record<string, string | undefined> = {
     src: mediaUrl(image.path), alt: image.alt, width: image.width ? String(image.width) : undefined,
-    height: image.height ? String(image.height) : undefined, loading: "lazy", decoding: "async", srcset, sizes: srcset ? sizes : undefined,
+    height: image.height ? String(image.height) : undefined, loading: placement.lazy ? "lazy" : undefined, fetchpriority: placement.priority ? "high" : undefined, decoding: "async", srcset, sizes: srcset ? placement.sizes : undefined,
   };
   if (keepAlt && startTagAttribute(existing, tag, "alt")) delete attributes.alt;
+  return mediaAttributes(existing, attributes);
+}
+
+export function mediaAttributes(existing: string, attributes: Record<string, string | undefined>): string {
+  const tag = startTags(existing)[0];
   const edits = Object.entries(attributes).flatMap(([name, value]) => {
     const attribute = startTagAttribute(existing, tag, name);
     if (attribute) return [{ start: attribute.start, end: attribute.end, text: value === undefined ? "" : ` ${name}="${mediaEscape(value)}"` }];

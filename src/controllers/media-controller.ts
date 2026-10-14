@@ -6,7 +6,8 @@ import type { NativeSite, NativeTextEdit } from "../../shared/native-project";
 import type { MediaWorkspaceContext, MediaWorkspaceBatch } from "../page-builder/media-workspace";
 import type { MediaPathPlacement, MediaPickerOptions } from "../page-builder/media-picker";
 type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")["mountMediaLibrary"]>;
-import { mediaExistingAlt, mediaUrl, type MediaImage } from "../page-builder/media-markup";
+import type { MediaImage } from "../page-builder/media-markup";
+import { mediaExistingAlt } from "../page-builder/media-attributes";
 import { locateNativeElementRange } from "../native-source-location";
 import { isImagePath } from "../native-structure";
 import { removedCopies, uploadImageType } from "../uploads";
@@ -27,6 +28,7 @@ export interface MediaModule {
   mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: import("../page-builder/media-picker").MediaCleanUpMount }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
+  measureImage?(path: string, node: number[], image: { width?: number; height?: number }): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
   usage?: MediaUsageCheckPorts;
   /** The clean-up count: where it is remembered (repository and branch) and the controls that show it. */
   cleanUp?: { place(): string; marks(): HTMLElement[] };
@@ -303,15 +305,8 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (!stamp.holds()) return undefined;
     return new Promise(resolve => {
       openMediaPicker({ accept: "image/*", place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
-        if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
-        if (cancelled() || !held) { resolve(cancelled() ? undefined : mediaUrl(image.path)); return; }
-        // Files added in the picker are saved with the value's placement, when it has one: one Undo step.
-        const saved = await held.save(placement && { path: placement.path, source: placement.source, stale: placement.stale,
-          live: () => !cancelled(), apply: paths => placement.edit(mediaUrl(held.image(paths).path)) });
-        if (placement && saved.placed) placement.placed = true;
-        if (saved.note) ports.announce(saved.note.trim());
-        // Cancelled while saving: the files are added, the value keeps what it had.
-        resolve(cancelled() && !saved.placed ? undefined : mediaUrl(held.image(saved.paths).path));
+        const { placeMediaPath } = await import("../page-builder/media-page-markup");
+        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve);
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });

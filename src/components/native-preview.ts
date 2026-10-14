@@ -1,3 +1,4 @@
+import { validImageSize } from "./preview-protocol";
 import { imageResult } from "../page-builder/image-sizes";
 import { samePreviewFiles } from "./preview-files";
 import type { DropReport } from "../page-builder/drop-report";
@@ -1157,13 +1158,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return answer.report;
     },
     /** Measure a rendered image without resizing the visible preview. */
-    async measureImage(request: NativeNodeRequest) {
+    async measureImage(request: NativeNodeRequest & { image?: { width: number; height: number } }) {
+      if (!validImageSize(request.image)) throw new Error("Invalid image size.");
       if (!frameState.active || !site || !frameState.ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
       const answer = await link.ask({ type: "measure-image", request }, 8000);
       if (!answer) throw new Error("The preview did not answer the image measurement.");
       if ("error" in answer.report) throw new Error(answer.report.error);
-      return imageResult(answer.report.facts);
+      return { ...imageResult(answer.report.facts), images: answer.report.images ?? [] };
     },
     /** Ends typing as Escape does: true once the runtime answered (after any text edit it posted). */
     finishTyping,

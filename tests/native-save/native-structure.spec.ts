@@ -107,7 +107,7 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await chooser.getByRole("button", { name: "Use image" }).click();
   await expect(page.locator("#status")).toHaveText("Image replaced");
   // The image's own alt ("Placeholder", written above) is kept.
-  await expect.poll(() => editorText(page, "#content")).toContain(`<img width="320" height="180" loading="lazy" decoding="async" class="hero-image" src="/images/studio-desk.svg" data-key="hero-image" alt="Placeholder">`);
+  await expect.poll(() => editorText(page, "#content")).toContain(`<img width="320" height="180" decoding="async" class="hero-image" src="/images/studio-desk.svg" data-key="hero-image" alt="Placeholder">`);
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
 
   // A written alt is kept; emptied, it is Not described yet (Decorative is

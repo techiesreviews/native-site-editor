@@ -2188,26 +2188,6 @@ const nativeMissingAssets = new Set<string>();
 const nativeAssetRequests = new Map<string, number>();
 let nativeAssetRequestId = 0;
 const NATIVE_FONT_WAIT_MS = 300;
-// The repository images and fonts `sources` name: `<img src>` in pages
-// (resolved against the page's path) and components (against the root, as a
-// root path), and `url()`s in stylesheets (against the stylesheet's path).
-function referencedAssets(sources: Record<string, string>) {
-  const out = new Set<string>();
-  const add = (from: string, url: string) => {
-    const path = resolveImportPath(from, url);
-    if (path && assetType(path)) out.add(path);
-  };
-  for (const [file, source] of Object.entries(sources)) {
-    if (file.endsWith(".css")) {
-      rewriteCssUrls(source, (url) => { add(file, url); return undefined; });
-      continue;
-    }
-    const from = nativePageRoute(file) ? file : "index.html";
-    for (const match of source.matchAll(/<img\b[^>]*?\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi))
-      add(from, (match[1] ?? match[2] ?? match[3] ?? "").trim());
-  }
-  return out;
-}
 // The sources of what the page `file` shows: the page, every component and
 // component stylesheet, and the stylesheets it links with their imports.
 function nativePageShownSources(site: NativeSite, file: string) {
@@ -2242,13 +2222,26 @@ async function readBlob(repo: string, sha: string, path?: string): Promise<Blob>
 }
 // Reads the assets `sources` name that are not read yet (only those `only`
 // keeps); `onProgress` runs as they arrive, in batches.
-async function loadNativeAssets(sources = nativeAssetSources(), onProgress = updateNativePreviewAssets, only: (path: string) => boolean = () => true) {
-  if (!appStore.repository.value || !appStore.snapshot.value) return;
+async function loadNativeAssets(sources = nativeAssetSources(), onProgress = updateNativePreviewAssets, only: (path: string) => boolean = () => true, fontsOnly = false) {
+  if (!appStore.repository.value || !appStore.snapshot.value || !Object.keys(sources).length) return;
   const repo = appStore.repository.value.full_name;
   const request = nativeSourcesRequest;
   const epoch = generation;
-  const wanted = [...referencedAssets(sources)].filter((path) =>
-    only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
+  const references = new Set<string>();
+  if (fontsOnly) {
+    // Font preloading precedes paint. The page-media scanner stays out of that boot path.
+    for (const [file, source] of Object.entries(sources)) if (file.endsWith(".css")) rewriteCssUrls(source, url => {
+      const path = resolveImportPath(file, url);
+      if (path) references.add(path);
+      return undefined;
+    });
+  } else {
+    const { scanMediaReferences } = await import("./page-builder/media-references");
+    if (epoch !== generation || request !== nativeSourcesRequest) return;
+    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source)) references.add(ref.path);
+  }
+  const wanted = [...references].filter((path) =>
+    assetType(path) && only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
   if (!wanted.length) return;
   const assetRequest = ++nativeAssetRequestId;
   wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
@@ -2390,6 +2383,8 @@ function mediaOrigins() {
 
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
 const mediaController = createMediaController({
+  measureImage: (path, node, image) => nativePreview && nativeSite?.routes[nativePreview.shownRoute() ?? ""] === path
+    ? nativePreview.measureImage({ path, node, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
   origins: mediaOrigins,
   usage: {
     key: () => nativeTextIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: nativeFiles,
@@ -2746,7 +2741,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     // fallback font first; images never hold the page back: they are read
     // after it is drawn and shown in place (see nativeAssets).
     await Promise.race([
-      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (nativeSite === site) updateNativePreviewAssets(); }, (path) => isFontType(assetType(path))).catch(() => undefined),
+      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (nativeSite === site) updateNativePreviewAssets(); }, (path) => isFontType(assetType(path)), true).catch(() => undefined),
       new Promise((resolve) => setTimeout(resolve, NATIVE_FONT_WAIT_MS)),
     ]);
     if (!live()) return true;

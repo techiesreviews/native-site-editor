@@ -1,7 +1,8 @@
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { Stamp } from "../guarded-edit";
 import type { MediaWorkspaceContext } from "./media-workspace";
-import { mediaImageMarkup, type MediaImage } from "./media-markup";
+import { mediaImageMarkup, type MediaMeasured, type MediaImage } from "./media-markup";
+import { mediaPageEdits } from "./media-page-markup";
 import type { MediaHeldFiles } from "./media-picker";
 import { locateNativeElementRange } from "../native-source-location";
 
@@ -24,6 +25,9 @@ export async function placeMediaImage(
   ]);
   const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
   ctx.assertLive();
+  let measured: MediaMeasured | undefined;
+  try { measured = await ports.measureImage?.(target.path, target.node, image); } catch { /* Measurement failure must never block placement. */ }
+  ctx.assertLive();
   const latest = ports.source(target.path);
   const range = latest === undefined ? undefined : locate(latest, target.node);
   // The alt decision rests on the records read: a newer records draft refuses, as a newer page does.
@@ -34,10 +38,14 @@ export async function placeMediaImage(
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
+  const pageRules = mediaPageEdits(latest, measured, target.node, locate);
   // Page places use the rules below; picker alt defaults belong to component and settings fields.
   const swap = (alt: string | undefined, picked = image) => {
-    const markup = mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, target.width, alt === undefined);
-    return { markup, page: latest.slice(0, range.tag.start) + markup + latest.slice(range.tag.end) };
+    const markup = mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, pageRules.placement, alt === undefined);
+    const edits = [...pageRules.edits, { start: range.tag.start, end: range.tag.end, text: markup }];
+    let page = latest;
+    for (const edit of edits.sort((a, b) => b.start - a.start)) page = page.slice(0, edit.start) + edit.text + page.slice(edit.end);
+    return { markup, page, edits };
   };
   // Files added in the picker are saved with the placement and its records: one Undo step.
   if (held) {
@@ -52,13 +60,13 @@ export async function placeMediaImage(
   }
   // Whether the old file stays on the page does not depend on the alt, only on the new src.
   const after = rules.swapPlaceImage(records, target.path, from, image.path, initialAlt, swap(undefined).page);
-  const { markup, page } = swap(after.alt);
+  const { page, edits } = swap(after.alt);
   // Cancel while the records were read: the placement stays.
   if (cancelled()) return;
   // Agent decoding captures the file revision before its first await.
   if (proof.asset && ctx.assetVersion(proof.asset.path) !== proof.asset.version) throw new Error("The image changed while preparing placement. Try again.");
   if (after.records === records || !readable) {
-    if (!ports.change(target.path, latest, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
+    if (!ports.change(target.path, latest, edits, target.node, "Image replaced")) throw new Error("The image could not be replaced.");
     return;
   }
   await ctx.applyBatch({ label: "Image replaced", expectedPaths: ctx.paths,

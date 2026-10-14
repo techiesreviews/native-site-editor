@@ -147,6 +147,11 @@ import { domView } from "../page-builder/rules/tree.ts";
     return key in assetUrls ? assetUrls[key] : null;
   }
   function resolveAssets(fragment) {
+    fragment.querySelectorAll("img[srcset],source[srcset]").forEach(function (el) {
+      el.setAttribute("srcset", el.getAttribute("srcset").replace(/([^,\s]+)(\s+[^,]+)?/g, function (all, url, descriptor) {
+        return (assetFor(url) || url) + (descriptor || "");
+      }));
+    });
     fragment.querySelectorAll("img[src]").forEach(function (el) {
       var url = assetFor(el.getAttribute("src"));
       if (url) el.setAttribute("src", url);
@@ -164,10 +169,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     var roots = [pageEl].concat(Array.from(shadowRoots));
     roots.forEach(function (root) {
       if (!root) return;
-      root.querySelectorAll("img[src]").forEach(function (el) {
-        var url = assetFor(el.getAttribute("src"));
-        if (url) el.setAttribute("src", url);
-      });
+      resolveAssets(root);
     });
   }
 
@@ -3361,6 +3363,12 @@ import { domView } from "../page-builder/rules/tree.ts";
       sheets(document, config.sheets[0]);
       visit(document);
       if (!target) throw new Error("The image could not be cloned.");
+      if (config.image) {
+        if (target.parentElement.localName === "picture") target.parentElement.querySelectorAll("source").forEach(function (source) { source.remove(); });
+        target.removeAttribute("srcset"); target.removeAttribute("sizes");
+        target.width = config.image.width; target.height = config.image.height;
+        target.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + config.image.width + '" height="' + config.image.height + '"/>');
+      }
       window.addEventListener("message", function (event) {
         var msg = event.data || {};
         if (event.source !== parent || msg.source !== HOST_SOURCE || msg.type !== "measure-image") return;
@@ -3385,7 +3393,12 @@ import { domView } from "../page-builder/rules/tree.ts";
             }
             if (!rect.width && !rect.height) { w = 0; h = 0; }
             if (!isFinite(w) || !isFinite(h)) throw new Error("The image content box could not be measured.");
-            answer({ facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
+            var pageImages = [];
+            if (innerWidth === 390 || innerWidth === 1280) document.querySelectorAll("img[data-native-measure-node]").forEach(function (image) {
+              var box = image.getBoundingClientRect(), first = box.top >= 0 && box.top < innerHeight && box.width > 0 && box.height > 0;
+              pageImages.push({ node: JSON.parse(image.getAttribute("data-native-measure-node")), firstScreen: first, large: first && box.width * box.height >= 50000 });
+            });
+            answer({ images: pageImages, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
           } catch (error) { answer({ error: String(error && error.message || error) }); }
         }
         read();
@@ -3406,7 +3419,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       // Stamp the render we cloned, even if a new render arrived meanwhile.
       emit("image-measured", { id: msg.id, context: context, report: report });
     }
-    var widths, facts = [], at = 0;
+    var widths, facts = [], pageImages = [], at = 0;
     function next() {
       if (state.context !== context) { finish({ error: "The preview changed during image measurement." }); return; }
       frame.style.setProperty("width", widths[at] + "px", "important");
@@ -3422,10 +3435,16 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (data.type !== "image-measured" || data.id !== msg.id) return;
       if (data.report.error) { finish(data.report); return; }
       facts.push(data.report.facts[0]);
-      if (++at === widths.length) finish({ facts: facts });
+      (data.report.images || []).forEach(function (image, i) {
+        if (!pageImages[i]) pageImages[i] = image;
+        else { pageImages[i].firstScreen = pageImages[i].firstScreen || image.firstScreen; pageImages[i].large = pageImages[i].large || image.large; }
+      });
+      if (++at === widths.length) finish({ facts: facts, images: pageImages });
       else next();
     }
     try {
+      var standin = msg.request.image;
+      if (standin !== undefined && (!standin || Array.isArray(standin) || !Number.isFinite(standin.width) || standin.width <= 0 || standin.width > 100000 || !Number.isFinite(standin.height) || standin.height <= 0 || standin.height > 100000)) throw new Error("Invalid image size.");
       var target = resolveNodePath(msg.request);
       if (!target || target.localName !== "img") throw new Error("No image at the requested node.");
       var conditions = [], seen = new Set(), ruleCount = 0;
@@ -3466,6 +3485,7 @@ import { domView } from "../page-builder/rules/tree.ts";
         return index;
       }
       adopted(document);
+      var originals = Array.prototype.slice.call(pageEl.querySelectorAll("img")).slice(0, 1000);
       function clone(from) {
         if (from.nodeType === 1 && (from.localName === "script" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
         var to = doc.importNode(from, false);
@@ -3473,7 +3493,10 @@ import { domView } from "../page-builder/rules/tree.ts";
           Array.prototype.slice.call(to.attributes).forEach(function (attr) {
             if (/^on/i.test(attr.name) || attr.name === "contenteditable" || /^data-native-measure-/.test(attr.name)) to.removeAttribute(attr.name);
           });
-          if (to.localName === "img") to.loading = "eager";
+          if (to.localName === "img") {
+            to.loading = "eager";
+            if (originals.indexOf(from) >= 0) to.setAttribute("data-native-measure-node", JSON.stringify(elementIndexPath(from)));
+          }
           // An embed keeps its box (it can push the image below the fold) but loads nothing.
           if (to.localName === "iframe") {
             to.removeAttribute("src");
@@ -3511,7 +3534,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       var config = doc.createElement("script");
       config.id = "ase-image-measure";
       config.type = "application/json";
-      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources }).replace(/</g, "\\u003c");
+      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin }).replace(/</g, "\\u003c");
       doc.head.appendChild(config);
       var script = doc.createElement("script");
       script.src = runtimeUrl;

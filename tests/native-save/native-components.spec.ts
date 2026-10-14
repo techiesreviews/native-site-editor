@@ -429,7 +429,10 @@ test("Choose image… places the picked file on the instance that opened the pic
   await expect(picker).toHaveCount(0);
   expect(await editorText(page)).toBe(before);
   await (await chooseImage(page)).getByRole("button", { name: "Use image", exact: true }).click();
-  await expect.poll(() => editorText(page)).toContain(`<media-card data-key="first">\n    <img slot="image" src="/images/studio-desk.svg" alt="Placeholder">\n  </media-card>\n  <media-card data-key="second"></media-card>`);
+  await expect.poll(() => editorText(page)).toMatch(/<media-card data-key="first">\s*<img\b[^>]*slot="image"[^>]*src="\/images\/studio-desk.svg"[^>]*alt="Placeholder"[^>]*>\s*<\/media-card>\s*<media-card data-key="second"><\/media-card>/);
+  await expect(frame(page).locator('media-card[data-key="first"] > img')).toHaveAttribute("width", "320");
+  await expect(frame(page).locator('media-card[data-key="first"] > img')).toHaveAttribute("height", "180");
+  expect(await storedDraft(page, "components/media-card/media-card.html")).toBeUndefined();
 });
 
 for (const action of ["delete", "reorder"] as const) {

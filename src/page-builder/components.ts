@@ -1231,7 +1231,7 @@ export function createComponentTools(deps: ComponentDeps) {
       if (!target) return;
       const stale = "The instance changed while the image was chosen; it was not replaced.";
       // A file added in the picker is saved with this slot's address: one Undo step.
-      const placement: MediaPathPlacement | undefined = target.source === undefined ? undefined : { path: target.path, source: target.source, stale, edit(url) {
+      const placement: MediaPathPlacement | undefined = target.source === undefined ? undefined : { path: target.path, source: target.source, node: [...target.node], stale, edit(url) {
         const at = instanceAt(target.path, target.node), current = at?.slots.find(entry => entry.name === slot.name);
         const edit = at && current && at.tag === target.tag && at.source === target.source ? slotAttributeEdit(at, current, "src", url) : undefined;
         if (!at || !edit) throw new Error(stale);
@@ -1904,7 +1904,7 @@ export function createComponentTools(deps: ComponentDeps) {
               if (closed || !read(initial.source, proof)) return false;
               const stale = "The instance changed while the image was chosen; it was not replaced.";
               // A file added in the picker is saved with this slot's address: one Undo step.
-              const placement: MediaPathPlacement = { path, source: initial.source, stale, edit(url) {
+              const placement: MediaPathPlacement = { path, source: initial.source, node: [...initial.node], stale, edit(url) {
                 const current = !closed && read(initial.source, proof, stale);
                 const problem = nativeElementUrlProblem(url, ["http", "https"], false);
                 if (problem) throw new Error(problem);

@@ -359,3 +359,38 @@ test("agent placement holds its page and decoded file proof across lazy reads", 
   ), /image changed while preparing/);
   assert.equal(asset.changes.length, 0);
 });
+
+test("placement uses the new file measurement and adjusts page priority in the same change", async () => {
+  const seen: unknown[] = [], written: Parameters<MediaControllerPorts["change"]>[2][] = [];
+  const f = fixture({
+    measureImage: async (...args) => { seen.push(args); return { sizes: "650px", firstScreen: true, large: true, images: [{ node: [0, 1], firstScreen: false, large: false }] }; },
+    locateElement: (source, node) => { const tag = startTags(source).filter(tag => tag.name === "img")[node[1]]; return tag && { tag }; },
+    change: (_path, _source, edits) => { written.push(edits); return true; },
+  });
+  f.sources.set("index.html", '<section><img src="/images/old.png" alt="Old alt"><img fetchpriority="high" loading="lazy" class="other"></section>');
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await f.pick()!.onPick!({ path: "images/new.png", width: 1200, height: 600, alt: "", variants: [{ path: "images/new-480.png", width: 480 }] }, () => false);
+  assert.equal(seen.length, 1); assert.deepEqual(seen[0], ["index.html", [0, 0], { path: "images/new.png", width: 1200, height: 600, alt: "", variants: [{ path: "images/new-480.png", width: 480 }] }]);
+  assert.equal(written.length, 1); assert.equal(written[0].length, 2);
+  const target = written[0].find(edit => edit.text.includes('src="/images/new.png"'))!;
+  assert.match(target.text, /sizes="650px"/); assert.match(target.text, /fetchpriority="high"/); assert.doesNotMatch(target.text, /loading=/);
+  const other = written[0].find(edit => edit.text.includes('class="other"'))!;
+  assert.match(other.text, /loading="lazy"/); assert.doesNotMatch(other.text, /fetchpriority/);
+});
+test("failed measurement places with lazy auto fallback", async () => {
+  const f = fixture({ measureImage: async () => { throw new Error("timeout"); } });
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await f.pick()!.onPick!({ path: "images/new.png", width: 1200, height: 600, alt: "", variants: [{ path: "images/new-480.png", width: 480 }] }, () => false);
+  assert.match(f.changes[0], /sizes="auto, 100vw"/); assert.match(f.changes[0], /loading="lazy"/); assert.doesNotMatch(f.changes[0], /fetchpriority/);
+});
+for (const changed of ["page", "records", "repository"] as const) test(`measurement await rechecks ${changed} proof`, async () => {
+  const f = fixture({ measureImage: async () => {
+    if (changed === "page") f.sources.set("index.html", "new page");
+    if (changed === "records") f.sources.set(".editor/media.json", "new records");
+    if (changed === "repository") f.bump();
+    return undefined;
+  } });
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await assert.rejects(f.pick()!.onPick!({ path: "images/new.png", alt: "" }, () => false), /changed/);
+  assert.equal(f.changes.length, 0);
+});

@@ -4,10 +4,10 @@ import { mediaImageMarkup, mediaSrcset, mediaVariantName, mediaVariants } from "
 
 test("image insertion preserves unrelated source and escapes alt while adding responsive dimensions", () => {
   const existing = '<img class="portrait" data-key="hero" src="old.png" alt="Old" width="99" style="object-fit:cover" slot="photo">';
-  const next = mediaImageMarkup({ path: "images/tea & cake.png", width: 1200, height: 800, alt: 'Café & "tea" <cup>', variants: [{ path: "images/tea-480w.png", width: 480 }] }, existing, 700);
+  const next = mediaImageMarkup({ path: "images/tea & cake.png", width: 1200, height: 800, alt: 'Café & "tea" <cup>', variants: [{ path: "images/tea-480w.png", width: 480 }] }, existing, { sizes: "auto, 700px", lazy: true, priority: false });
   assert.ok(next.includes('class="portrait"')); assert.ok(next.includes('data-key="hero"')); assert.ok(next.includes('slot="photo"')); assert.ok(next.includes('style="object-fit:cover"'));
   assert.ok(next.includes('src="/images/tea%20%26%20cake.png"')); assert.ok(next.includes('alt="Café &amp; &quot;tea&quot; &lt;cup&gt;"'));
-  assert.ok(next.includes('width="1200"')); assert.ok(next.includes('height="800"')); assert.ok(next.includes('sizes="(max-width: 768px) 100vw, 700px"'));
+  assert.ok(next.includes('width="1200"')); assert.ok(next.includes('height="800"')); assert.ok(next.includes('sizes="auto, 700px"'));
   assert.ok(next.includes('loading="lazy"')); assert.ok(next.includes('decoding="async"'));
   assert.throws(() => mediaImageMarkup({ path: "a.png", alt: "" }, "<video>"), /Choose an image/);
 });

@@ -1,3 +1,5 @@
+import { startTags } from "../../shared/html-source";
+import { decodeHtmlEntities } from "./html-entities";
 import type { StartTag, TagAttribute } from "../../shared/html-source";
 
 /** Attribute scan that never matches a name inside another quoted attribute value. */
@@ -32,4 +34,20 @@ export function mediaAttribute(source: string, tag: StartTag, wanted: string): T
     if (name === wanted.toLowerCase()) return { start, end: at, valueStart, valueEnd, value: source.slice(valueStart, valueEnd) };
   }
   return undefined;
+}
+
+export const mediaEscape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const mediaUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join("/")}`;
+
+
+/**
+ * The alt text an existing `<img>` start tag holds, decoded (including an empty
+ * value), or undefined when it has no alt attribute. A picker
+ * replacing that image offers it first, so a written alt survives.
+ */
+export function mediaExistingAlt(existing: string): string | undefined {
+  const tag = startTags(existing)[0];
+  if (!tag || tag.name !== "img") return undefined;
+  const attribute = mediaAttribute(existing, tag, "alt");
+  return attribute ? decodeHtmlEntities(attribute.value, true) : undefined;
 }

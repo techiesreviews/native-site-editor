@@ -88,7 +88,7 @@ test("first screen checks only phone and desktop, with an exclusive fold boundar
 
 test("host result uses cover widths for sizes and first-screen facts for loading order", () => {
   assert.deepEqual(imageResult([390, 768, 1280].map((viewport) => ({ viewport, viewportHeight: 800, top: 100, width: 300, height: 400, naturalWidth: 1200, naturalHeight: 600, fit: "cover" }))), {
-    sizes: "800px", widths: [390, 768, 1280].map((viewport) => ({ viewport, width: 800 })), firstScreen: true,
+    sizes: "800px", widths: [390, 768, 1280].map((viewport) => ({ viewport, width: 800 })), firstScreen: true, large: true,
   });
 });
 

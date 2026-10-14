@@ -1,7 +1,7 @@
 /** Widths are CSS pixels, independent of the visitor's device pixel ratio. */
 export type ImageWidth = { viewport: number; width: number };
 export type ImageFact = { viewport: number; viewportHeight: number; top: number; width: number; height: number; naturalWidth: number; naturalHeight: number; fit: string };
-export type ImageReport = { facts: ImageFact[] } | { error: string };
+export type ImageReport = { facts: ImageFact[]; images?: { node: number[]; firstScreen: boolean; large: boolean }[] } | { error: string };
 
 // The first integer viewport on the upper side of `width <op> n`.
 const UPPER: Record<string, (n: number) => number> = { ">": (n) => Math.floor(n) + 1, ">=": Math.ceil, "<": Math.ceil, "<=": (n) => Math.floor(n) + 1 };
@@ -94,7 +94,7 @@ export function imageFirstScreen(facts: readonly { viewport: number; viewportHei
   return facts.some(({ viewport, viewportHeight, top }) => (viewport === 390 || viewport === 1280) && Number.isFinite(top) && Number.isFinite(viewportHeight) && viewportHeight > 0 && top >= 0 && top < viewportHeight);
 }
 
-export function imageResult(facts: readonly ImageFact[]): { sizes: string | undefined; widths: ImageWidth[]; firstScreen: boolean } {
+export function imageResult(facts: readonly ImageFact[]): { sizes: string | undefined; widths: ImageWidth[]; firstScreen: boolean; large: boolean } {
   const widths = facts.map((fact) => ({ viewport: fact.viewport, width: imageWidth(fact.width, fact.height, fact.naturalWidth, fact.naturalHeight, fact.fit) }));
-  return { sizes: imageSizes(widths), widths, firstScreen: imageFirstScreen(facts) };
+  return { sizes: imageSizes(widths), widths, firstScreen: imageFirstScreen(facts), large: facts.some(fact => imageFirstScreen([fact]) && fact.width * fact.height >= 50000) };
 }
