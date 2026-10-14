@@ -2,7 +2,7 @@
 title: HEIC, SVG and PNG
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-29 runner)
 blocked_by: [25-image-recipe]
 builder: sol
 phase: 2
