@@ -3367,7 +3367,12 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
       if (config.style !== undefined) target.setAttribute("style", config.style);
       if (config.image) {
-        if (target.parentElement.localName === "picture") target.parentElement.querySelectorAll("source").forEach(function (source) { source.remove(); });
+        // Placing a new picture unwraps a <picture> (slice 34): measure the plain image in its place.
+        var wrapper = target.parentElement;
+        if (wrapper && wrapper.localName === "picture") {
+          if (!target.hasAttribute("slot") && wrapper.hasAttribute("slot")) target.setAttribute("slot", wrapper.getAttribute("slot"));
+          wrapper.replaceWith(target);
+        }
         target.removeAttribute("srcset"); target.removeAttribute("sizes");
         target.width = config.image.width; target.height = config.image.height;
         target.src = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="' + config.image.width + '" height="' + config.image.height + '"/>');

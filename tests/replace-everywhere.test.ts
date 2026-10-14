@@ -298,3 +298,10 @@ test("a picture showing another file stays wrapped while its family source is re
   assert.equal(p.edits.get("index.html"), `<picture slot="hero"><source srcset="/${copy}?v=${await copyHash} 480w"><img src="/media/other.jpg"></picture>`);
   assert.deepEqual(p.artDirected, []);
 });
+test("Replace everywhere cleans up an art-directed picture inside template content", async () => {
+  const p = await plan({ "index.html": `<template id="later"><div><picture><source media="(max-width: 600px)" srcset="/media/phone.avif"><img class="hero" src="/${path}"></picture></div></template>` });
+  const page = p.edits.get("index.html")!;
+  assert.doesNotMatch(page, /<picture|<source/);
+  assert.ok(page.includes(`<div><img class="hero" src="/${path}?v=${await mainHash}"></div>`));
+  assert.deepEqual(p.artDirected, ["index.html"]);
+});

@@ -290,3 +290,28 @@ test("picker replacement removes picture sources, keeps image class, and one Und
   await expect.poll(source).toBe(before);
   await expect(preview.locator("picture > img.hero-image")).toBeVisible();
 });
+
+// Default fixture group. Placing unwraps a <picture>, so the measuring copy measures the image without it.
+test("measuring a new picture for an image inside a narrow picture measures it unwrapped", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const preview = page.frameLocator(".native-preview-frame"), hero = preview.locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts"), text = editor.getMountedSource("index.html")!;
+    const at = text.indexOf("</body>");
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: "<style>#page .hero-image{width:100%;height:auto}</style>" });
+    const source = editor.getMountedSource("index.html")!, image = source.match(/<img\b[^>]*class="hero-image"[^>]*>/)![0], start = source.indexOf(image);
+    editor.replaceActiveRange({ path: "index.html", start, end: start + image.length, expected: image,
+      text: `<picture style="display:block;width:100px"><source media="(max-width: 1px)" srcset="/images/placeholder.svg">${image}</picture>` });
+  });
+  await expect(preview.locator("picture > img.hero-image")).toBeVisible();
+  await expect.poll(() => hero.evaluate(image => parseFloat(getComputedStyle(image).width))).toBe(100);
+  const wrapped = await measure(page, { path: "index.html", node: [1, 0, 2, 1] });
+  if ("error" in wrapped) throw new Error(wrapped.error);
+  expect(imageResult(wrapped.facts).widths.every(({ width }) => width === 100)).toBe(true);
+  const report = await measure(page, { path: "index.html", node: [1, 0, 2, 1], image: { width: 1800, height: 900 } });
+  if ("error" in report) throw new Error(report.error);
+  expect(imageResult(report.facts).widths.every(({ width }) => width > 100)).toBe(true);
+  await expect(preview.locator("picture > img.hero-image")).toBeVisible();
+});

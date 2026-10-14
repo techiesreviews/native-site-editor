@@ -1,6 +1,6 @@
 import { mediaPictureUnwrap, mediaEscape } from "./media-markup";
 import { readSource } from "./source-tree";
-import { startTags, startTagAttribute } from "../../shared/html-source";
+import { elementEnd, startTags, startTagAttribute } from "../../shared/html-source";
 import type { MediaRecords } from "../../shared/media-records";
 import { declarationRanges } from "../styles-index";
 import { editNativeRedirects } from "../native-page-moves";
@@ -123,18 +123,19 @@ export function planMediaReplace(input: ReplaceInput) {
   for (const [file, references] of refs) {
     if (!/\.html?$/i.test(file)) continue;
     const source = sources[file]!, edits: Edit[] = [];
-    const tree = readSource(source), removed: Edit[] = [];
-    for (const element of tree.elements()) {
-      if (element.type !== "element" || element.name !== "img" || element.parent?.name !== "picture") continue;
-      const shown = references.find(ref => ref.start >= element.tag.start && ref.end <= element.tag.end && ["src", "data-src", "srcset", "data-srcset"].includes(ref.attribute ?? ""));
-      if (!shown) continue;
-      const range = tree.range(element), picture = tree.range(element.parent);
-      const unwrap = range && mediaPictureUnwrap(source, range, picture);
-      if (!unwrap) continue;
+    // Start tags, not the tree, so pictures inside <template> content are cleaned up too.
+    const tags = startTags(source), removed: Edit[] = [];
+    tags.forEach((tag, index) => {
+      const picture = tag.name === "picture" ? elementEnd(source, tags, index, source.length) : undefined;
+      const inner = picture && readSource(source, { from: picture.tag.end, to: picture.close?.start ?? picture.end });
+      const image = inner?.children().find(child => child.type === "element" && child.name === "img"), range = image && inner!.range(image);
+      if (!range || !references.some(ref => ref.start >= range.tag.start && ref.end <= range.tag.end && ["src", "data-src", "srcset", "data-srcset"].includes(ref.attribute ?? ""))) return;
+      const unwrap = mediaPictureUnwrap(source, range, picture);
+      if (!unwrap) return;
       removed.push(...unwrap.edits);
-      if (unwrap.slot !== undefined) edits.push({ start: element.tag.nameEnd, end: element.tag.nameEnd, text: ` slot="${mediaEscape(unwrap.slot)}"` });
+      if (unwrap.slot !== undefined) edits.push({ start: range.tag.nameEnd, end: range.tag.nameEnd, text: ` slot="${mediaEscape(unwrap.slot)}"` });
       if (unwrap.artDirected && !artDirected.includes(file)) artDirected.push(file);
-    }
+    });
     edits.push(...removed);
     const tokens = scanMediaUrlTokens(file, source);
     for (const tag of startTags(source)) {
