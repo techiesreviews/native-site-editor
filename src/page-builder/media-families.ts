@@ -14,6 +14,20 @@ const stem = (path: string) => path.replace(/\.[^./]+$/, "");
 const base = (path: string) => stem(path).slice(stem(path).lastIndexOf("/") + 1);
 const extension = (path: string) => path.slice(stem(path).length);
 
+function responsiveCopyName(path: string): { stem: string; width: number } | undefined {
+  const match = /^(.*)-([1-9][0-9]*)(w?)$/.exec(stem(path));
+  if (!match) return;
+  const width = Number(match[2]);
+  // Bare numbers are copies only at generated widths; "w" allows any positive width.
+  if (!Number.isSafeInteger(width) || (!match[3] && !(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(width))) return;
+  return { stem: match[1], width };
+}
+
+/** An image outside `media/originals/` named like a responsive copy, whether or not its main exists. */
+export function isResponsiveCopyName(path: string): boolean {
+  return imageExtension.test(path) && !originalPath(path) && responsiveCopyName(path) !== undefined;
+}
+
 export function mediaFamilies(paths: string[]): MediaFamily[] {
   const images = [...new Set(paths)].filter(path => !originalPath(path) && imageExtension.test(path));
   const families = new Map<string, MediaFamily>(images.map(main => [main, { main, copies: [], originals: [] }]));
@@ -21,17 +35,13 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
   for (const path of images) byStem.set(stem(path), [...(byStem.get(stem(path)) ?? []), path]);
   // Shorter stems are resolved first, so an attached copy cannot claim another copy.
   for (const path of [...images].sort((a, b) => stem(a).length - stem(b).length)) {
-    const match = /^(.*)-([1-9][0-9]*)(w?)$/.exec(stem(path));
-    if (!match) continue;
-    const width = Number(match[2]);
-    // A bare number is a copy only at a copy width; any other is a conflict number or part of
-    // the name (`photo-2`, `report-2024`). Widths with "w" can be any positive integer.
-    if (!Number.isSafeInteger(width) || (!match[3] && !(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(width))) continue;
-    const candidates = (byStem.get(match[1]) ?? []).filter(main => families.has(main));
+    const copy = responsiveCopyName(path);
+    if (!copy) continue;
+    const candidates = (byStem.get(copy.stem) ?? []).filter(main => families.has(main));
     const sameExtension = candidates.find(main => extension(main).toLowerCase() === extension(path).toLowerCase());
     const main = sameExtension ?? (candidates.length === 1 ? candidates[0] : undefined);
     if (!main) continue;
-    families.get(main)!.copies.push({ path, width });
+    families.get(main)!.copies.push({ path, width: copy.width });
     families.delete(path);
   }
   const byBase = new Map<string, MediaFamily[]>();

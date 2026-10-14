@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
+import { isResponsiveCopyName, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
 import { mediaVariants } from "../src/page-builder/media-markup";
+
+test("responsive copy names share the family width rule", () => {
+  for (const path of ["images/photo-480w.webp", "photo-1w.jpg", "photo-1200w.png", "photo-480.webp", "photo-960.webp", "photo-1600.webp"]) {
+    assert.equal(isResponsiveCopyName(path), true, path);
+  }
+  for (const path of ["photo.jpg", "photo-2.webp", "report-2024.png", "photo-0w.jpg", "photo-0480.jpg", "photo-0480w.jpg", "photo-9007199254740992w.jpg", "folder-480w/photo.jpg", "docs/report-480.pdf", "media/originals/photo-480w.webp"]) {
+    assert.equal(isResponsiveCopyName(path), false, path);
+  }
+});
 
 test("both responsive names join a main and sort by width", () => {
   const paths = ["images/photo.jpg", "images/photo-960.webp", "images/photo-480w.webp", "images/photo-0w.jpg", "images/photo-0480.jpg"];
