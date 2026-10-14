@@ -1,3 +1,4 @@
+import { mediaKind } from "../../shared/agent";
 export interface MediaFamily {
   main: string;
   copies: { path: string; width: number }[];
@@ -18,8 +19,8 @@ export const RESPONSIVE_COPY_WIDTHS = [480, 960, 1600] as const;
 const imageExtension = /\.(?:svg|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|heif)$/i;
 const originalPath = (path: string) => /^media\/originals\//i.test(path);
 // Videos and PDFs own a still picture; videos and audio own subtitles (ticket 12 "Connecting details").
-const stillOwner = /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi|pdf)$/i;
-const subtitlesOwner = /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi|mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i;
+const stillOwner = { test: (path: string) => mediaKind(path) === "video" || /\.pdf$/i.test(path) };
+const subtitlesOwner = { test: (path: string) => mediaKind(path) === "video" || mediaKind(path) === "audio" };
 const subtitlesFile = /\.(?:vtt|srt)$/i;
 const stem = (path: string) => path.replace(/\.[^./]+$/, "");
 const base = (path: string) => stem(path).slice(stem(path).lastIndexOf("/") + 1);

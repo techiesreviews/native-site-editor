@@ -5,7 +5,7 @@ import type { MovableFile } from "../file-changes";
 import { gitBlobSha, removedCopies, uploadBytes, uploadKey, type UploadBytes } from "../uploads";
 import { isRenamableMedia } from "./media-names";
 import { isAgentMediaPath } from "../agent-media";
-import { mediaFamilyOf } from "./media-families";
+import { familyMembers, mediaFamilyOf } from "./media-families";
 import * as records from "../../shared/media-records";
 
 type RemovalPlan = { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } | { refuse: string };
@@ -37,16 +37,19 @@ export async function filesRemovalPlan(ports: FileOperationsPorts, r: Reads, fou
       const sha = !held ? file?.sha : held.opaque ? held.sourceSha : await gitBlobSha(new TextEncoder().encode(held.content));
       if (sha) current.set(member, sha);
     }
-    // A kept original of any format (TIFF, DNG) goes with its media main, as Files deletes it too.
+    // A family's members (a kept original of any format, a still, subtitles) go with its media main, as Files deletes them too.
     const paths = ports.nativeFiles();
     if (agent) {
       const problem = agentKeptRemovalProblem(found.map(file => file.path), paths, removed.pruneRemoved(before, date, path => current.get(path)));
       if (problem) return { refuse: problem };
     }
-    const originals = new Set(found.filter(file => isRenamableMedia(file.path)).flatMap(file => mediaFamilyOf(file.path, paths)?.originals ?? []));
+    const members = new Set(found.filter(file => isRenamableMedia(file.path)).flatMap(file => {
+      const family = mediaFamilyOf(file.path, paths);
+      return family ? familyMembers(family).slice(1) : [];
+    }));
     const files: records.RemovedPath[] = [], copies: { key: string; blob: Blob }[] = [];
     for (const file of found) {
-      if (!isRenamableMedia(file.path) && !originals.has(file.path) && !(agent && isAgentMediaPath(file.path))) continue;
+      if (!isRenamableMedia(file.path) && !members.has(file.path) && !(agent && isAgentMediaPath(file.path))) continue;
       const held = draft(file.path);
       let blob: Blob | undefined;
       if (held?.upload && held.sourceSha && scope) blob = await stores().uploads.get(uploadKey(scope, held.sourceSha));

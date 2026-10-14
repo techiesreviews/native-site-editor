@@ -16,12 +16,8 @@ export function accepts(path: string, accept?: string) {
 /** What a file is, from its extension: the kinds More offers. Documents are PDFs and other downloads. */
 export type MediaKind = "image" | "video" | "audio" | "document";
 export type MediaKindChoice = MediaKind | "all";
-const KINDS: [MediaKind, RegExp][] = [
-  ["image", /\.(?:svg|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|heif)$/i],
-  ["video", /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi)$/i],
-  ["audio", /\.(?:mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i],
-];
-export const mediaKind = (path: string): MediaKind => KINDS.find(([, pattern]) => pattern.test(path))?.[0] ?? "document";
+/** The agents' classifier (slice 20), so Media and agents agree; everything else is a download. */
+export const mediaKind = (path: string): MediaKind => { const kind = fileKind(path); return kind === "other" ? "document" : kind; };
 
 /** What Media lists, and agents too (slice 20): pictures, video, audio, PDFs and other downloads;
  * never pages, styles, scripts, fonts, source files or the editor's own files. */

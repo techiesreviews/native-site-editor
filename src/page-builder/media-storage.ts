@@ -10,7 +10,7 @@ export const MEDIA_DOWNLOADS_FOLDER = "media/downloads";
 export const MEDIA_ORIGINALS_FOLDER = "media/originals";
 
 /** Raster pictures follow the image recipe; SVG is cleaned as vector artwork. Still GIFs are checked by bytes. */
-export const mediaVideoNeedsPreparation = (name: string) => /\.(?:mp4|m4v|webm|mov|mkv|ogv|avi)$/i.test(name);
+export const mediaVideoNeedsPreparation = (name: string) => /\.(?:mp4|m4v|webm|mov|mkv|ogv|avi|mpe?g)$/i.test(name);
 
 export const mediaNeedsPreparation = (name: string) => /\.(?:jpe?g|png|webp|avif|bmp|svg|heic|heif)$/i.test(name);
 

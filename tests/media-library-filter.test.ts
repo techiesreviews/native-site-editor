@@ -156,6 +156,7 @@ test("nameEnds never splits a character made of two code units", () => {
 });
 
 import { formatMediaLength, isMediaLibraryPath, mediaTileLook, mediaTileStills } from "../src/page-builder/media-library-filter";
+import { mediaFamilyOf } from "../src/page-builder/media-families";
 
 test("Media lists every kind and leaves the site's own files out", () => {
   for (const path of ["media/images/a.webp", "logo.svg", "media/videos/a.mp4", "media/audio/a.mp3", "media/downloads/a.pdf", "files/archive.zip", "media/videos/a.vtt", "media/originals/a.jpg"])
@@ -190,4 +191,10 @@ test("each kind's tile: a still and length, a sound picture and length, a first 
   assert.deepEqual(only("video"), ["v/clip.mp4", "v/raw.mov"]);
   assert.deepEqual(only("document"), ["d/guide.pdf", "d/report.pdf"]);
   assert.deepEqual(only("image"), []);
+});
+
+test("MPEG is video and AIFF audio, as agents see them; they own stills and subtitles like other kinds", () => {
+  assert.deepEqual(["a.mpeg", "a.mpg", "a.aif", "a.aiff", "a.mkv", "a.docx", "a.bin"].map(mediaKind), ["video", "video", "audio", "audio", "video", "document", "document"]);
+  assert.equal(mediaTileStills(["a.mpg", "a.webp"]).get("a.mpg"), "a.webp");
+  assert.deepEqual(mediaFamilyOf("a.aiff", ["a.aiff", "a.vtt"])?.subtitles, ["a.vtt"]);
 });

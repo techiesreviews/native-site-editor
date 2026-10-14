@@ -517,4 +517,22 @@ test("agent delete_file checks uses outside a partial-family folder before remov
   assert.match(await h.controller.deleteFileTarget({ path: "images", name: "images", folder: true }, undefined, true) ?? "", /index.html/);
   assert.deepEqual(h.memory.steps(), []);
   for (const member of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(member));
+
+test("Files delete of a video names and keeps its still and unsaved subtitles, so Restore brings back all three", async () => {
+  const video = { "media/videos/clip.mp4": "mp4", "media/videos/clip.webp": "webp", "media/videos/clip.vtt": "WEBVTT" };
+  const h = fixture(true, video);
+  const removed = memoryUploadBytes();
+  h.ports.removalStores = () => ({ uploads: memoryUploadBytes(), removed });
+  const drafts = h.ports.draftStore.bind(h.ports);
+  h.ports.draftStore = () => Object.assign(drafts(), { get: (_: unknown, path: string) => h.memory.draft(path) });
+  h.memory.writeDraft("media/videos/clip.vtt", "WEBVTT\n\nunsaved");
+  let notes: string[] = [];
+  h.ports.confirmDialog = () => ({ ask: async (options: { notes: string[] }) => { notes = options.notes; return true; }, choose: async () => ({ value: "go", option: false }) });
+  assert.equal(await h.controller.deleteFileTarget({ path: "media/videos/clip.mp4", name: "clip.mp4", folder: false }), undefined);
+  assert.equal(notes[0], "Its still picture and subtitles file are deleted with it.");
+  const entry = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH)).removed![0];
+  assert.equal(entry.path, "media/videos/clip.mp4");
+  assert.deepEqual(entry.family!.map(item => item.path).sort(), ["media/videos/clip.vtt", "media/videos/clip.webp"]);
+  const subtitles = entry.family!.find(item => item.path === "media/videos/clip.vtt")!;
+  assert.equal(await removed.map.get(subtitles.browserKey!)!.text(), "WEBVTT\n\nunsaved");
 });
