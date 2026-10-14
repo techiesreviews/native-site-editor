@@ -28,6 +28,8 @@ const CANCELLED = "This file was cancelled. Choose another image.";
 export interface MediaLibraryView {
   element: HTMLElement;
   ready: Promise<void>;
+  /** The Optimise sheet for files added elsewhere, bound for `folder`. */
+  review(files: File[], folder: string): void;
   readonly refreshedKey: string | undefined;
   refresh(): Promise<void>;
   dispose(): void;
@@ -378,5 +380,6 @@ export function createMediaLibraryView(
     summary.textContent = "Reading repository images and references…";
     await refresh(); if (options.files?.length && alive) { chooseNext = true; adding.start(options.files); }
   }, false);
-  return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose };
+  return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose,
+    review: (files, folder) => { if (alive && library) showMediaOptimise(sheet, context, folder, files); } };
 }

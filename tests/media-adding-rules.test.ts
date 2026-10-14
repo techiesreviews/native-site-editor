@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaAddingPath, mediaAddingReveal, mediaAddingShown, mediaAddingStatus } from "../src/page-builder/media-adding-rules";
+import {
+  mediaAddingCancellable, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
+} from "../src/page-builder/media-adding-rules";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
 const all: MediaLibraryFilter = { query: "", collection: "", kind: "all" };
@@ -47,4 +49,31 @@ test("Show new files clears search and kind, and views the collection they joine
   assert.deepEqual(mediaAddingReveal({ query: "", collection: "Logos", kind: "all" }, "Studio picks"), { query: "", kind: "all", collection: "Studio picks" });
   // Dropped under All, now viewing a collection: back to All collections.
   assert.deepEqual(mediaAddingReveal({ query: "", collection: "Logos", kind: "all" }, ""), { query: "", kind: "all", collection: "" });
+});
+
+test("the summary offers Cancel while a file can be stopped, Retry once finished with failures, Dismiss when finished", () => {
+  assert.deepEqual(mediaAddingOffers(["preparing", "failed"]), { cancel: true, retry: false, dismiss: false });
+  assert.deepEqual(mediaAddingOffers(["ready", "adding"]), { cancel: true, retry: false, dismiss: false });
+  // Being saved, a file can no longer be stopped.
+  assert.deepEqual(mediaAddingOffers(["adding"]), { cancel: false, retry: false, dismiss: false });
+  assert.deepEqual(mediaAddingOffers(["added", "failed"]), { cancel: false, retry: true, dismiss: true });
+  assert.deepEqual(mediaAddingOffers(["added", "cancelled"]), { cancel: false, retry: false, dismiss: true });
+  // The picker's Use and Cancel end its addition: no Dismiss there.
+  assert.deepEqual(mediaAddingOffers(["failed"], true), { cancel: false, retry: true, dismiss: false });
+  // Held for Use, ready files leave Retry available in the picker; in the pane they are about to be saved.
+  assert.deepEqual(mediaAddingOffers(["ready", "failed"], true), { cancel: true, retry: true, dismiss: false });
+  assert.equal(mediaAddingOffers(["ready", "failed"]).retry, false);
+  assert.equal(mediaAddingOffers(["preparing", "failed"], true).retry, false);
+  assert.deepEqual(["waiting", "preparing", "ready", "adding", "added", "failed", "cancelled"].map(state => mediaAddingCancellable(state as never)),
+    [true, true, true, false, false, false, false]);
+});
+
+test("Review… from Files takes pictures not added yet, or that failed; other kinds keep going", () => {
+  assert.equal(mediaAddingReviewable("Holiday.JPG", "preparing"), true);
+  assert.equal(mediaAddingReviewable("shot.png", "failed"), true);
+  assert.equal(mediaAddingReviewable("shot.png", "ready"), true);
+  assert.equal(mediaAddingReviewable("shot.png", "adding"), false);
+  assert.equal(mediaAddingReviewable("shot.png", "added"), false);
+  assert.equal(mediaAddingReviewable("guide.pdf", "failed"), false);
+  assert.equal(mediaAddingReviewable("logo.svg", "waiting"), false);
 });

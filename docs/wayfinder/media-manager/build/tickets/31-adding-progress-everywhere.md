@@ -1,7 +1,7 @@
 ---
 title: Adding progress at every entry point
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-31 runner)
 blocked_by: [30-limits-and-repo-size]
 builder: claude

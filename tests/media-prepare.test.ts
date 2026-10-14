@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addPreparedMedia, prepareMedia, prepareMediaFile, mediaNeedsPreparation, mediaPreparationFolder } from "../src/page-builder/media-prepare";
+import { importPreparedMedia, prepareMedia, prepareMediaFile, mediaNeedsPreparation, mediaPreparationFolder } from "../src/page-builder/media-prepare";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { DEFAULT_MEDIA_OPTIMISE, type optimiseMedia } from "../src/page-builder/media-optimise";
 import { MAX_UPLOAD_BYTES } from "../src/uploads";
@@ -113,12 +113,15 @@ test("adding reads the files again after preparing; another repository refuses",
       assertLive() {}, async read() { return undefined; }, async blob() { return new Blob(); }, assetVersion: () => undefined,
       async openPage() {}, async applyBatch(batch) { assert.deepEqual([...batch.expectedPaths].sort(), [...files].sort()); } };
   };
-  const told: string[] = [];
-  const report = { error: (error: unknown) => { throw error; }, announce: (message: string) => told.push(message) };
-  assert.deepEqual(await addPreparedMedia(context, "images", [new File(["bytes"], "notes.pdf")], undefined, report), ["images/notes.pdf"]);
-  assert.equal(contexts, 2); assert.deepEqual(told, ["Added images/notes.pdf."]);
+  const add = async (name: string) => {
+    const ctx = await context();
+    const { requests } = await prepareMedia([new File(["bytes"], name)], ctx.key, "images");
+    return importPreparedMedia(ctx, context, requests);
+  };
+  assert.deepEqual(await add("notes.pdf"), ["images/notes.pdf"]);
+  assert.equal(contexts, 2);
   contexts = 0; switchAt = 2;
-  await assert.rejects(addPreparedMedia(context, "images", [new File(["bytes"], "more.pdf")], undefined, report), /repository changed while adding/);
+  await assert.rejects(add("more.pdf"), /repository changed while adding/);
 });
 test("replacement carries every record field instead of its metadata view", async () => {
   const record = { alwaysKeep: true as const, collections: ["Studio"], description: { text: "Agent words", byAgent: true as const, unknown: 42 },

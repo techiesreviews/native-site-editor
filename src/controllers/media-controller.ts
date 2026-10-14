@@ -335,6 +335,12 @@ export function createMediaController(ports: MediaControllerPorts) {
     gallery = mountMediaLibrary(ports.galleryHost(), { refreshKey: () => ports.gallerySignature(),
       cleanUp: ports.cleanUp && mountCleanUp });
   }
+  /** Media's Optimise sheet for files added elsewhere (Files' Review…), once the pane has loaded. */
+  async function reviewInGallery(files: File[], folder: string) {
+    await ensureGallery();
+    await gallery?.ready;
+    gallery?.review(files, folder);
+  }
   function requestGalleryRefresh() {
     if (!gallery) return;
     if (galleryScope !== ports.identity()) { disposeGallery(); return; }
@@ -372,6 +378,6 @@ export function createMediaController(ports: MediaControllerPorts) {
     onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {
       usageListeners.add(listener); return () => { usageListeners.delete(listener); };
     },
-    workspaceContext, preparePlacement, chooseImage, choosePath, placeState, changePlace, ensureGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, chooseImage, choosePath, placeState, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

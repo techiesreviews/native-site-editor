@@ -387,22 +387,6 @@
 .media-library__grid--list .media-library__pending-bar { inset: auto 52px 0 52px; background: var(--line); }
 .media-library__grid--list .media-library__pending-cancel { top: 6px; color: var(--text); filter: none; }
 
-.media-library__adding { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.media-library__adding[hidden] { display: none; }
-.media-library__adding-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.media-library__adding-status { flex: 1 1 10em; margin: 0; font-weight: 600; }
-.media-library__adding-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.media-library__adding-actions button { min-height: 44px; }
-.media-library__adding-actions button[hidden], .media-library__adding-bar[hidden] { display: none; }
-.media-library .media-library__adding-dismiss { width: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-.media-library .media-library__adding-dismiss:hover { background: var(--hover); }
-.media-library .media-library__adding-dismiss:focus-visible { outline: var(--focus-ring); }
-.media-library__adding-bar { width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; background: var(--line); accent-color: var(--primary); }
-.media-library__adding-bar::-webkit-progress-bar { background: var(--line); }
-.media-library__adding-bar::-webkit-progress-value { background: var(--primary); border-radius: 3px; }
-.media-library__adding-bar::-moz-progress-bar { background: var(--primary); }
-.media-library__adding-failed { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
-.media-library__adding-failed:empty { display: none; }
 
 /* Usage lists name a page by its title, with its path under it. */
 .media-library__page:has(.media-library__page-title) { display: grid; gap: 1px; padding-block: 4px; }

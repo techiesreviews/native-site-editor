@@ -38,3 +38,26 @@ export function mediaAddingPath(name: string) {
 export function mediaAddingReveal(filter: MediaLibraryFilter, collection: string): Partial<MediaLibraryFilter> {
   return { query: "", kind: "all", ...filter.collection && filter.collection !== collection ? { collection } : {} };
 }
+
+/** A file's words while it is being added: on its tile, or on its row where there are no tiles. */
+export const MEDIA_ADDING_WORDS: Partial<Record<MediaAddingState, string>> = { waiting: "Waiting", preparing: "Preparing…", ready: "Ready", adding: "Adding…", added: "Adding…" };
+
+/** A file that can still be stopped: it is not being saved yet. */
+export const mediaAddingCancellable = (state: MediaAddingState) => state === "waiting" || state === "preparing" || state === "ready";
+
+/** What the progress summary offers (ticket 07): Cancel while a file can still be stopped; Retry
+ * once nothing is running and some files failed; Dismiss when finished, except in the picker,
+ * whose Use and Cancel end the addition. The picker holds ready files for Use, so there they do
+ * not keep Retry away. */
+export function mediaAddingOffers(states: readonly MediaAddingState[], hold = false) {
+  const { running } = mediaAddingStatus(states);
+  return { cancel: states.some(mediaAddingCancellable), retry: !mediaAddingBusy(states, hold) && states.includes("failed"), dismiss: !running && !hold };
+}
+/** Files are still on their way: Retry waits (in the picker, held ready files do not count). */
+export const mediaAddingBusy = (states: readonly MediaAddingState[], hold = false) =>
+  states.some(state => state === "waiting" || state === "preparing" || state === "adding" || !hold && state === "ready");
+
+/** The files Review… takes to the Optimise sheet from Files: pictures not saved yet, or that failed.
+ * Other kinds keep going (the sheet's before/after is for images). */
+export const mediaAddingReviewable = (name: string, state: MediaAddingState) =>
+  (mediaAddingCancellable(state) || state === "failed") && mediaNeedsPreparation(name);

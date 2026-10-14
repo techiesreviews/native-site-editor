@@ -240,3 +240,84 @@ test("two photos with the same incoming name keep separate numbered families", a
       await expect.poll(() => storedDraft(page, `media/images/${base}${suffix}.webp`)).toBeDefined();
   }
 });
+
+// Files' tab, and files dropped from the desktop on its root heading as the browser delivers them.
+// `size` instead of `base64`: that many zero bytes, made in the page.
+async function filesTab(page: Page) {
+  const explorer = page.locator("#explorer");
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files" }).click();
+  return explorer;
+}
+async function dropOnFiles(page: Page, files: { name: string; type: string; base64?: string; size?: number }[]) {
+  await page.locator("#explorer-files > .files-heading").evaluate((element, files) => {
+    const transfer = new DataTransfer();
+    for (const file of files)
+      transfer.items.add(new File([file.base64 === undefined ? new Uint8Array(file.size ?? 0) : Uint8Array.from(atob(file.base64), char => char.charCodeAt(0))], file.name, { type: file.type }));
+    for (const type of ["dragenter", "dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, files);
+}
+
+test("Files: three files start adding at once with progress; one is cancelled; a big PDF gets a Large download note", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const explorer = await filesTab(page);
+  // The encoder never answers, so the picture stays in preparation until it is cancelled.
+  await page.evaluate(() => { Worker.prototype.postMessage = function () {}; });
+  await dropOnFiles(page, [
+    { name: "big.pdf", type: "application/pdf", size: 12_000_000 },
+    { name: "notes.pdf", type: "application/pdf", base64: btoa("%PDF-1.4") },
+    { name: "slow.png", type: "image/png", base64: btoa("held by worker") },
+  ]);
+  const summary = explorer.getByRole("region", { name: "Files being added" });
+  await expect(summary.getByRole("status")).toHaveText("Adding 3 files");
+  await expect(summary.locator(".media-library__adding-row").filter({ hasText: "slow.png" })).toContainText("Preparing…");
+  await expect(summary.locator("progress")).toHaveJSProperty("value", 2);
+  // The note shows while the picture is still being prepared.
+  await expect(summary).toContainText("Large download: big.pdf is 12.0 MB, which can be slow to load on phones.");
+  await summary.getByRole("button", { name: "Cancel adding slow.png", exact: true }).click();
+  await expect(summary.getByRole("status")).toHaveText("Added 2 files");
+  await expect(summary).toContainText("Large download: big.pdf is 12.0 MB");
+  await expect(page.locator("#status")).toHaveText("Added big.pdf, notes.pdf. Large download: big.pdf is 12.0 MB, which can be slow to load on phones.");
+  await expect.poll(() => storedDraft(page, "big.pdf")).toBeDefined();
+  await expect.poll(() => storedDraft(page, "notes.pdf")).toBeDefined();
+  expect(await storedDraft(page, "slow.webp")).toBeUndefined();
+  // One Undo removes the drop's files.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).filter(draft => /^(big|notes)\.pdf$/.test(draft.path)).length).toBe(0);
+  await (await filesTab(page)).getByRole("region", { name: "Files being added" }).getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(summary).toBeHidden();
+});
+
+test("Files: a picture that cannot be prepared asks first; Add unchanged adds it, Don't add and Escape leave it for Retry", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const explorer = await filesTab(page), bytes = await photo(page);
+  // The encoder answers with a failure, as it does for a picture it cannot read.
+  await page.evaluate(() => {
+    Worker.prototype.postMessage = function (this: Worker) {
+      setTimeout(() => this.onmessage?.call(this, new MessageEvent("message", { data: { error: "No encoder in this test." } })));
+    };
+  });
+  const summary = explorer.getByRole("region", { name: "Files being added" });
+  const question = page.getByRole("dialog", { name: "Add unchanged file?", exact: true });
+
+  await dropOnFiles(page, [{ name: "Kept.png", type: "image/png", base64: bytes }]);
+  await expect(question).toContainText("Kept.png could not be prepared. Add the unchanged file instead?");
+  await question.getByRole("button", { name: "Add unchanged", exact: true }).click();
+  await expect(summary.getByRole("status")).toHaveText("Added 1 file");
+  await expect(page.locator("#status")).toHaveText("Added kept.png.");
+  await expect.poll(() => storedDraft(page, "kept.png")).toBeDefined();
+
+  await dropOnFiles(page, [{ name: "Refused.png", type: "image/png", base64: bytes }]);
+  await question.getByRole("button", { name: "Don't add", exact: true }).click();
+  await expect(summary.getByRole("status")).toHaveText("1 file could not be added");
+  await expect(summary).toContainText("Refused.png: Refused.png was not added.");
+  expect(await storedDraft(page, "refused.png")).toBeUndefined();
+  // Retry asks again; Escape adds nothing either.
+  await summary.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(question).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(question).toBeHidden();
+  await expect(summary.getByRole("status")).toHaveText("1 file could not be added");
+  await expect(summary.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  expect(await storedDraft(page, "refused.png")).toBeUndefined();
+});

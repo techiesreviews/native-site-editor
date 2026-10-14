@@ -71,21 +71,16 @@ export async function prepareMedia(files: File[], key: string, folder?: string, 
   return { requests, errors, warnings };
 }
 
-/** Capture the repository before preparation; no library or usage scan is needed. */
-export async function addPreparedMedia(context: () => Promise<MediaWorkspaceContext>, folder: string, files: File[],
-  place: MediaPlacement | undefined, report: { error(error: unknown): void; announce(message: string): void }, ask?: Ask) {
-  const ctx = await context();
-  const prepared = await prepareMedia(files, ctx.key, folder, undefined, undefined, ask);
+/** Save prepared files as one batch (one Undo step) in the repository `ctx` was captured from.
+ * Files changed while preparing are read again; another repository or branch refuses. */
+export async function importPreparedMedia(ctx: MediaWorkspaceContext, context: () => Promise<MediaWorkspaceContext>,
+  requests: MediaImportRequest[], place?: MediaPlacement) {
   ctx.assertLive();
-  // Files changed while preparing are read again; another repository or branch refuses.
   const fresh = async () => {
     const next = await context();
     ctx.assertLive();
     if (next.key !== ctx.key || JSON.stringify(next.scope) !== JSON.stringify(ctx.scope)) throw new Error("The repository changed while adding files. Nothing was added.");
     return next;
   };
-  const paths = prepared.requests.length ? await createMediaWorkspace(fresh).import(prepared.requests, place) : [];
-  if (prepared.errors.length) report.error(new Error(prepared.errors.join(" ")));
-  if (paths.length) report.announce([`Added ${paths.join(", ")}.`, ...prepared.warnings].join(" "));
-  return paths;
+  return requests.length ? createMediaWorkspace(fresh).import(requests, place) : [];
 }

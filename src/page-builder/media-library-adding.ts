@@ -4,8 +4,10 @@ import { basename, type MediaLibraryFilter } from "./media-library-filter";
 import { prepareMediaFile, askToAddUnchanged } from "./media-prepare";
 import type { MediaImportRequest } from "./media-picker";
 import {
-  mediaAddingPath, mediaAddingReveal, mediaAddingShown, mediaAddingStatus, type MediaAddingState,
+  MEDIA_ADDING_WORDS as WORDS, mediaAddingBusy, mediaAddingCancellable, mediaAddingPath, mediaAddingReveal, mediaAddingShown,
+  mediaAddingStatus, type MediaAddingState,
 } from "./media-adding-rules";
+import { createMediaAddingSummary } from "./media-adding-summary";
 import type { MediaLibrary, MediaPickerHost } from "./media-picker";
 
 export interface MediaAddingHost {
@@ -31,41 +33,47 @@ export interface MediaAddingHost {
 }
 interface Entry {
   file: File; collection: string; state: MediaAddingState; tile: HTMLElement; words: HTMLElement;
-  error?: string; request?: MediaImportRequest; id: string; work?: AbortController; path?: string; url?: string;
+  error?: string; note?: string; request?: MediaImportRequest; id: string; work?: AbortController; path?: string; url?: string;
 }
 let nextEntry = 0;
-const WORDS: Partial<Record<MediaAddingState, string>> = { waiting: "Waiting", preparing: "Preparing…", ready: "Ready", adding: "Adding…", added: "Adding…" };
-const cancellable = (entry: Entry) => entry.state === "waiting" || entry.state === "preparing" || entry.state === "ready";
+const cancellable = (entry: Entry) => mediaAddingCancellable(entry.state);
 const problem = (error: unknown) => error instanceof Error ? error.message : "The file could not be added.";
 
 /** Automatic adding (media-manager ticket 06): dropped or chosen files are prepared on today's
  * Optimise path and defaults, one at a time, while the grid stays usable; each shows its
  * progress on a tile of its own and can be cancelled until it is saved. The ready ones are
- * saved together, joining the collection viewed at the drop: one Undo step. The tray keeps the
- * total, Cancel, files that could not be added, and Show new files when the view hides them. */
+ * saved together, joining the collection viewed at the drop: one Undo step. The tray is the shared
+ * progress summary (slice 31): the total, Cancel, Large download notes, files that could not be
+ * added with Retry, and Show new files when the view hides them. */
 export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: MediaAddingHost) {
   /** The latest drop: its files and the collection they join. An older drop's late steps see
    * their own run, never a newer one, so each drop saves as one batch. */
   let run: { entries: Entry[]; collection: string } = { entries: [], collection: "" }, focused: Entry | undefined;
   const live = (entries: Entry[]) => entries.some(entry => cancellable(entry) || entry.state === "adding");
-  const status = node("p", "media-library__adding-status"); status.setAttribute("role", "status");
-  const bar = node("progress", "media-library__adding-bar"); bar.setAttribute("aria-label", "Files added");
-  const failed = node("ul", "media-library__adding-failed");
-  const showNew = button("Show new files", () => h.show(mediaAddingReveal(h.filter(), run.collection)));
-  const review = button("Review…", () => {
-    const rest = run.entries.filter(entry => cancellable(entry) || entry.state === "failed");
-    rest.forEach(stop);
-    h.review(rest.map(entry => entry.file), run.collection);
-    paint();
+  const summary = createMediaAddingSummary(tray, {
+    showNew: () => h.show(mediaAddingReveal(h.filter(), run.collection)),
+    review: () => {
+      const rest = run.entries.filter(entry => cancellable(entry) || entry.state === "failed");
+      rest.forEach(stop);
+      h.review(rest.map(entry => entry.file), run.collection);
+      paint();
+    },
+    cancel: () => { run.entries.filter(cancellable).forEach(stop); paint(); summary.focus(); },
+    dismiss: () => { clear(); paint(); h.show({}); },
+    retry,
   });
-  const cancelAll = button("Cancel", () => { run.entries.filter(cancellable).forEach(stop); paint(); tray.querySelector<HTMLElement>("button:not([hidden])")?.focus(); });
-  const dismiss = button("", () => { clear(); paint(); h.show({}); }, "media-library__adding-dismiss");
-  dismiss.setAttribute("aria-label", "Dismiss"); dismiss.append(icon("x", 20));
-  for (const control of [cancelAll, dismiss, showNew]) control.dataset.mediaCancel = "adding";
-  const head = node("div", "media-library__adding-head"), actions = node("div", "media-library__adding-actions");
-  actions.append(showNew, review, cancelAll, dismiss);
-  head.append(status, actions); tray.append(head, bar, failed);
 
+  /** Files that could not be added go round again, in the same addition and collection. */
+  function retry() {
+    const again = run.entries.filter(entry => entry.state === "failed");
+    if (!again.length || mediaAddingBusy(run.entries.map(entry => entry.state), h.hold)) return;
+    for (const entry of again) {
+      entry.error = entry.note = entry.request = undefined;
+      entry.tile = node("article", "media-library__pending"); entry.words = node("span", "media-library__pending-state");
+      tile(entry); set(entry, "waiting");
+    }
+    summary.focus(); void prepare(run);
+  }
   function tile(entry: Entry) {
     if (h.hold) {
       // In the picker a ready file is chosen like any tile; Use saves and places it.
@@ -132,17 +140,15 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       if (focused && shown.includes(focused) && (document.activeElement === document.body || !document.activeElement?.isConnected))
         focused.tile.querySelector<HTMLElement>(".media-library__pending-cancel")?.focus();
     }
-    const { text, running, done, total } = mediaAddingStatus(entries.map(entry => entry.state));
-    tray.hidden = !text; status.textContent = text;
-    bar.hidden = !running; bar.max = Math.max(1, total); bar.value = done;
-    failed.replaceChildren(...entries.filter(entry => entry.state === "failed").map(entry =>
-      node("li", "", `${basename(entry.file.name)}: ${entry.error}`)));
-    showNew.hidden = !entries.some(entry => entry.state !== "cancelled" && entry.state !== "failed" && !visible(entry));
-    review.hidden = !entries.some(entry => entry.state === "failed" || running && cancellable(entry));
-    cancelAll.hidden = !entries.some(cancellable); dismiss.hidden = running || Boolean(h.hold);
-    if (h.hold) {
-      status.textContent = entries.some(entry => entry.state === "waiting" || entry.state === "preparing") ? text : `${entries.filter(entry => entry.state === "ready").length} ready · Use saves and places; Close saves without placing.`;
-    }
+    const { text, running } = mediaAddingStatus(entries.map(entry => entry.state));
+    summary.paint({
+      entries: entries.map(entry => ({ name: entry.file.name, state: entry.state, error: entry.error, note: entry.note })),
+      hold: h.hold,
+      text: h.hold && !entries.some(entry => entry.state === "waiting" || entry.state === "preparing")
+        ? `${entries.filter(entry => entry.state === "ready").length} ready · Use saves and places; Close saves without placing.` : text,
+      showNew: entries.some(entry => entry.state !== "cancelled" && entry.state !== "failed" && !visible(entry)),
+      review: entries.some(entry => entry.state === "failed" || running && cancellable(entry)),
+    });
   }
   async function prepare(mine: typeof run) {
     const key = h.library().key;
@@ -156,8 +162,9 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
         // Cancelling (or Review…) aborts the work and leaves the file alone.
         if (!work.signal.aborted) {
           entry.request = { ...prepared.request, ...entry.collection ? { collection: entry.collection } : {} };
+          // A Large download note stays in the summary with its file.
+          entry.note = prepared.warning;
           set(entry, "ready");
-          if (prepared.warning) h.tell(prepared.warning);
           h.ready?.(entry.id, entry.request);
         }
       } catch (error) {

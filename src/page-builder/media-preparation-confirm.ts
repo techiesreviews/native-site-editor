@@ -11,9 +11,10 @@ export function askToAddUnchanged(question: string): Promise<boolean> {
 }
 
 function ask(question: string): Promise<boolean> {
-  if (!confirmation) {
-    confirmation = createConfirmDialog("media-preparation-confirm");
-    document.body.append(confirmation.root);
-  }
+  confirmation ??= createConfirmDialog("media-preparation-confirm");
+  // Inside the open popover (the explorer, with Files or Media), a modal question leaves it open
+  // behind, so the adding summary stays in view; otherwise on the page.
+  const host = [...document.querySelectorAll<HTMLElement>(":popover-open")].at(-1) ?? document.body;
+  if (confirmation.root.parentElement !== host) host.append(confirmation.root);
   return confirmation.ask({ title: "Add unchanged file?", notes: [question], action: "Add unchanged", cancel: "Don't add" });
 }

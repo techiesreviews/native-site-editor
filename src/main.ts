@@ -2316,20 +2316,27 @@ function nativeImagePaths() {
   ])].filter((path) => !gone.has(path)).sort();
 }
 
-// Files from the computer as new-file drafts in `folder` (src/uploads.ts),
-// never over something that is there; resolves to the paths added.
-async function uploadFilesTo(folder: string, files: File[], place?: import("./page-builder/media-picker").MediaPlacement): Promise<string[]> {
+// Files from the computer as new-file drafts in `folder` (src/uploads.ts), never over something
+// that is there, with the shared adding progress at the foot of Files; resolves to the paths added.
+async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
   const epoch = generation, key = setupScope();
   if (!draftScope() || !files.length) return [];
   // The repository and branch of the drop; a switch while loading or preparing adds nothing.
   const current = () => epoch === generation && key === setupScope();
   try {
-    const { addPreparedMedia, askToAddUnchanged } = await import("./page-builder/media-prepare");
+    const { addFilesTo } = await import("./page-builder/media-files-adding");
     if (!current()) return [];
-    return await addPreparedMedia(() => {
-      if (!current()) throw new Error("The repository or branch changed while adding files. Nothing was added.");
-      return mediaController.workspaceContext();
-    }, folder, files, place, { error: errorMessage, announce }, askToAddUnchanged);
+    return await addFilesTo(element("explorer-files"), folder, files, { live: current, announce, error: errorMessage,
+      context: async () => {
+        if (!current()) throw new Error("The repository or branch changed while adding files. Nothing was added.");
+        return mediaController.workspaceContext();
+      },
+      // Pictures not added yet go to Media's Optimise sheet, still bound for this folder.
+      review: element("explorer-tabs").hidden ? undefined : (images, into) => {
+        if (!current()) return;
+        openExplorer(); selectExplorerTab("media");
+        void mediaController.reviewInGallery(images, into).catch(errorMessage);
+      } });
   } catch (error) { errorMessage(error); return []; }
 }
 
