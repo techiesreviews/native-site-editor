@@ -704,9 +704,8 @@ test("Media prepares an MP4 with AAC sound and an animated GIF as H.264 MP4 with
 test("converted GIF cannot be chosen or used in an image picker; Close saves video without placement", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await effectiveSource(page, baseURL, "index.html");
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  // Slice 39's Image button replaced the Edit bar's Choose image…: open the picker by double-click.
+  const picker = await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Loop.gif", mimeType: "image/gif", buffer: animatedGif() });
   const choice = picker.getByRole("button", { name: "Choose Loop.gif", exact: true });
   await expect(choice).toBeEnabled(); await expect(choice).toHaveAttribute("aria-pressed", "false");
