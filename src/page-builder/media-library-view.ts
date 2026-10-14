@@ -18,7 +18,7 @@ import {
   dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
 } from "./media-library-refresh";
 import "./media-picker.css";
-import type { MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
+import type { MediaCleanUpMount, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 
 export interface MediaLibraryView {
   element: HTMLElement;
@@ -33,7 +33,7 @@ let viewId = 0;
  * state; the parts it composes get what they need as arguments. */
 export function createMediaLibraryView(
   container: HTMLElement, adapter: MediaPickerHost,
-  options: MediaPickerOptions & { refreshKey?: () => string } = {}, modal?: HTMLDialogElement,
+  options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: MediaCleanUpMount } = {}, modal?: HTMLDialogElement,
 ): MediaLibraryView {
   adapter.begin?.();
   const shell = createMediaLibraryShell(container, options, ++viewId, {
@@ -84,6 +84,10 @@ export function createMediaLibraryView(
   const sheet: LibrarySheet = { element: shell.sheet, version: 0 };
   // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
   const more = createRowMenu(modal ?? container);
+  // Clean up (slice 49): More's item after Add new file opens the host's panel above the grid.
+  const cleanUpSlot = options.cleanUp && !modal ? document.createElement("div") : undefined;
+  if (cleanUpSlot) { cleanUpSlot.className = "media-clean-up"; cleanUpSlot.hidden = true; shell.browse.prepend(cleanUpSlot); }
+  const cleanUp = cleanUpSlot && options.cleanUp?.(cleanUpSlot, () => shell.more.focus());
   const listeners = new AbortController(), selected = new Set<string>(), observers = new Set<IntersectionObserver>();
   const busyLock = createBusyLock({ root: dialog, signal: listeners.signal, tell,
     alive: () => alive, loading: () => loadingLibrary });
@@ -210,6 +214,8 @@ export function createMediaLibraryView(
     const name = viewing;
     more.open(shell.more, [
       { label: "Add new file", run: () => shell.uploadInput.click() },
+      // Clean up, with the tab's count, is an action like adding; the choices follow.
+      ...cleanUp ? [{ ...cleanUp.item(), run: () => cleanUp.open() }] : [],
       ...kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
         kind = value; draw(); shell.more.focus();
       } })),

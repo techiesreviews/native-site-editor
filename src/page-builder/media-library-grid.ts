@@ -82,6 +82,11 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     const size = node("span", "media-library__size", item.size === undefined ? "" : formatBytes(item.size));
     if (list) thumb.append(size);
     card.append(node("span", "media-library__shade"), thumb, selectLabel, used);
+    if (library.keep?.includes(item.path)) {
+      const keep = node("span", "media-library__keep"); keep.title = "Always keep";
+      keep.setAttribute("role", "img"); keep.setAttribute("aria-label", "Always keep");
+      card.classList.add("is-kept"); card.append(keep);
+    }
     grid.append(card);
     // A file the browser cannot draw gets a clean surface with its type, not a broken picture.
     const noPreview = () => {

@@ -2,7 +2,7 @@ import type { MediaLibrary } from "./media-picker";
 
 export const detailIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify([
   value?.metadata[path] ?? { tags: [], alt: "" }, value?.usage[path],
-  value?.items.find(item => item.path === path)?.version, value?.collections,
+  value?.items.find(item => item.path === path)?.version, value?.collections, Boolean(value?.keep?.includes(path)),
 ]);
 export const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
 

@@ -308,3 +308,14 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 .media-library__collection-name { flex: 1; min-width: 0; display: grid; overflow-wrap: anywhere; }
 .media-library__collection-row button, .media-library__sheet-actions button { min-height: 44px; }
 .media-library__sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Always keep: a pin in the tile's corner (the name leaves it room) and a line in details. */
+.media-library__keep { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: rgb(10 18 32 / .62); pointer-events: none; }
+.media-library__keep::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/push-pin.svg") center / contain no-repeat; }
+.media-library__card.is-kept .media-library__name { padding-right: 34px; }
+/* In the list the pin sits on the thumbnail's corner, clear of the usage. */
+.media-library__grid--list .media-library__keep { right: auto; bottom: 4px; left: 78px; width: 20px; height: 20px; }
+.media-library__grid--list .media-library__keep::after { width: 12px; height: 12px; }
+.media-library__grid--list .media-library__card.is-kept .media-library__name { padding-right: 0; }
+.media-library__keep-note { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; }
+.media-library__keep-note::before { content: ""; flex: none; width: 16px; height: 16px; background: currentColor; mask: url("@phosphor-icons/core/regular/push-pin.svg") center / contain no-repeat; }

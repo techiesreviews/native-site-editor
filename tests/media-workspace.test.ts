@@ -274,3 +274,12 @@ test("an uploaded SVG the host holds no source for is proved by its revision, so
   assert.equal(f.batches[0].expectedAssets.get("images/logo.svg"), "upload-v1");
   assert.ok(f.paths.has("images/b.png"));
 });
+
+test("the Always keep mark reaches a family's main when only an original the library does not list is kept", async () => {
+  const f = fixture();
+  f.paths.add("media/originals/a.HEIC");
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "media/originals/a.HEIC": { alwaysKeep: true } } }));
+  const library = await f.host.load();
+  assert.ok(!library.items.some(item => item.path === "media/originals/a.HEIC"));
+  assert.deepEqual(library.keep?.sort(), ["images/a.png", "media/originals/a.HEIC"]);
+});

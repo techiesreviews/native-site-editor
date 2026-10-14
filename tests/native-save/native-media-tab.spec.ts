@@ -12,7 +12,8 @@ test("Media is the tab between Pages and Files, with keyboard navigation and per
   await open(page, baseURL);
   await expect(page.locator("#media-library-toggle")).toHaveCount(0);
   await expect(page.locator("dialog.media-library")).toHaveCount(0);
-  await expect(page.getByRole("tab")).toHaveText(["Pages", "Media", "Files"]);
+  // Media may carry the clean-up count (the starter has an unused image).
+  await expect(page.getByRole("tab")).toHaveText(["Pages", /^Media\d*$/, "Files"]);
   await pane(page).getByLabel("Search media", { exact: true }).fill("studio-desk");
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await page.getByRole("tab", { name: "Media", exact: true }).focus(); await page.keyboard.press("ArrowRight");

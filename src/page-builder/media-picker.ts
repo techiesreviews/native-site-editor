@@ -10,6 +10,8 @@ import { createMediaLibraryView, type MediaLibraryView } from "./media-library-v
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {
   key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
+  /** Files that show the Always keep mark: each kept file and the main of each family with a kept member. */
+  keep?: string[];
 }
 export interface MediaPickerHost {
   begin?(): void;
@@ -33,6 +35,10 @@ export interface MediaImportRequest {
   file: File; result: MediaOptimiseResult; folder: string;
   replaceFrom?: string; metadata?: MediaMetadata; expectedAssetVersion?: string;
 }
+/** Clean up in the Media pane: More's item (with the count) and the panel it opens. */
+export interface MediaCleanUpEntry { item(): { label: string; disabled?: string }; open(): void }
+/** The host draws Clean up into `slot`, above the grid; `closed` returns focus to More. */
+export type MediaCleanUpMount = (slot: HTMLElement, closed: () => void) => MediaCleanUpEntry;
 export interface MediaPickerOptions {
   onPick?: (image: MediaImage) => void | Promise<void>;
   /** The alt offered for the picked image, before the image's own default: the replaced image's alt. */
@@ -55,7 +61,7 @@ export function configureMediaPicker(value: MediaPickerHost) {
 export function closeMediaPicker() { closeActive?.(); }
 
 /** Mount a persistent manager directly into the explorer's host. Hiding is safe. */
-export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { adapter?: MediaPickerHost; refreshKey?: () => string } = {}): MediaLibraryView {
+export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { adapter?: MediaPickerHost; refreshKey?: () => string; cleanUp?: MediaCleanUpMount } = {}): MediaLibraryView {
   const adapter = options.adapter ?? host;
   if (!adapter) throw new Error("Open a repository before choosing an image.");
   const view = createMediaLibraryView(container, adapter, options);

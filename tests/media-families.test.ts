@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
+import { alwaysKeptFiles, isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
 import { mediaVariants } from "../src/page-builder/media-markup";
 
 test("a leftover copy is a responsive copy name with no image at its base name", () => {
@@ -74,4 +74,13 @@ test("bare numbers count only at copy widths, so numbered and dated names stay a
   assert.deepEqual(mediaFamilyOf("photo.webp", paths)?.copies, [{ path: "photo-480.webp", width: 480 }]);
   assert.deepEqual(mediaFamilyOf("report.png", paths)?.copies, [{ path: "report-1200w.png", width: 1200 }, { path: "report-1600.png", width: 1600 }]);
   for (const path of ["photo-100.webp", "photo-2.webp", "report-2024.png"]) assert.ok(mediaFamilyOf(path, paths));
+});
+
+test("the Always keep mark shows on kept files and on the main of a family with a kept member", () => {
+  const paths = ["images/photo.jpg", "images/photo-480w.webp", "media/originals/photo.HEIC", "images/logo.png", "images/logo-960.png", "files/guide.pdf", "images/plain.png"];
+  assert.deepEqual([...alwaysKeptFiles(paths, new Set(["images/photo-480w.webp", "files/guide.pdf", "gone.png"]))].sort(),
+    ["files/guide.pdf", "images/photo-480w.webp", "images/photo.jpg"]);
+  assert.deepEqual([...alwaysKeptFiles(paths, new Set(["media/originals/photo.HEIC"]))].sort(), ["images/photo.jpg", "media/originals/photo.HEIC"]);
+  assert.deepEqual([...alwaysKeptFiles(paths, new Set(["images/logo.png"]))], ["images/logo.png"]);
+  assert.equal(alwaysKeptFiles(paths, new Set()).size, 0);
 });

@@ -2531,6 +2531,7 @@ const mediaController = createMediaController({
     url: () => nativeSiteSettings(mediaTextSource(NATIVE_CONFIG_PATH)).url,
     settled: () => nativeTextIndexing ?? Promise.resolve(), changed: () => {},
   },
+  cleanUp: { place: setupScope, marks: () => ["explorer-tab-media", "explorer-toggle"].flatMap(id => document.getElementById(id) ?? []) },
   workspace: () => {
     const repo = appStore.repository.value, scope = draftScope();
     if (!repo || !scope || !appStore.snapshot.value) return undefined;

@@ -73,3 +73,13 @@ export function renamedFamily(family: MediaFamily, toMain: string): { from: stri
     })),
   ];
 }
+
+/** The files that show the Always keep mark: each kept file, and the main of every Image
+ * family with a kept member (a kept copy or original protects the whole family's tile). */
+export function alwaysKeptFiles(paths: string[], kept: ReadonlySet<string>): Set<string> {
+  const marked = new Set(paths.filter(path => kept.has(path)));
+  for (const family of mediaFamilies(paths)) {
+    if ([family.main, ...family.copies.map(copy => copy.path), ...family.originals].some(path => kept.has(path))) marked.add(family.main);
+  }
+  return marked;
+}

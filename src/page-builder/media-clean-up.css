@@ -1,0 +1,18 @@
+/* The clean-up count: on the Media tab, on the page picker that opens it, and on Clean up. */
+.media-count {
+  display: inline-grid; place-items: center; box-sizing: border-box;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 6px; vertical-align: 1px;
+  border-radius: 999px; background: var(--primary); color: var(--on-primary);
+  font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.media-count[hidden] { display: none; }
+.explorer-toggle > .media-count { margin-inline-start: -4px; }
+
+.media-clean-up { display: grid; gap: 4px; margin-bottom: 12px; padding: 12px; border-radius: var(--radius); background: var(--surface-subtle); }
+.media-clean-up[hidden] { display: none; }
+.media-clean-up__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.media-clean-up__heading { flex: 1; display: flex; align-items: center; margin: 0; font-size: var(--type-base); }
+.media-clean-up__heading:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.media-clean-up__head .button { min-height: var(--size-control); }
+.media-clean-up__group { margin: 8px 0 0; font-weight: 600; }
+.media-clean-up__files { margin: 0; padding-inline-start: 20px; overflow-wrap: anywhere; }

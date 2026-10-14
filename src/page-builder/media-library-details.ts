@@ -58,6 +58,9 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
     if (!h.modal) dialog.scrollTop = 0;
   }));
   renderMetadataForm(element, h, path, data, meta, library.collections, () => version === sheet.version && sheet.path === path);
+  if (library.keep?.includes(path)) {
+    element.querySelector(".media-library__detail-name + p")?.after(node("p", "media-library__keep-note", "Always keep: Clean up never suggests this file."));
+  }
   renderUsageList(element, h, library.usage[path]);
   renderFileActions(element, h, path, data);
   if (h.pick.onPick) renderPickerInsertion(element, h, h.pick.onPick, path, data, meta, library.items.map((item) => item.path));

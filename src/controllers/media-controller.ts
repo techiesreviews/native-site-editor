@@ -22,10 +22,12 @@ export interface MediaWorkspaceSnapshot {
 export interface MediaModule {
   openMediaPicker: (options: MediaPickerOptions) => Promise<void>;
   closeMediaPicker: () => void;
-  mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string }) => MediaLibraryView;
+  mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: import("../page-builder/media-picker").MediaCleanUpMount }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
   usage?: MediaUsageCheckPorts;
+  /** The clean-up count: where it is remembered (repository and branch) and the controls that show it. */
+  cleanUp?: { place(): string; marks(): HTMLElement[] };
   origins?(): string[];
   workspace(): MediaWorkspaceSnapshot | undefined;
   identity(): string;
@@ -63,6 +65,28 @@ export function createMediaController(ports: MediaControllerPorts) {
   let usage: ReturnType<typeof import("./media-usage-controller")["createMediaUsageController"]> | undefined;
   let usageLoading: Promise<void> | undefined;
   const usageListeners = new Set<(records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void>();
+  // Clean up's count rides in the usage chunk: no clean-up code runs at boot.
+  let cleanUp: ReturnType<typeof import("./media-clean-up-controller")["createMediaCleanUpController"]> | undefined;
+  let cleanUpView: typeof import("../page-builder/media-clean-up-view") | undefined;
+  let panel: { slot: HTMLElement; open: boolean; closed: () => void } | undefined;
+  function drawCleanUp() {
+    if (!cleanUp || !cleanUpView || !ports.cleanUp) return;
+    const state = cleanUp.state();
+    cleanUpView.drawMediaCount(ports.cleanUp.marks(), state.badge);
+    const live = panel;
+    if (live?.slot.isConnected) cleanUpView.drawCleanUpPanel(live.slot, state, live.open, {
+      dismiss: () => cleanUp?.dismiss(),
+      close: () => { live.open = false; drawCleanUp(); live.closed(); },
+    });
+  }
+  // More's Clean up item: its label carries the count; the panel opens above the grid.
+  function mountCleanUp(slot: HTMLElement, closed: () => void) {
+    const live = panel = { slot, open: false as boolean, closed };
+    return {
+      item: () => cleanUp?.item() ?? { label: "Clean up", disabled: "Still checking which files are used." },
+      open: () => { live.open = true; drawCleanUp(); },
+    };
+  }
   function refreshUsage() {
     const check = ports.usage;
     if (!check) return;
@@ -72,9 +96,17 @@ export function createMediaController(ports: MediaControllerPorts) {
     // Even the scanner's chunk waits for the deferred text index and first paint.
     void check.settled().then(() => {
       if (key !== check.key()) return;
-      usageLoading ??= import("./media-usage-controller").then(({ createMediaUsageController }) => {
+      const marks = ports.cleanUp;
+      usageLoading ??= Promise.all([import("./media-usage-controller"),
+        marks && import("./media-clean-up-controller"), marks && import("../page-builder/media-clean-up-view"),
+      ]).then(([{ createMediaUsageController }, cleanUpModule, view]) => {
+        if (marks && cleanUpModule && view) {
+          cleanUpView = view;
+          cleanUp = cleanUpModule.createMediaCleanUpController({ ...check, place: () => marks.place(), storage: () => localStorage, changed: drawCleanUp });
+        }
         usage = createMediaUsageController({ ...check, changed: records => {
           check.changed(records);
+          void cleanUp?.update(records);
           for (const listener of usageListeners) listener(records);
         } });
         usage.refresh();
@@ -263,7 +295,8 @@ export function createMediaController(ports: MediaControllerPorts) {
     galleryScope = scope; signature = ports.gallerySignature();
     const { mountMediaLibrary } = await load();
     if (attempt !== opening || scope !== ports.identity() || !ports.mediaSelected()) return;
-    gallery = mountMediaLibrary(ports.galleryHost(), { refreshKey: () => ports.gallerySignature() });
+    gallery = mountMediaLibrary(ports.galleryHost(), { refreshKey: () => ports.gallerySignature(),
+      cleanUp: ports.cleanUp && mountCleanUp });
   }
   function requestGalleryRefresh() {
     if (!gallery) return;
@@ -298,7 +331,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (view.refreshedKey === ports.gallerySignature()) return;
     void view.refresh();
   }
-  return { refreshUsage, invalidateUsage: () => usage?.invalidate(), usageRecords: () => usage?.usageRecords(),
+  return { refreshUsage, invalidateUsage: () => { usage?.invalidate(); cleanUp?.invalidate(); }, usageRecords: () => usage?.usageRecords(),
     onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {
       usageListeners.add(listener); return () => { usageListeners.delete(listener); };
     },
