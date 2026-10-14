@@ -2,7 +2,7 @@
 title: Copies for older images; adopt existing sizes
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-35 runner)
 blocked_by: [33-placed-image-markup, 24-media-folders-and-names]
 builder: sol
 phase: 2
