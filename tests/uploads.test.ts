@@ -111,6 +111,13 @@ test("an upload is an A change saved as its blob, its bytes kept apart; discardi
   await sweepUploads(bytes, scope, drafts.list(scope));
   assert.ok(await bytes.get(uploadKey(scope, sha)));
 
+  // A deleted replacement of a branch file keeps its bytes, so Restore can bring them back.
+  drafts.save({ ...scope, version: 1, path: "src/images/kept.png", baseSha: "f".repeat(40), original: "", content: "", deleted: true,
+    sourceSha: sha, opaque: true, upload: { size: png.length, type: "image/png" }, updatedAt: 1 });
+  await sweepUploads(bytes, scope, drafts.list(scope));
+  assert.ok(await bytes.get(uploadKey(scope, sha)));
+  drafts.remove(scope, "src/images/kept.png");
+
   // Discarded (deleted before it was ever saved), its bytes are swept; another branch's are not.
   await bytes.put(uploadKey(other, sha), new Blob([png]));
   assert.equal(deleteFile(drafts, scope, { path: "src/images/hero.png" }), "discarded");

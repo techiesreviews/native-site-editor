@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REPLACE_ACCEPT, existingReplacement, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "../src/page-builder/media-replace-rules";
+import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "../src/page-builder/media-replace-rules";
 import { accepts } from "../src/page-builder/media-library-filter";
 
 const paths = ["images/tram.webp", "images/tram-480.webp", "media/originals/tram.jpg", "images/new.jpg", "images/new-960.jpg", "logo.svg", "a.gif"];
@@ -15,19 +15,6 @@ test("the chosen picture must not be the one being replaced, or one of its copie
     assert.equal(replaceChoiceProblem("images/tram.webp", chosen, paths), "That is the picture being replaced. Choose a different one.");
   assert.equal(replaceChoiceProblem("images/tram.webp", "a.gif", paths), "Choose a JPEG, PNG, WebP or AVIF picture.");
   assert.equal(replaceChoiceProblem("images/tram.webp", "images/new.jpg", paths), undefined);
-});
-
-test("a picture already in Media brings its main, its copies and its kept original as they are", () => {
-  const main = new Blob(["main"]), copy = new Blob(["copy"]), original = new Blob(["raw"]);
-  const made = existingReplacement({ path: "images/new.JPG", blob: main, width: 1600, height: 900 }, [{ width: 960, blob: copy }],
-    { path: "media/originals/new.heic", blob: original });
-  assert.deepEqual(made.result.outputs, [
-    { blob: main, width: 1600, height: 900, extension: "jpg" },
-    { blob: copy, extension: "jpg", variantWidth: 960 },
-  ]);
-  assert.deepEqual({ before: made.result.before, after: made.result.after }, { before: 8, after: 8 });
-  assert.deepEqual(made.original, { blob: original, extension: "heic" });
-  assert.equal(existingReplacement({ path: "b.png", blob: main, width: 1, height: 1 }, []).original, undefined);
 });
 
 test("the confirmation says where it shows, that the address stays, and where the old picture goes", () => {

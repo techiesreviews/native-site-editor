@@ -123,7 +123,7 @@ export async function pruneUnchanged(
     if (!same) continue;
     const latest = store.get(scope, draft.path);
     // Changed while the SHAs were worked out: left for the next check.
-    if (!latest || latest.content !== draft.content || Boolean(latest.deleted) !== Boolean(draft.deleted)) continue;
+    if (!latest || latest.content !== draft.content || latest.sourceSha !== draft.sourceSha || Boolean(latest.deleted) !== Boolean(draft.deleted)) continue;
     store.remove(scope, draft.path);
     dropped.push(draft.path);
   }
@@ -161,6 +161,10 @@ export function publishFiles(changes: FileChange[]): PublishFile[] {
 const stamp = (scope: DraftScope, now: number) => ({
   account: scope.account, repoId: scope.repoId, repo: scope.repo, branch: scope.branch, version: 1 as const, updatedAt: now,
 });
+/** New bytes (an upload, from Replace everywhere) that `from` carries over the file whose blob is `baseSha`, if any. */
+const replacement = (from: SavedDraft | undefined, baseSha: string | null) =>
+  from?.upload && from.opaque && from.sourceSha && from.sourceSha !== baseSha
+    ? { sourceSha: from.sourceSha, opaque: true as const, upload: from.upload } : undefined;
 
 /**
  * Deletes `file`: a new file's draft is dropped (it was never on GitHub; a
@@ -183,8 +187,9 @@ export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableF
   const baseSha = draft?.baseSha ?? file.sha;
   if (!baseSha) return "none";
   const original = draft?.original ?? file.text ?? "";
+  // A deletion keeps replaced bytes (Replace everywhere), so Restore brings them back.
   store.save({
-    ...stamp(scope, now), path: file.path, baseSha, original, content: draft?.content ?? original, deleted: true,
+    ...stamp(scope, now), path: file.path, baseSha, original, content: draft?.content ?? original, deleted: true, ...replacement(draft, baseSha),
   });
   return "deleted";
 }
@@ -205,7 +210,9 @@ export function moveFile(store: DraftAccess, scope: DraftScope, file: MovableFil
     const paired = origin?.deleted && origin.movedTo === file.path ? origin : undefined;
     if (paired && draft.movedFrom === to) {
       store.remove(scope, to);
-      if (!draft.opaque && draft.content !== draft.original)
+      const bytes = replacement(draft, paired.baseSha);
+      if (bytes) store.save({ ...stamp(scope, now), path: to, baseSha: paired.baseSha, original: "", content: "", ...bytes });
+      else if (!draft.opaque && draft.content !== draft.original)
         store.save({ ...stamp(scope, now), path: to, baseSha: paired.baseSha, original: draft.original, content: draft.content });
       return "returned";
     }
@@ -215,11 +222,13 @@ export function moveFile(store: DraftAccess, scope: DraftScope, file: MovableFil
   }
   const baseSha = draft?.baseSha ?? file.sha;
   if (!baseSha) return "none";
-  const text = draft?.original ?? file.text;
+  // Replaced bytes (Replace everywhere) move with the file; the old blob stays the deletion's baseline.
+  const bytes = replacement(draft, baseSha);
+  const text = bytes ? undefined : draft?.original ?? file.text;
   const opaque = text === undefined;
   const moved: SavedDraft = {
-    ...stamp(scope, now), path: to, baseSha: null, original: text ?? "", content: draft?.content ?? text ?? "",
-    movedFrom: file.path, sourceSha: baseSha,
+    ...stamp(scope, now), path: to, baseSha: null, original: text ?? "", content: bytes ? "" : draft?.content ?? text ?? "",
+    movedFrom: file.path, sourceSha: baseSha, ...bytes,
   };
   if (opaque) moved.opaque = true;
   if (file.mode === "100755") moved.mode = "100755";
@@ -264,7 +273,9 @@ export function restoreFile(store: DraftAccess, scope: DraftScope, path: string,
     if (back) return back;
   }
   store.remove(scope, path);
-  if (marker.content !== marker.original)
+  const bytes = replacement(marker, marker.baseSha);
+  if (bytes) store.save({ ...stamp(scope, now), path, baseSha: marker.baseSha, original: "", content: "", ...bytes });
+  else if (marker.content !== marker.original)
     store.save({ ...stamp(scope, now), path, baseSha: marker.baseSha, original: marker.original, content: marker.content });
   return { path };
 }
@@ -282,7 +293,9 @@ export function moveBack(store: DraftAccess, scope: DraftScope, path: string, no
   const paired = origin?.deleted && origin.movedTo === path;
   if (paired) store.remove(scope, draft.movedFrom);
   const baseSha = paired ? origin!.baseSha : draft.sourceSha;
-  if (baseSha && !draft.opaque && draft.content !== draft.original)
+  const bytes = paired && baseSha ? replacement(draft, baseSha) : undefined;
+  if (baseSha && bytes) store.save({ ...stamp(scope, now), path: draft.movedFrom, baseSha, original: "", content: "", ...bytes });
+  else if (baseSha && !draft.opaque && draft.content !== draft.original)
     store.save({ ...stamp(scope, now), path: draft.movedFrom, baseSha, original: draft.original, content: draft.content });
   return { path: draft.movedFrom, from: path };
 }

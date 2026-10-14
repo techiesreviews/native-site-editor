@@ -329,6 +329,14 @@ test("retry after a lost response recognizes already-published content without a
   assert.equal(result.commit, head);
   assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
 });
+test("a retried replacement whose blob GitHub already holds is no change and writes nothing", async () => {
+  const replaced = "8".repeat(40);
+  const { github, calls } = fixture({ existing: replaced });
+  const result = await publish(github, repo, { branch: "main", files: [{ path: files[0].path, baseSha, content: "", sha: replaced }] });
+  assert.equal(result.unchanged, true);
+  assert.equal(calls.filter((call) => call.method !== "GET").length, 0);
+});
+
 test("Git blob digest preserves Unicode and exact whitespace", async () => {
   const content = "\ufeff<h1>hé 🌍</h1>\r\n";
   const expected = createHash("sha1")

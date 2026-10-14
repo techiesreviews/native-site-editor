@@ -1,11 +1,9 @@
 import { mediaFamilyOf } from "./media-families";
 import { basename } from "./media-library-filter";
-import type { MediaOptimiseResult } from "./media-optimise";
 import type { MediaMetadataMap } from "./media-metadata";
 
 /** The pure rules behind Replace everywhere in File details (media build slice 54; ticket 15
- * "Replace everywhere"): which pictures offer it, what the picker may choose, the new picture's
- * outputs when it is already in Media, and what the confirmation says. The engine is slice 53's. */
+ * "Replace everywhere"): what the picker may choose, and what the confirmation says. The engine is slice 53's. */
 
 /** The picker shows what the engine accepts as a new picture: photos and screenshots. */
 export const REPLACE_ACCEPT = "image/png,image/jpeg,image/webp,image/avif";
@@ -19,25 +17,6 @@ export function replaceChoiceProblem(path: string, chosen: string, paths: string
   if (members.includes(chosen)) return "That is the picture being replaced. Choose a different one.";
   if (!/^(?:png|jpe?g|webp|avif)$/.test(format(chosen))) return "Choose a JPEG, PNG, WebP or AVIF picture.";
   return undefined;
-}
-
-/** The new picture's outputs when it is already in Media: its main and its responsive copies as they
- * are (no second preparation), so it arrives with its own copies, plus its kept original. */
-export function existingReplacement(
-  main: { path: string; blob: Blob; width?: number; height?: number },
-  copies: { width: number; blob: Blob }[],
-  original?: { path: string; blob: Blob },
-): { result: MediaOptimiseResult; original?: { blob: Blob; extension: string } } {
-  const extension = format(main.path);
-  const outputs = [
-    { blob: main.blob, width: main.width, height: main.height, extension },
-    ...copies.map(copy => ({ blob: copy.blob, extension, variantWidth: copy.width })),
-  ];
-  const size = outputs.reduce((sum, output) => sum + output.blob.size, 0);
-  return {
-    result: { outputs, before: size, after: size },
-    ...original ? { original: { blob: original.blob, extension: format(original.path) } } : {},
-  };
 }
 
 export interface ReplaceNoticeInput {

@@ -205,3 +205,49 @@ test("a replaced file's draft is dropped once the branch holds its new blob", as
   assert.deepEqual(await pruneUnchanged(store, scope, store.list(scope), () => ({ sha: sha("a") })), []);
   assert.deepEqual(await pruneUnchanged(store, scope, store.list(scope), () => ({ sha: sha("b") })), ["a.png"]);
 });
+
+const replacedDraft = (path: string): SavedDraft => ({ ...scope, version: 1, path, baseSha: sha("a"), original: "", content: "",
+  sourceSha: sha("b"), opaque: true, upload: { size: 3, type: "image/png" }, updatedAt: 1 });
+
+test("a replaced file renamed keeps its new bytes, publishes them under the new name, and returns with them", () => {
+  const store = new DraftStore(memory());
+  store.save(replacedDraft("images/tram.png"));
+  assert.equal(moveFile(store, scope, { path: "images/tram.png", sha: sha("a") }, "images/lisbon.png"), "moved");
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))), [
+    { path: "images/lisbon.png", baseSha: null, content: "", sha: sha("b"), movedFrom: "images/tram.png" },
+    { path: "images/tram.png", baseSha: sha("a"), content: "", delete: true },
+  ]);
+  assert.ok(store.get(scope, "images/lisbon.png")?.upload);
+  // Moved back (a second rename to the old name, or Restore of the old path), the replacement is still there.
+  assert.equal(moveFile(store, scope, { path: "images/lisbon.png" }, "images/tram.png"), "returned");
+  assert.deepEqual(store.get(scope, "images/tram.png"), { ...replacedDraft("images/tram.png"), updatedAt: store.get(scope, "images/tram.png")!.updatedAt });
+  moveFile(store, scope, { path: "images/tram.png", sha: sha("a") }, "images/lisbon.png");
+  assert.deepEqual(restoreFile(store, scope, "images/tram.png"), { path: "images/tram.png", from: "images/lisbon.png" });
+  assert.equal(store.get(scope, "images/tram.png")?.sourceSha, sha("b"));
+  assert.deepEqual(kinds(store), ["M images/tram.png"]);
+});
+
+test("a replaced file deleted keeps its new bytes for Restore", () => {
+  const store = new DraftStore(memory());
+  store.save(replacedDraft("a.png"));
+  assert.equal(deleteFile(store, scope, { path: "a.png", sha: sha("a") }), "deleted");
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))), [{ path: "a.png", baseSha: sha("a"), content: "", delete: true }]);
+  assert.deepEqual(restoreFile(store, scope, "a.png"), { path: "a.png" });
+  assert.equal(store.get(scope, "a.png")?.sourceSha, sha("b"));
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))), [{ path: "a.png", baseSha: sha("a"), content: "", sha: sha("b") }]);
+});
+
+test("pruning keeps a replacement that changed while the branch was compared", async () => {
+  const store = new DraftStore(memory());
+  store.save(edit("a.txt", "x", "y"));
+  store.save(replacedDraft("b.png"));
+  const drafts = store.list(scope);
+  let release!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const pruning = pruneUnchanged(store, scope, drafts, path => ({ sha: path === "b.png" ? sha("b") : sha("z") }), async text => { await wait; return textBlobSha(text); });
+  // Replacement A (blob b) becomes B (blob c) while the earlier text draft is hashed.
+  store.save({ ...replacedDraft("b.png"), sourceSha: sha("c") });
+  release();
+  assert.deepEqual(await pruning, []);
+  assert.equal(store.get(scope, "b.png")?.sourceSha, sha("c"));
+});

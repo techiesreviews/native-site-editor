@@ -6,7 +6,10 @@ import { basename } from "./media-library-filter";
 import { check, input } from "./media-library-fields";
 import { openMediaPicker } from "./media-picker";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
-import { REPLACE_ACCEPT, existingReplacement, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "./media-replace-rules";
+import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "./media-replace-rules";
+import { prepareMediaFile } from "./media-prepare";
+import { mediaAddingSettings } from "./media-settings";
+import { uploadImageType } from "../uploads";
 import type { MediaReplaceRequest } from "./media-workspace";
 
 /** Replace everywhere from File details (media build slice 54; ticket 15): the picker chooses the new
@@ -45,18 +48,21 @@ export async function replaceEverywhere(sheet: LibrarySheet, c: ReplaceContext, 
         next = { result: request.result, ...request.original ? { original: request.original } : {}, name: request.file.name,
           url, width: main.width, height: main.height, inMedia: false, release: () => URL.revokeObjectURL(url) };
       } else {
-        const paths = c.library().items.map(item => item.path);
+        const library = c.library(), paths = library.items.map(item => item.path);
         const problem = replaceChoiceProblem(path, image.path, paths);
         if (problem) throw new Error(problem);
-        // A picture already in Media brings its own copies and kept original as they are.
-        const family = mediaFamilyOf(image.path, paths), data = await c.cache.get(image.path);
-        const copies: { width: number; blob: Blob }[] = [];
-        for (const copy of family?.copies ?? []) copies.push({ width: copy.width, blob: await c.adapter.blob(copy.path) });
-        const kept = family?.originals[0];
-        const original = kept ? { path: kept, blob: await c.adapter.blob(kept) } : undefined;
-        const width = data.width ?? image.width, height = data.height ?? image.height;
-        next = { ...existingReplacement({ path: image.path, blob: data.blob, width, height }, copies, original),
-          name: basename(image.path), url: data.url, width, height, inMedia: true, release: () => undefined };
+        // A picture already in Media is prepared again as at adding, with the site's settings, so it
+        // brings its own responsive copies in one format; its kept original comes along as it is.
+        const data = await c.cache.get(image.path), { image: quality } = mediaAddingSettings(library.adding);
+        const { request } = await prepareMediaFile(new File([data.blob], basename(image.path), { type: data.blob.type || uploadImageType(image.path) }),
+          library.key, undefined, undefined, undefined, undefined, undefined, quality, false);
+        const main = request.result?.outputs.find(output => output.variantWidth === undefined);
+        if (!request.result || !main) throw new Error(`${basename(image.path)} could not be prepared. Choose another picture.`);
+        const kept = mediaFamilyOf(image.path, paths)?.originals[0];
+        const original = kept ? { blob: await c.adapter.blob(kept), extension: kept.split(".").pop()!.toLowerCase() } : undefined;
+        const url = URL.createObjectURL(main.blob);
+        next = { result: request.result, ...original ? { original } : {}, name: basename(image.path), url,
+          width: main.width, height: main.height, inMedia: true, release: () => URL.revokeObjectURL(url) };
       }
       if (cancelled()) { next.release(); return; }
       // The picker closes once Use resolves; the confirmation then takes the pane's sheet.

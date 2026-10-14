@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { SavedDraft, DraftScope } from "../src/drafts";
+import { DraftStore, type SavedDraft, type DraftScope } from "../src/drafts";
 import { createGuardedEdits, type Stamp } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/media-draft-transaction";
@@ -282,6 +282,26 @@ test("explicit replacement stages new bytes over an existing branch path, preser
   assert.equal(h.undo(), true); assert.equal(h.records.size, 0);
   h.bytes.map.clear(); assert.equal(await h.redo(), true);
   assert.equal(h.records.get(path)?.sourceSha, draft.sourceSha); assert.equal(h.steps(), 1); assert.equal(h.bytes.map.size, 1);
+});
+
+test("explicit replacement survives the real draft store (no text, still a change) through Undo and Redo", async () => {
+  const h = harness(), path = "images/a.png", data = new Map<string, string>();
+  const real = new DraftStore({ getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); }, removeItem: key => { data.delete(key); },
+    key: index => [...data.keys()][index] ?? null, get length() { return data.size; } });
+  h.host.store = { get: (scope, file) => real.get(scope, file), list: scope => real.list(scope), error: "store failure",
+    save: record => real.save(record), remove: (scope, file) => real.remove(scope, file) } as typeof h.host.store;
+  h.host.paths = () => [path, ...real.list(h.host.scope).filter(record => !record.deleted).map(record => record.path)];
+  h.host.assetVersion = file => file === path ? real.get(h.host.scope, path)?.sourceSha ?? "old-sha" : real.get(h.host.scope, file)?.sourceSha;
+  h.host.source = file => real.get(h.host.scope, file)?.content;
+  h.host.entry = async file => file === path ? { path, sha: "old-sha" } : undefined;
+  h.batch.expectedPaths = [path]; h.batch.expectedAssets.set(path, "old-sha"); h.batch.overwrites = [path];
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  const draft = real.get(h.host.scope, path)!;
+  assert.ok(draft, "the replaced file's draft is kept");
+  assert.equal(draft.baseSha, "old-sha"); assert.ok(draft.upload); assert.notEqual(draft.sourceSha, "old-sha");
+  assert.equal(h.undo(), true); assert.equal(real.get(h.host.scope, path), undefined);
+  h.bytes.map.clear(); assert.equal(await h.redo(), true);
+  assert.equal(real.get(h.host.scope, path)?.sourceSha, draft.sourceSha); assert.equal(h.bytes.map.size, 1);
 });
 
 test("replacement of an existing upload preserves its base and exact draft on Undo", async () => {

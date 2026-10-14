@@ -213,7 +213,8 @@ export const uploadDrafts = (drafts: SavedDraft[]) => drafts.filter((draft) => d
 
 /** Removes the stored bytes of `scope` that none of its drafts (`drafts`, all of them) refers to. */
 export async function sweepUploads(bytes: UploadBytes, scope: DraftScope, drafts: SavedDraft[]) {
-  const kept = new Set(uploadDrafts(drafts).map((draft) => uploadKey(scope, draft.sourceSha!)));
+  // A deletion that holds replaced bytes keeps them for Restore.
+  const kept = new Set(drafts.filter((draft) => draft.upload && draft.sourceSha).map((draft) => uploadKey(scope, draft.sourceSha!)));
   const prefix = uploadKey(scope, "").slice(0, -3);
   for (const key of await bytes.keys())
     if (key.startsWith(prefix) && !kept.has(key) && !adding.has(key)) await bytes.delete(key);
