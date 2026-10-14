@@ -3,23 +3,34 @@ export type ImageWidth = { viewport: number; width: number };
 export type ImageFact = { viewport: number; viewportHeight: number; top: number; width: number; height: number; naturalWidth: number; naturalHeight: number; fit: string };
 export type ImageReport = { facts: ImageFact[] } | { error: string };
 
-/** Return the first integer viewport on the upper side of each width query. */
+// The first integer viewport on the upper side of `width <op> n`.
+const UPPER: Record<string, (n: number) => number> = { ">": (n) => Math.floor(n) + 1, ">=": Math.ceil, "<": Math.ceil, "<=": (n) => Math.floor(n) + 1 };
+const FLIP: Record<string, string> = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+const LENGTH = String.raw`(\d+(?:\.\d+)?)\s*(px|em|rem)`;
+const px = (value: string, unit: string) => Number(value) * (unit.toLowerCase() === "px" ? 1 : 16);
+
+/** Return the first integer viewport on the upper side of each width query (`min-`/`max-width` and range syntax). */
 export function imageBreakpoints(conditions: readonly string[]): number[] {
   const points = new Set<number>();
+  const add = (op: string, width: number) => { if (width > 0 && Number.isFinite(width)) points.add(UPPER[op](width)); };
   for (const condition of conditions) {
-    for (const match of condition.matchAll(/\(\s*(min|max)-width\s*:\s*(\d+(?:\.\d+)?)\s*(px|em|rem)\s*\)/gi)) {
-      const width = Number(match[2]) * (match[3].toLowerCase() === "px" ? 1 : 16);
-      if (width > 0 && Number.isFinite(width)) points.add(match[1].toLowerCase() === "min" ? Math.ceil(width) : Math.floor(width) + 1);
-    }
+    for (const m of condition.matchAll(new RegExp(String.raw`\(\s*(min|max)-width\s*:\s*${LENGTH}\s*\)`, "gi"))) add(m[1].toLowerCase() === "min" ? ">=" : "<=", px(m[2], m[3]));
+    // Range syntax: `(width > 900px)`, `(900px <= width)`, `(400px < width <= 900px)`.
+    for (const m of condition.matchAll(new RegExp(String.raw`(?<![\w-])width\s*([<>]=?)\s*${LENGTH}`, "gi"))) add(m[1], px(m[2], m[3]));
+    for (const m of condition.matchAll(new RegExp(String.raw`${LENGTH}\s*([<>]=?)\s*width(?![\w-])`, "gi"))) add(FLIP[m[3]], px(m[1], m[2]));
   }
   return [...points].sort((a, b) => a - b);
 }
 
-/** Keep baseline devices and at most six breakpoint pairs (15 layouts). */
+/** Site breakpoints measured on both sides; beyond this many, an even sample across the range. */
+export const IMAGE_BREAKPOINTS = 24;
+/** The most layouts one measurement reads: three devices plus both sides of each breakpoint. */
+export const IMAGE_FACTS = 3 + 2 * IMAGE_BREAKPOINTS;
+
 export function imageViewports(points: readonly number[]): number[] {
   const widths = new Set([390, 768, 1280]);
   const valid = [...new Set(points)].filter((point) => Number.isInteger(point) && point > 320 && point <= 2560).sort((a, b) => a - b);
-  const count = Math.min(6, valid.length);
+  const count = Math.min(IMAGE_BREAKPOINTS, valid.length);
   for (let i = 0; i < count; i++) {
     // Sample the whole stylesheet's range when there are too many queries.
     const point = valid[count === 1 ? 0 : Math.round(i * (valid.length - 1) / (count - 1))];

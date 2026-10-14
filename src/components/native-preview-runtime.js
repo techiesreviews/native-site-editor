@@ -3466,13 +3466,20 @@ import { domView } from "../page-builder/rules/tree.ts";
       }
       adopted(document);
       function clone(from) {
-        if (from.nodeType === 1 && (from.localName === "script" || from.localName === "iframe" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
+        if (from.nodeType === 1 && (from.localName === "script" || from.localName === "base" || from.localName === "meta" && from.hasAttribute("http-equiv") || from.hasAttribute("data-native-selection-box"))) return null;
         var to = doc.importNode(from, false);
         if (to.nodeType === 1) {
           Array.prototype.slice.call(to.attributes).forEach(function (attr) {
             if (/^on/i.test(attr.name) || attr.name === "contenteditable" || /^data-native-measure-/.test(attr.name)) to.removeAttribute(attr.name);
           });
           if (to.localName === "img") to.loading = "eager";
+          // An embed keeps its box (it can push the image below the fold) but loads nothing.
+          if (to.localName === "iframe") {
+            to.removeAttribute("src");
+            to.removeAttribute("srcdoc");
+            to.setAttribute("sandbox", "");
+            return to;
+          }
           if (from === target) to.setAttribute("data-native-measure-target", "");
         }
         Array.prototype.forEach.call(from.childNodes, function (child) {

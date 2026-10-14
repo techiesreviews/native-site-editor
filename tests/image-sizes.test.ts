@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { imageBreakpoints, imageViewports, imageWidth, imageSizes, imageFirstScreen, imageResult } from "../src/page-builder/image-sizes";
+import { IMAGE_FACTS, imageBreakpoints, imageViewports, imageWidth, imageSizes, imageFirstScreen, imageResult } from "../src/page-builder/image-sizes";
 
 const measurements = (pairs: number[][]) => pairs.map(([viewport, width]) => ({ viewport, width }));
 
@@ -13,10 +13,29 @@ test("width queries yield upper-side boundaries, ignoring other features and non
   ]), [768, 900, 901]);
 });
 
+test("range-syntax width queries yield the same upper-side boundaries", () => {
+  assert.deepEqual(imageBreakpoints(["(width >= 900px)"]), [900]);
+  assert.deepEqual(imageBreakpoints(["(width > 900px)"]), [901]);
+  assert.deepEqual(imageBreakpoints(["(width < 900px)"]), [900]);
+  assert.deepEqual(imageBreakpoints(["(width <= 900px)"]), [901]);
+  assert.deepEqual(imageBreakpoints(["(900px < width)"]), [901]);
+  assert.deepEqual(imageBreakpoints(["(48em <= width)"]), [768]);
+  assert.deepEqual(imageBreakpoints(["screen and (400px < width <= 899.5px)"]), [401, 900]);
+  assert.deepEqual(imageBreakpoints(["(min-width > 900px)", "(height > 900px)", "(width > -3px)", "(width > 80vw)"]), []);
+});
+
+test("every breakpoint up to the cap is measured on both sides", () => {
+  const points = [600, 700, 800, 900, 1000, 1100, 1200];
+  const widths = imageViewports(points);
+  for (const point of points) assert.ok(widths.includes(point - 1) && widths.includes(point), `${point}`);
+  const capped = imageViewports(Array.from({ length: 40 }, (_, i) => 400 + i * 20));
+  assert.ok(capped.length <= IMAGE_FACTS);
+});
+
 test("devices plus both breakpoint sides are sorted, deduplicated, sane and bounded", () => {
   assert.deepEqual(imageViewports([900, 768, 900, 0, 320, 2561, NaN]), [390, 767, 768, 899, 900, 1280]);
   const many = imageViewports(Array.from({ length: 200 }, (_, i) => 321 + i * 10));
-  assert.ok(many.length <= 15);
+  assert.ok(many.length <= IMAGE_FACTS);
   for (const baseline of [390, 768, 1280]) assert.ok(many.includes(baseline));
   assert.ok(many.every((width) => width >= 320 && width <= 2560));
   assert.ok(many.includes(320) && many.includes(2311));

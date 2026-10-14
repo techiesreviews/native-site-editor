@@ -84,3 +84,36 @@ test("preview measures a cover content box and reports a missing image without h
   expect(await measure(page, { path: "index.html", node: [99] })).toEqual({ error: "No image at the requested node." });
   await expect(preview.locator("iframe")).toHaveCount(0);
 });
+
+test("preview measures range-syntax breakpoints and keeps an embed's space above the image", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const preview = page.frameLocator(".native-preview-frame");
+  const hero = preview.locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await expect.poll(() => hero.evaluate((image) => image instanceof HTMLImageElement && image.naturalWidth)).toBeGreaterThan(0);
+  // A 1,000px embed before the hero puts it below the first screen at every
+  // width; only a range-syntax query narrows the image above 900px.
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const text = editor.getMountedSource("index.html");
+    if (text === undefined) throw new Error("Missing page model");
+    const style = "\n<style>#page .hero-image{width:100%;height:auto}@media (width > 900px){#page .hero-image{width:50%}}</style>";
+    const at = text.indexOf("</body>");
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: style });
+    const next = editor.getMountedSource("index.html") ?? "";
+    const before = next.indexOf("<h1 data-key=\"hero-title\">");
+    editor.replaceActiveRange({ path: "index.html", start: before, end: before, expected: "", text: "<iframe title=\"Embed\" style=\"display:block;width:100%;height:1000px;border:0\"></iframe>\n    " });
+  });
+  await expect(preview.locator("section.hero iframe")).toHaveCount(1);
+  await expect.poll(() => hero.evaluate((image) => getComputedStyle(image).height)).not.toBe("auto");
+  const report = await measure(page, { path: "index.html", node: [1, 0, 3] });
+  if ("error" in report) throw new Error(report.error);
+  const result = imageResult(report.facts);
+  const width = (viewport: number) => result.widths.find((item) => item.viewport === viewport)?.width ?? 0;
+  expect(result.widths.map(({ viewport }) => viewport)).toEqual(expect.arrayContaining([900, 901]));
+  expect(width(901)).toBeLessThan(width(900));
+  expect(report.facts.every((fact) => fact.top >= 1000)).toBe(true);
+  expect(result.firstScreen).toBe(false);
+  await expect(preview.locator("section.hero iframe")).toHaveCount(1);
+});

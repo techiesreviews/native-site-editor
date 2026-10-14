@@ -6,7 +6,7 @@
 // and limit; checks against the editor's state (a path of the site, the page
 // on show, the current render) stay with the receiver.
 import type { AssetChanges, EditComponentFrameMode, NativeNodeRequest, NativePreviewSelection, NativeStructureItem, NativeTextSelection, UpdatePayload } from "./native-preview";
-import type { ImageReport } from "../page-builder/image-sizes";
+import { IMAGE_FACTS, type ImageReport } from "../page-builder/image-sizes";
 import type { SelectionRect } from "./edit-bar";
 import type { InsertPoint } from "./insert-controls";
 import type { ItemGridReport } from "./card-grid-controls";
@@ -306,7 +306,7 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
       const report = object(raw.report);
       if (!index(raw.id) || !report) return undefined;
       if (typeof report.error === "string") return { ...base(raw.type), id: raw.id, report: { error: report.error.slice(0, 2000) } };
-      if (!Array.isArray(report.facts) || !report.facts.length || report.facts.length > 15) return undefined;
+      if (!Array.isArray(report.facts) || !report.facts.length || report.facts.length > IMAGE_FACTS) return undefined;
       const facts = report.facts.map((entry) => {
         const fact = object(entry);
         if (!fact || !finite(fact.viewport) || fact.viewport < 320 || fact.viewport > 2560 || !finite(fact.viewportHeight) || fact.viewportHeight <= 0 || !finite(fact.top)) return undefined;
