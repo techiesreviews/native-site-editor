@@ -4704,7 +4704,10 @@ const agentSiteActions: AgentSiteActions = {
   async previewMedia(path) {
     const ctx = await mediaController.workspaceContext();
     if (!ctx.paths.includes(path)) throw new (await loadAgentSite()).Conflict(`${path} is not in the site. list_media lists the media.`);
-    const blob = await ctx.blob(path);
+    // An SVG written as text here (an edited one, a new unsaved one) previews its draft, as the canvas shows it.
+    const draft = /\.svg$/i.test(path) ? ctx.drafts.get(ctx.scope, path) : undefined;
+    const svg = draft && !draft.deleted && !draft.opaque && !draft.sourceSha && !draft.upload ? editorModule?.getMountedSource(path) ?? draft.content : undefined;
+    const blob = svg !== undefined ? new Blob([svg], { type: "image/svg+xml" }) : await ctx.blob(path);
     const media = await import("./agent-media");
     ctx.assertLive();
     const preview = await media.previewPicture(blob, path);

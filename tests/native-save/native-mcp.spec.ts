@@ -924,5 +924,20 @@ test("media tools list starter images with uses and preview a picture at most 51
       const dimensions = { width: image.width, height: image.height }; image.close(); return dimensions;
     }, { data: content[0].data, mimeType: content[0].mimeType });
     expect(decoded).toEqual({ width: dimensions.width, height: dimensions.height });
+
+    // Unsaved SVG text previews as the editor has it: an edited one and a new one.
+    const svg = (width: number, height: number) => `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#2f6d3a"/></svg>`;
+    const saved = result(await client.callTool({ name: "read_file", arguments: { path: picture.path } }));
+    for (const [path, width, height, expectedHash, shown] of [
+      [picture.path, 1024, 256, saved.hash, { width: 512, height: 128 }],
+      ["images/agent-new.svg", 300, 100, undefined, { width: 300, height: 100 }],
+    ] as const) {
+      const written = await client.callTool({ name: "write_file", arguments: { path, content: svg(width, height), ...(expectedHash ? { expectedHash } : {}), waitSeconds: 25 } });
+      expect(result(written).state).toBe("applied");
+      const drafted = await client.callTool({ name: "preview_media", arguments: { path, waitSeconds: 25 } });
+      expect(drafted.isError).toBeFalsy();
+      const size = JSON.parse((drafted.content as { text?: string }[])[1].text!);
+      expect(size).toMatchObject({ ...shown, originalWidth: width, originalHeight: height });
+    }
   } finally { await client.close(); }
 });
