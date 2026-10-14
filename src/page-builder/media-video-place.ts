@@ -1,5 +1,4 @@
-// Lazy edit-bar controls and one-Undo video transactions.
-import type { EditBarControl } from "../components/edit-bar";
+// One-Undo video transactions behind the edit bar's Looping video and Background video controls (lazy).
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaHeldFiles, MediaUsageSource } from "./media-picker";
@@ -9,10 +8,9 @@ import { locateNativeElementRange } from "../native-source-location";
 import type { ElementRange } from "../../shared/html-source";
 import { isImagePath } from "../native-structure";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../../shared/media-records";
-import { mediaAttribute } from "./media-attributes";
 import { mediaPlayerPlan, type MediaPlayerKind } from "./player-markup";
 import { starterPlayerFiles } from "./starter-loader";
-import { isPictureSpot, PICTURE_SPOT_MESSAGE, readLooping, readSectionBackground, sectionBackgroundEdits, writeLooping } from "./looping-video";
+import { sectionBackgroundEdits, writeLooping } from "./looping-video";
 
 export const isVideoPath = (path: string) => /\.(?:mp4|m4v|webm|mov|ogv)$/i.test(path);
 type Context = (include?: (path: string) => boolean) => Promise<MediaWorkspaceContext>;
@@ -21,27 +19,20 @@ export type VideoPlacePorts = Pick<MediaControllerPorts, "stamp" | "generation" 
 export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load: () => Promise<Pick<MediaModule, "openMediaPicker">>, usage?: MediaUsageSource) {
   // The controller's locator when it has one (tests), else the page's own.
   const locate = (source: string, node: number[]) => (ports.locateElement ?? locateNativeElementRange)(source, node) as ElementRange | undefined;
-  function controls(path: string, node: number[], source: string): EditBarControl[] {
+  /** Looping on or off for the selected video, as one Undo step (the edit bar decides when it is offered). */
+  function toggleLooping(path: string, node: number[], source: string, on: boolean) {
     const range = locate(source, node);
-    if (!range) return [];
+    if (range?.tag.name !== "video") throw new Error("Choose a video.");
     const tag = source.slice(range.tag.start, range.tag.end);
-    if (range.tag.name === "video" && !mediaAttribute(source, range.tag, "data-background")) {
-      const checked = readLooping(tag), disabled = checked && isPictureSpot(tag);
-      return [{ kind: "checkbox", label: "Looping video", checked, disabled,
-        title: disabled ? PICTURE_SPOT_MESSAGE : "Plays silently by itself, over and over, with a small pause button",
-        onChange: on => { void change(path, node, source, on ? "Video loops silently" : "Video plays with sound on tap", on ? "looping-video" : undefined,
-          page => {
-            // Children (a subtitles track) stay, so switching looping off again loses nothing.
-            const current = locate(page, node)!;
-            return page.slice(0, current.tag.start) + writeLooping(tag, on) + page.slice(current.tag.end);
-          }).catch(error => ports.error(error)); } }];
-    }
-    if (range.tag.name !== "section") return [];
-    const old = readSectionBackground(source, range);
-    return [{ kind: "button", label: "Background video", onPress: () => { void chooseBackground({ path, node }, source).catch(error => ports.error(error)); } },
-      ...old ? [{ kind: "button" as const, label: "Remove background video", onPress: () => {
-        void change(path, node, source, "Background video removed", undefined, page => background(page, node)).catch(error => ports.error(error));
-      } }] : []];
+    return change(path, node, source, on ? "Video loops silently" : "Video plays with sound on tap", on ? "looping-video" : undefined,
+      page => {
+        // Children (a subtitles track) stay, so switching looping off again loses nothing.
+        const current = locate(page, node)!;
+        return page.slice(0, current.tag.start) + writeLooping(tag, on) + page.slice(current.tag.end);
+      });
+  }
+  function removeBackground(path: string, node: number[], source: string) {
+    return change(path, node, source, "Background video removed", undefined, page => background(page, node));
   }
   function background(source: string, node: number[], video?: { path: string; still?: string }) {
     const range = locate(source, node);
@@ -114,5 +105,5 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
           (page, record) => background(page, target.node, { path: video.path, still: record?.still }), video, cancelled, held, since);
       } });
   }
-  return { controls, chooseBackground };
+  return { toggleLooping, removeBackground, chooseBackground };
 }

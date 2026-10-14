@@ -7,7 +7,9 @@ import type { MediaWorkspaceContext, MediaWorkspaceBatch } from "../page-builder
 import type { MediaPathPlacement, MediaPickerOptions } from "../page-builder/media-picker";
 type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")["mountMediaLibrary"]>;
 import type { MediaImage } from "../page-builder/media-markup";
-import { mediaExistingAlt } from "../page-builder/media-attributes";
+import { mediaAttribute, mediaExistingAlt } from "../page-builder/media-attributes";
+import { startTags } from "../../shared/html-source";
+import type { EditBarControl } from "../components/edit-bar";
 import { locateNativeElementRange } from "../native-source-location";
 import { isImagePath } from "../native-structure";
 import { removedCopies, uploadImageType } from "../uploads";
@@ -380,11 +382,29 @@ export function createMediaController(ports: MediaControllerPorts) {
     videos = module.createVideoPlaces(ports, workspaceContext, load, {
       records: () => usage?.usageRecords(), pageLabel: page => ports.placeLabel?.(page),
       onChange: listener => { usageListeners.add(listener); return () => { usageListeners.delete(listener); }; } });
-    ports.refreshDescriptions();
   }, error => { videosLoading = undefined; throw error; });
-  function videoControls(path: string, node: number[], source: string) {
-    if (!videos) void loadVideos().catch(error => ports.error(error));
-    return videos?.controls(path, node, source) ?? [];
+  /** The edit bar's video controls, decided from the source so the bar never waits for the lazy module. */
+  function videoControls(path: string, node: number[], source: string): EditBarControl[] {
+    const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
+    if (!range) return [];
+    const has = (text: string, name: string) => Boolean(mediaAttribute(text, startTags(text)[0], name));
+    const fail = (error: unknown) => ports.error(error);
+    if (range.tag.name === "video") {
+      const tag = source.slice(range.tag.start, range.tag.end);
+      if (has(tag, "data-background")) return [];
+      // Looping: muted and loop; in a picture spot (a slot) a video always loops silently.
+      const checked = has(tag, "muted") && has(tag, "loop"), disabled = checked && has(tag, "slot");
+      return [{ kind: "checkbox", label: "Looping video", checked, disabled,
+        title: disabled ? "A video in a picture spot always loops silently." : "Plays silently by itself, over and over, with a small pause button",
+        onChange: on => { void loadVideos().then(() => videos!.toggleLooping(path, node, source, on)).catch(fail); } }];
+    }
+    if (range.tag.name !== "section") return [];
+    // A background video is the section's first child.
+    const after = source.slice(range.tag.end), first = /^\s*<video\b/i.test(after) ? source.slice(range.tag.end).trimStart() : "";
+    const hasBackground = Boolean(first) && has(first, "data-background");
+    return [{ kind: "button", label: "Background video", onPress: () => { void chooseBackground({ path, node }).catch(fail); } },
+      ...hasBackground ? [{ kind: "button" as const, label: "Remove background video",
+        onPress: () => { void loadVideos().then(() => videos!.removeBackground(path, node, source)).catch(fail); } }] : []];
   }
   async function chooseBackground(target: { path: string; node: number[] }) {
     const source = ports.source(target.path), stamp = ports.stamp();
