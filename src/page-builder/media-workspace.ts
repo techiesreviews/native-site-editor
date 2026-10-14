@@ -21,7 +21,7 @@ import { mediaStorageName, mediaCopyName, chooseMediaPath } from "./media-storag
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
 import { resetMediaAddingSettings, setMediaAddingSettings } from "./media-settings";
-import { planRestore, pruneRemoved, recentlyRemoved, recordRemoval, sweepRemovedCopies } from "./recently-removed";
+import { planRestore, pruneRemoved, recentlyRemoved, recordRemoval, removedPaths, sweepRemovedCopies } from "./recently-removed";
 
 /** Prepared mutations only. The host validates and commits this entire batch atomically. */
 export interface MediaWorkspaceBatch {
@@ -145,7 +145,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     ctx.assertLive();
     batch.expectedSources.set(MEDIA_RECORDS_PATH, metadata);
     // Files already back (a Restore outside Media) get their records again before any change is planned.
-    const records = pruneRemoved(readSiteMediaRecords(metadata, ctx.items.map(item => item.path)), today(ctx), path => currentSha(ctx, path));
+    const read = readSiteMediaRecords(metadata, ctx.items.map(item => item.path)), back = await currentBlobs(ctx, read);
+    ctx.assertLive();
+    const records = pruneRemoved(read, today(ctx), path => back.get(path));
     return { batch, text, metadata: records };
   };
   const assetGuard = (batch: MediaWorkspaceBatch, paths: string[]) => {
@@ -161,21 +163,33 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     // Refresh belongs to the transaction host, so no fallible second mutation follows it.
   };
   const today = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString().slice(0, 10);
-  const currentSha = (ctx: MediaWorkspaceContext, path: string) => {
+  /** The Git blob SHA of the present bytes of every path Recently removed names, to see which are back. */
+  const currentBlobs = async (ctx: MediaWorkspaceContext, records: MediaRecords) => {
+    const out = new Map<string, string>();
+    for (const path of new Set(removedPaths(records))) {
+      if (!ctx.paths.includes(path)) continue;
+      const draft = ctx.drafts.get(ctx.scope, path);
+      const sha = !draft ? ctx.assetVersion(path) : draft.opaque ? draft.sourceSha : await gitBlobSha(new TextEncoder().encode(draft.content));
+      if (sha) out.set(path, sha);
+    }
+    return out;
+  };
+  const committedSha = (ctx: MediaWorkspaceContext, path: string) => {
     if (!ctx.paths.includes(path)) return undefined;
     const draft = ctx.drafts.get(ctx.scope, path);
     return draft ? draft.opaque && !draft.upload ? draft.sourceSha : undefined : ctx.assetVersion(path);
   };
   const removedRecords = async (ctx: MediaWorkspaceContext, records: MediaRecords, paths: string[]) => {
     const date = today(ctx);
-    let next = pruneRemoved(records, date, path => currentSha(ctx, path));
+    // `prepare` already gave files that are back their records; only expiry is left.
+    let next = pruneRemoved(records, date);
     const remaining = new Set(paths);
     for (const path of [...paths].sort((a, b) => familyPaths(b, ctx.paths).length - familyPaths(a, ctx.paths).length)) {
       if (!remaining.has(path)) continue;
       const members = familyPaths(path, ctx.paths).filter(member => remaining.has(member));
       const family = [];
       for (const member of members) {
-        const sha = ctx.history ? currentSha(ctx, member) : undefined;
+        const sha = ctx.history ? committedSha(ctx, member) : undefined;
         if (sha) family.push({ path: member, sha });
         else {
           if (!ctx.removedCopies) throw new Error("Recently removed browser storage is unavailable.");
@@ -470,9 +484,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       session = await context();
       const ctx = active();
       const text = await sources(ctx);
-      const current = (path: string) => currentSha(ctx, path);
-      const records = pruneRemoved(readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)), today(ctx), current); ctx.assertLive();
-      const removed = recentlyRemoved(records, today(ctx), current);
+      const read = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
+      const back = await currentBlobs(ctx, read); ctx.assertLive();
+      const records = pruneRemoved(read, today(ctx), path => back.get(path));
+      const removed = recentlyRemoved(records, today(ctx), path => back.get(path));
       const metadata = mediaMetadataView(records);
       return { key: ctx.key, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
@@ -580,7 +595,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const ctx = active();
       const { batch, metadata } = await prepare(ctx, entries.length === 1 ? `Restore ${entries[0].path.split("/").pop()}` : "Restore files");
       const date = today(ctx), paths = [...batch.expectedPaths];
-      let next = pruneRemoved(metadata, date, path => currentSha(ctx, path));
+      let next = pruneRemoved(metadata, date);
       for (const entry of entries) {
         const plan = planRestore(next, entry, paths, date);
         next = plan.records;

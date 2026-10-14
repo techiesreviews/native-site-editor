@@ -6,6 +6,10 @@ export const RECENTLY_REMOVED_DAYS = 30;
 export const removedToday = (now: number) => new Date(now).toISOString().slice(0, 10);
 const expired = (date: string, today: string) => Date.parse(today) - Date.parse(date) > RECENTLY_REMOVED_DAYS * 86400000;
 const identity = (entry: RemovedPath) => entry.sha ?? entry.browserKey;
+/** The Git blob SHA of a removed file's bytes: its history blob, or the one inside its browser key. */
+export const removedBlob = (entry: RemovedPath) => entry.sha ?? /^removed:\d{4}-\d{2}-\d{2}:(.+)$/.exec(entry.browserKey ?? "")?.[1];
+/** Every path a removed entry names, to look up which of them are back. */
+export const removedPaths = (records: MediaRecords) => records.removed?.flatMap(entry => [entry.path, ...entry.family?.map(member => member.path) ?? []]) ?? [];
 
 export function recordRemoval(records: MediaRecords, removal: { main: string; family: RemovedPath[]; date: string }): MediaRecords {
   const members = removal.family.map(member => ({ ...member, ...(records.files[member.path] ? { record: records.files[member.path] } : {}) }));
@@ -19,12 +23,14 @@ export function recordRemoval(records: MediaRecords, removal: { main: string; fa
 /**
  * Drops expired entries and entries whose file is back already (the Files tab's or Save's Restore of an
  * unsaved deletion): their records return to the files, so a description or collection is never lost.
+ * `current` gives the Git blob SHA of a path's present bytes (undefined when it is not there).
  */
 export function pruneRemoved(records: MediaRecords, today: string, current?: (path: string) => string | undefined): MediaRecords {
   let files = records.files;
   const removed = records.removed?.filter(entry => {
     if (expired(entry.date, today)) return false;
-    if (!entry.sha || current?.(entry.path) !== entry.sha) return true;
+    const blob = removedBlob(entry);
+    if (!blob || current?.(entry.path) !== blob) return true;
     for (const member of [entry, ...entry.family ?? []]) {
       if (!member.record || Object.hasOwn(files, member.path) || (member !== entry && current(member.path) === undefined)) continue;
       files = Object.assign(Object.create(null), files, { [member.path]: member.record });

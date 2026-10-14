@@ -25,13 +25,15 @@ export async function filesRemovalPlan(ports: FileOperationsPorts, r: Reads, fou
     const before = records.parseMediaRecords(source), date = removed.removedToday(Date.now());
     const scope = ports.draftScope();
     const draft = (path: string) => scope ? ports.draftStore().get(scope, path) : undefined;
+    // The present blob of every path an entry names (main and members), so a family back through
+    // the Files tab's or Save's Restore gets every member's records again.
     const current = new Map<string, string>();
-    for (const entry of before.removed ?? []) if (r.exists(entry.path)) {
-      r.source(entry.path);
-      const held = draft(entry.path), file = held ? undefined : await ports.findEntry(entry.path);
+    for (const member of new Set(removed.removedPaths(before))) if (r.exists(member)) {
+      r.source(member);
+      const held = draft(member), file = held ? undefined : await ports.findEntry(member);
       if (!since.holds()) return { refuse: changed };
-      const sha = held?.opaque && !held.upload ? held.sourceSha : file?.sha;
-      if (sha) current.set(entry.path, sha);
+      const sha = !held ? file?.sha : held.opaque ? held.sourceSha : await gitBlobSha(new TextEncoder().encode(held.content));
+      if (sha) current.set(member, sha);
     }
     // A kept original of any format (TIFF, DNG) goes with its media main, as Files deletes it too.
     const paths = ports.nativeFiles();

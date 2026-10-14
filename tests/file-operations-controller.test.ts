@@ -296,6 +296,20 @@ test("Files delete moves family records into Recently removed and Undo returns t
   assert.equal(h.memory.undo(), true); assert.deepEqual(JSON.parse(h.memory.workspace.source(MEDIA_RECORDS_PATH)!), records);
 });
 
+test("a family back through Files Restore keeps every member's records on the next Files delete", async () => {
+  const records = { version: 2, collections: ["Work"], files: {
+    [imageTarget.path]: { collections: ["Work"] }, "images/photo-480w.webp": { alwaysKeep: true }, "media/originals/photo.HEIC": { collections: ["Work"] },
+  } };
+  const h = fixture(true, { ...imageFamily, "images/other.webp": "other", [MEDIA_RECORDS_PATH]: JSON.stringify(records) });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
+  // Files' Restore: the deletions go, the records draft stays.
+  for (const [path, text] of Object.entries(imageFamily)) h.memory.writeDraft(path, text);
+  assert.equal(await h.controller.deleteFileTarget({ path: "images/other.webp", name: "other.webp", folder: false }), undefined);
+  const after = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH));
+  for (const [path, record] of Object.entries(records.files)) assert.deepEqual(after.files[path], record);
+  assert.deepEqual(after.removed?.map(entry => entry.path), ["images/other.webp"]);
+});
+
 test("Files delete keeps browser copies of unsaved family members once Delete is confirmed", async () => {
   const h = fixture(true, imageFamily);
   const uploads = memoryUploadBytes(), removed = memoryUploadBytes();

@@ -144,6 +144,20 @@ test("a Restore outside Media (Files or Save) brings the records back with the f
   assert.deepEqual(saved.files["a.png"].collections, ["Work"]); assert.equal(saved.removed, undefined);
 });
 
+test("an edited SVG kept as a browser copy and restored outside Media gets its records back", async () => {
+  const f = engine(); f.branch.set("icon.svg", "blob-svg");
+  f.drafts.set("icon.svg", { ...f.scope, version: 1, path: "icon.svg", baseSha: "blob-svg", original: "<svg/>", content: "<svg>edited</svg>", updatedAt: 1 });
+  await f.workspace.load();
+  await f.workspace.collections({ kind: "new", name: "Icons", paths: ["icon.svg"] });
+  await f.workspace.remove(["icon.svg"]);
+  assert.ok((await f.workspace.load()).removed![0].browserKey);
+  // Files' Restore turns the deletion back into the edit it held.
+  const { deleted: _, ...edit } = f.drafts.get("icon.svg")!;
+  f.drafts.set("icon.svg", edit);
+  const library = await f.workspace.load();
+  assert.equal(library.removed?.length, 0); assert.deepEqual(library.metadata["icon.svg"]?.tags, ["Icons"]);
+});
+
 test("after saving a removal, restore publishes the old blob without uploading bytes", async () => {
   const f = engine(); await f.workspace.load(); await f.workspace.remove(["a.png"]);
   const entry = (await f.workspace.load()).removed![0];
