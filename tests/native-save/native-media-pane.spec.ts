@@ -118,7 +118,7 @@ test("refresh after real metadata Undo restores detail fields and cannot save un
   const panel = pane(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   const alt = panel.getByLabel("Description", { exact: true });
-  const keep = panel.getByLabel("Always keep", { exact: true });
+  const keep = panel.getByRole("checkbox", { name: "Always keep", exact: true });
   const originalAlt = await alt.inputValue();
   await expect(keep).not.toBeChecked();
   await alt.fill("Undone pane alt"); await keep.check();

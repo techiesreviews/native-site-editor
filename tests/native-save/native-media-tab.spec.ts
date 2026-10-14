@@ -49,7 +49,7 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await pane(page).getByLabel("Description", { exact: true }).fill("Unfinished alt");
   await pane(page).getByLabel("New collection", { exact: true }).fill("unfinished, tags");
-  await pane(page).getByLabel("Always keep", { exact: true }).check();
+  await pane(page).getByRole("checkbox", { name: "Always keep", exact: true }).check();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
@@ -61,7 +61,7 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
   const alt = pane(page).getByLabel("Description", { exact: true });
   await expect(alt).toHaveValue("Unfinished alt");
   await expect(pane(page).getByLabel("New collection", { exact: true })).toHaveValue("unfinished, tags");
-  await expect(pane(page).getByLabel("Always keep", { exact: true })).toBeChecked();
+  await expect(pane(page).getByRole("checkbox", { name: "Always keep", exact: true })).toBeChecked();
   await alt.focus();
   await page.evaluate(() => { (window as any).mediaCardBeforeRefresh = document.querySelector(".media-library__card"); });
   await page.evaluate(async () => {
@@ -140,7 +140,7 @@ test("changed image usage rebuilds detail references while retaining unfinished 
   await open(page,baseURL);await pane(page).getByRole("button",{name:"Details for images/studio-desk.svg",exact:true}).click();
   const alt = pane(page).getByLabel("Description",{exact:true});await alt.fill("Unfinished referenced portrait");await alt.focus();
   await pane(page).getByLabel("New collection",{exact:true}).fill("unfinished usage tags");
-  await pane(page).getByLabel("Always keep",{exact:true}).check();await alt.focus();
+  await pane(page).getByRole("checkbox",{name:"Always keep",exact:true}).check();await alt.focus();
   await page.evaluate(async () => {
     (window as any).mediaAltBeforeUsage = document.querySelector('#explorer-media textarea[aria-label="Description"]');
     const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html");
@@ -151,7 +151,7 @@ test("changed image usage rebuilds detail references while retaining unfinished 
   await expect(pane(page)).not.toHaveAttribute("aria-busy","true");
   await expect(alt).toHaveValue("Unfinished referenced portrait");await expect(alt).toBeFocused();
   await expect(pane(page).getByLabel("New collection",{exact:true})).toHaveValue("unfinished usage tags");
-  await expect(pane(page).getByLabel("Always keep",{exact:true})).toBeChecked();
+  await expect(pane(page).getByRole("checkbox",{name:"Always keep",exact:true})).toBeChecked();
 });
 test("busy image action explains blocked controls and keeps Save focus after its refresh", async ({page,baseURL}) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);

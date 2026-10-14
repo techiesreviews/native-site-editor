@@ -11,7 +11,7 @@ for (const file of ["styles/site.css", "missing.html"]) {
     await page.getByRole("tab", { name: "Media", exact: true }).click();
     const images = page.getByRole("region", { name: "Media", exact: true });
     await images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-    await images.getByLabel("Always keep", { exact: true }).check();
+    await images.getByRole("checkbox", { name: "Always keep", exact: true }).check();
     await images.getByRole("button", { name: "Save details", exact: true }).click();
     await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain('"alwaysKeep": true');
     await expect(images).not.toHaveAttribute("aria-busy", "true");

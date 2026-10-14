@@ -243,7 +243,7 @@ test("Always keep stays after reload, and Cancel leaves without saving", async (
   await open(page, baseURL);
   await details(page, "images/studio-desk.svg");
   const library = pane(page);
-  await library.getByLabel("Always keep", { exact: true }).check();
+  await library.getByRole("checkbox", { name: "Always keep", exact: true }).check();
   await library.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(() => records(page)).toContain('"alwaysKeep": true');
   await page.reload();
@@ -251,7 +251,7 @@ test("Always keep stays after reload, and Cancel leaves without saving", async (
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Media", exact: true }).click();
   await details(page, "images/studio-desk.svg");
-  const keep = library.getByLabel("Always keep", { exact: true });
+  const keep = library.getByRole("checkbox", { name: "Always keep", exact: true });
   await expect(keep).toBeChecked();
   await keep.uncheck();
   await library.getByRole("button", { name: "Cancel", exact: true }).click();
