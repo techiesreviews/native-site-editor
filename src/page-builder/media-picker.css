@@ -237,7 +237,7 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 /* The list (More → View → List): each file's name, size and usage on one row. */
 .media-library__grid.media-library__grid--list { grid-template-columns: minmax(0, 1fr); gap: 0; }
 .media-library__grid--list .media-library__card {
-  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; column-gap: 8px;
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; column-gap: 8px;
   aspect-ratio: auto; overflow: visible; min-height: 56px; border-radius: 0; background: none; color: var(--text);
   border-bottom: 1px solid var(--line); container-type: normal;
 }
@@ -245,16 +245,19 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 .media-library .media-library__grid--list :is(.media-library__select, .media-library__thumbnail, .media-library__usage) { position: static; }
 .media-library__grid--list .media-library__select { grid-column: 1; grid-row: 1; }
 .media-library .media-library__grid--list .media-library__thumbnail {
-  grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: 56px; padding: 6px 0; text-align: left;
+  grid-column: 2; grid-row: 1; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; column-gap: 10px;
+  min-width: 0; height: auto; min-height: 56px; padding: 6px 0; text-align: left;
 }
-.media-library__grid--list .media-library__thumbnail img { flex: none; width: 44px; height: 44px; border-radius: var(--radius-small); background: var(--surface-subtle); }
+.media-library__grid--list .media-library__thumbnail > :is(img, svg) { grid-column: 1; grid-row: 1 / span 2; justify-self: center; }
+.media-library__grid--list .media-library__thumbnail img { width: 44px; height: 44px; border-radius: var(--radius-small); background: var(--surface-subtle); }
 .media-library__grid--list .media-library__card.is-file .media-library__thumbnail { color: var(--text); }
-.media-library__grid--list .media-library__card.is-file .media-library__thumbnail > svg { flex: none; color: var(--muted); }
-.media-library__grid--list .media-library__name { position: static; flex: 1; min-width: 0; padding: 0; opacity: 1; font-weight: 500; font-size: var(--type-base); text-shadow: none; }
+.media-library__grid--list .media-library__card.is-file .media-library__thumbnail > svg { color: var(--muted); }
+.media-library__grid--list .media-library__format { display: none; }
+.media-library__grid--list .media-library__name { position: static; grid-column: 2; grid-row: 1 / span 2; min-width: 0; padding: 0; opacity: 1; font-weight: 500; font-size: var(--type-base); text-shadow: none; }
 .media-library__grid--list .media-library__name::before, .media-library__grid--list .media-library__name::after { display: none; }
-.media-library__size { grid-column: 3; grid-row: 1; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.media-library__size { grid-column: 3; grid-row: 1 / span 2; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .media-library .media-library__grid--list .media-library__usage {
-  grid-column: 4; grid-row: 1; width: auto; height: auto; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+  grid-column: 3; grid-row: 1; width: auto; height: auto; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
   border-radius: 22px; color: var(--text); text-shadow: none; font-size: var(--type-small); font-weight: 600; text-align: left;
 }
 .media-library__grid--list .media-library__count { flex: none; min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 12px; background: var(--surface-subtle); font-variant-numeric: tabular-nums; }
@@ -262,5 +265,9 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 .media-library__grid--list .media-library__select input:not(:checked) { border-color: var(--muted); background: transparent; box-shadow: none; }
 .media-library__grid--list :is(.media-library__usage, .media-library__select)::before { background: var(--hover); backdrop-filter: none; mask-image: none; border-radius: 22px; }
 .media-library .media-library__grid--list .media-library__usage:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-/* Phones: the usage words stay; a long name shortens first. */
-@container media-browse (max-width: 420px) { .media-library__grid--list .media-library__usage-label { max-width: 7.5em; } }
+/* Phones: the size goes under the name, so the name keeps its room beside the usage words. */
+@container media-browse (max-width: 520px) {
+  .media-library__grid--list .media-library__name { grid-row: 1; align-self: end; }
+  .media-library__grid--list .media-library__size { grid-column: 2; grid-row: 2; align-self: start; text-align: left; }
+  .media-library__grid--list .media-library__usage-label { max-width: 6.5em; }
+}

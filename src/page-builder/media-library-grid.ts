@@ -78,8 +78,10 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     // The number counts distinct pages; hover and focus show its words, a tap the page names.
     const used = button("", () => h.usage(item.path), "media-library__usage");
     used.setAttribute("aria-haspopup", "dialog"); paintUsageBadge(used, h.records(), item.path);
+    // The list's size sits with the name, so phones can stack them.
     const size = node("span", "media-library__size", item.size === undefined ? "" : formatBytes(item.size));
-    card.append(node("span", "media-library__shade"), thumb, selectLabel, ...list ? [size] : [], used);
+    if (list) thumb.append(size);
+    card.append(node("span", "media-library__shade"), thumb, selectLabel, used);
     grid.append(card);
     // A file the browser cannot draw gets a clean surface with its type, not a broken picture.
     const noPreview = () => {
