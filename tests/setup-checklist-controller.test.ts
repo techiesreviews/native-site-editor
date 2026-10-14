@@ -14,9 +14,9 @@ function fixture() {
   let resolve!: (value: Awaited<ReturnType<SetupChecklistPorts["loadChecklist"]>>) => void;
   let loads = 0, mounts = 0, closes = 0, removes = 0, opens = 0;
   const views: SetupView[] = [];
-  const host = { append: () => { mounts++; } } as unknown as HTMLElement;
-  const checklist = { root: { remove: () => { removes++; } }, close: () => { closes++; }, open: () => { opens++; }, update: (view: SetupView) => views.push(view), onRequest: (callback: () => void) => { request = callback; } };
-  const module = { createSetupChecklist: (options: SetupActions) => { actions = options; return checklist; } } as unknown as Awaited<ReturnType<SetupChecklistPorts["loadChecklist"]>>;
+  const host = ({ append: () => { mounts++; } } satisfies Pick<HTMLElement, "append">) as HTMLElement;
+  const checklist = { root: { remove: () => { removes++; } } as HTMLDivElement, menuItem: {} as HTMLButtonElement, isOpen: () => opens > closes, close: () => { closes++; }, open: () => { opens++; }, update: (view: SetupView) => views.push(view), onRequest: (callback: () => void) => { request = callback; } };
+  const module = { createSetupChecklist: (options: SetupActions) => { actions = options; return checklist; } } satisfies Awaited<ReturnType<SetupChecklistPorts["loadChecklist"]>>;
   const controller = createSetupChecklistController({
     account: () => account, repository: () => repo, scope: () => scope, state: () => state,
     host: () => host, menu: () => undefined, connected: () => false, ensureAgent: async () => {}, agentText: () => [], storage,

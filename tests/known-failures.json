@@ -1,0 +1,52 @@
+[
+  {
+    "spec": "native-save/native-card-paths-starter.spec.ts",
+    "line": 149,
+    "status": "flaky",
+    "since": "2026-10-09",
+    "note": "Retro: 6 runners reported the starter panels' text fields read inline variants (formerly line 143). Ticket 86 records an audit fix and 80/80 passes; current behavior has not been reverified.",
+    "ticket": "docs/wayfinder/components-and-builder/build/tickets/86-site-settings-flake.md"
+  },
+  {
+    "spec": "native-save/native-cards.spec.ts",
+    "line": 304,
+    "title": "overlapping card and section Add controls remain clickable; ghost tracks scroll and Undo restores cards",
+    "status": "flaky",
+    "since": "2026-10-09",
+    "note": "Retro: 3 runners reported this test, formerly line 291 (popup renamed ghost).",
+    "ticket": "docs/work/tech-debt/issues/09-flaky-specs.md"
+  },
+  {
+    "spec": "native-save/native-component-structure-host.spec.ts",
+    "status": "flaky",
+    "since": "2026-10-09",
+    "note": "Retro: about 1 in 4 runs; no individual test was supplied, so this entry covers the spec. Ticket 86 records a fix for the line 101 typing test; current behavior has not been reverified.",
+    "ticket": "docs/wayfinder/components-and-builder/build/tickets/86-site-settings-flake.md"
+  },
+  {
+    "spec": "native-save/native-structure-compact.spec.ts",
+    "line": 302,
+    "status": "failing-on-dev",
+    "since": "2026-10-09",
+    "note": "Retro: failing on dev, formerly lines 300 and 301; the parameterized 'a Show on a current paint' refusal test. Ticket 86 mentions a separate fix branch; current behavior has not been reverified.",
+    "ticket": "docs/work/tech-debt/issues/09-flaky-specs.md"
+  },
+  {
+    "spec": "native-save/native-selector.spec.ts",
+    "line": 249,
+    "title": "component CSS loads on demand, scopes to matching shadow root, and edits live",
+    "status": "flaky",
+    "since": "2026-10-09",
+    "note": "Retro: failed 2 of 6 runs on plain dev.",
+    "ticket": "docs/work/tech-debt/issues/09-flaky-specs.md"
+  },
+  {
+    "spec": "native-save/native-canvas.spec.ts",
+    "line": 203,
+    "title": "the code pane's cursor selects its element on the canvas, and a hovered line points at its element",
+    "status": "flaky",
+    "since": "2026-10-08",
+    "note": "Formerly line 195: hover lands before Monaco paints the line (dev 3/30).",
+    "ticket": "docs/work/tech-debt/issues/09-flaky-specs.md"
+  }
+]

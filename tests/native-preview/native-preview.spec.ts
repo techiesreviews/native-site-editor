@@ -91,10 +91,10 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
   // the very same window survives the edit (no reload/navigation).
   const win = await frameWindow(page);
   const before = await win.evaluate(() => {
-    (window as unknown as { __nativeId?: string }).__nativeId = "sentinel-" + Math.random();
+    (window as typeof window & { __nativeId?: string }).__nativeId = "sentinel-" + Math.random();
     (document.scrollingElement as Element).scrollTop = 120;
     return {
-      id: (window as unknown as { __nativeId: string }).__nativeId,
+      id: (window as typeof window & { __nativeId: string }).__nativeId,
       scroll: (document.scrollingElement as Element).scrollTop,
     };
   });
@@ -104,7 +104,7 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
   await expect(frame.getByRole("heading", { name: "Edited in place" })).toBeVisible();
 
   const after = await win.evaluate(() => ({
-    id: (window as unknown as { __nativeId?: string }).__nativeId,
+    id: (window as typeof window & { __nativeId?: string }).__nativeId,
     scroll: (document.scrollingElement as Element).scrollTop,
   }));
   expect(after.id).toBe(before.id); // same window object → no reload
@@ -116,7 +116,7 @@ test("HTML and CSS edits patch the live preview in place, same window, scroll ke
     .poll(() => frame.locator(".lead").evaluate((el) => getComputedStyle(el).color))
     .toBe("rgb(190, 20, 40)");
   // Still the same never-navigated window after two edits.
-  const afterCss = await win.evaluate(() => (window as unknown as { __nativeId?: string }).__nativeId);
+  const afterCss = await win.evaluate(() => (window as typeof window & { __nativeId?: string }).__nativeId);
   expect(afterCss).toBe(before.id);
 });
 
@@ -312,7 +312,7 @@ test("repository images arrive after the page is drawn, from /api/blob, shown in
   await page.addInitScript(() => {
     if (window.top === window) return;
     const seen: string[] = [];
-    (window as unknown as { seen: string[] }).seen = seen;
+    (window as typeof window & { seen: string[] }).seen = seen;
     window.addEventListener("message", (event) => {
       const type = (event.data as { type?: string } | null)?.type;
       if (type === "update" || type === "assets") seen.push(type);
@@ -326,7 +326,7 @@ test("repository images arrive after the page is drawn, from /api/blob, shown in
   // Drawn and usable while the image is still on its way.
   await expect(structureRow).toBeVisible({ timeout: 30_000 });
   expect(await hero.getAttribute("src")).toBe("/images/placeholder.svg");
-  const seen = () => frame.evaluate(() => [...(window as unknown as { seen: string[] }).seen]);
+  const seen = () => frame.evaluate(() => [...(window as typeof window & { seen: string[] }).seen]);
   await expect.poll(seen).toContain("update");
   const before = (await seen()).filter((type) => type === "update").length;
   release();

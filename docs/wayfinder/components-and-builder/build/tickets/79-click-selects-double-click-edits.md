@@ -3,7 +3,7 @@ title: "Click selects, double-click edits, everywhere on the page"
 type: task (AFK)
 status: closed
 assignee:
-blocked_by: [36-blocks-drag-themselves]
+blocked_by: [36-drag-existing-blocks]
 builder: claude ★
 phase: 4
 ---

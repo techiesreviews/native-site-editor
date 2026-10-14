@@ -10,3 +10,8 @@ dist/
 !.env.example
 test-results/
 playwright-report/
+.claude/settings.local.json
+.claude/worktrees/
+!.claude/settings.json
+.codex/*
+!.codex/hooks.json

@@ -3,7 +3,7 @@ title: "Tone: cap the band surface's chroma to sRGB"
 type: task (AFK)
 status: closed
 assignee:
-blocked_by: [59-tone-formulas-and-sweep]
+blocked_by: [59-tone-formula-sweep-test]
 builder: sol
 phase: 7
 ---

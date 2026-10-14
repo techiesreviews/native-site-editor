@@ -36,6 +36,7 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
     mounted: path => mem.openFile() === path && mem.model(path) !== undefined,
     forgetOpening: () => painted => { forgotten.push(painted); },
   } satisfies BlockMovePorts);
+  // eslint-disable-next-line no-restricted-syntax -- This move/text fixture supplies only the controller paths it exercises; drawBar adds its rendering ports below.
   const ports = {
     edits,
     appStore: { openFile: { get value() { return mem.openFile(); } }, selection: { get value() { return state.selected; } } },

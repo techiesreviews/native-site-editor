@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8787 --local-upstream 127.0.0.1:8787",
     "dev:ui": "vite --host 127.0.0.1",
-    "build:ui": "vite build",
+    "build:ui": "vite build --configLoader runner",
     "check": "node scripts/check-types.mjs && node scripts/check-specs.mjs",
     "deploy": "wrangler deploy",
     "deploy:techies": "wrangler deploy --config wrangler.techies.jsonc",
@@ -24,7 +24,7 @@
     "test:browser:all": "playwright test",
     "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\"",
     "test:budget": "tsx tests/perf/byte-budget.ts",
-    "lint": "eslint"
+    "lint": "eslint && node scripts/agents/tickets.mjs check"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261002.1",

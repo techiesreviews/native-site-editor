@@ -229,6 +229,7 @@ test("a drag by the name needs 7 px, cancels on Escape and records nothing for a
   await clearStatus(page);
   let from = await pressHandle(page);
   await page.mouse.move(from.x, from.y + 6, { steps: 3 });
+  // fixed-wait: Asserts movement below the drag threshold never starts a ghost on subsequent frames.
   await page.waitForTimeout(100);
   await expect(ghost(page)).toHaveCount(0);
   await page.mouse.up();
@@ -348,8 +349,10 @@ test("a drag by the name near the bottom edge scrolls the frame", async ({ page 
   const scrolled = await frameScroll(page);
   // Out of the band it stops.
   await page.mouse.move(from.x, frameBox.y + frameBox.height / 2, { steps: 4 });
+  // fixed-wait: Lets queued autoscroll frames settle after the pointer leaves the edge band.
   await page.waitForTimeout(200);
   const settled = await frameScroll(page);
+  // fixed-wait: Asserts autoscroll stays stopped over a later observation window.
   await page.waitForTimeout(200);
   expect(await frameScroll(page)).toBe(settled);
   expect(settled).toBeGreaterThanOrEqual(scrolled);

@@ -36,7 +36,7 @@ function runs(project: string) {
   if (!names.length) return true;
   return names.some((name) => new RegExp(`^${name.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`, "i").test(project));
 }
-function server(project: string, port: number): WebServer {
+export function server(project: string, port: number): WebServer {
   return {
     command: `bash -o pipefail -c 'mkdir -p .scratch/${project}; { echo "server ${project}:${port} started $(date -Is)"; ASE_NATIVE_SAVE_PORT=${port} ./node_modules/.bin/tsx tests/native-save/server.ts; status=$?; echo "server ${project}:${port} exited $status $(date -Is)"; exit $status; } 2>&1 | tee -a .scratch/${project}/server-${port}.log'`,
     stdout: "pipe",

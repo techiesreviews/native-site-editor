@@ -11,13 +11,14 @@ function fixture(empty = false) {
   let path = "index.html", draft = false;
   let revision = 1, opened = false, destroyed = 0, mounted = 0, unsubscribed = 0, restored = 0, viewed = 0, files = 0;
   let resize: (() => void) | undefined;
-  const style: Record<string, string> = {};
-  const panel = { style, matches: () => opened, hidePopover: () => { opened = false; }, showPopover: () => { opened = true; }, replaceChildren: () => { mounted++; }, getBoundingClientRect: () => ({ width: 300 }) } as unknown as HTMLElement;
+  const style = { top: "", right: "", left: "" } as CSSStyleDeclaration;
+  // eslint-disable-next-line no-restricted-syntax -- The panel fake models popover state and placement; it cannot implement DOM matches type-guard overloads.
+  const panel = { style, matches: () => opened, hidePopover: () => { opened = false; }, showPopover: () => { opened = true; }, replaceChildren: () => { mounted++; }, getBoundingClientRect: () => ({ width: 300 } as DOMRect) } as unknown as HTMLElement;
   let anchor = { getBoundingClientRect: () => ({ bottom: 40, right: 700 }) } as HTMLElement;
   const skipped: { path: string; result: import("../shared/types.ts").RestoreResult; hasDraft: boolean }[] = [];
   const options: Parameters<typeof createCommitHistory>[0][] = [];
   const loads: ReturnType<typeof deferred<Awaited<ReturnType<HistoryPorts["loadHistory"]>>>>[] = [];
-  const module = { createCommitHistory: (value: Parameters<typeof createCommitHistory>[0]) => { options.push(value); return { root: {} as HTMLElement, destroy: () => { destroyed++; }, mark: () => {}, refresh: () => {} }; } } as unknown as Awaited<ReturnType<HistoryPorts["loadHistory"]>>;
+  const module = { createCommitHistory: (value: Parameters<typeof createCommitHistory>[0]) => { options.push(value); return { root: {} as HTMLElement, destroy: () => { destroyed++; }, mark: () => {}, refresh: () => {} }; } } satisfies Awaited<ReturnType<HistoryPorts["loadHistory"]>>;
   const controller = createHistoryController({
     capture: () => { const own = revision, file = path; return { key: `${own}`, repo: "lex/site", branch: "main", path: file, empty, isCurrent: site => own === revision && (site || file === path), hasDraft: () => draft, viewing: () => "commit" } satisfies HistoryContext; },
     panel: () => panel, anchor: () => anchor, loadHistory: () => { const load = deferred<typeof module>(); loads.push(load); return load.promise; },

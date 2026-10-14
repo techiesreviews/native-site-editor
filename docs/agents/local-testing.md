@@ -5,25 +5,18 @@ the automated checks in [guardrails.md](guardrails.md).
 
 ## Setup
 
-- Node 24 is not on the default PATH:
-  `export PATH=/home/ubulex/.npm/_npx/387698761821791d/node_modules/node/bin:$PATH`.
+- Node 24: [Hooks](guardrails.md#hooks) set PATH in Claude; other agent CLIs receive
+  a SessionStart instruction to prefix shell commands with the discovered Node PATH.
+  In a plain terminal, put your installed Node >=24 on PATH.
 - One branch, one worktree: `scripts/agents/worktree.sh <branch>` (shared
   `node_modules` and the native-static fixture are linked in).
 - Leave a worktree untouched while a suite runs from it.
 
 ## Ports
 
-| Port | Use |
-| --- | --- |
-| 5216 | Timing (`scripts/agents/timing.sh`, all locks) and single-port full suites |
-| 5226, 5236, 5246, 5256 | Focused specs, smoke, full-suite shards (`scripts/agents/port.sh`) |
-
-Each run also takes port + 1 (the native-preview project). Every browser run
-holds its port's lock: through `port.sh`, or
-`flock /tmp/ase-5216.lock env ASE_TEST_PORT=5216 <cmd>` for 5216.
-
-Stop only processes you started, by PID or process group: other agents'
-servers share these ports, and a pattern kill takes theirs down too.
+Pool, resource gates, lock ownership and orphan cleanup: see
+[agent-scripts.md](agent-scripts.md#ports). Run browser tests through `port.sh`;
+run timing through `timing.sh`. Stop only processes you started.
 
 ## Which tests
 
@@ -38,12 +31,11 @@ servers share these ports, and a pattern kill takes theirs down too.
 - CI fonts (DejaVu Sans, wider than the local Noto Sans): put
   `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` (run from the worktree root) in front of the
   `port.sh` command; specs must pass with both fonts.
-- Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`
-  (about 15 minutes).
-- Known flaky specs: `native-shared-link-host.spec.ts:82`,
-  `native-canvas.spec.ts:195`, `native-shared-authoring-host.spec.ts:282`;
-  rerun once before calling a failure flaky
-  ([tech debt 09](../work/tech-debt/issues/09-flaky-specs.md)).
+- Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`;
+  duration and shard limits: [agent-scripts.md](agent-scripts.md).
+- Known failures: [tests/known-failures.json](../../tests/known-failures.json)
+  records flaky and failing-on-dev tests. Rerun once before calling a new
+  failure flaky; known failures still fail the suite summary.
 
 ## Reading results
 
@@ -61,16 +53,20 @@ builds: runs from different sittings differ by about 30 ms.
 
 ## Code review
 
-`scripts/agents/review.sh <worktree> <brief> <out-dir>` (GPT-6.1 Sol,
-read-only). The reviewer applies `CODING_STANDARDS.md`. Sol builders run with
-`codex exec -s workspace-write` and cannot commit: the lead commits their work.
+`scripts/agents/review.sh <worktree> <brief> <out-dir>` runs a read-only agent
+(default `gpt-6.1-sol`; override with `ASE_REVIEW_MODEL` and `ASE_AGENT_CLI`).
+The reviewer applies `CODING_STANDARDS.md`. Builders leave changes unstaged
+under the build contract; the lead commits. Codex uses `workspace-write`;
+Claude uses `acceptEdits`. Invocation and hook trust: [agent-scripts.md](agent-scripts.md#agent-runner).
 
-## After pushing to dev
+## Landing and preview
 
-1. Watch the CI run: `gh run watch $(gh run list --workflow deploy-preview.yml -L 1 --json databaseId -q '.[0].databaseId') --exit-status`.
-   It tests but does not deploy (no Cloudflare token yet,
+1. Land finished work with `scripts/agents/land.sh`, then run
+   `scripts/agents/ci-status.sh dev --wait`. CI failures on dev are the
+   landing agent's to fix. Script options and logs: [agent-scripts.md](agent-scripts.md).
+2. Deploy the preview with `scripts/agents/deploy-preview.sh` when needed
+   (CI deployment needs the token in
    [tech debt 05](../work/tech-debt/issues/05-ci-preview-deploy-token.md)).
-2. Deploy the preview: `npm run deploy:preview` from the dev worktree.
 3. Confirm the live build: `curl -s "https://preview-editor.techies.tools/?v=$(date +%s)"`
    names the same `index-*.js` as `dist/assets` (the cache buster skips an
    edge copy that has not revalidated yet).

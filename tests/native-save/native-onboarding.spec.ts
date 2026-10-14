@@ -69,6 +69,7 @@ async function publishNow(page: Page) {
 // sign-in leads (see native-setup-wizard.spec.ts for each branch).
 const signedOutSession = (page: Page, delay = 0) =>
   page.route("**/api/session", async (route) => {
+    // fixed-wait: Injects session latency so the initial sign-in loading state can be observed.
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
     await route.fulfill({ json: { configured: true, user: null } });
   });
@@ -165,6 +166,7 @@ test("a browser that signed in before continues to GitHub by itself, once", asyn
   // Back with no session (it did not work): the normal screen, and no second try in this tab.
   await page.goto(`${baseURL}/`);
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+  // fixed-wait: Asserts a failed automatic sign-in does not retry past its continuation delay.
   await page.waitForTimeout(2200);
   expect(logins).toBe(1);
 });
@@ -180,6 +182,7 @@ test("an error on return shows the button and the message, and does not try agai
   await page.goto(`${baseURL}/?error=${encodeURIComponent("GitHub access was not granted.")}`);
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
   await expect(page.getByRole("alert").filter({ hasText: "GitHub access was not granted." })).toBeVisible();
+  // fixed-wait: Asserts an error return does not start automatic sign-in during its continuation delay.
   await page.waitForTimeout(2200);
   expect(logins).toBe(0);
 
@@ -188,6 +191,7 @@ test("an error on return shows the button and the message, and does not try agai
   await page.goto(`${baseURL}/`);
   await page.getByRole("button", { name: "Use the button instead" }).click();
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+  // fixed-wait: Asserts cancelling automatic sign-in prevents navigation past its continuation delay.
   await page.waitForTimeout(2200);
   expect(logins).toBe(0);
 });
@@ -202,6 +206,7 @@ test("signing out of the last account forgets that this browser signed in before
   await page.getByRole("button", { name: /^Sign out/ }).click();
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible({ timeout: 30_000 });
   expect(await page.evaluate(() => localStorage.getItem("ase:signed-in-before"))).toBeNull();
+  // fixed-wait: Asserts signing out prevents automatic sign-in during its continuation delay.
   await page.waitForTimeout(2000);
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
 });

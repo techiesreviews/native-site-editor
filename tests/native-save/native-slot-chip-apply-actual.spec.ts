@@ -67,11 +67,11 @@ async function openMode(page: Page, baseURL: string | undefined) {
 test("slot chip toggles and renames the template in one undo step without reloading the frame", { tag: "@actual" }, async ({ page, baseURL }) => {
   await openMode(page, baseURL);
   const work = frame(page).locator("section-work");
-  await frame(page).locator("html").evaluate(() => { (window as unknown as { slotMark: string }).slotMark = "slice-44"; });
+  await frame(page).locator("html").evaluate(() => { (window as typeof window & { slotMark: string }).slotMark = "slice-44"; });
   const srcdoc = await page.locator(".native-preview-frame").getAttribute("srcdoc");
   const source = () => effectiveSource(page, baseURL, TEMPLATE);
   const unchangedFrame = async () => {
-    expect(await frame(page).locator("html").evaluate(() => (window as unknown as { slotMark?: string }).slotMark)).toBe("slice-44");
+    expect(await frame(page).locator("html").evaluate(() => (window as typeof window & { slotMark?: string }).slotMark)).toBe("slice-44");
     expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toBe(srcdoc);
   };
   const undo = () => page.getByRole("button", { name: "Undo", exact: true }).click();

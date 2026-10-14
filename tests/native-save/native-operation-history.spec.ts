@@ -90,7 +90,7 @@ test("a synchronous source-save listener cannot replace owned draft metadata", a
       const success = save(value);
       if (!replaced && value.path === "index.html" && value.content.includes("Collision history title")) {
         replaced = true;
-        const foreign = { ...value, baseSha: "foreign-base", mode: "100755", movedFrom: "foreign.html" };
+        const foreign = { ...value, baseSha: "foreign-base", mode: "100755" as const, movedFrom: "foreign.html" };
         save(foreign);
         Object.assign(window, { collisionDraft: foreign });
       }
@@ -103,10 +103,10 @@ test("a synchronous source-save listener cannot replace owned draft metadata", a
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByLabel("Title", { exact: true }).fill("Collision history title");
   await settings.getByRole("button", { name: "Apply page settings" }).click();
-  await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { collisionDraft?: unknown }).collisionDraft))).toBe(true);
+  await expect.poll(() => page.evaluate(() => Boolean((window as typeof window & { collisionDraft?: unknown }).collisionDraft))).toBe(true);
   const foreign = await page.evaluate(async () => {
     const store = (await import("/src/drafts.ts")).draftStore();
-    const injected = (window as unknown as { collisionDraft: Parameters<typeof store.save>[0] }).collisionDraft;
+    const injected = (window as typeof window & { collisionDraft: Parameters<typeof store.save>[0] }).collisionDraft;
     const current = store.get(injected, injected.path);
     return { exact: current === injected, baseSha: current?.baseSha, mode: current?.mode, movedFrom: current?.movedFrom, content: current?.content };
   });
@@ -135,7 +135,7 @@ test("clearing a compound journal releases its retained clean Monaco model", asy
   await page.locator('#explorer [role="treeitem"][data-route="/about/"]').click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   const result = await page.evaluate(async () => {
-    const proof = (window as unknown as { retainedModelProof: { isCurrent(): boolean } }).retainedModelProof;
+    const proof = (window as typeof window & { retainedModelProof: { isCurrent(): boolean } }).retainedModelProof;
     const retained = proof.isCurrent();
     (await import("/src/components/code-editor.ts")).clearHistory();
     return { retained, released: !proof.isCurrent() };
@@ -306,7 +306,7 @@ test("ordinary canvas edits persist while a history refresh is held", async ({ p
   const stored = await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const record = (await import("/src/drafts.ts")).draftStore().get({ account: "native-demo-user", repoId: 501, repo: "native-demo-user/native-demo", branch: "main" }, "index.html");
-    (window as unknown as { releaseNativeHold(): void }).releaseNativeHold();
+    (window as typeof window & { releaseNativeHold(): void }).releaseNativeHold();
     return { text: record?.content, model: editor.getMountedSource("index.html") };
   });
   expect(stored.text).toBe(stored.model);

@@ -57,7 +57,7 @@ function fixture() {
     componentTag: path => Object.keys(state.components).find(tag => state.components[tag] === path),
     editingScopePath: () => state.editingScope,
     instanceContent: () => false,
-    locateTag: (source, node) => tagAt(source, node) ? ({ name: tagAt(source, node) } as unknown as StartTag) : undefined,
+    locateTag: (source, node) => tagAt(source, node) ? ({ name: tagAt(source, node)!, start: 0, nameEnd: 0, end: 0 } satisfies StartTag) : undefined,
     tagName: tagAt,
     openFile: (path, epoch) => {
       const done = deferred<void>();
@@ -247,7 +247,7 @@ test("text and grid reports re-render the bar only when they change", () => {
   handlers.onTextSelection(text);
   handlers.onTextSelection({ ...text });
   assert.deepEqual(f.controller.textSelection(), { ...text, path: PAGE, node: [1] });
-  const grid = { selected: { path: PAGE, parent: [0], index: 0, row: 0 } } as unknown as Parameters<typeof handlers.onItemGrids>[0];
+  const grid = { hover: null, selected: { path: PAGE, parent: [0], index: 0, position: 0, count: 1, row: false, beside: false, ghost: { top: 0, left: 0, width: 0, height: 0 } } } satisfies Parameters<typeof handlers.onItemGrids>[0];
   handlers.onItemGrids(grid);
   handlers.onItemGrids(grid);
   assert.deepEqual(f.log, [`editBar ${PAGE}`, `editBar ${PAGE}`]);

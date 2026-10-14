@@ -283,13 +283,16 @@ test("implied end tags map to their parent and pending code pointers can be canc
     const cursor = () => window.dispatchEvent(new CustomEvent('native-code-pointer', { detail: { path: 'index.html', kind: 'cursor', source: '<div><p>Hi</p></div>', offset: 6, stale: () => false } }));
     cursor();
     window.dispatchEvent(new CustomEvent('native-code-pointer', { detail: { path: 'index.html', kind: 'range' } }));
+    // fixed-wait: Asserts a range selection cancels the pending 120 ms cursor selection.
     await new Promise(resolve => setTimeout(resolve, 180));
     const afterRange = selected.length;
     cursor();
     link.cancel();
+    // fixed-wait: Asserts clearing selection cancels the pending 120 ms cursor selection.
     await new Promise(resolve => setTimeout(resolve, 180));
     const afterClear = selected.length;
     cursor();
+    // fixed-wait: Lets the uncancelled 120 ms cursor selection run before destroying the link.
     await new Promise(resolve => setTimeout(resolve, 180));
     link.destroy();
     return { mapped, afterRange, afterClear, selected };
@@ -339,7 +342,7 @@ test("mobile hover labels stay in the viewport and clear the edit bar", async ({
   const frame = page.frameLocator('.native-preview-frame');
   const target = frame.locator('.hero h1');
   await target.evaluate(el => {
-    el.className = 'a-very-long-class-name-that-must-fit-in-the-narrow-canvas';
+    el.setAttribute('class', 'a-very-long-class-name-that-must-fit-in-the-narrow-canvas');
     (el as HTMLElement).style.cssText = 'position:relative;left:300px;width:40px;font-size:12px';
   });
   await target.hover();
@@ -395,9 +398,11 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   await page.mouse.move(box.x + 30, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 150, box.y + box.height / 2, { steps: 4 });
+  // fixed-wait: Keeps the code range held beyond the 120 ms cursor debounce before mouse release.
   await page.waitForTimeout(180);
   await page.mouse.up();
   await expect(editor.locator('.selected-text').first()).toBeVisible();
+  // fixed-wait: Observes whether mouse release incorrectly queues cursor selection after the 120 ms debounce.
   await page.waitForTimeout(180);
   await expect(current(page)).toHaveText('h1');
   // A real code click queues cursor selection; a real body crumb click wins while it waits.
@@ -430,6 +435,7 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   await page.clock.runFor(500);
   await page.clock.resume();
   await expect(crumbs(page)).toHaveText(['body']);
+  // fixed-wait: Asserts no delayed cursor selection replaces the body crumb after the clock resumes.
   await page.waitForTimeout(180);
   await expect(crumbs(page)).toHaveText(['body']);
 });

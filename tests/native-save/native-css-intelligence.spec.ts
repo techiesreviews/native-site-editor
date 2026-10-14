@@ -17,6 +17,7 @@ test.beforeEach(async ({page,baseURL}) => {
       if(state.mutateSources){state.sources['other.css']=':root {--accent: orange}';}
       if(state.switchMount){dispose();api.mountCodeEditor(host,{key:'css-B',historyScope:'B',path:'current.css',source:state.sources['current.css']});return true;}
       if(path==='other.css' && state.invalidateFirst){
+        // fixed-wait: Yields a task before invalidating the mounted editor to force the stale completion race.
         await new Promise(resolve=>setTimeout(resolve,0));
         if(state.invalidateFirst==='replace') {
           const replacement=document.createElement('div');document.body.append(replacement);

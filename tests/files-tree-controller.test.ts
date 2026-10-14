@@ -38,6 +38,7 @@ function harness(entries = [entry("a.txt")]) {
   const root = new Element(), calls: string[] = [];
   let load = async () => ({ entries: [entry("child.txt")] });
   const node = (_tag: string, className = "", text = "") => Object.assign(new Element(), { className, textContent: text });
+  // eslint-disable-next-line no-restricted-syntax -- The minimal Element class models tree interactions; it deliberately omits the rest of the browser DOM.
   const ports = {
     ui: { node, button: (text: string, action: () => void, className: string) => { const row = node("button", className, text); row.addEventListener("click", action); return row; }, setIcon: () => {} },
     snapshot: () => snapshot, repo: () => repo, epoch: () => epoch, root: () => root,

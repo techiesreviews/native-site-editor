@@ -39,6 +39,7 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
       window.addEventListener("message", receive);
       (window as any).avoidanceProbe = { probe, stop: () => { window.requestAnimationFrame = originalRAF; Element.prototype.getBoundingClientRect = originalRect; window.removeEventListener("message", receive); return probe; } };
     }, [callLine, runtimeFile] as const);
+    // fixed-wait: Spaces wheel events across frames to exercise repeated scroll coalescing.
     for (let index = 0; index < 6; index++) { await page.mouse.wheel(0, 10); await page.waitForTimeout(60); }
     await expect.poll(async () => (await bar.boundingBox())!.y).toBeLessThan(barBefore.y - 30);
     await expect.poll(() => frame.locator("html").evaluate(() => (window as any).avoidanceProbe.probe.messages)).toBeGreaterThan(0);

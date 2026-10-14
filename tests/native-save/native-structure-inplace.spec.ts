@@ -229,7 +229,7 @@ test("an outside change while typing ends the edit, and the page shows what its 
   await expect(titleRow(page)).not.toHaveClass(/is-editing/);
   expect(await source(page)).toContain("<!-- elsewhere -->");
   // The page never shows text its source does not have.
-  const written = (await source(page)).match(/<span slot="title">([^<]*)<\/span>/)![1];
+  const written = (await source(page))!.match(/<span slot="title">([^<]*)<\/span>/)![1];
   await expect(shownTitle(page)).toHaveText(written);
   await page.keyboard.type("More");
   await expect(shownTitle(page)).toHaveText(written);
@@ -247,10 +247,11 @@ test("a link's text and URL are one edit: one undo step, and Escape from the URL
   await text.fill("Read more");
   await url.click();
   // The window losing focus (another app) leaves the edit open.
-  await page.evaluate(() => { (document as unknown as { hasFocus: () => boolean }).hasFocus = () => false; (document.activeElement as HTMLElement).blur(); });
+  await page.evaluate(() => { document.hasFocus = () => false; (document.activeElement as HTMLElement).blur(); });
+  // fixed-wait: Asserts blur from window focus loss keeps editing open after the deferred focus check.
   await page.waitForTimeout(100);
   await expect(editing).toHaveCount(1);
-  await page.evaluate(() => { delete (document as unknown as { hasFocus?: unknown }).hasFocus; });
+  await page.evaluate(() => { Reflect.deleteProperty(document, "hasFocus"); });
   await url.click();
   await url.fill("/about/");
   await url.press("Escape");

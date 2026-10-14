@@ -127,7 +127,7 @@ test("an expired install pending cookie is refused", async () => {
   exchanges = 0;
   const { oauth, pending } = await install(env);
   const id = pending.split("=")[1];
-  records.set(id, { kind: "install", expiresAt: Date.now() - 1 } as unknown as StoredSession);
+  records.set(id, { kind: "install", expiresAt: Date.now() - 1 } satisfies StoredSession);
   const response = await handle(get("/auth/callback?code=c", `${oauth}; ${pending}`), env, github);
   assert.match(response.headers.get("location")!, /error=/);
   assert.equal(exchanges, 0);

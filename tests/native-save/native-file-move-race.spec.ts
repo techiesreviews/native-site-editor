@@ -51,6 +51,7 @@ test("an edit made in another tab while the Rename dialog is open refuses the re
   await other.close();
   // This tab has the other tab's draft before Rename is pressed.
   await expect.poll(() => page.evaluate(async () => {
+    // eslint-disable-next-line no-restricted-syntax -- This race must inspect the in-memory broadcast receipt without loading persisted drafts through list().
     const store = (await import("/src/drafts.ts")).draftStore() as unknown as { memory: Map<string, { path: string; content: string }> };
     return [...store.memory.values()].some((d) => d.path === "about/index.html" && d.content.includes("other tab"));
   })).toBe(true);

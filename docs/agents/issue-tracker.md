@@ -26,7 +26,7 @@ Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 - **Map**: `docs/wayfinder/<effort>/map.md`. Its frontmatter holds `label: wayfinder:map`, `title`, `charted` and `tracker`. Its body holds Destination, Notes, Decisions so far, Not yet specified and Out of scope.
 - **Child ticket**: `docs/wayfinder/<effort>/tickets/NN-<slug>.md`, numbered from `01`. Frontmatter: `title`, `type` (`research (AFK)`, `prototype (HITL)`, `grilling (HITL)` or `task (AFK|HITL)`), `status: open|closed`, `assignee`, `blocked_by: [NN-slug, …]`. Body: `## Question`.
 - **Blocking**: the `blocked_by` list. A ticket is unblocked when every ticket it lists has `status: closed`.
-- **Frontier**: tickets with `status: open`, an empty `assignee:` and no open blockers. The lowest number goes first.
+- **Frontier**: `scripts/agents/tickets.mjs frontier [map]` lists tickets with `status: open` and all blockers closed, including builder and title, lowest number first within each map. Check `assignee:` before claiming. `scripts/agents/tickets.mjs check` validates statuses and blocker slugs across each map's `tickets/` and `build/tickets/`.
 - **Claim**: fill in `assignee:` (for example `Lex + claude (grilling)` or `claude (research subagent)`), then commit and push on `dev` before doing any work.
 - **Resolve**: append `## Resolution (YYYY-MM-DD)` to the ticket and set `status: closed`. Then add one line to the map's Decisions so far: `- [<ticket title>](tickets/NN-<slug>.md): <gist>`.
 - **Research findings**: committed on a throwaway branch `research/<map-prefix>-NN-<slug>` as `docs/wayfinder/<effort>/research/NN-<slug>.md`. The resolution names the branch and commit.

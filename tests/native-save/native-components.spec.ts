@@ -489,11 +489,11 @@ test("browser slot assignment keeps whitespace around an element assigned to ano
 test("replaced component pencils cannot navigate after selection changes", async ({ page }) => {
   await selectFirstCard(page);
   await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).evaluate((el) => {
-    (window as unknown as { oldComponentPencil: HTMLElement }).oldComponentPencil = el as HTMLElement;
+    (window as typeof window & { oldComponentPencil: HTMLElement }).oldComponentPencil = el as HTMLElement;
   });
   await select(page, "project-card span[slot='title']");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
-  await page.evaluate(() => (window as unknown as { oldComponentPencil: HTMLElement }).oldComponentPencil.click());
+  await page.evaluate(() => (window as typeof window & { oldComponentPencil: HTMLElement }).oldComponentPencil.click());
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Text");
   await expect(status(page)).toHaveText("This component action is stale. Select the component again to edit its current template.");
@@ -531,7 +531,7 @@ test("editable component names keep their drag pixels, and a click after a drag 
     const record = (value: string) => { output.textContent += value + " "; };
     // The host's drag: a press is recorded; whether it became a drag is the test's to say.
     const state = { dragged: false };
-    (window as unknown as { affordanceDrag: typeof state }).affordanceDrag = state;
+    (window as typeof window & { affordanceDrag: typeof state }).affordanceDrag = state;
     const toolbar = createEditBar(pane, pane, () => { record("press"); return { justDragged: () => state.dragged }; });
     toolbar.show({
       kind: "Project card", draggable: true, controls: [],
@@ -564,11 +564,11 @@ test("editable component names keep their drag pixels, and a click after a drag 
   await page.mouse.down();
   await expect(output).toHaveText("select press direct press ");
   // Released after a drag: the click that follows edits nothing.
-  await page.evaluate(() => { (window as unknown as { affordanceDrag: { dragged: boolean } }).affordanceDrag.dragged = true; });
+  await page.evaluate(() => { (window as typeof window & { affordanceDrag: { dragged: boolean } }).affordanceDrag.dragged = true; });
   await page.mouse.up();
   await expect(output).toHaveText("select press direct press ");
   // Keyboard presses are clicks, never drags.
-  await page.evaluate(() => { (window as unknown as { affordanceDrag: { dragged: boolean } }).affordanceDrag.dragged = false; });
+  await page.evaluate(() => { (window as typeof window & { affordanceDrag: { dragged: boolean } }).affordanceDrag.dragged = false; });
   await chip.focus();
   await page.keyboard.press("Enter");
   await direct.focus();
@@ -617,6 +617,7 @@ test("child selections omit template entry while root entry rejects stale or mis
       const fresh = tools.identity(selection).component.onEdit;
       fresh();
       // The template opens, then its root is selected.
+      // fixed-wait: Polls the in-page selection callback while the asynchronous template open completes.
       for (let tries = 0; !selected.length && tries < 50; tries++) await new Promise((done) => setTimeout(done, 10));
       const selectedRoot = selected[0];
       delete sources[templatePath];

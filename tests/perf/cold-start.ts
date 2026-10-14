@@ -113,10 +113,10 @@ async function measure(page: Page, resources: Res[], load: () => Promise<unknown
   if (signedIn) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
-      const top = await page.evaluate(() => (window as unknown as { __cold: Record<string, number> }).__cold);
+      const top = await page.evaluate(() => (window as typeof window & { __cold: Record<string, number> }).__cold);
       for (const frame of page.frames()) {
         if (frame === page.mainFrame() || paint !== null) continue;
-        const fcp = await frame.evaluate(() => (window as unknown as { __cold?: { fcp?: number } }).__cold?.fcp).catch(() => undefined);
+        const fcp = await frame.evaluate(() => (window as typeof window & { __cold?: { fcp?: number } }).__cold?.fcp).catch(() => undefined);
         if (fcp) paint = fcp - origin;
       }
       // Selectable once the structure is in and the page is on screen.

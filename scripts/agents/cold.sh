@@ -5,6 +5,7 @@ set -euo pipefail
 worktree=$(realpath "$1")
 outprefix=$(realpath -m "$2")
 mkdir -p "$(dirname "$outprefix")"
+agent_scripts=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd "$worktree"
 srv=
 cleanup() {
@@ -17,8 +18,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 # Measure this checkout's server only: refuse a port someone else holds.
-if curl -fsS --max-time 2 -o /dev/null http://127.0.0.1:5216/ 2>/dev/null; then echo "Port 5216 is already serving; stop that server first" >&2; exit 1; fi
-ASE_NATIVE_SAVE_DIST=1 ASE_NATIVE_SAVE_PORT=5216 setsid ./node_modules/.bin/tsx tests/native-save/server.ts > "$outprefix.server.log" 2>&1 &
+source "$agent_scripts/port-common.sh"
+if slot_listeners 5216; then echo "cold: $slot_busy" >&2; exit 1; fi
+ASE_TEST_OWNER_PID=$$ ASE_NATIVE_SAVE_DIST=1 ASE_NATIVE_SAVE_PORT=5216 setsid ./node_modules/.bin/tsx tests/native-save/server.ts > "$outprefix.server.log" 2>&1 &
 srv=$!
 ready=false
 for (( i=0; i<100; i++ )); do

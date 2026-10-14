@@ -83,10 +83,10 @@ test("Edit component mode shows each part's slot chip after its name; a click re
   const work = frame(page).locator("section-work");
   await page.evaluate(() => {
     const reports: unknown[] = [];
-    (window as unknown as { slotChipReports: unknown[] }).slotChipReports = reports;
+    (window as typeof window & { slotChipReports: unknown[] }).slotChipReports = reports;
     window.addEventListener("native-slot-chip", (event) => reports.push((event as CustomEvent).detail));
   });
-  const reports = () => page.evaluate(() => (window as unknown as { slotChipReports: { action: string; template: string; node: number[]; chip: { state: string; name: string } }[] }).slotChipReports);
+  const reports = () => page.evaluate(() => (window as typeof window & { slotChipReports: { action: string; template: string; node: number[]; chip: { state: string; name: string } }[] }).slotChipReports);
 
   // The title: a slot, purple.
   await work.getByText("Section title", { exact: true }).click();
@@ -119,6 +119,7 @@ test("Edit component mode shows each part's slot chip after its name; a click re
   // A double-click: none. A timer set in the page after it, for longer than the
   // click's wait, runs after any click it could have left waiting.
   await chip(page).dblclick();
+  // fixed-wait: Asserts double-click leaves no delayed single-click toggle after three click windows.
   await page.evaluate(() => new Promise((done) => setTimeout(done, 3 * 240)));
   expect(await reports()).toHaveLength(1);
 
@@ -143,7 +144,7 @@ test("a double-click renames a slot in its chip: valid as typed, Enter or leavin
   const work = frame(page).locator("section-work");
   await page.evaluate(() => {
     const reports: unknown[] = [];
-    (window as unknown as { slotChipReports: unknown[] }).slotChipReports = reports;
+    (window as typeof window & { slotChipReports: unknown[] }).slotChipReports = reports;
     window.addEventListener("native-slot-chip", (event) => {
       const detail = (event as CustomEvent<{ name?: string }>).detail;
       reports.push(detail);
@@ -151,8 +152,9 @@ test("a double-click renames a slot in its chip: valid as typed, Enter or leavin
       if (detail.name === "taken") event.preventDefault();
     });
   });
-  const reports = () => page.evaluate(() => (window as unknown as { slotChipReports: { action: string; node: number[]; name?: string }[] }).slotChipReports);
+  const reports = () => page.evaluate(() => (window as typeof window & { slotChipReports: { action: string; node: number[]; name?: string }[] }).slotChipReports);
   const name = () => chip(page).locator(".slot-chip__name");
+  // fixed-wait: Separates chip click sequences and checks no delayed toggle or rename leaks past three click windows.
   const settle = () => page.evaluate(() => new Promise((done) => setTimeout(done, 3 * 240)));
 
   await work.getByText("Section title", { exact: true }).click();

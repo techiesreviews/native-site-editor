@@ -54,11 +54,13 @@ files), settles every outcome by design.
 - Each matrix row has a browser spec that forces the order through
   `page.route` hold and release, waiting on observable app state.
 
+## Test fixtures
+
+- Type fakes with `satisfies` or a declared type; document deliberate double assertions (enforced by `no-restricted-syntax` in `tests/**`).
+
 ## Browser specs
 
-- Wait on observable state (`expect`, `expect.poll`, a locator), so a spec
-  passes the same on a slow CI runner as on a fast laptop.
-- A spec that reads the clipboard first polls it for the expected content
-  (`docs/agents/guardrails.md` checks this).
+- Wait on observable state; document deliberate fixed waits (enforced by `scripts/check-specs.mjs`).
+- Poll the clipboard for expected content before reading it (enforced by `scripts/check-specs.mjs`).
 - A spec states which fixture group it needs (`@actual`, `@native-static`,
   or default) and runs in that group.

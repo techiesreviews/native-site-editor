@@ -288,16 +288,16 @@ test("preview route, iframe and scroll persist through save completion", async (
     spacer.id = "test-scroll-spacer";
     spacer.style.height = "2000px";
     document.body.append(spacer);
-    (window as unknown as { __id?: string }).__id = "id-" + Math.random();
+    (window as typeof window & { __id?: string }).__id = "id-" + Math.random();
     window.scrollTo(0, 120);
-    return { id: (window as unknown as { __id: string }).__id, scroll: (document.scrollingElement as Element).scrollTop };
+    return { id: (window as typeof window & { __id: string }).__id, scroll: (document.scrollingElement as Element).scrollTop };
   });
 
   await pasteSource(page, "<site-header", indexSource.replace("A native browser preview", "Reload survivor"));
   // The preview stays on About (route preserved) and never reloaded (same window, scroll kept).
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   const after = await win.evaluate(() => ({
-    id: (window as unknown as { __id?: string }).__id,
+    id: (window as typeof window & { __id?: string }).__id,
     scroll: (document.scrollingElement as Element).scrollTop,
   }));
   expect(after.id).toBe(before.id);
@@ -311,7 +311,7 @@ test("preview route, iframe and scroll persist through save completion", async (
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   await expect(frame.getByRole("heading", { name: "About this project" })).toBeVisible();
   const postSave = await win.evaluate(() => ({
-    id: (window as unknown as { __id?: string }).__id,
+    id: (window as typeof window & { __id?: string }).__id,
     scroll: (document.scrollingElement as Element).scrollTop,
   }));
   expect(postSave.id).toBe(before.id);

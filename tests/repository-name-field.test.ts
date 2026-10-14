@@ -117,7 +117,8 @@ test("Get Started: the name field previews the repository, flags bad names and t
   const root = createGetStarted({
     login: "lex", installUrl: null, editor: "https://editor.example", create: async () => ({ ok: true }) as never, reload: () => {},
     loadOwners: async () => owners as never,
-  }).root as unknown as FakeElement;
+  }).root;
+  assert.ok(root instanceof FakeElement);
   const field = fieldOf(root, "repository-name-hint");
   const command = () => root.all().filter((el) => el.localName === "code").map((el) => el.textContent).join(" | ");
 
@@ -156,7 +157,8 @@ test("Get Started: submitting an empty name flags it and returns focus to the fi
   let created = 0;
   const root = createGetStarted({
     login: "lex", installUrl: null, editor: "https://editor.example", create: async () => { created++; return { ok: true } as never; }, reload: () => {},
-  }).root as unknown as FakeElement;
+  }).root;
+  assert.ok(root instanceof FakeElement);
   const field = fieldOf(root, "repository-name-hint");
   field.type("");
   root.all().find((el) => el.localName === "form")!.dispatchEvent(new FakeEvent("submit"));
@@ -173,7 +175,8 @@ test("setup wizard: the name field remembers what is typed, normalises on change
     loadOwners: async () => [{ login: "lex", type: "User" }, { login: "techies", type: "Organization" }] as never,
     create: async () => ({ ok: true }) as never, findRepository: async () => undefined, agentPrompt: () => "",
     remember: (change) => void remembered.push(change), finish: () => {}, exit: () => {},
-  }).root as unknown as FakeElement;
+  }).root;
+  assert.ok(root instanceof FakeElement);
   await tick();
   const field = fieldOf(root, "wizard-name-hint");
   assert.equal(field.input.value, "kept-name");

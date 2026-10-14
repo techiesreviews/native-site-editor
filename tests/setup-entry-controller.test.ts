@@ -14,12 +14,12 @@ function fixture() {
   const loads: ReturnType<typeof deferred<Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>>>[] = [];
   const connection = deferred<Connection>();
   const options: SetupWizardOptions[] = [];
-  const module = { createSetupWizard: (value: SetupWizardOptions) => { options.push(value); return { root: {} as HTMLElement, focus: () => { focuses++; }, destroy: () => { destroys++; } }; } } as unknown as Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>;
+  const module = { createSetupWizard: (value: SetupWizardOptions) => { options.push(value); return { root: {} as HTMLDivElement, focus: () => { focuses++; }, destroy: () => { destroys++; } }; } } satisfies Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>;
   const controller = createSetupEntryController({
     login: () => login, ownerSetupUrl: () => owner, repositoryCount: () => count,
     connectionHint: () => hint, connection: () => connection.promise, readMemory: () => undefined,
     writeMemory: change => { writes++; return { step: "connect", ...change, at: 0 }; }, clearMemory: () => { clears++; },
-    loadWizard: () => { const load = deferred<typeof module>(); loads.push(load); return load.promise; },
+    loadWizard: () => { const load = deferred<Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>>(); loads.push(load); return load.promise; },
     append: () => { mounts++; }, onExit: () => { exits++; },
     actions: { loadOwners: async () => [], create: async () => ({ ok: false, message: "Unused" }), findRepository: async () => undefined, agentPrompt: () => "", finish: () => {} },
   });

@@ -11,7 +11,7 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 test.beforeEach(async ({ page, baseURL }) => {
   // Record the runtime's messages: the render context and the last reported inset.
   await page.addInitScript(() => {
-    const seen = window as unknown as { aseContext?: string; aseInsets?: (number | undefined)[] };
+    const seen = window as typeof window & { aseContext?: string; aseInsets?: (number | undefined)[] };
     seen.aseInsets = [];
     window.addEventListener("message", (event) => {
       const data = event.data as { source?: string; type?: string; context?: string; rect?: { inset?: number } } | undefined;
@@ -28,7 +28,7 @@ test.beforeEach(async ({ page, baseURL }) => {
 // A rectangle 100px down the frame, 40px high, with `inset`, sent as the
 // runtime would (with its context unless `context` is false).
 async function sendRect(page: Page, inset: unknown, context = true) {
-  const ctx = context ? await page.evaluate(() => (window as unknown as { aseContext?: string }).aseContext) : undefined;
+  const ctx = context ? await page.evaluate(() => (window as typeof window & { aseContext?: string }).aseContext) : undefined;
   if (context) expect(ctx).toBeTruthy();
   const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();
   await child!.evaluate(([value, ctxValue]) => {
@@ -36,6 +36,7 @@ async function sendRect(page: Page, inset: unknown, context = true) {
     if (ctxValue) message.context = ctxValue;
     parent.postMessage(message, "*");
   }, [inset, ctx] as const);
+  // fixed-wait: Lets the synthetic frame rectangle report reach the host before reading its geometry.
   await page.waitForTimeout(150);
   const area = (await page.locator(".native-preview-frame").boundingBox())!;
   const box = (await bar(page).boundingBox())!;
@@ -45,6 +46,7 @@ async function sendRect(page: Page, inset: unknown, context = true) {
 test("a reported inset moves the bar; invalid or missing ones leave it; a huge one keeps it in the frame", async ({ page }) => {
   await frame(page).locator(".hero h1").click();
   await expect(bar(page)).toBeVisible();
+  // fixed-wait: Lets initial runtime rectangle reports finish before synthetic reports override them.
   await page.waitForTimeout(800);
   const plain = await sendRect(page, undefined);
   // With room above the rectangle and no inset, the bar stands above it.
@@ -75,7 +77,7 @@ test("a reported inset moves the bar; invalid or missing ones leave it; a huge o
 // heading (right under it) puts the bar below the heading and the header.
 test("the sticky header leaves the bar under it and below the selected heading", async ({ page }) => {
   await frame(page).locator(".hero h1").click();
-  await page.waitForTimeout(300);
+  await expect(bar(page)).toHaveAttribute("data-side", "below");
   const header = (await frame(page).locator("site-header").boundingBox())!;
   const heading = (await frame(page).locator(".hero h1").boundingBox())!;
   const box = (await bar(page).boundingBox())!;
@@ -94,10 +96,12 @@ test("a full-height sidebar or a full-screen layer is not a header", async ({ pa
   const lastInset = async () => {
     // A 1px scroll makes the runtime measure and report again.
     await child!.evaluate(() => { window.scrollBy(0, 1); });
+    // fixed-wait: Lets the scroll produce a new runtime inset report before reversing direction.
     await page.waitForTimeout(250);
     await child!.evaluate(() => { window.scrollBy(0, -1); });
+    // fixed-wait: Lets the reverse scroll produce its runtime inset report before reading the last inset.
     await page.waitForTimeout(250);
-    return page.evaluate(() => (window as unknown as { aseInsets: (number | undefined)[] }).aseInsets.at(-1));
+    return page.evaluate(() => (window as typeof window & { aseInsets: (number | undefined)[] }).aseInsets.at(-1));
   };
   await frame(page).locator(".hero p.lead").click();
   const header = await child!.evaluate(() => document.querySelector("site-header")!.getBoundingClientRect().bottom);

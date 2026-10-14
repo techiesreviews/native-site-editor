@@ -16,6 +16,14 @@ const RECEIVER_GLOBALS = [
   "setTimeout", "clearTimeout", "setInterval", "clearInterval", "queueMicrotask",
   "fetch", "structuredClone", "atob", "btoa", "getComputedStyle", "matchMedia", "reportError",
 ].join("|");
+const DOUBLE_UNKNOWN = {
+  selector: "TSAsExpression > TSAsExpression.expression[typeAnnotation.type='TSUnknownKeyword']",
+  message: "Type the fake with satisfies or a declared type instead of casting through unknown. Escape only with eslint-disable-next-line no-restricted-syntax -- <reason>.",
+};
+const RECEIVER_RULE = {
+  selector: `ObjectExpression > Property > Identifier.value[name=/^(${RECEIVER_GLOBALS})$/]`,
+  message: 'Wrap this global in an arrow: called as a property it gets the wrong receiver and throws "Illegal invocation".',
+};
 const { default: tseslint } = await import("typescript-eslint");
 
 export default tseslint.config(
@@ -35,13 +43,14 @@ export default tseslint.config(
       "@typescript-eslint/unbound-method": "error",
       // unbound-method skips bare globals. A browser or Workers global stored as an object
       // property and called as `ports.frame()` gets the wrong receiver (p5-21, milestone-01).
-      "no-restricted-syntax": ["error", {
-        selector: `ObjectExpression > Property > Identifier.value[name=/^(${RECEIVER_GLOBALS})$/]`,
-        message: "Wrap this global in an arrow: called as a property it gets the wrong receiver and throws \"Illegal invocation\".",
-      }],
+      "no-restricted-syntax": ["error", RECEIVER_RULE],
       // tsc covers unused code (scripts/check-types.mjs).
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": "off",
     },
+  },
+  {
+    files: ["tests/**/*.ts"],
+    rules: { "no-restricted-syntax": ["error", RECEIVER_RULE, DOUBLE_UNKNOWN] },
   },
 );

@@ -25,12 +25,13 @@ const RETURNS = /^\s*return\b/;
 const OPT_OUT = /\/\/\s*clipboard-ready:\s*\S/;
 
 /**
- * `text` with comments, string contents and template text blanked to spaces. `${...}`
- * expressions stay code, nested to any depth. Offsets are UTF-16 indices, as everywhere
- * else in this file, and newlines are kept.
+ * Code with comments, string contents and template text blanked, plus a view containing
+ * only real line comments for opt-outs. `${...}` expressions stay code, nested to any
+ * depth. Both views preserve UTF-16 offsets and newlines.
  */
-function codeOnly(text) {
+function sourceViews(text) {
   const out = text.split("");
+  const lineComments = text.replace(/[^\n]/g, " ").split("");
   const blank = (from, to) => { for (let i = from; i < to; i++) if (out[i] !== "\n") out[i] = " "; };
   const braces = []; // open `${` levels: braces opened inside each that are not closed yet
   let inTemplate = false;
@@ -42,7 +43,9 @@ function codeOnly(text) {
       else if (char === "$" && next === "{") { braces.push(0); inTemplate = false; at++; }
       else blank(at, at + 1);
     } else if (char === "/" && next === "/") {
-      const stop = text.indexOf("\n", at); const to = stop < 0 ? text.length : stop; blank(at, to); at = to - 1;
+      const stop = text.indexOf("\n", at); const to = stop < 0 ? text.length : stop;
+      for (let i = at; i < to; i++) lineComments[i] = text[i];
+      blank(at, to); at = to - 1;
     } else if (char === "/" && next === "*") {
       const stop = text.indexOf("*/", at + 2); const to = stop < 0 ? text.length : stop + 2; blank(at, to); at = to - 1;
     } else if (char === '"' || char === "'") {
@@ -56,7 +59,7 @@ function codeOnly(text) {
       else braces[braces.length - 1]--;
     }
   }
-  return out.join("");
+  return { code: out.join(""), lineComments: lineComments.join("") };
 }
 
 /** Each expect.poll(...) call in `code`: its start and end offsets and whether it reads the clipboard. */
@@ -75,15 +78,16 @@ function polls(code) {
 
 /** Line numbers (1-based) of clipboard reads in `text` that are not ready. */
 export function unreadyClipboardReads(text) {
-  const code = codeOnly(text);
+  const { code, lineComments } = sourceViews(text);
   const lines = text.split("\n");
+  const comments = lineComments.split("\n");
   const lineOf = (offset) => code.slice(0, offset).split("\n").length - 1;
   const ranges = polls(code).map((poll) => ({ ...poll, endLine: lineOf(poll.end) }));
   const unready = [];
   for (const match of code.matchAll(new RegExp(READ.source, "g"))) {
     const at = match.index, index = lineOf(at), line = lines[index];
     if (RETURNS.test(line)) continue;
-    if (OPT_OUT.test(line) || OPT_OUT.test(lines[index - 1] ?? "")) continue;
+    if (OPT_OUT.test(comments[index]) || OPT_OUT.test(comments[index - 1] ?? "")) continue;
     // Inside a poll callback: the poll retries it.
     if (ranges.some((poll) => poll.start < at && at < poll.end)) continue;
     // A keyboard copy (Ctrl/Cmd+C) writes the clipboard before press() resolves.
@@ -93,6 +97,40 @@ export function unreadyClipboardReads(text) {
     unready.push(index + 1);
   }
   return unready;
+}
+
+/** Line numbers of fixed waits without a reason on the wait or the preceding line. */
+export function fixedWaits(text) {
+  const { code, lineComments } = sourceViews(text), comments = lineComments.split("\n");
+  const offsets = [...code.matchAll(/\bwaitForTimeout\s*\(/g)].map(match => match.index);
+  for (const match of code.matchAll(/\bnew\s+Promise\b/g)) {
+    let at = match.index + match[0].length;
+    while (/\s/.test(code[at] ?? "")) at++;
+    if (code[at] === "<") {
+      // Balance nested type arguments and object/tuple/function types. An arrow's
+      // `=>` does not close a type argument, and object members may contain `;`.
+      const stack = ["<"], closes = { ">": "<", "}": "{", "]": "[", ")": "(" };
+      for (at++; at < code.length && stack.length; at++) {
+        const char = code[at];
+        if ("<{[(".includes(char)) stack.push(char);
+        else if (closes[char] === stack[stack.length - 1] && !(char === ">" && code[at - 1] === "=")) stack.pop();
+      }
+      if (stack.length) continue;
+      while (/\s/.test(code[at] ?? "")) at++;
+    }
+    if (code[at] !== "(") continue;
+    let depth = 1;
+    const argumentsStart = ++at;
+    for (; at < code.length && depth > 0; at++) {
+      if (code[at] === "(") depth++;
+      else if (code[at] === ")") depth--;
+    }
+    if (/\bsetTimeout\s*\(/.test(code.slice(argumentsStart, at))) offsets.push(match.index);
+  }
+  const optOut = /\/\/\s*fixed-wait:\s*\S/;
+  return [...new Set(offsets.map(offset => code.slice(0, offset).split("\n").length))]
+    .filter(line => !optOut.test(comments[line - 1]) && !optOut.test(comments[line - 2] ?? ""))
+    .sort((a, b) => a - b);
 }
 
 function specs(dir) {
@@ -105,11 +143,16 @@ function specs(dir) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL("..", import.meta.url));
-  const findings = specs(join(root, "tests")).flatMap((file) => unreadyClipboardReads(readFileSync(file, "utf8"))
-    .map((line) => `${relative(root, file)}:${line}: clipboard read without a preceding expect.poll on the clipboard`));
+  const findings = specs(join(root, "tests")).flatMap((file) => {
+    const source = readFileSync(file, "utf8"), path = relative(root, file);
+    return [
+      ...unreadyClipboardReads(source).map(line => `${path}:${line}: clipboard read without a preceding expect.poll on the clipboard`),
+      ...fixedWaits(source).map(line => `${path}:${line}: fixed wait; wait on observable state or add "// fixed-wait: <reason>"`),
+    ];
+  });
   if (findings.length) {
     console.error(findings.join("\n"));
-    console.error(`check-specs: ${findings.length} finding(s). Poll the clipboard first or add "// clipboard-ready: <reason>".`);
+    console.error(`check-specs: ${findings.length} finding(s). Poll observable state or give a clipboard-ready / fixed-wait reason.`);
     process.exit(1);
   }
 }
