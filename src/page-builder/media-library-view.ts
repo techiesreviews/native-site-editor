@@ -1,6 +1,6 @@
 import { WARN_IMAGE_BYTES, uploadImageType } from "../uploads";
 import { createBusyLock } from "./media-busy-lock";
-import { createMediaByteCache } from "./media-byte-cache";
+import { createMediaByteCache, decodeImage } from "./media-byte-cache";
 import { createMediaLibraryShell } from "./media-library-shell";
 import { drawLibraryGrid } from "./media-library-grid";
 import { repaintUsageBadges, showUsageDialog } from "./media-library-usage";
@@ -10,7 +10,7 @@ import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
 import { basename, filterMediaLibrary, mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
-import { mediaNameAlt, mediaVariants, type MediaImage } from "./media-markup";
+import { mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
 import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
@@ -22,7 +22,8 @@ import {
   dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
 } from "./media-library-refresh";
 import "./media-picker.css";
-import type { MediaCleanUpMount, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
+import type { MediaCleanUpMount, MediaHeldFiles, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
+const CANCELLED = "This file was cancelled. Choose another image.";
 
 export interface MediaLibraryView {
   element: HTMLElement;
@@ -111,12 +112,22 @@ export function createMediaLibraryView(
     if (!alive) return;
     repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh(); sheet.repaint?.();
   });
-  // Dropped and chosen files are added at once, in the pane and in the picker (slice 17).
+  // Dropped and chosen files are added at once (slice 17). The pane saves them; the picker holds the
+  // ready ones and chooses the first of each addition, so Use saves and places them in one Undo step.
+  let chooseNext = false;
   const adding = createMediaAdding(grid, shell.adding, {
+    hold: Boolean(modal),
+    select: id => { chosen = id; paintChoice(); },
+    ready: (id, request) => {
+      if (!chooseNext || !filterMediaLibrary({ ...library, items: [{ path: request.file.name }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length) return;
+      chooseNext = false; chosen = id; paintChoice();
+    },
     alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: collections.value, kind }),
     import: requests => adapter.import(requests), task: work => task(work), idle: () => busyLock.idle(),
     refresh: async () => { cache.clear(); await refresh(); }, show: recover, tell,
-    review: (files, collection) => showMediaOptimise(sheet, context, "", files, false, new Map(), collection),
+    // The picker's reviewed files are held like the others.
+    review: (files, collection) => showMediaOptimise(sheet, modal ? { ...context, adapter: { ...adapter,
+      import: async requests => { adding.reviewed(requests); return []; } } } : context, "", files, false, new Map(), collection),
     // In the picker a new file is chosen, never placed: Use still confirms it.
     added: paths => {
       const fits = paths.find(path => library.items.some(item => item.path === path) && filterMediaLibrary(
@@ -150,14 +161,22 @@ export function createMediaLibraryView(
       tell(`Added ${filesLabel(paths.length)} to "${name}".`);
     });
   }
-  function dispose() {
+  /** Closing the picker (Cancel, Close, Escape) saves its ready files without placing them: one Undo
+   * step. A picker closed by a repository switch (`dispose()` from outside) drops them. */
+  function dispose(saveHeld = false) {
     if (!alive) return;
+    const rest = modal && saveHeld ? adding.take() : [], unfinished = modal && saveHeld ? adding.cancelPending() : 0;
+    const notAdded = unfinished ? ` ${filesLabel(unfinished)} still being prepared ${unfinished === 1 ? "was" : "were"} not added.` : "";
+    if (rest.length) void adapter.import(rest.map(entry => entry.request)).then(
+      paths => options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`), error => options.report?.error(error));
+    else if (notAdded) options.report?.announce(notAdded.trim());
     alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); cache.dispose();
     more.close(false); more.element.remove();
-    modal?.removeEventListener("close", dispose); dialog.replaceChildren(); dialog.remove();
+    modal?.removeEventListener("close", closed); dialog.replaceChildren(); dialog.remove();
   }
-  modal?.addEventListener("close", dispose, { once: true });
+  const closed = () => dispose(true);
+  modal?.addEventListener("close", closed, { once: true });
   function tell(text: string) { if (alive) message.textContent = text; }
   function task(work: () => Promise<void>, lock = true, canCancel = false) {
     return busyLock.task(work, lock, canCancel);
@@ -202,8 +221,8 @@ export function createMediaLibraryView(
   function draw() {
     if (!alive || !library) return;
     viewing = collections.value;
-    // A chosen file that is gone (removed, renamed) is no longer chosen.
-    if (chosen && !library.items.some(item => item.path === chosen)) chosen = undefined;
+    // A chosen file that is gone (removed, renamed, a held file cancelled) is no longer chosen.
+    if (chosen && !heldFile(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
     drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen }, {
       alive: () => alive, bytes: path => cache.get(path), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
@@ -216,36 +235,74 @@ export function createMediaLibraryView(
   /** The picker's status: the chosen file's picture and name, or what to do. Use waits for a choice. */
   function paintChoice() {
     if (!modal) return;
+    if (chosen?.startsWith("pending:") && !heldFile(chosen)) chosen = undefined;
     const { thumb, name, details, use } = shell.choice;
-    for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card")) {
-      const on = card.dataset.path === chosen;
+    for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card, .media-library__pending[data-id]")) {
+      const on = (card.dataset.path ?? card.dataset.id) === chosen;
       card.classList.toggle("is-chosen", on);
-      card.querySelector(".media-library__thumbnail")?.setAttribute("aria-pressed", String(on));
+      card.querySelector(".media-library__thumbnail, .media-library__pending-select")?.setAttribute("aria-pressed", String(on));
     }
-    name.textContent = chosen ? basename(chosen) : "Choose one image";
-    thumb.replaceChildren(); details.hidden = !chosen;
+    const held = chosen ? heldFile(chosen) : undefined;
+    name.textContent = held ? basename(held.request.file.name) : chosen ? basename(chosen) : "Choose one image";
+    thumb.replaceChildren(); details.hidden = !chosen || Boolean(held);
     use.disabled = !chosen;
     if (!chosen) return;
     const path = chosen;
+    if (held) {
+      const url = held.request.file.type.startsWith("image/") && URL.createObjectURL(held.request.file);
+      if (url) { const image = node("img"); image.alt = ""; image.src = url; image.addEventListener("load", () => URL.revokeObjectURL(url), { once: true }); thumb.replaceChildren(image); }
+      return;
+    }
     void cache.get(path).then(data => {
       if (!alive || chosen !== path || !uploadImageType(path)) return;
       const image = node("img"); image.alt = ""; image.src = data.url; thumb.replaceChildren(image);
     }).catch(() => undefined);
   }
   /** Use: place the chosen file with today's markup; the picker closes once the place has it. */
+  function heldFile(id: string) { return adding.held().find(entry => entry.id === id); }
   function use() {
     const path = chosen, pick = options.onPick;
     if (!path || !pick) return;
     void task(async () => {
-      const data = await cache.get(path);
+      const held = heldFile(path);
+      let image: MediaImage;
+      if (held) {
+        // A held file's size is its main output's, or (stored as it is: SVG, GIF) read from its bytes.
+        const primary = held.request.result?.outputs[0];
+        let size: { width?: number; height?: number } | undefined = primary?.width ? primary : undefined;
+        if (!size) { const url = URL.createObjectURL(primary?.blob ?? held.request.file); try { size = await decodeImage(url); } finally { URL.revokeObjectURL(url); } }
+        image = { path, width: size.width, height: size.height, alt: "", variants: [] };
+      } else {
+        if (path.startsWith("pending:")) throw new Error(CANCELLED);
+        const data = await cache.get(path), meta = library.metadata[path];
+        image = { path, width: data.width, height: data.height, variants: mediaVariants(path, library.items.map(item => item.path)),
+          alt: meta?.decorative ? "" : meta?.alt || mediaNameAlt(path) };
+      }
       // Cancel or Close while the picture was read: nothing is placed.
       if (!alive) return;
-      const meta = library.metadata[path];
-      const image: MediaImage = { path, width: data.width, height: data.height, variants: mediaVariants(path, library.items.map(item => item.path)),
-        alt: meta?.decorative ? "" : meta?.alt || mediaNameAlt(path) };
-      await pick(image, () => !alive);
+      if (held && !heldFile(path)) throw new Error(CANCELLED);
+      await pick(image, () => !alive, heldFiles(image));
       shell.close();
     });
+  }
+  /** The ready held files, saved with Use's placement in one batch; undefined when there are none. */
+  function heldFiles(image: MediaImage): MediaHeldFiles | undefined {
+    const ready = adding.held(), ids = ready.map(entry => entry.id), index = ids.indexOf(image.path);
+    if (!ready.length) return undefined;
+    const outputs = (paths: string[]) => paths.flatMap((path, at) =>
+      ready[at].request.result?.outputs.map(output => output.variantWidth ? mediaVariantName(path, output.variantWidth) : path) ?? [path]);
+    return {
+      image: paths => index < 0 ? image : { ...image, path: paths[index], alt: mediaNameAlt(paths[index]), variants: mediaVariants(paths[index], outputs(paths)) },
+      async save(place) {
+        const taken = adding.take();
+        // A held file cancelled (or a new one ready) since Use began: nothing is saved or placed.
+        if (taken.map(entry => entry.id).join() !== ids.join()) { adding.settle(taken.map(entry => entry.id)); throw new Error(CANCELLED); }
+        try {
+          const paths = await adapter.import(taken.map(entry => entry.request), place);
+          adding.settle(ids, paths); return paths;
+        } catch (error) { adding.settle(ids); throw error; }
+      },
+    };
   }
   function usage(path: string) {
     usageDialog?.close();
@@ -303,12 +360,12 @@ export function createMediaLibraryView(
   }
   wireMediaLibraryInput(shell, {
     draw, loaded: () => Boolean(library), tell,
-    add: files => adding.start(files),
+    add: files => { chooseNext = true; adding.start(files); },
     viewing: () => viewing, manage: () => { if (library) showManageCollections(sheet, collectionHost); },
   }, listeners.signal);
   const ready = task(async () => {
     summary.textContent = "Reading repository images and references…";
-    await refresh(); if (options.files?.length && alive) adding.start(options.files);
+    await refresh(); if (options.files?.length && alive) { chooseNext = true; adding.start(options.files); }
   }, false);
   return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose };
 }

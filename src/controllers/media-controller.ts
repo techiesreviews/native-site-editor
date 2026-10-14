@@ -4,7 +4,7 @@ import type { DraftScope, SavedDraft } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import type { NativeSite, NativeTextEdit } from "../../shared/native-project";
 import type { MediaWorkspaceContext, MediaWorkspaceBatch } from "../page-builder/media-workspace";
-import type { MediaPickerOptions } from "../page-builder/media-picker";
+import type { MediaPathPlacement, MediaPickerOptions } from "../page-builder/media-picker";
 type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")["mountMediaLibrary"]>;
 import { mediaExistingAlt, mediaUrl, type MediaImage } from "../page-builder/media-markup";
 import { locateNativeElementRange } from "../native-source-location";
@@ -273,10 +273,10 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (!stamp.holds() || ports.source(target.path) !== source) return;
     // The place: its page, and the picture by its words ("Home · Studio desk").
     const place = `${ports.placeLabel?.(target.path) ?? target.path} · ${initialAlt?.trim() || "Image"}`;
-    await openMediaPicker({ files, accept: "image/*", place, onPick: async (image: MediaImage, cancelled) => {
+    await openMediaPicker({ files, accept: "image/*", place, report: ports, onPick: async (image: MediaImage, cancelled, held) => {
       const { placeMediaImage } = await import("../page-builder/media-place");
       await placeMediaImage(ports, workspaceContext, target, image,
-        { stamp, epoch, source: source!, expected, initialAlt }, cancelled);
+        { stamp, epoch, source: source!, expected, initialAlt }, cancelled, held);
     } }).catch((error: unknown) => ports.error(error));
   }
 
@@ -293,15 +293,20 @@ export function createMediaController(ports: MediaControllerPorts) {
 
   /** The Media picker for a value that holds an image's address (component fields, Site settings):
    * resolves to the chosen file's root path on Use, or undefined on Cancel. */
-  async function choosePath(place: string): Promise<string | undefined> {
+  async function choosePath(place: string, placement?: MediaPathPlacement): Promise<string | undefined> {
     const stamp = ports.stamp();
     const { openMediaPicker } = await load();
     // A repository switched while the picker loaded: no picker opens for the old request.
     if (!stamp.holds()) return undefined;
     return new Promise(resolve => {
-      openMediaPicker({ accept: "image/*", place, onClose: () => resolve(undefined), onPick: (image, cancelled) => {
+      openMediaPicker({ accept: "image/*", place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
         if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
-        resolve(cancelled() ? undefined : mediaUrl(image.path));
+        if (cancelled() || !held) { resolve(cancelled() ? undefined : mediaUrl(image.path)); return; }
+        // Files added in the picker are saved with the value's placement, when it has one: one Undo step.
+        const paths = await held.save(placement && { path: placement.path, source: placement.source, stale: placement.stale,
+          apply: paths => placement.edit(mediaUrl(held.image(paths).path)) });
+        if (placement) placement.placed = true;
+        resolve(mediaUrl(held.image(paths).path));
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });

@@ -68,9 +68,10 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
 
   function tile(entry: Entry) {
     if (h.hold) {
+      // In the picker a ready file is chosen like any tile; Use saves and places it.
       const choose = button("", () => { if (entry.state === "ready" && entry.request) h.select?.(entry.id, entry.request); }, "media-library__pending-select");
-      choose.setAttribute("aria-label", `Details for ${entry.file.name}`); choose.disabled = true;
-      entry.tile.append(choose);
+      choose.setAttribute("aria-label", `Choose ${entry.file.name}`); choose.setAttribute("aria-pressed", "false"); choose.disabled = true;
+      entry.tile.dataset.id = entry.id; entry.tile.append(choose);
     }
     const name = basename(entry.file.name), preview = node("span", "media-library__pending-preview");
     if (entry.file.type.startsWith("image/")) {
@@ -216,12 +217,27 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       run.entries.push(...entries); paint();
       return entries.map(entry => entry.id);
     },
+    /** The picker's ready files, not saved yet. */
     held() { return run.entries.filter(entry => entry.state === "ready" && entry.request).map(entry => ({ id: entry.id, request: entry.request! })); },
+    /** Hold the ready files for one save: they show Adding… and no other save takes them. */
+    take() {
+      const ready = run.entries.filter(entry => entry.state === "ready" && entry.request);
+      ready.forEach(entry => set(entry, "adding"));
+      return ready.map(entry => ({ id: entry.id, request: entry.request! }));
+    },
+    /** A save ended: saved with `paths`, or (without) back to ready. */
+    settle(ids: string[], paths?: string[]) {
+      for (const entry of run.entries) {
+        const at = ids.indexOf(entry.id);
+        if (at < 0 || entry.state !== "adding") continue;
+        if (paths) { entry.path = paths[at]; set(entry, "added"); } else set(entry, "ready");
+      }
+    },
+    /** Files still waiting or preparing, stopped; how many. */
     cancelPending() {
       const pending = run.entries.filter(entry => entry.state === "waiting" || entry.state === "preparing");
       pending.forEach(stop); paint(); return pending.length;
     },
-    saved() { run.entries.filter(entry => entry.state === "ready").forEach(entry => set(entry, "added")); },
     /** The collection the files join follows its rename. */
     renamed(from: string, to: string) {
       if (run.collection === from) run.collection = to;

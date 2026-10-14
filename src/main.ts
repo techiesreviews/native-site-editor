@@ -679,7 +679,7 @@ function mountComponentTools() {
     announce,
     error: errorMessage,
     images: nativeImagePaths,
-    chooseImage: place => mediaController.choosePath(place),
+    chooseImage: (place, placement) => mediaController.choosePath(place, placement),
     links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title) : []),
     pageLabel: nativePageLabelOf,
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,

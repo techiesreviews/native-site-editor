@@ -1,3 +1,4 @@
+import type { MediaRecords } from "../../shared/media-records";
 import type { MediaCollectionChange } from "./media-collections";
 import { node } from "../ui/dom";
 import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
@@ -47,7 +48,21 @@ export interface MediaPlacement {
   path: string; source: string;
   /** The refusal when the page changed before the batch; a generic one otherwise. */
   stale?: string;
-  apply(paths: string[], requests: MediaImportRequest[]): string;
+  apply(paths: string[], requests: MediaImportRequest[], records: MediaRecords): string | { page: string; records?: MediaRecords };
+}
+/** A value placed by its address (a component's image slot): `edit` returns the page's text with
+ * `url` in it. When new files are saved with it, `placed` turns true: the caller writes nothing more. */
+export interface MediaPathPlacement {
+  path: string; source: string; stale?: string;
+  edit(url: string): string;
+  placed?: boolean;
+}
+/** Files added inside the picker and not saved yet (adding starts at once; nothing is placed
+ * without Use). Use saves them with the placement in one batch: one Undo step. */
+export interface MediaHeldFiles {
+  /** The chosen image once saved: a held file's final path, copies and size, or the chosen existing file. */
+  image(paths: string[]): MediaImage;
+  save(place?: MediaPlacement): Promise<string[]>;
 }
 export interface MediaImportRequest {
   file: File; result?: MediaOptimiseResult; folder: string;
@@ -62,7 +77,9 @@ export type MediaCleanUpMount = (slot: HTMLElement, closed: () => void) => Media
 export interface MediaPickerOptions {
   /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open.
    * `cancelled` turns true when the picker closes meanwhile (Cancel): nothing may be placed after it. */
-  onPick?: (image: MediaImage, cancelled: () => boolean) => void | Promise<void>;
+  onPick?: (image: MediaImage, cancelled: () => boolean, held?: MediaHeldFiles) => void | Promise<void>;
+  /** Ready files saved when the picker closes without Use, and problems after it closed. */
+  report?: { announce(message: string): void; error(error: unknown): void };
   /** The picker closed without Use (Cancel, Close or Escape): the existing placement stays. */
   onClose?: () => void;
   /** The place being filled, under the picker's title ("Home · Studio desk"). */
@@ -103,8 +120,8 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
   if (!host) throw new Error("Open a repository before choosing an image.");
   const dialog = node("dialog", "media-library media-library--picker");
   let used = false, closed = false;
-  const view = createMediaLibraryView(document.body, host, { ...options, onPick: options.onPick && (async image => {
-    await options.onPick!(image, () => closed); used = !closed;
+  const view = createMediaLibraryView(document.body, host, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
+    await options.onPick!(image, () => closed, held); used = !closed;
   }) }, dialog);
   const close = () => { dialog.close(); view.dispose(); };
   closeActive = close;

@@ -142,10 +142,9 @@ test("a file dropped on a page's image is added and chosen in the picker, placed
     for (const type of ["dragover", "drop"]) image.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true, composed: true }));
   }, svg);
   await expect(picker(page)).toBeVisible();
-  // No Optimise screen first: the file is added at once (slice 17's path) and chosen.
+  // No Optimise screen first: the file is prepared at once (slice 17's path), held and chosen; Use saves and places it (slice 23).
   await expect(picker(page).getByRole("heading", { name: "Optimise", exact: true })).toHaveCount(0);
-  await expect(picker(page).locator(".media-library__adding-status")).toHaveText("Added 1 file");
-  await expect(picker(page).getByRole("button", { name: "Choose images/dropped-photo.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker(page).getByRole("button", { name: "Choose Dropped Photo.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
   expect(await source(page)).toBe(before);
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect.poll(() => source(page)).toContain('src="/images/dropped-photo.svg"');

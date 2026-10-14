@@ -234,14 +234,17 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     // New files join the viewed collection in the same batch: one Undo step.
     let next = applyMediaMetadata({ ...metadata, files: { ...metadata.files, ...inherited } }, changes);
     for (const [name, members] of joins) next = addToMediaCollection(next, name, members);
-    recordsEdit(batch, metadata, next);
     if (place) {
       const source = await ctx.read(place.path);
       ctx.assertLive();
       if (source !== place.source) throw new Error(place.stale ?? `${place.path} changed while the file was being added. Nothing was added or placed.`);
       batch.expectedSources.set(place.path, place.source);
-      batch.edits.set(place.path, place.apply(paths, requests));
+      // The placement sees the records as this addition leaves them, and may change them (a moved mark).
+      const placed = place.apply(paths, requests, next);
+      batch.edits.set(place.path, typeof placed === "string" ? placed : placed.page);
+      if (typeof placed !== "string" && placed.records) next = placed.records;
     }
+    recordsEdit(batch, metadata, next);
     await commit(ctx, batch);
     return paths;
   };

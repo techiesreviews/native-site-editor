@@ -22,10 +22,9 @@ test.afterEach(() => {
 
 // A real 1×1 PNG, then every byte value (ignored after IEND): not UTF-8.
 const png = Buffer.concat([
-  Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"),
+  Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP476AAAAOhAWAv9IBkAAAAAElFTkSuQmCC", "base64"),
   Buffer.from(Array.from({ length: 256 }, (_, i) => i)),
 ]);
-const pngUrl = `data:image/png;base64,${png.toString("base64")}`;
 // The picker adds files on the drop-to-add path, which keeps an SVG's bytes as they are.
 const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="#c03"/></svg>\n');
 
@@ -64,12 +63,12 @@ async function openChooser(page: Page) {
   await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
 }
 
-/** The added file is chosen, not placed: the page is unchanged until Use. */
-async function addedThenUse(page: Page, path: string) {
-  await expect(chooser(page).locator(".media-library__adding-status")).toHaveText("Added 1 file");
-  await expect(chooser(page).getByRole("button", { name: `Choose ${path}`, exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(chooser(page).locator(".media-library__chosen-text")).toHaveText(path.split("/").pop()!);
+/** The added file is held and chosen, not saved or placed: nothing changes until Use, which saves and places it. */
+async function addedThenUse(page: Page, name: string, path: string) {
+  await expect(chooser(page).getByRole("button", { name: `Choose ${name}`, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(chooser(page).locator(".media-library__chosen-text")).toHaveText(name);
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).not.toContain(path);
+  expect(await storedUploads(page)).toBe(0);
   await chooser(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(chooser(page)).toBeHidden();
 }
@@ -111,7 +110,7 @@ test("Add new file in the Media picker adds to images/ and chooses it; Use place
   await chooser(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
   await (await upload).setFiles({ name: "Team Photo.svg", mimeType: "image/svg+xml", buffer: svg });
-  await addedThenUse(page, "images/team-photo.svg");
+  await addedThenUse(page, "Team Photo.svg", "images/team-photo.svg");
 
   // The image points at the new file, its alt follows the name, and the preview shows the bytes.
   await expect.poll(() => editorText(page)).toContain(`<img alt="team photo" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.svg" data-key="hero-image">`);
@@ -152,7 +151,7 @@ test("a file dropped on the Media picker is added and chosen; Discard in the Sav
   await open(page, baseURL);
   await openChooser(page);
   await dropFiles(page, "dialog.media-library", [{ name: "placeholder.svg", type: "image/svg+xml", base64: svg.toString("base64") }]);
-  await addedThenUse(page, "images/placeholder-2.svg");
+  await addedThenUse(page, "placeholder.svg", "images/placeholder-2.svg");
   // The name is taken on the branch: a suffix, never an overwrite.
   await expect.poll(() => editorText(page)).toContain(`src="/images/placeholder-2.svg"`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
@@ -189,26 +188,34 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
     { name: "Logo.PNG", mimeType: "image/png", buffer: png },
     { name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nÿþ") },
   ]);
-  await expect(status(page)).toHaveText("Uploaded images/logo.png, images/notes.pdf.");
-  const logo = explorer(page).locator(".file-row[data-path='images/logo.png']");
+  await expect(status(page)).toHaveText("Added images/logo.webp, images/notes.pdf.");
+  const logo = explorer(page).locator(".file-row[data-path='images/logo.webp']");
   await expect(logo).toHaveAttribute("aria-description", "added, not saved to GitHub yet");
+
+  // One Undo removes the whole folder addition, one Redo restores it.
+  await page.locator(".code-editor__undo").first().click();
+  await expect(explorer(page).locator(".file-row[data-path='images/logo.webp']")).toHaveCount(0);
+  await expect(explorer(page).locator(".file-row[data-path='images/notes.pdf']")).toHaveCount(0);
+  await page.locator(".code-editor__redo").first().click();
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(logo).toBeVisible();
 
   // Opened, an uploaded image shows itself, with Discard.
   await logo.click();
-  await expect(page.locator(".upload-summary__image")).toHaveAttribute("src", pngUrl);
-  await expect(page.getByRole("button", { name: "Discard images/logo.png" })).toBeVisible();
+  await expect(page.locator(".upload-summary__image")).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await expect(page.getByRole("button", { name: "Discard images/logo.webp" })).toBeVisible();
 
   // Dropped from the desktop on a folder row: uploaded into that folder.
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
   await dropFiles(page, "#explorer .file-row[data-path='about']", [{ name: "Photo.png", type: "image/png", base64: png.toString("base64") }]);
-  await expect(status(page)).toHaveText("Uploaded about/photo.png.");
+  await expect(status(page)).toHaveText("Added about/photo.webp.");
 
   // Over 20 MB: refused, with nothing added.
-  await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "huge.png", type: "image/png", size: 20 * 1024 * 1024 + 1 }]);
-  await expect(page.locator("#notice")).toContainText("huge.png is 20 MB; uploads are limited to 20 MB per file.");
-  await expect(explorer(page).locator(".file-row[data-path='images/huge.png']")).toHaveCount(0);
+  await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "huge.pdf", type: "application/pdf", size: 20 * 1024 * 1024 + 1 }]);
+  await expect(page.locator("#notice")).toContainText("huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
+  await expect(explorer(page).locator(".file-row[data-path='images/huge.pdf']")).toHaveCount(0);
 
-  // Saving commits all three, byte for byte.
+  // Saving commits prepared images and the byte-for-byte as-is PDF.
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`);
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
@@ -217,7 +224,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  expect((await committed(page, "images/logo.png"))?.equals(png)).toBe(true);
-  expect((await committed(page, "about/photo.png"))?.equals(png)).toBe(true);
+  expect((await committed(page, "images/logo.webp"))?.subarray(0, 4).toString()).toBe("RIFF");
+  expect((await committed(page, "about/photo.webp"))?.subarray(0, 4).toString()).toBe("RIFF");
   expect((await committed(page, "images/notes.pdf"))?.equals(Buffer.from("%PDF-1.4\nÿþ"))).toBe(true);
 });

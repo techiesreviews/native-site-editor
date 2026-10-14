@@ -38,9 +38,16 @@ test("Structure upload prepares and places; one Undo removes placement and famil
   await instance.click();
   if (await instance.getAttribute("aria-expanded") === "false") await instance.locator(".page-structure__toggle").click();
   await tree.locator(".page-structure__slot-badge").filter({ hasText: /^Image$/ }).press("Enter");
-  const bytes = await photo(page), chooser = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Upload image…", exact: true }).click();
-  await (await chooser).setFiles({ name: "Added.png", mimeType: "image/png", buffer: Buffer.from(bytes, "base64") });
+  const bytes = await photo(page);
+  // Structure's Choose image… opens the picker; a file added there is prepared and held, then Use places it.
+  await tree.getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Added.png", mimeType: "image/png", buffer: Buffer.from(bytes, "base64") });
+  await expect(picker.getByRole("button", { name: "Choose Added.png", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(await storedDraft(page, "images/added.webp")).toBeUndefined();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/added.webp"');
   for (const path of ["images/added.webp", "images/added-480w.webp", "images/added-960w.webp", "images/added-1600w.webp"])
     await expect.poll(() => storedDraft(page, path)).toBeDefined();
@@ -73,7 +80,7 @@ test("Close saves every ready file once, cancels unfinished preparation, and pla
   await page.frameLocator(".native-preview-frame").locator(".hero img").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await expect(picker.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await page.evaluate(() => {
     // Deliberately hold the encoder so Close races real in-flight preparation.
     Worker.prototype.postMessage = function () {};
@@ -86,7 +93,7 @@ test("Close saves every ready file once, cancels unfinished preparation, and pla
   await expect(picker.locator('.media-library__pending[data-state="preparing"]')).toHaveCount(1);
   await picker.getByRole("button", { name: "Close", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect(page.locator("#status")).toContainText("1 file still preparing was not added");
+  await expect(page.locator("#status")).toContainText("1 file still being prepared was not added");
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
   expect(await storedDraft(page, "images/unfinished.webp")).toBeUndefined();
   await expect.poll(() => storedDraft(page, "images/added.svg")).toBeDefined();
@@ -100,13 +107,13 @@ test("Use saves all ready files across picker additions with placement in one ba
   await page.frameLocator(".native-preview-frame").locator(".hero img").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await expect(picker.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   for (const name of ["first.svg", "second.svg"]) {
     await picker.locator('input[name="media-upload"]').setInputFiles({ name, mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
-    await expect(picker.getByRole("button", { name: `Details for ${name}`, exact: true })).toBeEnabled();
+    await expect(picker.getByRole("button", { name: `Choose ${name}`, exact: true })).toBeEnabled();
   }
   expect(await storedDraft(page, "images/first.svg")).toBeUndefined();
-  await picker.getByRole("button", { name: "Details for second.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Choose second.svg", exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
   await expect.poll(() => storedDraft(page, "images/first.svg")).toBeDefined();
@@ -125,7 +132,7 @@ test("picker Review retains Optimise but reviewed files stay held until Use", as
   await page.frameLocator(".native-preview-frame").locator(".hero img").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await expect(picker.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "reviewed.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
   await expect(picker.locator('.media-library__pending[data-state="ready"]')).toHaveCount(1);
   await picker.getByRole("button", { name: "Review…", exact: true }).click();
@@ -133,9 +140,9 @@ test("picker Review retains Optimise but reviewed files stay held until Use", as
   await picker.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await expect(picker.getByRole("button", { name: "Add to library", exact: true })).toBeEnabled();
   await picker.getByRole("button", { name: "Add to library", exact: true }).click();
-  await expect(picker.getByRole("button", { name: "Details for reviewed.svg", exact: true })).toBeEnabled();
+  await expect(picker.getByRole("button", { name: "Choose reviewed.svg", exact: true })).toBeEnabled();
   expect(await storedDraft(page, "images/reviewed.svg")).toBeUndefined();
-  await picker.getByRole("button", { name: "Details for reviewed.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Choose reviewed.svg", exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
   await expect.poll(() => storedDraft(page, "images/reviewed.svg")).toBeDefined();
@@ -167,9 +174,9 @@ test("cancelling a held file while Use reads its size places nothing", async ({ 
   await page.frameLocator(".native-preview-frame").locator(".hero img").click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await expect(picker.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "held.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
-  await picker.getByRole("button", { name: "Details for held.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Choose held.svg", exact: true }).click();
   // Hold the size read that Use starts, cancel the file, then let the read finish.
   await page.evaluate(() => {
     const prototype = HTMLImageElement.prototype, original = Object.getOwnPropertyDescriptor(prototype, "decode")!;

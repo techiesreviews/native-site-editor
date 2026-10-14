@@ -2,6 +2,7 @@ import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { Stamp } from "../guarded-edit";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import { mediaImageMarkup, type MediaImage } from "./media-markup";
+import type { MediaHeldFiles } from "./media-picker";
 import { locateNativeElementRange } from "../native-source-location";
 
 /** The picker's Use and agent placement share this exact swap and transaction. */
@@ -9,7 +10,7 @@ export async function placeMediaImage(
   ports: MediaControllerPorts, workspaceContext: () => Promise<MediaWorkspaceContext>,
   target: { path: string; node: number[]; width?: number }, image: MediaImage,
   proof: { stamp: Stamp; epoch: number; source: string; expected: string; initialAlt?: string; asset?: { path: string; version?: string } },
-  cancelled: () => boolean,
+  cancelled: () => boolean, held?: MediaHeldFiles,
 ) {
   const { stamp, epoch, source, expected, initialAlt } = proof;
   const locate = ports.locateElement ?? locateNativeElementRange;
@@ -33,10 +34,21 @@ export async function placeMediaImage(
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
-  const swap = (alt: string | undefined) => {
-    const markup = mediaImageMarkup({ ...image, alt: alt ?? "" }, expected, target.width, alt === undefined);
+  const swap = (alt: string | undefined, picked = image) => {
+    const markup = mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, target.width, alt === undefined);
     return { markup, page: latest.slice(0, range.tag.start) + markup + latest.slice(range.tag.end) };
   };
+  // Files added in the picker are saved with the placement and its records: one Undo step.
+  if (held) {
+    if (cancelled()) return;
+    const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata },
+      apply: (paths, _requests, current) => {
+        const picked = held.image(paths), after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page);
+        return { page: swap(after.alt, picked).page, records: after.records };
+      } });
+    ports.announce(saved.placed ? `Image replaced${saved.note && `.${saved.note}`}` : `Added ${saved.paths.join(", ")}.${saved.note}`);
+    return;
+  }
   // Whether the old file stays on the page does not depend on the alt, only on the new src.
   const after = rules.swapPlaceImage(records, target.path, from, image.path, initialAlt, swap(undefined).page);
   const { markup, page } = swap(after.alt);

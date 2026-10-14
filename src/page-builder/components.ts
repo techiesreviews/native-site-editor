@@ -1,3 +1,4 @@
+import type { MediaPathPlacement } from "./media-picker";
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
 import { createComponentMode, EnterTimeout, scopeHolds, type Level } from "./component-mode";
@@ -127,7 +128,7 @@ export interface ComponentDeps {
   /** Images of the repository, as root paths' suggestions. */
   images: () => string[];
   /** The Media picker for `place`; resolves to the chosen file's root path, or undefined on Cancel. */
-  chooseImage: (place: string) => Promise<string | undefined>;
+  chooseImage: (place: string, placement?: MediaPathPlacement) => Promise<string | undefined>;
   /** Pages of the site for a link's address. */
   links: () => { label: string; value: string }[];
   /** A page's name as the Pages tab shows it. */
@@ -1228,8 +1229,16 @@ export function createComponentTools(deps: ComponentDeps) {
       // The instance the choice is for, not whatever is selected when Use places it.
       const target = shown && { path: shown.path, node: [...shown.node], tag: shown.tag, source: deps.sources()[shown.path] };
       if (!target) return;
-      const path = await deps.chooseImage(`${componentLabel(target.tag)} · ${slotLabel(slot.name)}`);
-      if (path !== undefined) setImage(target, slot.name, path);
+      const stale = "The instance changed while the image was chosen; it was not replaced.";
+      // A file added in the picker is saved with this slot's address: one Undo step.
+      const placement: MediaPathPlacement | undefined = target.source === undefined ? undefined : { path: target.path, source: target.source, stale, edit(url) {
+        const at = instanceAt(target.path, target.node), current = at?.slots.find(entry => entry.name === slot.name);
+        const edit = at && current && at.tag === target.tag && at.source === target.source ? slotAttributeEdit(at, current, "src", url) : undefined;
+        if (!at || !edit) throw new Error(stale);
+        return at.source.slice(0, edit.start) + edit.text + at.source.slice(edit.end);
+      } };
+      const path = await deps.chooseImage(`${componentLabel(target.tag)} · ${slotLabel(slot.name)}`, placement);
+      if (path !== undefined && !placement?.placed) setImage(target, slot.name, path);
     }, "component-panel__text-button");
     const row = node("div", "component-field__upload");
     row.append(pick);
@@ -1893,7 +1902,18 @@ export function createComponentTools(deps: ComponentDeps) {
           async choose() {
             try {
               if (closed || !read(initial.source, proof)) return false;
-              const uploaded = await deps.chooseImage(`${componentLabel(at.tag)} · ${slotLabel(name)}`);
+              const stale = "The instance changed while the image was chosen; it was not replaced.";
+              // A file added in the picker is saved with this slot's address: one Undo step.
+              const placement: MediaPathPlacement = { path, source: initial.source, stale, edit(url) {
+                const current = !closed && read(initial.source, proof, stale);
+                const problem = nativeElementUrlProblem(url, ["http", "https"], false);
+                if (problem) throw new Error(problem);
+                const edit = current ? slotAttributeEdit(current, slot, "src", url) : undefined;
+                if (!current || !edit) throw new Error(stale);
+                return current.source.slice(0, edit.start) + edit.text + current.source.slice(edit.end);
+              } };
+              const uploaded = await deps.chooseImage(`${componentLabel(at.tag)} · ${slotLabel(name)}`, placement);
+              if (placement.placed) return true;
               if (closed || uploaded === undefined) return false;
               const current = read(initial.source, proof, "The instance changed while the image was chosen; it was not replaced.");
               if (!current) return false;
