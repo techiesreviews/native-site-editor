@@ -93,6 +93,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [44 The Social image popup](tickets/44-social-image-popup.md) | claude | 39, 36 |
 | [45 Agents set shape and focus, and trim](tickets/45-agents-frame-and-trim.md) | sol | 38, 40, 37 |
 | [90 Undo of removing an unsaved file brings its picture back too](tickets/90-undo-retrim-bytes.md) | sol | 41 |
+| [92 Agents' frame_image knows component shapes](tickets/92-agent-frame-component-shapes.md) | sol | 43 |
 
 ### Phase 4: Clean-up, renaming, Replace everywhere
 
