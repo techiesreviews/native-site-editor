@@ -2,7 +2,7 @@
 title: Placed-image markup - srcset, sizes, loading order
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-33 runner)
 blocked_by: [32-measured-sizes, 25-image-recipe]
 builder: sol
 phase: 2
