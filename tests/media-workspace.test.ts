@@ -572,3 +572,136 @@ test("Always keep forwards by default; explicit false overrides and suggestion i
   await assert.rejects(f.host.rename("images/a.png", "Garden.png"), error => error instanceof Error && "suggestion" in error && error.suggestion === "images/garden-2.png");
   await assert.rejects(f.host.rename("images/a.png", "Garden.webp"), /Keep the image's file format/);
 });
+
+const rectangle = { x: .1, y: .1, width: .8, height: .8 };
+const oldTrim = "media/images/a-crop.webp";
+const oldSmall = "media/images/a-crop-480.webp";
+function trimFixture() {
+  const f = fixture();
+  for (const path of [oldTrim, oldSmall]) {
+    f.paths.add(path); f.bytes.set(path, new Blob(["old pixels"])); f.versions.set(path, "old-v1");
+  }
+  f.text.set("index.html", '<img src="/media/images/a-crop.webp" srcset="/media/images/a-crop-480.webp 480w">');
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: ["Hero"], files: {
+    "images/a.png": { description: { text: "Original", byAgent: true }, collections: ["Hero"], alwaysKeep: true },
+    [oldTrim]: { description: { text: "Trim", byAgent: true }, trimmedFrom: { source: "images/a.png", trim: rectangle } },
+    [oldSmall]: { decorative: true },
+  } }));
+  const result = { outputs: [
+    { blob: new Blob(["new main"], { type: "image/webp" }), extension: "webp", width: 800, height: 400 },
+    { blob: new Blob(["small"], { type: "image/webp" }), extension: "webp", width: 480, height: 240, variantWidth: 480 },
+  ], before: 8, after: 8 };
+  const request = () => ({
+    source: "images/a.png", previous: oldTrim, trim: rectangle, result,
+    place: {
+      path: "index.html", source: f.text.get("index.html")!,
+      records: { text: f.text.get(MEDIA_RECORDS_PATH) },
+      apply(path: string) { return { page: '<img src="/' + path + '" srcset="/' + path.replace(".webp", "-480.webp") + ' 480w">' }; },
+    },
+  });
+  return { ...f, request };
+}
+test("trim uploads, page swap, records and unused family deletion share one Undo step", async () => {
+  const f = trimFixture(), original = f.bytes.get("images/a.png"), originalRecord = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"];
+  const before = new Map(f.text);
+  const path = await f.host.trim(f.request());
+  assert.equal(path, "media/images/a-crop-2.webp");
+  assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
+  const batch = f.batches[0];
+  assert.equal(batch.label, "Picture trimmed");
+  assert.deepEqual(batch.uploads.map(upload => upload.path), [path, "media/images/a-crop-2-480.webp"]);
+  assert.deepEqual(batch.deletes, [oldTrim, oldSmall]);
+  assert.deepEqual([...batch.edits.keys()].sort(), [MEDIA_RECORDS_PATH, "index.html"].sort());
+  assert.deepEqual(batch.moves, []);
+  assert.ok(!batch.uploads.some(upload => upload.path === "images/a.png"));
+  assert.ok(!batch.deletes.includes("images/a.png")); assert.ok(!batch.edits.has("images/a.png"));
+  const next = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  assert.deepEqual(next.files[path], { description: { text: "Trim", byAgent: true }, trimmedFrom: { source: "images/a.png", trim: rectangle } });
+  assert.equal(next.files[oldTrim], undefined); assert.equal(next.files[oldSmall], undefined);
+  assert.deepEqual(next.files["images/a.png"], originalRecord); assert.equal(f.bytes.get("images/a.png"), original);
+  f.history.pop()!();
+  assert.deepEqual(f.text, before); assert.ok(f.bytes.has(oldTrim)); assert.ok(f.bytes.has(oldSmall)); assert.ok(!f.bytes.has(path));
+});
+test("a previous main or responsive copy still mentioned in site text stays untouched", async () => {
+  for (const file of ["other.html", "scripts/data.js", "_redirects", "settings.json"]) {
+    for (const member of [oldTrim, oldSmall]) {
+      const f = trimFixture(), before = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+      f.paths.add(file); f.text.set(file, file + ' "/' + member + '"');
+      await f.host.trim(f.request());
+      assert.deepEqual(f.batches[0].deletes, []);
+      const after = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+      assert.deepEqual(after.files[oldTrim], before.files[oldTrim]);
+      assert.deepEqual(after.files[oldSmall], before.files[oldSmall]);
+    }
+  }
+});
+test("another place on the same page keeps the previous trimmed copy", async () => {
+  const f = trimFixture(), request = f.request();
+  request.place.apply = path => ({ page: '<img src="/' + path + '"><img src="/' + oldTrim + '">' });
+  await f.host.trim(request);
+  assert.deepEqual(f.batches[0].deletes, []);
+});
+test("unreadable text keeps the previous copy and still saves the trim", async () => {
+  for (const rejects of [false, true]) {
+    const f = trimFixture();
+    f.paths.add("unreadable.js");
+    const read = f.context.read.bind(f.context);
+    f.context.read = async path => {
+      if (path === "unreadable.js") { if (rejects) throw new Error("Read failed"); return undefined; }
+      return read(path);
+    };
+    await f.host.trim(f.request());
+    assert.deepEqual(f.batches[0].deletes, []);
+    assert.equal(f.batches[0].uploads.length, 2); assert.equal(f.history.length, 1);
+  }
+});
+test("Always keep on any previous family member prevents deletion", async () => {
+  for (const member of [oldTrim, oldSmall]) {
+    const f = trimFixture(), records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+    records.files[member].alwaysKeep = true;
+    f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+    await f.host.trim(f.request());
+    assert.deepEqual(f.batches[0].deletes, []);
+    assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/images/a-crop-2.webp"].alwaysKeep, undefined);
+  }
+});
+test("stale page, newer records and cancelled placement refuse the entire trim", async () => {
+  for (const stale of ["page", "records", "cancel", "stage"] as const) {
+    const f = trimFixture(), request = f.request();
+    if (stale === "page") f.text.set("index.html", "New page");
+    if (stale === "records") f.text.set(MEDIA_RECORDS_PATH, f.text.get(MEDIA_RECORDS_PATH)! + "\n");
+    if (stale === "cancel") request.place = { ...request.place, ...{ live: () => false } };
+    if (stale === "stage") f.afterStage(() => f.text.set("index.html", "Changed while staging"));
+    await assert.rejects(f.host.trim(request), /changed|Cancelled/i);
+    assert.equal(f.history.length, 0); assert.ok(!f.bytes.has("media/images/a-crop-2.webp"));
+    assert.ok(f.bytes.has(oldTrim)); assert.ok(f.bytes.has("images/a.png"));
+  }
+});
+test("trim validates no-op, cap, one primary format and source record preservation", async () => {
+  for (const bad of ["noop", "cap", "format", "primary", "record"] as const) {
+    const f = trimFixture(), request = f.request();
+    if (bad === "noop") request.trim = { x: 0, y: 0, width: 1, height: 1 };
+    if (bad === "cap") request.result.outputs[0].blob = new Blob([new Uint8Array(21 * 1024 * 1024)]);
+    if (bad === "format") request.result.outputs[1].extension = "png";
+    if (bad === "primary") request.result.outputs.push(request.result.outputs[0]);
+    if (bad === "record") {
+      const apply = (path: string) => request.place.apply(path);
+      const place: import("../src/page-builder/media-workspace").MediaTrimRequest["place"] = {
+        ...request.place, apply(path, records) {
+          records.files["images/a.png"] = { description: { text: "Changed source" } };
+          return { ...apply(path), records };
+        },
+      };
+      await assert.rejects(f.host.trim({ ...request, place }), /original picture's record/);
+    } else await assert.rejects(f.host.trim(request));
+    assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
+  }
+});
+test("a re-trim never reuses an address on the Recently removed list", async () => {
+  const f = trimFixture(), records = JSON.parse(f.text.get(MEDIA_RECORDS_PATH)!);
+  records.removed = [{ path: "media/images/a-crop-2.webp", sha: "abc", date: "2026-10-01", family: [{ path: "media/images/a-crop-3-480.webp", sha: "def" }] }];
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  const request = f.request();
+  request.place.records = { text: f.text.get(MEDIA_RECORDS_PATH) };
+  assert.equal(await f.host.trim(request), "media/images/a-crop-4.webp");
+});

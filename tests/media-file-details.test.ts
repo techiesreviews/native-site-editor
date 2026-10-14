@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaDetailChanges, mediaDetailFacts, mediaDetailRename, mediaFamilyRows, mediaRenamedPath } from "../src/page-builder/media-file-details";
+import { mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaDetailRename, mediaFamilyRows, mediaRenamedPath } from "../src/page-builder/media-file-details";
 import { applyMediaMetadata, mediaMetadataView } from "../src/page-builder/media-metadata";
 import { parseMediaRecords, serializeMediaRecords } from "../shared/media-records";
 
@@ -55,4 +55,11 @@ test("Always keep is read, written only when changed, cleared, and survives savi
   assert.deepEqual(kept.files["b.png"], { description: { text: "B", byAgent: true }, alwaysKeep: true });
   assert.equal(parseMediaRecords(serializeMediaRecords(kept)).files["b.png"].alwaysKeep, true);
   assert.deepEqual(applyMediaMetadata(kept, { "a.pdf": { alwaysKeep: false } }).files["a.pdf"], {});
+});
+
+test("trimmed copies show Made from even when the source no longer exists", () => {
+  const records = parseMediaRecords('{"version":2,"collections":[],"files":{"media/images/photo-crop.webp":{"trimmedFrom":{"source":"images/Original Photo.jpg","trim":{"x":0,"y":0,"width":0.5,"height":1}}}}}');
+  const meta = mediaMetadataView(records)["media/images/photo-crop.webp"];
+  assert.deepEqual(mediaMadeFrom(meta), [{ label: "Made from", value: "Original Photo.jpg" }]);
+  assert.deepEqual(mediaMadeFrom({}), []);
 });

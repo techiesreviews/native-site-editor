@@ -19,6 +19,11 @@ export function mediaDetailFacts(file: { path: string; size?: number; width?: nu
   return facts;
 }
 
+/** Provenance remains visible when the original has been removed. */
+export function mediaMadeFrom(record: Pick<MediaMetadata, "trimmedFrom">): MediaDetailFact[] {
+  return record.trimmedFrom ? [{ label: "Made from", value: basename(record.trimmedFrom.source) }] : [];
+}
+
 export interface MediaFamilyRow { path: string; label: string; size?: string }
 
 /** The responsive copies (narrowest first) and kept originals of the image whose main is

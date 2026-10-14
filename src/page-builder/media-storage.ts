@@ -33,8 +33,9 @@ const signatures = (paths: string[]) => new Map(mediaFamilies(paths).map(family 
 const base = (path: string) => stem(path.slice(path.lastIndexOf("/") + 1));
 
 /** Reserve a whole family: adding it must neither adopt nor detach existing members.
- * Compared in lower case, since sites are cloned onto case-insensitive disks. */
-export function chooseMediaPath(options: { folder: string; name: string; copies: number[]; original?: string; paths: Iterable<string> }): string {
+ * Compared in lower case, since sites are cloned onto case-insensitive disks.
+ * minimum skips earlier numbered addresses in a re-trimming chain (1 is the unnumbered name). */
+export function chooseMediaPath(options: { folder: string; name: string; copies: number[]; original?: string; paths: Iterable<string>; minimum?: number }): string {
   const paths = [...new Set([...options.paths].map(path => path.toLowerCase()))];
   const existing = new Set(paths), stems = new Set(paths.map(stem));
   const folders = new Set(paths.flatMap(path => path.split("/").slice(0, -1).map((_, index, parts) => parts.slice(0, index + 1).join("/"))));
@@ -60,5 +61,6 @@ export function chooseMediaPath(options: { folder: string; name: string; copies:
       return list.some(path => own.has(path)) && list.some(path => !own.has(path));
     });
   };
-  return taken(main) ? suggestMediaName(main, taken) : main;
+  const minimum = options.minimum ?? 1;
+  return minimum <= 1 && !taken(main) ? main : suggestMediaName(main, taken, minimum);
 }

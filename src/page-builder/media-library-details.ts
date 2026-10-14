@@ -4,7 +4,7 @@ import { uploadImageType } from "../uploads";
 import { input, field, check } from "./media-library-fields";
 import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
 import { basename, mediaKind } from "./media-library-filter";
-import { mediaDetailChanges, mediaDetailFacts, mediaDetailRename, mediaFamilyRows, mediaRenamedPath } from "./media-file-details";
+import { mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaDetailRename, mediaFamilyRows, mediaRenamedPath } from "./media-file-details";
 import { keepPageFocus, usageSections } from "./media-library-usage";
 import { mediaUsageBadge, mediaUsageFor } from "./media-usage-text";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
@@ -130,7 +130,7 @@ function renderInformation(
   // Today's rename handles images; renaming every kind comes with Rename everywhere (slice 54).
   if (!uploadImageType(path)) name.disabled = true;
   const facts = node("dl", "media-detail__facts");
-  for (const fact of mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width, height: data.height })) {
+  for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width, height: data.height }), ...mediaMadeFrom(meta)]) {
     const row = node("div"); row.append(node("dt", "", fact.label), node("dd", "", fact.value)); facts.append(row);
   }
   form.append(field("File name", name), facts);

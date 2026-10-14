@@ -22,8 +22,8 @@ export class MediaNameTakenError extends Error {
 }
 
 /** The candidates describe the entire destination family, not just its main. */
-export function suggestMediaName(to: string, taken: (candidate: string) => boolean): string {
-  for (let number = 2; ; number++) {
+export function suggestMediaName(to: string, taken: (candidate: string) => boolean, from = 2): string {
+  for (let number = Math.max(2, from); ; number++) {
     const candidate = `${stem(to)}-${number}${extension(to)}`;
     if (!taken(candidate)) return candidate;
   }

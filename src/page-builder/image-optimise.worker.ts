@@ -1,3 +1,5 @@
+import type { MediaTrim } from "../../shared/media-records";
+import { trimGeometry, isTrim } from "./trim-geometry";
 import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, mediaAnimatedOutput, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
 
 import { strippedImageSource } from "./media-image-bytes";
@@ -13,10 +15,25 @@ function sourceType(file: File, bytes: Uint8Array) {
   return file.type;
 }
 
-self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions }>) => {
-  const { file, options } = event.data;
+/** Decode once, then feed the same trimmed pixels to the main and every responsive encode. */
+function imagePixels(bitmap: ImageBitmap, trim?: MediaTrim): ImageBitmap | OffscreenCanvas {
+  if (!trim) return bitmap;
+  const { width, height, matrix } = trimGeometry(bitmap.width, bitmap.height, trim);
+  const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas image encoding is unavailable.");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.setTransform(...matrix);
+  ctx.drawImage(bitmap, 0, 0);
+  return canvas;
+}
+
+self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions; trim?: MediaTrim }>) => {
+  const { file, options, trim } = event.data;
   try {
     validateMediaOptimiseOptions(options);
+    if (trim && !isTrim(trim)) throw new Error("The picture has not been trimmed.");
+    if (trim && options.keepOriginal) throw new Error("A trimmed copy cannot keep the original bytes.");
     if (options.keepOriginal) {
       self.postMessage({ result: { outputs: [{ blob: file, extension: file.name.split(".").pop()?.toLowerCase() ?? "bin" }], before: file.size, after: file.size, note: "Original bytes and metadata are kept. Unsupported formats may not display on the web." } satisfies MediaOptimiseResult });
       return;
@@ -24,11 +41,13 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "png";
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (mediaUntouched(file.name, bytes)) {
+      if (trim) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
       self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: "SVG and animated GIF are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
       return;
     }
     const animated = mediaAnimatedOutput(file.name, bytes);
     if (animated) {
+      if (trim) throw new Error("Animated pictures cannot be trimmed. Use a still picture.");
       self.postMessage({ result: { outputs: [animated], before: file.size, after: animated.blob.size, note: "Animated images keep their frames; location and camera details are removed." } satisfies MediaOptimiseResult });
       return;
     }
@@ -36,13 +55,16 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
     try { bitmap = await createImageBitmap(file); }
     catch { throw new Error(`${file.name} cannot be decoded by this browser. For HEIC, export as JPEG or PNG first. You can also keep the original; unsupported files may not display on the web.`); }
     try {
-      const size = mediaDimensions(bitmap.width, bitmap.height, options.maxWidth);
+      const picture = imagePixels(bitmap, trim);
+      const size = mediaDimensions(picture.width, picture.height, options.maxWidth);
       let settings = options, note: string | undefined;
       const canvasAt = (width: number) => {
-        const height = Math.max(1, Math.round(bitmap.height * width / bitmap.width));
+        const height = Math.max(1, Math.round(picture.height * width / picture.width));
         const canvas = new OffscreenCanvas(width, height), ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas image encoding is unavailable. Keep the original instead.");
-        ctx.drawImage(bitmap, 0, 0, width, height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(picture, 0, 0, width, height);
         return { canvas, ctx, height };
       };
       const { canvas, ctx, height } = canvasAt(size.width);
@@ -61,7 +83,8 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
       if (png) blob = mediaChooseEncoding(blob, png);
       // Transparent pictures already compared WebP with lossless PNG above.
       const type = sourceType(file, bytes);
-      const stripped = strippedImageSource(bytes, type, bitmap.width === size.width && bitmap.height === height);
+      // Original bytes never represent trimmed pixels, even for a full-frame turn or flip.
+      const stripped = trim ? undefined : strippedImageSource(bytes, type, bitmap.width === size.width && bitmap.height === height);
       blob = await mediaSmallerMain(blob, { size: file.size, stripped: stripped && new Blob([new Uint8Array(stripped)], { type }),
         transparent, lossless: /^image\/(?:png|gif|bmp)$/.test(type) || /\.(?:png|gif|bmp)$/i.test(file.name) }, type => encode(canvas, type, settings.quality));
       const output = (blob: Blob, width: number, height: number): MediaOutput => ({ blob, width, height,

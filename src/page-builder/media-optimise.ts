@@ -1,3 +1,4 @@
+import type { MediaTrim } from "../../shared/media-records";
 import { gifIsAnimated, webpIsAnimated, pngIsAnimated, strippedImageSource } from "./media-image-bytes";
 import { RESPONSIVE_COPY_WIDTHS } from "./media-families";
 export interface MediaOptimiseOptions {
@@ -56,7 +57,7 @@ export function validateMediaOptimiseOptions(options: MediaOptimiseOptions) {
 }
 
 /** Vite emits a same-origin script; never a blob: worker under the editor CSP. */
-export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?: AbortSignal): Promise<MediaOptimiseResult> {
+export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?: AbortSignal, trim?: MediaTrim): Promise<MediaOptimiseResult> {
   return new Promise((resolve, reject) => {
     validateMediaOptimiseOptions(options);
     if (signal?.aborted) { reject(new DOMException("Image optimisation cancelled.", "AbortError")); return; }
@@ -74,6 +75,6 @@ export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?
     }
     worker.onmessage = (event: MessageEvent<{ error?: string; result?: MediaOptimiseResult }>) => finish(event.data.error ? new Error(event.data.error) : undefined, event.data.result);
     worker.onerror = () => finish(new Error("Image optimisation is unavailable in this browser. Keep the original to upload it."));
-    worker.postMessage({ file, options });
+    worker.postMessage({ file, options, ...(trim ? { trim } : {}) });
   });
 }

@@ -196,12 +196,16 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
   const calls: { width: number; type: string; quality?: number }[] = [];
   let result: import("../src/page-builder/media-optimise").MediaOptimiseResult | undefined;
   const scope = {
-    onmessage: undefined as undefined | ((event: { data: { file: File; options: import("../src/page-builder/media-optimise").MediaOptimiseOptions } }) => Promise<void>),
+    onmessage: undefined as undefined | ((event: { data: { file: File; options: import("../src/page-builder/media-optimise").MediaOptimiseOptions; trim?: import("../shared/media-records").MediaTrim } }) => Promise<void>),
     postMessage(value: { result?: typeof result; error?: string }) { assert.equal(value.error, undefined); result = value.result; },
   };
+  const transforms: number[][] = [], draws: { width: number; height: number; args: number[] }[] = [];
   class Canvas {
     constructor(readonly width: number, readonly height: number) {}
-    getContext() { return { drawImage() {}, getImageData() { return { data: Uint8Array.from([0, 0, 0, transparent ? 128 : 255]) }; } }; }
+    getContext() { return {
+      setTransform(...matrix: number[]) { transforms.push(matrix); },
+      drawImage: (_picture: unknown, ...args: number[]) => { draws.push({ width: this.width, height: this.height, args }); },
+      getImageData() { return { data: Uint8Array.from([0, 0, 0, transparent ? 128 : 255]) }; } }; }
     async convertToBlob(options: { type: string; quality?: number }) {
       calls.push({ width: this.width, ...options });
       const size = this.width === 2000 ? options.type === "image/png" ? pngSize : options.type === "image/jpeg" ? jpegSize : mainSize : this.width === 960 ? 200 : 20;
@@ -213,9 +217,9 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
   Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: async () => ({ width: 2000, height: 1000, close() { closed++; } }) });
   try {
     await import("../src/page-builder/image-optimise.worker");
-    const run = async (file = new File([new Uint8Array(100)], "photo.jpg"), options = mediaImageRecipe()): Promise<import("../src/page-builder/media-optimise").MediaOptimiseResult> => {
+    const run = async (file = new File([new Uint8Array(100)], "photo.jpg"), options = mediaImageRecipe(), trim?: import("../shared/media-records").MediaTrim): Promise<import("../src/page-builder/media-optimise").MediaOptimiseResult> => {
       calls.length = 0; result = undefined;
-      await scope.onmessage!({ data: { file, options } });
+      await scope.onmessage!({ data: { file, options, trim } });
       assert.ok(result); return result;
     };
     const ordinary = await run();
@@ -242,6 +246,20 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.deepEqual(new Uint8Array(await source.outputs[0].blob.arrayBuffer()), stripJpegMetadata(jpeg()));
     assert.ok(source.outputs.slice(1).every(output => output.blob.type === "image/jpeg"));
     assert.equal(closed, 5);
+    transforms.length = 0; draws.length = 0;
+    const flipped = await run(new File([jpeg()], "source.jpg"), mediaImageRecipe(), { x: 0, y: 0, width: 1, height: 1, flipX: true });
+    assert.equal(flipped.outputs[0].blob.size, 500);
+    assert.equal(flipped.outputs[0].extension, "jpg");
+    assert.notDeepEqual(new Uint8Array(await flipped.outputs[0].blob.arrayBuffer()), stripJpegMetadata(jpeg()));
+    assert.deepEqual(transforms[0].map(value => value === 0 ? 0 : value), [-1, 0, 0, 1, 2000, 0]);
+    assert.deepEqual(draws[0], { width: 2000, height: 1000, args: [0, 0] });
+    transforms.length = 0; draws.length = 0;
+    const turned = await run(undefined, mediaImageRecipe(), { x: .25, y: .25, width: .5, height: .5, turn: 90 });
+    assert.deepEqual([turned.outputs[0].width, turned.outputs[0].height], [500, 1000]);
+    assert.deepEqual(transforms[0], [0, 1, -1, 0, 750, -500]);
+    assert.deepEqual(draws[0], { width: 500, height: 1000, args: [0, 0] });
+    assert.ok(turned.outputs.every(output => !output.variantWidth || output.variantWidth < 500));
+    assert.equal(closed, 7);
   } finally {
     names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
   }

@@ -1,10 +1,12 @@
-import { removeMediaRecords, setMediaAlwaysKeep, setMediaCollections, setMediaDescription, type MediaRecords } from "../../shared/media-records";
+import { removeMediaRecords, setMediaAlwaysKeep, setMediaCollections, setMediaDescription, type MediaRecords, type MediaFileRecord } from "../../shared/media-records";
 import { setMediaFileDecorative } from "./media-descriptions";
 
 export interface MediaMetadata {
   tags: string[]; alt: string; decorative?: boolean; alwaysKeep?: boolean;
   /** Read only: an agent wrote the description and Lex has not checked it (To check). */
   byAgent?: boolean;
+  /** Read only: provenance of a trimmed copy, even when its source is gone. */
+  trimmedFrom?: MediaFileRecord["trimmedFrom"];
 }
 export type MediaMetadataMap = Record<string, MediaMetadata>;
 
@@ -16,6 +18,7 @@ export function cleanMediaTags(tags: string[]) {
 export function mediaMetadataView(records: MediaRecords): MediaMetadataMap {
   const out: MediaMetadataMap = Object.create(null);
   for (const [path, record] of Object.entries(records.files)) out[path] = { tags: [...record.collections ?? []], alt: record.description?.text ?? "", ...(record.decorative ? { decorative: true } : {}), ...(record.alwaysKeep ? { alwaysKeep: true } : {}),
+    ...(record.trimmedFrom ? { trimmedFrom: structuredClone(record.trimmedFrom) } : {}),
     ...(record.description?.byAgent && record.description.text ? { byAgent: true } : {}) };
   return out;
 }

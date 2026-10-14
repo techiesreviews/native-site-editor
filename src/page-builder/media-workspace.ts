@@ -3,6 +3,7 @@ import { startTags, startTagAttribute } from "../../shared/html-source";
 import { locateNativeElementRange } from "../native-source-location";
 import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
+import type { MediaOptimiseResult } from "./media-optimise";
 import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
@@ -10,7 +11,7 @@ import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import { uploadProblem } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, removeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { alwaysKeptFiles, mediaFamilyOf } from "./media-families";
 import { mediaEscape } from "./media-markup";
@@ -86,6 +87,15 @@ function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWork
   const usage = mediaUsageIndex(paths, text, ctx.pages, ctx.components, site);
   for (const [path, mentions] of mediaMentions({ media: paths, sources: text, site })) for (const { file } of mentions) if (!usage[path].files.includes(file)) usage[path].files.push(file);
   return usage;
+}
+
+export interface MediaTrimRequest {
+  source: string; trim: MediaTrim; previous?: string; result: MediaOptimiseResult;
+  place: {
+    path: string; source: string; stale?: string; live?: () => boolean;
+    records?: { text: string | undefined };
+    apply(path: string, records: MediaRecords): { page: string; records?: MediaRecords };
+  };
 }
 
 /** Repository adapter; the panel never writes directly to drafts, bytes or source models. */
@@ -268,6 +278,81 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     await commit(ctx, batch);
     return paths;
   };
+  const trimCopy = async ({ source, trim, previous, result, place }: MediaTrimRequest) => {
+    session?.assertLive();
+    const ctx = await context();
+    session?.assertLive(); ctx.assertLive();
+    const versions = familyVersions(ctx, [source, ...previous ? familyPaths(previous, ctx.paths) : []]);
+    const { batch, metadata } = await prepare(ctx, "Picture trimmed");
+    for (const [member, version] of versions) batch.expectedAssets.set(member, version);
+    assetGuard(batch, [source, ...previous ? [previous] : []]);
+    const { isTrim, trimmedCopyPath, planTrimmedCopy } = await import("./trimmed-copies");
+    ctx.assertLive();
+    if (!isTrim(trim)) throw new Error("The picture has not been trimmed.");
+    if (previous && (previous === source || !metadata.files[previous]?.trimmedFrom))
+      throw new Error("Re-trimming must start from a trimmed copy.");
+    const outputs = result.outputs, first = outputs[0];
+    if (!first || first.variantWidth || outputs.filter(output => !output.variantWidth).length !== 1)
+      throw new Error("Exactly one primary image must be encoded.");
+    if (outputs.some(output => !/^[a-z0-9]+$/i.test(output.extension) || output.extension !== first.extension))
+      throw new Error("All responsive images must use the primary image format.");
+    const widths = outputs.flatMap(output => output.variantWidth ? [output.variantWidth] : []);
+    if (new Set(widths).size !== widths.length || widths.some(width => !Number.isInteger(width) || width <= 0))
+      throw new Error("Responsive image widths must be positive and unique.");
+    for (const output of outputs) {
+      const problem = uploadProblem({ name: source, size: output.blob.size });
+      if (problem) throw new Error(problem);
+    }
+    for (const folder of ["media", "media/images"]) if (batch.expectedPaths.includes(folder))
+      throw new Error(folder + " is a file, so it cannot contain uploaded files.");
+    // Addresses on the Recently removed list stay taken, so a cached old trim can never reappear.
+    const path = trimmedCopyPath({ source, extension: first.extension, copies: widths, previous,
+      paths: [...batch.expectedPaths, ...metadata.removed?.flatMap(item => [item.path, ...item.family?.map(member => member.path) ?? []]) ?? []] });
+    const page = await ctx.read(place.path);
+    ctx.assertLive();
+    const stale = place.stale ?? "The page or media records changed while trimming. Nothing was saved.";
+    if (page !== place.source || place.records && place.records.text !== batch.expectedSources.get(MEDIA_RECORDS_PATH))
+      throw new Error(stale);
+    batch.expectedSources.set(place.path, place.source);
+    batch.live = place.live;
+    const provisional = planTrimmedCopy({ records: metadata, source, trim, path, previous, previousStillUsed: true, paths: batch.expectedPaths });
+    const placed = place.apply(path, structuredClone(provisional.records));
+    batch.edits.set(place.path, placed.page);
+    let next = placed.records ?? provisional.records;
+    if (JSON.stringify(next.files[source]) !== JSON.stringify(metadata.files[source]))
+      throw new Error("Trimming must leave the original picture's record unchanged.");
+    // A surviving previous copy belongs to its other places; its record stays untouched.
+    if (previous && metadata.files[previous]) next = { ...next, files: { ...next.files, [previous]: metadata.files[previous] } };
+    let previousStillUsed = true;
+    if (previous) {
+      const members = familyPaths(previous, batch.expectedPaths);
+      const text: Record<string, string> = {};
+      let complete = true;
+      text[place.path] = placed.page;
+      const files = batch.expectedPaths.filter(file => file !== MEDIA_RECORDS_PATH && file !== place.path && isMediaTextFile(file));
+      for (let index = 0; index < files.length; index += 12) {
+        const values = await Promise.all(files.slice(index, index + 12).map(async file => [file, await ctx.read(file).catch(() => undefined)] as const));
+        ctx.assertLive();
+        for (const [file, value] of values) {
+          // Never remove when unsure: an unreadable file keeps the previous copy.
+          if (value === undefined) { complete = false; continue; }
+          text[file] = value;
+          if (!batch.expectedAssets.has(file)) batch.expectedSources.set(file, value);
+        }
+      }
+      const usage = wideUsage(members, text, ctx);
+      previousStillUsed = !complete || members.some(member => usage[member].files.length > 0);
+    }
+    const plan = planTrimmedCopy({ records: metadata, source, trim, path, previous, previousStillUsed, paths: batch.expectedPaths });
+    batch.deletes.push(...plan.removes);
+    next = removeMediaRecords(next, plan.removes);
+    recordsEdit(batch, metadata, next);
+    for (const output of outputs) batch.uploads.push({
+      path: output.variantWidth ? mediaCopyName(path, output.variantWidth) : path, blob: output.blob,
+    });
+    await commit(ctx, batch);
+    return path;
+  };
   return {
     async describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }) {
       const ctx = active(), words = change.text?.trim();
@@ -368,6 +453,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, change === "reset" ? resetMediaAddingSettings(metadata) : setMediaAddingSettings(metadata, change));
       await commit(ctx, batch);
     },
+    trim: trimCopy,
     async rename(path, name, options) {
       const ctx = active();
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));
@@ -418,5 +504,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }
