@@ -176,7 +176,9 @@ const loadHistory = lazyModule(() => import("./components/commit-history"));
 const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction"), import("../shared/media-records")]));
 const loadMedia = lazyModule(async () => {
   const [module, [{ createMediaWorkspace }]] = await Promise.all([import("./page-builder/media-picker"), loadMediaWorkspace()]);
-  module.configureMediaPicker(createMediaWorkspace(mediaController.workspaceContext));
+  // Usage badges read the site's usage check, which runs on open.
+  module.configureMediaPicker({ ...createMediaWorkspace(mediaController.workspaceContext),
+    usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener) } });
   return module;
 });
 const loadChecklist = lazyModule(() => import("./components/setup-checklist"));

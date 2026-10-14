@@ -192,3 +192,75 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 }
 .media-library__empty:has(> button) { text-align: center; }
 .media-library__empty > button { margin-top: 12px; }
+
+/* Usage (media-manager ticket 06): the number counts distinct pages; hover or keyboard focus
+   opens its words below the top controls, on the name's soft background with sharp text. */
+.media-library__card { container-type: inline-size; }
+.media-library__usage-label { display: none; }
+.media-library__grid:not(.media-library__grid--list) .media-library__usage:is(:hover, :focus-visible) .media-library__usage-label {
+  display: block; position: absolute; top: 46px; left: 4px; width: max-content; max-width: calc(100cqi - 8px);
+  padding: 4px 8px; border-radius: 8px; background: rgb(10 18 32 / .8); backdrop-filter: blur(8px);
+  box-shadow: 0 0 10px 2px rgb(10 18 32 / .35); color: #fff; text-align: left; text-shadow: none;
+  font-size: var(--type-small); font-weight: 600; line-height: 1.3; white-space: normal; pointer-events: none;
+}
+.media-library__card.is-file .media-library__usage-label { background: var(--panel-surface); backdrop-filter: none; box-shadow: 0 0 0 1px var(--line); color: var(--text); }
+/* Not checked yet is a question, never a zero. */
+.media-library__usage[data-usage="not-checked"] .media-library__count { opacity: .8; }
+
+/* Tapping a badge: the usage words, the pages by name, and other uses apart. */
+.media-usage {
+  width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 20px; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: var(--radius-dialog); background: var(--panel-surface); color: var(--text);
+  box-shadow: var(--shadow); font-size: var(--type-base);
+}
+.media-usage[open] { display: flex; flex-direction: column; gap: 16px; }
+.media-usage::backdrop { background: color-mix(in oklch, var(--background) 60%, transparent); }
+.media-usage :is(h2, h3, p, ul) { margin: 0; }
+.media-usage h2 { font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+.media-usage h3 { font-size: var(--type-base); font-weight: 600; margin-bottom: 4px; }
+.media-usage button { font: inherit; min-height: 44px; cursor: pointer; }
+.media-usage :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.media-usage__head { display: flex; align-items: start; gap: 12px; }
+.media-usage__head > div { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.media-usage__state { color: var(--muted); }
+.media-usage .media-usage__close { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
+.media-usage .media-usage__close:hover { background: var(--hover); }
+.media-usage__body { display: grid; gap: 16px; overflow: auto; }
+.media-usage ul { padding: 0; list-style: none; }
+.media-usage li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 32px; overflow-wrap: anywhere; }
+.media-usage .media-library__page { background: none; color: var(--link); border: 0; padding: 0; text-align: left; overflow-wrap: anywhere; }
+.media-usage .media-library__page:hover { text-decoration: underline; }
+.media-usage__file { min-width: 0; }
+.media-usage .media-library__muted, .media-usage .media-library__hint { color: var(--muted); font-size: var(--type-small); }
+.media-usage__foot { display: flex; justify-content: end; gap: 8px; flex-wrap: wrap; }
+
+/* The list (More → View → List): each file's name, size and usage on one row. */
+.media-library__grid.media-library__grid--list { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.media-library__grid--list .media-library__card {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto auto; align-items: center; column-gap: 8px;
+  aspect-ratio: auto; overflow: visible; min-height: 56px; border-radius: 0; background: none; color: var(--text);
+  border-bottom: 1px solid var(--line); container-type: normal;
+}
+.media-library__grid--list .media-library__shade { display: none; }
+.media-library .media-library__grid--list :is(.media-library__select, .media-library__thumbnail, .media-library__usage) { position: static; }
+.media-library__grid--list .media-library__select { grid-column: 1; grid-row: 1; }
+.media-library .media-library__grid--list .media-library__thumbnail {
+  grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 10px; min-width: 0; height: auto; min-height: 56px; padding: 6px 0; text-align: left;
+}
+.media-library__grid--list .media-library__thumbnail img { flex: none; width: 44px; height: 44px; border-radius: var(--radius-small); background: var(--surface-subtle); }
+.media-library__grid--list .media-library__card.is-file .media-library__thumbnail { color: var(--text); }
+.media-library__grid--list .media-library__card.is-file .media-library__thumbnail > svg { flex: none; color: var(--muted); }
+.media-library__grid--list .media-library__name { position: static; flex: 1; min-width: 0; padding: 0; opacity: 1; font-weight: 500; font-size: var(--type-base); text-shadow: none; }
+.media-library__grid--list .media-library__name::before, .media-library__grid--list .media-library__name::after { display: none; }
+.media-library__size { grid-column: 3; grid-row: 1; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.media-library .media-library__grid--list .media-library__usage {
+  grid-column: 4; grid-row: 1; width: auto; height: auto; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px;
+  border-radius: 22px; color: var(--text); text-shadow: none; font-size: var(--type-small); font-weight: 600; text-align: left;
+}
+.media-library__grid--list .media-library__count { flex: none; min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 12px; background: var(--surface-subtle); font-variant-numeric: tabular-nums; }
+.media-library__grid--list .media-library__usage-label { display: block; max-width: 11em; font-weight: 500; }
+.media-library__grid--list .media-library__select input:not(:checked) { border-color: var(--muted); background: transparent; box-shadow: none; }
+.media-library__grid--list :is(.media-library__usage, .media-library__select)::before { background: var(--hover); backdrop-filter: none; mask-image: none; border-radius: 22px; }
+.media-library .media-library__grid--list .media-library__usage:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+/* Phones: the usage words stay; a long name shortens first. */
+@container media-browse (max-width: 420px) { .media-library__grid--list .media-library__usage-label { max-width: 7.5em; } }

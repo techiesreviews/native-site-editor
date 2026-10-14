@@ -22,7 +22,7 @@ export interface DetailHost extends LibrarySheetContext {
 }
 
 /** Open the details of `path`; a `background` open (a refresh) keeps focus where it is. */
-export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: string, focusUsage = false, background = false) {
+export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: string, background = false) {
   const { element } = sheet, { dialog, grid, cache, tell } = h;
   if (!h.alive()) return;
   const initiatingFocus = document.activeElement;
@@ -57,14 +57,14 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
     if (!h.modal) dialog.scrollTop = 0;
   }));
   renderMetadataForm(element, h, path, data, meta, () => version === sheet.version && sheet.path === path);
-  const usageTitle = renderUsageList(element, h, library.usage[path]);
+  renderUsageList(element, h, library.usage[path]);
   renderFileActions(element, h, path, data);
   if (h.pick.onPick) renderPickerInsertion(element, h, h.pick.onPick, path, data, meta, library.items.map((item) => item.path));
   h.sync();
   const requestedFocus = background ? sheet.focus?.path === path ? sheet.focus.active : undefined : initiatingFocus;
   if (requestedFocus !== undefined && (document.activeElement === requestedFocus ||
     document.activeElement === document.body && (!requestedFocus?.isConnected || !requestedFocus.getClientRects().length))) {
-    if (focusUsage) usageTitle.focus(); else element.querySelector<HTMLElement>("button")?.focus();
+    element.querySelector<HTMLElement>("button")?.focus();
   }
   if (sheet.focus?.path === path) sheet.focus = undefined;
 }
@@ -97,15 +97,13 @@ function renderUsageList(
   sheet: HTMLElement, { task, adapter, close }: Pick<DetailHost, "task" | "adapter" | "close">,
   usage: MediaUsage | undefined,
 ) {
-  const usageTitle = node("h3", "", `Used on ${usage?.pages.length ?? 0} pages`); usageTitle.tabIndex = -1;
-  sheet.append(usageTitle);
+  sheet.append(node("h3", "", `Used on ${usage?.pages.length ?? 0} pages`));
   for (const page of usage?.pages ?? []) sheet.append(button(page, () => void task(async () => { await adapter.openPage(page); close(); }), "media-library__page"));
   if (!usage?.pages.length) sheet.append(node("p", "media-library__muted", "No page references found."));
   if (usage?.files.length) {
     const refs = node("details"); refs.append(node("summary", "", `References in ${usage.files.length} source files`));
     for (const file of usage.files) refs.append(node("p", "media-library__hint", file)); sheet.append(refs);
   }
-  return usageTitle;
 }
 
 /** Rename, Copy path, Optimise and Delete for one image. */

@@ -4,6 +4,7 @@ import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
 import type { MediaImage } from "./media-markup";
 import type { MediaOptimiseResult } from "./media-optimise";
 import type { MediaUsage } from "./media-references";
+import type { MediaUsageRecords } from "./media-usage";
 import { createMediaLibraryView, type MediaLibraryView } from "./media-library-view";
 
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
@@ -20,6 +21,13 @@ export interface MediaPickerHost {
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[]): Promise<string[]>;
   openPage(path: string): Promise<void>;
+  /** The site's usage check (checked on open); without it every file is Not checked yet. */
+  usage?: MediaUsageSource;
+}
+export interface MediaUsageSource {
+  records(): MediaUsageRecords | undefined;
+  /** Called with each newer result; returns the unsubscribe. */
+  onChange(listener: () => void): () => void;
 }
 export interface MediaImportRequest {
   file: File; result: MediaOptimiseResult; folder: string;

@@ -5,15 +5,23 @@ import type { MediaBytes } from "./media-byte-cache";
 import type { LibraryShell } from "./media-library-shell";
 import type { MediaLibrary } from "./media-picker";
 import { icon } from "../icons";
+import { formatBytes } from "../uploads";
+import { paintUsageBadge } from "./media-library-usage";
+import type { MediaUsageRecords } from "./media-usage";
 
 /** What the grid keeps between draws; the view owns it. */
 export interface LibraryGridState {
   kind: MediaKindChoice; selected: Set<string>; observers: Set<IntersectionObserver>;
   accept?: string; modal: boolean;
+  /** Tiles, or the list (from More) with each file's size and usage. */
+  layout: "grid" | "list";
 }
 export interface LibraryGridHost {
   alive: () => boolean;
-  details: (path: string, focusUsage?: boolean) => void;
+  details: (path: string) => void;
+  /** The site's usage check, and its badge's tap: the usage words and page names. */
+  records: () => MediaUsageRecords | undefined;
+  usage: (path: string) => void;
   bytes: (path: string) => Promise<MediaBytes>;
   /** Widens the filters when nothing matches. */
   recover: (change: Partial<MediaLibraryFilter>) => void;
@@ -22,7 +30,7 @@ export interface LibraryGridHost {
   restoreFocus: boolean;
 }
 
-/** Draw the screen-reader count and one square tile per Image family, or a way back when nothing matches. */
+/** Draw the screen-reader count and one square tile (or list row) per Image family, or a way back when nothing matches. */
 export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, state: LibraryGridState, h: LibraryGridHost) {
   const { search, collections, summary, bulk, bulkCount, grid, browse, dialog } = shell;
   const { selected, observers } = state;
@@ -39,6 +47,8 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   summary.textContent = `${filtered.length} of ${tiles.length} files${collections.value ? ` · ${collections.value}` : ""}`;
   bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
   grid.replaceChildren();
+  const list = state.layout === "list";
+  grid.classList.toggle("media-library__grid--list", list);
   if (!filtered.length) {
     const empty = node("div", "media-library__empty");
     if (!library.items.length) empty.textContent = state.modal
@@ -65,11 +75,11 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
       bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
     });
     selectLabel.append(checkbox);
-    const usage = library.usage[item.path];
-    const usageLabel = `Used on ${usage?.pages.length ?? 0} pages`;
-    const used = button(String(usage?.pages.length ?? 0), () => h.details(item.path, true), "media-library__usage");
-    used.setAttribute("aria-label", usageLabel); used.title = usageLabel;
-    card.append(node("span", "media-library__shade"), thumb, selectLabel, used);
+    // The number counts distinct pages; hover and focus show its words, a tap the page names.
+    const used = button("", () => h.usage(item.path), "media-library__usage");
+    used.setAttribute("aria-haspopup", "dialog"); paintUsageBadge(used, h.records(), item.path);
+    const size = node("span", "media-library__size", item.size === undefined ? "" : formatBytes(item.size));
+    card.append(node("span", "media-library__shade"), thumb, selectLabel, ...list ? [size] : [], used);
     grid.append(card);
     // A file the browser cannot draw gets a clean surface with its type, not a broken picture.
     const noPreview = () => {
@@ -84,7 +94,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
       observer.disconnect();
       void h.bytes(item.path).then((data) => {
         if (!h.alive() || !card.isConnected) return;
-        item.size = data.blob.size; image.src = data.url;
+        item.size = data.blob.size; size.textContent = formatBytes(item.size); image.src = data.url;
       }).catch(noPreview);
     }, { root: state.modal ? browse : dialog, rootMargin: "200px" });
     observers.add(observer); observer.observe(card);

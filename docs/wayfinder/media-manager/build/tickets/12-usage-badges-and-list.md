@@ -1,7 +1,7 @@
 ---
 title: Usage badges and the list view
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-12 runner)
 blocked_by: [10-one-bar, 11-usage-records]
 builder: claude

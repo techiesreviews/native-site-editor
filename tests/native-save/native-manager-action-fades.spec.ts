@@ -81,20 +81,20 @@ test("Pages and Files overlay existing actions without shrinking names, and keep
   await expect(fileLine.locator(".file-row")).toBeFocused();
 });
 
-test("Media tiles keep the usage number visible on the picture and it opens the usage details", async ({ page, baseURL }) => {
+test("Media tiles keep the usage number visible on the picture and it opens the usage", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.locator("#explorer").getByRole("tab", { name: "Media", exact: true }).click();
   const card = page.locator(".media-library__card").first();
   await page.mouse.move(1400, 900);
-  const usage = card.getByRole("button", { name: /^Used on \d+ pages$/ });
+  const usage = card.getByRole("button", { name: /^Used on \d+ pages?$/ });
   await expect(usage).toBeVisible();
-  await expect(usage).toHaveText(/^\d+$/);
+  await expect(usage.locator(".media-library__count")).toHaveText(/^\d+$/);
   const thumbnail = await card.locator(".media-library__thumbnail").boundingBox();
   const badge = await usage.boundingBox();
   expect(badge!.y).toBeGreaterThanOrEqual(thumbnail!.y);
   expect(badge!.y + badge!.height).toBeLessThanOrEqual(thumbnail!.y + thumbnail!.height);
   await usage.click();
-  await expect(page.locator(".media-library__sheet").getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
+  await expect(page.getByRole("dialog").getByText(/^Used on \d+ pages?$/)).toBeVisible();
 });
 
 test("reduced motion reveals actions immediately on hover", async ({ page, baseURL }) => {
@@ -170,8 +170,8 @@ test("keyboard focus on a Media tile's checkbox shows its name at once, and the 
   await expect(name).toHaveCSS("opacity", "0");
   await card.getByRole("checkbox").focus();
   await expect(name).toHaveCSS("opacity", "1");
-  await card.getByRole("button", { name: /^Used on \d+ pages$/ }).click();
-  await expect(page.locator(".media-library__sheet").getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
+  await card.getByRole("button", { name: /^Used on \d+ pages?$/ }).click();
+  await expect(page.getByRole("dialog").getByText(/^Used on \d+ pages?$/)).toBeVisible();
 });
 
 test("a mouse-opened file keeps its own tint: no keyboard gray, and the fade matches it", async ({ page, baseURL }) => {

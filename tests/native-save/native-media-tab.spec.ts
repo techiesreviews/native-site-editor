@@ -302,7 +302,7 @@ test("refresh keeps thumbnail, Collections and usage focus and completes a keybo
   const back = library.getByRole("button", { name: "Back to grid", exact: true });
   await expect(back).toBeFocused();
   await page.keyboard.press("Enter"); await expect(thumb).toBeFocused();
-  for (const target of [thumb, library.getByLabel("Collections", { exact: true }), library.getByRole("button", { name: "Used on 1 pages", exact: true })]) {
+  for (const target of [thumb, library.getByLabel("Collections", { exact: true }), library.getByRole("button", { name: "Not checked yet", exact: true })]) {
     await target.focus();
     await page.evaluate(() => (window as any).focusProbe.refresh());
     await expect(library).toHaveAttribute("aria-busy", "true");
@@ -402,12 +402,19 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const { mediaUsageRecords } = await import("/src/page-builder/media-usage.ts");
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
     document.body.append(host);
     const paths = ["images/photo.webp", "images/photo-480w.webp", "images/photo-960w.webp", "images/scan.png"];
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#2f6d3a"/></svg>';
+    const records = mediaUsageRecords({ media: paths, pages: ["index.html", "about/index.html", "work/index.html"], sources: {
+      "index.html": '<img src="/images/photo.webp">',
+      "about/index.html": '<img src="/images/photo.webp" srcset="/images/photo-480w.webp 480w">',
+      "work/index.html": '<img srcset="/images/photo-480w.webp 480w">',
+    } });
     const view = createMediaLibraryView(host, {
+      usage: { records: () => records, onChange: () => () => {} },
       async load() { return { key: "tiles", items: paths.map(path => ({ path, version: "A" })), metadata: {}, collections: [], usage: { "images/photo.webp": { pages: ["index.html", "about/index.html"], files: ["index.html", "about/index.html"], alts: [] }, "images/photo-480w.webp": { pages: ["about/index.html", "work/index.html"], files: ["about/index.html", "work/index.html"], alts: [] } } }; },
       async blob(path) { return path.endsWith(".png") ? new Blob(["not a picture"], { type: "image/png" }) : new Blob([svg], { type: "image/svg+xml" }); },
       async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {}, async import() { return []; },
@@ -422,7 +429,7 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
   const photo = tiles.filter({ has: page.getByRole("button", { name: "Details for images/photo.webp", exact: true }) });
   await expect.poll(() => photo.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   // The copy's page counts for its family, and a page both use counts once.
-  await expect(photo.getByRole("button", { name: "Used on 3 pages", exact: true })).toHaveText("3");
+  await expect(photo.getByRole("button", { name: "Used on 3 pages", exact: true }).locator(".media-library__count")).toHaveText("3");
   const name = photo.locator(".media-library__name");
   await page.mouse.move(1270, 890);
   await expect(name).toHaveCSS("opacity", "0");

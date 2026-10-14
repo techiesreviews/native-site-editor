@@ -2,6 +2,8 @@ import { isMediaTextFile, mediaMentions, type MediaSite } from "./media-mentions
 import { mediaFamilies } from "./media-families";
 import { scanMediaReferences, walkMediaReferencePages } from "./media-references";
 import type { MediaReference } from "./media-references";
+// The lookups live apart so the Media screen can use them without loading the scanner.
+export { mediaUsageFor, mediaUsageState } from "./media-usage-text";
 
 export type MediaOtherUseKind = "stylesheet" | "component" | "sharing" | "settings" | "file" | "script" | "data" | "feed" | "notes";
 export interface MediaOtherUse { file: string; kind: MediaOtherUseKind }
@@ -75,15 +77,4 @@ export function mediaUsageRecords(input: {
     }
   }
   return result;
-}
-
-export function mediaUsageFor(records: MediaUsageRecords, path: string): MediaUsageRecord {
-  return records.families.find(family => family.members.includes(path))
-    ?? { main: path, members: [path], checked: false, pages: [], otherUses: [] };
-}
-
-export function mediaUsageState(record: MediaUsageRecord): "not-checked" | "used-on-pages" | "other-uses-only" | "no-uses-found" {
-  if (!record.checked) return "not-checked";
-  if (record.pages.length) return "used-on-pages";
-  return record.otherUses.length ? "other-uses-only" : "no-uses-found";
 }
