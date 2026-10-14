@@ -198,6 +198,44 @@ test("on a phone the list shortens a long name in the middle, keeping its end; t
   await page.evaluate(() => (window as any).usageProbe.dispose());
 });
 
+/** Each list row's usage: its words and how many lines they take, its height, whether it stays in the row, and where its number sits. */
+const usageRows = (page: Page, paths: string[]) => page.evaluate(paths => paths.map(path => {
+  const row = document.querySelector(`.media-library__card[data-path="${path}"]`)!, usage = row.querySelector(".media-library__usage")!;
+  const words = usage.querySelector(".media-library__usage-label")!, range = document.createRange(); range.selectNodeContents(words);
+  const [box, target, count] = [row, usage, usage.querySelector(".media-library__count")!].map(element => element.getBoundingClientRect());
+  return { path, words: words.textContent, lines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size,
+    height: target.height, inside: target.left >= box.left - 0.5 && target.right <= box.right + 0.5, count: Math.round(count.left) };
+}), paths);
+
+test("the list's usage words stay tidy in every state and width; wide lists keep long names whole with the numbers in one column", async ({ page, baseURL }) => {
+  const paths = ["images/feed.png", "images/shared.png", "images/spare.png", LONG];
+  await page.setViewportSize({ width: 320, height: 844 });
+  await mountUsage(page, baseURL);
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
+  for (const row of await usageRows(page, paths)) expect(row).toMatchObject({ words: "Not checked yet", lines: 1, inside: true });
+  await page.evaluate(() => (window as any).usageProbe.checked());
+  await expect(tile(page, "images/shared.png").locator(".media-library__usage-label")).toHaveText("0 pages · Other uses found");
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const row of await usageRows(page, paths)) {
+      expect(row.inside).toBe(true);
+      expect(row.height).toBeLessThanOrEqual(44.5);
+      // Only the longest words may take a second line, and only on the narrowest phones.
+      if (row.words === "0 pages · Other uses found" && width < 390) expect(row.lines).toBeLessThanOrEqual(2);
+      else expect(row.lines).toBe(1);
+    }
+    for (const path of paths) await phoneRowApart(page, path);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const wide = await usageRows(page, paths);
+  for (const row of wide) expect(row).toMatchObject({ lines: 1, inside: true, count: wide[0].count });
+  expect(await clipped(page, LONG)).toBe(false);
+  await expect(tile(page, LONG).locator(".media-library__name")).toHaveText(LONG.split("/").pop()!);
+  await page.evaluate(() => (window as any).usageProbe.dispose());
+});
+
 test("the list keeps 44 px selection and usage targets apart on a phone, without sideways scrolling", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, baseURL);
@@ -207,7 +245,9 @@ test("the list keeps 44 px selection and usage targets apart on a phone, without
     for (const path of ["images/placeholder.svg", "images/studio-desk.svg"]) {
       await expect(tile(page, path).locator(".media-library__size")).toHaveText(/\d/);
       await phoneRowApart(page, path);
-      expect(await clipped(page, path)).toBe(false);
+      // Short names stay whole at 390 px; at 320 px they may shorten, never losing their end.
+      if (width === 390) expect(await clipped(page, path)).toBe(false);
+      await expect(tile(page, path).locator(".media-library__name-tail")).toBeInViewport({ ratio: 1 });
     }
     await expect(tile(page, "images/studio-desk.svg").locator(".media-library__usage")).toContainText("No uses found");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);

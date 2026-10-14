@@ -14,8 +14,8 @@ Follow-up to slice [12](12-usage-badges-and-list.md)'s list view, seen in the st
 
 Ticket [06](../../tickets/06-prototype-media-manager-look.md#resolution-2026-10-12) "Phone and tablet": phone file names may shorten long names; details shows the complete name; usage and selection targets stay at least 44 px and never overlap.
 
-- On phones each list row keeps the name on one line. A name that does not fit shortens in the middle, keeping its end and extension ("portrait-ma…ya.jpg"); the complete name stays in the row's accessible name, as a tooltip, and in File details. Short names never shorten or break.
-- The usage number and words stay on one tidy line, apart from the name; the selection and usage targets stay 44 px, apart, and the list never scrolls sideways (320 to 1280 px).
+- On phones each list row keeps the name on one line, never broken mid-word. A name that does not fit shortens in the middle, keeping its end and extension ("portrait-m…maya.jpg"); the complete name stays in the row's accessible name, as a tooltip, and in File details. At 390 px everyday names (up to about 20 letters) fit whole; the narrowest phones (320 px) shorten more.
+- The usage number and words stay on one tidy line below the name (only the longest words, "0 pages · Other uses found", may take two balanced lines inside the 44 px target on the narrowest phones); the selection and usage targets stay 44 px, apart, and the list never scrolls sideways (320 to 1280 px).
 - On wider screens the list keeps complete names, and the usage numbers line up in one column.
 - A row is highlighted only by real hover (a mouse), keyboard focus or selection. The hover background of the selection and usage controls covers only that control, never the whole row, and does not stay behind after a tap on a touch screen.
 - Code stays in the lazily loaded Media chunk.
