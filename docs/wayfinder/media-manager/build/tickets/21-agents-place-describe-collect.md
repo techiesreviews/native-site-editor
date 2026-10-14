@@ -2,7 +2,7 @@
 title: Agents place, swap, describe and collect
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-21 runner)
 blocked_by: [18-media-picker, 20-agents-see-media, 15-collection-records]
 builder: sol
 phase: 1
