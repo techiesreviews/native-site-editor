@@ -2,7 +2,7 @@
 title: Audio preparation; PDF first-page previews
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-58 runner)
 blocked_by: [23-one-preparation-path]
 builder: sol
 phase: 5
