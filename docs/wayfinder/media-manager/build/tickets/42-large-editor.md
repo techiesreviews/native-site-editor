@@ -2,7 +2,7 @@
 title: The large editor
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-42 runner)
 blocked_by: [41-popup-trim-zoom-turn]
 builder: claude
 phase: 3
