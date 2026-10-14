@@ -1,3 +1,4 @@
+import { mediaFamilyOf, renamedFamily } from "../page-builder/media-families";
 import type { GuardedEdits, Reads, PlanResult } from "../guarded-edit";
 import { pageLinkSources } from "./pages-controller";
 import type { FileRowTarget } from "../components/file-row-actions";
@@ -62,7 +63,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     ports.requestAnimationFrame(() => ports.fileRow(target.path)?.focus());
   }
 
-  const BINARY_FILE = /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|tar|7z|woff2?|ttf|otf|eot|mp3|mp4|m4a|webm|mov|wav|ogg)$/i;
+  const BINARY_FILE = /\.(?:heic|heif|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|tar|7z|woff2?|ttf|otf|eot|mp3|mp4|m4a|webm|mov|wav|ogg)$/i;
   // The protected file a target takes: the home page.
   function protectedProblem(target: FileRowTarget, operation: FileOperation) {
     const home = ports.engaged() ? NATIVE_HOME_PAGE : undefined;
@@ -134,6 +135,23 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     return out;
   }
 
+  function targetFamily(target: FileRowTarget) {
+    return target.folder ? undefined : mediaFamilyOf(target.path, ports.nativeFiles());
+  }
+
+  async function familyFiles(target: FileRowTarget, withText: boolean): Promise<MovableFile[]> {
+    const family = targetFamily(target);
+    if (!family) return targetFiles(target, withText);
+    const paths = [family.main, ...family.copies.map(copy => copy.path), ...family.originals];
+    const out: MovableFile[] = [];
+    for (const path of paths) {
+      const files = await targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, withText);
+      if (!files.length) throw new Error(`${path} is no longer available. Try again.`);
+      out.push(...files);
+    }
+    return out;
+  }
+
   // For a confirmation: the pages, components and stylesheets that link to
   // the pages among `paths` whose URL goes away.
   function pageLinks(paths: string[], moves: Map<string, string | undefined>, action: "deleted" | "moved", r: Reads = ports.edits.peek) {
@@ -161,16 +179,25 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const indexed = await ports.ensureNativeTextIndex();
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     if (indexed) return indexed;
+    const family = targetFamily(source);
+    const familyMoves = family ? renamedFamily(family, to).filter(move => move.from !== move.to) : undefined;
     let found: MovableFile[];
     try {
-      const taken = await ports.branchPathProblem(to);
-      if (!since.holds()) return "The repository changed meanwhile. Try again.";
-      if (taken) return taken;
-      found = await targetFiles(source, true);
+      for (const move of familyMoves ?? [{ from: source.path, to }]) {
+        const target = { path: move.from, name: move.from, folder: source.folder };
+        const problem = moveProblem(target, move.to, operation);
+        if (problem) return problem;
+        const taken = await ports.branchPathProblem(move.to);
+        if (!since.holds()) return "The repository changed meanwhile. Try again.";
+        if (taken) return taken;
+      }
+      found = await familyFiles(source, true);
     } catch (error) { return error instanceof Error ? error.message : "The files could not be read."; }
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     if (!found.length) return `${source.path} has no files to ${operation}.`;
-    const ops = found.map(file => ({ file, to: movedPath(file.path, source.path, to) }));
+    const destinations = new Map(familyMoves?.map(move => [move.from, move.to]));
+    const ops = found.filter(file => !familyMoves || destinations.has(file.path))
+      .map(file => ({ file, to: destinations.get(file.path) ?? movedPath(file.path, source.path, to) }));
     const cancel = `Cancelled ${operation === "rename" ? "renaming" : "moving"} ${source.path}`;
     let cancelled = false, urlDialog = false;
     const outcome = await ports.edits.run(async r => {
@@ -349,7 +376,9 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   function targetDrafts(target: FileRowTarget) {
     const scope = ports.draftScope(), prefix = `${target.path}/`;
     const drafts = scope ? ports.draftStore().list(scope) : [];
-    return JSON.stringify(drafts.filter(draft => draft.path === target.path || (target.folder && draft.path.startsWith(prefix))).sort((a, b) => a.path.localeCompare(b.path)));
+    const family = targetFamily(target);
+    const members = new Set(family ? [family.main, ...family.copies.map(copy => copy.path), ...family.originals] : [target.path]);
+    return JSON.stringify(drafts.filter(draft => members.has(draft.path) || (target.folder && draft.path.startsWith(prefix))).sort((a, b) => a.path.localeCompare(b.path)));
   }
 
   // Deletes a file or folder after a confirmation naming it (and how many
@@ -370,7 +399,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const outcome = await ports.edits.run(async r => {
       r.exists(target.path);
       let found: MovableFile[];
-      try { found = await targetFiles(target, false); }
+      try { found = await familyFiles(target, false); }
       catch (error) { return { refuse: error instanceof Error ? error.message : "The files could not be read." }; }
       if (!found.length) return { refuse: `${target.path} has no files to delete.` };
       for (const file of found) { r.exists(file.path); r.source(file.path); }
@@ -385,7 +414,13 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       const count = found.length, onGitHub = found.some(file => file.sha);
       const links = pageLinks(found.map(file => file.path), new Map(), "deleted", r);
       const title = wording?.title ?? (target.folder ? `Delete the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}?` : `Delete ${target.path}?`);
+      const family = targetFamily(target);
+      const members = family ? [
+        ...(family.copies.length ? [`${family.copies.length} smaller ${family.copies.length === 1 ? "copy" : "copies"}`] : []),
+        ...(family.originals.length ? [`${family.originals.length} kept ${family.originals.length === 1 ? "original" : "originals"}`] : []),
+      ] : [];
       const ok = await ports.confirmDialog()?.ask({ title, notes: [
+        ...(members.length ? [`Its ${members.join(" and ")} ${family!.copies.length + family!.originals.length === 1 ? "is" : "are"} deleted with it.`] : []),
         ...(links ? [links] : []),
         onGitHub ? count === 1 ? "It is removed from GitHub when you save. Until then, Restore brings it back." : "They are removed from GitHub when you save. Until then, Restore brings them back."
           : count === 1 ? "It is not on GitHub yet, so this discards it." : "They are not on GitHub yet, so this discards them.",

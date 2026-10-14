@@ -2,6 +2,7 @@ import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from ".
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import { MEDIA_METADATA_PATH, mergeMediaMetadata, parseMediaMetadata, type MediaMetadata } from "./media-metadata";
+import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaVariantName } from "./media-markup";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaImportRequest, MediaLibraryItem, MediaPickerHost } from "./media-picker";
@@ -129,6 +130,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (next !== before) batch.edits.set(path, next);
     }
   };
+  const familyPaths = (path: string, paths: string[]) => {
+    const family = mediaFamilyOf(path, paths);
+    return family ? [path, ...family.copies.map(copy => copy.path), ...family.originals] : [path];
+  };
+  const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
+    new Map(paths.map(path => [path, ctx.assetVersion?.(path)]));
   const importMedia = async (requests: MediaImportRequest[]) => {
     const ctx = active();
     const { batch, text, metadata } = await prepare(ctx, "Add images", requests.some((item) => item.replaceFrom));
@@ -186,16 +193,22 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     async upload(file, result, folder) { return (await importMedia([{ file, result, folder }]))[0]; },
     async rename(path, name) {
       const ctx = active();
+      const family = mediaFamilyOf(path, ctx.paths);
+      const versions = familyVersions(ctx, familyPaths(path, ctx.paths));
       const { batch, text, metadata } = await prepare(ctx, "Rename image", true);
-      assetGuard(ctx, batch, [path]);
+      for (const [member, version] of versions) batch.expectedAssets.set(member, version);
+      assetGuard(ctx, batch, [...versions.keys()]);
       if (!name.trim() || /[\\/\u0000-\u001f]/.test(name)) throw new Error("Enter an image filename without a folder.");
       const filename = uploadFileName(name);
       if (!uploadImageType(filename) || uploadImageType(filename) !== uploadImageType(path)) throw new Error("Keep the image's file format when renaming it.");
       const to = path.slice(0, path.lastIndexOf("/") + 1) + filename;
       if (to === path) return;
-      if (batch.expectedPaths.includes(to)) throw new Error(`${to} already exists. Choose another filename.`);
-      batch.moves.push({ from: path, to });
-      rewriteInto(batch, text, path, to);
+      const moves = family ? renamedFamily(family, to) : [{ from: path, to }];
+      for (const move of moves) {
+        if (move.from !== move.to && batch.expectedPaths.includes(move.to)) throw new Error(`${move.to} already exists. Choose another filename.`);
+      }
+      batch.moves.push(...moves.filter(move => move.from !== move.to));
+      for (const move of moves) rewriteInto(batch, text, move.from, move.to);
       const before = parseMediaMetadata(metadata)[path];
       if (before) {
         const moved = JSON.parse(metadata!);
@@ -207,8 +220,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     },
     async remove(paths, unusedOnly = false) {
       const ctx = active();
+      const unique = [...new Set(paths.flatMap(path => familyPaths(path, ctx.paths)))];
+      const versions = familyVersions(ctx, unique);
       const { batch, text, metadata } = await prepare(ctx, "Delete images", true);
-      const unique = [...new Set(paths)];
+      for (const [member, version] of versions) batch.expectedAssets.set(member, version);
       assetGuard(ctx, batch, unique);
       if (unusedOnly) {
         const usage = mediaUsageIndex(unique, text, ctx.pages, ctx.components);

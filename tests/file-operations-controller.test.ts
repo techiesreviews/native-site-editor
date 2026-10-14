@@ -253,3 +253,43 @@ test("restore uses the current deletions and defers focus to the next frame", ()
   assert.deepEqual(h.restored, [["pages/new.html"]]); assert.deepEqual(h.focused, []);
   frames[0](); assert.deepEqual(h.focused, ["pages"]);
 });
+
+const imageTarget = { path: "images/photo.webp", name: "photo.webp", folder: false };
+const imageFamily = { "images/photo.webp": "main", "images/photo-480w.webp": "copy", "media/originals/photo.HEIC": "original" };
+
+test("Files rename moves the family and rewrites srcset in one plan", async () => {
+  const h = fixture(true, { ...imageFamily, "index.html": '<img src="/images/photo.webp" srcset="/images/photo-480w.webp 480w">' });
+  assert.equal(await h.controller.moveFileTarget(imageTarget, "new/garden.webp", "rename"), undefined);
+  for (const path of ["new/garden.webp", "new/garden-480w.webp", "media/originals/garden.HEIC"]) assert.ok(h.memory.workspace.exists(path));
+  assert.match(h.memory.workspace.source("index.html")!, /garden-480w.webp 480w/);
+  assert.deepEqual(h.memory.steps(), ["operation"]); assert.equal(h.memory.undo(), true);
+  for (const path of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(path));
+});
+
+test("Files delete removes the family in one plan and explains the members", async () => {
+  const h = fixture(true, imageFamily); let notes: string[] = [];
+  h.ports.confirmDialog = () => ({ ask: async question => { notes = question.notes ?? []; return true; }, choose: async () => ({ value: "go", option: false }) });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
+  assert.match(notes.join(" "), /1 smaller copy and 1 kept original/);
+  for (const path of Object.keys(imageFamily)) assert.equal(h.memory.workspace.exists(path), false);
+  assert.deepEqual(h.memory.steps(), ["operation"]); assert.equal(h.memory.undo(), true);
+  for (const path of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(path));
+});
+
+test("taken family destination refuses the whole Files rename", async () => {
+  const h = fixture(true, { ...imageFamily, "images/garden-480w.webp": "taken" });
+  assert.match((await h.controller.moveFileTarget(imageTarget, "images/garden.webp", "rename"))!, /already exists/);
+  assert.deepEqual(h.memory.steps(), []); assert.ok(h.memory.workspace.exists(imageTarget.path));
+});
+
+test("a used copy blocks Files family delete", async () => {
+  const h = fixture(true, { ...imageFamily, "index.html": '<img src="/images/photo-480w.webp">' });
+  assert.ok(await h.controller.deleteFileTarget(imageTarget));
+  assert.deepEqual(h.memory.steps(), []);
+});
+
+test("moving a copy alone leaves its main and original", async () => {
+  const h = fixture(true, imageFamily);
+  assert.equal(await h.controller.moveFileTarget({ path: "images/photo-480w.webp", name: "photo-480w.webp", folder: false }, "images/copy.webp", "move"), undefined);
+  assert.ok(h.memory.workspace.exists(imageTarget.path)); assert.ok(h.memory.workspace.exists("media/originals/photo.HEIC"));
+});

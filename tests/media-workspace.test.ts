@@ -162,3 +162,52 @@ test("preview revision stays in the final batch even when a read races later", a
   assert.equal(f.batches[0].expectedAssets.get("images/a.png"), "a-v1");
   assert.equal(f.paths.has("images/a.webp"), false); assert.equal(f.bytes.has("images/a.webp"), false);
 });
+
+function addFamily(f: ReturnType<typeof fixture>) {
+  const members = ["images/a-480w.webp", "images/a-960.png", "media/originals/a.HEIC"];
+  for (const path of members) { f.paths.add(path); f.bytes.set(path, new Blob([path])); f.versions.set(path, path + ":v1"); }
+  // The library cannot preview HEIC, but the family still owns it.
+  Object.defineProperty(f.context, "items", { get: () => [...f.bytes.keys()].filter(path => !path.endsWith(".HEIC")).map(path => ({ path })) });
+  return members;
+}
+
+test("family rename rewrites srcset, captures hidden originals and undoes in one step", async () => {
+  const f = fixture(), members = addFamily(f);
+  f.text.set("index.html", '<img src="/images/a.png" srcset="/images/a-480w.webp 480w, /images/a-960.png 960w">');
+  await f.host.load(); await f.host.rename("images/a.png", "garden.png");
+  assert.deepEqual(f.batches[0].moves.map(move => move.to), ["images/garden.png", "images/garden-480w.webp", "images/garden-960.png", "media/originals/garden.HEIC"]);
+  assert.equal(f.batches[0].expectedAssets.get(members[2]), members[2] + ":v1");
+  assert.match(f.text.get("index.html")!, /garden-480w.webp 480w, \/images\/garden-960.png 960w/);
+  assert.equal(f.history.length, 1); f.history.pop()!();
+  for (const path of ["images/a.png", ...members]) assert.ok(f.bytes.has(path));
+});
+
+test("family delete removes every member and metadata in one Undo", async () => {
+  const f = fixture(), members = addFamily(f);
+  f.text.set(MEDIA_METADATA_PATH, JSON.stringify(Object.fromEntries(["images/a.png", ...members].map(path => [path, { alt: "Family" }]))));
+  await f.host.load(); await f.host.remove(["images/a.png", members[0]]);
+  assert.deepEqual(f.batches[0].deletes, ["images/a.png", ...members]);
+  assert.deepEqual(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!), {});
+  assert.equal(f.history.length, 1); f.history.pop()!();
+  for (const path of members) assert.ok(f.bytes.has(path));
+});
+
+test("Delete unused refuses a used responsive copy", async () => {
+  const f = fixture(), members = addFamily(f);
+  f.text.set("index.html", '<img src="/' + members[0] + '">'); f.text.set("styles/site.css", "");
+  await f.host.load(); await assert.rejects(f.host.remove(["images/a.png"], true), /now referenced/);
+  assert.equal(f.batches.length, 0);
+});
+
+test("hidden original changes during preparation reject the whole family rename", async () => {
+  const f = fixture(), members = addFamily(f); await f.host.load();
+  f.afterRead(() => f.versions.set(members[2], "newer"));
+  await assert.rejects(f.host.rename("images/a.png", "garden.png"), /changed while preparing/);
+  assert.equal(f.history.length, 0); assert.ok(f.paths.has("images/a.png"));
+});
+
+test("taken copy destination refuses the entire Images rename", async () => {
+  const f = fixture(); addFamily(f); f.paths.add("images/garden-480w.webp");
+  await f.host.load(); await assert.rejects(f.host.rename("images/a.png", "garden.png"), /already exists/);
+  assert.equal(f.batches.length, 0);
+});

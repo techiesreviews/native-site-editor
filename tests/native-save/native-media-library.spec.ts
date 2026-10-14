@@ -151,3 +151,31 @@ test("the editor CSP permits decoding generated image Blob URLs", async ({ page,
   });
   expect(width).toBe(24);
 });
+
+// Default fixture, nightly: responsive copies follow an Images-tab rename into placed markup.
+test("renaming an image family keeps responsive copies when placing it on a page", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  for (const width of [1600, 480, 960]) {
+    const content = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="240"><rect width="100%" height="100%" fill="green"/></svg>`;
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: width === 1600 ? "images/studio-desk.svg" : `images/studio-desk-${width}w.svg`, content } })).status()).toBe(204);
+  }
+  await open(page, baseURL);
+  const panel = library(page);
+  await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await panel.getByLabel("New image filename", { exact: true }).fill("garden-family.svg");
+  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Details for images/garden-family.svg", exact: true })).toBeVisible();
+  for (const width of [480, 960]) {
+    await expect.poll(async () => (await storedDraft(page, `images/garden-family-${width}w.svg`))?.movedFrom).toBe(`images/studio-desk-${width}w.svg`);
+  }
+  await closeLibrary(page);
+  await page.frameLocator(".native-preview-frame").locator(".hero-image").click();
+  await page.getByRole("button", { name: "Choose image…", exact: true }).click();
+  const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await chooser.getByRole("button", { name: "Details for images/garden-family.svg", exact: true }).click();
+  await chooser.getByRole("button", { name: "Use image", exact: true }).click();
+  const image = page.frameLocator(".native-preview-frame").locator(".hero-image");
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/garden-family.svg"');
+  await expect(image).toHaveAttribute("srcset", /\/images\/garden-family-480w.svg 480w/);
+  await expect(image).toHaveAttribute("srcset", /\/images\/garden-family-960w.svg 960w/);
+});

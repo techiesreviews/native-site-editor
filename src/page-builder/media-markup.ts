@@ -1,3 +1,4 @@
+import { mediaFamilyOf } from "./media-families";
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
@@ -64,11 +65,5 @@ export function mediaVariantName(path: string, width: number) {
 }
 
 export function mediaVariants(path: string, paths: string[]): MediaVariant[] {
-  const dot = path.lastIndexOf(".");
-  const stem = path.slice(0, dot), extension = path.slice(dot);
-  return paths.flatMap((candidate) => {
-    if (!candidate.startsWith(`${stem}-`) || !candidate.endsWith(extension)) return [];
-    const width = /^(\d+)w$/.exec(candidate.slice(stem.length + 1, -extension.length));
-    return width ? [{ path: candidate, width: Number(width[1]) }] : [];
-  }).sort((a, b) => a.width - b.width);
+  return mediaFamilyOf(path, paths)?.copies ?? [];
 }
