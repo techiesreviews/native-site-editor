@@ -1,8 +1,8 @@
 ---
 title: The Recently removed list; removing a used file warns
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-51 runner)
 blocked_by: [48-recently-removed]
 builder: claude
 phase: 4
