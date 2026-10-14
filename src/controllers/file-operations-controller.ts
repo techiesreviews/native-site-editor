@@ -209,9 +209,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const problem = fileMoveProblem(source, to, operation);
     if (problem) return problem;
     if (to === source.path) return undefined;
-    const [rename, { isMediaTextFile }] = media
-      ? await Promise.all([import("../page-builder/media-rename"), import("../page-builder/media-mentions")])
-      : [undefined, { isMediaTextFile: (_path: string) => false }];
+    const rename = media ? await import("../page-builder/media-rename") : undefined;
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     const takenMessage = (destination: string) => `${to} is taken. Try ${suggestMediaName(to, candidate => candidate === destination || mediaTaken(source, candidate))}.`;
     const indexed = await ports.ensureNativeTextIndex();
@@ -234,13 +232,8 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     if (!found.length) return `${source.path} has no files to ${operation}.`;
     if (rename && ports.readMediaText) {
-      try {
-        const textFiles = [...new Set([...ports.nativeFiles().filter(isMediaTextFile), ".editor/media.json"])];
-        for (let at = 0; at < textFiles.length; at += 12) {
-          await Promise.all(textFiles.slice(at, at + 12).map(path => ports.readMediaText!(path)));
-          if (!since.holds()) return "The repository changed meanwhile. Try again.";
-        }
-      } catch (error) { return error instanceof Error ? error.message : "The files that use this could not be read."; }
+      const unread = await rename.readMediaRenameSources(ports.nativeFiles(), path => ports.readMediaText!(path), () => since.holds());
+      if (unread) return unread;
     }
     const destinations = new Map(familyMoves?.map(move => [move.from, move.to]));
     const ops = found.filter(file => !familyMoves || destinations.has(file.path))
@@ -249,32 +242,8 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     let cancelled = false, urlDialog = false;
     const outcome = await ports.edits.run(async r => {
       for (const file of found) { r.exists(file.path); r.source(file.path); }
-      if (rename) {
-        const { parseMediaRecords, serializeMediaRecords, MEDIA_RECORDS_PATH } = await import("../../shared/media-records");
-        const sources = Object.fromEntries(ports.nativeFiles().filter(isMediaTextFile).map(path => [path, r.source(path)]));
-        const missing = Object.keys(sources).find(path => sources[path] === undefined);
-        if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was moved.` };
-        const records = parseMediaRecords(r.source(MEDIA_RECORDS_PATH));
-        sources._redirects = r.source(NATIVE_REDIRECTS_PATH);
-        const site = r.site();
-        const plan = rename.planMediaRename({ from: source.path, to, paths: ports.nativeFiles(), sources, records,
-          site: { origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components },
-          keepOldAddress: options?.keepOldAddress ?? Boolean(records.files[source.path]?.alwaysKeep) });
-        if ("taken" in plan) return { refuse: `${plan.taken} is taken. Try ${plan.suggestion}.` };
-        if (serializeMediaRecords(records) !== serializeMediaRecords(plan.records)) plan.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(plan.records));
-        const creates: { path: string; content: string }[] = [];
-        if (plan.redirects !== undefined) {
-          if (sources._redirects === undefined) creates.push({ path: NATIVE_REDIRECTS_PATH, content: plan.redirects });
-          else plan.edits.set(NATIVE_REDIRECTS_PATH, plan.redirects);
-        }
-        if (plan.edits.has(MEDIA_RECORDS_PATH) && !r.exists(MEDIA_RECORDS_PATH)) {
-          creates.push({ path: MEDIA_RECORDS_PATH, content: plan.edits.get(MEDIA_RECORDS_PATH)! });
-          plan.edits.delete(MEDIA_RECORDS_PATH);
-        }
-        return { moves: plan.moves, edits: plan.edits, creates,
-          done: `${operation === "rename" ? "Renamed" : "Moved"} ${source.path} to ${to}.`,
-          undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${source.path} to ${to}.` };
-      }
+      if (rename) return rename.filesMediaRenamePlan({ from: source.path, to, operation, paths: ports.nativeFiles(),
+        source: path => r.source(path), exists: path => r.exists(path), site: r.site(), origins: ports.origins?.() ?? [], keepOldAddress: options?.keepOldAddress });
       const urls = planFileMoveUrls(ops, r);
       if (urls && ports.confirmDialog()) {
         // Fill the branch cache before the plan's tracked redirects read.

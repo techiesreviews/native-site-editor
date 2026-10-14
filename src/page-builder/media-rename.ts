@@ -1,4 +1,4 @@
-import { renameMediaRecord, type MediaRecords } from "../../shared/media-records";
+import { MEDIA_RECORDS_PATH, parseMediaRecords, renameMediaRecord, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { editNativeRedirects } from "../native-page-moves";
 import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { isMediaTextFile } from "./media-mentions";
@@ -150,4 +150,47 @@ export function planMediaRename(input: RenameInput): { taken: string; suggestion
   if (redirects === (sources._redirects ?? "")) redirects = undefined;
   const records = moves.reduce((records, move) => renameMediaRecord(records, move.from, move.to), input.records);
   return { moves, edits, records, redirects };
+}
+
+/** The Files tab and agent `move_file` read every text file first, in batches, while `holds()`; a message when they cannot. */
+export async function readMediaRenameSources(paths: string[], read: (path: string) => Promise<unknown>, holds: () => boolean): Promise<string | undefined> {
+  try {
+    const files = [...new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH])];
+    for (let at = 0; at < files.length; at += 12) {
+      await Promise.all(files.slice(at, at + 12).map(read));
+      if (!holds()) return "The repository changed meanwhile. Try again.";
+    }
+  } catch (error) { return error instanceof Error ? error.message : "The files that use this could not be read."; }
+  return undefined;
+}
+
+/** The Files tab and agent `move_file`: the plan as a guarded edit's result, every file read through the edit's reads. */
+export function filesMediaRenamePlan(input: {
+  from: string; to: string; operation: "rename" | "move"; paths: string[];
+  source(path: string): string | undefined; exists(path: string): boolean;
+  site?: { routes: Record<string, string>; components: Record<string, string> } | null; origins: string[]; keepOldAddress?: boolean;
+}) {
+  const { from, to, operation, paths, site } = input;
+  const sources: Record<string, string | undefined> = Object.fromEntries(paths.filter(isMediaTextFile).map(path => [path, input.source(path)]));
+  const missing = Object.keys(sources).find(path => sources[path] === undefined);
+  if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was moved.` };
+  const records = parseMediaRecords(input.source(MEDIA_RECORDS_PATH));
+  sources._redirects = input.source("_redirects");
+  const plan = planMediaRename({ from, to, paths, sources, records,
+    site: { origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
+    keepOldAddress: input.keepOldAddress ?? Boolean(records.files[from]?.alwaysKeep) });
+  if ("taken" in plan) return { refuse: `${plan.taken} is taken. Try ${plan.suggestion}.` };
+  if (serializeMediaRecords(records) !== serializeMediaRecords(plan.records)) plan.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(plan.records));
+  const creates: { path: string; content: string }[] = [];
+  if (plan.redirects !== undefined) {
+    if (sources._redirects === undefined) creates.push({ path: "_redirects", content: plan.redirects });
+    else plan.edits.set("_redirects", plan.redirects);
+  }
+  if (plan.edits.has(MEDIA_RECORDS_PATH) && !input.exists(MEDIA_RECORDS_PATH)) {
+    creates.push({ path: MEDIA_RECORDS_PATH, content: plan.edits.get(MEDIA_RECORDS_PATH)! });
+    plan.edits.delete(MEDIA_RECORDS_PATH);
+  }
+  return { moves: plan.moves, edits: plan.edits, creates,
+    done: `${operation === "rename" ? "Renamed" : "Moved"} ${from} to ${to}.`,
+    undone: `Undid ${operation === "rename" ? "renaming" : "moving"} ${from} to ${to}.` };
 }
