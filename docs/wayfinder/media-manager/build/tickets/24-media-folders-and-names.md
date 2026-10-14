@@ -2,7 +2,7 @@
 title: media/ kind folders and tidy names
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-24 runner)
 blocked_by: [23-one-preparation-path]
 builder: sol
 phase: 2
