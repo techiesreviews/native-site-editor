@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accepts, filterMediaLibrary, mediaLibraryTags, mediaLibraryTiles } from "../src/page-builder/media-library-filter";
+import { accepts, filterMediaLibrary, mediaFamilyUsage, mediaLibraryTags, mediaLibraryTiles } from "../src/page-builder/media-library-filter";
 import type { MediaLibrary, MediaLibraryItem } from "../src/page-builder/media-picker";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -88,4 +88,21 @@ test("tiles show one item per Image family and keep other files", () => {
   const sized = [{ path: "a.png", size: 3 }, { path: "a-480w.png", size: 1 }];
   assert.equal(mediaLibraryTiles(sized)[0], sized[0]);
   assert.deepEqual(mediaLibraryTiles([]), []);
+});
+
+test("a family's main counts the pages of all its members, each once", () => {
+  const items = [{ path: "images/photo.webp" }, { path: "images/photo-480w.webp" }, { path: "images/photo-960w.webp" }, { path: "images/solo.png" }, { path: "images/other.png" }];
+  const use = (pages: string[], alts: string[] = []) => ({ pages, files: pages, alts });
+  const copyOnly = mediaFamilyUsage({ items, usage: { "images/photo-480w.webp": use(["about/index.html"]), "images/solo.png": use(["index.html"]) } });
+  assert.deepEqual(copyOnly["images/photo.webp"], use(["about/index.html"]));
+  assert.deepEqual(copyOnly["images/solo.png"], use(["index.html"]));
+  assert.equal(copyOnly["images/other.png"], undefined);
+  const both = mediaFamilyUsage({ items, usage: {
+    "images/photo.webp": use(["index.html"], ["Desk"]), "images/photo-480w.webp": use(["index.html", "work/index.html"], ["Desk"]),
+    "images/photo-960w.webp": use(["work/index.html"], ["Studio"]),
+  } });
+  assert.deepEqual(both["images/photo.webp"], use(["index.html", "work/index.html"], ["Desk", "Studio"]));
+  assert.deepEqual(both["images/photo-480w.webp"], use(["index.html", "work/index.html"], ["Desk"]));
+  const unused = { "images/solo.png": use([]) };
+  assert.deepEqual(mediaFamilyUsage({ items, usage: unused }), unused);
 });

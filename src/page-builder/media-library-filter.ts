@@ -41,5 +41,21 @@ export function mediaLibraryTiles<T extends { path: string }>(items: T[]): T[] {
   return items.filter(item => !members.has(item.path));
 }
 
+/** Each Image family's main carries the usage of all its members (a page that shows only a
+ * responsive copy uses the family), each page, file and alt once, in first-seen order. */
+export function mediaFamilyUsage(library: Pick<MediaLibrary, "items" | "usage">): MediaLibrary["usage"] {
+  const usage = { ...library.usage };
+  const once = (values: string[]) => [...new Set(values)];
+  for (const family of mediaFamilies(library.items.map(item => item.path))) {
+    const found = [family.main, ...family.copies.map(copy => copy.path), ...family.originals]
+      .flatMap(path => library.usage[path] ? [library.usage[path]] : []);
+    if (found.length < 2 && (found.length === 0 || library.usage[family.main])) continue;
+    usage[family.main] = {
+      pages: once(found.flatMap(entry => entry.pages)), files: once(found.flatMap(entry => entry.files)), alts: once(found.flatMap(entry => entry.alts)),
+    };
+  }
+  return usage;
+}
+
 export const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
 export const basename = (path: string) => path.split("/").pop()!;

@@ -110,9 +110,11 @@
 
 /* Tiles (media-manager ticket 06, tiles.html): square crops, one per Image family. The crop
    is only the tile's; the stored file is untouched. Columns follow the space: 3 on phones,
-   4 on tablets, 6 wide. */
+   4 on tablets, 6 wide (2 on the narrowest phones). */
 .media-library__browse { container: media-browse / inline-size; }
 .media-library__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; align-content: start; }
+/* Below about 360 px phones, 2 across keeps both 44 px targets apart. */
+@container media-browse (max-width: 269px) { .media-library__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container media-browse (min-width: 520px) { .media-library__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container media-browse (min-width: 800px) { .media-library__grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 /* Media is a picture library: the explorer widens while it shows, so 4 or 6 tiles fit with

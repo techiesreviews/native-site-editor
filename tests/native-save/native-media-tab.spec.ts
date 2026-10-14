@@ -381,13 +381,16 @@ test("a failed detail image clears its focus request and later refresh preserves
 });
 
 const columns = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(" ").length);
-for (const [width, across] of [[390, 3], [768, 4], [1280, 6]] as const) {
-  test(`Media shows ${across} square tiles across at ${width} px`, async ({ page, baseURL }) => {
+for (const [width, across] of [[320, 2], [390, 3], [768, 4], [1280, 6]] as const) {
+  test(`Media shows ${across} square tiles across at ${width} px, with usage and selection targets apart`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width, height: 900 }); await open(page, baseURL);
     await expect.poll(() => columns(page)).toBe(across);
-    const tile = await pane(page).locator(".media-library__card").first().boundingBox();
+    const card = pane(page).locator(".media-library__card").first();
+    const tile = await card.boundingBox();
     expect(Math.abs(tile!.width - tile!.height)).toBeLessThan(1);
-    expect(tile!.width).toBeGreaterThanOrEqual(88);
+    const usage = (await card.locator(".media-library__usage").boundingBox())!, select = (await card.locator(".media-library__select").boundingBox())!;
+    for (const target of [usage, select]) expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
+    expect(usage.x + usage.width).toBeLessThanOrEqual(select.x);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   });
 }
@@ -404,7 +407,7 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
     const paths = ["images/photo.webp", "images/photo-480w.webp", "images/photo-960w.webp", "images/scan.png"];
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#2f6d3a"/></svg>';
     const view = createMediaLibraryView(host, {
-      async load() { return { key: "tiles", items: paths.map(path => ({ path, version: "A" })), metadata: {}, collections: [], usage: { "images/photo.webp": { pages: ["index.html", "about/index.html"], files: ["index.html", "about/index.html"], alts: [] } } }; },
+      async load() { return { key: "tiles", items: paths.map(path => ({ path, version: "A" })), metadata: {}, collections: [], usage: { "images/photo.webp": { pages: ["index.html", "about/index.html"], files: ["index.html", "about/index.html"], alts: [] }, "images/photo-480w.webp": { pages: ["about/index.html", "work/index.html"], files: ["about/index.html", "work/index.html"], alts: [] } } }; },
       async blob(path) { return path.endsWith(".png") ? new Blob(["not a picture"], { type: "image/png" }) : new Blob([svg], { type: "image/svg+xml" }); },
       async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {}, async import() { return []; },
     });
@@ -417,7 +420,8 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
   await expect(library.locator(".media-library__browse > [role=status]")).toContainText("2 of 2 images");
   const photo = tiles.filter({ has: page.getByRole("button", { name: "Details for images/photo.webp", exact: true }) });
   await expect.poll(() => photo.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  await expect(photo.getByRole("button", { name: "Used on 2 pages", exact: true })).toHaveText("2");
+  // The copy's page counts for its family, and a page both use counts once.
+  await expect(photo.getByRole("button", { name: "Used on 3 pages", exact: true })).toHaveText("3");
   const name = photo.locator(".media-library__name");
   await page.mouse.move(1270, 890);
   await expect(name).toHaveCSS("opacity", "0");

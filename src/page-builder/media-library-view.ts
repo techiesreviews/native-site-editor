@@ -8,6 +8,7 @@ import { showMediaDetail } from "./media-library-details";
 import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
+import { mediaFamilyUsage } from "./media-library-filter";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import {
   detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
@@ -96,7 +97,8 @@ export function createMediaLibraryView(
     finally { if (request === refreshVersion) loadingLibrary = false; }
     if (!alive || request !== refreshVersion) return;
     cache.sync(next.items);
-    library = next;
+    // One tile per Image family, so its main counts the pages of all its members.
+    library = { ...next, usage: mediaFamilyUsage(next) };
     refreshedKey = inputKey;
     pruneLibrarySelection(library.items, selected);
     rebuildLibraryFolders(folders, library.items);
