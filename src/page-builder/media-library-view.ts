@@ -5,6 +5,13 @@ import { formatBytes, uploadImageType, WARN_IMAGE_BYTES } from "../uploads";
 import { cleanMediaTags, type MediaMetadata } from "./media-metadata";
 import { mediaImageMarkup, mediaVariants, type MediaImage } from "./media-markup";
 import { DEFAULT_MEDIA_OPTIMISE, mediaSavings, optimiseMedia, type MediaOptimiseOptions, type MediaOptimiseResult } from "./media-optimise";
+import { createBusyLock, cancellation } from "./media-busy-lock";
+import { createMediaByteCache } from "./media-byte-cache";
+import { basename, parent, filterMediaLibrary, mediaLibraryTags } from "./media-library-filter";
+import {
+  detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
+  dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryFolders,
+} from "./media-library-refresh";
 import "./media-picker.css";
 import type { MediaLibrary, MediaPickerHost, MediaPickerOptions, MediaImportRequest } from "./media-picker";
 
@@ -16,15 +23,6 @@ export interface MediaLibraryView {
   dispose(): void;
 }
 let viewId = 0;
-
-function accepts(path: string, accept?: string) {
-  if (!accept) return true;
-  const type = uploadImageType(path) ?? "";
-  return accept.split(",").some((part) => {
-    const value = part.trim().toLowerCase();
-    return value.startsWith(".") ? path.toLowerCase().endsWith(value) : value.endsWith("/*") ? type.startsWith(value.slice(0, -1)) : type === value;
-  });
-}
 
 export function createMediaLibraryView(container: HTMLElement, adapter: MediaPickerHost, options: MediaPickerOptions & { refreshKey?: () => string } = {}, modal?: HTMLDialogElement): MediaLibraryView {
   adapter.begin?.();
@@ -91,81 +89,35 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
   let library: MediaLibrary;
   let tag = "";
   const selected = new Set<string>();
-  const urls = new Set<string>();
-  const assets = new Map<string, Promise<{ url: string; blob: Blob; width?: number; height?: number; version?: string }>>();
   let detailVersion = 0;
   let detailPath: string | undefined;
   let pendingDetailFocus: { path: string; active: Element | null } | undefined;
   let optimisation: AbortController | undefined;
-  let busy = false;
-  let pendingTasks = 0;
-  let cancellableTask = false;
   let refreshVersion = 0;
   let loadingLibrary = false;
   let refreshedKey: string | undefined;
+  const busyLock = createBusyLock({
+    root: dialog, signal: listeners.signal, tell,
+    alive: () => alive, loading: () => loadingLibrary,
+  });
+  const cache = createMediaByteCache({
+    load: path => adapter.blob(path),
+    version: path => library.items.find(item => item.path === path)?.version,
+    alive: () => alive,
+  });
   const observers = new Set<IntersectionObserver>();
   function dispose() {
     if (!alive) return;
     alive = false; detailVersion++; optimisation?.abort(); listeners.abort();
     observers.forEach((observer) => observer.disconnect()); observers.clear();
-    urls.forEach((url) => URL.revokeObjectURL(url)); urls.clear(); assets.clear();
+    cache.dispose();
     modal?.removeEventListener("close", dispose);
     dialog.replaceChildren(); dialog.remove();
   }
   modal?.addEventListener("close", dispose, { once: true });
   function tell(text: string) { if (alive) message.textContent = text; }
-  async function task(work: () => Promise<void>, lock = true, canCancel = false) {
-    if (!alive) return;
-    if (lock && loadingLibrary) { tell("Repository images are refreshing. Wait for them to finish before making a change."); return; }
-    if (busy) { tell("An image change is in progress. Wait for it to finish before making another change."); return; }
-    if (lock) { busy = true; cancellableTask = canCancel; }
-    pendingTasks++; dialog.setAttribute("aria-busy", "true");
-    setBusyControls();
-    try { await work(); } catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) tell(error instanceof Error ? error.message : "The image change could not be made."); }
-    finally {
-      if (lock) { busy = false; cancellableTask = false; }
-      pendingTasks--;
-      if (!pendingTasks) dialog.removeAttribute("aria-busy");
-      setBusyControls();
-    }
-  }
-  function cancellation(label: string, action: () => void) {
-    const control = button(label, action); control.dataset.mediaCancel = label === "Close" ? "close" : "cancel"; return control;
-  }
-  function canUseCancellation(control: Element) {
-    return control.getAttribute("data-media-cancel") === "close" || cancellableTask && control.hasAttribute("data-media-cancel");
-  }
-  function setBusyControls() {
-    for (const control of dialog.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input,button,select")) {
-      if (busy && !canUseCancellation(control)) control.setAttribute("aria-disabled", "true"); else control.removeAttribute("aria-disabled");
-      if (control instanceof HTMLInputElement && control.type !== "checkbox" && control.type !== "file") control.readOnly = busy;
-    }
-  }
-  dialog.addEventListener("click", event => {
-    if (!busy || !(event.target instanceof Element) || canUseCancellation(event.target.closest("button,input,select") ?? event.target) || !event.target.closest("button,input,select")) return;
-    event.preventDefault(); event.stopImmediatePropagation();
-    tell("An image change is in progress. Wait for it to finish before making another change.");
-  }, { capture: true, signal: listeners.signal });
-  dialog.addEventListener("keydown", event => {
-    if (!busy || event.target instanceof Element && canUseCancellation(event.target.closest("button,input,select") ?? event.target) || !["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) && !(event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey)) return;
-    event.preventDefault(); event.stopImmediatePropagation();
-    tell("An image change is in progress. Wait for it to finish before making another change.");
-  }, { capture: true, signal: listeners.signal });
-  function objectUrl(blob: Blob) { const url = URL.createObjectURL(blob); urls.add(url); return url; }
-  function asset(path: string) {
-    let pending = assets.get(path);
-    if (!pending) {
-      const version = library.items.find((item) => item.path === path)?.version;
-      pending = adapter!.blob(path).then(async (blob) => {
-        if (!alive) throw new Error("Image library closed.");
-        const url = objectUrl(blob);
-        const image = new Image(); image.src = url;
-        await image.decode().catch(() => undefined);
-        return { url, blob, width: image.naturalWidth || undefined, height: image.naturalHeight || undefined, version };
-      });
-      assets.set(path, pending);
-    }
-    return pending;
+  function task(work: () => Promise<void>, lock = true, canCancel = false) {
+    return busyLock.task(work, lock, canCancel);
   }
   async function refresh() {
     if (!alive) return;
@@ -174,35 +126,18 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     // Refreshing repository sources must not erase an unfinished metadata form.
     const previous = library;
     const previousPath = detailPath;
-    const detailIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify([
-      value?.metadata[path] ?? { tags: [], alt: "" }, value?.usage[path],
-      value?.items.find(item => item.path === path)?.version,
-    ]);
-    const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
     loadingLibrary = true;
-    if (!sheet.hidden && sheet.dataset.mode === "delete") {
-      const active = document.activeElement;
-      const returnPath = sheet.dataset.deletePath;
-      const restoreBrowseFocus = active instanceof Element && sheet.contains(active);
-      detailVersion++; sheet.hidden = true; delete sheet.dataset.mode;
-      if (restoreBrowseFocus && (document.activeElement === active || document.activeElement === document.body)) grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(returnPath ?? "")}"] button`)?.focus();
-      tell("Repository images are refreshing. Reopen Delete after the refresh to check current references.");
-    }
+    dismissRefreshingDelete(sheet, grid, () => { detailVersion++; }, tell);
     let next: MediaLibrary;
     try { next = await adapter.load(); }
     catch (error) { if (request === refreshVersion) pendingDetailFocus = undefined; throw error; }
     finally { if (request === refreshVersion) loadingLibrary = false; }
     if (!alive || request !== refreshVersion) return;
-    for (const item of next.items) {
-      if (library?.items.find((old) => old.path === item.path)?.version !== item.version) assets.delete(item.path);
-    }
+    cache.sync(next.items);
     library = next;
     refreshedKey = inputKey;
-    for (const path of [...selected]) if (!library.items.some((item) => item.path === path)) selected.delete(path);
-    const folder = folders.value;
-    folders.replaceChildren(new Option("All folders", ""), ...[...new Set(library.items.map((item) => parent(item.path)))].sort().map((path) => new Option(path || "Repository root", path || "/")));
-    folders.value = folder;
-    if (folders.selectedIndex < 0) folders.selectedIndex = 0;
+    pruneLibrarySelection(library.items, selected);
+    rebuildLibraryFolders(folders, library.items);
     draw();
     if (detailPath) {
       if (library.items.some((item) => item.path === detailPath)) {
@@ -210,31 +145,10 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         const rendered = sheet.querySelector<HTMLInputElement>('input[aria-label="Default alt text"]');
         if (path !== previousPath || !rendered || detailIdentity(previous, path) !== detailIdentity(library, path)) {
           const preserve = path === previousPath && rendered && metadataIdentity(previous, path) === metadataIdentity(library, path);
-          const inputs = preserve ? [...sheet.querySelectorAll<HTMLInputElement>("input")].map(input => ({
-            label: input.getAttribute("aria-label"), value: input.value,
-            focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd,
-          })) : [];
-          const active = document.activeElement;
-          const focus = active instanceof HTMLElement && sheet.contains(active) ? {
-            label: active.getAttribute("aria-label"), text: active instanceof HTMLButtonElement ? active.textContent : undefined,
-            start: active instanceof HTMLInputElement ? active.selectionStart : null,
-            end: active instanceof HTMLInputElement ? active.selectionEnd : null,
-          } : undefined;
+          const savedForm = captureDetailForm(sheet, Boolean(preserve));
           await showDetail(path, false, true);
           if (alive && detailPath === path) {
-            for (const saved of inputs) {
-              const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => input.getAttribute("aria-label") === saved.label);
-              if (!input) continue;
-              input.value = saved.value; input.dispatchEvent(new Event("input", { bubbles: true }));
-            }
-            // Metadata Undo changes values, but it must not strand keyboard focus.
-            // A user who focused elsewhere during the read keeps that focus.
-            if (focus && document.activeElement === document.body && !active?.isConnected) {
-              const controls = [...sheet.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button")];
-              const control = controls.find(control => focus.label ? control.getAttribute("aria-label") === focus.label : control instanceof HTMLButtonElement && control.textContent === focus.text) ?? controls[0];
-              control?.focus();
-              if (control instanceof HTMLInputElement && focus.start !== null && focus.end !== null) control.setSelectionRange(focus.start, focus.end);
-            }
+            restoreDetailForm(sheet, savedForm);
           }
         }
       }
@@ -248,18 +162,15 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     const browseFocus = active instanceof HTMLButtonElement ? { path: card?.dataset.path, label: active.getAttribute("aria-label"), chip: active.classList.contains("media-library__chip") ? active.textContent : undefined, usage: active.classList.contains("media-library__usage") } : undefined;
     observers.forEach((observer) => observer.disconnect()); observers.clear();
     chips.replaceChildren();
-    const allTags = [...new Set(Object.values(library.metadata).flatMap((entry) => entry.tags))].sort();
+    const allTags = mediaLibraryTags(library.metadata);
     if (tag && !allTags.includes(tag)) tag = "";
     for (const value of ["", ...allTags]) {
       const chip = button(value || "All images", () => { tag = value; draw(); }, "media-library__chip");
       chip.setAttribute("aria-pressed", String(tag === value)); chips.append(chip);
     }
-    const query = search.value.trim().toLowerCase();
-    const filtered = library.items.filter((item) => {
-      const meta = library.metadata[item.path];
-      return accepts(item.path, options.accept) && (!folders.value || parent(item.path) === (folders.value === "/" ? "" : folders.value)) &&
-        (!tag || meta?.tags.includes(tag)) && `${item.path} ${meta?.alt ?? ""} ${meta?.tags.join(" ") ?? ""} ${library.usage[item.path]?.alts.join(" ") ?? ""}`.toLowerCase().includes(query);
-    }).sort((a, b) => sort.value === "size" ? (b.size ?? 0) - (a.size ?? 0) || a.path.localeCompare(b.path) : sort.value === "date" ? (b.date ?? 0) - (a.date ?? 0) || a.path.localeCompare(b.path) : a.path.localeCompare(b.path));
+    const filtered = filterMediaLibrary(library, {
+      query: search.value, folder: folders.value, tag, sort: sort.value, accept: options.accept,
+    });
     summary.textContent = `${filtered.length} of ${library.items.length} images${folders.value ? ` · ${folders.selectedOptions[0].text}` : " · All folders"}`;
     bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
     grid.replaceChildren();
@@ -295,7 +206,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       const observer = new IntersectionObserver((entries) => {
         if (!alive || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
         observer.disconnect();
-        void asset(item.path).then((data) => {
+        void cache.get(item.path).then((data) => {
           if (!alive || !card.isConnected) return;
           image.src = data.url;
           item.size = data.blob.size;
@@ -305,7 +216,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       }, { root: modal ? browse : dialog, rootMargin: "200px" });
       observers.add(observer); observer.observe(card);
     }
-    setBusyControls();
+    busyLock.sync();
     if (browseFocus && !pendingDetailFocus && document.activeElement === document.body && !active?.isConnected) {
       const replacement = [...dialog.querySelectorAll<HTMLButtonElement>(".media-library__grid button,.media-library__chip")].find(control => browseFocus.path ? control.closest<HTMLElement>(".media-library__card")?.dataset.path === browseFocus.path && (browseFocus.usage ? control.classList.contains("media-library__usage") : control.getAttribute("aria-label") === browseFocus.label) : browseFocus.chip !== undefined && control.classList.contains("media-library__chip") && control.textContent === browseFocus.chip);
       if (replacement?.getClientRects().length) replacement.focus();
@@ -324,11 +235,11 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     sheet.hidden = false; sheet.replaceChildren(node("p", "media-library__muted", "Loading image…"));
     if (!modal && !background) dialog.scrollTop = 0;
     if (loadingLibrary) return;
-    const data = await asset(path).catch((error) => { tell(String(error)); return undefined; });
+    const data = await cache.get(path).catch((error) => { tell(String(error)); return undefined; });
     if (!alive || version !== detailVersion || !data || !library.items.some((item) => item.path === path)) {
       if (pendingDetailFocus === focusRequest) pendingDetailFocus = undefined;
       if (alive && version === detailVersion && !data) {
-        assets.delete(path); sheet.hidden = true; detailPath = undefined;
+        cache.drop(path); sheet.hidden = true; detailPath = undefined;
         if (document.activeElement === document.body || (!background || initiatingInsideDetail) && document.activeElement === initiatingFocus) grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus();
       }
       return;
@@ -360,7 +271,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     }
     const name = input("New image filename", "text"); name.value = basename(path);
     sheet.append(field("Filename", name), button("Rename", () => void task(async () => {
-      await adapter.rename(path, name.value); assets.clear(); await refresh(); sheet.hidden = true; tell("Image renamed and references updated as drafts.");
+      await adapter.rename(path, name.value); cache.clear(); await refresh(); sheet.hidden = true; tell("Image renamed and references updated as drafts.");
     })), button("Copy path", () => void task(async () => { await navigator.clipboard.writeText(`/${path}`); tell("Image path copied."); })), button("Optimise image…", () => showOptimise([new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]))), button("Delete image…", () => confirmDelete([path])));
     if (options.onPick) {
       const insertionAlt = input("Alt text for insertion", "text"); insertionAlt.value = options.initialAlt ?? (meta.decorative ? "" : meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
@@ -371,7 +282,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         await options.onPick!(image); close();
       }), "button"));
     }
-    setBusyControls();
+    busyLock.sync();
     const requestedFocus = background ? pendingDetailFocus?.path === path ? pendingDetailFocus.active : undefined : initiatingFocus;
     if (requestedFocus !== undefined && (document.activeElement === requestedFocus || document.activeElement === document.body && (!requestedFocus?.isConnected || !requestedFocus.getClientRects().length))) {
       if (focusUsage) usageTitle.focus(); else sheet.querySelector<HTMLElement>("button")?.focus();
@@ -435,7 +346,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
         requests.push({ ...item, folder, metadata: existing ? library.metadata[item.file.name] : undefined, replaceFrom: existing && update.checked ? item.file.name : undefined, expectedAssetVersion: receipts.get(item.file.name) });
       }
       await adapter.import(requests);
-      assets.clear(); await refresh(); sheet.hidden = true; tell("Images added as drafts. Choose an image to use it on the page.");
+      cache.clear(); await refresh(); sheet.hidden = true; tell("Images added as drafts. Choose an image to use it on the page.");
     }), "button"); add.disabled = true;
     const prepare = button("Preview optimisation", () => void task(async () => {
       if (!width.checkValidity() || !quality.checkValidity()) throw new Error("Enter a width from 1 to 10000 and quality from 1 to 100.");
@@ -452,7 +363,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       }
       results.replaceChildren();
       for (const { file, result } of prepared) {
-        const preview = node("img", "media-library__preview"); preview.alt = ""; preview.src = objectUrl(result.outputs[0].blob);
+        const preview = node("img", "media-library__preview"); preview.alt = ""; preview.src = cache.objectUrl(result.outputs[0].blob);
         const savings = mediaSavings(result.before, result.after);
         results.append(preview, node("p", "", `${basename(file.name)} · ${formatBytes(result.before)} → ${formatBytes(result.after)}, ${savings >= 0 ? "−" : "+"}${Math.abs(savings)}%`), node("p", "media-library__hint", `${result.outputs.length - 1} responsive variants · ${formatBytes(result.outputs.reduce((sum, output) => sum + output.blob.size, 0))} total${result.note ? ` · ${result.note}` : " · Metadata stripped"}`));
       }
@@ -473,18 +384,21 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     const jump = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
     if (jump !== undefined) { event.preventDefault(); buttons[Math.max(0, Math.min(buttons.length - 1, at + jump))]?.focus(); }
   }, { signal: listeners.signal });
-  uploadInput.addEventListener("change", () => { const files = [...(uploadInput.files ?? [])]; uploadInput.value = ""; if (files.length && busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (files.length && library) showOptimise(files); else if (files.length) tell("Repository images are loading. Wait for them to finish before uploading images."); }, { signal: listeners.signal });
+  uploadInput.addEventListener("change", () => {
+    const files = [...(uploadInput.files ?? [])]; uploadInput.value = "";
+    if (files.length && busyLock.busy) tell("An image change is in progress. Wait for it to finish before uploading images.");
+    else if (files.length && library) showOptimise(files);
+    else if (files.length) tell("Repository images are loading. Wait for them to finish before uploading images.");
+  }, { signal: listeners.signal });
   dialog.addEventListener("dragover", (event) => { if (event.dataTransfer?.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }, { signal: listeners.signal });
   dialog.addEventListener("drop", (event) => {
     if (!event.dataTransfer?.files.length) return; event.preventDefault();
-    if (busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (library) showOptimise([...event.dataTransfer.files]); else tell("Repository images are loading. Wait for them to finish before uploading images.");
+    if (busyLock.busy) tell("An image change is in progress. Wait for it to finish before uploading images."); else if (library) showOptimise([...event.dataTransfer.files]); else tell("Repository images are loading. Wait for them to finish before uploading images.");
   }, { signal: listeners.signal });
   const ready = task(async () => { summary.textContent = "Reading repository images and references…"; await refresh(); if (options.files?.length && alive) showOptimise(options.files); }, false);
   return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose };
 }
 
-const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
-const basename = (path: string) => path.split("/").pop()!;
 function input(label: string, type: string) { const control = node("input"); control.type = type; control.name = label.toLowerCase().replace(/\s+/g, "-"); control.setAttribute("aria-label", label); return control; }
 function select(label: string, choices: string[][]) { const control = node("select"); control.name = label.toLowerCase().replace(/\s+/g, "-"); control.setAttribute("aria-label", label); for (const [value, text] of choices) control.append(new Option(text, value)); return control; }
 function field(label: string, control: HTMLElement) { const wrap = node("label", "media-library__field"); wrap.append(node("span", "", label), control); return wrap; }
