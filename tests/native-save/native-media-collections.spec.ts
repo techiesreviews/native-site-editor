@@ -385,6 +385,9 @@ test("renaming the collection while its files are prepared: they join it under i
 test("Review… stops automatic adding and opens Optimise for the files not added yet, in the same collection", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const library = pane(page);
+  await newCollectionFromManage(page, "Studio picks");
+  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByLabel("Collections", { exact: true }).selectOption("Studio picks");
   const hold = await holdFirstPreparation(page);
   await dropOnMedia(page, [{ name: "first.svg", text: svg("red") }, { name: "second.svg", text: svg("blue") }]);
   await hold.started();
@@ -397,8 +400,36 @@ test("Review… stops automatic adding and opens Optimise for the files not adde
   // Nothing is added behind the sheet's back; its own Add to library adds them once.
   await library.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await library.getByRole("button", { name: "Add to library", exact: true }).click();
-  await expect.poll(() => tileNames(page)).toEqual(["images/first.svg", "images/placeholder.svg", "images/second.svg", "images/studio-desk.svg"]);
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["images/first.svg", "images/second.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["images/first.svg", "images/second.svg"]);
   expect(await storedDraft(page, "images/first-2.svg")).toBeUndefined();
+});
+
+test("a file that cannot be prepared stays in the tray with its reason and Review…; the others join the collection once", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page);
+  await newCollectionFromManage(page, "Studio picks");
+  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByLabel("Collections", { exact: true }).selectOption("Studio picks");
+  await pane(page).evaluate((element, good) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([good], "good.svg", { type: "image/svg+xml" }));
+    transfer.items.add(new File(["not a picture"], "broken.png", { type: "image/png" }));
+    for (const type of ["dragenter", "dragover", "drop"])
+      element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, svg("red"));
+  await expect(tray(page).getByRole("status")).toHaveText("Added 1 file · 1 could not be added");
+  await expect(tray(page).getByRole("listitem")).toHaveText(/^broken\.png: .+/);
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["images/good.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["images/good.svg"]);
+  // Review… offers only the failed file to today's Optimise sheet.
+  await tray(page).getByRole("button", { name: "Review…", exact: true }).click();
+  await expect(library.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible();
+  await expect(library.locator(".media-library__sheet")).toContainText("1 image");
+  // The tray keeps the file that was added; the failed one moved to the sheet.
+  await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
+  await expect(tray(page).getByRole("listitem")).toHaveCount(0);
+  expect(await storedDraft(page, "images/good-2.svg")).toBeUndefined();
 });
 
 test("a cancelled drop whose save was waiting never takes a later drop's files: each drop saves once", async ({ page, baseURL }) => {
