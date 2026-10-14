@@ -122,3 +122,25 @@ test("on a phone the page scrolls so the picture sits above the sheet", () => {
   // Scrolled above the frame: back down, just above the sheet.
   assert.equal(sheetScroll({ left: 0, top: 0, right: 390, bottom: 100 }, 500, 60), -392);
 });
+
+test("component shape opens first, crops at its ratio, names the badge and notes other choices", async () => {
+  const { componentFrame, componentShapeEntry, componentShapeNotice } = await import("../src/page-builder/component-shapes");
+  const component = { label: "Photo card", shape: { value: "4 / 3", ratio: 4 / 3, label: "4:3" } };
+  const entry = componentShapeEntry(component)!;
+  assert.equal(entry.label, "Photo card's shape (4:3)");
+  const initial = componentFrame('<img style="object-position:20% 30%">', undefined, "index.html", component);
+  assert.deepEqual(initial.shape, entry.id);
+  assert.equal(componentFrame('<img style="/* own */ aspect-ratio:auto">', undefined, "index.html", component).shape, "original");
+  assert.deepEqual(componentFrame('<img style="--note: \'aspect-ratio:auto\'">', undefined, "index.html", component).shape, entry.id);
+  assert.equal(shapeLabel(initial.shape), entry.label);
+  assert.equal(shapeRatio(initial.shape), 4 / 3);
+  assert.equal(focusApplies(initial.shape), true);
+  assert.equal(frameBadge(initial), "Photo card's shape");
+  assert.equal(componentShapeNotice(initial.shape, component), undefined);
+  assert.equal(componentShapeNotice("square", component), "This Photo card will look different from the others.");
+  assert.equal(frameBadge(componentFrame('<img style="aspect-ratio:1;object-fit:cover">', undefined, "index.html", component)), "Square");
+  assert.deepEqual(frameChange({ shape: "square", focus: initial.focus }, { shape: entry.id, focus: { x: 20, y: 30 }, component }), { shape: "component" });
+  assert.deepEqual(frameChange(initial, { shape: "original", focus: { x: 20, y: 30 }, component }), { shape: "original", originalUnderComponent: true });
+  assert.deepEqual(frameChange(initial, { shape: entry.id, focus: { x: 50, y: 50 }, component }, true), { focus: { x: 50, y: 50 } });
+  assert.equal(componentFrame('<img style="aspect-ratio:auto;object-fit:contain">', undefined, "index.html", component).shape, "original");
+});

@@ -17,11 +17,13 @@ import type { MediaTrim } from "../../shared/media-records";
 import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
+import { componentShapeEntry, componentShapeNotice, type ComponentPicture } from "./component-shapes";
 import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, placePopup, popupMessage, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 
 export interface ImagePopupState {
+  component?: ComponentPicture;
   file: string; url?: string; shape: PopupShape; focus: PlaceFocus; boxes?: MediaBox[]; busy: boolean;
   /** Said at the top after Replace. */
   notice?: string;
@@ -80,11 +82,12 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   const shapeText = node("span");
   shapeButton.append(shapeText, icon("caret-down", 13));
   const menu = node("div", "image-popup__menu"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Shape"); menu.hidden = true;
-  const items = [...POPUP_SHAPES, { id: "free" as const, label: "Free" }].map(shape => {
+  const componentEntry = componentShapeEntry(state.component);
+  const items = [...(componentEntry ? [componentEntry] : []), ...POPUP_SHAPES, { id: "free" as const, label: "Free" }].map(shape => {
     const item = actionButton("image-popup__item", () => { toggleMenu(false); shapeButton.focus(); events.shape(shape.id); });
     item.setAttribute("role", "menuitemradio");
     item.append(node("span", "", shape.label), icon("check", 16));
-    item.dataset.shape = shape.id;
+    item.dataset.shape = typeof shape.id === "string" ? shape.id : "component";
     return item;
   });
   menu.append(...items);
@@ -175,11 +178,12 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   function draw(focusDot = false) {
     where.textContent = state.file.split("/").pop() ?? "";
     where.title = state.file;
-    notice.hidden = !state.notice; notice.textContent = state.notice ?? "";
+    const saidNotice = componentShapeNotice(state.shape, state.component) ?? state.notice;
+    notice.hidden = !saidNotice; notice.textContent = saidNotice ?? "";
     shapeText.textContent = shapeLabel(state.shape);
     shapeButton.setAttribute("aria-label", `Shape: ${shapeLabel(state.shape)}`);
     for (const item of items) {
-      item.setAttribute("aria-checked", String(item.dataset.shape === state.shape));
+      item.setAttribute("aria-checked", String(item.dataset.shape === (typeof state.shape === "string" ? state.shape : state.shape.kind)));
       if (item.dataset.shape === "free") item.hidden = !state.trimmable;
     }
     if (state.url && picture.getAttribute("src") !== state.url) picture.src = state.url;

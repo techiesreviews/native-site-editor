@@ -3,7 +3,8 @@
 import type { MediaControllerPorts, MediaModule } from "../controllers/media-controller";
 import type { MediaRecords } from "../../shared/media-records";
 import type { MediaWorkspaceContext } from "./media-workspace";
-import { placeBadge } from "./image-popup-rules";
+import { componentFrame, componentPicture } from "./component-shapes";
+import { frameBadge } from "./image-popup-rules";
 
 export interface ImagePopupsDeps {
   ports: MediaControllerPorts;
@@ -22,7 +23,9 @@ export function createImagePopups(deps: ImagePopupsDeps) {
   return {
     /** The badge ("Square", "Trimmed") and whether the popup is open on this image. */
     placeFrame(page: string, node: number[], tag: string) {
-      return { badge: placeBadge(tag, deps.records(), page), open: popup?.path === page && popup.node === key(node) };
+      const source = ports.source(page);
+      const component = source === undefined ? undefined : componentPicture(source, node, path => ports.source(path));
+      return { badge: frameBadge(componentFrame(tag, deps.records(), page, component)), open: popup?.path === page && popup.node === key(node) };
     },
     /** The Image button: the popup, or (pressed again) closing it unchanged. */
     async edit(target: { path: string; node: number[] }) {

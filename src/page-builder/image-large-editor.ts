@@ -18,6 +18,7 @@ import eyeIcon from "@phosphor-icons/core/regular/eye.svg?raw";
 import checkCircleIcon from "@phosphor-icons/core/regular/check-circle.svg?raw";
 import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
 import { POPUP_SHAPES, popupMessage, shapeLabel, type PopupShape } from "./image-popup-rules";
+import { componentShapeEntry } from "./component-shapes";
 import { cutArea, makesNewPicture, nudgeFree, shownTrim, turnBy, turnedSize, type TrimRect } from "./image-popup-trim";
 import { canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerValue, straightenEdit, zoomArea, type PopupEdit } from "./image-large-rules";
 import { mountPreviews, paintTrim, type ImagePopupState, type PreviewDevice } from "./image-popup-view";
@@ -40,7 +41,7 @@ const svg = (raw: string, size = 20) => {
 
 /** Opens the large editor on the popup's `state`; `own` is the place's shape when the popup opened (Reset goes back to it). */
 export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events: LargeEditorEvents) {
-  const size = state.size!;
+  const size = state.size!, componentShape = componentShapeEntry(state.component)?.id;
   const edit = (): PopupEdit => ({ shape: state.shape, focus: state.focus, cut: state.cut, around: state.around, aroundFocus: state.aroundFocus });
   const dialog = node("dialog", "image-large");
   dialog.setAttribute("aria-labelledby", "image-large-title");
@@ -116,7 +117,7 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     const select = node("select", className);
     select.setAttribute("aria-label", "Shape");
     select.addEventListener("change", () => {
-      const shape = SHAPES.find(item => item === select.value);
+      const shape = select.value === "component" ? componentShape : SHAPES.find(item => item === select.value);
       if (shape) act(chooseShape(size, edit(), shape));
     });
     return select;
@@ -217,11 +218,12 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     const now = edit(), free = state.shape === "free";
     where.textContent = state.file.split("/").pop() ?? ""; where.title = state.file;
     for (const select of [sideShape, phoneShape]) {
-      const other = typeof state.shape === "object" ? [state.shape] : [];
+      // A shaped component's own shape is always offered first (slice 43); a hand-written ratio only while the place has it.
+      const other = [...(componentShape ? [componentShape] : []), ...(typeof state.shape === "object" && state.shape.kind !== "component" ? [state.shape] : [])];
       const options = [...other, ...SHAPES].map(shape => {
         const option = node("option", "", shapeLabel(shape));
-        option.value = typeof shape === "string" ? shape : "";
-        option.selected = shape === state.shape;
+        option.value = typeof shape === "string" ? shape : shape.kind === "component" ? "component" : "";
+        option.selected = shape === state.shape || typeof shape === "object" && shape.kind === "component" && typeof state.shape === "object" && state.shape.kind === "component";
         return option;
       });
       if (select.options.length !== options.length || [...select.options].some((option, index) => option.value !== options[index].value)) select.replaceChildren(...options);

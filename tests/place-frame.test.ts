@@ -200,3 +200,15 @@ test("looping video start tags take and read the same shape and focus declaratio
   assert.match(framed, /controls muted loop playsinline/);
   assert.throws(() => writePlaceFrame('<video controls>', { shape: "square" }), /Choose an image place/);
 });
+
+test("Original in a shaped component writes auto and contain; component shape removes overrides keeping focus", () => {
+  const own = '<img slot="image" style="color:red;aspect-ratio:1;object-fit:cover;object-position:20% 30%">';
+  const original = writePlaceFrame(own, { shape: "original", originalUnderComponent: true });
+  assert.match(style(original)!, /aspect-ratio: auto;/);
+  assert.match(style(original)!, /object-fit: contain;/);
+  assert.equal(readPlaceFrame(original, undefined, "index.html", true).shape, "original");
+  const component = writePlaceFrame(own, { shape: "component" });
+  assert.equal(style(component), "color:red;object-position:20% 30%");
+  assert.equal(readPlaceFrame(component).focus?.x, 20);
+  assert.equal(writePlaceFrame(original, { shape: "component" }), '<img slot="image" style="color:red;">');
+});

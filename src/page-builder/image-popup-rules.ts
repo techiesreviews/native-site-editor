@@ -1,11 +1,12 @@
 // The image popup's rules (media-manager ticket 09 "Entry point and popup", build slice 39):
 // its shapes and badge, the part of the picture a place shows, the focus dot's keys,
 // the one-line message, where the popup stands and what Done writes. No DOM here.
+import type { ComponentPicture } from "./component-shapes";
 import type { MediaRecords } from "../../shared/media-records";
 import { readPlaceFrame, type PlaceFocus, type PlaceFrameChange, type PlaceShape } from "./place-frame";
 
-/** A place's shape as read back (one of the popup's, or a hand-written ratio it keeps), or Free trimming. */
-export type PopupShape = PlaceShape | "free" | { kind: "other"; value: string };
+/** A place's shape as read back (one of the popup's, a hand-written ratio it keeps, or its component's), or Free trimming. */
+export type PopupShape = PlaceShape | "free" | { kind: "other"; value: string } | { kind: "component"; value: string; label: string; badge: string };
 
 /** The shape menu, in the prototype's order; Free follows when the picture can be trimmed (slice 41). */
 export const POPUP_SHAPES: readonly { id: PlaceShape; label: string; ratio?: number }[] = [
@@ -18,7 +19,7 @@ export const POPUP_SHAPES: readonly { id: PlaceShape; label: string; ratio?: num
 
 export function shapeLabel(shape: PopupShape) {
   if (shape === "free") return "Free";
-  return typeof shape === "string" ? POPUP_SHAPES.find(item => item.id === shape)?.label ?? shape : `Custom (${shape.value.trim()})`;
+  return typeof shape === "string" ? POPUP_SHAPES.find(item => item.id === shape)?.label ?? shape : shape.kind === "component" ? shape.label : `Custom (${shape.value.trim()})`;
 }
 
 /** A shape's width over height; undefined for Original or a ratio that cannot be read. */
@@ -31,7 +32,7 @@ export function shapeRatio(shape: PopupShape): number | undefined {
 
 /** The edit bar's badge: "Trimmed" for a trimmed copy, else the shape's short name. */
 export function frameBadge(frame: { shape: PopupShape; trimmed: boolean }) {
-  return frame.trimmed ? "Trimmed" : typeof frame.shape === "string" ? shapeLabel(frame.shape) : "Custom";
+  return frame.trimmed ? "Trimmed" : typeof frame.shape === "string" ? shapeLabel(frame.shape) : frame.shape.kind === "component" ? frame.shape.badge : "Custom";
 }
 
 /** The badge of an image tag on `page`; records name a trimmed copy. */
@@ -96,11 +97,13 @@ export function replaceNotice(file: string, shape: PopupShape, trimmed: boolean)
 export const placeShapeOf = (shape: PopupShape): PopupShape => shape === "free" ? "original" : shape;
 
 /** What Done writes to the place: only what changed; nothing when nothing did. */
-export function frameChange(start: { shape: PopupShape; focus: PlaceFocus | undefined }, now: { shape: PopupShape; focus: PlaceFocus }, replaced = false): PlaceFrameChange | undefined {
+export function frameChange(start: { shape: PopupShape; focus: PlaceFocus | undefined }, now: { shape: PopupShape; focus: PlaceFocus; component?: ComponentPicture }, replaced = false): PlaceFrameChange | undefined {
   const change: PlaceFrameChange = {};
   now = { ...now, shape: placeShapeOf(now.shape) };
-  const sameShape = typeof start.shape === "string" || typeof now.shape === "string" ? start.shape === now.shape : start.shape.value === now.shape.value;
+  const sameShape = typeof start.shape === "string" || typeof now.shape === "string" ? start.shape === now.shape : start.shape.kind === now.shape.kind && start.shape.value === now.shape.value;
   if (!sameShape && typeof now.shape === "string" && now.shape !== "free") change.shape = now.shape;
+  if (!sameShape && typeof now.shape !== "string" && now.shape.kind === "component") change.shape = "component";
+  if (change.shape === "original" && now.component) change.originalUnderComponent = true;
   // A replacement always writes the focus: it starts in the middle for the new picture. A focus
   // the popup cannot read (lengths) started the dot in the middle and is kept unless it moved.
   const from = start.focus ?? { x: 50, y: 50 };

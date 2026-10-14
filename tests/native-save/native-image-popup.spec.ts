@@ -375,3 +375,64 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
+
+test("a slotted component image opens on its shape; other choices and restoring it each undo once", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  for (const [path, content] of [
+    ["components/photo-card/photo-card.html", '<figure class="photo"><slot name="image"><img src="/images/placeholder.svg" alt=""></slot></figure>'],
+    ["components/photo-card/photo-card.css", ".photo img { display:block; width:100%; aspect-ratio:4 / 3; object-fit:cover; }"],
+  ]) {
+    const edited = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
+    expect(edited.ok()).toBe(true);
+  }
+  const response = await page.request.get(`${baseURL}/__demo/file?path=index.html`);
+  expect(response.ok()).toBe(true);
+  const seeded = (await response.text()).replace("</main>", '<photo-card><img slot="image" src="/images/studio-desk.svg" alt="A desk"></photo-card><photo-card data-fallback></photo-card></main>');
+  const edited = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: seeded } });
+  expect(edited.ok()).toBe(true);
+  await page.locator(".repository-menu__trigger").click();
+  await page.locator('.repository-menu__repo[aria-current="true"]').hover();
+  await page.getByRole("menu", { name: "Branches" }).getByRole("menuitem", { name: "Refresh from GitHub" }).click();
+  await expect.poll(() => source(page)).toContain("<photo-card>");
+  const image = frame(page).locator("photo-card > img");
+  await expect(image).toBeVisible();
+  const before = await source(page);
+  const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
+  await image.click();
+  await expect(imageButton(page)).toHaveText("ImagePhoto card's shape");
+  await imageButton(page).click();
+  await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
+  await expect(dot(page)).toBeVisible();
+  await chooseShape(page, "Square");
+  await expect(popup(page).getByRole("status").filter({ hasText: "This Photo card will look different from the others." })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(tag).toContain("aspect-ratio: 1 / 1");
+  const square = await source(page);
+  await image.click();
+  await imageButton(page).click();
+  await chooseShape(page, "Photo card's shape (4:3)");
+  await expect(popup(page).getByRole("status").filter({ hasText: "will look different" })).toBeHidden();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(tag).not.toMatch(/aspect-ratio|object-fit/);
+  await expect(image).toHaveCSS("aspect-ratio", "4 / 3");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(square);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
+  // Original overrides the component crop and reads back as Original.
+  await image.click();
+  await imageButton(page).click();
+  await chooseShape(page, "Original");
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(tag).toContain("aspect-ratio: auto");
+  await expect(image).toHaveCSS("object-fit", "contain");
+  await image.click();
+  await imageButton(page).click();
+  await expect(popup(page).getByRole("button", { name: "Shape: Original", exact: true })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
+  // A template fallback clicked from the page cannot expose a popup writing to its template.
+  await frame(page).locator("photo-card[data-fallback] img").click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect(imageButton(page)).toHaveCount(0);
+});

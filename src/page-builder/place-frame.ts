@@ -12,7 +12,7 @@ import { mediaResolvePath } from "./media-references";
 const ratios = { square: "1 / 1", "4:3": "4 / 3", "16:9": "16 / 9", "4:5": "4 / 5" };
 export type PlaceShape = "original" | keyof typeof ratios;
 export interface PlaceFocus { x: number; y: number }
-export interface PlaceFrameChange { shape?: PlaceShape; focus?: PlaceFocus }
+export interface PlaceFrameChange { shape?: PlaceShape | "component"; focus?: PlaceFocus; originalUnderComponent?: boolean }
 const managed = ["aspect-ratio", "object-fit", "object-position"] as const;
 
 /** Split only at top-level semicolons; comments and strings are opaque CSS tokens. */
@@ -68,9 +68,9 @@ export function writePlaceFrame(tagText: string, change: PlaceFrameChange): stri
   if (!tag || (tag.name !== "img" && !(tag.name === "video" && mediaAttribute(tagText, tag, "muted") && mediaAttribute(tagText, tag, "loop"))) || tagText[tag.end - 1] !== ">") throw new Error("Choose an image place.");
   const changes: Record<string, string | undefined> = {};
   if (change.shape !== undefined) {
-    if (change.shape !== "original" && !Object.hasOwn(ratios, change.shape)) throw new Error("Free trimming needs a trimmed copy.");
-    changes["aspect-ratio"] = change.shape === "original" ? undefined : ratios[change.shape];
-    changes["object-fit"] = change.shape === "original" ? undefined : "cover";
+    if (change.shape !== "original" && change.shape !== "component" && !Object.hasOwn(ratios, change.shape)) throw new Error("Free trimming needs a trimmed copy.");
+    changes["aspect-ratio"] = change.shape === "component" ? undefined : change.shape === "original" ? (change.originalUnderComponent ? "auto" : undefined) : ratios[change.shape];
+    changes["object-fit"] = change.shape === "component" ? undefined : change.shape === "original" ? (change.originalUnderComponent ? "contain" : undefined) : "cover";
     if (change.shape === "original") changes["object-position"] = undefined;
   }
   if (change.focus && change.shape !== "original") {
@@ -102,6 +102,12 @@ function styleValues(style: string) {
   return (name: string) => values.get(name)?.value;
 }
 
+/** Any inline shape declaration overrides the component's default, including auto. */
+export function hasPlaceShape(tagText: string) {
+  const values = styleValues(inlineStyle(tagText));
+  return values("aspect-ratio") !== undefined || values("object-fit") !== undefined;
+}
+
 function readFocus(raw: string | undefined): PlaceFocus | undefined {
   if (raw === undefined) return { x: 50, y: 50 };
   let tokens = raw.toLowerCase().trim().split(/\s+/);
@@ -119,10 +125,10 @@ function readFocus(raw: string | undefined): PlaceFocus | undefined {
   return x === undefined || y === undefined ? undefined : { x, y };
 }
 
-export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath = "index.html") {
+export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath = "index.html", underComponent = false) {
   const values = styleValues(inlineStyle(tagText)), raw = values("aspect-ratio");
   let shape: PlaceShape | { kind: "other"; value: string } = "original";
-  if (raw !== undefined) {
+  if (raw !== undefined && !(underComponent && raw.toLowerCase() === "auto")) {
     const ratio = raw.match(/^\s*(\d+(?:\.\d*)?|\.\d+)\s*(?:\/\s*(\d+(?:\.\d*)?|\.\d+))?\s*$/);
     const n = ratio ? Number(ratio[1]) / Number(ratio[2] ?? 1) : NaN;
     const known = Object.entries(ratios).find(([, text]) => {

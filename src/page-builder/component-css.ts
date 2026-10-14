@@ -276,8 +276,10 @@ export function compoundsOf(selector: string): Compound[] | undefined {
 
 // ---- Matching on the page source. ----
 
-interface Match {
+export interface Match {
   html: string;
+  /** The component instance when matching its shadow template. */
+  host?: SourceElement;
   /** The page's top-level elements: the siblings of an element without a parent. */
   top: SourceElement[];
   /** Matching stops here: no parent, no siblings (the element on its own, as in its template). */
@@ -352,7 +354,8 @@ function matchPseudo(m: Match, el: SourceElement, name: string, argument: string
     case "scope": return m.scope ? el === m.scope : !el.parent && el.name === "html" && el !== m.boundary;
     case "empty": return !el.children.length;
     case "link": case "any-link": return (el.name === "a" || el.name === "area") && attributeOf(m, el, "href") !== undefined;
-    case "host": case "host-context": return false;
+    case "host": return el === m.host && (!argument || matches(m, el, argument));
+    case "host-context": return false;
   }
   if (!EXACT.has(name)) return true;
   const siblings = siblingsOf(m, el);
@@ -423,7 +426,7 @@ function matchFrom(m: Match, el: SourceElement, compounds: Compound[], index: nu
   return before.some((sibling) => matchFrom(m, sibling, compounds, index - 1, from));
 }
 
-function matches(m: Match, el: SourceElement, selector: string) {
+export function matches(m: Match, el: SourceElement, selector: string) {
   const compounds = compoundsOf(selector);
   return !!compounds && matchFrom(m, el, compounds, compounds.length - 1, 0);
 }

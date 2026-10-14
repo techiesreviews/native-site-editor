@@ -1,7 +1,7 @@
 ---
 title: Components open on their own shape
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-43 runner)
 blocked_by: [39-image-button-and-popup]
 builder: sol
