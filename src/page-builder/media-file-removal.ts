@@ -1,3 +1,4 @@
+import { agentKeptRemovalProblem } from "./agent-media-removal";
 import type { FileOperationsPorts } from "../controllers/file-operations-controller";
 import type { Reads, Stamp } from "../guarded-edit";
 import type { MovableFile } from "../file-changes";
@@ -15,7 +16,7 @@ export interface RemovalStores { uploads: UploadBytes; removed: UploadBytes }
  * which the caller runs once Delete is confirmed.
  */
 export async function filesRemovalPlan(ports: FileOperationsPorts, r: Reads, found: MovableFile[], since: Stamp,
-  stores: () => RemovalStores = () => ({ uploads: uploadBytes(), removed: removedCopies() })): Promise<RemovalPlan> {
+  stores: () => RemovalStores = () => ({ uploads: uploadBytes(), removed: removedCopies() }), agent = false): Promise<RemovalPlan> {
   const changed = "The repository or source changed meanwhile. Try again.";
   const removed = await import("./recently-removed");
   if (!since.holds()) return { refuse: changed };
@@ -37,6 +38,10 @@ export async function filesRemovalPlan(ports: FileOperationsPorts, r: Reads, fou
     }
     // A kept original of any format (TIFF, DNG) goes with its media main, as Files deletes it too.
     const paths = ports.nativeFiles();
+    if (agent) {
+      const problem = agentKeptRemovalProblem(found.map(file => file.path), paths, removed.pruneRemoved(before, date, path => current.get(path)));
+      if (problem) return { refuse: problem };
+    }
     const originals = new Set(found.filter(file => isRenamableMedia(file.path)).flatMap(file => mediaFamilyOf(file.path, paths)?.originals ?? []));
     const files: records.RemovedPath[] = [], copies: { key: string; blob: Blob }[] = [];
     for (const file of found) {

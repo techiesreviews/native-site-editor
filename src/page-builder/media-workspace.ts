@@ -282,7 +282,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     for (const [file, source] of batch.edits) if (file !== MEDIA_RECORDS_PATH) sources[file] = source;
     const plan = planMediaRename({ from: path, to, paths: batch.expectedPaths, sources, records,
       site: { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components },
-      keepOldAddress: options?.keepOldAddress ?? Boolean(records.files[path]?.alwaysKeep) });
+      keepOldAddress: options?.keepOldAddress ?? familyPaths(path, ctx.paths).some(member => Boolean(records.files[member]?.alwaysKeep)) });
     if ("taken" in plan) throw new MediaNameTakenError(plan.taken, plan.suggestion);
     batch.moves.push(...plan.moves);
     for (const [file, source] of plan.edits) batch.edits.set(file, source);
@@ -474,12 +474,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (plan.removes.length) await sweep(ctx);
     return path;
   };
-  const replace = async (request: MediaReplaceRequest) => {
+  const replace = async (request: MediaReplaceRequest, agent = false) => {
     const ctx = active();
     if (!ctx.items.some(item => item.path === request.path)) throw new Error("Choose an image Media file to replace.");
     // Capture every binary proof before the first read, including trims discovered in records later.
     const versions = familyVersions(ctx, ctx.paths);
-    const { batch, metadata, text } = await prepare(ctx, "Replace everywhere", true);
+    const { batch, metadata, text } = await prepare(ctx, agent ? "Agent replaced picture everywhere" : "Replace everywhere", true);
     batch.live = request.live;
     const { replacementFamilies, replacementImageSize, planMediaReplace } = await import("./replace-everywhere");
     ctx.assertLive();
@@ -671,9 +671,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         ...records.adding ? { adding: records.adding } : {}, ...ctx.repoSize === undefined ? {} : { repoSize: ctx.repoSize } };
     },
     async blob(path) { return active().blob(path); },
-    async metadata(changes) {
+    async metadata(changes, agent = false) {
       const ctx = active();
-      const { batch, metadata, text } = await prepare(ctx, "Edit image metadata", true);
+      const { batch, metadata, text } = await prepare(ctx, agent ? "Agent added Always keep" : "Edit image metadata", true);
       recordsEdit(batch, metadata, metadataInto(batch, text, metadata, changes));
       await commit(ctx, batch);
     },
@@ -752,13 +752,24 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
     },
-    async remove(paths, unusedOnly = false) {
+    async remove(paths, unusedOnly = false, agent = false) {
       const ctx = active();
-      const unique = [...new Set(paths.flatMap(path => familyPaths(path, ctx.paths)))];
+      const rules = agent ? await import("./agent-media-removal") : undefined;
+      ctx.assertLive();
+      if (agent && paths.some(path => !ctx.items.some(item => item.path === path))) throw new Error(OUTSIDE_MEDIA_REFUSED);
+      const unique = rules ? rules.agentRemovalPaths(paths, ctx.paths) : [...new Set(paths.flatMap(path => familyPaths(path, ctx.paths)))];
       const versions = familyVersions(ctx, unique);
-      const { batch, text, metadata } = await prepare(ctx, "Delete images", true);
+      const { batch, text, metadata } = await prepare(ctx, agent ? `Agent removed ${unique.length} files` : "Delete images", true);
       for (const [member, version] of versions) batch.expectedAssets.set(member, version);
       assetGuard(batch, unique);
+      if (rules) {
+        const kept = rules.agentKeptRemovalProblem(unique, ctx.paths, metadata);
+        if (kept) throw new Error(kept);
+        const usage = wideUsage(unique, text, ctx);
+        const used = unique.filter(path => usage[path].files.length || usage[path].pages.length);
+        if (used.length) throw new Error("These files are still used; swap them out of every mention first: " +
+          used.map(path => `${path}: ${[...new Set([...usage[path].pages, ...usage[path].files])].join(", ")}`).join("; "));
+      }
       if (unusedOnly) {
         const usage = wideUsage(unique, text, ctx);
         if (unique.some((path) => usage[path].files.length)) throw new Error("Some selected images are now referenced. Refresh the library before deleting unused images.");
@@ -771,9 +782,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
       await sweep(ctx);
     },
-    async restore(entries: { path: string; id: string }[]) {
+    async restore(entries: { path: string; id: string }[], agent = false) {
       const ctx = active();
-      const { batch, metadata } = await prepare(ctx, entries.length === 1 ? `Restore ${entries[0].path.split("/").pop()}` : "Restore files");
+      const { batch, metadata } = await prepare(ctx, agent ? "Agent restored media files" : entries.length === 1 ? `Restore ${entries[0].path.split("/").pop()}` : "Restore files");
       const date = today(ctx), paths = [...batch.expectedPaths];
       let next = pruneRemoved(metadata, date);
       for (const entry of entries) {
@@ -805,5 +816,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }

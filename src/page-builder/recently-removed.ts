@@ -48,7 +48,8 @@ export function recentlyRemoved(records: MediaRecords, today: string, current: (
 
 export function planRestore(records: MediaRecords, entry: { path: string; id: string }, paths: readonly string[], today: string) {
   const next = pruneRemoved(records, today);
-  const found = next.removed?.find(item => item.path === entry.path && identity(item) === entry.id);
+  // Repeated removals can have the same blob identity; choose the newest entry, as the list does.
+  const found = recentlyRemoved(next, today, () => undefined).find(item => item.path === entry.path && identity(item) === entry.id);
   if (!found) throw new Error(`${entry.path} is no longer in Recently removed.`);
   const members = [found, ...found.family ?? []];
   for (const member of members) {

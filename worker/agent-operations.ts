@@ -50,7 +50,7 @@ export function agentOperation(hub: AgentHub, action: any) {
   } else if (action.type === "queue") {
     const command = action.command as AgentCommand;
     // Whatever the tool, an agent's change never reaches the workflows.
-    if ([command.path, ...(command.operation === "change_collection" ? [] : [command.args?.to]), command.args?.parent, command.args?.file, command.args?.page, ...command.args?.files ?? []].some((path) => typeof path === "string" && touchesGithubConfig(path)))
+    if ([command.path, ...(command.operation === "change_collection" ? [] : [command.args?.to]), command.args?.parent, command.args?.file, command.args?.with, command.args?.page, ...command.args?.files ?? []].some((path) => typeof path === "string" && touchesGithubConfig(path)))
       throw new HttpError(403, GITHUB_CONFIG_REFUSED);
     // edit_file queues write_file after applying its replacements.
     if (["write_file", "move_file", "delete_file"].includes(command.operation) &&
@@ -59,7 +59,7 @@ export function agentOperation(hub: AgentHub, action: any) {
     const problem = agentMediaArgsProblem(command.operation, command.args ?? {}, command.path);
     if (problem) throw new HttpError(400, problem);
     if (command.operation === "write_file" && isMediaUploadWrite(command.path)) throw new HttpError(403, OUTSIDE_MEDIA_REFUSED);
-    if ([command.args?.file, ...command.args?.files ?? []].some(path => typeof path === "string" && touchesMediaRecords(path))) throw new HttpError(403, MEDIA_RECORDS_REFUSED);
+    if ([command.args?.file, command.args?.with, ...command.args?.files ?? []].some(path => typeof path === "string" && touchesMediaRecords(path))) throw new HttpError(403, MEDIA_RECORDS_REFUSED);
     const commands = (hub.commands ??= []);
     const existing = commands.find(
       (item) => item.id === command.id && item.grantId === command.grantId,

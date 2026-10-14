@@ -1,8 +1,22 @@
 import { agentImageTrim } from "./agent-image-frame";
 import { isOutsideMediaAddress, OUTSIDE_MEDIA_REFUSED, parseOutlineId, mediaKind, type AgentOperation, type AgentCommandArgs } from "./agent";
 
+export const AGENT_KEEP_REFUSED = "Agents may add Always keep but never take it off; ask the user to do it in Media.";
+
 /** Worker and lazy tab validation use the same rules before applying media commands. */
 export function agentMediaArgsProblem(operation: AgentOperation, args: AgentCommandArgs, path?: string): string | undefined {
+  if (operation === "keep_media" && args.keep === false) return AGENT_KEEP_REFUSED;
+  if (["remove_media", "keep_media", "restore_media"].includes(operation)) {
+    if (operation !== "restore_media" || args.files !== undefined) {
+      if (!Array.isArray(args.files) || args.files.length < 1 || args.files.length > 200) return "Give between 1 and 200 files.";
+      if (args.files.some(file => typeof file !== "string" || !file || file.length > 1024 || isOutsideMediaAddress(file))) return OUTSIDE_MEDIA_REFUSED;
+    }
+  }
+  if (operation === "replace_media") {
+    if (!args.file || !args.with || [args.file, args.with].some(isOutsideMediaAddress)) return OUTSIDE_MEDIA_REFUSED;
+    if ([args.file, args.with].some(file => mediaKind(file) !== "image")) return "Only pictures can be replaced.";
+    if (args.file === args.with) return "That is the picture being replaced. Choose a different one.";
+  }
   if (operation === "frame_image") {
     if (!path || !/\.html$/i.test(path)) return "Give a page path ending in .html.";
     if (!args.element || !parseOutlineId(args.element)) return "Give an image element id from get_page or inspect_preview.";

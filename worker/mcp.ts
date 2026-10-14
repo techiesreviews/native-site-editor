@@ -303,7 +303,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   // An inspection's report arrives as JSON; the agent gets it as an object.
   function resultOf(command: AgentCommand) {
     const report = command.result?.report;
-    if (!["inspect_preview", "list_media", "adding_settings", "frame_image"].includes(command.operation) || typeof report !== "string") return command.result;
+    if (!["inspect_preview", "list_media", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media"].includes(command.operation) || typeof report !== "string") return command.result;
     try {
       return JSON.parse(report);
     } catch {
@@ -552,11 +552,11 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "move_file",
     {
       description:
-        "Rename or move a file or folder, as the editor's Files tab does. A page's URL is its path, so moving a page changes its URL: root links to it (href=\"/about/\") in every page, template and stylesheet are updated, and keepOldUrl adds \"/old/ /new/ 301\" to _redirects. Move a page's folder (about → company/about) to take its subpages and images along. Unsaved until the user saves.",
+        "Rename or move a file or folder, as the editor's Files tab does. A page's URL is its path, so moving a page changes its URL: root links to it (href=\"/about/\") in every page, template and stylesheet are updated, and keepOldUrl adds \"/old/ /new/ 301\" to _redirects. Move a page's folder (about → company/about) to take its subpages and images along. A media file renames or moves its whole Image family and rewrites every mention; a same-folder rename keeps its folder and type, tidies the name, and refuses a taken name with the next numbered suggestion. For media, keepOldUrl defaults to Always keep. Unsaved until the user saves.",
       inputSchema: z.object({
         path: z.string().min(1).max(1024),
         to: z.string().min(1).max(1024).describe("The full new path, such as company/about (a folder page's folder) or company/about/index.html."),
-        keepOldUrl: z.boolean().optional().describe("For a page already saved to GitHub: redirect its old URL to the new one in _redirects (default: yes)."),
+        keepOldUrl: z.boolean().optional().describe("Keep the old address working: default yes for a saved page, Always keep for media."),
         requestId,
         waitSeconds,
       }),
@@ -579,7 +579,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "delete_file",
     {
       description:
-        "Delete a file or folder, as the editor's Files tab does. The deletion is an unsaved change the user can restore or save.",
+        "Delete a file or folder, as the editor's Files tab does. Media families go to Recently removed; used files are refused with their mentions, and Always keep families are never removed by agents. The deletion is an unsaved change the user can restore or save.",
       inputSchema: z.object({ path: z.string().min(1).max(1024), requestId, waitSeconds }),
       annotations: removing,
     },
@@ -737,6 +737,37 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
 
   const mediaPath = z.string().min(1).max(1024);
+  const mediaFiles = z.array(mediaPath).min(1).max(200);
+  for (const operation of ["remove_media", "keep_media", "restore_media"] as const) {
+    server.registerTool(operation, {
+      description: ({
+        remove_media: "Remove unused media families into Recently removed; refuse Always keep or any mention, naming the pages and other files. Returns all removed family members.",
+        keep_media: "Add Always keep to files in Media. Agents never take it off. Already-kept files do nothing.",
+        restore_media: "With no files, read Recently removed (main paths, dates, days left, family members and browser-only copies). With main paths, restore the newest entries and their whole families.",
+      })[operation] + " Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+      inputSchema: z.object({ files: operation === "restore_media" ? mediaFiles.optional() : mediaFiles,
+        ...(operation === "keep_media" ? { keep: z.boolean().optional() } : {}), requestId, waitSeconds }),
+      annotations: operation === "remove_media" ? removing : editing,
+    }, async ({ files, keep, requestId, waitSeconds }) => {
+      const args = { ...(files !== undefined ? { files } : {}), ...(typeof keep === "boolean" ? { keep } : {}) };
+      const problem = agentMediaArgsProblem(operation, args) ?? files?.map(file => writablePathProblem(file)).find(Boolean);
+      if (problem) return failure(problem);
+      const { context } = await current();
+      return queue(operation, context, { path: "", args, requestId, waitSeconds });
+    });
+  }
+  server.registerTool("replace_media", {
+    description: "Replace a picture everywhere with another picture already in Media, prepared with the site's Adding settings. Its name stays; every mention gets a new version. Never choose its own family or outside media. Returns the new main path and notices. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ file: mediaPath, with: mediaPath, keepOldUrl: z.boolean().optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ file, with: chosen, keepOldUrl, requestId, waitSeconds }) => {
+    const args = { file, with: chosen, ...(keepOldUrl !== undefined ? { keepOldUrl } : {}) };
+    const problem = agentMediaArgsProblem("replace_media", args) ?? writablePathProblem(file) ?? writablePathProblem(chosen);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("replace_media", context, { path: "", args, requestId, waitSeconds });
+  });
+
   server.registerTool("frame_image", {
     description: "Read an image place's shape, focus and trim, or change them. Trim makes a copy from the site's own picture for this place. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({

@@ -439,3 +439,27 @@ test("Files rename of a media file tidies any language and suggests a free name 
   assert.equal(await h.controller.moveFileTarget(imageTarget, "images/Kyoto Night 京都!.webp", "rename"), undefined);
   assert.ok(h.memory.workspace.exists("images/kyoto-night-京都.webp"));
 });
+
+test("agent delete_file refuses kept families and folders, while the user's Files delete still works", async () => {
+  for (const kept of ["images/photo.webp", "images/photo-480w.webp", "media/originals/photo.tiff"]) {
+    for (const folder of [false, true]) {
+      const h = fixture(true, { ...imageFamily, "media/originals/photo.tiff": "original",
+        [MEDIA_RECORDS_PATH]: JSON.stringify({ version: 2, collections: [], files: { [kept]: { alwaysKeep: true } } }) });
+      const target = folder ? { path: "images", name: "images", folder: true } : imageTarget;
+      assert.match(await h.controller.deleteFileTarget(target, undefined, true) ?? "", /Always keep/);
+      assert.deepEqual(h.memory.steps(), []); assert.ok(h.memory.workspace.exists(imageTarget.path));
+      assert.equal(await h.controller.deleteFileTarget(target), undefined);
+      assert.equal(h.memory.steps().length, 1);
+    }
+  }
+});
+
+test("agent delete_file still protects Always keep after a Files Restore outside Media", async () => {
+  const records = { version: 2, collections: [], files: { "images/photo-480w.webp": { alwaysKeep: true } } };
+  const h = fixture(true, { ...imageFamily, [MEDIA_RECORDS_PATH]: JSON.stringify(records) });
+  assert.equal(await h.controller.deleteFileTarget(imageTarget), undefined);
+  for (const [path, text] of Object.entries(imageFamily)) h.memory.writeDraft(path, text);
+  assert.match(await h.controller.deleteFileTarget(imageTarget, undefined, true) ?? "", /Always keep/);
+  assert.equal(h.memory.steps().length, 1);
+  assert.ok(h.memory.workspace.exists(imageTarget.path));
+});

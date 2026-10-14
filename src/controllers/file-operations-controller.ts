@@ -428,7 +428,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
 
   // Deletes a file or folder after a confirmation naming it (and how many
   // pages link to the pages it takes).
-  async function deleteFileTarget(target: FileRowTarget, wording?: { title: string; pages?: boolean }): Promise<string | undefined> {
+  async function deleteFileTarget(target: FileRowTarget, wording?: { title: string; pages?: boolean }, agent = false): Promise<string | undefined> {
     if (target.gone) return `${target.path} is deleted already.`;
     const guarded = protectedProblem(target, "delete");
     if (guarded) { ports.errorMessage(new Error(guarded)); ports.refuse(guarded); return guarded; }
@@ -464,6 +464,13 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       catch (error) { return { refuse: error instanceof Error ? error.message : "The files could not be read." }; }
       if (!found.length) return { refuse: `${target.path} has no files to delete.` };
       for (const file of found) { r.exists(file.path); r.source(file.path); }
+      let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } = {};
+      if (found.some(file => isRenamableMedia(file.path) || agent && file.path.startsWith("media/originals/"))) {
+        const { filesRemovalPlan } = await import("../page-builder/media-file-removal");
+        const plan = await filesRemovalPlan(ports, r, found, since, ports.removalStores, agent);
+        if ("refuse" in plan) return plan;
+        recordsPlan = plan;
+      }
       if (r.site() && found.some(file => !/\.html?$/i.test(file.path))) {
         const { isMediaTextFile } = await import("../page-builder/media-mentions");
         if (!since.holds()) return { refuse: changed };
@@ -477,13 +484,6 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
           const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path), { origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components }));
           if (inUse) return { refuse: inUse };
         } catch (error) { return { refuse: error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted." }; }
-      }
-      let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } = {};
-      if (found.some(file => isRenamableMedia(file.path))) {
-        const { filesRemovalPlan } = await import("../page-builder/media-file-removal");
-        const plan = await filesRemovalPlan(ports, r, found, since, ports.removalStores);
-        if ("refuse" in plan) return plan;
-        recordsPlan = plan;
       }
       const count = found.length, onGitHub = found.some(file => file.sha);
       const links = pageLinks(found.map(file => file.path), new Map(), "deleted", r);

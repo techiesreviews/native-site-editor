@@ -1,15 +1,13 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { cancellation } from "./media-busy-lock";
-import { mediaFamilyOf } from "./media-families";
 import { basename } from "./media-library-filter";
 import { check, input } from "./media-library-fields";
 import { openMediaPicker } from "./media-picker";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "./media-replace-rules";
-import { askToAddUnchanged, prepareMediaFile } from "./media-prepare";
-import { mediaAddingSettings } from "./media-settings";
-import { uploadImageType } from "../uploads";
+import { askToAddUnchanged } from "./media-prepare";
+import { prepareMediaReplacement } from "./media-replace-prepare";
 import type { MediaReplaceRequest } from "./media-workspace";
 
 /** Replace everywhere from File details (media build slice 54; ticket 15): the picker chooses the new
@@ -53,16 +51,13 @@ export async function replaceEverywhere(sheet: LibrarySheet, c: ReplaceContext, 
         if (problem) throw new Error(problem);
         // A picture already in Media is prepared again as at adding, with the site's settings, so it
         // brings its own responsive copies in one format; its kept original comes along as it is.
-        const data = await c.cache.get(image.path), { image: quality, video: videoQuality, keepOriginal } = mediaAddingSettings(library.adding);
-        const { request } = await prepareMediaFile(new File([data.blob], basename(image.path), { type: data.blob.type || uploadImageType(image.path) }),
-          library.key, undefined, undefined, undefined, askToAddUnchanged, undefined, quality, keepOriginal, videoQuality);
-        const main = request.result?.outputs.find(output => output.variantWidth === undefined);
-        if (!request.result || !main) throw new Error(`${basename(image.path)} could not be prepared. Choose another picture.`);
-        const kept = mediaFamilyOf(image.path, paths)?.originals[0];
-        // Its kept original when it has one; else, with Keep original on, the one preparation kept.
-        const original = kept ? { blob: await c.adapter.blob(kept), extension: kept.split(".").pop()!.toLowerCase() } : request.original;
+        const { result, main, original } = await prepareMediaReplacement({
+          path: image.path, paths, key: library.key, adding: library.adding,
+          blob: async path => path === image.path ? (await c.cache.get(path)).blob : c.adapter.blob(path),
+          ask: askToAddUnchanged,
+        });
         const url = URL.createObjectURL(main.blob);
-        next = { result: request.result, ...original ? { original } : {}, name: basename(image.path), url,
+        next = { result, ...original ? { original } : {}, name: basename(image.path), url,
           width: main.width, height: main.height, inMedia: true, release: () => URL.revokeObjectURL(url) };
       }
       if (cancelled()) { next.release(); return; }

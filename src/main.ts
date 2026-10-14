@@ -4551,7 +4551,7 @@ const agentSiteActions: AgentSiteActions = {
   deleteFile: (path) =>
     withAgentAnswers({}, async () => {
       const target = agentFileTarget(path);
-      return target ? deleteFileTarget(target) : `${path} does not exist.`;
+      return target ? deleteFileTarget(target, undefined, true) : `${path} does not exist.`;
     }),
   inspect(request) {
     if (!nativePreview?.isActive()) throw new Error("The preview is not showing a page.");

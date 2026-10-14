@@ -31,7 +31,11 @@ export type AgentOperation =
   | "place_media"
   | "describe_media"
   | "change_collection"
-  | "adding_settings";
+  | "adding_settings"
+  | "remove_media"
+  | "keep_media"
+  | "restore_media"
+  | "replace_media";
 
 export interface AgentCommand {
   id: string;
@@ -89,6 +93,8 @@ export interface AgentCommandArgs {
   selector?: string;
   limit?: number;
   file?: string;
+  with?: string;
+  keep?: boolean;
   text?: string;
   decorative?: boolean;
   page?: string;
@@ -119,7 +125,7 @@ export const MEDIA_PREVIEW_SIZE = 512;
 export function agentResultLimit(operation: AgentOperation) {
   if (operation === "inspect_preview") return 2 * INSPECTION_LIMIT;
   // Reports are JSON strings inside JSON: quotes and backslashes need slack.
-  if (operation === "list_media") return 2 * MEDIA_LIST_LIMIT + 2048;
+  if (["list_media", "restore_media", "remove_media", "keep_media"].includes(operation)) return 2 * MEDIA_LIST_LIMIT + 2048;
   if (operation === "preview_media") return MEDIA_PREVIEW_LIMIT + 2048;
   return 2048;
 }

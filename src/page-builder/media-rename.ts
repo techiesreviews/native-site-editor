@@ -210,10 +210,12 @@ export function filesMediaRenamePlan(input: {
   const missing = Object.keys(sources).find(path => sources[path] === undefined);
   if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was moved.` };
   const records = parseMediaRecords(input.source(MEDIA_RECORDS_PATH));
+  const family = mediaFamilyOf(from, paths);
+  const kept = [from, ...family?.copies.map(copy => copy.path) ?? [], ...family?.originals ?? []].some(path => Boolean(records.files[path]?.alwaysKeep));
   sources._redirects = input.source("_redirects");
   const plan = planMediaRename({ from, to, paths, sources, records,
     site: { origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
-    keepOldAddress: input.keepOldAddress ?? Boolean(records.files[from]?.alwaysKeep) });
+    keepOldAddress: input.keepOldAddress ?? kept });
   if ("taken" in plan) return { refuse: `${plan.taken} is taken. Try ${plan.suggestion}.` };
   if (serializeMediaRecords(records) !== serializeMediaRecords(plan.records)) plan.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(plan.records));
   const creates: { path: string; content: string }[] = [];

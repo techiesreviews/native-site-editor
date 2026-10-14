@@ -58,9 +58,9 @@ An agent watches for requests with `wait_for_requests` (the `watch_editor` promp
 
 ## Tools
 
-The server exposes 28 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
+The server exposes 32 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
 
-For listing, previewing, placing or describing media, changing collections and reading or changing adding settings, follow the Media chapter of `native-site://conventions`.
+For listing, previewing, placing or describing media, changing collections, reading or changing adding settings, framing, removing, keeping, restoring, renaming and replacing media, follow the Media chapter of `native-site://conventions`.
 
 | Tool | What it does |
 | --- | --- |
@@ -72,6 +72,10 @@ For listing, previewing, placing or describing media, changing collections and r
 | `place_media` | `path, element, file`: fill an existing page image with a file from Media, using the picker's markup and description rules. One unsaved Undo step. |
 | `describe_media` | `file` and exactly one of `text` / `decorative`; optional `page, element` for a place. Agent words carry the by-agent mark and appear in To check. One unsaved Undo step. |
 | `change_collection` | `action: new, add, take-out, rename, delete`, `name`, optional `to, files`. Uses Media's collection rules; taken names refuse, delete keeps files. One unsaved Undo step, even without a page open. |
+| `remove_media` | Remove 1–200 unused files and their whole Image families into Recently removed in one Undo step. Refuses Always keep families, unchecked usage and remaining mentions, naming pages and other files. Returns all removed members. |
+| `keep_media` | Add Always keep to 1–200 files, one Undo step. Already-kept files do nothing; `keep: false` is refused because only the user may take it off. |
+| `restore_media` | Without `files`, read Recently removed: main paths, removed dates, days left, family members and browser-only copies. With 1–200 main paths, restore the newest entries and whole families, one Undo step. Taken addresses and missing browser copies refuse. |
+| `replace_media` | Replace picture `file` everywhere with picture `with` already in Media, prepared with the site's Adding settings. Never outside media or its own family; copies, originals, Trimmed copies and SVG refuse. Returns the new main path and notices. `keepOldUrl` defaults to Always keep. One unsaved Undo step, no dialog. |
 | `adding_settings` | Read or change the site's picture, video and audio quality and Keep original for files the user adds later. With no choices it reads; `reset: true` resets defaults and cannot be combined with choices. Returns current settings, whether they are defaults, and choices with plain hints. Changes are unsaved, labelled as the agent's and undoable. |
 | `read_file` | Any text file: a draft up to 1 MB, else GitHub (up to 1 MB); with its content hash. |
 | `export_site` | The whole site, or one folder, in one call: every text file with drafts applied and its hash, binaries by path, SHA and size. Saved texts are read from GitHub in batched GraphQL queries (100 blobs each) and kept by SHA; text past about 4 MB is listed as `omitted`. |
@@ -84,8 +88,8 @@ For listing, previewing, placing or describing media, changing collections and r
 | `make_component` | Turn a selected whole element into a component with slots, as Make component in the editor does. |
 | `move_section` | A section before or after a sibling section, given the page hash. |
 | `remove_section` | A section removed, given the page hash. |
-| `move_file` | The Files tab's rename or move of a file or folder: a page's URL follows it (move a folder page's folder to take its subpages along), root links to it are rewritten in every page, template and stylesheet, and `keepOldUrl` adds `/old/ /new/ 301` to `_redirects` at the root (default: yes for a page already on GitHub). |
-| `delete_file` | The Files tab's delete (a deletion the user can restore). The home page is protected as in the editor. |
+| `move_file` | The Files tab's rename or move of a file or folder: a page's URL follows it (move a folder page's folder to take its subpages along), root links to it are rewritten in every page, template and stylesheet, and `keepOldUrl` adds `/old/ /new/ 301` to `_redirects` at the root (default: yes for a page already on GitHub). A media file renames or moves its whole Image family and rewrites every mention; same-folder renames keep folder and type and tidy the name. A taken name refuses with the next numbered suggestion. For media, `keepOldUrl` defaults to Always keep. |
+| `delete_file` | The Files tab's delete (a deletion the user can restore). The home page is protected as in the editor. Media families go to Recently removed; agents refuse Always keep families and still-used files, naming their mentions. |
 | `open_page` | Shows a page (or opens any file) in the editor. |
 | `inspect_preview` | Shows a page and measures elements as the editor's preview renders them (by `get_page` id, CSS selector, or the preview selection): box, computed styles, matching rules by file, and the text's contrast against the solid background behind it with WCAG AA/AAA. The preview is as wide as the editor pane. |
 | `get_command_status` | The state, message and result of a change this connection queued. |

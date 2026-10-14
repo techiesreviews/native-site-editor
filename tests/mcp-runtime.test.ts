@@ -1,4 +1,10 @@
 import { MEDIA_ADDING_CHOICES, MEDIA_ADDING_DEFAULTS } from "../src/page-builder/media-settings";
+import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
+import { createFileOperationsController, type FileOperationsPorts } from "../src/controllers/file-operations-controller";
+import { DraftStore } from "../src/drafts";
+import { resolveNativeProject } from "../shared/native-project";
+import { createGuardedEdits } from "../src/guarded-edit";
+import { createMemoryWorkspace } from "./fakes/memory-workspace";
 import { applyAgentMedia } from "../src/agent-media-actions";
 import type { AgentCommand } from "../shared/agent";
 import { createMediaController, type MediaControllerPorts } from "../src/controllers/media-controller";
@@ -91,7 +97,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
-      "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
+      "inspect_preview", "keep_media", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
     const documentation = readFileSync(new URL("../docs/mcp.md", import.meta.url), "utf8");
@@ -150,11 +156,11 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const servedMedia = mediaChapter(served);
     assert.ok(servedMedia?.startsWith("## Media\n"));
     assert.equal(servedMedia, mediaChapter(siteConventions));
-    for (const rule of ["adding_settings", "media/images/", "srcset", "### Shape, focus and trims", "frame_image", "whole new trim"]) assert.ok(servedMedia.includes(rule));
+    for (const rule of ["adding_settings", "media/images/", "srcset", "### Shape, focus and trims", "frame_image", "whole new trim", "### Removing, keeping and restoring", "### Renaming and Replace everywhere"]) assert.ok(servedMedia.includes(rule));
     assert.doesNotMatch(servedMedia.slice(1), /^## /m);
-    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image"])
+    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media"])
       assert.match(listing.find(tool => tool.name === name)!.description!, /Media chapter.*native-site:\/\/conventions/);
-    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media, changing collections, reading or changing adding settings, or using frame_image/);
+    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media, changing collections, reading or changing adding settings, using frame_image/);
     assert.ok(chapter.startsWith("## Components\n"));
     assert.doesNotMatch(chapter.slice(1), /^## /m);
     assert.match(chapter, /```html\n<section>[\s\S]*<\/section>\n```$/, "the chapter ends with its example template");
@@ -965,10 +971,18 @@ test("agent media editing tools validate before queueing and retain their comman
     }));
     const call = (name: string, args: Record<string, unknown>) => client!.callTool({ name, arguments: { ...args, waitSeconds: 0 } });
     const tools = (await client.listTools()).tools;
-    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings", "frame_image"]) {
+    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media"]) {
       assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, false);
       assert.match(tools.find(tool => tool.name === name)!.description!, /Unsaved until the user saves.*Media chapter.*native-site:\/\/conventions/);
     }
+    assert.equal(tools.find(tool => tool.name === "remove_media")?.annotations?.destructiveHint, true);
+    assert.equal((await call("keep_media", { files: ["images/a.png"], keep: false })).isError, true);
+    for (const name of ["remove_media", "keep_media", "restore_media"]) {
+      for (const files of [[], Array(201).fill("images/a.png"), ["https://example.com/a.png"], [".github/a.png"], [".editor/media.json"]])
+        assert.equal((await call(name, { files })).isError, true);
+    }
+    for (const chosen of ["https://example.com/a.png", "//example.com/a.png", "data:image/png,x", ".github/a.png", ".editor/media.json", "files/menu.pdf", "images/a.png"])
+      assert.equal((await call("replace_media", { file: "images/a.png", with: chosen })).isError, true);
     for (const file of ["https://example.com/a.png", "http://example.com/a.png", "//example.com/a.png", "data:image/png;base64,x", "blob:x", "files/menu.pdf", ".github/a.png", ".editor/media.json"]) {
       const refused = await call("place_media", { path: "index.html", element: "1", file });
       assert.equal(refused.isError, true);
@@ -993,6 +1007,11 @@ test("agent media editing tools validate before queueing and retain their comman
     const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
       ["frame_image", { path: "index.html", element: "1.0" }, "index.html", { element: "1.0" }],
       ["frame_image", { path: "index.html", element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }, "index.html", { element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }],
+      ["remove_media", { files: ["images/a.png"] }, "", { files: ["images/a.png"] }],
+      ["keep_media", { files: ["images/a.png"] }, "", { files: ["images/a.png"] }],
+      ["restore_media", {}, "", {}],
+      ["restore_media", { files: ["images/a.png"] }, "", { files: ["images/a.png"] }],
+      ["replace_media", { file: "images/a.png", with: "images/b.png", keepOldUrl: false }, "", { file: "images/a.png", with: "images/b.png", keepOldUrl: false }],
       ["adding_settings", {}, "", {}],
       ["adding_settings", { image: "smaller", keepOriginal: true }, "", { image: "smaller", keepOriginal: true }],
       ["adding_settings", { reset: true }, "", { reset: true }],
@@ -1055,6 +1074,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
       batches.push(batch); labels.push(batch.label);
       for (const [path, value] of batch.edits) text.set(path, value);
       for (const { path, blob } of batch.uploads) { bytes.set(path, blob); if (!paths.includes(path)) paths.push(path); }
+      for (const { path } of batch.restores) { bytes.set(path, beforeBytes.get(path) ?? new Blob(["restored"])); if (!paths.includes(path)) paths.push(path); }
       for (const path of batch.deletes) { bytes.delete(path); const index = paths.indexOf(path); if (index >= 0) paths.splice(index, 1); }
       history.push(() => {
         text.clear(); before.forEach((value, path) => text.set(path, value));
@@ -1330,4 +1350,212 @@ test("trim place refuses stale proofs, records, originals, old versions and comp
     await assert.rejects(f.controller.prepareFrame({ path: "components/card/card.html", node: [0, 0] }).trim({ trim: { x: 0, y: 0, width: 0.5, height: 1 } }), /component template/);
     assert.equal(f.batches.length, 0);
   } finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
+});
+
+function agentTidyActions(f: ReturnType<typeof agentMediaFixture>): AgentSiteActions {
+  const memory = createMemoryWorkspace();
+  const unused = async () => { throw new Error("Unexpected action"); };
+  return {
+    text: async path => f.text.get(path), isMounted: () => true, edits: createGuardedEdits(memory.workspace),
+    writeDraft: unused, open: unused, createPage: unused, makeComponent: unused, setPageDetail: unused,
+    sectionTags: () => new Set(), moveSection: () => { throw new Error("Unexpected move"); },
+    moveFile: unused, deleteFile: unused, inspect: unused, listMedia: unused, previewMedia: unused, legacy: unused,
+    media: async command => applyAgentMedia(await f.controller.workspaceContext(), command, target => f.controller.preparePlacement(target)),
+  } satisfies AgentSiteActions;
+}
+
+test("agent remove and restore whole families through the tab dispatcher with one Undo each", async () => {
+  const f = agentMediaFixture(), actions = agentTidyActions(f);
+  const family = [f.file, ...f.paths.filter(path => /photo-(480|960)\.webp$|originals\/photo/.test(path))];
+  const removed = await applySiteCommand(actions, mediaCommand("remove_media", { files: [family[1], f.file] }));
+  assert.deepEqual(JSON.parse(String(removed.result!.report)).files, family);
+  assert.equal(f.history.length, 1); assert.match(f.labels[0], /Agent removed 4 files/);
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!);
+  assert.equal(records.removed!.length, 1); assert.equal(records.removed![0].path, f.file);
+  assert.equal(records.removed![0].family!.length, 3);
+  for (const member of family) assert.ok(!f.paths.includes(member));
+  const listed = await applySiteCommand(actions, mediaCommand("restore_media"));
+  const entry = JSON.parse(String(listed.result!.report)).removed[0];
+  assert.equal(entry.path, f.file); assert.equal(entry.daysLeft, 30);
+  assert.equal(entry.browserOnly, false); assert.deepEqual(entry.family, family);
+  assert.equal(f.history.length, 1, "reading adds no Undo");
+  await applySiteCommand(actions, mediaCommand("restore_media", { files: [f.file, f.file] }));
+  assert.equal(f.history.length, 2); assert.match(f.labels[1], /Agent restored/);
+  for (const member of family) assert.ok(f.paths.includes(member));
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!).files[f.file].description!.text, "Photo");
+  f.history.pop()!();
+  for (const member of family) assert.ok(!f.paths.includes(member));
+  f.history.pop()!();
+  for (const member of family) assert.ok(f.paths.includes(member));
+});
+
+test("agent keep is one tab Undo, refuses taking it off and repeated marks add no Undo", async () => {
+  const f = agentMediaFixture(), actions = agentTidyActions(f), before = f.text.get(MEDIA_RECORDS_PATH);
+  await applySiteCommand(actions, mediaCommand("keep_media", { files: [f.file] }));
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!).files[f.file].alwaysKeep, true);
+  assert.equal(f.history.length, 1); assert.match(f.labels[0], /Agent added Always keep/);
+  await applySiteCommand(actions, mediaCommand("keep_media", { files: [f.file], keep: true }));
+  assert.equal(f.history.length, 1);
+  await assert.rejects(applySiteCommand(actions, mediaCommand("keep_media", { files: [f.file], keep: false })), /only|user/);
+  await assert.rejects(applySiteCommand(actions, mediaCommand("remove_media", { files: [f.file] })), /Always keep/);
+  assert.equal(f.history.length, 1);
+  f.history.pop()!(); assert.equal(f.text.get(MEDIA_RECORDS_PATH), before);
+});
+
+test("agent removal refuses all changes for uses, kept members, outside files and unreadable site text", async () => {
+  for (const used of ["index.html", "script.js", "notes.md"]) {
+    const f = agentMediaFixture();
+    f.text.set(used, `<img src="/${f.file}" alt="Photo">`);
+    if (!f.paths.includes(used)) f.paths.push(used);
+    await assert.rejects(applySiteCommand(agentTidyActions(f), mediaCommand("remove_media", { files: [f.file, "images/old.png"] })), error => {
+      assert.match((error as Error).message, new RegExp(used.replace(".", "\\.")));
+      return true;
+    });
+    assert.equal(f.history.length, 0); assert.ok(f.paths.includes(f.file));
+  }
+  for (const kept of ["media/images/photo.webp", "media/images/photo-480.webp", "media/originals/photo.jpg"]) {
+    const f = agentMediaFixture();
+    const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!);
+    records.files[kept] = { alwaysKeep: true }; f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+    await assert.rejects(applySiteCommand(agentTidyActions(f), mediaCommand("remove_media", { files: [f.file] })), /Always keep/);
+    assert.equal(f.history.length, 0);
+  }
+  const f = agentMediaFixture();
+  for (const operation of ["remove_media", "keep_media"] as const)
+    await assert.rejects(applySiteCommand(agentTidyActions(f), mediaCommand(operation, { files: ["images/not-in-media.png"] })), /never upload, fetch or generate/);
+  const ctx = await f.controller.workspaceContext(), read = ctx.read.bind(ctx);
+  ctx.read = async path => path === "index.html" ? undefined : read(path);
+  await assert.rejects(applyAgentMedia(ctx, mediaCommand("remove_media", { files: [f.file] }), target => f.controller.preparePlacement(target)), /usage is incomplete/);
+  assert.equal(f.history.length, 0);
+});
+
+test("agent Replace everywhere uses Media preparation, marks mentions and undoes with removed records", () => withTrimWorker(async requests => {
+  const f = agentMediaFixture(`<section><picture><source media="(max-width:600px)" srcset="/media/images/photo-480.webp"><img src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:4/3;object-fit:cover;object-position:10% 20%"></picture></section>`);
+  f.paths.splice(f.paths.indexOf("media/originals/photo.jpg"), 1);
+  const source = f.text.get("index.html")!, actions = agentTidyActions(f);
+  const outcome = await applySiteCommand(actions, mediaCommand("replace_media", { file: f.file, with: "images/old.png" }));
+  assert.equal(outcome.result!.path, f.file);
+  assert.match(String(outcome.result!.notices), /used on all screens/);
+  assert.equal(requests.length, 1); assert.equal(requests[0].file.name, "old.png");
+  assert.equal(f.history.length, 1); assert.match(f.labels[0], /Agent replaced/);
+  assert.match(f.text.get("index.html")!, /photo.webp\?v=/);
+  assert.match(f.text.get("index.html")!, /object-position:50% 50%/);
+  assert.doesNotMatch(f.text.get("index.html")!, /<picture>/);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!).removed![0].path, f.file);
+  assert.ok(f.paths.includes("images/old.png"));
+  f.history.pop()!(); assert.equal(f.text.get("index.html"), source);
+}));
+
+test("agent Replace everywhere refuses outside files, web addresses, its family, copies, originals, trims and SVG", async () => {
+  const f = agentMediaFixture(), actions = agentTidyActions(f);
+  for (const chosen of ["images/outside.png", "https://example.com/a.png", "data:image/png,x", f.file, "media/images/photo-480.webp", "media/originals/photo.jpg"]) {
+    await assert.rejects(applySiteCommand(actions, mediaCommand("replace_media", { file: f.file, with: chosen })), /never upload|different one/);
+  }
+  for (const path of ["media/images/photo-480.webp", "media/originals/photo.jpg", "images/logo.svg"]) {
+    if (!f.paths.includes(path)) { f.paths.push(path); f.bytes.set(path, new Blob(["<svg/>"])); }
+    await assert.rejects(applySiteCommand(actions, mediaCommand("replace_media", { file: path, with: "images/old.png" })), /main|picture|original/);
+  }
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!);
+  records.files[f.file].trimmedFrom = { source: "images/old.png", trim: { x: 0, y: 0, width: 1, height: 1 } };
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  await assert.rejects(applySiteCommand(actions, mediaCommand("replace_media", { file: f.file, with: "images/old.png" })), /Trimmed copy/);
+  assert.equal(f.history.length, 0);
+});
+
+test("agent move_file renames a media family through Files, rewrites every mention and protects delete_file", async () => {
+  const branch = {
+    "index.html": '<img src="/images/photo.webp" alt="Photo">',
+    "images/photo.webp": "picture", "images/photo-480.webp": "copy", "media/originals/photo.jpg": "original",
+    "script.js": 'const picture = "/images/photo.webp";',
+    [MEDIA_RECORDS_PATH]: JSON.stringify({ version: 2, collections: [], files: { "media/originals/photo.jpg": { alwaysKeep: true } } }),
+  };
+  const parsed = resolveNativeProject(Object.keys(branch)); assert.ok(parsed.ok);
+  const memory = createMemoryWorkspace({ branch, open: "index.html", site: parsed.site });
+  const edits = createGuardedEdits(memory.workspace);
+  const store = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 });
+  const ports = {
+    edits, parentOf: path => path.slice(0, path.lastIndexOf("/")), draftScope: () => memory.scope,
+    engaged: () => true, repository: () => ({ full_name: "lex/site" }),
+    treeState: () => ({ changes: new Map(), deleted: new Map(), drafted: [] }),
+    pathNow: path => memory.files().includes(path) ? "file" : memory.workspace.exists(path) ? "folder" : undefined,
+    branchFilesUnder: async folder => Object.keys(branch).filter(path => path.startsWith(folder + "/")).map(path => ({ path, type: "blob" as const, mode: "100644", sha: path })),
+    findEntry: async path => Object.hasOwn(branch, path) ? { path, type: "blob" as const, mode: "100644", sha: path } : undefined,
+    draftStore: () => store, baseSource: path => edits.peek.source(path), readFiles: async () => ({}), readFile: async () => "",
+    nativeFiles: () => memory.files(), readMediaText: async path => edits.peek.source(path),
+    ensureNativeTextIndex: async () => undefined, branchPathProblem: async () => undefined,
+    onBranchHere: path => Object.hasOwn(branch, path), withMovedPageUrls() {}, readNativeRedirects: async () => undefined,
+    confirmDialog: () => { throw new Error("Agents must never open a dialog"); },
+    undoFileChanges() {}, duplicateFile: () => true, afterFileChanges() {}, announce() {}, refuse() {}, errorMessage() {},
+    requestAnimationFrame: callback => callback(), openFolder() {}, fileRow: () => undefined, renderFileTree() {}, filesTabOpen: () => true,
+  } satisfies FileOperationsPorts;
+  const controller = createFileOperationsController(ports), actions = agentTidyActions(agentMediaFixture());
+  actions.text = async path => memory.workspace.source(path);
+  actions.moveFile = (path, to, keep) => controller.moveFileTarget({ path, name: path.split("/").pop()!, folder: false }, to, "rename", { keepOldAddress: keep });
+  actions.deleteFile = path => controller.deleteFileTarget({ path, name: path.split("/").pop()!, folder: path === "media/originals" }, undefined, true);
+  for (const path of ["images/photo.webp", "media/originals"])
+    await assert.rejects(applySiteCommand(actions, { ...mediaCommand("delete_file"), path }), /Always keep/);
+  assert.equal(memory.steps().length, 0);
+  const outcome = await applySiteCommand(actions, { ...mediaCommand("move_file", { to: "images/garden.webp" }), path: "images/photo.webp" });
+  assert.equal(outcome.result!.path, "images/garden.webp");
+  assert.match(memory.workspace.source("index.html")!, /images\/garden.webp/);
+  assert.match(memory.workspace.source("script.js")!, /images\/garden.webp/);
+  assert.ok(memory.workspace.exists("images/garden-480.webp"));
+  assert.ok(memory.workspace.exists("media/originals/garden.jpg"));
+  assert.match(memory.workspace.source("_redirects")!, /images\/photo.webp \/images\/garden.webp 301/);
+  assert.equal(memory.steps().length, 1);
+  memory.undo();
+  assert.equal(memory.workspace.source("index.html"), branch["index.html"]);
+  assert.ok(memory.workspace.exists("images/photo-480.webp"));
+});
+
+test("agent restore picks the newest entry and refuses taken addresses and missing browser copies atomically", async () => {
+  const f = agentMediaFixture(), actions = agentTidyActions(f), records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)!);
+  const date = new Date().toISOString().slice(0, 10);
+  records.removed = [
+    { path: "images/gone.webp", sha: "new", date },
+    { path: "images/gone.webp", sha: "new", date, family: [{ path: "images/gone-480.webp", sha: "copy" }] },
+  ];
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  await applySiteCommand(actions, mediaCommand("restore_media", { files: ["images/gone.webp"] }));
+  assert.deepEqual(f.batches[0].restores, [{ path: "images/gone.webp", sha: "new" }, { path: "images/gone-480.webp", sha: "copy" }]);
+  f.history.pop()!();
+  f.paths.push("images/gone-480.webp");
+  await assert.rejects(applySiteCommand(actions, mediaCommand("restore_media", { files: ["images/gone.webp"] })), /already exists/);
+  assert.equal(f.history.length, 0);
+  const ctx = await f.controller.workspaceContext();
+  ctx.removedCopies = { get: async () => undefined, put: async () => {}, delete: async () => {}, keys: async () => [] };
+  records.removed = [{ path: "images/missing.webp", browserKey: `removed:${date}:missing`, date }];
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  await assert.rejects(applyAgentMedia(ctx, mediaCommand("restore_media", { files: ["images/missing.webp"] }), target => f.controller.preparePlacement(target)), /browser only.*copy is gone/);
+  assert.equal(f.history.length, 0);
+});
+
+test("agent replacement refuses stale source bytes and records before committing", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  let during = () => {};
+  class Worker {
+    onmessage?: (event: { data: { result: import("../src/page-builder/media-optimise").MediaOptimiseResult } }) => void;
+    postMessage() {
+      queueMicrotask(() => {
+        during();
+        this.onmessage?.({ data: { result: { before: 10, after: 4,
+          outputs: [{ blob: new Blob(["new"], { type: "image/webp" }), extension: "webp", width: 800, height: 600 }] } } });
+      });
+    }
+    terminate() {}
+  }
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: Worker });
+  try {
+    for (const race of ["source", "records"] as const) {
+      const f = agentMediaFixture();
+      during = () => {
+        if (race === "source") f.ports.entry = path => ({ sha: path + "-changed" });
+        else f.text.set(MEDIA_RECORDS_PATH, '{"version":2,"collections":[],"files":{}}');
+      };
+      await assert.rejects(applySiteCommand(agentTidyActions(f), mediaCommand("replace_media", { file: f.file, with: "images/old.png" })), /changed|revision/);
+      assert.equal(f.history.length, 0); assert.equal(f.batches.length, 0);
+    }
+  } finally {
+    descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker");
+  }
 });
