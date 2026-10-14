@@ -20,10 +20,61 @@ export function repaintUsageBadges(grid: HTMLElement, records: MediaUsageRecords
   }
 }
 
+/** The page a usage lists: its title from the Pages tab, with the path under it. */
+function pageButton(page: string, label: string | undefined, open: () => void) {
+  const control = button("", open, "media-library__page");
+  const title = label?.trim() && label.trim() !== page ? label.trim() : undefined;
+  if (title) control.append(node("span", "media-library__page-title", title), node("span", "media-library__page-path", page));
+  else control.textContent = page;
+  control.dataset.page = page;
+  return control;
+}
+
+/** Pages and other uses of one family (media-manager ticket 06), shared by the usage
+ * dialog and File details; uses found so far show while the check reads the rest. */
+export function usageSections(
+  records: MediaUsageRecords | undefined, path: string,
+  openPage: (page: string) => void, pageLabel?: (page: string) => string | undefined,
+): HTMLElement[] {
+  const record = mediaUsageFor(records, path), checked = record.checked;
+  const pages = node("section"), other = node("section");
+  pages.append(node("h3", "", checked ? `Pages · ${record.pages.length}` : "Pages"));
+  if (record.pages.length) {
+    const list = node("ul");
+    for (const page of record.pages) {
+      const item = node("li"); item.append(pageButton(page, pageLabel?.(page), () => openPage(page))); list.append(item);
+    }
+    pages.append(list);
+  } else pages.append(node("p", "media-library__muted", checked ? "No page uses found." : "Not checked yet."));
+  other.append(node("h3", "", checked ? `Other uses · ${record.otherUses.length}` : "Other uses"));
+  if (record.otherUses.length) {
+    const list = node("ul");
+    for (const use of record.otherUses) {
+      const item = node("li"); item.append(node("span", "media-usage__file", use.file), node("span", "media-library__muted", mediaOtherUseLabel(use.kind)));
+      list.append(item);
+    }
+    other.append(list);
+  } else other.append(node("p", "media-library__muted", checked ? "No other uses found." : "Not checked yet."));
+  const note = !checked ? node("p", "media-library__hint", records?.unreadable.length
+    ? `Some site files could not be read: ${records.unreadable.join(", ")}.`
+    : "The site's files are still being checked.") : undefined;
+  return [pages, other, ...(note ? [note] : [])];
+}
+
+/** Keep keyboard focus on the same page after a newer result, or on `fallback` when it is gone. */
+export function keepPageFocus(body: HTMLElement, render: () => void, fallback: () => HTMLElement | undefined) {
+  const active = document.activeElement;
+  const focused = active instanceof HTMLButtonElement && body.contains(active) ? active.dataset.page : undefined;
+  render();
+  if (focused !== undefined) ([...body.querySelectorAll<HTMLButtonElement>("button")].find(page => page.dataset.page === focused) ?? fallback())?.focus();
+}
+
 export interface UsageDialogHost {
   /** Where the dialog lives: inside the explorer or the chooser, so opening it closes neither. */
   root: HTMLElement;
   records(): MediaUsageRecords | undefined;
+  /** The page's title in the Pages tab, when the host knows it. */
+  pageLabel?: (page: string) => string | undefined;
   openPage(page: string): void;
   details(path: string): void;
   /** Focus goes back to the badge, or its replacement after a redraw. */
@@ -44,34 +95,11 @@ export function showUsageDialog(h: UsageDialogHost, path: string) {
   footer.append(button("File details", () => { dialog.close(); h.details(path); }), button("Close", () => dialog.close(), "button primary"));
   dialog.append(header, body, footer);
   function render() {
-    // A newer result keeps keyboard focus on the same page, or the dialog when that page is gone.
-    const active = document.activeElement, focused = active instanceof HTMLButtonElement && body.contains(active) ? active.textContent : undefined;
-    const records = h.records(), record = mediaUsageFor(records, path), checked = record.checked;
-    state.textContent = mediaUsageBadge(record).label;
-    const pages = node("section"), other = node("section");
-    pages.append(node("h3", "", checked ? `Pages · ${record.pages.length}` : "Pages"));
-    if (record.pages.length) {
-      const list = node("ul");
-      for (const page of record.pages) {
-        const item = node("li"); item.append(button(page, () => { dialog.close(); h.openPage(page); }, "media-library__page")); list.append(item);
-      }
-      pages.append(list);
-    } else pages.append(node("p", "media-library__muted", checked ? "No page uses found." : "Not checked yet."));
-    other.append(node("h3", "", checked ? `Other uses · ${record.otherUses.length}` : "Other uses"));
-    if (record.otherUses.length) {
-      const list = node("ul");
-      for (const use of record.otherUses) {
-        const item = node("li"); item.append(node("span", "media-usage__file", use.file), node("span", "media-library__muted", mediaOtherUseLabel(use.kind)));
-        list.append(item);
-      }
-      other.append(list);
-    } else other.append(node("p", "media-library__muted", checked ? "No other uses found." : "Not checked yet."));
-    // Uses found so far still show while the check reads the rest of the site.
-    const note = !checked ? node("p", "media-library__hint", records?.unreadable.length
-      ? `Some site files could not be read: ${records.unreadable.join(", ")}.`
-      : "The site's files are still being checked.") : undefined;
-    body.replaceChildren(...[pages, other, note].filter(part => part !== undefined));
-    if (focused !== undefined) ([...body.querySelectorAll("button")].find(page => page.textContent === focused) ?? closer).focus();
+    keepPageFocus(body, () => {
+      const records = h.records();
+      state.textContent = mediaUsageBadge(mediaUsageFor(records, path)).label;
+      body.replaceChildren(...usageSections(records, path, page => { dialog.close(); h.openPage(page); }, h.pageLabel));
+    }, () => closer);
   }
   render();
   // Escape closes only this dialog, not the explorer around it.

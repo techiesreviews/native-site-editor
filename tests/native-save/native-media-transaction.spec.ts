@@ -3,7 +3,7 @@ import { storedDraft } from "./drafts";
 
 // Default native-save fixture group.
 for (const file of ["styles/site.css", "missing.html"]) {
-  test(file === "missing.html" ? "media metadata with no file open joins the next page's Undo and Redo" : "open a stylesheet, change an image's tags, Undo", async ({ page, baseURL }) => {
+  test(file === "missing.html" ? "media metadata with no file open joins the next page's Undo and Redo" : "open a stylesheet, mark an image Always keep, Undo", async ({ page, baseURL }) => {
     await page.goto(`${baseURL}/#repo=501&branch=main&file=${file}`);
     await expect(page.locator("#status")).toContainText("Up to date with main");
     if (file === "missing.html") await expect(page.locator(".code-editor__undo")).toHaveCount(0);
@@ -11,9 +11,9 @@ for (const file of ["styles/site.css", "missing.html"]) {
     await page.getByRole("tab", { name: "Media", exact: true }).click();
     const images = page.getByRole("region", { name: "Media", exact: true });
     await images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-    await images.getByLabel("New collection", { exact: true }).fill("history-home-tag");
-    await images.getByRole("button", { name: "Save metadata", exact: true }).click();
-    await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("history-home-tag");
+    await images.getByLabel("Always keep", { exact: true }).check();
+    await images.getByRole("button", { name: "Save details", exact: true }).click();
+    await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain('"alwaysKeep": true');
     await expect(images).not.toHaveAttribute("aria-busy", "true");
     if (file === "missing.html") {
       await page.getByRole("tab", { name: "Pages", exact: true }).click();
@@ -24,7 +24,7 @@ for (const file of ["styles/site.css", "missing.html"]) {
     await expect.poll(() => storedDraft(page, ".editor/media.json")).toBeUndefined();
     if (file === "missing.html") {
       await page.locator(".code-editor__redo").click();
-      await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("history-home-tag");
+      await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain('"alwaysKeep": true');
     }
   });
 }

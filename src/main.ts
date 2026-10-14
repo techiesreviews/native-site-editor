@@ -178,7 +178,7 @@ const loadMedia = lazyModule(async () => {
   const [module, [{ createMediaWorkspace }]] = await Promise.all([import("./page-builder/media-picker"), loadMediaWorkspace()]);
   // Usage badges read the site's usage check, which runs on open.
   module.configureMediaPicker({ ...createMediaWorkspace(mediaController.workspaceContext),
-    usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener) } });
+    usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener), pageLabel: nativePageLabelOf } });
   return module;
 });
 const loadChecklist = lazyModule(() => import("./components/setup-checklist"));

@@ -17,7 +17,8 @@ its upload and optimisation controls. Selecting writes native image markup as a
 draft. The manager's saved query remains available when returning to Media.
 
 The pane uses the explorer and shared media-library surfaces in both themes. Its
-width follows the explorer; details replace browsing at small container widths.
+width follows the explorer. File details is its own screen with Back at every width:
+a large preview beside grouped information from 680 px of pane width, stacked below that.
 
 In `src/page-builder/`, `media-library-view.ts` composes the view and owns its
 state; each part gets what it needs as arguments and changes nothing of another's.
@@ -26,8 +27,11 @@ supplies the small control helpers, and `media-library-grid.ts` draws the
 screen-reader count, one square tile per Image family or the no-results way back, loads thumbnails as they scroll into view and keeps browse focus.
 Details, delete and Optimise share one side sheet, `media-library-sheet.ts`: its
 version makes an earlier screen's callbacks stale. `media-library-details.ts` renders
-the metadata form, the usage list, the file actions and the picker's insertion
-preview; `media-library-delete.ts` asks before deleting and moves focus afterwards;
+File details (slice 14): the preview with Optimise, Copy path and Remove file; the name,
+facts, usage and Image family (expand/collapse), collections (tick boxes and New collection),
+Description with Decorative, Always keep, then Cancel and Save details; and the picker's
+insertion preview. Its pure rules are in `media-file-details.ts`; usage sections, with
+page titles from the host's `usage.pageLabel`, are shared with the usage window; `media-library-delete.ts` asks before deleting and moves focus afterwards;
 `media-library-optimise.ts` is the Optimise sheet, with its stored per-repository
 settings and import requests in `media-library-optimise-rules.ts`; and
 `media-library-input.ts` wires search and Collections, arrow keys (by the grid's laid-out

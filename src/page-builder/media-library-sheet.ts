@@ -14,6 +14,8 @@ export interface LibrarySheet {
   work?: AbortController;
   /** Redraws a list screen (Manage collections) after the library refreshes. */
   redraw?: () => void;
+  /** Repaints the open File details' usage with newer check results. */
+  repaint?: () => void;
 }
 
 /** What the sheet screens read from the view and ask it to do; no writes. */
@@ -35,6 +37,6 @@ export interface LibrarySheetContext {
 /** Replace the sheet with a new non-detail screen. */
 export function takeSheet(sheet: LibrarySheet) {
   sheet.focus = undefined;
-  sheet.work?.abort(); sheet.redraw = undefined;
+  sheet.work?.abort(); sheet.redraw = undefined; sheet.repaint = undefined; delete sheet.element.dataset.mode;
   sheet.version++; sheet.path = undefined; sheet.element.hidden = false; sheet.element.replaceChildren();
 }

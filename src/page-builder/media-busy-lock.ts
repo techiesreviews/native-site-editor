@@ -44,9 +44,9 @@ export function createBusyLock(ports: MediaBusyLockPorts) {
     return ["close", "adding"].includes(control.getAttribute("data-media-cancel") ?? "") || cancellableTask && control.hasAttribute("data-media-cancel");
   }
   function setBusyControls() {
-    for (const control of ports.root.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input,button,select")) {
+    for (const control of ports.root.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement>("input,button,select,textarea")) {
       if (busy && !canUseCancellation(control)) control.setAttribute("aria-disabled", "true"); else control.removeAttribute("aria-disabled");
-      if (control instanceof HTMLInputElement && control.type !== "checkbox" && control.type !== "file") control.readOnly = busy;
+      if (control instanceof HTMLInputElement && control.type !== "checkbox" && control.type !== "file" || control instanceof HTMLTextAreaElement) control.readOnly = busy;
     }
   }
   ports.root.addEventListener("click", event => {

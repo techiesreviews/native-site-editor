@@ -151,17 +151,17 @@ test("details show and edit a file's collections; a new name there must be free"
   const fresh = library.getByLabel("New collection", { exact: true });
   await fresh.fill("desk");
   await expect(library.locator(".media-library__problem")).toContainText("already taken");
-  await library.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
   await expect(fresh).toBeFocused();
   expect(await members(page, "Desk")).toEqual([]);
   await fresh.fill("Workspace");
-  await library.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(() => members(page, "Workspace")).toEqual(["images/studio-desk.svg"]);
   expect(await members(page, "Desk")).toEqual(["images/studio-desk.svg"]);
   await expect(memberships.getByRole("checkbox", { name: "Workspace", exact: true })).toBeChecked();
   await expect(fresh).toHaveValue("");
   await memberships.getByRole("checkbox", { name: "Desk", exact: true }).uncheck();
-  await library.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(() => members(page, "Desk")).toEqual([]);
   expect((await records(page)).collections).toEqual(["Desk", "Workspace"]);
 });
@@ -210,7 +210,7 @@ test("collections named like the details fields keep their own ticks across a re
     const view = createMediaLibraryView(host, {
       async load() {
         loads++;
-        return { key: "names", items: [{ path: "images/a.svg", version: "A" }], collections: ["Default alt text", "Decorative", "New collection"],
+        return { key: "names", items: [{ path: "images/a.svg", version: "A" }], collections: ["Description", "Decorative", "New collection"],
           metadata: { "images/a.svg": { alt: "Stored alt", tags: ["Decorative"] } },
           // Only usage changes, so the unfinished form is kept.
           usage: loads > 1 ? { "images/a.svg": { pages: ["index.html"], files: ["index.html"], alts: [] } } : {} };
@@ -223,20 +223,22 @@ test("collections named like the details fields keep their own ticks across a re
   });
   const library = pane(page);
   await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
-  const alt = library.locator('input[name="default-alt-text"]'), decorative = library.locator('input[name="decorative"]');
+  const alt = library.locator('textarea[name="description"]'), decorative = library.locator('input[name="decorative"]');
   const member = (name: string) => library.locator(`[data-form-key="collection:${name}"]`);
   await alt.fill("Unfinished alt");
-  await member("Default alt text").check(); await member("Decorative").uncheck(); await member("New collection").check();
+  await member("Description").check(); await member("Decorative").uncheck(); await member("New collection").check();
   await alt.focus();
+  // Only usage changes, so File details rebuilds in the background and keeps the unfinished form.
+  await page.evaluate(() => { document.querySelector<HTMLElement>("[data-detail-form]")!.dataset.old = ""; });
   await page.evaluate(() => (window as any).namesProbe.refresh());
-  await expect(library.getByRole("heading", { name: "Used on 1 pages", exact: true })).toBeVisible();
+  await expect(library.locator("[data-detail-form][data-old]")).toHaveCount(0);
   await expect(alt).toHaveValue("Unfinished alt"); await expect(alt).toBeFocused();
   await expect(decorative).not.toBeChecked();
-  await expect(member("Default alt text")).toBeChecked(); await expect(member("Decorative")).not.toBeChecked(); await expect(member("New collection")).toBeChecked();
+  await expect(member("Description")).toBeChecked(); await expect(member("Decorative")).not.toBeChecked(); await expect(member("New collection")).toBeChecked();
   await expect(library.locator('input[name="new-collection"]')).toHaveValue("");
-  await library.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as any).namesProbe.saved)).toEqual([
-    { "images/a.svg": { alt: "Unfinished alt", tags: ["Default alt text", "New collection"], decorative: false } },
+    { "images/a.svg": { alt: "Unfinished alt", tags: ["Description", "New collection"], decorative: false, alwaysKeep: false } },
   ]);
   await page.evaluate(() => (window as any).namesProbe.dispose());
 });

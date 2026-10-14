@@ -47,7 +47,7 @@ test("arrow keys browse the image grid by card and row; Enter opens details", as
 
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Enter");
-  await expect(library(page).getByLabel("Default alt text", { exact: true })).toBeVisible();
-  await expect(library(page).locator(".media-library__detail-name")).toHaveText("key-1.svg");
-  await expect(library(page).getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
+  await expect(library(page).getByLabel("Description", { exact: true })).toBeVisible();
+  await expect(library(page).getByLabel("File name", { exact: true })).toHaveValue("key-1.svg");
+  await expect(library(page).getByRole("button", { name: "Back", exact: true })).toBeFocused();
 });

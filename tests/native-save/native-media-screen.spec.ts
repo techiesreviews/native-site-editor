@@ -1,6 +1,7 @@
-// The Media screen (media-manager build slice 12): usage badges on the tiles and the list view.
+// The Media screen (media-manager build slices 12 and 14): usage badges on the tiles, the list view and File details.
 // Default fixture: images/placeholder.svg is on index.html; images/studio-desk.svg is on no page.
 import { test, expect, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const tile = (page: Page, path: string) => pane(page).locator(`.media-library__card[data-path="${path}"]`);
 async function open(page: Page, baseURL: string | undefined, file = "index.html") {
@@ -72,7 +73,7 @@ test("tapping a badge opens the usage words and page names; Escape keeps the exp
   await expect(pane(page)).toBeVisible();
   await expect(badge).toBeFocused();
   await badge.tap();
-  await page.getByRole("dialog", { name: "placeholder.svg", exact: true }).getByRole("button", { name: "index.html", exact: true }).tap();
+  await page.getByRole("dialog", { name: "placeholder.svg", exact: true }).getByRole("button", { name: "Home index.html", exact: true }).tap();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await context.close();
 });
@@ -155,7 +156,7 @@ test("Not checked yet and other uses show apart, and newer results repaint the b
   // File details from the usage dialog opens the file's details.
   await other.click();
   await sharedUsage.getByRole("button", { name: "File details", exact: true }).click();
-  await expect(library.getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
+  await expect(library.getByRole("button", { name: "Back", exact: true })).toBeFocused();
   await page.evaluate(() => (window as any).usageProbe.dispose());
 });
 
@@ -193,4 +194,140 @@ test("the list keeps 44 px selection and usage targets apart on a phone, without
   // Back to the grid from More.
   await view(page, "Grid");
   await expect(pane(page).locator(".media-library__grid--list")).toHaveCount(0);
+});
+
+// File details (slice 14): its own screen with Back, Save details after the fields.
+async function details(page: Page, path: string) {
+  await pane(page).getByRole("button", { name: `Details for ${path}`, exact: true }).click();
+  await expect(pane(page).getByRole("button", { name: "Back", exact: true })).toBeFocused();
+}
+const records = async (page: Page) => (await storedDraft(page, ".editor/media.json"))?.content ?? "";
+
+test("a description saved in File details shows on the placed image, and usage names the page", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await details(page, "images/placeholder.svg");
+  const library = pane(page);
+  // Usage opens to the page by its title, with its path under it.
+  await library.locator("summary").filter({ hasText: "Usage" }).click();
+  await expect(library.getByRole("button", { name: "Home index.html", exact: true })).toBeVisible();
+  await expect(library.getByText("Not described yet", { exact: true })).toBeVisible();
+  await library.getByLabel("Description", { exact: true }).fill("A quiet green placeholder");
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(library.getByRole("status").last()).toContainText("Details saved as a draft");
+  await expect(page.frameLocator(".native-preview-frame").locator(".hero-image")).toHaveAttribute("alt", "A quiet green placeholder");
+  await expect.poll(() => records(page)).toContain("A quiet green placeholder");
+  await expect(library.getByLabel("Description", { exact: true })).toHaveValue("A quiet green placeholder");
+});
+
+test("Decorative clears and locks the description, and is stored for the file", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await details(page, "images/studio-desk.svg");
+  const library = pane(page), description = library.getByLabel("Description", { exact: true });
+  await description.fill("Words to set aside");
+  await library.getByLabel("Decorative", { exact: true }).check();
+  await expect(description).toHaveValue(""); await expect(description).toBeDisabled();
+  // Unticking before saving brings the words back.
+  await library.getByLabel("Decorative", { exact: true }).uncheck();
+  await expect(description).toHaveValue("Words to set aside"); await expect(description).toBeEnabled();
+  await library.getByLabel("Decorative", { exact: true }).check();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect.poll(async () => JSON.parse(await records(page) || "{}").files?.["images/studio-desk.svg"]).toEqual({ decorative: true });
+  await expect(library.getByLabel("Decorative", { exact: true })).toBeChecked();
+  await expect(description).toBeDisabled();
+});
+
+test("Always keep stays after reload, and Cancel leaves without saving", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await details(page, "images/studio-desk.svg");
+  const library = pane(page);
+  await library.getByLabel("Always keep", { exact: true }).check();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect.poll(() => records(page)).toContain('"alwaysKeep": true');
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await details(page, "images/studio-desk.svg");
+  const keep = library.getByLabel("Always keep", { exact: true });
+  await expect(keep).toBeChecked();
+  await keep.uncheck();
+  await library.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeFocused();
+  expect(await records(page)).toContain('"alwaysKeep": true');
+});
+
+test("on a phone, File details is its own screen with Back, the preview first and Save after the fields", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await open(page, baseURL);
+  const library = pane(page);
+  await details(page, "images/studio-desk.svg");
+  await expect(library.getByLabel("Search media", { exact: true })).toBeHidden();
+  await expect(library.locator(".media-library__grid")).toBeHidden();
+  const [preview, name] = await Promise.all([library.locator(".media-detail__preview").boundingBox(), library.getByLabel("File name", { exact: true }).boundingBox()]);
+  expect(preview!.y + preview!.height).toBeLessThanOrEqual(name!.y);
+  // The buttons follow the fields and cover none of them.
+  const save = library.getByRole("button", { name: "Save details", exact: true });
+  await save.scrollIntoViewIfNeeded();
+  const [saveBox, keepBox] = await Promise.all([save.boundingBox(), library.getByText("Never suggested for clean-up", { exact: false }).boundingBox()]);
+  expect(saveBox!.y).toBeGreaterThanOrEqual(keepBox!.y + keepBox!.height);
+  expect(saveBox!.height).toBeGreaterThanOrEqual(44);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await library.getByRole("button", { name: "Back", exact: true }).tap();
+  await expect(library.getByLabel("Search media", { exact: true })).toBeVisible();
+  await expect(library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeFocused();
+  await context.close();
+});
+
+test("words set aside by Decorative survive a background refresh and come back when it is unticked", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await details(page, "images/studio-desk.svg");
+  const library = pane(page), description = library.getByLabel("Description", { exact: true });
+  await description.fill("Held words");
+  await library.getByLabel("Decorative", { exact: true }).check();
+  await expect(description).toHaveValue("");
+  // A page starts using the file, so details rebuild in the background.
+  await page.evaluate(async () => {
+    (window as any).heldDescription = document.querySelector('#explorer-media textarea[aria-label="Description"]');
+    const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html");
+    if (source === undefined) throw new Error("Missing source model");
+    editor.replaceActiveRange({ path: "index.html", start: source.length, end: source.length, expected: "", text: '\n<img src="/images/studio-desk.svg">' });
+  });
+  await expect.poll(() => page.evaluate(() => !(window as any).heldDescription.isConnected)).toBe(true);
+  await expect(library).not.toHaveAttribute("aria-busy", "true");
+  await expect(library.getByLabel("Decorative", { exact: true })).toBeChecked();
+  await expect(description).toBeDisabled();
+  await library.getByLabel("Decorative", { exact: true }).uncheck();
+  await expect(description).toHaveValue("Held words");
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect.poll(() => records(page)).toContain("Held words");
+});
+
+test("a host without one-step details refuses a rename and writes nothing", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const calls: string[] = [];
+    const host = document.createElement("div"); host.style.cssText = "position:fixed;inset:20px;background:white;z-index:1000"; document.body.append(host);
+    const view = createMediaLibraryView(host, {
+      async load() { return { key: "no-details", items: [{ path: "images/a.svg", version: "A" }], metadata: {}, collections: [], usage: {} }; },
+      async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
+      async metadata() { calls.push("metadata"); }, async collections() { calls.push("collections"); },
+      async rename() { calls.push("rename"); }, async remove() {}, async import() { return []; }, async openPage() {},
+    });
+    Object.assign(window, { noDetailsProbe: { calls, dispose: () => { view.dispose(); host.remove(); } } }); await view.ready;
+  });
+  const library = page.getByRole("region", { name: "Media", exact: true });
+  await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
+  await library.getByLabel("Description", { exact: true }).fill("Not saved");
+  await library.getByLabel("File name", { exact: true }).fill("b.svg");
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(library.locator(".media-library__message")).toContainText("Renaming is not available here.");
+  expect(await page.evaluate(() => (window as any).noDetailsProbe.calls)).toEqual([]);
+  await page.evaluate(() => (window as any).noDetailsProbe.dispose());
 });

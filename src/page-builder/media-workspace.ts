@@ -135,6 +135,38 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (next !== before) batch.edits.set(path, next);
     }
   };
+  /** A metadata change, with the description rewritten into every place that uses it. */
+  const metadataInto = (batch: MediaWorkspaceBatch, text: Record<string, string>, records: MediaRecords, changes: Record<string, Partial<MediaMetadata> | null>) => {
+    const next = applyMediaMetadata(records, changes);
+    for (const file of Object.keys(changes)) {
+      const before = records.files[file], after = next.files[file];
+      for (const [page, source] of Object.entries(text)) {
+        const original = batch.edits.get(page) ?? source;
+        const edited = descriptionPlaceEdits(records, file, page, original,
+          { text: before?.description?.text ?? "", decorative: Boolean(before?.decorative) },
+          { text: after?.description?.text ?? "", decorative: Boolean(after?.decorative) });
+        if (edited !== original) batch.edits.set(page, edited);
+      }
+    }
+    return next;
+  };
+  /** A family rename: the moves, every reference and the records follow; a refusal throws before any change. */
+  const renameInto = (batch: MediaWorkspaceBatch, text: Record<string, string>, records: MediaRecords, path: string, name: string) => {
+    const family = mediaFamilyOf(path, batch.expectedPaths);
+    if (!name.trim() || /[\\/\u0000-\u001f]/.test(name)) throw new Error("Enter an image filename without a folder.");
+    const filename = uploadFileName(name);
+    if (!uploadImageType(filename) || uploadImageType(filename) !== uploadImageType(path)) throw new Error("Keep the image's file format when renaming it.");
+    const to = path.slice(0, path.lastIndexOf("/") + 1) + filename;
+    if (to === path) return records;
+    const moves = family ? renamedFamily(family, to) : [{ from: path, to }];
+    for (const move of moves) {
+      if (move.from !== move.to && batch.expectedPaths.includes(move.to)) throw new Error(`${move.to} already exists. Choose another filename.`);
+    }
+    batch.moves.push(...moves.filter(move => move.from !== move.to));
+    for (const move of moves) rewriteInto(batch, text, move.from, move.to);
+    // Every member's record follows its file, in the same batch as the moves.
+    return moves.reduce((next, move) => move.from === move.to ? next : renameMediaRecord(next, move.from, move.to), records);
+  };
   const familyPaths = (path: string, paths: string[]) => {
     const family = mediaFamilyOf(path, paths);
     return family ? [path, ...family.copies.map(copy => copy.path), ...family.originals] : [path];
@@ -198,16 +230,19 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     async metadata(changes) {
       const ctx = active();
       const { batch, metadata, text } = await prepare(ctx, "Edit image metadata", true);
-      const next = applyMediaMetadata(metadata, changes);
-      for (const file of Object.keys(changes)) {
-        const before = metadata.files[file], after = next.files[file];
-        for (const [page, source] of Object.entries(text)) {
-          const original = batch.edits.get(page) ?? source;
-          const edited = descriptionPlaceEdits(metadata, file, page, original,
-            { text: before?.description?.text ?? "", decorative: Boolean(before?.decorative) },
-            { text: after?.description?.text ?? "", decorative: Boolean(after?.decorative) });
-          if (edited !== original) batch.edits.set(page, edited);
-        }
+      recordsEdit(batch, metadata, metadataInto(batch, text, metadata, changes));
+      await commit(ctx, batch);
+    },
+    async details(path, changes, name) {
+      // File details' Save: its fields and its rename succeed whole, fail whole and undo as one step.
+      const ctx = active();
+      const versions = name === undefined ? undefined : familyVersions(ctx, familyPaths(path, ctx.paths));
+      const { batch, metadata, text } = await prepare(ctx, name === undefined ? "Edit file details" : "Edit file details and rename", true);
+      let next = metadataInto(batch, text, metadata, { [path]: changes });
+      if (name !== undefined) {
+        for (const [member, version] of versions!) batch.expectedAssets.set(member, version);
+        assetGuard(batch, [...versions!.keys()]);
+        next = renameInto(batch, text, next, path, name);
       }
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
@@ -231,24 +266,11 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     import: importMedia,
     async rename(path, name) {
       const ctx = active();
-      const family = mediaFamilyOf(path, ctx.paths);
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));
       const { batch, text, metadata } = await prepare(ctx, "Rename image", true);
       for (const [member, version] of versions) batch.expectedAssets.set(member, version);
       assetGuard(batch, [...versions.keys()]);
-      if (!name.trim() || /[\\/\u0000-\u001f]/.test(name)) throw new Error("Enter an image filename without a folder.");
-      const filename = uploadFileName(name);
-      if (!uploadImageType(filename) || uploadImageType(filename) !== uploadImageType(path)) throw new Error("Keep the image's file format when renaming it.");
-      const to = path.slice(0, path.lastIndexOf("/") + 1) + filename;
-      if (to === path) return;
-      const moves = family ? renamedFamily(family, to) : [{ from: path, to }];
-      for (const move of moves) {
-        if (move.from !== move.to && batch.expectedPaths.includes(move.to)) throw new Error(`${move.to} already exists. Choose another filename.`);
-      }
-      batch.moves.push(...moves.filter(move => move.from !== move.to));
-      for (const move of moves) rewriteInto(batch, text, move.from, move.to);
-      // Every member's record follows its file, in the same batch as the moves.
-      recordsEdit(batch, metadata, moves.reduce((records, move) => move.from === move.to ? records : renameMediaRecord(records, move.from, move.to), metadata));
+      recordsEdit(batch, metadata, renameInto(batch, text, metadata, path, name));
       await commit(ctx, batch);
     },
     async remove(paths, unusedOnly = false) {

@@ -102,7 +102,7 @@ export function createMediaLibraryView(
   // Each newer usage result repaints the badges and an open usage dialog.
   const stopUsage = adapter.usage?.onChange(() => {
     if (!alive) return;
-    repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh();
+    repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh(); sheet.repaint?.();
   });
   // The pane adds dropped and chosen files at once; the chooser keeps Optimise until slice 18.
   const adding = modal ? undefined : createMediaAdding(grid, shell.adding, {
@@ -175,7 +175,7 @@ export function createMediaLibraryView(
     if (sheet.path) {
       if (library.items.some((item) => item.path === sheet.path)) {
         const path = sheet.path;
-        const rendered = shell.sheet.querySelector<HTMLInputElement>('input[aria-label="Default alt text"]');
+        const rendered = shell.sheet.querySelector("[data-detail-form]");
         if (path !== previousPath || !rendered || detailIdentity(previous, path) !== detailIdentity(library, path)) {
           const preserve = path === previousPath && rendered && metadataIdentity(previous, path) === metadataIdentity(library, path);
           const savedForm = captureDetailForm(shell.sheet, Boolean(preserve));
@@ -183,7 +183,7 @@ export function createMediaLibraryView(
           if (alive && sheet.path === path) restoreDetailForm(shell.sheet, savedForm);
         }
       }
-      else { sheet.path = undefined; shell.sheet.hidden = true; shell.sheet.replaceChildren(); }
+      else { sheet.path = undefined; sheet.repaint = undefined; delete shell.sheet.dataset.mode; shell.sheet.hidden = true; shell.sheet.replaceChildren(); }
     }
   }
   function draw() {
@@ -199,7 +199,7 @@ export function createMediaLibraryView(
   function usage(path: string) {
     usageDialog?.close();
     const opened = usageDialog = showUsageDialog({
-      root: modal ?? container, records: () => adapter.usage?.records(),
+      root: modal ?? container, records: () => adapter.usage?.records(), pageLabel: page => adapter.usage?.pageLabel?.(page),
       openPage: page => void task(async () => { await adapter.openPage(page); shell.close(); }),
       details: path => void details(path),
       returnFocus: path => {

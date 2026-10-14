@@ -244,6 +244,12 @@ export function setMediaCollections(records: MediaRecords, path: string, names: 
   memberships.forEach(name => { if (!collections.includes(name)) collections.push(name); });
   return { ...records, collections, files: Object.assign(Object.create(null), records.files, { [path]: record }) };
 }
+/** Always keep (media-manager ticket 10): the file is never suggested for clean-up. */
+export function setMediaAlwaysKeep(records: MediaRecords, path: string, keep: boolean): MediaRecords {
+  const record = { ...records.files[path] };
+  if (keep) record.alwaysKeep = true; else delete record.alwaysKeep;
+  return { ...records, files: Object.assign(Object.create(null), records.files, { [path]: record }) };
+}
 export function setMediaDescription(records: MediaRecords, path: string, text: string, byAgent = false): MediaRecords {
   const record = { ...records.files[path] };
   if (text || (record.description && hasUnknown(record.description))) record.description = { ...record.description, text, ...(byAgent ? { byAgent: true as const } : {}) };

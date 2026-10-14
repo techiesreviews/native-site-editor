@@ -309,3 +309,67 @@ test("the Always keep mark reaches a family's main when only an original the lib
   assert.ok(!library.items.some(item => item.path === "media/originals/a.HEIC"));
   assert.deepEqual(library.keep?.sort(), ["images/a.png", "media/originals/a.HEIC"]);
 });
+
+test("File details saves its fields and the rename as one step, even before media records exist", async () => {
+  const f = fixture();
+  f.text.delete(MEDIA_RECORDS_PATH); f.paths.delete(MEDIA_RECORDS_PATH);
+  f.text.set("index.html", '<head></head><body><img src="/images/a.png"></body>');
+  const before = new Map(f.text);
+  await f.host.load();
+  await f.host.details!("images/a.png", { alt: "A garden", decorative: false, alwaysKeep: true }, "Garden.png");
+  assert.equal(f.batches.length, 1);
+  assert.deepEqual(f.batches[0].moves, [{ from: "images/a.png", to: "images/garden.png" }]);
+  assert.equal(f.text.get("index.html"), '<head></head><body><img alt="A garden" src="/images/garden.png"></body>');
+  assert.ok(f.text.get("styles/site.css")!.includes("/images/garden.png"));
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  assert.deepEqual(records.files["images/garden.png"], { description: { text: "A garden" }, alwaysKeep: true });
+  assert.equal(records.files["images/a.png"], undefined);
+  // One Undo restores files, references and the absent records.
+  assert.equal(f.history.length, 1);
+  f.history.pop()!();
+  assert.deepEqual(f.text, before);
+  assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
+});
+
+test("a refused rename in File details saves none of its fields", async () => {
+  for (const name of ["unused.png", "garden.jpg", "a/b.png"]) {
+    const f = fixture(); await f.host.load();
+    const before = new Map(f.text);
+    await assert.rejects(f.host.details!("images/a.png", { alt: "Changed", decorative: false, alwaysKeep: true }, name));
+    assert.equal(f.batches.length, 0, name);
+    assert.deepEqual(f.text, before, name);
+    assert.equal(f.paths.has("images/a.png"), true);
+  }
+});
+
+test("File details without a rename writes only the fields", async () => {
+  const f = fixture(); await f.host.load();
+  await f.host.details!("images/a.png", { alt: "Default", decorative: false, alwaysKeep: true });
+  assert.equal(f.batches.length, 1); assert.deepEqual(f.batches[0].moves, []);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].alwaysKeep, true);
+  assert.ok(f.text.get("index.html")!.includes('alt="Keep this alt"'));
+});
+
+test("File details renames a whole family with its fields in one step; a taken copy name refuses all of it", async () => {
+  const f = fixture(), members = addFamily(f);
+  f.text.set("index.html", '<img src="/images/a.png" srcset="/images/a-480w.webp 480w, /images/a-960.png 960w">');
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ [members[0]]: { tags: ["copy"] } }));
+  const before = new Map(f.text);
+  await f.host.load();
+  await f.host.details!("images/a.png", { alt: "A garden", decorative: false, alwaysKeep: true }, "garden.png");
+  assert.equal(f.batches.length, 1);
+  assert.deepEqual(f.batches[0].moves.map(move => move.to), ["images/garden.png", "images/garden-480w.webp", "images/garden-960.png", "media/originals/garden.HEIC"]);
+  assert.match(f.text.get("index.html")!, /alt="A garden"/);
+  assert.match(f.text.get("index.html")!, /src="\/images\/garden.png" srcset="\/images\/garden-480w.webp 480w, \/images\/garden-960.png 960w"/);
+  const files = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files;
+  assert.deepEqual(files["images/garden.png"], { description: { text: "A garden" }, alwaysKeep: true });
+  assert.deepEqual(files["images/garden-480w.webp"], { collections: ["copy"] });
+  f.history.pop()!();
+  assert.deepEqual(f.text, before);
+  for (const path of ["images/a.png", ...members]) assert.ok(f.bytes.has(path));
+  const taken = fixture(); addFamily(taken); taken.paths.add("images/garden-480w.webp");
+  const untouched = new Map(taken.text);
+  await taken.host.load();
+  await assert.rejects(taken.host.details!("images/a.png", { alt: "A garden", decorative: false, alwaysKeep: true }, "garden.png"), /already exists/);
+  assert.equal(taken.batches.length, 0); assert.deepEqual(taken.text, untouched);
+});

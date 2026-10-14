@@ -48,7 +48,7 @@ test("the Media tab counts unused files from anywhere; Dismiss hides the count u
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"] .media-library__keep')).toHaveCount(0);
   await kept.getByRole("button", { name: "Details for images/kept.svg", exact: true }).click();
   await expect(pane(page).getByText("Always keep: Clean up never suggests this file.", { exact: true })).toBeVisible();
-  await pane(page).getByRole("button", { name: "Back to grid", exact: true }).click();
+  await pane(page).getByRole("button", { name: "Back", exact: true }).click();
 
   // Dismiss hides the count everywhere, also after a reload; Clean up keeps its count.
   await panel.getByRole("button", { name: "Dismiss", exact: true }).click();

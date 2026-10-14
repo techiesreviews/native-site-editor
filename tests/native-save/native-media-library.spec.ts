@@ -20,8 +20,8 @@ test("image library searches repository images and shows transitive page usage",
   await panel.getByLabel("Search media", { exact: true }).fill("studio-desk");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await expect(panel.getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
-  await expect(panel.getByLabel("Default alt text", { exact: true })).toBeVisible();
+  await expect(panel.locator("summary").filter({ hasText: "Usage" })).toContainText(/Used on \d+ pages?|No uses found|Not checked yet/);
+  await expect(panel.getByLabel("Description", { exact: true })).toBeVisible();
 });
 
 test("rename updates references and metadata in one Undo", async ({ page, baseURL }) => {
@@ -30,12 +30,15 @@ test("rename updates references and metadata in one Undo", async ({ page, baseUR
   const before = await source();
   const panel = library(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await panel.getByLabel("Default alt text", { exact: true }).fill("Studio portrait");
+  await panel.getByLabel("Description", { exact: true }).fill("Studio portrait");
   await panel.getByLabel("New collection", { exact: true }).fill("Studio portraits");
-  await panel.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Studio portrait");
-  await panel.getByLabel("New image filename", { exact: true }).fill("garden-desk.svg");
-  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await panel.getByLabel("File name", { exact: true }).fill("garden-desk.svg");
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
+  // File details reopens on the renamed file; Back shows its tile.
+  await expect(panel.getByLabel("File name", { exact: true })).toHaveValue("garden-desk.svg");
+  await panel.getByRole("button", { name: "Back", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/garden-desk.svg", exact: true })).toBeVisible();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("images/garden-desk.svg");
   const renamed = await source();
@@ -51,14 +54,50 @@ test("rename updates references and metadata in one Undo", async ({ page, baseUR
   await expect.poll(async () => (await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
 });
 
+test("one Save details with a description, Always keep and a new name is one Undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html") as string);
+  const before = await source();
+  expect(await storedDraft(page, ".editor/media.json")).toBeUndefined();
+  const panel = library(page);
+  await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await panel.getByLabel("Description", { exact: true }).fill("Studio portrait");
+  await panel.getByLabel("Always keep", { exact: true }).check();
+  await panel.getByLabel("File name", { exact: true }).fill("garden-desk.svg");
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(panel.getByLabel("File name", { exact: true })).toHaveValue("garden-desk.svg");
+  await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Studio portrait");
+  await expect(panel.getByLabel("Always keep", { exact: true })).toBeChecked();
+  const records = JSON.parse((await storedDraft(page, ".editor/media.json"))!.content!);
+  expect(records.files["images/garden-desk.svg"]).toEqual({ description: { text: "Studio portrait" }, alwaysKeep: true });
+  await expect.poll(source).toEqual(before.replaceAll("studio-desk.svg", "garden-desk.svg"));
+  await closeLibrary(page);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => storedDraft(page, ".editor/media.json")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, "images/garden-desk.svg")).toBeUndefined();
+  await expect.poll(source).toEqual(before);
+});
+
+test("a taken name refuses the whole Save details", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const panel = library(page);
+  await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+  await panel.getByLabel("Description", { exact: true }).fill("Never saved");
+  await panel.getByLabel("File name", { exact: true }).fill("placeholder.svg");
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(panel.locator(".media-library__message")).toContainText("already exists");
+  expect(await storedDraft(page, ".editor/media.json")).toBeUndefined();
+  await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Never saved");
+});
+
 test("delete keeps metadata and binary deletion together until Undo", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const panel = library(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await panel.getByLabel("Default alt text", { exact: true }).fill("Restore me");
-  await panel.getByRole("button", { name: "Save metadata", exact: true }).click();
+  await panel.getByLabel("Description", { exact: true }).fill("Restore me");
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Restore me");
-  await panel.getByRole("button", { name: "Delete image…", exact: true }).click();
+  await panel.getByRole("button", { name: "Remove file…", exact: true }).click();
   await panel.getByRole("button", { name: "Delete images", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toHaveCount(0);
   await expect.poll(async () => (await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
@@ -168,8 +207,11 @@ test("renaming an image family keeps responsive copies when placing it on a page
   await open(page, baseURL);
   const panel = library(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await panel.getByLabel("New image filename", { exact: true }).fill("garden-family.svg");
-  await panel.getByRole("button", { name: "Rename", exact: true }).click();
+  await panel.getByLabel("File name", { exact: true }).fill("garden-family.svg");
+  await panel.getByRole("button", { name: "Save details", exact: true }).click();
+  // File details reopens on the renamed file; Back shows its tile.
+  await expect(panel.getByLabel("File name", { exact: true })).toHaveValue("garden-family.svg");
+  await panel.getByRole("button", { name: "Back", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/garden-family.svg", exact: true })).toBeVisible();
   for (const width of [480, 960]) {
     await expect.poll(async () => (await storedDraft(page, `images/garden-family-${width}w.svg`))?.movedFrom).toBe(`images/studio-desk-${width}w.svg`);

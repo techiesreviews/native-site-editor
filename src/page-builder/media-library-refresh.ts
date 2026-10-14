@@ -26,38 +26,48 @@ export function rebuildLibraryCollections(select: HTMLSelectElement, collections
 /** A control's identity across redraws: membership boxes carry their own key, since a collection
  * may share its name with a field ("Decorative"). */
 const formKey = (control: Element) => control.getAttribute("data-form-key") ?? control.getAttribute("aria-label");
+type DetailControl = HTMLInputElement | HTMLTextAreaElement;
+const fields = (sheet: HTMLElement) => [...sheet.querySelectorAll<DetailControl>("input,textarea")];
+const typed = (control: Element | null): control is DetailControl => control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement;
 
+/** What a background refresh must keep of File details: unfinished fields, open sections and focus. */
 export function captureDetailForm(sheet: HTMLElement, preserve: boolean) {
-  const inputs = preserve ? [...sheet.querySelectorAll<HTMLInputElement>("input")].map(input => ({
-    label: formKey(input), value: input.value, checked: input.checked,
-    focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd,
+  const inputs = preserve ? fields(sheet).map(input => ({
+    label: formKey(input), value: input.value,
+    checked: input instanceof HTMLInputElement && input.type === "checkbox" ? input.checked : undefined,
+    // Words a field holds aside, such as a description while Decorative is ticked.
+    kept: input.dataset.kept,
   })) : [];
+  const open = [...sheet.querySelectorAll<HTMLDetailsElement>("details[open]")].map(section => section.dataset.part);
   const active = document.activeElement;
   const focus = active instanceof HTMLElement && sheet.contains(active) ? {
-    label: formKey(active), text: active instanceof HTMLButtonElement ? active.textContent : undefined,
-    start: active instanceof HTMLInputElement ? active.selectionStart : null,
-    end: active instanceof HTMLInputElement ? active.selectionEnd : null,
+    label: formKey(active), text: active instanceof HTMLButtonElement || active.localName === "summary" ? active.textContent : undefined,
+    start: typed(active) && active.type !== "checkbox" ? active.selectionStart : null,
+    end: typed(active) && active.type !== "checkbox" ? active.selectionEnd : null,
   } : undefined;
-  return { inputs, active, focus };
+  return { inputs, open, active, focus };
 }
 
 export function restoreDetailForm(sheet: HTMLElement, savedForm: ReturnType<typeof captureDetailForm>) {
-  const { inputs, active, focus } = savedForm;
+  const { inputs, open, active, focus } = savedForm;
+  for (const section of sheet.querySelectorAll<HTMLDetailsElement>("details")) if (open.includes(section.dataset.part)) section.open = true;
   for (const saved of inputs) {
-    const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => formKey(input) === saved.label);
+    const input = fields(sheet).find(input => formKey(input) === saved.label);
     if (!input) continue;
-    if (input.type === "checkbox") input.checked = saved.checked; else input.value = saved.value;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
+    if (saved.kept !== undefined) input.dataset.kept = saved.kept;
+    if (saved.checked !== undefined && input instanceof HTMLInputElement) {
+      if (input.checked !== saved.checked) input.click();
+    } else { input.value = saved.value; input.dispatchEvent(new Event("input", { bubbles: true })); }
   }
   // Metadata Undo changes values, but it must not strand keyboard focus.
   // A user who focused elsewhere during the read keeps that focus.
   if (focus && document.activeElement === document.body && !active?.isConnected) {
-    const controls = [...sheet.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input,button")];
+    const controls = [...sheet.querySelectorAll<HTMLElement>("input,textarea,button,summary")];
     const control = controls.find(control => focus.label
       ? formKey(control) === focus.label
-      : control instanceof HTMLButtonElement && control.textContent === focus.text) ?? controls[0];
+      : (control instanceof HTMLButtonElement || control.localName === "summary") && control.textContent === focus.text) ?? controls[0];
     control?.focus();
-    if (control instanceof HTMLInputElement && focus.start !== null && focus.end !== null) control.setSelectionRange(focus.start, focus.end);
+    if (typed(control ?? null) && focus.start !== null && focus.end !== null) (control as DetailControl).setSelectionRange(focus.start, focus.end);
   }
 }
 

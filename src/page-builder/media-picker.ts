@@ -20,6 +20,8 @@ export interface MediaPickerHost {
   metadata(changes: Record<string, Partial<MediaMetadata> | null>): Promise<void>;
   collections(change: MediaCollectionChange): Promise<void>;
   rename(path: string, name: string): Promise<void>;
+  /** File details' Save as one step: the file's fields and, when `name` is given, its rename. */
+  details?(path: string, changes: Partial<MediaMetadata>, name?: string): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[]): Promise<string[]>;
   openPage(path: string): Promise<void>;
@@ -30,6 +32,8 @@ export interface MediaUsageSource {
   records(): MediaUsageRecords | undefined;
   /** Called with each newer result; returns the unsubscribe. */
   onChange(listener: () => void): () => void;
+  /** A page's title in the Pages tab; usage lists show it above the page's path. */
+  pageLabel?(page: string): string | undefined;
 }
 export interface MediaImportRequest {
   file: File; result: MediaOptimiseResult; folder: string;
