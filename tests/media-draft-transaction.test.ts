@@ -362,6 +362,32 @@ for (const mode of ["delete", "overwrite"]) test(`${mode} of an unsaved upload k
   assert.equal(await h.bytes.get(key), undefined);
 });
 
+test("a failed Redo keeps the step's hold on the overwritten upload's bytes", async () => {
+  const h = harness(), path = "images/a.png", sha = "retained-failed-redo", blob = new Blob(["old picture"]);
+  const old: SavedDraft = { ...h.host.scope, version: 1, path, baseSha: null, original: "", content: "", opaque: true, sourceSha: sha, upload: { size: blob.size, type: "image/png" }, updatedAt: 1 };
+  const key = uploadKey(h.host.scope, sha);
+  h.records.set(path, old); await h.bytes.put(key, blob);
+  h.batch.expectedPaths = [path]; h.batch.expectedAssets.set(path, sha); h.batch.overwrites = [path];
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(h.undo(), true); assert.equal(h.records.get(path), old);
+  // The new picture's bytes are swept after Undo, so Redo must stage them again; that write fails once.
+  await sweepUploads(h.bytes, h.host.scope, h.host.store.list(h.host.scope));
+  const put = h.bytes.put.bind(h.bytes);
+  h.bytes.put = async () => { h.bytes.put = put; throw new Error("storage full"); };
+  assert.equal(await h.redo(), false);
+  assert.equal(h.records.get(path), old);
+  assert.equal(uploadKeyHeld(key), true);
+  assert.equal(await h.redo(), true);
+  await sweepUploads(h.bytes, h.host.scope, h.host.store.list(h.host.scope));
+  assert.equal(h.undo(), true); assert.equal(h.records.get(path), old);
+  assert.equal(await (await h.bytes.get(key))?.text(), "old picture");
+  assert.equal(await h.redo(), true);
+  h.dispose();
+  assert.equal(uploadKeyHeld(key), false);
+  await sweepUploads(h.bytes, h.host.scope, h.host.store.list(h.host.scope));
+  assert.equal(await h.bytes.get(key), undefined);
+});
+
 for (const failure of ["store", "registration"]) test(`${failure} refusal releases old upload holds`, async () => {
   const h = harness(), path = "images/a.png", sha = `refused-${failure}`, blob = new Blob(["old"]);
   const old: SavedDraft = { ...h.host.scope, version: 1, path, baseSha: null, original: "", content: "", sourceSha: sha, opaque: true, upload: { size: 3, type: "image/png" }, updatedAt: 1 };
