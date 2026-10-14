@@ -13,6 +13,8 @@ import { uploadImageType } from "../uploads";
 
 export interface MediaWorkspaceSnapshot {
   repo: string;
+  /** The repository's size in KiB (GitHub); absent for local folders. */
+  repoSize?: number;
   scope: DraftScope;
   identity: string;
   site?: NativeSite;
@@ -121,7 +123,7 @@ export function createMediaController(ports: MediaControllerPorts) {
   async function workspaceContext(include: (path: string) => boolean = isImagePath): Promise<MediaWorkspaceContext> {
     const workspace = ports.workspace();
     if (!workspace) throw new Error("Choose a repository before opening Media.");
-    const { repo, scope, drafts, site } = workspace;
+    const { repo, repoSize, scope, drafts, site } = workspace;
     const stamp = ports.stamp();
     const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
     const branchPaths = workspace.nativePaths ?? await ports.listPaths(workspace);
@@ -147,7 +149,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     for (const path of [".editor/config.json", "CNAME"]) if (paths.includes(path)) await read(path);
     assertLive();
     return {
-      key: `${scope.account}:${scope.repoId}`, scope, drafts, paths,
+      key: `${scope.account}:${scope.repoId}`, scope, drafts, paths, repoSize,
       items: paths.filter(include).map((path) => {
         const draft = drafts.get(scope, path), entry = ports.entry(path);
         return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };

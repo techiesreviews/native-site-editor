@@ -60,6 +60,65 @@ test("Balanced adding saves a 2400px WebP main and three copies from a detailed 
     if (width === 2400) mainBytes = saved.length; else expect(saved.length).toBeLessThan(mainBytes);
   }
 });
+async function adding(page: Page) {
+  const media = page.getByRole("region", { name: "Media", exact: true }), tab = page.getByRole("tab", { name: "Media", exact: true });
+  if (!await tab.isVisible()) await page.locator("#explorer-toggle").click();
+  await tab.click();
+  await media.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: "Adding settings", exact: true }).click();
+  await expect(media.getByRole("heading", { name: "Adding settings", exact: true })).toBeFocused();
+  return media;
+}
+
+test("Adding settings: Smaller files is remembered for the site and adds a photo at most 1,600 px wide", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  let media = await adding(page);
+  const images = media.getByRole("group", { name: "Images", exact: true });
+  await expect(images.getByRole("radio")).toHaveCount(4);
+  await expect(images.getByRole("radio", { name: /^Balanced/ })).toBeChecked();
+  await expect(media.getByRole("group", { name: "Audio", exact: true }).getByRole("radio", { name: /^Speech/ })).not.toBeChecked();
+  await expect(media.getByRole("checkbox", { name: /^Keep original/ })).not.toBeChecked();
+  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeDisabled();
+  await images.getByRole("radio", { name: /^Smaller files/ }).check();
+  await expect.poll(async () => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}").adding).toEqual({ image: "smaller" });
+  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeEnabled();
+
+  // Reload: the site still remembers the choice.
+  await page.reload();
+  await expect(page.frameLocator(".native-preview-frame").locator(".hero img")).toBeVisible({ timeout: 30_000 });
+  media = await adding(page);
+  await expect(media.getByRole("group", { name: "Images", exact: true }).getByRole("radio", { name: /^Smaller files/ })).toBeChecked();
+  await media.getByRole("button", { name: "Back", exact: true }).click();
+
+  const bytes = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 3000; canvas.height = 1500;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let seed = 654321;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = seed & 255; pixels.data[i + 1] = (seed >>> 8) & 255; pixels.data[i + 2] = (seed >>> 16) & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/jpeg", 0.95));
+    return await new Promise<string>(resolve => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.readAsDataURL(blob); });
+  });
+  await media.locator('input[name="media-upload"]').setInputFiles({ name: "Smaller.jpg", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") });
+  // Copies only below the main's width: a 1,600 px main has no -1600 copy.
+  await expect.poll(async () => (await storedDrafts(page)).map(draft => draft.path).filter(path => path.startsWith("media/images/smaller")).sort(), { timeout: 30_000 })
+    .toEqual(["media/images/smaller-480.webp", "media/images/smaller-960.webp", "media/images/smaller.webp"]);
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  const saved = await page.request.get(`${baseURL}/__demo/file?${new URLSearchParams({ path: "media/images/smaller.webp" })}`);
+  expect(saved.ok()).toBe(true);
+  const width = await page.evaluate(async base64 => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), char => char.charCodeAt(0))], { type: "image/webp" }));
+    const width = bitmap.width; bitmap.close(); return width;
+  }, (await saved.body()).toString("base64"));
+  expect(width).toBe(1600);
+});
+
 async function undoAddition(page: Page, baseURL: string | undefined, before: string) {
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);

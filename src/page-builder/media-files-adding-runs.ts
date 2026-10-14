@@ -1,6 +1,7 @@
 import { mediaAddingCancellable, mediaAddingReviewable, type MediaAddingState } from "./media-adding-rules";
 import type { MediaImportRequest } from "./media-picker";
 import type { MediaWorkspaceContext } from "./media-workspace";
+import type { MediaImageQuality } from "./media-optimise";
 
 export interface FilesAddingEntry {
   file: File; state: MediaAddingState; error?: string; note?: string; path?: string;
@@ -18,7 +19,9 @@ export interface FilesAddingHost {
 }
 export interface FilesAddition { folder: string; host: FilesAddingHost; entries: FilesAddingEntry[] }
 export interface FilesAddingDeps {
-  prepare(file: File, key: string, folder: string, signal: AbortSignal): Promise<{ request: MediaImportRequest; warning?: string }>;
+  prepare(file: File, key: string, folder: string, signal: AbortSignal, quality?: MediaImageQuality): Promise<{ request: MediaImportRequest; warning?: string }>;
+  /** The site's remembered image quality (Adding settings), read once per addition. */
+  quality?(ctx: MediaWorkspaceContext): Promise<MediaImageQuality>;
   save(ctx: MediaWorkspaceContext, context: () => Promise<MediaWorkspaceContext>, requests: MediaImportRequest[]): Promise<string[]>;
   paint(): void;
 }
@@ -53,10 +56,11 @@ export function createFilesAdding(deps: FilesAddingDeps) {
   async function run(addition: FilesAddition): Promise<string[]> {
     const { host } = addition;
     if (!addition.entries.some(entry => entry.state === "waiting")) return [];
-    let ctx: MediaWorkspaceContext;
+    let ctx: MediaWorkspaceContext, quality: MediaImageQuality | undefined;
     try {
       if (!host.live()) throw new Error(CHANGED);
       ctx = await host.context();
+      quality = await deps.quality?.(ctx);
     } catch (error) { drop(addition, error); return []; }
     for (const entry of addition.entries) {
       if (entry.state !== "waiting") continue;
@@ -64,7 +68,7 @@ export function createFilesAdding(deps: FilesAddingDeps) {
       const work = entry.work = new AbortController();
       set(entry, "preparing");
       try {
-        const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal);
+        const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal, quality);
         // Cancelled meanwhile: the file is left alone.
         if (work.signal.aborted) continue;
         entry.request = prepared.request; entry.note = prepared.warning;

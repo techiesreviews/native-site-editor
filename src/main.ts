@@ -2402,7 +2402,7 @@ const mediaController = createMediaController({
   workspace: () => {
     const repo = appStore.repository.value, scope = draftScope();
     if (!repo || !scope || !appStore.snapshot.value) return undefined;
-    return { repo: repo.full_name, scope, identity: mediaIdentity(), site: nativeSite,
+    return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site: nativeSite,
       nativePaths: nativeSite ? nativeFiles(scope) : undefined, drafts: draftStore() };
   },
   identity: mediaIdentity,

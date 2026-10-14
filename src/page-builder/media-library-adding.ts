@@ -2,6 +2,7 @@ import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename, type MediaLibraryFilter } from "./media-library-filter";
 import { prepareMediaFile, askToAddUnchanged } from "./media-prepare";
+import { mediaAddingSettings } from "./media-settings";
 import type { MediaImportRequest } from "./media-picker";
 import {
   MEDIA_ADDING_WORDS as WORDS, mediaAddingBusy, mediaAddingCancellable, mediaAddingPath, mediaAddingReveal, mediaAddingShown,
@@ -151,14 +152,15 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     });
   }
   async function prepare(mine: typeof run) {
-    const key = h.library().key;
+    // The site's remembered image quality when this addition starts preparing.
+    const { key, adding } = h.library(), quality = mediaAddingSettings(adding).image;
     for (const entry of mine.entries) {
       if (!h.alive()) return;
       if (entry.state !== "waiting") continue;
       const work = entry.work = new AbortController();
       set(entry, "preparing");
       try {
-        const prepared = await prepareMediaFile(entry.file, key, undefined, work.signal, undefined, askToAddUnchanged);
+        const prepared = await prepareMediaFile(entry.file, key, undefined, work.signal, undefined, askToAddUnchanged, undefined, quality);
         // Cancelling (or Review…) aborts the work and leaves the file alone.
         if (!work.signal.aborted) {
           entry.request = { ...prepared.request, ...entry.collection ? { collection: entry.collection } : {} };

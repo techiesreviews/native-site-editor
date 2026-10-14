@@ -18,6 +18,7 @@ import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-ren
 import { mediaStorageName, mediaCopyName, chooseMediaPath } from "./media-storage";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
+import { resetMediaAddingSettings, setMediaAddingSettings } from "./media-settings";
 
 /** Prepared mutations only. The host validates and commits this entire batch atomically. */
 export interface MediaWorkspaceBatch {
@@ -69,6 +70,8 @@ export async function applyMediaWorkspaceBatch<State>(batch: MediaWorkspaceBatch
 export interface MediaWorkspaceContext {
   key: string; scope: DraftScope; drafts: DraftAccess; paths: string[]; items: MediaLibraryItem[];
   pages: string[]; components: Record<string, string>; origins?: string[];
+  /** The repository's size in KiB (GitHub); absent for local folders. */
+  repoSize?: number;
   assertLive(): void;
   read(path: string): Promise<string | undefined>;
   blob(path: string): Promise<Blob>;
@@ -317,7 +320,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
-        toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text) };
+        toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text),
+        ...records.adding ? { adding: records.adding } : {}, ...ctx.repoSize === undefined ? {} : { repoSize: ctx.repoSize } };
     },
     async blob(path) { return active().blob(path); },
     async metadata(changes) {
@@ -357,6 +361,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     import: importMedia,
+    async adding(change) {
+      // Adding settings live in the site's records, so they travel with the site and undo like any change.
+      const ctx = active();
+      const { batch, metadata } = await prepare(ctx, change === "reset" ? "Reset adding settings" : "Change adding settings");
+      recordsEdit(batch, metadata, change === "reset" ? resetMediaAddingSettings(metadata) : setMediaAddingSettings(metadata, change));
+      await commit(ctx, batch);
+    },
     async rename(path, name, options) {
       const ctx = active();
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));

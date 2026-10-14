@@ -1,11 +1,12 @@
 import { formatBytes } from "../uploads";
 import { basename } from "./media-library-filter";
-import { buildMediaImportRequests, readMediaOptimiseDefaults, writeMediaOptimiseDefaults } from "./media-library-optimise-rules";
+import { buildMediaImportRequests } from "./media-library-optimise-rules";
+import { mediaAddingSettings } from "./media-settings";
 import { button, node } from "../ui/dom";
 import { cancellation } from "./media-busy-lock";
 import { input, select, field, check } from "./media-library-fields";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
-import { mediaSavings, optimiseMedia, type MediaOptimiseResult, type MediaOptimiseOptions } from "./media-optimise";
+import { mediaImageRecipe, mediaSavings, optimiseMedia, type MediaOptimiseResult, type MediaOptimiseOptions } from "./media-optimise";
 
 type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell">;
 
@@ -19,13 +20,16 @@ export function showMediaOptimise(
   if (!c.alive()) return;
   takeSheet(sheet);
   delete element.dataset.mode;
-  const key = c.library().key;
-  const defaults = readMediaOptimiseDefaults(key);
+  // It starts from the site's Adding settings (More); changes here are for these files only.
+  const site = mediaAddingSettings(c.library().adding);
+  const defaults = { ...mediaImageRecipe(site.image), keepOriginal: site.keepOriginal };
   element.append(node("h3", "", "Optimise"), node("p", "media-library__muted",
     `${files.length} ${files.length === 1 ? "image" : "images"} · ${formatBytes(files.reduce((sum, file) => sum + file.size, 0))} before`));
-  const width = input("Maximum width", "number"); width.min = "1"; width.max = "10000"; width.value = String(defaults.maxWidth);
-  const quality = input("Image quality", "number"); quality.min = "1"; quality.max = "100"; quality.value = String(defaults.quality);
-  const format = select("Image format", [["webp", "WebP"], ["png", "PNG"], ["jpeg", "JPEG"]]); format.value = defaults.format;
+  // Empty keeps the full size (Higher quality).
+  const width = input("Maximum width", "number"); width.min = "1"; width.max = "10000"; width.value = defaults.maxWidth === null ? "" : String(defaults.maxWidth);
+  width.placeholder = "Full size";
+  const quality = input("Image quality", "number"); quality.min = "1"; quality.max = "100"; quality.value = String(defaults.quality); quality.required = true;
+  const format = select("Image format", [["webp", "WebP"], ["avif", "AVIF"], ["png", "PNG"], ["jpeg", "JPEG"]]); format.value = defaults.format;
   const responsive = input("Responsive sizes", "checkbox"); responsive.checked = defaults.responsive;
   const original = input("Keep original", "checkbox"); original.checked = defaults.keepOriginal;
   const update = input("Update existing references", "checkbox"); update.checked = true;
@@ -48,12 +52,11 @@ export function showMediaOptimise(
     cache.clear(); await c.refresh(); element.hidden = true; tell("Images added as drafts. Choose an image to use it on the page.");
   }), "button"); add.disabled = true;
   const prepare = button("Preview optimisation", () => void task(async () => {
-    if (!width.checkValidity() || !quality.checkValidity()) throw new Error("Enter a width from 1 to 10000 and quality from 1 to 100.");
+    if (!width.checkValidity() || !quality.checkValidity()) throw new Error("Enter a width from 1 to 10000 (or none for full size) and quality from 1 to 100.");
     const settings: MediaOptimiseOptions = {
-      maxWidth: Number(width.value), quality: Number(quality.value), format: format.value as MediaOptimiseOptions["format"],
-      responsive: responsive.checked, keepOriginal: original.checked,
+      maxWidth: width.value ? Number(width.value) : null, quality: Number(quality.value), format: format.value as MediaOptimiseOptions["format"],
+      ...format.value === "avif" ? { speed: mediaImageRecipe("smallest").speed } : {}, responsive: responsive.checked, keepOriginal: original.checked,
     };
-    writeMediaOptimiseDefaults(key, settings);
     prepared = []; add.disabled = true; results.replaceChildren(node("p", "", "Optimising in your browser…"));
     sheet.work?.abort();
     const controller = new AbortController(); sheet.work = controller;

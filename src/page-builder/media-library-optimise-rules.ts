@@ -1,27 +1,6 @@
 import { parent } from "./media-library-filter";
-import { DEFAULT_MEDIA_OPTIMISE, type MediaOptimiseOptions } from "./media-optimise";
 import type { MediaMetadataMap } from "./media-metadata";
 import type { MediaImportRequest } from "./media-picker";
-
-/** The Optimise settings last used in this repository, over the defaults. */
-export function readMediaOptimiseDefaults(
-  libraryKey: string, storage: () => Pick<Storage, "getItem"> = () => localStorage,
-): MediaOptimiseOptions {
-  let defaults = { ...DEFAULT_MEDIA_OPTIMISE };
-  try {
-    defaults = { ...defaults, ...JSON.parse(storage().getItem(`native-site-editor:media-optimise:${libraryKey}`) ?? "{}") };
-  } catch { /* Defaults work without storage. */ }
-  return defaults;
-}
-
-/** Remember the settings for this repository; storage is optional. */
-export function writeMediaOptimiseDefaults(
-  libraryKey: string, settings: MediaOptimiseOptions,
-  storage: () => Pick<Storage, "setItem"> = () => localStorage,
-) {
-  try { storage().setItem(`native-site-editor:media-optimise:${libraryKey}`, JSON.stringify(settings)); }
-  catch { /* Encoding still works without storage. */ }
-}
 
 /** One import request per prepared file, refusing folders with . or .. segments;
  * new files join `collection` when one is viewed. */

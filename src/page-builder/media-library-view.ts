@@ -205,7 +205,8 @@ export function createMediaLibraryView(
     rebuildLibraryCollections(collections, library.collections, true, followed ?? collections.value);
     followed = undefined;
     draw();
-    if (!shell.sheet.hidden && (shell.sheet.dataset.mode === "collections" || shell.sheet.dataset.mode === "to-check")) sheet.redraw?.();
+    // Collections, To check and Adding settings redraw from the refreshed library.
+    if (!shell.sheet.hidden) sheet.redraw?.();
     if (sheet.path) {
       if (library.items.some((item) => item.path === sheet.path)) {
         const path = sheet.path;
@@ -337,13 +338,18 @@ export function createMediaLibraryView(
     if (change.query !== undefined) shell.search.value = change.query;
     draw(); shell.search.focus();
   }
-  // More: adding first, then the kinds, then Grid or List, then the viewed collection's Rename and Delete.
+  // More: adding and its settings first, then the kinds, then Grid or List, then the viewed collection's Rename and Delete.
   const kinds: [MediaKindChoice, string][] = [["all", "All"], ["image", "Images"], ["video", "Video"], ["audio", "Audio"], ["document", "Documents"]];
   shell.more.addEventListener("click", () => {
     if (more.isOpen() && more.opener === shell.more) { more.close(true); return; }
     const name = viewing;
     more.open(shell.more, [
       { label: "Add new file", run: () => shell.uploadInput.click() },
+      // Adding settings (ticket 07): the choices future additions use, loaded when opened.
+      ...adapter.adding ? [{ label: "Adding settings", run: () => void task(async () => {
+        const { showAddingSettings } = await import("./media-adding-settings");
+        if (alive && library) showAddingSettings(sheet, { ...context, close: () => closeSheet(shell.more) });
+      }, false) }] : [],
       // Clean up, with the tab's count, is an action like adding; the choices follow.
       ...cleanUp ? [{ ...cleanUp.item(), run: () => cleanUp.open() }] : [],
       // To check (ticket 13), with its count: agent-written descriptions waiting for OK or Edit.

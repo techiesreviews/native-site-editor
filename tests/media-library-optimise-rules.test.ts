@@ -1,52 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  readMediaOptimiseDefaults, writeMediaOptimiseDefaults, buildMediaImportRequests,
-} from "../src/page-builder/media-library-optimise-rules";
-import { DEFAULT_MEDIA_OPTIMISE } from "../src/page-builder/media-optimise";
-import type { MediaOptimiseOptions, MediaOptimiseResult } from "../src/page-builder/media-optimise";
+import { buildMediaImportRequests } from "../src/page-builder/media-library-optimise-rules";
+import type { MediaOptimiseResult } from "../src/page-builder/media-optimise";
 import type { MediaImportRequest } from "../src/page-builder/media-picker";
 import type { MediaMetadataMap } from "../src/page-builder/media-metadata";
-
-function storage(initial: string | null) {
-  const values = new Map<string, string>();
-  if (initial !== null) values.set("native-site-editor:media-optimise:repo", initial);
-  return {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => { values.set(key, value); },
-  } satisfies Pick<Storage, "getItem" | "setItem">;
-}
-
-test("missing and malformed defaults fall back; partial defaults merge", () => {
-  for (const value of [null, "{broken", "null"])
-    assert.deepEqual(readMediaOptimiseDefaults("repo", () => storage(value)), DEFAULT_MEDIA_OPTIMISE);
-  assert.deepEqual(readMediaOptimiseDefaults("repo", () => storage('{"quality":65,"responsive":false}')), {
-    ...DEFAULT_MEDIA_OPTIMISE, quality: 65, responsive: false,
-  });
-});
-
-test("defaults round-trip under the repository-specific storage key", () => {
-  const store = storage(null);
-  const settings = {
-    maxWidth: 1200, quality: 70, format: "png", responsive: false, keepOriginal: true,
-  } satisfies MediaOptimiseOptions;
-  writeMediaOptimiseDefaults("repo", settings, () => store);
-  assert.equal(store.getItem("native-site-editor:media-optimise:repo"), JSON.stringify(settings));
-  assert.deepEqual(readMediaOptimiseDefaults("repo", () => store), settings);
-  assert.deepEqual(readMediaOptimiseDefaults("other-repo", () => store), DEFAULT_MEDIA_OPTIMISE);
-});
-
-test("storage access and methods may throw without preventing optimisation", () => {
-  const throwing = {
-    getItem: () => { throw new Error("unavailable"); },
-    setItem: () => { throw new Error("quota"); },
-  } satisfies Pick<Storage, "getItem" | "setItem">;
-  const inaccessible = () => { throw new Error("denied"); };
-  assert.deepEqual(readMediaOptimiseDefaults("repo", () => throwing), DEFAULT_MEDIA_OPTIMISE);
-  assert.deepEqual(readMediaOptimiseDefaults("repo", inaccessible), DEFAULT_MEDIA_OPTIMISE);
-  assert.doesNotThrow(() => writeMediaOptimiseDefaults("repo", DEFAULT_MEDIA_OPTIMISE, () => throwing));
-  assert.doesNotThrow(() => writeMediaOptimiseDefaults("repo", DEFAULT_MEDIA_OPTIMISE, inaccessible));
-});
 
 const file = new File(["original"], "photos/sub/portrait.png", { type: "image/png" });
 const result = {

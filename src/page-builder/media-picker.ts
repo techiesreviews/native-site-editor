@@ -1,4 +1,4 @@
-import type { MediaRecords } from "../../shared/media-records";
+import type { AddingSettings, MediaRecords } from "../../shared/media-records";
 import type { MediaCollectionChange } from "./media-collections";
 import { node } from "../ui/dom";
 import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
@@ -7,6 +7,7 @@ import type { MediaOptimiseResult } from "./media-optimise";
 import type { MediaUsage } from "./media-references";
 import type { MediaUsageRecords } from "./media-usage";
 import type { MediaToCheckRow } from "./media-descriptions";
+import type { MediaAddingChoices } from "./media-settings";
 import { createMediaLibraryView, type MediaLibraryView } from "./media-library-view";
 
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
@@ -16,6 +17,10 @@ export interface MediaLibrary {
   keep?: string[];
   /** To check: agent-written words Lex has not checked, in file order. */
   toCheck?: MediaToCheckRow[];
+  /** The site's Adding settings: its remembered choices over the defaults (`media-settings.ts`). */
+  adding?: AddingSettings;
+  /** The repository's size in KiB as GitHub reports it; absent for local folders. */
+  repoSize?: number;
 }
 export interface MediaPickerHost {
   begin?(): void;
@@ -33,6 +38,8 @@ export interface MediaPickerHost {
   check?(row: MediaToCheckRow, text?: string): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]>;
+  /** Adding settings: remember changed choices for this site, or "reset" to the defaults. One Undo step. */
+  adding?(change: Partial<MediaAddingChoices> | "reset"): Promise<void>;
   openPage(path: string): Promise<void>;
   /** The site's usage check (checked on open); without it every file is Not checked yet. */
   usage?: MediaUsageSource;

@@ -1,0 +1,25 @@
+/* More → Adding settings (media-manager slice 26): its own screen with Back, like To check.
+   Plain choices in groups, each row a 44 px target with a short hint, then the repository's size. */
+.media-library__body:has(> .media-library__sheet[data-mode="adding-settings"]:not([hidden])) .media-library__browse,
+.media-library:has(.media-library__sheet[data-mode="adding-settings"]:not([hidden])) :is(.media-library__bar, .media-library__footer),
+.media-library--pane:has(.media-library__sheet[data-mode="adding-settings"]:not([hidden])) .media-library__header { display: none; }
+.media-library .media-library__sheet[data-mode="adding-settings"] {
+  flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 8px;
+}
+.media-library--pane .media-library__sheet[data-mode="adding-settings"] { padding: 8px 12px 20px; }
+.media-settings, .media-settings__size { display: flex; flex-direction: column; gap: 16px; max-width: 34rem; }
+.media-settings__group { margin: 0; padding: 0; border: 0; display: grid; gap: 2px; }
+.media-settings__group legend { padding: 0 0 4px; font-weight: 600; }
+.media-settings__choice {
+  min-height: 44px; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 10px;
+  padding: 4px 8px; margin-inline: -8px; border-radius: 8px; cursor: pointer;
+}
+.media-settings__choice:hover { background: var(--hover); }
+.media-settings__choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
+.media-settings__text { display: grid; gap: 1px; min-width: 0; }
+.media-settings__keep { border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-top: 12px; }
+.media-library .media-settings__reset { align-self: start; min-height: 44px; }
+.media-settings__size { padding-top: 16px; margin-top: 8px; border-top: 1px solid var(--line); gap: 8px; }
+.media-settings__size :is(h4, p) { margin: 0; }
+.media-settings__size meter { width: 100%; height: 8px; }
+.media-settings__warning { padding: 10px 12px; border-radius: 8px; background: var(--warning-bg); color: var(--warning-fg); line-height: 1.5; }

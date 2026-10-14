@@ -3,6 +3,7 @@ import { createMediaAddingSummary } from "./media-adding-summary";
 import { mediaAddingCancellable } from "./media-adding-rules";
 import { createFilesAdding, type FilesAddingEntry, type FilesAddingHost } from "./media-files-adding-runs";
 import { askToAddUnchanged, importPreparedMedia, prepareMediaFile } from "./media-prepare";
+import { readMediaAddingSettings } from "./media-settings";
 
 let section: HTMLElement | undefined;
 let summary: ReturnType<typeof createMediaAddingSummary> | undefined;
@@ -30,7 +31,8 @@ export function addFilesTo(mount: HTMLElement, folder: string, files: File[], ho
     section = node("section", "media-library__adding media-files-adding"); section.hidden = true;
     section.setAttribute("aria-label", "Files being added");
     runs = createFilesAdding({
-      prepare: (file, key, into, signal) => prepareMediaFile(file, key, into, signal, undefined, askToAddUnchanged),
+      prepare: (file, key, into, signal, quality) => prepareMediaFile(file, key, into, signal, undefined, askToAddUnchanged, undefined, quality),
+      quality: async ctx => (await readMediaAddingSettings(path => ctx.read(path))).image,
       save: (ctx, context, requests) => importPreparedMedia(ctx, context, requests),
       paint,
     });
