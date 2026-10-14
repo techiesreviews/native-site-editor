@@ -13,3 +13,4 @@ Turn every decision on this map into a build plan: phases and small slices in a 
 ## Comments
 
 - 2026-10-14: Claimed for grilling with Lex (claude). Planning only: no editor code, pushes or deployments; documents committed locally on `dev`.
+- 2026-10-14: **What ships first on preview.** Lex chose **the new Media screen**: the selected Tiles look with collections, details and the picker, working on the site's existing images, with better adding, cropping and clean-up in later stages. Declined: better images on pages first (every adding route optimised, old Images tab kept until later); clean-up first (badge, review and Recently removed before the new look).
