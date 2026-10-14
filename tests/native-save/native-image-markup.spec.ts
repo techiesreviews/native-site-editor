@@ -337,6 +337,9 @@ test("moving a placed image to the top re-checks markup in the move's Undo step"
   await page.keyboard.press("Alt+ArrowUp");
   await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["hero", "moved-image", "cards", "filler"]);
   await expect.poll(() => page.evaluate(async () => !(await import("/src/components/source-editor.ts")).hasOpenEditGroup("index.html"))).toBe(true);
+  // The 160px hero (14,400px²) is not large: with nothing large on the first screen, no image keeps priority.
+  await expect(former).not.toHaveAttribute("fetchpriority", /./);
+  await expect(former).toHaveAttribute("sizes", "160px");
   await rows.nth(1).focus();
   await page.keyboard.press("Alt+ArrowUp");
   await expect(moved).not.toHaveAttribute("loading", "lazy");
@@ -348,10 +351,20 @@ test("moving a placed image to the top re-checks markup in the move's Undo step"
   await page.keyboard.press("ControlOrMeta+Z");
   await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["hero", "moved-image", "cards", "filler"]);
   await expect(moved).toHaveAttribute("loading", "lazy");
+  await expect(moved).toHaveAttribute("sizes", "auto, 320px");
+  await expect(moved).not.toHaveAttribute("fetchpriority", /./);
   await expect(former).not.toHaveAttribute("loading", "lazy");
-  await expect(former).toHaveAttribute("fetchpriority", "high");
+  await expect(former).toHaveAttribute("sizes", "160px");
+  await expect(former).not.toHaveAttribute("fetchpriority", /./);
   await page.keyboard.press("ControlOrMeta+Shift+Z");
   await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["moved-image", "hero", "cards", "filler"]);
   await expect(moved).not.toHaveAttribute("loading", "lazy");
+  await expect(moved).toHaveAttribute("fetchpriority", "high");
   await expect(former).toHaveAttribute("loading", "lazy");
+  // Two Undos: the first move's own re-check goes with it, so the seeded priority comes back.
+  await page.keyboard.press("ControlOrMeta+Z");
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["hero", "cards", "moved-image", "filler"]);
+  await expect(former).toHaveAttribute("fetchpriority", "high");
+  await expect(moved).toHaveAttribute("loading", "lazy");
 });

@@ -101,3 +101,52 @@ test("timeout closes the group and a late measurement cannot write", async conte
   await Promise.resolve();
   assert.equal(f.store.text(f.scope, f.path), source);
 });
+
+test("timeout before the moved bytes paint: no measurement, no rewrite, group closed", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = setup();
+  let calls = 0;
+  f.ports.painted = () => "the old render";
+  f.ports.measure = async () => { calls++; return measured; };
+  const pending = recheckMove(f.ports, f.path, source, [0, 0], f.tag);
+  context.mock.timers.tick(10000);
+  await pending;
+  assert.equal(calls, 0);
+  assert.equal(f.closed(), 1);
+  assert.equal(f.store.hasOpenGroup("h"), false);
+  assert.equal(f.store.text(f.scope, f.path), source);
+});
+
+test("a page of images without sizes: the large first-screen one takes priority, no sizes written", () => {
+  const page = '<main><section><img fetchpriority="high" src="old.svg"></section><section><img src="big.svg"></section></main>';
+  const report: MediaMeasured = { sizes: "100vw", firstScreen: true, large: true, images: [
+    { node: [0, 0, 0], firstScreen: false, large: false },
+    { node: [0, 1, 0], firstScreen: true, large: true },
+  ] };
+  const result = rewrite(page, mediaMoveEdits(page, report, []));
+  assert.equal(result, '<main><section><img src="old.svg"></section><section><img fetchpriority="high" src="big.svg"></section></main>');
+});
+
+test("several moved placed images each get their own measured sizes", () => {
+  const page = '<main><section><img sizes="auto, 100vw" loading="lazy" src="a.jpg"><img sizes="auto, 100vw" loading="lazy" src="b.jpg"></section></main>';
+  const report: MediaMeasured = { sizes: "50vw", firstScreen: false, large: false, images: [
+    { node: [0, 0, 0], firstScreen: false, large: false },
+    { node: [0, 0, 1], firstScreen: false, large: false },
+  ] };
+  const result = rewrite(page, mediaMoveEdits(page, report, [{ node: [0, 0, 0], sizes: "50vw" }, { node: [0, 0, 1], sizes: "25vw" }]));
+  assert.match(result, /sizes="auto, 50vw"[^>]*src="a.jpg"/);
+  assert.match(result, /sizes="auto, 25vw"[^>]*src="b.jpg"/);
+});
+
+test("a move measures each moved placed image or, with none, one page image for the list", async () => {
+  const f = setup();
+  const asked: number[][] = [];
+  f.ports.measure = async node => { asked.push(node); return measured; };
+  await recheckMove(f.ports, f.path, source, [0, 2], f.tag);
+  assert.deepEqual(asked, [[0, 0, 0]]);
+  assert.match(f.store.text(f.scope, f.path)!, /<img fetchpriority="high" sizes="100vw" src="new.jpg">/);
+  const g = setup(), many: number[][] = [];
+  g.ports.measure = async node => { many.push(node); return measured; };
+  await recheckMove(g.ports, g.path, source, [0], g.tag);
+  assert.deepEqual(many, [[0, 0, 0], [0, 1, 0]]);
+});

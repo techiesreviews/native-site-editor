@@ -15,7 +15,7 @@ import { STALE_MESSAGE, type GuardedEdits, type Outcome, type PlanResult, type R
 import type { Mode } from "./component-mode";
 import { itemsSlotRule } from "./block-insert";
 import { nativeElementMoveMessage, ownSlot, pageRules, templateRules, type MovePlan, type MoveStep } from "./block-move-rules";
-import { nativeEditInside, nativeMovableBlock, nativeOutline } from "./native-operations";
+import { nativeEditInside, nativeMovableBlock, nativeOutline, type NativeOutline } from "./native-operations";
 import { isCustomElementName } from "./rules/movable";
 
 export interface BlockMovePorts {
@@ -100,6 +100,13 @@ function tagAt(source: string, node: readonly number[]) {
   for (const step of node) at = at?.children[step];
   return at?.name;
 }
+/** Whether the element at `node` is or holds an `<img>`. */
+function hasImage(source: string, node: readonly number[]) {
+  let at = nativeOutline(source);
+  for (const step of node) at = at?.children[step];
+  const holds = (element: NativeOutline): boolean => element.name === "img" || element.children.some(holds);
+  return at !== undefined && holds(at);
+}
 /** A whole section: a `<section>`, or a component whose template is one (read through `reads`). */
 const isSection = (tag: string | undefined, reads: Reads) =>
   tag === "section" || (tag !== undefined && isCustomElementName(tag) && isSectionTemplate(reads.template(tag)?.source ?? ""));
@@ -160,7 +167,9 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
     let movedSource: string | undefined, movedRoot: number[] | undefined;
     // The bytes the destination was measured on: a drop's, else the press's.
     const expected = "drop" in to ? to.painted : at.painted;
-    const tag = !template && ports.recheck && expected !== undefined && startTags(expected).some(tag => tag.name === "img" && startTagAttribute(expected, tag, "sizes")) ? `move:${++moveId}` : undefined;
+    // Images to re-check: the page's placed images or priority holder, or any image in what moves.
+    const tag = !template && ports.recheck && expected !== undefined && (startTags(expected).some(tag => tag.name === "img" && (startTagAttribute(expected, tag, "sizes") || startTagAttribute(expected, tag, "fetchpriority")))
+      || hasImage(expected, rulesFor(false, edits.peek).rules.subject(expected, at.node) ?? at.node)) ? `move:${++moveId}` : undefined;
     // A Section on the page as the press saw it: a template made a Section or not meanwhile is stale.
     const wasSection = !template && at.painted !== undefined && isSection(tagAt(at.painted, at.node), edits.peek);
     // What the plan came to: stale bytes, the moved element's path, the words for staying.

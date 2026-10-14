@@ -447,9 +447,27 @@ test("placed-image moves use fresh tags on mounted and opening paths; plain page
     assert.equal(again.status, "moved");
     assert.notEqual(checks[1].tag, first);
     assert.equal(m.steps().length, 2);
+    // No placed image or priority holder: an image-free block moves without a re-check...
     const plain = checks[1].source.replace('sizes="100vw"', 'data-sizes="100vw"');
     m.typeInto(PAGE, plain);
-    moves.move({ path: PAGE, node: [0, 0], painted: plain }, { step: "down" });
+    assert.equal(moves.move({ path: PAGE, node: [0, 1], painted: plain }, { step: "up" }).status, "moved");
     assert.equal(checks.length, 2);
+    // ...but a moved hand-written image is re-checked (it may become or stop being the priority image).
+    const later = m.workspace.source(PAGE)!;
+    assert.equal(moves.move({ path: PAGE, node: [0, 1], painted: later }, { step: "up" }).status, "moved");
+    assert.equal(checks.length, 3);
+    assert.deepEqual(checks[2].node, [0, 0]);
   }
+});
+
+test("a priority holder without sizes makes any move on its page a re-check", () => {
+  const page = '<main><section><img fetchpriority="high" src="a.svg"></section><section>B</section></main>';
+  const m = createMemoryWorkspace({ branch: { [PAGE]: page }, open: PAGE, site });
+  const checks: number[][] = [];
+  const moves = createBlockMoves({
+    edits: createGuardedEdits(m.workspace), editing: () => undefined, mounted: path => m.workspace.mounted(path),
+    forgetOpening: () => () => {}, recheck: (_path, _source, node) => { checks.push(node); },
+  } satisfies BlockMovePorts);
+  assert.equal(moves.move({ path: PAGE, node: [0, 1], painted: page }, { step: "up" }).status, "moved");
+  assert.deepEqual(checks, [[0, 0]]);
 });

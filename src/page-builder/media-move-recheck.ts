@@ -36,7 +36,14 @@ export interface MoveRecheckPorts {
   close(): void;
 }
 
-/** Never holds up the move. A timeout abandons late replies before they can write. */
+/**
+ * Never holds up the move: its step is written before this starts. Settle matrix (each row
+ * ends with the group closed, the timer cleared and the move a complete step of its own):
+ * - the moved bytes paint, every measurement resolves while nothing else changed: one rewrite joins the move's step;
+ * - they never paint, or a measurement never settles: the 10 s timeout ends it, no rewrite, a late reply writes nothing;
+ * - a measurement rejects: no rewrite;
+ * - another edit, Undo or Redo, a page or scope change, or other bytes painted before the rewrite: no rewrite.
+ */
 export async function recheckMove(ports: MoveRecheckPorts, path: string, source: string, root: number[], tag: string) {
   let ended = false, timer: ReturnType<typeof setTimeout> | undefined;
   const current = () => !ended && ports.current();
@@ -45,9 +52,10 @@ export async function recheckMove(ports: MoveRecheckPorts, path: string, source:
     while (current() && ports.painted() !== source) await new Promise(resolve => setTimeout(resolve, 16));
     if (!current()) return;
     const tree = readSource(source, { page: true });
-    const images = tree.elements().filter(element => tree.view.name(element) === "img" && tree.attribute(element, "sizes"));
-    const targets = images.filter(element => within(tree.path(element), root));
-    const nodes = (targets.length ? targets : images.slice(0, 1)).map(element => tree.path(element));
+    const images = tree.elements().filter(element => tree.view.name(element) === "img"), placed = images.filter(element => tree.attribute(element, "sizes"));
+    const targets = placed.filter(element => within(tree.path(element), root));
+    // Moved placed images each get their own sizes; any page image carries the page list.
+    const nodes = (targets.length ? targets : [placed[0] ?? images[0]].filter(Boolean)).map(element => tree.path(element));
     let page: MediaMeasured | undefined;
     const moved: { node: number[]; sizes?: string }[] = [];
     for (const node of nodes) {
