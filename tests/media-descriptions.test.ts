@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMediaRecords, serializeMediaRecords, renameMediaRecord, setMediaDescription } from "../shared/media-records";
-import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits, swapPlaceImage, pageUsesFile, mediaNameAlt, strandsAgentWords } from "../src/page-builder/media-descriptions";
+import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits, swapPlaceImage, pageUsesFile, mediaNameAlt, followsFileName, strandsAgentWords } from "../src/page-builder/media-descriptions";
 import { mediaMetadataView } from "../src/page-builder/media-metadata";
 
 const file = "images/a.png", page = "news/index.html";
@@ -10,8 +10,8 @@ const described = () => setMediaDescription(empty(), file, "Old & familiar");
 const before = { text: "Old & familiar", decorative: false };
 const after = { text: 'New & "bright" <view>', decorative: false };
 
-test("file description flows to new places; Decorative gives empty alt; missing allows filename fallback", () => {
-  assert.equal(newPlaceAlt(empty(), file), undefined);
+test("file description flows to new places; Decorative and missing give empty alt", () => {
+  assert.equal(newPlaceAlt(empty(), file), "");
   assert.deepEqual(fileDescriptionState(), { state: "missing", text: "", byAgent: false });
   const records = described();
   assert.equal(newPlaceAlt(records, file), before.text);
@@ -217,10 +217,10 @@ test("the new file's own Decorative mark and description apply where the place f
   assert.equal(swapPlaceImage(describedNew, page, file, other, before.text, swapped).alt, "A bright desk");
   assert.equal(swapPlaceImage(describedNew, page, file, other, undefined, swapped).alt, "A bright desk");
   assert.equal(swapPlaceImage(describedNew, page, file, other, "", swapped).alt, "A bright desk");
-  // An undescribed new file: the old description goes, the file name stands in; a gap stays a gap.
-  assert.equal(swapPlaceImage(described(), page, file, other, before.text, swapped).alt, "b photo 2");
+  // An undescribed new file: the old description goes; a gap stays a gap.
+  assert.equal(swapPlaceImage(described(), page, file, other, before.text, swapped).alt, "");
   assert.equal(swapPlaceImage(described(), page, file, other, "", swapped).alt, undefined);
-  assert.equal(swapPlaceImage(empty(), page, undefined, other, undefined, swapped).alt, mediaNameAlt(other));
+  assert.equal(swapPlaceImage(empty(), page, undefined, other, undefined, swapped).alt, "");
   // Records change only for a Decorative place.
   const plain = described();
   assert.equal(swapPlaceImage(plain, page, file, other, before.text, swapped).records, plain);
@@ -228,6 +228,54 @@ test("the new file's own Decorative mark and description apply where the place f
   const marked = setMediaPlaceDecorative(plain, file, page, true);
   assert.deepEqual(swapPlaceImage(marked, page, file, file, "", `<img src="/images/a.png" alt="">`), { alt: undefined, records: marked });
 });
+
+test("an undescribed placement stays missing and later follows description and file Decorative", () => {
+  const placed = swapPlaceImage(empty(), page, undefined, other, undefined, swapped);
+  assert.equal(placed.alt, "");
+  assert.deepEqual(placeDescriptionState(placed.records, other, page, placed.alt), { state: "missing", own: false, byAgent: false });
+  assert.equal(placed.records.files[other], undefined);
+  const gap = { text: "", decorative: false };
+  assert.equal(descriptionPlaceEdits(placed.records, other, page, swapped, gap, { text: "A desk", decorative: false }),
+    '<img src="/images/b-photo_2.png" alt="A desk">');
+  const decorative = setMediaFileDecorative(placed.records, other, true);
+  assert.equal(descriptionPlaceEdits(placed.records, other, page, swapped, gap, { text: "", decorative: true }), swapped);
+  assert.equal(placeDescriptionState(decorative, other, page, "").state, "decorative");
+});
+
+for (const alt of [mediaNameAlt(other), "b-photo_2", "b-photo_2.png"]) {
+  test(`legacy name alt ${alt} reads missing and follows descriptions, Decorative and swaps`, () => {
+    const records = setMediaDescription(empty(), other, "Old description", true);
+    const source = `<img src="/images/b-photo_2.png" alt="${alt}">`;
+    assert.equal(followsFileName(other, alt), true);
+    assert.equal(followsFileName(other, "My words"), false);
+    assert.equal(followsFileName(other, undefined), false);
+    assert.deepEqual(placeDescriptionState(records, other, page, alt), { state: "missing", own: false, byAgent: false });
+    const old = { text: "Old description", decorative: false };
+    assert.equal(descriptionPlaceEdits(records, other, page, source, old, { text: "A desk", decorative: false }),
+      '<img src="/images/b-photo_2.png" alt="A desk">');
+    assert.equal(descriptionPlaceEdits(records, other, page, source, old, { text: "", decorative: true }), swapped);
+    assert.equal(descriptionPlaceEdits(records, other, page, source, old, { text: "", decorative: false }), source);
+    // A name alt that is the file's description follows it like any shared description (slice 13).
+    const named = setMediaDescription(empty(), other, alt);
+    assert.deepEqual(placeDescriptionState(named, other, page, alt), { state: "described", own: false, byAgent: false });
+    assert.equal(descriptionPlaceEdits(named, other, page, source, { text: alt, decorative: false }, { text: "", decorative: false }),
+      '<img src="/images/b-photo_2.png" alt="">');
+    assert.equal(swapPlaceImage(records, page, other, file, alt, '<img src="/images/a.png">').alt, "");
+    assert.equal(swapPlaceImage(setMediaDescription(records, file, "New description"), page, other, file, alt, "").alt, "New description");
+    assert.equal(swapPlaceImage(setMediaFileDecorative(records, file, true), page, other, file, alt, "").alt, "");
+  });
+
+  test(`deliberate agent name words ${alt} stay own words`, () => {
+    const records = setMediaPlaceAgentText(setMediaDescription(empty(), other, "Old description"), other, page, alt);
+    const source = `<img src="/images/b-photo_2.png" alt="${alt}">`;
+    assert.deepEqual(placeDescriptionState(records, other, page, alt), { state: "described", own: true, byAgent: true });
+    for (const next of [{ text: "New description", decorative: false }, { text: "", decorative: true }, { text: "", decorative: false }])
+      assert.equal(descriptionPlaceEdits(records, other, page, source, { text: "Old description", decorative: false }, next), source);
+    const swapped = swapPlaceImage(records, page, other, file, alt, `<img src="/images/a.png" alt="${alt}">`);
+    assert.equal(swapped.alt, undefined);
+    assert.equal(swapped.records.files[file]?.places?.[page]?.agentText, alt);
+  });
+}
 
 test("a page uses a file through any of its image addresses", () => {
   assert.equal(pageUsesFile(`<img src="../images/a.png?v=2">`, page, file), true);

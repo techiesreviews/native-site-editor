@@ -1,7 +1,7 @@
 ---
 title: Placing an undescribed file leaves it not described yet
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-85 runner)
 blocked_by: [21-agents-place-describe-collect]
 builder: sol

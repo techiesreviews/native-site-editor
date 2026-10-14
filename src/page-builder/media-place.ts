@@ -34,6 +34,7 @@ export async function placeMediaImage(
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
+    // Page places use the rules below; picker alt defaults belong to component and settings fields.
   const swap = (alt: string | undefined, picked = image) => {
     const markup = mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, target.width, alt === undefined);
     return { markup, page: latest.slice(0, range.tag.start) + markup + latest.slice(range.tag.end) };

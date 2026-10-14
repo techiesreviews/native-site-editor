@@ -77,6 +77,29 @@ test("a phone shows the picker full-screen, its status above one row of Cancel a
   await expect.poll(() => source(page)).toContain('src="/images/studio-desk.svg"');
 });
 
+test("Use leaves an undescribed file missing until File details supplies its description", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await openPicker(page);
+  await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+  const image = frame(page).locator(".hero img");
+  await expect(image).toHaveAttribute("alt", "");
+  await image.click();
+  await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Decorative", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await openPicker(page);
+  await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker(page).getByRole("button", { name: "File details", exact: true }).click();
+  await picker(page).getByLabel("Description", { exact: true }).fill("A studio desk, now described");
+  await picker(page).getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(image).toHaveAttribute("alt", "A studio desk, now described");
+  await picker(page).getByRole("button", { name: "Back", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await image.click();
+  await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toHaveCount(0);
+});
+
 test("the picker has the pane's Collections and More, shows only images, and keeps its choice through File details", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);

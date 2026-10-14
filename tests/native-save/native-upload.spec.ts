@@ -112,8 +112,8 @@ test("Add new file in the Media picker adds to images/ and chooses it; Use place
   await (await upload).setFiles({ name: "Team Photo.svg", mimeType: "image/svg+xml", buffer: svg });
   await addedThenUse(page, "Team Photo.svg", "images/team-photo.svg");
 
-  // The image points at the new file, its alt follows the name, and the preview shows the bytes.
-  await expect.poll(() => editorText(page)).toContain(`<img alt="team photo" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.svg" data-key="hero-image">`);
+  // The image points at the new file, its alt stays empty until described, and the preview shows the bytes.
+  await expect.poll(() => editorText(page)).toContain(`<img alt="" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.svg" data-key="hero-image">`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", `data:image/svg+xml;base64,${svg.toString("base64")}`);
 
   // It is an A change, uploaded, with the page's edit beside it.

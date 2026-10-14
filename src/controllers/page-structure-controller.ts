@@ -522,7 +522,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         kind: "address",
         label: "Alt text",
         // No file at all comes first; only an image that shows something needs its alt text.
-        warning: !src?.value.trim() && !attribute("srcset")?.value.trim() && !(node && ports.nativePictureSources(source, node)) ? "No image" : !alt ? "Alt text missing" : !alt.value && description?.state !== "decorative" ? "Not described yet" : undefined,
+        warning: !src?.value.trim() && !attribute("srcset")?.value.trim() && !(node && ports.nativePictureSources(source, node)) ? "No image" : !alt ? "Alt text missing" : description?.state === "missing" || !alt.value && description?.state !== "decorative" ? "Not described yet" : undefined,
         value: alt?.value ?? "",
         initial: alt ? undefined : altFromPath(src?.value ?? ""),
         placeholder: "What the image shows",

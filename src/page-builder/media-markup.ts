@@ -59,7 +59,7 @@ export function mediaImageMarkup(image: MediaImage, existing = "<img>", rendered
   return text.slice(0, updated.nameEnd) + append + text.slice(updated.nameEnd);
 }
 
-/** The words a picture's name gives a new place while its file is not described (slice 13). */
+/** Name words used by picker fields and to recognise legacy page-image alts. */
 export function mediaNameAlt(path: string) {
   return (path.split("/").pop() ?? path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
 }

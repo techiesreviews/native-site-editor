@@ -3,7 +3,7 @@ import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./page-builder/media-workspace";
 import { createMediaByteCache } from "./page-builder/media-byte-cache";
-import { mediaNameAlt, mediaVariants, type MediaImage } from "./page-builder/media-markup";
+import { mediaVariants, type MediaImage } from "./page-builder/media-markup";
 
 /** Loaded only when an agent changes Media. All writes use the editor's media transactions. */
 export async function applyAgentMedia(
@@ -25,7 +25,7 @@ export async function applyAgentMedia(
     try {
       const data = await cache.get(file); ctx.assertLive();
       if (ctx.assetVersion(file) !== version) throw new Error("The image changed while preparing placement. Try again.");
-      let alt = mediaNameAlt(file);
+      let alt = "";
       try {
         const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path));
         const record = records.files[file];

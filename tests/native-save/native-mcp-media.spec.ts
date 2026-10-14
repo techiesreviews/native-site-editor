@@ -38,6 +38,34 @@ function result(value: unknown): any {
   return JSON.parse(text);
 }
 
+test("an agent places an undescribed file, then describes the file and fills the place", { tag: "@smoke" }, async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const response = await client.callTool({ name, arguments: { ...args, waitSeconds: 25 } });
+    expect(response.isError, JSON.stringify(response)).toBeFalsy();
+    return result(response);
+  };
+  try {
+    const inspection = await call("inspect_preview", { page: indexPath, selector: ".hero img", limit: 1 });
+    const element = inspection.result.elements[0].element, file = "images/studio-desk.svg";
+    const placed = await call("place_media", { path: indexPath, element, file });
+    expect(placed.state).toBe("applied");
+    expect(placed.result.alt).toBe("");
+    const image = frame(page).locator(".hero img").first();
+    await expect(image).toHaveAttribute("alt", "");
+    await image.click();
+    const bar = page.getByRole("toolbar", { name: "Edit bar" });
+    await expect(bar.getByRole("button", { name: "Not described yet", exact: true })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Decorative", exact: true })).toHaveAttribute("aria-pressed", "false");
+    const words = "A studio desk, described after placement";
+    expect((await call("describe_media", { file, text: words })).state).toBe("applied");
+    await expect(image).toHaveAttribute("alt", words);
+    await image.click();
+    await expect(bar.getByRole("button", { name: "Not described yet", exact: true })).toHaveCount(0);
+  } finally { await client.close(); }
+});
+
 
 test("an agent describes and places a picture already in Media; To check lists it and Undo takes it back", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

@@ -251,14 +251,14 @@ test("every family member's record follows the rename, and Undo restores the old
 
 test("description metadata rewrites shared and missing page alts with records in one undoable batch", async () => {
   const f = fixture(); await f.host.load();
-  const original = '<img src="/images/a.png" alt="Default"><img src="/images/a.png" alt=""><img src="/images/a.png"><img src="/images/a.png" alt="Own words">';
+  const original = '<img src="/images/a.png" alt="Default"><img src="/images/a.png" alt=""><img src="/images/a.png"><img src="/images/a.png" alt="a"><img src="/images/a.png" alt="a.png"><img src="/images/a.png" alt="Own words">';
   f.text.set("index.html", original);
   const css = f.text.get("styles/site.css");
   await f.host.metadata({ "images/a.png": { alt: "New description" } });
   assert.equal(f.batches.length, 1);
   assert.equal(f.batches[0].expectedSources.get("index.html"), original);
   assert.equal(f.batches[0].edits.size, 2);
-  assert.equal((f.text.get("index.html")!.match(/alt="New description"/g) ?? []).length, 3);
+  assert.equal((f.text.get("index.html")!.match(/alt="New description"/g) ?? []).length, 5);
   assert.ok(f.text.get("index.html")!.includes('alt="Own words"'));
   assert.equal(f.text.get("styles/site.css"), css);
   f.history.pop()!();
@@ -267,7 +267,7 @@ test("description metadata rewrites shared and missing page alts with records in
   await f.host.metadata({ "images/a.png": { decorative: true } });
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].decorative, true);
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, undefined);
-  assert.equal((f.text.get("index.html")!.match(/alt=""/g) ?? []).length, 3);
+  assert.equal((f.text.get("index.html")!.match(/alt=""/g) ?? []).length, 5);
   const decorated = f.text.get("index.html");
   await f.host.metadata({ "images/a.png": { decorative: false } });
   assert.equal(f.text.get("index.html"), decorated);
@@ -393,14 +393,14 @@ test("To check: load lists agent words; OK clears a file's mark and keeps its wo
 
 test("To check: Lex's edit of a file description updates the places using it and clears the mark", async () => {
   const f = fixture();
-  f.text.set("index.html", '<img src="/images/a.png" alt="Agent alt"><img src="/images/a.png" alt="Own">');
+  f.text.set("index.html", '<img src="/images/a.png" alt="Agent alt"><img src="/images/a.png" alt=""><img src="/images/a.png" alt="a.png"><img src="/images/a.png" alt="Own">');
   f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { description: { text: "Agent alt", byAgent: true } } } }));
   await f.host.load();
   const row = { file: "images/a.png", text: "Agent alt" };
   await assert.rejects(f.host.check!(row, "  "), /Write the description/);
   await f.host.check!(row, "Lex's words ");
   assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Edit description");
-  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Lex\'s words"><img src="/images/a.png" alt="Own">');
+  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Lex\'s words"><img src="/images/a.png" alt="Lex\'s words"><img src="/images/a.png" alt="Lex\'s words"><img src="/images/a.png" alt="Own">');
   assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "Lex's words" });
   f.history.pop()!();
   assert.ok(f.text.get("index.html")!.includes('alt="Agent alt"'));
@@ -466,12 +466,12 @@ test("To check: saving the same words counts as OK for a file and a place; one U
 
 test("agent file descriptions flow to following places, mark To check, and undo with records", async () => {
   const f = fixture(); await f.host.load();
-  f.text.set("index.html", '<body><img src="/images/a.png" alt="Default"><img src="/images/a.png" alt="Own"><img src="/images/a.png"></body>');
+  f.text.set("index.html", '<body><img src="/images/a.png" alt="Default"><img src="/images/a.png" alt="Own"><img src="/images/a.png"><img src="/images/a.png" alt=""><img src="/images/a.png" alt="a.png"></body>');
   const before = f.text.get("index.html");
   await f.host.describe("images/a.png", { text: "A garden & flowers" });
   assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
   assert.match(f.batches[0].label, /Agent described a.png/);
-  assert.equal((f.text.get("index.html")!.match(/alt="A garden &amp; flowers"/g) ?? []).length, 2);
+  assert.equal((f.text.get("index.html")!.match(/alt="A garden &amp; flowers"/g) ?? []).length, 4);
   assert.match(f.text.get("index.html")!, /alt="Own"/);
   assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "A garden & flowers", byAgent: true });
   assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", text: "A garden & flowers" }]);

@@ -203,6 +203,16 @@ test("place Decorative writes page and records atomically; unmark leaves empty a
   // Simulate Undo of both batches, including removal of newly created metadata.
   f.sources.delete(".editor/media.json"); f.sources.set("index.html", original);
   assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
+  // Lazy rules report legacy names as gaps even while their alt is nonempty.
+  for (const alt of ["old", "old.png"]) {
+    assert.equal(f.controller.placeState("index.html", "/images/old.png", alt)?.state, "missing");
+    assert.equal(f.controller.placeState("index.html", "/images/old.png", alt)?.own, false);
+  }
+  f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: {
+    "images/old.png": { places: { "index.html": { agentText: "old.png" } } },
+  } }));
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "old.png")?.own, true);
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "old.png")?.byAgent, true);
 });
 
 test("a Decorative press refuses when the page is switched while records are read", async () => {

@@ -11,13 +11,21 @@ export function fileDescriptionState(record?: MediaFileRecord) {
 }
 export function placeDescriptionState(records: MediaRecords, file: string, page: string, alt: string | undefined) {
   const record = records.files[file], place = record?.places?.[page];
-  const own = Boolean(alt && alt !== record?.description?.text);
+  // A name alt that is also the file's description simply follows that description.
+  const name = alt !== record?.description?.text && followsFileName(file, alt), agentName = name && place?.agentText === alt;
+  if (name && !agentName) return { state: "missing" as const, own: false, byAgent: false };
+  const own = Boolean(alt && (agentName || alt !== record?.description?.text));
   return { state: alt ? "described" as const : alt !== undefined && (record?.decorative || place?.decorative) ? "decorative" as const : "missing" as const,
     own, byAgent: own ? place?.agentText === alt : Boolean(alt && record?.description?.byAgent) };
 }
-export function newPlaceAlt(records: MediaRecords, file: string): string | undefined {
+export function newPlaceAlt(records: MediaRecords, file: string): string {
   const state = fileDescriptionState(records.files[file]);
-  return state.state === "decorative" ? "" : state.text || undefined;
+  return state.state === "decorative" ? "" : state.text;
+}
+/** Legacy name alts follow the file unless recorded as deliberately written agent words. */
+export function followsFileName(file: string, alt: string | undefined): boolean {
+  const name = file.split("/").pop() ?? file;
+  return Boolean(alt && (alt === mediaNameAlt(file) || alt === name.replace(/\.[^.]+$/, "") || alt === name));
 }
 function updateFile(records: MediaRecords, file: string, record: MediaFileRecord) {
   if (JSON.stringify(records.files[file] ?? {}) === JSON.stringify(record)) return records;
@@ -66,7 +74,9 @@ export function descriptionPlaceEdits(records: MediaRecords, file: string, page:
     // Places using the description follow it; own words and Decorative places stay.
     // Not described yet (absent, or empty without a Decorative mark) takes new text;
     // an emptied, undecorated description never writes alt="" over an absent alt.
-    const follows = alt ? alt === before.text && !before.decorative : alt === "" ? !placeDecorative && !(before.decorative && after.decorative) : Boolean(target) || after.decorative;
+    const name = alt !== before.text && followsFileName(file, alt);
+    const follows = name ? records.files[file]?.places?.[page]?.agentText !== alt && (Boolean(target) || after.decorative)
+      : alt ? alt === before.text && !before.decorative : alt === "" ? !placeDecorative && !(before.decorative && after.decorative) : Boolean(target) || after.decorative;
     if (!follows || alt === target) return [];
     const text = ` alt="${mediaEscape(target)}"`;
     return [{ start: attribute?.start ?? tag.nameEnd, end: attribute?.end ?? tag.nameEnd, text }];
@@ -149,10 +159,11 @@ export function swapPlaceImage(
     return { alt: alt === undefined ? "" : undefined, records: next };
   }
   const own = target.state === "decorative" ? "" : target.text;
-  if (alt === undefined) return { alt: target.state === "decorative" ? "" : own || mediaNameAlt(to), records };
+  if (alt === undefined) return { alt: own, records };
   if (alt === "") return { alt: own || undefined, records };
   // Words that were the old file's description describe the old picture, not this one.
-  if (from && from !== to && alt === old?.description?.text) return { alt: target.state === "decorative" ? "" : own || mediaNameAlt(to), records };
+  if (from && from !== to && (followsFileName(from, alt)
+    ? old?.places?.[page]?.agentText !== alt : alt === old?.description?.text)) return { alt: own, records };
   // Own words an agent wrote keep their by-agent mark: it moves with the words to the new file on
   // this page (the old file keeps it only while it still shows on the page), so To check keeps them.
   if (from && from !== to && alt && old?.places?.[page]?.agentText === alt) {
