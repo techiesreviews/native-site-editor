@@ -49,7 +49,7 @@ test("picker preserves the place's own words and applies the exact captured imag
   const f = fixture({ placeLabel: () => "Home" });
   await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
   assert.equal(f.pick()?.place, "Home · Old alt");
-  await f.pick()!.onPick!({ path: "images/new.png", alt: "New file's words" });
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "New file's words" }, () => false);
   assert.equal(f.changes.length, 1);
   assert.match(f.changes[0], /src="\/images\/new.png"/);
   assert.match(f.changes[0], /alt="Old alt"/);
@@ -61,7 +61,7 @@ test("swapping a Decorative place's picture moves the mark with the page change 
   f.sources.set("index.html", '<section><img src="/images/old.png" alt=""></section>');
   f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { places: { "index.html": { decorative: true } } } } }));
   await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
-  await f.pick()!.onPick!({ path: "images/new.png", alt: "new" });
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "new" }, () => false);
   assert.equal(f.changes.length, 0);
   assert.equal(batches.length, 1);
   const page = batches[0].edits.get("index.html")!, records = JSON.parse(batches[0].edits.get(".editor/media.json")!);
@@ -73,7 +73,7 @@ test("swapping a Decorative place's picture moves the mark with the page change 
   const own = fixture();
   own.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { description: { text: "Old alt" } }, "images/new.png": { decorative: true } } }));
   await own.controller.chooseImage({ path: "index.html", node: [0, 0] });
-  await own.pick()!.onPick!({ path: "images/new.png", alt: "" });
+  await own.pick()!.onPick!({ path: "images/new.png", alt: "" }, () => false);
   assert.match(own.changes[0], /alt=""/);
 });
 
@@ -82,8 +82,9 @@ test("a value's picker resolves to the chosen root path on Use and to nothing on
   const used = f.controller.choosePath("Site settings · Favicon");
   await tick(); await tick();
   assert.equal(f.pick()?.place, "Site settings · Favicon");
-  await f.pick()!.onPick!({ path: "images/icon.png", alt: "" });
-  assert.equal(await used, "/images/icon.png");
+  // The path is a URL: names with # or ? stay part of it.
+  await f.pick()!.onPick!({ path: "images/a #1?.png", alt: "" }, () => false);
+  assert.equal(await used, "/images/a%20%231%3F.png");
   const cancelled = f.controller.choosePath("Site settings · Favicon");
   await tick(); await tick();
   f.pick()!.onClose!();
@@ -98,7 +99,7 @@ test("picker refuses navigation after lazy load and source drift during restore"
   const restoring = fixture({ openFile: () => "other.html" });
   restoring.ports.restoreFile = async () => { restoring.sources.set("index.html", "changed by an agent"); };
   await restoring.controller.chooseImage({ path: "index.html", node: [0, 0] });
-  await assert.rejects(async () => restoring.pick()!.onPick!({ path: "images/new.png", alt: "New" }), /image changed while/);
+  await assert.rejects(async () => restoring.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false), /image changed while/);
   assert.equal(restoring.changes.length, 0);
 });
 
@@ -271,4 +272,26 @@ test("an unsaved uploaded SVG is read from browser storage for the usage scan", 
   const context = await f.controller.workspaceContext();
   assert.equal(await context.read("images/new.svg"), '<svg><image href="/images/old.png"/></svg>');
   assert.equal(f.sources.has("images/new.svg"), false);
+});
+
+test("Cancel while Use reads the records places nothing; a newer records draft refuses the swap", async () => {
+  const f = fixture();
+  let closed = false;
+  f.ports.readText = async () => { closed = true; return '{"version":2,"collections":[],"files":{}}'; };
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "" }, () => closed);
+  assert.equal(f.changes.length, 0);
+  const newer = fixture();
+  newer.ports.readText = async () => { newer.sources.set(".editor/media.json", '{"version":2,"collections":["Newer"],"files":{}}'); return '{"version":2,"collections":[],"files":{}}'; };
+  newer.ports.rememberSource = () => {};
+  await newer.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await assert.rejects(async () => newer.pick()!.onPick!({ path: "images/new.png", alt: "" }, () => false), /image changed while/);
+  assert.equal(newer.changes.length, 0);
+});
+
+test("a value's picker opens nothing when the repository changed while it loaded", async () => {
+  const f = fixture();
+  f.ports.load = async () => { f.navigate(); return f.module; };
+  assert.equal(await f.controller.choosePath("Site settings · Favicon"), undefined);
+  assert.equal(f.pick(), undefined);
 });

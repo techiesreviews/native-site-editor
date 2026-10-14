@@ -53,8 +53,9 @@ export interface MediaCleanUpEntry { item(): { label: string; disabled?: string 
 /** The host draws Clean up into `slot`, above the grid; `closed` returns focus to More. */
 export type MediaCleanUpMount = (slot: HTMLElement, closed: () => void) => MediaCleanUpEntry;
 export interface MediaPickerOptions {
-  /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open. */
-  onPick?: (image: MediaImage) => void | Promise<void>;
+  /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open.
+   * `cancelled` turns true when the picker closes meanwhile (Cancel): nothing may be placed after it. */
+  onPick?: (image: MediaImage, cancelled: () => boolean) => void | Promise<void>;
   /** The picker closed without Use (Cancel, Close or Escape): the existing placement stays. */
   onClose?: () => void;
   /** The place being filled, under the picker's title ("Home · Studio desk"). */
@@ -94,13 +95,14 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
   closeActive?.();
   if (!host) throw new Error("Open a repository before choosing an image.");
   const dialog = node("dialog", "media-library media-library--picker");
-  let used = false;
+  let used = false, closed = false;
   const view = createMediaLibraryView(document.body, host, { ...options, onPick: options.onPick && (async image => {
-    await options.onPick!(image); used = true;
+    await options.onPick!(image, () => closed); used = !closed;
   }) }, dialog);
   const close = () => { dialog.close(); view.dispose(); };
   closeActive = close;
   dialog.addEventListener("close", () => {
+    closed = true;
     if (closeActive === close) closeActive = undefined;
     if (!used) options.onClose?.();
   }, { once: true });

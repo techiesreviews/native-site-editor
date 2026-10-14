@@ -6,7 +6,7 @@ import type { NativeSite, NativeTextEdit } from "../../shared/native-project";
 import type { MediaWorkspaceContext, MediaWorkspaceBatch } from "../page-builder/media-workspace";
 import type { MediaPickerOptions } from "../page-builder/media-picker";
 type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")["mountMediaLibrary"]>;
-import { mediaExistingAlt, mediaImageMarkup, type MediaImage } from "../page-builder/media-markup";
+import { mediaExistingAlt, mediaImageMarkup, mediaUrl, type MediaImage } from "../page-builder/media-markup";
 import { locateNativeElementRange } from "../native-source-location";
 import { isImagePath } from "../native-structure";
 import { uploadImageType } from "../uploads";
@@ -273,7 +273,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (!stamp.holds() || ports.source(target.path) !== source) return;
     // The place: its page, and the picture by its words ("Home · Studio desk").
     const place = `${ports.placeLabel?.(target.path) ?? target.path} · ${initialAlt?.trim() || "Image"}`;
-    await openMediaPicker({ files, accept: "image/*", place, onPick: async (image: MediaImage) => {
+    await openMediaPicker({ files, accept: "image/*", place, onPick: async (image: MediaImage, cancelled) => {
       const changed = "This image changed while the picker was open. Select it again.";
       if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
       if (ports.openFile() !== target.path) await ports.restoreFile(target.path, epoch);
@@ -286,7 +286,9 @@ export function createMediaController(ports: MediaControllerPorts) {
       ctx.assertLive();
       const latest = ports.source(target.path);
       const range = latest === undefined ? undefined : locate(latest, target.node);
-      if (!stamp.holds() || latest === undefined || latest !== source || !range || range.tag.name !== "img" || latest.slice(range.tag.start, range.tag.end) !== expected) throw new Error(changed);
+      // The alt decision rests on the records read: a newer records draft refuses, as a newer page does.
+      if (!stamp.holds() || latest === undefined || latest !== source || !range || range.tag.name !== "img" || latest.slice(range.tag.start, range.tag.end) !== expected
+        || ports.source(io.MEDIA_RECORDS_PATH) !== metadata) throw new Error(changed);
       const tag = html.startTags(expected)[0], src = tag && html.startTagAttribute(expected, tag, "src");
       const from = src ? references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), target.path) : undefined;
       // Unreadable records never block a swap, and are never overwritten (slice 13).
@@ -299,6 +301,8 @@ export function createMediaController(ports: MediaControllerPorts) {
       // Whether the old file stays on the page does not depend on the alt, only on the new src.
       const after = rules.swapPlaceImage(records, target.path, from, image.path, initialAlt, swap(undefined).page);
       const { markup, page } = swap(after.alt);
+      // Cancel while the records were read: the placement stays.
+      if (cancelled()) return;
       if (after.records === records || !readable) {
         if (!ports.change(target.path, latest, [{ start: range.tag.start, end: range.tag.end, text: markup }], target.node, "Image replaced")) throw new Error("The image could not be replaced.");
         return;
@@ -313,9 +317,15 @@ export function createMediaController(ports: MediaControllerPorts) {
   /** The Media picker for a value that holds an image's address (component fields, Site settings):
    * resolves to the chosen file's root path on Use, or undefined on Cancel. */
   async function choosePath(place: string): Promise<string | undefined> {
+    const stamp = ports.stamp();
     const { openMediaPicker } = await load();
+    // A repository switched while the picker loaded: no picker opens for the old request.
+    if (!stamp.holds()) return undefined;
     return new Promise(resolve => {
-      openMediaPicker({ accept: "image/*", place, onPick: image => resolve(`/${image.path}`), onClose: () => resolve(undefined) })
+      openMediaPicker({ accept: "image/*", place, onClose: () => resolve(undefined), onPick: (image, cancelled) => {
+        if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
+        resolve(cancelled() ? undefined : mediaUrl(image.path));
+      } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });
   }

@@ -238,10 +238,12 @@ export function createMediaLibraryView(
     if (!path || !pick) return;
     void task(async () => {
       const data = await cache.get(path);
+      // Cancel or Close while the picture was read: nothing is placed.
+      if (!alive) return;
       const meta = library.metadata[path];
       const image: MediaImage = { path, width: data.width, height: data.height, variants: mediaVariants(path, library.items.map(item => item.path)),
         alt: meta?.decorative ? "" : meta?.alt || mediaNameAlt(path) };
-      await pick(image);
+      await pick(image, () => !alive);
       shell.close();
     });
   }
