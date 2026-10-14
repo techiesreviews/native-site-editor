@@ -51,31 +51,28 @@ import { createNativePreview, routeStylesheets, type NativePreviewSelection, typ
 import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import type { DraggedBlock } from "./page-builder/drop-target";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
-import type { SiteSettingsValues, SiteLinkPreference } from "./components/site-settings";
-import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
-import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
-import { editNavigation, readNavigation } from "./page-builder/site-navigation";
-import { nativePageTemplate, newFilePath, newFolderPath, renamedPath, type Checked } from "./native-create";
+import { readNavigation } from "./page-builder/site-navigation";
+import { withPageField } from "./page-builder/site-head";
+import { newFilePath, newFolderPath, renamedPath, type Checked } from "./native-create";
 import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
-import { createPagesTree, type NativeNewRequest, type NativePagesTarget } from "./components/pages-tree";
+import type { createPagesTree, NativeNewRequest, NativePagesTarget } from "./components/pages-tree";
+import "./components/pages-tree.css";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import type { FilesResult, OwnerInstallation } from "../shared/types";
 import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "./boot-memory";
-import type { CreateChoice, CreateOutcome } from "./components/get-started";
-import type { WizardCreateOutcome } from "./components/setup-wizard";
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
 import { forgetSignedIn } from "./auto-signin";
 
 import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
 import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
-import { withSiteSettings, type SetupState } from "./setup-checklist";
-import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
+import type { SetupState } from "./setup-checklist";
+import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import type { MenuItem } from "./components/row-menu";
 import { deleteFile, duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
-import { DEFAULT_IMAGE_FOLDER, addUpload, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadImageType, uploadKey } from "./uploads";
+import { DEFAULT_IMAGE_FOLDER, formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
@@ -101,7 +98,7 @@ import { nativePageRoute } from "../shared/native-routes";
 
 
 import { descendants, parseSource } from "./page-builder/component-model";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageBody, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
@@ -115,7 +112,7 @@ import { createComponentTools, type ComponentTools, type PreparedComponentLoader
 import { addSectionStep } from "./page-builder/component-plans";
 import { writeNewDrafts } from "./new-drafts";
 import { createAgentSiteHost } from "./agent-site-host";
-import { createGuardedEdits, type Reads, type PlanResult, type Stamp, type Outcome } from "./guarded-edit";
+import { createGuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
 import type {
   EditorContext,
@@ -127,7 +124,6 @@ import type {
   Repository,
   SessionInfo,
   Snapshot,
-  StarterFile,
   TreeEntry,
 } from "../shared/types";
 
@@ -181,18 +177,40 @@ const loadMedia = lazyModule(async () => {
     usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener), pageLabel: nativePageLabelOf } });
   return module;
 });
-const loadChecklist = lazyModule(() => import("./components/setup-checklist"));
+const loadSetupActions = lazyModule(async () => {
+  const { createSetupActions } = await import("./setup-actions");
+  return createSetupActions({
+    get info() { return info; }, get generation() { return generation; },
+    get repositories() { return repositories; }, set repositories(value) { repositories = value; },
+    get wizardCreated() { return wizardCreated; }, set wizardCreated(value) { wizardCreated = value; },
+    get waitingForRepositories() { return waitingForRepositories; }, set waitingForRepositories(value) { waitingForRepositories = value; },
+    get repositorySelect() { return repositorySelect; }, get repositoryMenu() { return repositoryMenu; },
+    boot, appStore, guardedEdits, nativeBaseSources, repositoryIndex, setupController,
+    api, readFiles, readFile, readBlob, branchText, draftScope, draftStore, pathNow,
+    rememberStartingPoint, rememberPartialStart, rememberRepositories, repositoryOptions,
+    chooseRepository, forgetPartialStart, removeFinishStarter, loadSnapshot, announce, errorMessage,
+  });
+});
+const loadChecklist = lazyModule(async () => (await Promise.all([import("./components/setup-checklist"), loadSetupActions()]))[0]);
 // The prompt for a coding agent that sets the site up (src/agent-prompts.ts),
 // loaded with the wizard and the start panel that offer it.
 let agentPrompts: typeof import("./agent-prompts") | undefined;
 const loadAgentPrompts = lazyModule(async () => agentPrompts = await import("./agent-prompts"));
-const loadWizard = lazyModule(async () => (await Promise.all([import("./components/setup-wizard"), loadAgentPrompts()]))[0]);
-const loadGetStarted = lazyModule(() => import("./components/get-started"));
-const loadStartSite = lazyModule(() => import("./components/start-site"));
+const loadWizard = lazyModule(async () => (await Promise.all([import("./components/setup-wizard"), loadAgentPrompts(), loadSetupActions()]))[0]);
+const loadGetStarted = lazyModule(async () => (await Promise.all([import("./components/get-started"), loadSetupActions()]))[0]);
+const loadStartSite = lazyModule(async () => (await Promise.all([import("./components/start-site"), loadSetupActions()]))[0]);
 const loadSpotlight = lazyModule(() => import("./components/spotlight"));
 const loadAgentMenu = lazyModule(() => import("./components/agent-menu"));
 // The Site, Page and Navigation settings dialogs, loaded when one first opens.
-const loadSiteSettings = lazyModule(() => import("./components/site-settings"));
+const loadSiteSettings = lazyModule(async () => {
+  const { createNativeSettings } = await import("./native-settings");
+  return createNativeSettings({
+    get nativeSite() { return nativeSite; }, get generation() { return generation; },
+    appStore, guardedEdits, nativeAssets, nativePageLabelOf, setupScope,
+    nativeUrlPlan, changeNativeUrl, restoreFile, nativeSiteReadForCreate,
+    uploadFilesTo, nativeEffectiveSource, loadNativeAssets,
+  });
+});
 // What agents are shown and how their commands run (src/agent-site.ts), loaded when one asks.
 const loadAgentSite = lazyModule(() => import("./agent-site"));
 // The code panes' Monaco load gate and resize handles (src/controllers/code-panes-controller.ts).
@@ -442,39 +460,11 @@ function mountWorkspace() {
   });
   fileActions.attachRoot(files);
   fileActions.attachRoot(element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
-  pagesTree = createPagesTree({
-    open: (file) => {
-      // The open page chosen again shows in the preview, which a link may have taken elsewhere.
-      if (file === appStore.openFile.value && editorModule?.isMounted(file)) { explorerDropdown?.close(); updatePreview(); }
-      else void restoreFile(file, generation);
-    },
-    plan: (request) => {
-      const planned = planNativeNew(request);
-      return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
-    },
-    create: createNativeNew,
-    announce,
-    onInteractionEnd: flushPendingNativePageTitles,
-    retitle: retitleNativePage,
-    changed: (file) => Boolean(treeState().changes.get(file)),
-    discard: (file) => void savePublish.discardFile(file),
-    duplicate: (file) => void duplicateNativePage(file),
-    remove: (target) => void removeNativePagesTarget(target),
-    createPage: (route) => void createNativeFolderPage(route),
-    pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
-    navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
-    canAddToNavigation: () => Boolean(nativeNavigationTarget(nativeSite?.routes["/"])),
-    planUrl: (target, value) => (target.file ? nativeUrlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
-    changeUrl: (target, value, keep) => (target.file ? changeNativeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
-    moveTo: (target) => void moveNativePageTo(target),
-    dropProblem: nativeDropProblem,
-    drop: (source, parent) => void confirmNativeMove(source, parent),
-    cardOffer: cardsController.cardOffer,
-  });
-  element("explorer-pages").append(pagesTree.root);
+  pagesTree = undefined;
+  pagesTreeMount = undefined;
   mountExplorerTabs();
   element("explorer").addEventListener("toggle", () => {
-    if (explorerDropdown?.isOpen()) renderPagesTree();
+    if (explorerDropdown?.isOpen()) void ensurePagesTree().then(() => renderPagesTree()).catch(errorMessage);
     else {
       pagesTree?.reset();
       fileActions?.close();
@@ -629,7 +619,10 @@ const paletteController = createCommandPaletteController({
   stamp: () => guardedEdits.stamp("repository"),
   isMounted: path => Boolean(editorModule?.isMounted(path)),
   beginNewPage: () => { openExplorer(); selectExplorerTab("pages"); },
-  startNewPage: () => pagesTree?.startNew("/"),
+  startNewPage: () => {
+    const since = guardedEdits.stamp("repository");
+    void ensurePagesTree().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesTree?.startNew("/"); }).catch(errorMessage);
+  },
   actions: {
     open: (path) => {
       if (path === appStore.openFile.value && editorModule?.isMounted(path)) return;
@@ -1835,10 +1828,6 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
 
 // ---- Page-builder site controls. Kept together to isolate this slice's wiring. ----
 
-function nativeSitePageChoices() {
-  return Object.entries(nativeSite?.routes ?? {}).map(([route, file]) => ({ route, file, label: nativePageLabelOf(file) }));
-}
-
 function nativeNavigationTarget(pagePath: string | undefined, r: Reads = guardedEdits.peek) {
   const site = r.site();
   if (!site || !pagePath) return undefined;
@@ -1854,110 +1843,6 @@ function nativeNavigationTarget(pagePath: string | undefined, r: Reads = guarded
   return list ? { path: pagePath, source: page, list, shared: false } : undefined;
 }
 
-let siteLinkPreferenceScope = "";
-let siteLinkPreferences = new Map<string, SiteLinkPreference>();
-
-function nativeSettingsController({ createSiteSettings }: typeof import("./components/site-settings"), shown: string[] = []) {
-  const scope = setupScope();
-  let since = guardedEdits.stamp();
-  if (siteLinkPreferenceScope !== scope) { siteLinkPreferenceScope = scope; siteLinkPreferences = new Map(); }
-  let baseline = new Map(shown.map(path => [path, guardedEdits.peek.source(path)] as const));
-  const changed = "The repository or source changed meanwhile. Reopen settings and try again.";
-  const stale = () => !since.holds();
-  const sourcesChanged = () => [...baseline].some(([path, source]) => guardedEdits.peek.source(path) !== source);
-  const checkShown = (r: Reads) => [...baseline].some(([path, source]) => r.source(path) !== source);
-  const applied = (outcome: Outcome) => {
-    if (!outcome.ok) return outcome.reason === "stale" ? changed : outcome.message;
-    since = guardedEdits.stamp();
-    baseline = new Map(shown.map(path => [path, guardedEdits.peek.source(path)] as const));
-    return outcome.message;
-  };
-  return createSiteSettings({
-    async applyPage(path, fields) {
-      // The element selected on the page as it was applied: its Undo and Redo select it again.
-      const selected = appStore.selection.value;
-      const at = selected?.path === path && selected.node ? { path, node: [...selected.node] } : undefined;
-      return applied(await guardedEdits.run(r => {
-        if (checkShown(r)) return { refuse: changed };
-        const source = r.source(path), site = r.site();
-        if (source === undefined || !site || !Object.values(site.routes).includes(path)) return { refuse: "The page could not be read." };
-        let next = source;
-        try { for (const [field, value] of Object.entries(fields)) next = upsertHeadTag(next, field as HeadField, value); }
-        catch (error) { return { refuse: error instanceof Error ? error.message : "Page settings could not be changed." }; }
-        return { edits: new Map([[path, next]]), ...at ? { select: { before: at, after: at } } : {}, done: "Page settings applied as a draft. Publish to keep them.", undone: "Undid page settings." };
-      }, { since }));
-    },
-    planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : nativeUrlPlan(path, value),
-    async applyUrl(path, value, keep) {
-      const error = await changeNativeUrl(path, value, keep, since, baseline);
-      if (!error) {
-        since = guardedEdits.stamp();
-        // The page may have moved: the settings panel closes on URL Apply.
-        baseline = new Map(shown.map(file => [file, guardedEdits.peek.source(file)] as const));
-      }
-      return error;
-    },
-    async applySite(values) {
-      return applied(await guardedEdits.run(r => checkShown(r) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));
-    },
-    async open404() {
-      if (stale() || sourcesChanged() || !nativeSite) return changed;
-      if (nativeSite.routes["/404.html"]) { await restoreFile(nativeSite.routes["/404.html"], generation); return undefined; }
-      return applied(await guardedEdits.run(async r => {
-        if (checkShown(r)) return { refuse: changed };
-        const site = r.site();
-        if (!site) return { refuse: changed };
-        const unread = await nativeSiteReadForCreate();
-        if (unread) return { refuse: unread };
-        const template = r.source(site.routes["/"]);
-        if (template === undefined) return { refuse: NATIVE_HOME_UNREAD };
-        r.exists("404.html");
-        let source = nativePageTemplate(template, "Page not found");
-        source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
-        source = upsertHeadTag(source, "robots", "noindex");
-        source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
-        return { creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." };
-      }, { since }));
-    },
-    async applyNavigation(path, original, links) {
-      return applied(await guardedEdits.run(r => {
-        const source = r.source(path);
-        if (source !== original) return { refuse: "Navigation changed while this panel was open. Reopen it to review the latest links." };
-        const list = readNavigation(source, path.startsWith("components/"));
-        if (!list) return { refuse: "This header's navigation is not a simple list of links." };
-        try { return { edits: new Map([[path, editNavigation(source, list, links)]]), done: "Navigation applied as a draft. Publish to keep it.", undone: "Undid changing navigation." }; }
-        catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
-      }, { since }));
-    },
-    async uploadImage() {
-      const picked = await pickFiles({ accept: "image/*", multiple: false });
-      if (stale()) throw new Error(changed);
-      const [path] = await uploadFilesTo(DEFAULT_IMAGE_FOLDER, picked);
-      if (stale()) throw new Error(changed);
-      return path ? `/${path}` : undefined;
-    },
-    async imageUrl(value) {
-      if (stale() || !value.trim()) return undefined;
-      // An absolute URL is previewed only when it is this site's own address (its canonical
-      // origin), from the repository file at that path; the editor never loads other sites' images.
-      const page = appStore.openFile.value ?? "index.html";
-      let own: string | undefined;
-      if (/^https?:\/\//i.test(value)) {
-        let url: URL, origin: string | undefined;
-        // Another site's image is not loaded: the preview says it is unavailable (the dialog shows that for a refusal).
-        const unavailable = () => { throw new Error("Images from other sites are not previewed."); };
-        try { url = new URL(value.trim()); origin = new URL(readHeadSettings(nativeEffectiveSource(page) ?? "").canonical || "x:").origin; } catch { return unavailable(); }
-        if (!origin || origin === "null" || url.origin !== origin) return unavailable();
-        try { own = decodeURIComponent(url.pathname).replace(/^\//, ""); } catch { return unavailable(); }
-      }
-      const path = own ?? resolveImportPath(page, value);
-      if (!path || !isImagePath(path)) return undefined;
-      await loadNativeAssets({ "index.html": `<img src="/${escapeText(path).replace(/"/g, "&quot;")}">` }, () => {});
-      return stale() || sourcesChanged() ? undefined : nativeAssets.get(path);
-    },
-  }, siteLinkPreferences);
-}
-
 async function openNativePageSettings(path: string) {
   const epoch = generation, scope = setupScope();
   const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
@@ -1965,7 +1850,7 @@ async function openNativePageSettings(path: string) {
   if (problem) { errorMessage(new Error(problem)); return; }
   const source = nativeEffectiveSource(path), route = nativeRouteForPath(path);
   if (source === undefined || !route) return;
-  try { nativeSettingsController(settings, [path]).page({ path, source, route, images: nativeImagePaths() }); }
+  try { settings.nativeSettingsController(settings, [path]).page({ path, source, route, images: nativeImagePaths() }); }
   catch (error) { errorMessage(error); }
 }
 
@@ -1976,29 +1861,8 @@ async function openNativeSiteSettings() {
   if (epoch !== generation || scope !== setupScope()) return;
   if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
   try {
-    nativeSettingsController(settings, [NATIVE_CONFIG_PATH, nativeSite.routes["/"]]).site({ values: readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
+    settings.nativeSettingsController(settings, [NATIVE_CONFIG_PATH, nativeSite.routes["/"]]).site({ values: settings.readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: settings.nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
   } catch (error) { errorMessage(error); }
-}
-
-function applyNativeSiteSettings(values: SiteSettingsValues, r: Reads): PlanResult {
-  const site = r.site();
-  if (!site) return { refuse: "Open a native site first." };
-  const config = r.source(NATIVE_CONFIG_PATH);
-  const before = readSiteIdentity(config, r.source(site.routes["/"]) ?? "");
-  const edits = new Map<string, string>();
-  try {
-    const nextConfig = withSiteIdentityConfig(config, values);
-    if (config !== nextConfig) edits.set(NATIVE_CONFIG_PATH, nextConfig);
-    for (const path of new Set(Object.values(site.routes))) {
-      const source = r.source(path);
-      if (source === undefined) return { refuse: `${path} could not be read. No settings were applied.` };
-      const next = withSiteIdentityPage(source, before, values);
-      if (next !== source) edits.set(path, next);
-    }
-  } catch (error) { return { refuse: error instanceof Error ? error.message : "Site settings could not be changed." }; }
-  const creates: { path: string; content: string }[] = [];
-  if (config === undefined && edits.has(NATIVE_CONFIG_PATH)) { creates.push({ path: NATIVE_CONFIG_PATH, content: edits.get(NATIVE_CONFIG_PATH)! }); edits.delete(NATIVE_CONFIG_PATH); }
-  return { creates, edits, done: `Site settings applied to ${edits.size + creates.length} files as drafts. Publish to keep them.`, undone: "Undid site settings on all affected pages." };
 }
 
 async function openNativeNavigation(pagePath: string) {
@@ -2008,7 +1872,7 @@ async function openNativeNavigation(pagePath: string) {
   if (problem) { errorMessage(new Error(problem)); return; }
   const target = nativeNavigationTarget(pagePath);
   if (!target) { refuse("No editable navigation found in this page's header. Navigation supports simple links, or a list of single-link items."); return; }
-  nativeSettingsController(settings).navigation({ path: target.path, source: target.source, links: target.list.links, pages: nativeSitePageChoices(), shared: target.shared });
+  settings.nativeSettingsController(settings).navigation({ path: target.path, source: target.source, links: target.list.links, pages: settings.nativeSitePageChoices(), shared: target.shared });
 }
 
 // Pages and components are found from the files when the project loads. A
@@ -3388,7 +3252,6 @@ function renderLogin(
 
 // Start your site: in place of the preview when the repository has nothing
 // to show, because it is empty or has no index.html at its top.
-let startDialog: ReturnType<typeof createConfirmDialog> | undefined;
 async function startSitePanel() {
   const repo = appStore.repository.value!;
   const empty = Boolean(appStore.snapshot.value?.empty);
@@ -3466,163 +3329,7 @@ function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
 
 // The site's name or address into `.editor/config.json` as a draft (the
 // rest of the file kept); Publish keeps it. Undo in the editor takes it back.
-async function writeSiteSettings(change: { name?: string; url?: string }): Promise<string | undefined> {
-  // The file is read for this repository and branch; if the user moves on meanwhile, nothing is
-  // written (it would land in the other one). The branch's file is read first, so the plan reads it.
-  const since = guardedEdits.stamp("repository"), changed = "The repository changed meanwhile. Try again.";
-  if (guardedEdits.peek.source(NATIVE_CONFIG_PATH) === undefined) {
-    try {
-      const base = await branchText(NATIVE_CONFIG_PATH);
-      if (!since.holds()) return changed;
-      if (base) nativeBaseSources.set(NATIVE_CONFIG_PATH, base.text);
-    } catch (error) {
-      return error instanceof Error ? error.message : `${NATIVE_CONFIG_PATH} could not be read.`;
-    }
-  }
-  const what = change.name !== undefined ? "name" : "address";
-  const done = `Site ${what} set as a draft. Publish to keep it.`, undone = `Undid setting the site ${what}.`;
-  const outcome = await guardedEdits.run(r => {
-    const text = r.source(NATIVE_CONFIG_PATH), next = withSiteSettings(text, change);
-    if ("error" in next) return { refuse: next.error };
-    return text === undefined ? { creates: [{ path: NATIVE_CONFIG_PATH, content: next.text }], done, undone }
-      : { edits: new Map([[NATIVE_CONFIG_PATH, next.text]]), done, undone };
-  }, { since });
-  return outcome.ok ? outcome.message : outcome.reason === "stale" ? changed : outcome.message;
-}
 
-// A starting point's files as drafts: the files of `point` (the blank page,
-// or the Starter site the Worker fetches), new files as new drafts, images
-// as uploads, then the project opened again so the preview shows the site.
-// A file that is already there is replaced only when the user says so.
-async function writeStartingPoint(point: StartingPoint, partial?: { committed: string[]; repoId: number }): Promise<string | undefined> {
-  const repo = appStore.repository.value;
-  const scope = draftScope();
-  if (!repo || !scope) return "Open a repository first.";
-  const epoch = generation;
-  // Everything below reads and writes for this repository, branch and snapshot only.
-  const snap = appStore.snapshot.value!;
-  const bound = () => generation === epoch && appStore.snapshot.value === snap && appStore.repository.value === repo;
-  const find = (path: string) => repositoryIndex.find(api, repo, snap, path);
-  const siteName = siteNameFromRepository(repo.name);
-  let starting: StarterFile[];
-  try {
-    starting = point === "blank" ? blankSiteFiles(siteName) : (await api<{ files: StarterFile[] }>("starter", { name: siteName })).files;
-  } catch (error) {
-    return error instanceof Error ? error.message : "The Starter site could not be loaded. Try again.";
-  }
-  if (epoch !== generation) return "The repository changed meanwhile. Try again.";
-  // Finishing a starting point that stopped part way: the files already committed stay as they are, and nothing else is overwritten.
-  if (partial) starting = starting.filter((file) => !partial.committed.includes(file.path));
-  const state = new Map<string, "free" | "taken" | "folder">();
-  // A file cannot go under a path that is a file: the folder it needs is taken by one.
-  const blockedBy = new Map<string, string>();
-  const isFile = async (path: string) => {
-    const now = pathNow(path);
-    if (now === "file") return true;
-    if (now !== undefined) return false;
-    const found = await find(path);
-    return Boolean(found);
-  };
-  try {
-    for (const file of starting) {
-      const parts = file.path.split("/");
-      for (let index = 1; index < parts.length; index++) {
-        const ancestor = parts.slice(0, index).join("/");
-        const blocked = await isFile(ancestor);
-        if (!bound()) return "The repository changed meanwhile. Try again.";
-        if (blocked) { blockedBy.set(file.path, ancestor); break; }
-      }
-      if (blockedBy.has(file.path)) continue;
-      const now = pathNow(file.path);
-      const found = now === undefined ? await find(file.path) : undefined;
-      if (!bound()) return "The repository changed meanwhile. Try again.";
-      state.set(file.path, now === "folder" ? "folder" : now !== undefined || found ? "taken" : "free");
-    }
-  } catch (error) {
-    return error instanceof Error ? error.message : "GitHub could not be asked which files exist.";
-  }
-  if (!bound()) return "The repository changed meanwhile. Try again.";
-  const taken = starting.filter((file) => state.get(file.path) === "taken");
-  let replace = false;
-  if (taken.length && !partial) {
-    if (!startDialog) {
-      startDialog = createConfirmDialog("start-dialog");
-      document.body.append(startDialog.root);
-    }
-    const shown = taken.slice(0, 6).map((file) => file.path).join(", ") + (taken.length > 6 ? ` and ${taken.length - 6} more` : "");
-    const answer = await startDialog.choose({
-      title: taken.length === 1 ? "A file is already there" : `${taken.length} files are already there`,
-      notes: [`${shown} ${taken.length === 1 ? "is" : "are"} in this repository already.`, "Keep yours and add only the rest, or replace them with the starting point's? A replaced text file stays a draft you can discard."],
-      actions: [{ label: "Keep mine", value: "keep" }, { label: "Replace them", value: "replace" }],
-    });
-    if (!answer.value) return "Nothing was added.";
-    replace = answer.value === "replace";
-    if (!bound()) return "The repository changed meanwhile. Try again.";
-  }
-  const problems: string[] = [];
-  const skipped = new Map<string, string[]>();
-  for (const [path, ancestor] of blockedBy) skipped.set(ancestor, [...(skipped.get(ancestor) ?? []), path]);
-  for (const [ancestor, paths] of skipped)
-    problems.push(`${paths.join(", ")} ${paths.length === 1 ? "was" : "were"} skipped: ${ancestor} is a file here, so nothing can go in it.`);
-  let added = 0;
-  for (const file of starting) {
-    if (!bound()) return "The repository changed meanwhile. Some files may have been added as drafts; the rest were not.";
-    if (blockedBy.has(file.path)) continue;
-    const here = state.get(file.path);
-    if (here === "folder") { problems.push(`${file.path} is a folder here, so it was skipped.`); continue; }
-    if (here === "taken" && !replace) continue;
-    if ("base64" in file) {
-      // Images and other bytes go the way an upload does; one in the way stays.
-      if (here === "taken") continue;
-      const bytes = Uint8Array.from(atob(file.base64), (char) => char.charCodeAt(0));
-      const result = await addUpload({
-        drafts: draftStore(), bytes: uploadBytes(), scope, folder: "", exact: true,
-        file: new File([bytes], file.path, { type: uploadImageType(file.path) }),
-        taken: () => false,
-      });
-      if (!bound()) {
-        // The upload went to the scope captured above; it is not left behind for another branch to see.
-        if (result.ok) draftStore().remove(scope, result.path);
-        return "The repository changed meanwhile. Try again.";
-      }
-      if (result.ok) added++;
-      else problems.push(result.error);
-      continue;
-    }
-    const drafted = draftStore().get(scope, file.path);
-    if (drafted?.upload || drafted?.opaque) continue;
-    let baseSha: string | null = null;
-    let original = "";
-    if (drafted) ({ baseSha, original } = drafted);
-    else if (here === "taken") {
-      try {
-        const entry = await find(file.path);
-        if (entry) { baseSha = entry.sha; original = await readFile(repo.full_name, entry.sha); }
-      } catch {
-        problems.push(`${file.path} could not be read, so it was left as it is.`);
-        continue;
-      }
-      if (!bound()) return "The repository changed meanwhile. Try again.";
-    }
-    if (!bound()) return "The repository changed meanwhile. Try again.";
-    draftStore().save({ ...scope, version: 1, path: file.path, baseSha, original, content: file.content, updatedAt: Date.now() });
-    added++;
-  }
-  if (!bound()) return undefined;
-  const failure = draftStore().error;
-  if (failure) return failure;
-  setupController.start(repo.id);
-  // Finished: the recovery record and its banner go before the reload below, which would offer them again.
-  if (partial) {
-    forgetPartialStart(partial.repoId);
-    removeFinishStarter();
-  }
-  // Opened again: the home page is a draft now, so the native preview takes over from this screen.
-  await loadSnapshot();
-  if (added) announce(`Added ${added} ${added === 1 ? "file" : "files"} as drafts. Publish to keep them.`);
-  if (problems.length) errorMessage(new Error(problems.join(" ")));
-  return undefined;
-}
 
 function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
@@ -3711,6 +3418,51 @@ function fileRow(path: string) { return filesTreeController.row(path); }
 // The explorer's Pages | Media | Files tabs: tab state and tree rendering
 // live in the Pages controller; the host mounts the DOM and paints the tabs.
 let pagesTree: ReturnType<typeof createPagesTree> | undefined;
+const loadPagesTree = lazyModule(() => import("./components/pages-tree"));
+let pagesTreeMount: Promise<void> | undefined;
+function ensurePagesTree() {
+  if (pagesTree) return Promise.resolve();
+  if (pagesTreeMount) return pagesTreeMount;
+  const host = element("explorer-pages");
+  const pending = loadPagesTree().then(({ createPagesTree }) => {
+    if (!host.isConnected || host !== document.getElementById("explorer-pages")) return;
+    pagesTree = createPagesTree({
+      open: (file) => {
+        // The open page chosen again shows in the preview, which a link may have taken elsewhere.
+        if (file === appStore.openFile.value && editorModule?.isMounted(file)) { explorerDropdown?.close(); updatePreview(); }
+        else void restoreFile(file, generation);
+      },
+      plan: (request) => {
+        const planned = planNativeNew(request);
+        return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
+      },
+      create: createNativeNew,
+      announce,
+      onInteractionEnd: flushPendingNativePageTitles,
+      retitle: retitleNativePage,
+      changed: (file) => Boolean(treeState().changes.get(file)),
+      discard: (file) => void savePublish.discardFile(file),
+      duplicate: (file) => void duplicateNativePage(file),
+      remove: (target) => void removeNativePagesTarget(target),
+      createPage: (route) => void createNativeFolderPage(route),
+      pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
+      navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
+      canAddToNavigation: () => Boolean(nativeNavigationTarget(nativeSite?.routes["/"])),
+      planUrl: (target, value) => (target.file ? nativeUrlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
+      changeUrl: (target, value, keep) => (target.file ? changeNativeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
+      moveTo: (target) => void moveNativePageTo(target),
+      dropProblem: nativeDropProblem,
+      drop: (source, parent) => void confirmNativeMove(source, parent),
+      cardOffer: cardsController.cardOffer,
+    });
+    element("explorer-pages").append(pagesTree.root);
+
+    if (explorerDropdown?.isOpen()) renderPagesTree();
+  }).finally(() => { if (pagesTreeMount === pending) pagesTreeMount = undefined; });
+  pagesTreeMount = pending;
+  return pending;
+}
+
 
 function imagesSignature() {
   const scope = draftScope();
@@ -5349,151 +5101,6 @@ const setupEntry = createSetupEntryController({
 });
 
 /** Create site: the repository, with its starting point already committed (POST /api/repositories). */
-async function createSiteInWizard(choice: CreateChoice): Promise<WizardCreateOutcome> {
-  let response: Response;
-  try {
-    response = await fetch("/api/repositories", {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: choice.name,
-        ...(choice.owner ? { owner: choice.owner } : {}),
-        private: choice.private,
-        description: "A website edited with Native Site Editor",
-        startingPoint: choice.point,
-        siteName: siteNameFromRepository(choice.name),
-      }),
-    });
-  } catch {
-    return { ok: false, message: "GitHub could not be reached. Try again." };
-  }
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 403 || response.status === 404) {
-    rememberStartingPoint(choice.owner, choice.name, choice.point);
-    return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
-  }
-  if (response.status === 409) {
-    // The name exists. When it is a repository this account can reach (a retry after making it by hand, say), it is the one wanted.
-    const existing = await findWizardRepository(choice).catch(() => undefined);
-    if (existing) return { ok: true, repo: existing };
-  }
-  if (!response.ok) return { ok: false, message: data.error || "The site could not be created. Try again." };
-  const { commit, startingPointError, committed, ...plain } = data as Repository & { commit?: unknown; startingPointError?: string; committed?: string[]; missing?: string[] };
-  const repository = plain as Repository & { missing?: undefined };
-  delete (repository as { missing?: unknown }).missing;
-  wizardCreated = repository;
-  repositories = [...repositories.filter((known) => known.id !== repository.id), repository];
-  rememberRepositories(repositories);
-  let partial = false;
-  if (startingPointError) {
-    if (Array.isArray(committed) && committed.length) {
-      // Some files are committed already: the editor offers to add the missing ones when the repository opens.
-      partial = true;
-      rememberPartialStart(repository.id, choice.point, committed);
-    } else rememberStartingPoint(repository.owner.login, repository.name, choice.point);
-  }
-  return { ok: true, repo: wizardRepository(repository, Boolean(commit), partial), ...(startingPointError ? { error: startingPointError } : {}) };
-}
-
-/**
- * The new site's home page as one self-contained document for the wizard's preview, built with the
- * editor's own helpers: the linked stylesheets with their `@import` chains expanded (`expandStyleImports`)
- * and the repository images turned into data URLs (`rewriteCssUrls`, `resolveImportPath`, as the editor's
- * preview does). A page that needs scripts to render (shared components are custom elements) or that
- * cannot be completed has no preview: the wizard shows its card instead, never a half-styled page.
- */
-async function wizardPreview(repo: WizardRepo): Promise<string | undefined> {
-  try {
-    const snap = await api<Snapshot>("snapshot", { repo: repo.fullName, branch: repo.defaultBranch });
-    if (!snap.tree) return undefined;
-    const byPath = new Map(snap.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
-    const homeSha = byPath.get("index.html");
-    if (!homeSha) return undefined;
-    const home = (await readFiles(repo.fullName, [homeSha]))[homeSha];
-    if (typeof home !== "string") return undefined;
-    const body = nativePageBody(home);
-    if (/<[a-z][a-z\d]*-[a-z\d-]*[\s/>]/i.test(home.slice(body.start, body.end))) return undefined;
-    // Stylesheets: the linked ones, then every file they import, round by round.
-    const sheets: Record<string, string> = {};
-    const linked = nativePageStylesheets(home, "index.html");
-    for (let round = 0; round < 20; round++) {
-      const known = expandStyleImports(linked.filter((path) => path in sheets), (path) => sheets[path]);
-      const wanted = [...new Set([...linked, ...known.imported])].filter((path) => !(path in sheets) && byPath.has(path));
-      if (!wanted.length) break;
-      const contents = await readFiles(repo.fullName, wanted.map((path) => byPath.get(path)!));
-      for (const path of wanted) sheets[path] = contents[byPath.get(path)!] ?? "";
-    }
-    const expanded = expandStyleImports(linked.filter((path) => path in sheets), (path) => sheets[path]);
-    if (expanded.errors.length || linked.some((path) => !(path in sheets))) return undefined;
-    // Images the page and the sheets name, as data URLs (the frame cannot reach the repository).
-    const imagePath = (from: string, url: string) => {
-      const path = resolveImportPath(from, url);
-      return path && assetType(path) && byPath.has(path) ? path : undefined;
-    };
-    const wanted = new Set<string>();
-    for (const sheet of expanded.sheets)
-      rewriteCssUrls(sheet.source, (url) => {
-        const path = imagePath(sheet.path, url);
-        if (path) wanted.add(path);
-        return undefined;
-      });
-    for (const match of home.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) {
-      const path = imagePath("index.html", match[1]);
-      if (path) wanted.add(path);
-    }
-    const images = new Map<string, string>();
-    for (const path of [...wanted].slice(0, 12)) {
-      images.set(path, await dataUrlOf(await readBlob(repo.fullName, byPath.get(path)!, path), assetType(path)!));
-    }
-    const css = expanded.sheets
-      .map((sheet) => rewriteCssUrls(sheet.source, (url) => {
-        const path = imagePath(sheet.path, url);
-        return path ? images.get(path) : undefined;
-      }))
-      .join("\n");
-    let html = home.replace(/<script\b[\s\S]*?<\/script>/gi, "");
-    for (const tag of home.match(/<link\b[^>]*>/gi) ?? []) if (/rel\s*=\s*["']?stylesheet/i.test(tag)) html = html.replace(tag, "");
-    html = html.replace(/(<img\b[^>]*?\bsrc\s*=\s*["'])([^"']+)(["'])/gi, (whole, before: string, url: string, after: string) => {
-      const path = imagePath("index.html", url);
-      const data = path ? images.get(path) : undefined;
-      return data ? `${before}${data}${after}` : whole;
-    });
-    const style = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
-    return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, () => `${style}</head>`) : `${style}${html}`;
-  } catch {
-    return undefined;
-  }
-}
-
-function wizardRepository(repository: Repository, committed: boolean, partial = false): WizardRepo {
-  return {
-    id: repository.id,
-    name: repository.name,
-    fullName: repository.full_name,
-    private: repository.private,
-    defaultBranch: repository.default_branch || "main",
-    owner: repository.owner.login,
-    committed,
-    ...(partial ? { partial: true } : {}),
-  };
-}
-
-/** The repository the user was told to make on GitHub (or retried the name of), looked up afresh; its starting point waits for it to open. */
-async function findWizardRepository(choice: CreateChoice): Promise<WizardRepo | undefined> {
-  const owner = (choice.owner ?? info.user?.login ?? "").toLowerCase();
-  const list = await boot.fetchList(true);
-  const repository = list.find((candidate) => candidate.owner.login.toLowerCase() === owner && candidate.name.toLowerCase() === choice.name.toLowerCase());
-  if (!repository) return undefined;
-  wizardCreated = repository;
-  repositories = [...repositories.filter((known) => known.id !== repository.id), repository];
-  rememberRepositories(repositories);
-  // Empty, it gets the starting point when it opens; one with files keeps them.
-  rememberStartingPoint(repository.owner.login, repository.name, choice.point);
-  return wizardRepository(repository, false);
-}
-
 // A starting point that stopped part way (the first file is committed, the rest is not): which files are in, kept
 // (localStorage, by account and repository id) until the user finishes adding it or leaves it.
 const partialStartKey = (repoId: number) => `native-site-editor:partial-start:${info.user?.login.toLowerCase() ?? ""}/${repoId}`;
@@ -5621,41 +5228,6 @@ function takeStartingPoint(repo: Repository): StartingPoint | undefined {
 // the App's Administration permission for it), opened with the chosen
 // starting point written as drafts. When the editor may not create it,
 // Get started offers GitHub's own New repository page instead.
-async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
-  let response: Response;
-  try {
-    response = await fetch("/api/repositories", {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: choice.name, ...(choice.owner ? { owner: choice.owner } : {}), private: choice.private, description: "A website edited with Native Site Editor" }),
-    });
-  } catch {
-    return { ok: false, message: "GitHub could not be reached. Try again." };
-  }
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 403 || response.status === 404) {
-    rememberStartingPoint(choice.owner, choice.name, choice.point);
-    return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
-  }
-  if (!response.ok) return { ok: false, message: data.error || "The repository could not be created. Try again." };
-  const repo = data as Repository;
-  waitingForRepositories = false;
-  repositories = [...repositories.filter((known) => known.id !== repo.id), repo];
-  rememberRepositories(repositories);
-  repositoryOptions();
-  repositorySelect.disabled = false;
-  repositorySelect.value = String(repo.id);
-  repositoryMenu?.setRepositories(repositories);
-  await chooseRepository();
-  if (appStore.repository.value?.id === repo.id) {
-    const problem = await writeStartingPoint(choice.point);
-    if (problem) errorMessage(new Error(problem));
-  }
-  return { ok: true };
-}
-
 async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(epoch: number): void }) {
   boot.loading();
   removeFinishStarter();
@@ -5935,3 +5507,33 @@ window.addEventListener("hashchange", () => { dropBootGuess(); boot.onHashChange
 renderLogin("loading");
 startBootGuess();
 void boot.start();
+
+async function createSiteInWizard(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["createSiteInWizard"]>) {
+  return (await loadSetupActions()).createSiteInWizard(...args);
+}
+
+async function findWizardRepository(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["findWizardRepository"]>) {
+  return (await loadSetupActions()).findWizardRepository(...args);
+}
+
+async function wizardPreview(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["wizardPreview"]>) {
+  return (await loadSetupActions()).wizardPreview(...args);
+}
+
+async function createSite(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["createSite"]>) {
+  return (await loadSetupActions()).createSite(...args);
+}
+
+async function writeSiteSettings(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["writeSiteSettings"]>) {
+  const epoch = generation, snapshot = appStore.snapshot.value;
+  const actions = await loadSetupActions();
+  if (epoch !== generation || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
+  return actions.writeSiteSettings(...args);
+}
+
+async function writeStartingPoint(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["writeStartingPoint"]>) {
+  const epoch = generation, snapshot = appStore.snapshot.value;
+  const actions = await loadSetupActions();
+  if (epoch !== generation || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
+  return actions.writeStartingPoint(...args);
+}

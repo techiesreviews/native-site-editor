@@ -41,7 +41,7 @@ test('real CmdK searches native groups without component template commands and p
 });
 test('native command uses source-safe inside, after and main placement and calls the existing insert seam',async({page})=>{
  const result=await page.evaluate(async()=>{
-  const {nativePaletteCommands}=await import('/src/page-builder/palette.ts');const {state,deps}=(window as any).nativePaletteTest;
+  const {nativePaletteCommands}=await import('/src/page-builder/palette-catalog.ts');const {state,deps}=(window as any).nativePaletteTest;
   await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:heading')!.run();
   state.selection={path:'index.html',node:[0,0],tag:'section'};await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:paragraph')!.run();
   state.selection={path:'index.html',node:[0,0,0],tag:'p'};await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:image')!.run();
@@ -52,7 +52,7 @@ test('native command uses source-safe inside, after and main placement and calls
 });
 test('captured commands refuse source, selection, path, scope and callback changes with zero writes',async({page})=>{
  const result=await page.evaluate(async()=>{
-  const {nativePaletteCommands}=await import('/src/page-builder/palette.ts');const {state,deps}=(window as any).nativePaletteTest;
+  const {nativePaletteCommands}=await import('/src/page-builder/palette-catalog.ts');const {state,deps}=(window as any).nativePaletteTest;
   for(const change of [()=>state.source+='<footer></footer>',()=>state.revision='scope:2',()=>state.path='other.html',()=>state.selection={path:'index.html',node:[0,0],tag:'section'}]){
    const saved={...state};const command=nativePaletteCommands(deps)[0];change();await command.run();Object.assign(state,saved);
   }
@@ -62,7 +62,7 @@ test('captured commands refuse source, selection, path, scope and callback chang
 });
 test('invalid or opaque selection and repaired HTML refuse placement rather than guessing a DOM path',async({page})=>{
  const calls=await page.evaluate(async()=>{
-  const {nativePaletteCommands}=await import('/src/page-builder/palette.ts');const {state,deps}=(window as any).nativePaletteTest;
+  const {nativePaletteCommands}=await import('/src/page-builder/palette-catalog.ts');const {state,deps}=(window as any).nativePaletteTest;
   for(const source of ['<main><p>unclosed</main>','<main><x-card><div></div></x-card></main>']){
    state.source=source;state.selection={path:'index.html',node:[0,0,0],tag:'div'};await nativePaletteCommands(deps)[0].run();
   }return state.calls;
@@ -71,7 +71,7 @@ test('invalid or opaque selection and repaired HTML refuse placement rather than
 
 test('repaired main DOM path never inserts into a different source container',async({page})=>{
  const result=await page.evaluate(async()=>{
-  const {nativePaletteCommands}=await import('/src/page-builder/palette.ts');const {state,deps}=(window as any).nativePaletteTest;
+  const {nativePaletteCommands}=await import('/src/page-builder/palette-catalog.ts');const {state,deps}=(window as any).nativePaletteTest;
   state.source='<dl><dt><dd></dd></dt><dd><main></main></dd><dd><div></div></dd><dd><div></div></dd></dl>';
   const document=new DOMParser().parseFromString(state.source,'text/html');
   const names=Array.from(document.querySelector('dl')!.children).map(el=>el.localName);
@@ -81,7 +81,7 @@ test('repaired main DOM path never inserts into a different source container',as
 });
 test('actual commands filter catalogue kinds, place blocks after lists and in main and refuse invalid or foreign host paths',async({page})=>{
  const result=await page.evaluate(async()=>{
-  const {nativePaletteCommands}=await import('/src/page-builder/palette.ts');const {state,deps}=(window as any).nativePaletteTest;
+  const {nativePaletteCommands}=await import('/src/page-builder/palette-catalog.ts');const {state,deps}=(window as any).nativePaletteTest;
   const choices=deps.nativeElements();deps.nativeElements=()=>[...choices,{tag:'native:bogus',label:'Bogus',kind:'native'},{tag:'feature-block',label:'Feature',kind:'component'}];
   const commands=nativePaletteCommands(deps).map(c=>({id:c.id,group:c.group,hint:c.hint,navigation:c.navigation??false}));
   state.source='<main><ul><li>Item</li></ul></main>';state.selection={path:'index.html',node:[0,0],tag:'ul'};

@@ -22,7 +22,9 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | History and restoring saved versions | `src/controllers/history-controller.ts` — `createHistoryController`; `src/components/commit-history.ts` — `createCommitHistory` |
 | Repository opening and first paint | `src/controllers/boot-controller.ts` — `createBootController`; `src/repository-loading.ts` — `RepositoryIndex`; `src/native-boot.ts` — `nativeShownFiles`; `src/main.ts` — `activateNativeSite` |
 | Setup wizard and Get started | `src/controllers/setup-entry-controller.ts` — `createSetupEntryController`; `src/components/setup-wizard.ts` — `createSetupWizard`; `src/setup-wizard.ts` — `readWizard` |
-| Setup checklist and starting point | `src/controllers/setup-checklist-controller.ts` — `createSetupChecklistController`; `shared/starting-point.ts` — `blankSiteFiles`; `src/main.ts` — `writeStartingPoint` |
+| Setup checklist and starting point | `src/controllers/setup-checklist-controller.ts` — `createSetupChecklistController`; `shared/starting-point.ts` — `blankSiteFiles`; `src/setup-actions.ts` — `createSetupActions` |
+| Settings dialog actions | `src/native-settings.ts` — `createNativeSettings` |
+| On-demand palette catalog | `src/page-builder/palette-catalog.ts` — `nativePaletteCommands` |
 | Command palette | `src/controllers/command-palette-controller.ts` — `createCommandPaletteController` |
 | Editor colours and surfaces | `src/style.css`; `src/theme.css`; `src/utilities.css` |
 | Effective sources, routes and preview updates | `src/main.ts` — `nativeSources`, `nativeEffectiveSource`, `updateNativePreviewSources` |
@@ -104,7 +106,7 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Variant reads and CSS workspace | 1495–1562 | readVariantFiles, nativeCssWorkspace |
 | Page Structure and edit-bar controller ports | 1563–1715 | pageStructureController, renderNativeEditBar, applyNativeTextEdit |
 | Native state, draft scope and page metadata | 1716–1822 | nativeModeActive, draftScope, nativePageMeta, writeNativePageMeta |
-| Site, page and navigation settings | 1823–2003 | nativeSettingsController, applyNativeSiteSettings, openNativeNavigation |
+| Site, page and navigation settings | 1823–2003 | openNativePageSettings, openNativeSiteSettings, openNativeNavigation |
 | Routes, effective sources and preview updates | 2004–2130 | refreshNativeRoutes, nativeSources, nativeEffectiveSource, updateNativePreviewSources |
 | Shown source files and stylesheet loading | 2131–2310 | readNativeShownFiles, readNativeStyleFiles, loadNativeShownFiles |
 | Media reads, uploads and media manager ports | 2311–2548 | loadNativeAssets, uploadFilesTo, applyMediaBatch, mediaController |
@@ -119,7 +121,7 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Agent context and commands | 4517–4695 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
 | New, uploaded and deleted drafts; snapshot loading | 4696–5014 | openNewDraft, showUpload, applyAgentCommand, restoreFile, loadSnapshot |
 | Speculative boot reads and repository choice | 5015–5199 | startBootGuess, takeBootGuess, chooseRepository |
-| Setup wizard and partial starting points | 5200–5450 | wizardConnection, createSiteInWizard, wizardPreview, finishWizard |
+| Setup wizard and partial starting points | 5200–5450 | wizardConnection, setupEntry, finishWizard |
 | Get started, repository lists and account switching | 5451–5758 | showGetStarted, createSite, loadRepositories, switchAccount, disconnect |
 | Draft baseline, agent/boot ports and startup | 5759–5833 | agentController, boot, startBootGuess |
 

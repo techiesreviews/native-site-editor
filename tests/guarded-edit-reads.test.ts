@@ -27,7 +27,6 @@ const allowlist: AllowlistEntry[] = [
 // Same-file helpers a plan calls are scanned too, except these waits: the module re-proves
 // every read after them, and the plan reads what it uses through `r` once they settle.
 const waits: AllowlistEntry[] = [
-  { file: "src/main.ts", match: { rule: "plan-wait", function: "ensureNativeTextIndex" }, reason: "The site's text index load (open404 via nativeSiteReadForCreate) is a wait: it fills the index from branch bases and drafts for search and labels, not the plan's bytes." },
 ];
 
 function readsParameter(parameter: TS.ParameterDeclaration) {
@@ -147,9 +146,12 @@ test("plans reject untracked readers in same-file helpers they call and plans th
   for (const source of ["edits.run(plans[kind]);", "ports.edits.now(this.plan);", "edits.run(plan);"]) flags(planReads, source, "plan-unresolved");
   assert.deepEqual(planReads("function paint(path) { return ports.source(path); } edits.run(r => r.source(path)); paint(path);", FAKE), []);
   assert.deepEqual(planReads("function gridFor(reads: Reads) { return reads !== edits.peek ? reads.source(path) : cached; } edits.run(r => gridFor(r));", FAKE), [], "a reader identity compare reads no bytes");
-  // A listed wait is reported once (its allowlist entry) and not scanned.
+  // A listed wait is reported once (its allowlist entry) and not scanned; unlisted, its reads are flagged.
+  // No real wait is listed today (open404's index wait is a port of src/native-settings.ts), so the test lists one.
   const wait = "async function ensureNativeTextIndex() { return nativeBaseSources.get(path); } edits.run(async r => { await ensureNativeTextIndex(); await ensureNativeTextIndex(); return r.source(path); });";
-  assert.deepEqual(planReads(wait, "src/main.ts").map(hit => [hit.rule, hit.function]), [["plan-wait", "ensureNativeTextIndex"]]);
+  waits.push({ file: "src/wait-example.ts", match: { rule: "plan-wait", function: "ensureNativeTextIndex" }, reason: "Test-only example of a listed wait." });
+  try { assert.deepEqual(planReads(wait, "src/wait-example.ts").map(hit => [hit.rule, hit.function]), [["plan-wait", "ensureNativeTextIndex"]]); }
+  finally { waits.pop(); }
   flags(planReads, wait, "plan-read");
 });
 
