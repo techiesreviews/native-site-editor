@@ -1,3 +1,4 @@
+import { RESPONSIVE_COPY_WIDTHS } from "./media-families";
 export interface MediaOptimiseOptions {
   maxWidth: number; quality: number; format: "webp" | "png" | "jpeg"; responsive: boolean; keepOriginal: boolean;
 }
@@ -10,7 +11,7 @@ export function mediaDimensions(width: number, height: number, maxWidth: number)
   const scale = Math.min(1, Math.max(1, maxWidth) / width);
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
-export function mediaResponsiveWidths(width: number) { return [480, 960, 1600].filter((size) => size < width); }
+export function mediaResponsiveWidths(width: number) { return RESPONSIVE_COPY_WIDTHS.filter((size) => size < width); }
 export function mediaChooseEncoding(webp: Blob, png: Blob | undefined) { return png && png.size < webp.size ? png : webp; }
 export function mediaSavings(before: number, after: number) { return before > 0 ? Math.round((1 - after / before) * 100) : 0; }
 export function mediaUntouched(name: string) { return /\.(?:svg|gif)$/i.test(name); }

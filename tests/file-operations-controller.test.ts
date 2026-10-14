@@ -293,3 +293,15 @@ test("moving a copy alone leaves its main and original", async () => {
   assert.equal(await h.controller.moveFileTarget({ path: "images/photo-480w.webp", name: "photo-480w.webp", folder: false }, "images/copy.webp", "move"), undefined);
   assert.ok(h.memory.workspace.exists(imageTarget.path)); assert.ok(h.memory.workspace.exists("media/originals/photo.HEIC"));
 });
+
+test("Restore on a deleted main brings back its deleted family, not members renamed away", () => {
+  const h = fixture(true);
+  const draft = { ...h.memory.scope, version: 1 as const, path: "", baseSha: "sha", original: "", content: "", updatedAt: 1, deleted: true as const };
+  const gone = (path: string, movedTo?: string) => [path, { ...draft, path, ...(movedTo ? { movedTo } : {}) }] as const;
+  h.ports.treeState = () => ({ changes: new Map(), drafted: [], deleted: new Map([
+    gone("images/photo.webp"), gone("images/photo-480w.webp"), gone("media/originals/photo.HEIC"),
+    gone("images/photo-960w.webp", "images/kept-960w.webp"), gone("images/other-480w.webp"),
+  ]) });
+  h.controller.restoreFileTarget({ ...imageTarget, gone: true });
+  assert.deepEqual(h.restored, [["images/photo.webp", "images/photo-480w.webp", "media/originals/photo.HEIC"]]);
+});

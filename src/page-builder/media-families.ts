@@ -5,6 +5,9 @@ export interface MediaFamily {
   // Phase 5 adds video stills and subtitles alongside these members.
 }
 
+/** The widths responsive copies are made at when an image is added (ticket 07). */
+export const RESPONSIVE_COPY_WIDTHS = [480, 960, 1600] as const;
+
 const imageExtension = /\.(?:svg|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|heif)$/i;
 const originalPath = (path: string) => /^media\/originals\//i.test(path);
 const stem = (path: string) => path.replace(/\.[^./]+$/, "");
@@ -21,8 +24,9 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
     const match = /^(.*)-([1-9][0-9]*)(w?)$/.exec(stem(path));
     if (!match) continue;
     const width = Number(match[2]);
-    // Bare numbers below 100 are conflict names; widths with "w" can be any positive integer.
-    if (!Number.isSafeInteger(width) || (!match[3] && width < 100)) continue;
+    // A bare number is a copy only at a copy width; any other is a conflict number or part of
+    // the name (`photo-2`, `report-2024`). Widths with "w" can be any positive integer.
+    if (!Number.isSafeInteger(width) || (!match[3] && !(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(width))) continue;
     const candidates = (byStem.get(match[1]) ?? []).filter(main => families.has(main));
     const sameExtension = candidates.find(main => extension(main).toLowerCase() === extension(path).toLowerCase());
     const main = sameExtension ?? (candidates.length === 1 ? candidates[0] : undefined);

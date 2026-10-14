@@ -54,3 +54,10 @@ test("renaming moves copies beside the new main, preserving suffixes and origina
     { from: paths[2], to: "other/garden-960.jpg" }, { from: paths[3], to: "media/originals/garden.HEIC" },
   ]);
 });
+
+test("bare numbers count only at copy widths, so numbered and dated names stay apart", () => {
+  const paths = ["photo.webp", "photo-100.webp", "photo-2.webp", "photo-480.webp", "report.png", "report-2024.png", "report-1600.png", "report-1200w.png"];
+  assert.deepEqual(mediaFamilyOf("photo.webp", paths)?.copies, [{ path: "photo-480.webp", width: 480 }]);
+  assert.deepEqual(mediaFamilyOf("report.png", paths)?.copies, [{ path: "report-1200w.png", width: 1200 }, { path: "report-1600.png", width: 1600 }]);
+  for (const path of ["photo-100.webp", "photo-2.webp", "report-2024.png"]) assert.ok(mediaFamilyOf(path, paths));
+});

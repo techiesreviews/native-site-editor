@@ -58,9 +58,17 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const state = ports.treeState();
     const paths = target.folder
       ? [...state.deleted.keys()].filter((path) => path.startsWith(`${target.path}/`))
-      : [target.path];
+      : familyRestore(target.path, state);
     ports.undoFileChanges({ restore: paths });
     ports.requestAnimationFrame(() => ports.fileRow(target.path)?.focus());
+  }
+
+  // A deleted main image comes back with the copies and original deleted beside it;
+  // members renamed away stay where they went.
+  function familyRestore(path: string, state: FileOperationsTreeState) {
+    const family = mediaFamilyOf(path, [path, ...ports.nativeFiles(), ...state.deleted.keys()]);
+    const members = family ? [...family.copies.map(copy => copy.path), ...family.originals] : [];
+    return [path, ...members.filter(member => state.deleted.has(member) && !state.deleted.get(member)!.movedTo)];
   }
 
   const BINARY_FILE = /\.(?:heic|heif|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|tar|7z|woff2?|ttf|otf|eot|mp3|mp4|m4a|webm|mov|wav|ogg)$/i;

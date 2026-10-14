@@ -209,11 +209,14 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       }
       batch.moves.push(...moves.filter(move => move.from !== move.to));
       for (const move of moves) rewriteInto(batch, text, move.from, move.to);
-      const before = parseMediaMetadata(metadata)[path];
-      if (before) {
+      const recorded = parseMediaMetadata(metadata);
+      const followed = moves.filter(move => move.from !== move.to && recorded[move.from]);
+      if (followed.length) {
+        // Every member's record follows its file, in the same batch as the moves.
         const moved = JSON.parse(metadata!);
-        Object.defineProperty(moved, to, { value: moved[path], enumerable: true, configurable: true, writable: true });
-        delete moved[path];
+        const entries = followed.map(move => [move.to, moved[move.from]] as const);
+        for (const move of followed) delete moved[move.from];
+        for (const [key, value] of entries) Object.defineProperty(moved, key, { value, enumerable: true, configurable: true, writable: true });
         batch.edits.set(MEDIA_METADATA_PATH, mergeMediaMetadata(JSON.stringify(moved), {}));
       }
       await commit(ctx, batch);

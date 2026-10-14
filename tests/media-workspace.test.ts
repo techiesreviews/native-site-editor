@@ -211,3 +211,15 @@ test("taken copy destination refuses the entire Images rename", async () => {
   await f.host.load(); await assert.rejects(f.host.rename("images/a.png", "garden.png"), /already exists/);
   assert.equal(f.batches.length, 0);
 });
+
+test("every family member's record follows the rename, and Undo restores the old keys", async () => {
+  const f = fixture(), members = addFamily(f);
+  const before = { "images/a.png": { alt: "Main" }, [members[0]]: { tags: ["copy"] }, [members[2]]: { tags: ["original"] } };
+  f.text.set(MEDIA_METADATA_PATH, JSON.stringify(before));
+  await f.host.load(); await f.host.rename("images/a.png", "garden.png");
+  assert.deepEqual(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!), {
+    "images/garden.png": { alt: "Main" }, "images/garden-480w.webp": { tags: ["copy"] }, "media/originals/garden.HEIC": { tags: ["original"] },
+  });
+  assert.equal(f.history.length, 1); f.history.pop()!();
+  assert.deepEqual(JSON.parse(f.text.get(MEDIA_METADATA_PATH)!), before);
+});
