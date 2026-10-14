@@ -1,8 +1,8 @@
 ---
 title: Drop to add into the viewed collection
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-17 runner)
 blocked_by: [16-collections-in-media]
 builder: claude
 phase: 1
