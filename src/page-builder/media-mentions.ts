@@ -34,7 +34,8 @@ export function mediaMentions(input: { media: readonly string[]; sources: Readon
   for (const [file, source] of Object.entries(input.sources)) {
     if (source === undefined || !isMediaTextFile(file)) continue;
     let text = source.replace(/\\\//g, "/");
-    if (/\.html?$/i.test(file)) text = decodeHtmlEntities(text);
+    // Markup (HTML, XML sitemaps and feeds, SVG) may spell addresses with entities such as &amp;.
+    if (/\.(?:html?|xml|rss|atom|svg)$/i.test(file)) text = decodeHtmlEntities(text);
     for (const { name, alias } of aliases) {
       text = text.replaceAll(name, alias);
       if (encodeURIComponent(name) !== name) text = text.replaceAll(encodeURIComponent(name), alias);
@@ -53,7 +54,13 @@ export function mediaMentions(input: { media: readonly string[]; sources: Readon
       if (!names.has(restore(value).split("/").at(-1)!)) value = value.replace(/[.!:]+$/, "");
       try { value = decodeURIComponent(value); } catch { /* Keep malformed encodings as written. */ }
       value = restore(value);
-      value = value.replace(/^(?:(?:\.\.?)?\/)+/, "");
+      // Dot segments resolve as in a URL; leading ones are dropped, so the rest is compared as a path suffix.
+      const parts: string[] = [];
+      for (const part of value.split("/")) {
+        if (part === "" || part === ".") continue;
+        if (part === "..") parts.pop(); else parts.push(part);
+      }
+      value = parts.join("/");
       const name = value.split("/").at(-1)!;
       for (const path of names.get(name) ?? []) {
         if (value !== name && path !== value && !path.endsWith("/" + value)) continue;

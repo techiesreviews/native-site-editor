@@ -67,3 +67,20 @@ test("disposing a queued check cancels reads and publications", async () => {
   assert.equal(f.updates.length, count);
   assert.equal(controller.usageRecords(), undefined);
 });
+
+test("an edit during a read stops that check from publishing a stale result", async () => {
+  const f = fixture(), held = deferred<string>();
+  f.ports.read = async () => held.promise;
+  const controller = createMediaUsageController(f.ports);
+  f.gate.resolve(); controller.refresh(); await turn();
+  const before = f.updates.length;
+  f.sources["index.html"] = '<img src="/images/a.png">';
+  controller.invalidate();
+  held.resolve("nothing"); await turn();
+  assert.equal(f.updates.length, before);
+  assert.notEqual(controller.usageRecords()?.families[0].checked, true);
+  controller.refresh(); await turn(); await turn();
+  assert.deepEqual(controller.usageRecords()?.families[0].pages, ["index.html"]);
+  assert.equal(controller.usageRecords()?.families[0].checked, true);
+  controller.dispose();
+});

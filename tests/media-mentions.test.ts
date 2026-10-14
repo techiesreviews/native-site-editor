@@ -63,3 +63,14 @@ test("names holding spaces, parentheses or commas are still one mention", () => 
   assert.deepEqual(found.get("images/a, b.png"), [{ file: "notes.md", kind: "notes" }]);
   assert.equal(found.has("images/1).jpg"), false);
 });
+
+test("XML entities and dot segments inside an address still name the file", () => {
+  const media = ["images/a&b.png", "images/a.png"];
+  const sources = {
+    "sitemap.xml": "<image:loc>https://native.example/images/a&amp;b.png</image:loc>",
+    "app.js": 'const image = "/images/unused/../a.png";',
+  };
+  const found = mediaMentions({ media, sources, site: { origins: ["https://native.example"] } });
+  assert.deepEqual(found.get("images/a&b.png"), [{ file: "sitemap.xml", kind: "feed" }]);
+  assert.deepEqual(found.get("images/a.png"), [{ file: "app.js", kind: "script" }]);
+});

@@ -227,3 +227,13 @@ test("Decorative's first save preserves starting collections before the library 
   assert.deepEqual(saved.collections, ["Logos"]);
   assert.deepEqual(saved.files["images/logos/mark.png"].collections, ["Logos"]);
 });
+
+test("an unsaved uploaded SVG is read from browser storage for the usage scan", async () => {
+  const f = fixture();
+  const draft: SavedDraft = { ...f.scope, version: 1, path: "images/new.svg", baseSha: null, original: "", content: "", updatedAt: 1, sourceSha: "svg-sha", opaque: true, upload: { size: 40, type: "image/svg+xml" } };
+  f.records.push(draft);
+  f.ports.uploadedBlob = async (_scope, sha) => sha === "svg-sha" ? new Blob(['<svg><image href="/images/old.png"/></svg>']) : undefined;
+  const context = await f.controller.workspaceContext();
+  assert.equal(await context.read("images/new.svg"), '<svg><image href="/images/old.png"/></svg>');
+  assert.equal(f.sources.has("images/new.svg"), false);
+});

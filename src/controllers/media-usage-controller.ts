@@ -60,7 +60,9 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
     scheduled = true;
     queueMicrotask(() => { scheduled = false; if (!disposed) void check(generation); });
   }
-  return { refresh, usageRecords: () => records,
+  /** Stops in-flight reads from publishing: their captured sources may be out of date. */
+  function invalidate() { if (!disposed) generation++; }
+  return { refresh, invalidate, usageRecords: () => records,
     onUsageChange(listener: (records: MediaUsageRecords | undefined) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     dispose() { disposed = true; generation++; listeners.clear(); publish(undefined); } };
 }

@@ -98,7 +98,13 @@ export function createMediaController(ports: MediaControllerPorts) {
       assertLive();
       const held = ports.source(path, scope);
       if (held !== undefined) return held;
-      if (drafts.get(scope, path)?.deleted) return undefined;
+      const draft = drafts.get(scope, path);
+      if (draft?.deleted) return undefined;
+      // An uploaded or moved file (an SVG, say) holds no text in its draft: read its bytes.
+      if (draft?.opaque && draft.sourceSha) {
+        const text = draft.upload ? await (await ports.uploadedBlob(scope, draft.sourceSha))?.text() : await ports.readText(repo, draft.sourceSha);
+        assertLive(); return text;
+      }
       const entry = await ports.findEntry(path); assertLive();
       if (!entry) return undefined;
       const text = await ports.readText(repo, entry.sha); assertLive();
@@ -292,7 +298,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (view.refreshedKey === ports.gallerySignature()) return;
     void view.refresh();
   }
-  return { refreshUsage, usageRecords: () => usage?.usageRecords(),
+  return { refreshUsage, invalidateUsage: () => usage?.invalidate(), usageRecords: () => usage?.usageRecords(),
     onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {
       usageListeners.add(listener); return () => { usageListeners.delete(listener); };
     },

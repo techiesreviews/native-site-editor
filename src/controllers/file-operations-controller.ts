@@ -406,13 +406,14 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(target);
     const indexed = await ports.ensureNativeTextIndex();
     if (indexed && since.holds()) { ports.errorMessage(new Error(indexed)); return indexed; }
+    const readTexts = new Map<string, string | undefined>();
     if (ports.readMediaText) {
       const { isMediaTextFile } = await import("../page-builder/media-mentions");
       if (!since.holds()) return changed;
       const textFiles = ports.nativeFiles().filter(isMediaTextFile);
       try {
         for (let at = 0; at < textFiles.length; at += 12) {
-          await Promise.all(textFiles.slice(at, at + 12).map(path => ports.readMediaText!(path)));
+          await Promise.all(textFiles.slice(at, at + 12).map(async path => { readTexts.set(path, await ports.readMediaText!(path)); }));
           if (!since.holds()) return changed;
         }
       } catch (error) { ports.errorMessage(error); return "The files that use this could not be read."; }
@@ -427,7 +428,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       if (r.site() && found.some(file => !/\.html?$/i.test(file.path))) {
         const { isMediaTextFile } = await import("../page-builder/media-mentions");
         if (!since.holds()) return { refuse: changed };
-        const sources = Object.fromEntries(ports.nativeFiles().filter(isMediaTextFile).map(path => [path, r.source(path)]));
+        const sources = Object.fromEntries(ports.nativeFiles().filter(isMediaTextFile).map(path => [path, r.source(path) ?? readTexts.get(path)]));
         const missing = Object.keys(sources).find(path => sources[path] === undefined);
         if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was deleted.` };
         const snap = { sources };

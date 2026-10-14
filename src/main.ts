@@ -2492,6 +2492,13 @@ async function readMediaText(path: string) {
   const held = nativeEffectiveSource(path);
   if (held !== undefined) return held;
   if (!repo || !key) return undefined;
+  const scope = draftScope(), draft = scope ? draftStore().get(scope, path) : undefined;
+  if (draft?.deleted) return undefined;
+  // An uploaded or moved file (an SVG, say) holds no text in its draft: read its bytes.
+  if (scope && draft?.opaque && draft.sourceSha) {
+    const text = draft.upload ? await (await uploadBytes().get(uploadKey(scope, draft.sourceSha)))?.text() : await readFile(repo.full_name, draft.sourceSha);
+    return key === nativeTextIndexScopeKey() ? text : undefined;
+  }
   const entry = await findEntry(path);
   if (key !== nativeTextIndexScopeKey() || !entry) return undefined;
   const source = await readFile(repo.full_name, entry.sha);
@@ -2561,6 +2568,7 @@ const mediaController = createMediaController({
 let mediaUsageTimer: ReturnType<typeof setTimeout> | undefined;
 effect(() => {
   appStore.repository.value; appStore.snapshot.value; appStore.drafts.revision.value;
+  mediaController.invalidateUsage();
   clearTimeout(mediaUsageTimer);
   mediaUsageTimer = setTimeout(() => mediaController.refreshUsage(), 400);
 });
