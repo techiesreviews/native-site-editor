@@ -14,9 +14,12 @@ test("trim names tidy the source, use the new folder and reserve the entire fami
   assert.equal(name(), previous);
   assert.equal(trimmedCopyPath({ source, extension: "WEBP", copies: [], paths: [] }), previous);
   assert.equal(name([previous]), "media/images/studio-lights-crop-2.webp");
-  for (const conflict of ["media/images/studio-lights-crop-480.webp", "media/images/STUDIO-LIGHTS-CROP.JPG", "media/originals/studio-lights-crop.png"]) {
+  for (const conflict of ["media/images/STUDIO-LIGHTS-CROP.JPG", "media/originals/studio-lights-crop.png"]) {
     assert.equal(name([conflict]), "media/images/studio-lights-crop-2.webp");
   }
+  // A lone -crop-480 may be an earlier trimmed main (slice 06: a copy without a main is its own file),
+  // so the chain goes above it rather than risk an address that once held another trim.
+  assert.equal(name(["media/images/studio-lights-crop-480.webp"]), "media/images/studio-lights-crop-481.webp");
   assert.equal(trimmedCopyPath({ source: "media/images/studio-lights.webp", extension: "png", copies: [], paths: [] }), "media/images/studio-lights-crop.png");
   assert.equal(trimmedCopyPath({ source: "images/東京 Tower.JPG", extension: "webp", copies: [], paths: [] }), "media/images/東京-tower-crop.webp");
 });
@@ -148,5 +151,16 @@ test("a shared copy's branches never reuse an address another branch used and re
   // A removed address on the records' removed list counts too.
   assert.equal(name([previous, "media/images/studio-lights-crop-9.webp"], previous), "media/images/studio-lights-crop-10.webp");
   // Responsive copies and other folders are not chain numbers.
-  assert.equal(name(["media/images/studio-lights-crop-480.webp", "images/studio-lights-crop-7.webp"], previous), "media/images/studio-lights-crop-2.webp");
+  assert.equal(name([previous, "media/images/studio-lights-crop-480.webp", "images/studio-lights-crop-7.webp"], previous), "media/images/studio-lights-crop-2.webp");
+});
+test("a trimmed copy numbered at a responsive width still raises the chain", () => {
+  for (const width of [480, 960, 1600]) {
+    const before = `media/images/studio-lights-crop-${width - 1}.webp`, main = `media/images/studio-lights-crop-${width}.webp`;
+    // The chain reaches the width; that main and its own copy are present, earlier numbers removed.
+    assert.equal(name([before], before), main);
+    const after = name([main, `media/images/studio-lights-crop-${width}-480.webp`], main);
+    assert.ok(Number(/crop-(\d+)\.webp$/.exec(after)![1]) > width, after);
+    // Beside an unnumbered -crop, that name would be its responsive copy, so the chain skips it.
+    assert.equal(name([previous, before], before), `media/images/studio-lights-crop-${width + 1}.webp`);
+  }
 });
