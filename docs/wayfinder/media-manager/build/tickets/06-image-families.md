@@ -2,7 +2,7 @@
 title: Image families, for both copy names
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-06 runner)
 blocked_by: [01-bring-dev-level]
 builder: sol
 phase: 0
