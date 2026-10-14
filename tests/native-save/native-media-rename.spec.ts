@@ -208,6 +208,14 @@ test("with Keep original on, a picture from Media keeps its own original when it
   expect(await storedDraft(page, "images/next.png")).toBeUndefined();
 });
 
+test("replacing a picture an art-directed <picture> shows says it is now used on all screens", async ({ page, baseURL }) => {
+  await seed(page, baseURL, { "about/index.html": { content: about.replace('<section class="prose"',
+    '<picture><source media="(max-width: 600px)" srcset="/images/lisbon.webp"><img src="/images/tram.webp" alt="Tram"></picture>\n  <section class="prose"') } });
+  await replaceWithNext(page);
+  await expect(pane(page).locator(".media-library__message")).toContainText("The new picture is now used on all screens.");
+  await expect.poll(async () => (await text(page, "about/index.html")) ?? "").not.toContain("<picture");
+});
+
 test("Replace everywhere with a picture added in the picker: prepared, a new format forwarding when ticked, never added on its own", async ({ page, baseURL }) => {
   await seed(page, baseURL);
   const media = pane(page);

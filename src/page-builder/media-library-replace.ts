@@ -109,12 +109,14 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
   const actions = node("div", "media-remove__actions");
   actions.append(cancellation("Cancel", leave), button("Replace everywhere", () => void c.task(async () => {
     if (version !== sheet.version || element.dataset.mode !== "replace") { c.tell("This confirmation has expired. Open Replace everywhere again."); return; }
+    // Slice 34: a replaced art-directed <picture> says so ("The new picture is now used on all screens.").
+    const notices: string[] = [];
     const to = await c.adapter.replace!({ path, result: next.result, ...next.original ? { original: next.original } : {},
-      ...keep ? { keepOldAddress: keep.checked } : {} });
+      ...keep ? { keepOldAddress: keep.checked } : {}, notice: text => notices.push(text) });
     next.release(); c.cache.clear(); await c.refresh();
     if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }
-    c.tell(replacedMessage(to, pages));
+    c.tell([replacedMessage(to, pages), ...notices].join(" "));
   }), "button primary"));
   element.append(actions);
   title.focus();
