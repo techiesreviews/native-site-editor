@@ -176,7 +176,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
   expect((await page.request.get(`${baseURL}/__demo/file?path=images/placeholder.svg`)).ok()).toBe(true);
 });
 
-test("an unused image appears in Clean up; removing it puts it in Recently removed, and Undo brings it back", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("unused images appear in Clean up; removing them puts them in Recently removed, and Undo brings them back", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   await commit(page, baseURL, [["images/spare.svg", svg("Spare")]]);
   await open(page, baseURL);
@@ -201,19 +201,20 @@ test("an unused image appears in Clean up; removing it puts it in Recently remov
   await expect(review).toBeDisabled();
   await pane(page).getByRole("checkbox", { name: "Select spare.svg", exact: true }).check();
   await expect(pane(page).locator(".media-cleanup__sum")).toHaveText(/^1 selected · \d+ B$/);
+  await pane(page).getByRole("checkbox", { name: "Select studio-desk.svg", exact: true }).check();
 
-  // The confirmation names the file; Keep files goes back with the choice kept.
+  // The confirmation names the files; Keep files goes back with the choice kept.
   await review.click();
-  await expect(pane(page).getByRole("heading", { name: "Remove spare.svg?", exact: true })).toBeFocused();
-  await expect(pane(page).getByText("Nothing on the site uses this file.", { exact: true })).toBeVisible();
+  await expect(pane(page).getByRole("heading", { name: "Remove 2 files?", exact: true })).toBeFocused();
+  await expect(pane(page).getByText("Nothing on the site uses these files.", { exact: true })).toBeVisible();
   await pane(page).getByRole("button", { name: "Keep files", exact: true }).click();
   await expect(pane(page).getByRole("checkbox", { name: "Select spare.svg", exact: true })).toBeChecked();
   await review.click();
-  await pane(page).getByRole("button", { name: "Remove file", exact: true }).click();
+  await pane(page).getByRole("button", { name: "Remove 2 files", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
-  await expect(pane(page).locator(".media-cleanup__notice")).toContainText("Removed spare.svg. It stays in Recently removed for 30 days.");
+  await expect(pane(page).locator(".media-cleanup__notice")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toHaveCount(0);
-  await expect(toggleCount(page)).toHaveText("1");
+  await expect(toggleCount(page)).toBeHidden();
 
   // It waits in Recently removed.
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
@@ -221,10 +222,10 @@ test("an unused image appears in Clean up; removing it puts it in Recently remov
   await expect(pane(page).locator('.media-removed__list li[data-path="images/spare.svg"]')).toContainText("Removed today · 30 days left");
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
 
-  // Back in Clean up, Undo brings it back to its address.
-  await more(/^Clean up/);
+  // With nothing left to suggest, Clean up still opens for Undo, which brings both back to their addresses.
+  await more("Clean up");
   await pane(page).getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(pane(page).locator(".media-library__message")).toContainText("Brought back spare.svg to its address.");
+  await expect(pane(page).locator(".media-library__message")).toContainText("Brought back 2 files to their addresses.");
   await expect(pane(page).getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
   await expect(toggleCount(page)).toHaveText("2");
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();

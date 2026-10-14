@@ -352,7 +352,9 @@ export function createMediaLibraryView(
         if (alive && library) showAddingSettings(sheet, { ...context, close: () => closeSheet(shell.more) });
       }, false) }] : [],
       // Clean up, with the tab's count, is an action like adding; the choices follow.
-      ...cleanUp ? [{ ...cleanUp.item(), run: () => void task(async () => {
+      // While the files Clean up removed last can be brought back, it opens for their Undo.
+      ...cleanUp ? [{ ...cleanUp.item(), ...cleanUpMemory.undo?.every(path => library?.removed?.some(entry => entry.path === path)) ? { disabled: undefined } : {},
+        run: () => void task(async () => {
         const { showCleanUp } = await import("./media-library-clean-up");
         if (alive && library) showCleanUp(sheet, { ...context, cleanUp, memory: cleanUpMemory, close: () => closeSheet(shell.more) });
       }, false) }] : [],

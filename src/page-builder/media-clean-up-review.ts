@@ -14,31 +14,48 @@ export const cleanUpGroupNames: Record<MediaCleanUpKind, string> = {
 const name = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 export const filesCount = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 
+/** A suggested family with its bytes from the library's listing; `unknown` members have no listed size. */
+export interface SizedItem extends MediaCleanUpItem { unknown: number }
+export interface SizedGroup extends MediaCleanUpGroup { items: SizedItem[] }
+export interface SizedSuggestions extends MediaCleanUpSuggestions { groups: SizedGroup[] }
+
 /** Suggestions with each item's size summed from the library's file sizes (copies included). */
-export function sizedSuggestions(suggestions: MediaCleanUpSuggestions, sizes: Readonly<Record<string, number | undefined>>): MediaCleanUpSuggestions {
+export function sizedSuggestions(suggestions: MediaCleanUpSuggestions, sizes: Readonly<Record<string, number | undefined>>): SizedSuggestions {
   const groups = suggestions.groups.map(group => {
-    const items = group.items.map(item => ({ ...item, size: item.members.reduce((sum, path) => sum + (sizes[path] ?? 0), 0) }));
+    const items = group.items.map(item => ({ ...item,
+      size: item.members.reduce((sum, path) => sum + (sizes[path] ?? 0), 0),
+      unknown: item.members.filter(path => sizes[path] === undefined).length }));
     return { ...group, items, size: items.reduce((sum, item) => sum + item.size, 0) };
   });
   return { ...suggestions, groups, size: groups.reduce((sum, group) => sum + group.size, 0) };
 }
 
+/** The bytes of some families, never claiming more than is known: nothing when no size is
+ * listed, "at least 3 KB" when some are missing. */
+export function bytesText(items: readonly SizedItem[]) {
+  const members = items.reduce((sum, item) => sum + item.members.length, 0);
+  const unknown = items.reduce((sum, item) => sum + item.unknown, 0);
+  if (members && unknown === members) return "";
+  const bytes = formatBytes(items.reduce((sum, item) => sum + item.size, 0));
+  return unknown ? `at least ${bytes}` : bytes;
+}
+const withBytes = (text: string, items: readonly SizedItem[]) => { const bytes = bytesText(items); return bytes ? `${text} · ${bytes}` : text; };
+
 /** A group card's line: "2 files · 3 KB". */
-export const groupLine = (group: Pick<MediaCleanUpGroup, "count" | "size">) => `${filesCount(group.count)} · ${formatBytes(group.size)}`;
+export const groupLine = (group: SizedGroup) => withBytes(filesCount(group.count), group.items);
 
 /** Under a reviewed file: its size when known, what the check found, and the copies that go with it. */
-export function itemLine(item: MediaCleanUpItem, sizeKnown = true) {
-  const copies = item.members.length - 1;
-  return `${sizeKnown ? `${formatBytes(item.size)} · ` : ""}No uses found${copies ? ` · with its ${copies} ${copies === 1 ? "copy" : "copies"}` : ""}`;
+export function itemLine(item: SizedItem) {
+  const copies = item.members.length - 1, bytes = bytesText([item]);
+  return `${bytes ? `${bytes} · ` : ""}No uses found${copies ? ` · with its ${copies} ${copies === 1 ? "copy" : "copies"}` : ""}`;
 }
 
 /** The limit of any check, the groups screen's one line. */
-export const cleanUpLimit = "Files used only from outside the site (a shared PDF, a newsletter picture) can't be seen. Mark them Always keep.";
+export const cleanUpLimit = "Files used only from outside the site (a shared PDF, a newsletter picture) or by addresses a script builds can't be seen. Mark them Always keep.";
 
 /** The review's footer: "2 selected · 3 KB". */
-export function selectionLine(items: readonly MediaCleanUpItem[], selected: ReadonlySet<string>) {
-  const chosen = items.filter(item => selected.has(item.main));
-  return `${chosen.length} selected · ${formatBytes(chosen.reduce((sum, item) => sum + item.size, 0))}`;
+export function selectionLine(items: readonly SizedItem[], selected: ReadonlySet<string>) {
+  return withBytes(`${items.filter(item => selected.has(item.main)).length} selected`, items.filter(item => selected.has(item.main)));
 }
 
 /** Selected files still suggested: a file used meanwhile drops out of the selection. */

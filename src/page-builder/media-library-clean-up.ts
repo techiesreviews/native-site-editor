@@ -2,10 +2,10 @@ import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
 import { icon } from "../icons";
 import { cleanUpMenuItem } from "./media-badge";
-import type { MediaCleanUpItem, MediaCleanUpKind, MediaCleanUpSuggestions } from "./media-clean-up";
+import type { MediaCleanUpKind } from "./media-clean-up";
 import {
   cleanedMessage, cleanUpGroupNames, cleanUpLimit, groupLine, itemLine, keepSelected,
-  selectionLine, sizedSuggestions, undoEntries, undoneMessage,
+  selectionLine, sizedSuggestions, undoEntries, undoneMessage, type SizedItem, type SizedSuggestions,
 } from "./media-clean-up-review";
 import { basename, mediaKind } from "./media-library-filter";
 import { removalNotice } from "./media-recently-removed";
@@ -33,7 +33,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
   let phase: Phase = { at: "groups" };
   let selected = new Set<string>();
   /** The last ready suggestions: a recheck in progress keeps the open review steady. */
-  let last: MediaCleanUpSuggestions | undefined;
+  let last: SizedSuggestions | undefined;
 
   const current = () => {
     const state = h.cleanUp.state();
@@ -43,8 +43,6 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
     return { live, badge: state?.badge, steady: live?.state === "not-checked" ? last : live };
   };
   const go = (next: Phase, focus = true) => { phase = next; draw(focus); };
-  // The listing may not know a file's size; then its line says nothing rather than "0 B".
-  const sizeKnown = (item: MediaCleanUpItem) => item.members.every(path => h.library().items.some(entry => entry.path === path && entry.size !== undefined));
 
   function draw(focus: boolean | string = true) {
     const { element } = sheet;
@@ -126,7 +124,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
       }
     }
 
-    function drawReview(kind: MediaCleanUpKind, items: MediaCleanUpItem[]) {
+    function drawReview(kind: MediaCleanUpKind, items: SizedItem[]) {
       title.textContent = cleanUpGroupNames[kind];
       const toggle = button("Select all", () => {
         selected = items.every(item => selected.has(item.main)) ? new Set() : new Set(items.map(item => item.main)); draw("select-all");
@@ -148,7 +146,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         const round = node("span", "media-cleanup__check"); round.append(check);
         const name = node("strong", "", basename(item.main)); name.title = item.main;
         const text = node("span", "media-cleanup__photo-text");
-        text.append(name, node("span", "media-library__muted", itemLine(item, sizeKnown(item))));
+        text.append(name, node("span", "media-library__muted", itemLine(item)));
         label.append(preview(item.main, true), round, text);
         card.append(label);
         grid.append(card);
@@ -169,7 +167,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
       }
     }
 
-    function drawConfirm(kind: MediaCleanUpKind, items: MediaCleanUpItem[]) {
+    function drawConfirm(kind: MediaCleanUpKind, items: SizedItem[]) {
       const mains = items.map(item => item.main);
       const notice = removalNotice(mains, h.library().usage);
       title.textContent = notice.title;
@@ -178,7 +176,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         const row = node("li", "media-check__row"); row.dataset.path = item.main;
         const text = node("div", "media-check__text");
         const name = node("strong", "", basename(item.main)); name.title = item.main;
-        text.append(name, node("span", "media-library__muted", itemLine(item, sizeKnown(item))));
+        text.append(name, node("span", "media-library__muted", itemLine(item)));
         row.append(preview(item.main), text);
         files.append(row);
       }

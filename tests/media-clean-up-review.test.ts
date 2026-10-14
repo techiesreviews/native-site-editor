@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseMediaRecords, type RemovedMedia } from "../shared/media-records";
 import { mediaCleanUpSuggestions } from "../src/page-builder/media-clean-up";
 import {
-  cleanedMessage, groupLine, itemLine, keepSelected, selectionLine, sizedSuggestions, undoEntries, undoneMessage,
+  bytesText, cleanedMessage, groupLine, itemLine, keepSelected, selectionLine, sizedSuggestions, undoEntries, undoneMessage,
 } from "../src/page-builder/media-clean-up-review";
 import { mediaUsageRecords } from "../src/page-builder/media-usage";
 
@@ -17,23 +17,32 @@ const suggestions = mediaCleanUpSuggestions({ usage, records: parseMediaRecords(
 test("sizes come from the library: a family's copies count with its main, groups and the total follow", () => {
   const sized = sizedSuggestions(suggestions, { "media/hero.jpg": 2048, "media/hero-480.webp": 1024, "media/spare.svg": 300, "media/used.png": 9 });
   assert.deepEqual(sized.groups[0].items, [
-    { main: "media/hero.jpg", members: ["media/hero.jpg", "media/hero-480.webp"], size: 3072 },
-    { main: "media/spare.svg", members: ["media/spare.svg"], size: 300 },
+    { main: "media/hero.jpg", members: ["media/hero.jpg", "media/hero-480.webp"], size: 3072, unknown: 0 },
+    { main: "media/spare.svg", members: ["media/spare.svg"], size: 300, unknown: 0 },
   ]);
   assert.equal(sized.groups[0].size, 3372);
   assert.equal(sized.size, 3372);
   assert.equal(sized.count, 2);
   assert.equal(groupLine(sized.groups[0]), "2 files · 3 KB");
-  assert.equal(groupLine({ count: 1, size: 300 }), "1 file · 300 B");
-  // Unknown sizes count nothing rather than guessing.
-  assert.equal(sizedSuggestions(suggestions, {}).size, 0);
+});
+
+test("unknown sizes are never shown as exact: nothing when none is listed, at least when some are", () => {
+  const none = sizedSuggestions(suggestions, {});
+  assert.equal(groupLine(none.groups[0]), "2 files");
+  assert.equal(itemLine(none.groups[0].items[1]), "No uses found");
+  assert.equal(selectionLine(none.groups[0].items, new Set(["media/spare.svg"])), "1 selected");
+  // A family whose copy has no listed size.
+  const some = sizedSuggestions(suggestions, { "media/hero.jpg": 2048, "media/spare.svg": 300 });
+  assert.equal(groupLine(some.groups[0]), "2 files · at least 2 KB");
+  assert.equal(itemLine(some.groups[0].items[0]), "at least 2 KB · No uses found · with its 1 copy");
+  assert.equal(selectionLine(some.groups[0].items, new Set(["media/spare.svg"])), "1 selected · 300 B");
+  assert.equal(bytesText([]), "0 B");
 });
 
 test("a reviewed file says what the check found and the copies that go with it", () => {
-  assert.equal(itemLine({ main: "media/hero.jpg", members: ["media/hero.jpg", "media/hero-480.webp"], size: 3072 }), "3 KB · No uses found · with its 1 copy");
-  assert.equal(itemLine({ main: "a.jpg", members: ["a.jpg", "a-480.jpg", "a-960.jpg"], size: 10 }), "10 B · No uses found · with its 2 copies");
-  assert.equal(itemLine({ main: "media/spare.svg", members: ["media/spare.svg"], size: 300 }), "300 B · No uses found");
-  assert.equal(itemLine({ main: "guide.pdf", members: ["guide.pdf"], size: 0 }, false), "No uses found");
+  assert.equal(itemLine({ main: "media/hero.jpg", members: ["media/hero.jpg", "media/hero-480.webp"], size: 3072, unknown: 0 }), "3 KB · No uses found · with its 1 copy");
+  assert.equal(itemLine({ main: "a.jpg", members: ["a.jpg", "a-480.jpg", "a-960.jpg"], size: 10, unknown: 0 }), "10 B · No uses found · with its 2 copies");
+  assert.equal(itemLine({ main: "media/spare.svg", members: ["media/spare.svg"], size: 300, unknown: 0 }), "300 B · No uses found");
 });
 
 test("the selection sums the chosen families and drops files no longer suggested", () => {
