@@ -61,3 +61,7 @@ export const mediaAddingBusy = (states: readonly MediaAddingState[], hold = fals
  * Other kinds keep going (the sheet's before/after is for images). */
 export const mediaAddingReviewable = (name: string, state: MediaAddingState) =>
   (mediaAddingCancellable(state) || state === "failed") && mediaNeedsPreparation(name);
+
+/** A failed file's line: its reason and advice, named once. */
+export const mediaAddingFailedLine = (name: string, error = "The file could not be added.") =>
+  error.includes(name) ? error : `${name}: ${error}`;

@@ -2,7 +2,7 @@ import "./media-adding-summary.css";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename } from "./media-library-filter";
-import { MEDIA_ADDING_WORDS, mediaAddingCancellable, mediaAddingOffers, mediaAddingStatus, type MediaAddingState } from "./media-adding-rules";
+import { MEDIA_ADDING_WORDS, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingStatus, type MediaAddingState } from "./media-adding-rules";
 
 /** One file as the summary shows it. `cancel` is offered on its row while it can be stopped;
  * `key` keeps the row (and its focus) from one paint to the next. */
@@ -73,7 +73,7 @@ export function createMediaAddingSummary(root: HTMLElement, actions: MediaAdding
         if (items.some((item, index) => list.children[index] !== item)) list.replaceChildren(...items);
       }
       failed.replaceChildren(...view.entries.filter(entry => entry.state === "failed").map(entry =>
-        node("li", "", `${basename(entry.name)}: ${entry.error}`)));
+        node("li", "", mediaAddingFailedLine(basename(entry.name), entry.error))));
       // Notes stay with files on their way in or added; a cancelled or failed file's note is moot.
       notes.replaceChildren(...view.entries.filter(entry => entry.note && entry.state !== "cancelled" && entry.state !== "failed")
         .map(entry => node("li", "", entry.note)));

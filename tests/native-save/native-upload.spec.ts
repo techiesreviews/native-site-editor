@@ -215,7 +215,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   // The reason stays in the Files adding summary.
   const adding = explorer(page).getByRole("region", { name: "Files being added" });
   await expect(adding.getByRole("status")).toHaveText("1 file could not be added");
-  await expect(adding).toContainText("huge.pdf: huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
+  await expect(adding).toContainText("huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
   await expect(explorer(page).locator(".file-row[data-path='images/huge.pdf']")).toHaveCount(0);
 
   // Saving commits prepared images and the byte-for-byte as-is PDF.

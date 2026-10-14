@@ -310,7 +310,7 @@ test("Files: a picture that cannot be prepared asks first; Add unchanged adds it
   await dropOnFiles(page, [{ name: "Refused.png", type: "image/png", base64: bytes }]);
   await question.getByRole("button", { name: "Don't add", exact: true }).click();
   await expect(summary.getByRole("status")).toHaveText("1 file could not be added");
-  await expect(summary).toContainText("Refused.png: Refused.png was not added.");
+  await expect(summary).toContainText("Refused.png was not added.");
   expect(await storedDraft(page, "refused.png")).toBeUndefined();
   // Retry asks again; Escape adds nothing either.
   await summary.getByRole("button", { name: "Retry", exact: true }).click();

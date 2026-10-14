@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mediaAddingCancellable, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
+  mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
 } from "../src/page-builder/media-adding-rules";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -76,4 +76,10 @@ test("Review… from Files takes pictures not added yet, or that failed; other k
   assert.equal(mediaAddingReviewable("shot.png", "added"), false);
   assert.equal(mediaAddingReviewable("guide.pdf", "failed"), false);
   assert.equal(mediaAddingReviewable("logo.svg", "waiting"), false);
+});
+
+test("a failed file's line names it once", () => {
+  assert.equal(mediaAddingFailedLine("huge.pdf", "huge.pdf is 20 MB; uploads are limited to 20 MB per file."), "huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
+  assert.equal(mediaAddingFailedLine("a.png", "This folder changed. Try again."), "a.png: This folder changed. Try again.");
+  assert.equal(mediaAddingFailedLine("a.png"), "a.png: The file could not be added.");
 });
