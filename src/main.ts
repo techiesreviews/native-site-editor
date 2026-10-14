@@ -84,6 +84,7 @@ import { isImagePath, structureLabel } from "./native-structure";
 import { gridOfItem } from "./page-builder/card-source";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import * as sourceEditor from "./components/source-editor";
+import { createMediaHistoryHome } from "./page-builder/media-history-home";
 import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
 import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
@@ -145,6 +146,7 @@ let blockRail: ReturnType<typeof mountBlockRail> | undefined;
 // Undo/Redo and edits from the preview work from its draft store at once;
 // Monaco is only the code pane's view, loaded later.
 const editorModule = sourceEditor;
+const mediaHistoryHome = createMediaHistoryHome();
 const appStore = createAppStore(editorModule.sourceStore());
 installChunkRecovery({
   storage: () => window.sessionStorage,
@@ -252,6 +254,9 @@ function openCodeEditor(
     element("editor-toolbar-host"),
   );
   const historyHost = editorModule.captureHistoryHost(file.path), liveScope = draftScope();
+  if (appStore.openFile.value === file.path && historyHost) {
+    mediaHistoryHome.adopt(mediaIdentity(), (undo, redo) => editorModule.recordHistoryAction(file.path, undo, redo));
+  }
   primaryHistoryScope = file.scope && historyScope && appStore.openFile.value === file.path && historyHost && liveScope &&
     draftKey(liveScope, file.path) === draftKey(file.scope, file.path)
     ? { key: draftKey(file.scope, file.path), session: historyScope, proof: historyHost } : undefined;
@@ -2530,17 +2535,17 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   assertLive();
   if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   const editor = editorModule;
-  if (!editor || !appStore.openFile.value) throw new Error("Open a page before changing images.");
-  const historyPath = appStore.openFile.value, historyHost = editor.captureHistoryHost(appStore.openFile.value);
-  if (!historyHost) throw new Error("Open an editable page before changing images.");
+  // With no editable file open, the step waits for the next one (mediaHistoryHome).
+  const historyPath = appStore.openFile.value, historyHost = historyPath ? editor.captureHistoryHost(historyPath) : undefined;
+  const identity = mediaIdentity();
   await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
     scope, store: draftStore(), bytes: uploadBytes(), stamp,
     paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
     assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
     entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
-    modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
+    modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
-    history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
+    history: (undo, redo) => historyHost && historyPath ? editor.recordHistoryAction(historyPath, undo, redo) : mediaHistoryHome.hold(identity, undo, redo),
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
     announce,
   }));

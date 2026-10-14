@@ -6,6 +6,7 @@ import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { mediaDraftTransaction, type MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import { applyMediaWorkspaceBatch, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { memoryUploadBytes } from "../src/uploads";
+import { createMediaHistoryHome } from "../src/page-builder/media-history-home";
 
 function harness(stamp?: Stamp) {
   const scope: DraftScope = { account: "a", repoId: 1, repo: "a/r", branch: "main" };
@@ -25,6 +26,27 @@ function harness(stamp?: Stamp) {
   const batch: MediaWorkspaceBatch = { label: "images", expectedPaths: [], expectedSources: new Map([[".editor/media.json", undefined]]), expectedAssets: new Map(), edits: new Map([[".editor/media.json", '{"version":2,"collections":[],"files":{"images":{}}}']]), moves: [], deletes: [], uploads: [{ path: "images/a.png", blob: new Blob(["png"], { type: "image/png" }) }] };
   return { host, batch, records, bytes, steps: () => steps, undo: () => undo(), redo: () => redo(), stale: () => { current = false; }, fail: (path: string, after = false) => { fail = path; failAfterWrite = after; } };
 }
+
+test("a metadata change with no page open applies and undoes", async () => {
+  const h = harness(), home = createMediaHistoryHome();
+  h.batch.uploads = [];
+  const previous: SavedDraft = { ...h.host.scope, version: 1, path: ".editor/media.json", baseSha: null, original: "", content: '{"version":2,"collections":[],"files":{}}', updatedAt: 1 };
+  h.records.set(previous.path, previous);
+  h.batch.expectedPaths = [previous.path];
+  h.batch.expectedSources.set(previous.path, previous.content);
+  h.host.historyCurrent = () => h.host.stamp.holds();
+  h.host.history = (undo, redo) => home.hold("site", undo, redo);
+  await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
+  assert.equal(h.records.get(previous.path)?.content, h.batch.edits.get(previous.path));
+  assert.notEqual(h.records.get(previous.path), previous);
+  let undo: () => boolean | Promise<boolean> = () => false, redo: typeof undo = () => false, steps = 0;
+  home.adopt("site", (u, r) => { undo = u; redo = r; steps++; return true; });
+  assert.equal(steps, 1);
+  assert.equal(await undo(), true);
+  assert.equal(h.records.get(previous.path), previous);
+  assert.equal(await redo(), true);
+  assert.equal(h.records.get(previous.path)?.content, h.batch.edits.get(previous.path));
+});
 
 test("metadata and upload undo together; redo restages swept bytes", async () => {
   const h = harness(); await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));

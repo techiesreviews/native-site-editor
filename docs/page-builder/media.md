@@ -47,6 +47,11 @@ validate, then synchronously commit drafts/models/paths and register exactly one
 Undo action. The synchronous commit must contain no awaits. A host using another
 operation engine must enforce equivalent final guards after its final await.
 
+Media changes apply even when no editable file is open. Their Undo steps are held
+under the current repository, branch and generation, then recorded oldest first
+in the next primary editable file's history. With an editable file already open,
+the change joins that file's history immediately.
+
 Snapshot/rollback and Undo must be bound to the originating draft scope. Switching
 repositories before Undo cannot direct old paths or bytes into the new repository.
 Rollback before commit must remove only staged bytes owned by this operation and

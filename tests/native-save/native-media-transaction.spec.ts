@@ -1,4 +1,33 @@
 import { test, expect } from "@playwright/test";
+import { storedDraft } from "./drafts";
+
+// Default native-save fixture group.
+for (const file of ["styles/site.css", "missing.html"]) {
+  test(file === "missing.html" ? "media metadata with no file open joins the next page's Undo and Redo" : "open a stylesheet, change an image's tags, Undo", async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=${file}`);
+    await expect(page.locator("#status")).toContainText("Up to date with main");
+    if (file === "missing.html") await expect(page.locator(".code-editor__undo")).toHaveCount(0);
+    await page.locator("#explorer-toggle").click();
+    await page.getByRole("tab", { name: "Images", exact: true }).click();
+    const images = page.getByRole("region", { name: "Images", exact: true });
+    await images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+    await images.getByLabel("Image tags", { exact: true }).fill("history-home-tag");
+    await images.getByRole("button", { name: "Save metadata", exact: true }).click();
+    await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("history-home-tag");
+    await expect(images).not.toHaveAttribute("aria-busy", "true");
+    if (file === "missing.html") {
+      await page.getByRole("tab", { name: "Pages", exact: true }).click();
+      await page.locator('#explorer-pages [data-key="page:index.html"] .pages-row').click();
+      await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+    } else await page.keyboard.press("Escape");
+    await page.locator(".code-editor__undo").click();
+    await expect.poll(() => storedDraft(page, ".editor/media.json")).toBeUndefined();
+    if (file === "missing.html") {
+      await page.locator(".code-editor__redo").click();
+      await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("history-home-tag");
+    }
+  });
+}
 
 for (const change of ["mount affected source", "unmount history host"] as const) {
   test(`${change} while media preparation waits refuses drafts and preserves real Monaco`, async ({ page, baseURL }) => {
