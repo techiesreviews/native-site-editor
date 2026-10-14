@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMediaRecords, serializeMediaRecords, renameMediaRecord, setMediaDescription } from "../shared/media-records";
-import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits, swapPlaceImage, pageUsesFile, mediaNameAlt } from "../src/page-builder/media-descriptions";
+import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits, swapPlaceImage, pageUsesFile, mediaNameAlt, strandsAgentWords } from "../src/page-builder/media-descriptions";
 import { mediaMetadataView } from "../src/page-builder/media-metadata";
 
 const file = "images/a.png", page = "news/index.html";
@@ -177,6 +177,33 @@ test("swapping a place's picture moves its Decorative mark to the new file and k
   assert.equal(words.records.files[other]?.places?.[page]?.decorative, true);
   // Another page's mark is not this place's.
   assert.equal(swapPlaceImage(records, "about.html", file, other, "", swapped).records.files[other], undefined);
+});
+
+test("other agent words for one image would strand the unchecked words on another image of the file", () => {
+  const source = '<img src="/images/a.png" alt="First"><img src="/images/a.png" alt="Old"><img src="/images/b.png" alt="First">';
+  const second = source.indexOf('<img src="/images/a.png" alt="Old"');
+  assert.equal(strandsAgentWords(source, file, page, second, "First", "Second"), true);
+  // The same words, the marked image itself, no mark, or words no longer shown: nothing is stranded.
+  assert.equal(strandsAgentWords(source, file, page, second, "First", "First"), false);
+  assert.equal(strandsAgentWords(source, file, page, 0, "First", "Second"), false);
+  assert.equal(strandsAgentWords(source, file, page, second, undefined, "Second"), false);
+  assert.equal(strandsAgentWords(source, file, page, second, "Gone", "Second"), false);
+});
+
+test("swapping a place keeps an agent's own words marked: the mark moves to the new file and stays in To check", () => {
+  const records = setMediaPlaceAgentText(described(), file, page, "Agent words");
+  const after = '<img src="/images/b-photo_2.png" alt="Agent words">';
+  const result = swapPlaceImage(records, page, file, other, "Agent words", after);
+  assert.equal(result.alt, undefined);
+  assert.equal(result.records.files[other]?.places?.[page]?.agentText, "Agent words");
+  // The old file left the page, so its mark for this page goes.
+  assert.equal(result.records.files[file]?.places?.[page]?.agentText, undefined);
+  assert.deepEqual(mediaToCheck(result.records, [file, other], { [page]: after }), [{ file: other, page, text: "Agent words" }]);
+  // The old file still shows its words on the page: its mark there stays too.
+  const both = `${after}<img src="/images/a.png" alt="Agent words">`;
+  assert.equal(swapPlaceImage(records, page, file, other, "Agent words", both).records.files[file]?.places?.[page]?.agentText, "Agent words");
+  // Lex's own words (no agent mark) stay unmarked.
+  assert.equal(swapPlaceImage(records, page, file, other, "Lex words", after).records, records);
 });
 
 test("the new file's own Decorative mark and description apply where the place followed the old file", () => {

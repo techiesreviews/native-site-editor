@@ -115,6 +115,12 @@ export function placeWordsEdits(source: string, file: string, page: string, from
   return source;
 }
 
+/** One by-agent mark per file on a page: whether other words for the image at `target` (its start
+ * tag's offset) would leave the agent's unchecked `marked` words on another image of `file` unmarked. */
+export function strandsAgentWords(source: string, file: string, page: string, target: number, marked: string | undefined, words: string) {
+  return Boolean(marked && marked !== words && placeImages(source, file, page).some(image => image.tag.start !== target && image.alt === marked));
+}
+
 export { mediaNameAlt };
 
 /** Whether `page`'s source still shows `file` in one of its images. */
@@ -147,5 +153,12 @@ export function swapPlaceImage(
   if (alt === "") return { alt: own || undefined, records };
   // Words that were the old file's description describe the old picture, not this one.
   if (from && from !== to && alt === old?.description?.text) return { alt: target.state === "decorative" ? "" : own || mediaNameAlt(to), records };
+  // Own words an agent wrote keep their by-agent mark: it moves with the words to the new file on
+  // this page (the old file keeps it only while it still shows on the page), so To check keeps them.
+  if (from && from !== to && alt && old?.places?.[page]?.agentText === alt) {
+    let next = setMediaPlaceAgentText(records, to, page, alt);
+    if (!pageUsesFile(after, page, from)) next = setMediaPlaceAgentText(next, from, page, undefined);
+    return { alt: undefined, records: next };
+  }
   return { alt: undefined, records };
 }

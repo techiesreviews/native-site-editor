@@ -496,6 +496,15 @@ test("agent own words and place Decorative are one batch and one Undo, retaining
   f.history.pop()!(); assert.equal(f.text.get("index.html"), before);
 });
 
+test("an agent's words for every use of a file on a page keep one mark and one To check row", async () => {
+  const f = fixture(); await f.host.load();
+  f.text.set("index.html", '<body><img src="/images/a.png" alt="Old"><img src="/images/a.png" alt="Old"></body>');
+  await f.host.describe("images/a.png", { page: "index.html", text: "Both words" });
+  assert.equal((f.text.get("index.html")!.match(/alt="Both words"/g) ?? []).length, 2);
+  assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", page: "index.html", text: "Both words" }]);
+  f.history.pop()!(); assert.equal((f.text.get("index.html")!.match(/alt="Old"/g) ?? []).length, 2);
+});
+
 test("agent file Decorative follows library rules and never clears an unchecked description", async () => {
   const f = fixture(); await f.host.load();
   f.text.set("index.html", '<body><img src="/images/a.png" alt="Default"><img src="/images/a.png" alt="Own"></body>');

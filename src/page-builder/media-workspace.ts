@@ -5,7 +5,7 @@ import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
 import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
-import { pageUsesFile, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
+import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
@@ -240,6 +240,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         const range = node && locateNativeElementRange(source, node);
         const images = startTags(source).filter(tag => tag.name === "img" && mediaResolvePath(decodeHtmlEntities(startTagAttribute(source, tag, "src")?.value ?? "", true), page) === file);
         if (node && (!range || range.tag.name !== "img" || !images.some(tag => tag.start === range.tag.start))) throw new Error("That element is not an image showing this file.");
+        // One by-agent mark per file on a page: other words for one of its images would leave
+        // the agent's unchecked words on another image unmarked, so that is refused.
+        if (range && words !== undefined && strandsAgentWords(source, file, page, range.tag.start, metadata.files[file]?.places?.[page]?.agentText, words))
+          throw new Error(`Another image of ${file} on ${page} still shows unchecked agent words. Describe the place without element to give every use the same words, or ask the user to check them in To check first.`);
         let edited = source;
         if (words !== undefined || change.decorative) {
           for (const tag of images.filter(tag => !range || tag.start === range.tag.start).reverse()) {
