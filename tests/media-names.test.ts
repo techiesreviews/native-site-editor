@@ -51,3 +51,23 @@ test("numbered batch families reserve their main and every copy", () => {
     for (const width of [480, 960, 1600]) paths.add(mediaCopyName(main, width));
   }
 });
+
+test("an explicit media/originals destination completes with distinct numbered members", () => {
+  for (const folder of ["media/originals", "media/originals/trips"]) {
+    const paths = new Set<string>();
+    for (const expected of ["holiday.webp", "holiday-2.webp"]) {
+      const main = chooseMediaPath({ folder, name: "holiday.webp", copies: [480, 960], paths });
+      assert.equal(main, `${folder}/${expected}`);
+      const members = [main, mediaCopyName(main, 480), mediaCopyName(main, 960)];
+      assert.equal(new Set(members).size, 3);
+      for (const member of members) paths.add(member);
+    }
+  }
+});
+
+test("many numbered originals do not slow choosing a free base", () => {
+  const paths = Array.from({ length: 3000 }, (_, index) => `media/originals/photo${index ? "-" + (index + 1) : ""}.jpg`);
+  const start = performance.now();
+  assert.equal(chooseMediaPath({ folder: "media/images", name: "photo.webp", copies: [480], paths }), "media/images/photo-3001.webp");
+  assert.ok(performance.now() - start < 1000);
+});
