@@ -8,7 +8,6 @@ import type { TreeEntry } from "../../shared/types";
 import type { FileChange, MovableFile } from "../file-changes";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "../native-files";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type RouteChange } from "../native-page-moves";
-import { assetInUseProblem, assetMoves, assetUsers, planAssetReferenceRewrites } from "../page-builder/asset-references";
 import { nativePageRoute } from "../../shared/native-routes";
 import { NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, resolveNativeProject } from "../../shared/native-project";
 
@@ -33,6 +32,8 @@ export interface FileOperationsPorts {
   readFiles(repo: string, shas: string[]): Promise<Record<string, string>>;
   readFile(repo: string, sha: string): Promise<string>;
   nativeFiles(scope?: DraftScope): string[];
+  readMediaText?(path: string): Promise<string | undefined>;
+  origins?(): string[];
   ensureNativeTextIndex(): Promise<string | undefined>;
   branchPathProblem(path: string): Promise<string | undefined>;
   onBranchHere(path: string): boolean;
@@ -221,7 +222,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
         return plan;
       }
       const moves = ops.map(op => ({ from: op.file.path, to: op.to }));
-      const references = r.site() ? nativeAssetReferences(moves, r) : {};
+      const references = r.site() ? await nativeAssetReferences(moves, r) : {};
       if ("error" in references) return { refuse: references.error };
       const links = pageLinks(found.map(file => file.path), new Map(ops.map(op => [op.file.path, op.to])), "moved", r);
       if (links && ports.confirmDialog()) {
@@ -260,7 +261,8 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     return { sources: linked as Record<string, string>, files: ports.nativeFiles() };
   }
 
-  function nativeAssetReferences(moves: { from: string; to: string }[], r: Reads, base: Map<string, string> = new Map()): { edits?: Map<string, string> } | { error: string } {
+  async function nativeAssetReferences(moves: { from: string; to: string }[], r: Reads, base: Map<string, string> = new Map()): Promise<{ edits?: Map<string, string> } | { error: string }> {
+    const { assetMoves, planAssetReferenceRewrites } = await import("../page-builder/asset-references");
     if (!assetMoves(moves).length) return { edits: base };
     const snap = nativeAssetSnapshot("moved", r);
     if ("error" in snap) return snap;
@@ -334,7 +336,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     let edits = new Map(urls.links.map(item => [item.path, item.text]));
     ports.withMovedPageUrls(edits, urls.pages, r);
     const redirects = r.source(NATIVE_REDIRECTS_PATH);
-    const references = nativeAssetReferences(ops.map(op => ({ from: op.file.path, to: op.to })), r, edits);
+    const references = await nativeAssetReferences(ops.map(op => ({ from: op.file.path, to: op.to })), r, edits);
     if ("error" in references) return { refuse: references.error };
     edits = references.edits ?? edits;
     const verb = operation === "rename" ? "Rename" : "Move";
@@ -404,6 +406,17 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(target);
     const indexed = await ports.ensureNativeTextIndex();
     if (indexed && since.holds()) { ports.errorMessage(new Error(indexed)); return indexed; }
+    if (ports.readMediaText) {
+      const { isMediaTextFile } = await import("../page-builder/media-mentions");
+      if (!since.holds()) return changed;
+      const textFiles = ports.nativeFiles().filter(isMediaTextFile);
+      try {
+        for (let at = 0; at < textFiles.length; at += 12) {
+          await Promise.all(textFiles.slice(at, at + 12).map(path => ports.readMediaText!(path)));
+          if (!since.holds()) return changed;
+        }
+      } catch (error) { ports.errorMessage(error); return "The files that use this could not be read."; }
+    }
     const outcome = await ports.edits.run(async r => {
       r.exists(target.path);
       let found: MovableFile[];
@@ -412,10 +425,16 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       if (!found.length) return { refuse: `${target.path} has no files to delete.` };
       for (const file of found) { r.exists(file.path); r.source(file.path); }
       if (r.site() && found.some(file => !/\.html?$/i.test(file.path))) {
-        const snap = nativeAssetSnapshot("deleted", r);
-        if ("error" in snap) return { refuse: snap.error };
+        const { isMediaTextFile } = await import("../page-builder/media-mentions");
+        if (!since.holds()) return { refuse: changed };
+        const sources = Object.fromEntries(ports.nativeFiles().filter(isMediaTextFile).map(path => [path, r.source(path)]));
+        const missing = Object.keys(sources).find(path => sources[path] === undefined);
+        if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was deleted.` };
+        const snap = { sources };
         try {
-          const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path)));
+          const { assetInUseProblem, assetUsers } = await import("../page-builder/asset-references");
+          const site = r.site();
+          const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path), { origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components }));
           if (inUse) return { refuse: inUse };
         } catch (error) { return { refuse: error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted." }; }
       }

@@ -101,7 +101,7 @@ test("any unreadable source makes every family unchecked, including ignored sour
     assert.equal(records.families.length, 2);
     for (const family of records.families) {
       assert.equal(family.checked, false);
-      assert.deepEqual(family.pages, []);
+      assert.deepEqual(family.pages, family.members.includes("images/photo.jpg") ? ["index.html"] : []);
       assert.deepEqual(family.otherUses, []);
       assert.equal(mediaUsageState(family), "not-checked");
     }
@@ -128,7 +128,7 @@ test("unknown paths are not checked while checked files without mentions have no
   assert.equal(records.families.length, 1);
 });
 
-test("reach is html-css; scripts, settings and node_modules are ignored even when linked", () => {
+test("reach is text; scripts and data count, node_modules stays excluded", () => {
   const records = mediaUsageRecords({
     media: ["images/a.png"],
     sources: {
@@ -140,9 +140,9 @@ test("reach is html-css; scripts, settings and node_modules are ignored even whe
     },
     pages: ["index.html"],
   });
-  assert.equal(records.reach, "html-css");
+  assert.equal(records.reach, "text");
   assert.deepEqual(records.unreadable, []);
-  assert.equal(mediaUsageState(mediaUsageFor(records, "images/a.png")), "no-uses-found");
+  assert.deepEqual(mediaUsageFor(records, "images/a.png").otherUses, [{ file: "script.js", kind: "script" }, { file: "settings.json", kind: "data" }]);
 });
 
 test("a link to another page does not place that page's pictures on the linking page", () => {
@@ -177,4 +177,22 @@ test("a download link to a stylesheet applies none of its pictures, a stylesheet
   };
   const records = mediaUsageRecords({ media: ["images/hero.jpg"], sources, pages: ["download.html", "linked.html", "imported.html"] });
   assert.deepEqual(mediaUsageFor(records, "images/hero.jpg").pages, ["linked.html", "imported.html"]);
+});
+
+test("pending text keeps all families unchecked and retains found uses", () => {
+  const records = mediaUsageRecords({ media: ["images/a.png", "unused.png"], files: ["index.html", "app.js", ".editor/media.json", "binary.png"], sources: { "index.html": '<img src="/images/a.png">' }, pages: ["index.html"] });
+  assert.deepEqual(records.pending, ["app.js"]);
+  assert.equal(records.reach, "text");
+  assert.deepEqual(mediaUsageFor(records, "images/a.png").pages, ["index.html"]);
+  assert.ok(records.families.every(family => mediaUsageState(family) === "not-checked"));
+});
+test("wide kinds and own-domain sharing stay distinct from page uses", () => {
+  const records = mediaUsageRecords({ media: ["images/a.png"], pages: ["index.html"], site: { origins: ["https://native.example"] }, sources: {
+    "index.html": '<meta property="og:image" content="https://native.example/images/a.png">',
+    "app.js": '"/images/a.png"', "data.json": '"a.png"', "sitemap.xml": "a.png", "AGENTS.md": "a.png", "_redirects": "a.png",
+  } });
+  assert.deepEqual(records.pending, []);
+  assert.deepEqual(records.families[0].pages, []);
+  assert.deepEqual(records.families[0].otherUses.map(use => use.kind), ["sharing", "script", "data", "feed", "notes", "settings"]);
+  assert.equal(records.families[0].checked, true);
 });

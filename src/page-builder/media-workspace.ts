@@ -1,5 +1,6 @@
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { descriptionPlaceEdits } from "./media-descriptions";
+import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
@@ -56,7 +57,7 @@ export async function applyMediaWorkspaceBatch<State>(batch: MediaWorkspaceBatch
 }
 export interface MediaWorkspaceContext {
   key: string; scope: DraftScope; drafts: DraftAccess; paths: string[]; items: MediaLibraryItem[];
-  pages: string[]; components: Record<string, string>;
+  pages: string[]; components: Record<string, string>; origins?: string[];
   assertLive(): void;
   read(path: string): Promise<string | undefined>;
   blob(path: string): Promise<Blob>;
@@ -64,6 +65,13 @@ export interface MediaWorkspaceContext {
   assetVersion(path: string): string | undefined;
   applyBatch(batch: MediaWorkspaceBatch): Promise<void>;
   openPage(path: string): Promise<void>;
+}
+
+function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWorkspaceContext) {
+  const site = { origins: ctx.origins ?? [] };
+  const usage = mediaUsageIndex(paths, text, ctx.pages, ctx.components, site);
+  for (const [path, mentions] of mediaMentions({ media: paths, sources: text, site })) for (const { file } of mentions) if (!usage[path].files.includes(file)) usage[path].files.push(file);
+  return usage;
 }
 
 /** Repository adapter; the panel never writes directly to drafts, bytes or source models. */
@@ -76,7 +84,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const sources = async (ctx: MediaWorkspaceContext, paths = [...ctx.paths]) => {
     const out: Record<string, string> = {};
-    const files = paths.filter((path) => /\.(?:html|css)$/i.test(path) && !path.startsWith("node_modules/"));
+    const files = paths.filter(isMediaTextFile);
     for (let index = 0; index < files.length; index += 12) {
       const values = await Promise.all(files.slice(index, index + 12).map(async (path) => [path, await ctx.read(path)] as const));
       ctx.assertLive();
@@ -121,6 +129,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const rewriteInto = (batch: MediaWorkspaceBatch, text: Record<string, string>, from: string, to: string) => {
     for (const [path, source] of Object.entries(text)) {
+      if (!/\.(?:html|css)$/i.test(path)) continue;
       const before = batch.edits.get(path) ?? source;
       const next = rewriteMediaReferences(path, before, from, to);
       if (next !== before) batch.edits.set(path, next);
@@ -177,7 +186,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const text = await sources(ctx);
       const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
       const metadata = mediaMetadataView(records);
-      return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: mediaUsageIndex(ctx.items.map((item) => item.path), text, ctx.pages, ctx.components) };
+      return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx) };
     },
     async blob(path) { return active().blob(path); },
     async metadata(changes) {
@@ -244,7 +253,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       for (const [member, version] of versions) batch.expectedAssets.set(member, version);
       assetGuard(batch, unique);
       if (unusedOnly) {
-        const usage = mediaUsageIndex(unique, text, ctx.pages, ctx.components);
+        const usage = wideUsage(unique, text, ctx);
         if (unique.some((path) => usage[path].files.length)) throw new Error("Some selected images are now referenced. Refresh the library before deleting unused images.");
       }
       batch.deletes.push(...unique);

@@ -123,3 +123,22 @@ test("a reference added in another tab while the Delete dialog is open stops the
   expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
   expect((await storedDraft(page, "styles/site.css"))?.content).toBe(used);
 });
+
+test("a full own-domain sharing address alone refuses Files deletion and names the page", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const sharing = source.replace('/images/studio-desk.svg', 'https://native.example/images/placeholder.svg');
+  for (const [path, content] of [[".editor/config.json", '{"site":{"name":"Native Studio","url":"https://native.example"}}'], ["index.html", home], [item, sharing]])
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.locator("#explorer-toggle").click();
+  const explorer = page.locator("#explorer");
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  const images = explorer.getByRole("button", { name: "images", exact: true });
+  if (await images.getAttribute("aria-expanded") === "false") await images.click();
+  await explorer.getByRole("button", { name: "placeholder.svg", exact: true }).click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for images/placeholder.svg" }).getByRole("menuitem", { name: "Delete" }).click();
+  await expect(page.locator("#status")).toHaveText(`images/placeholder.svg is used by ${item}. Remove or replace those references first; nothing was deleted.`);
+  await expect(page.getByRole("dialog", { name: /^Delete images\/placeholder\.svg/ })).toHaveCount(0);
+  expect(await storedDrafts(page)).toEqual([]);
+});

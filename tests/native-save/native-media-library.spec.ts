@@ -104,7 +104,7 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
       key: "receipt-browser", scope: { account: "test", repoId: 1, repo: "test/repo", branch: "main" },
       drafts: { get() { return undefined; }, save() { throw new Error("Legacy mutation"); }, remove() { throw new Error("Legacy mutation"); } },
       paths: ["index.html", "images/a.svg"], items: [{ path: "images/a.svg" }], pages: ["index.html"], components: {},
-      assertLive() {}, async read(path) { return path === "index.html" ? '<img src="/images/a.svg">' : undefined; },
+      assertLive() {}, async read(path) { return path === "index.html" ? '<img src="/images/a.svg">' : path === "images/a.svg" ? bytes.text() : undefined; },
       async blob() { return bytes; }, assetVersion() { return version; }, async applyBatch() { commits++; },
       async openPage() {},
     })));

@@ -1,3 +1,4 @@
+import type { MediaUsageCheckPorts } from "./media-usage-controller";
 import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
 import type { DraftAccess } from "../file-changes";
@@ -24,6 +25,8 @@ export interface MediaModule {
   mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
+  usage?: MediaUsageCheckPorts;
+  origins?(): string[];
   workspace(): MediaWorkspaceSnapshot | undefined;
   identity(): string;
   stamp(): Stamp;
@@ -57,6 +60,27 @@ export interface MediaControllerPorts {
 
 /** Owns media UI sessions; source receipts, upload staging and Undo stay on the host. */
 export function createMediaController(ports: MediaControllerPorts) {
+  let usage: ReturnType<typeof import("./media-usage-controller")["createMediaUsageController"]> | undefined;
+  let usageLoading: Promise<void> | undefined;
+  const usageListeners = new Set<(records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void>();
+  function refreshUsage() {
+    const check = ports.usage;
+    if (!check) return;
+    if (usage) { usage.refresh(); return; }
+    const key = check.key();
+    if (!key) return;
+    // Even the scanner's chunk waits for the deferred text index and first paint.
+    void check.settled().then(() => {
+      if (key !== check.key()) return;
+      usageLoading ??= import("./media-usage-controller").then(({ createMediaUsageController }) => {
+        usage = createMediaUsageController({ ...check, changed: records => {
+          check.changed(records);
+          for (const listener of usageListeners) listener(records);
+        } });
+        usage.refresh();
+      }).catch(error => { usageLoading = undefined; ports.error(error); });
+    }).catch(error => ports.error(error));
+  }
   let loaded: MediaModule | undefined;
   const load = async () => loaded = await ports.load();
 
@@ -80,6 +104,8 @@ export function createMediaController(ports: MediaControllerPorts) {
       const text = await ports.readText(repo, entry.sha); assertLive();
       ports.rememberSource(path, text); return text;
     };
+    for (const path of [".editor/config.json", "CNAME"]) if (paths.includes(path)) await read(path);
+    assertLive();
     return {
       key: `${scope.account}:${scope.repoId}`, scope, drafts, paths,
       items: paths.filter(include).map((path) => {
@@ -87,7 +113,7 @@ export function createMediaController(ports: MediaControllerPorts) {
         return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };
       }),
       pages: site ? Object.values(site.routes) : paths.filter((path) => /(?:^|\/)index\.html$/i.test(path) && !path.startsWith("components/")),
-      components: site?.components ?? {}, assertLive, read,
+      components: site?.components ?? {}, get origins() { return ports.origins?.() ?? []; }, assertLive, read,
       blob: async (path) => {
         assertLive();
         const draft = drafts.get(scope, path);
@@ -266,6 +292,10 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (view.refreshedKey === ports.gallerySignature()) return;
     void view.refresh();
   }
-  return { workspaceContext, chooseImage, placeState, changePlace, ensureGallery, requestGalleryRefresh, disposeGallery,
+  return { refreshUsage, usageRecords: () => usage?.usageRecords(),
+    onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {
+      usageListeners.add(listener); return () => { usageListeners.delete(listener); };
+    },
+    workspaceContext, chooseImage, placeState, changePlace, ensureGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

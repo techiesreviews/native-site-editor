@@ -1,3 +1,4 @@
+import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
 import { createRowMenu } from "./components/row-menu";
@@ -17,7 +18,7 @@ import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
 import { createHistoryController } from "./controllers/history-controller";
-import { batch } from "@preact/signals-core";
+import { batch, effect } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
 import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
 import "./utilities.css";
@@ -1730,6 +1731,8 @@ let nativeSite: NativeSite | undefined;
 // instead of the plain file browser.
 let nativeEngaged = false;
 const nativeBaseSources = new Map<string, string>();
+let mediaTextKey = "";
+const mediaText = new Map<string, string>();
 const nativeComponentStyles = new Map<string, string>();
 const nativeMissingComponentStyles = new Set<string>();
 const nativeComponentStyleRequests = new Set<string>();
@@ -2050,7 +2053,7 @@ function nativeMoveItems() {
 }
 
 function nativeEffectiveSource(path: string, scope = draftScope()) {
-  let content = nativeBaseSources.get(path);
+  let content = nativeBaseSources.get(path) ?? (mediaTextKey === nativeTextIndexScopeKey() ? mediaText.get(path) : undefined);
   const draft = scope ? draftStore().get(scope, path) : undefined;
   // A file deleted in the drafts has no source; a binary one moved has none to show.
   if (draft?.deleted || draft?.opaque) return undefined;
@@ -2483,8 +2486,34 @@ function discardUpload(path: string) {
   announce(`Discarded ${path}.`);
 }
 
+// Text read for usage is kept out of the preview source map.
+async function readMediaText(path: string) {
+  const key = nativeTextIndexScopeKey(), repo = appStore.repository.value;
+  const held = nativeEffectiveSource(path);
+  if (held !== undefined) return held;
+  if (!repo || !key) return undefined;
+  const entry = await findEntry(path);
+  if (key !== nativeTextIndexScopeKey() || !entry) return undefined;
+  const source = await readFile(repo.full_name, entry.sha);
+  if (key !== nativeTextIndexScopeKey()) return undefined;
+  if (mediaTextKey !== key) { mediaText.clear(); mediaTextKey = key; }
+  mediaText.set(path, source);
+  return source;
+}
+function mediaOrigins() {
+  return mediaOwnOrigins(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, nativeEffectiveSource("CNAME"));
+}
+
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
 const mediaController = createMediaController({
+  origins: mediaOrigins,
+  usage: {
+    key: () => nativeTextIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: nativeFiles,
+    pages: () => Object.values(nativeSite?.routes ?? {}), components: () => nativeSite?.components ?? {},
+    source: nativeEffectiveSource, read: readMediaText,
+    url: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+    settled: () => nativeTextIndexing ?? Promise.resolve(), changed: () => {},
+  },
   workspace: () => {
     const repo = appStore.repository.value, scope = draftScope();
     if (!repo || !scope || !appStore.snapshot.value) return undefined;
@@ -2503,7 +2532,14 @@ const mediaController = createMediaController({
   findEntry,
   entry: entryAt,
   readText: readFile,
-  rememberSource: (path, source) => { nativeBaseSources.set(path, source); },
+  rememberSource: (path, source) => {
+    if (/\.(?:html|css)$/i.test(path)) nativeBaseSources.set(path, source);
+    else {
+      const key = nativeTextIndexScopeKey();
+      if (mediaTextKey !== key) { mediaText.clear(); mediaTextKey = key; }
+      mediaText.set(path, source);
+    }
+  },
   uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
   readBlob,
   applyBatch: applyMediaBatch,
@@ -2520,6 +2556,13 @@ const mediaController = createMediaController({
   gallerySignature: imagesSignature,
   announce,
   error: errorMessage,
+});
+// Typing changes drafts often; the usage check waits for a pause.
+let mediaUsageTimer: ReturnType<typeof setTimeout> | undefined;
+effect(() => {
+  appStore.repository.value; appStore.snapshot.value; appStore.drafts.revision.value;
+  clearTimeout(mediaUsageTimer);
+  mediaUsageTimer = setTimeout(() => mediaController.refreshUsage(), 400);
 });
 function mediaIdentity() { return `${generation}:${setupScope()}`; }
 function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
@@ -2860,6 +2903,7 @@ function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnT
   else release();
   const indexing: Promise<boolean> = due.then(() => (live() ? indexNativeTextFiles(repo, site, scope, live) : false)).then((done) => {
     if (done && live() && nativeTextIndexing === indexing) nativeTextIndexed = true;
+    if (live()) mediaController.refreshUsage();
     return done;
   }, (error) => {
     if (live() && nativeSite === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
@@ -4057,6 +4101,7 @@ const fileOperationsController = createFileOperationsController({
   baseSource: path => nativeBaseSources.get(path), readFiles, readFile,
   nativeFiles,
   ensureNativeTextIndex, branchPathProblem,
+  readMediaText, origins: mediaOrigins,
   onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,
   undoFileChanges,
   duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),

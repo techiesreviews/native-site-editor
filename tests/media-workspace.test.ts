@@ -246,3 +246,18 @@ test("description metadata rewrites shared and missing page alts with records in
   await f.host.metadata({ "images/a.png": { decorative: false } });
   assert.equal(f.text.get("index.html"), decorated);
 });
+
+test("library load and Delete unused read scripts, notes and SVG text, while rename stays HTML/CSS", async () => {
+  const f = fixture();
+  f.context.origins = ["https://native.example"];
+  for (const [file, source] of [
+    ["app.js", 'const image = "/images/unused.png"'],
+    ["AGENTS.md", "Keep unused.png"],
+    ["embedded.svg", '<svg><image href="https://native.example/images/unused.png"/></svg>'],
+  ]) { f.paths.add(file); f.text.set(file, source); }
+  const loaded = await f.host.load();
+  assert.deepEqual(loaded.usage["images/unused.png"].files, ["embedded.svg", "app.js", "AGENTS.md"]);
+  await assert.rejects(() => f.host.remove!(["images/unused.png"], true), /now referenced/);
+  await f.host.rename!("images/unused.png", "renamed.png");
+  assert.equal(f.text.get("app.js"), 'const image = "/images/unused.png"');
+});

@@ -1,14 +1,18 @@
+import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaUrl } from "./media-markup";
 
-export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attribute?: "src" | "href" | "poster" | "content" | "srcset" | "style"; tag?: string; attributeQuote?: string; cssQuote?: string }
+export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attribute?: "src" | "href" | "poster" | "content" | "srcset" | "data-src" | "data-srcset" | "imagesrcset" | "data" | "xlink:href" | "style"; tag?: string; attributeQuote?: string; cssQuote?: string }
 export interface MediaReference extends MediaUrlToken { path: string }
 export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 
-export function mediaResolvePath(value: string, file: string): string | undefined {
-  const decoded = value.trim();
+export function mediaResolvePath(value: string, file: string, site?: MediaSite): string | undefined {
+  let decoded = value.trim();
+  if (site && /^(?:https?:)?\/\//i.test(decoded) && mediaOwnAddress(decoded, site)) {
+    try { decoded = new URL(decoded.startsWith("//") ? "https:" + decoded : decoded).pathname; } catch { return undefined; }
+  }
   if (!decoded || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(decoded)) return undefined;
   try { return decodeURIComponent(new URL(decoded, `https://repo.invalid/${file}`).pathname).replace(/^\//, ""); }
   catch { return undefined; }
@@ -140,7 +144,8 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
     if (tag.start < styleEnd) continue;
     const rawAlt = startTagAttribute(source, tag, "alt")?.value;
     const alt = rawAlt === undefined ? undefined : decodeHtmlEntities(rawAlt, true);
-    for (const name of ["src", "href", "poster", "content", "srcset"] as const) {
+    for (const name of ["src", "href", "poster", "content", "srcset", "data-src", "data-srcset", "imagesrcset", "data", "xlink:href"] as const) {
+      if (name === "data" && tag.name !== "object") continue;
       if (name === "content") {
         const key = startTagAttribute(source, tag, "property") ?? startTagAttribute(source, tag, "name") ?? startTagAttribute(source, tag, "itemprop");
         if (tag.name !== "meta" || !/^(?:og:image(?::url|:secure_url)?|twitter:image(?::src)?|msapplication-tileimage|image)$/i.test(decodeHtmlEntities(key?.value ?? "", true))) continue;
@@ -148,7 +153,7 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
       const attr = startTagAttribute(source, tag, name);
       if (!attr) continue;
       const quote = ["'", '"'].includes(source[attr.valueStart - 1]) ? source[attr.valueStart - 1] : "";
-      if (name === "srcset") {
+      if (name.endsWith("srcset")) {
         const decoded = attributeText(attr.value);
         srcsetUrls(decoded.text, (value, start, end) => add(value, attr.valueStart + decoded.starts[start], attr.valueStart + decoded.ends[end - 1], alt, quote, undefined, name, tag.name));
       } else add(decodeHtmlEntities(attr.value, true), attr.valueStart, attr.valueEnd, alt, quote, undefined, name, tag.name);
@@ -169,9 +174,9 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
   return out;
 }
 
-export function scanMediaReferences(file: string, source: string): MediaReference[] {
+export function scanMediaReferences(file: string, source: string, site?: MediaSite): MediaReference[] {
   return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attribute, tag, attributeQuote, cssQuote }) => {
-    const path = mediaResolvePath(value, file);
+    const path = mediaResolvePath(value, file, site);
     return path ? [{ file, start, end, value, path, alt, attribute, tag, attributeQuote, cssQuote }] : [];
   });
 }
@@ -184,40 +189,38 @@ export function walkMediaReferencePages(
   components: Record<string, string>,
   visitReference: (page: string, reference: MediaReference) => void,
 ): void {
-  const dependencies = new Map<string, Set<string>>();
-  for (const [file, refs] of references) {
-    // Only stylesheets (<link>, CSS @import) and components place their pictures on a page;
-    // a link to another page or a download link to a stylesheet does not.
-    const applied = (ref: MediaReference) => ref.attribute === undefined || ref.attribute === "style" || ref.tag === "link";
-    const deps = new Set(refs.filter((ref) => applied(ref) && /\.css$/i.test(ref.path) && Object.hasOwn(sources, ref.path)).map((ref) => ref.path));
-    if (/\.html$/i.test(file)) for (const tag of startTags(sources[file] ?? "")) if (components[tag.name]) {
-      deps.add(components[tag.name]);
-      const sheet = components[tag.name].replace(/\.html$/i, ".css");
-      if (Object.hasOwn(sources, sheet)) deps.add(sheet);
-    }
-    dependencies.set(file, deps);
-  }
+  const templates = new Set(Object.values(components));
   for (const page of pages) {
     const visited = new Set<string>();
     const visit = (file: string) => {
       if (visited.has(file)) return;
       visited.add(file);
-      for (const ref of references.get(file) ?? []) visitReference(page, ref);
-      for (const dependency of dependencies.get(file) ?? []) visit(dependency);
+      const refs = (references.get(file) ?? []).map(ref => {
+        if (!templates.has(file) || /^(?:[a-z][\w+.-]*:|\/|#)/i.test(ref.value.trim())) return ref;
+        const path = mediaResolvePath(ref.value, page);
+        return path ? { ...ref, path } : ref;
+      });
+      for (const ref of refs) visitReference(page, ref);
+      for (const ref of refs) if ((ref.attribute === undefined || ref.attribute === "style" || (ref.tag === "link" && ref.attribute === "href")) && /\.css$/i.test(ref.path) && Object.hasOwn(sources, ref.path)) visit(ref.path);
+      if (/\.html$/i.test(file)) for (const tag of startTags(sources[file] ?? "")) if (components[tag.name]) {
+        visit(components[tag.name]);
+        const sheet = components[tag.name].replace(/\.html$/i, ".css");
+        if (Object.hasOwn(sources, sheet)) visit(sheet);
+      }
     };
     visit(page);
   }
 }
 
 /** Page usage includes nested components, linked styles and CSS imports, once per page. */
-export function mediaUsageIndex(paths: string[], sources: Record<string, string | undefined>, pages: string[], components: Record<string, string> = {}): Record<string, MediaUsage> {
+export function mediaUsageIndex(paths: string[], sources: Record<string, string | undefined>, pages: string[], components: Record<string, string> = {}, site?: MediaSite): Record<string, MediaUsage> {
   const images = new Set(paths);
   const out: Record<string, MediaUsage> = Object.create(null);
   const references = new Map<string, MediaReference[]>();
   for (const path of paths) out[path] = { files: [], pages: [], alts: [] };
   for (const [file, source] of Object.entries(sources)) {
     if (source === undefined) continue;
-    const refs = scanMediaReferences(file, source);
+    const refs = scanMediaReferences(file, source, site);
     references.set(file, refs);
     for (const ref of refs) if (images.has(ref.path)) {
       const item = out[ref.path];
@@ -226,7 +229,10 @@ export function mediaUsageIndex(paths: string[], sources: Record<string, string 
     }
   }
   walkMediaReferencePages(sources, references, pages, components, (page, ref) => {
-    if (images.has(ref.path) && !out[ref.path].pages.includes(page)) out[ref.path].pages.push(page);
+    if (images.has(ref.path)) {
+      if (!out[ref.path].pages.includes(page)) out[ref.path].pages.push(page);
+      if (!out[ref.path].files.includes(ref.file)) out[ref.path].files.push(ref.file);
+    }
   });
   return out;
 }

@@ -1,3 +1,4 @@
+import { isMediaTextFile, mediaMentions, type MediaSite } from "./media-mentions";
 /**
  * What renaming, moving or deleting a site file (an image, a stylesheet, a
  * download) does to the pages and stylesheets that use it. References are
@@ -5,7 +6,7 @@
  * src, href, srcset, poster, image meta tags, inline style and CSS url().
  * Pages are not handled here; their links follow Change URL.
  */
-import { mediaResolvePath, rewriteMediaReferences, scanMediaReferences } from "./media-references";
+import { mediaResolvePath, mediaUsageIndex, rewriteMediaReferences, scanMediaReferences } from "./media-references";
 
 const isPage = (path: string) => /\.html?$/i.test(path);
 const isText = (path: string) => /\.(?:html?|css)$/i.test(path);
@@ -52,15 +53,18 @@ export function planAssetReferenceRewrites(sources: Readonly<Record<string, stri
  * The files that still use any of `paths` (pages and stylesheets), leaving out files
  * among `paths` themselves. Empty when nothing uses them.
  */
-export function assetUsers(sources: Readonly<Record<string, string | undefined>>, paths: readonly string[]): Map<string, string[]> {
+export function assetUsers(sources: Readonly<Record<string, string | undefined>>, paths: readonly string[], site?: MediaSite & { pages?: string[]; components?: Record<string, string> }): Map<string, string[]> {
   const gone = new Set(paths.filter((path) => !isPage(path)));
   const users = new Map<string, string[]>();
   const use = (asset: string, file: string) => { const list = users.get(asset) ?? users.set(asset, []).get(asset)!; if (!list.includes(file)) list.push(file); };
   if (!gone.size) return users;
   for (const [file, source] of Object.entries(sources)) {
-    if (source === undefined || !isText(file) || paths.includes(file)) continue;
-    for (const ref of scanMediaReferences(file, source)) if (gone.has(ref.path)) use(ref.path, file);
+    if (source === undefined || !isText(file) || !isMediaTextFile(file) || paths.includes(file)) continue;
+    for (const ref of scanMediaReferences(file, source, site)) if (gone.has(ref.path)) use(ref.path, file);
   }
+  const placed = mediaUsageIndex([...gone], Object.fromEntries(Object.entries(sources).filter(([file]) => isMediaTextFile(file))), site?.pages ?? [], site?.components ?? {}, site);
+  for (const [path, usage] of Object.entries(placed)) for (const file of usage.files) if (!paths.includes(file)) use(path, file);
+  for (const [path, mentions] of mediaMentions({ media: [...gone], sources, site })) for (const mention of mentions) if (!paths.includes(mention.file)) use(path, mention.file);
   return users;
 }
 

@@ -56,3 +56,20 @@ test("a file in use by pages or stylesheets cannot be deleted", () => {
   // Deleted together with the page that uses it: nothing is left pointing at it.
   assert.equal(assetUsers({ "work/a/index.html": '<img src="/work/a/x.svg">' }, ["work/a/index.html", "work/a/x.svg"]).size, 0);
 });
+
+test("wide users cover scripts, SVG, notes and own-domain sharing but exclude foreign hosts", () => {
+  const users = assetUsers({
+    "index.html": '<meta property="og:image" content="https://www.native.example/images/a.png">',
+    "app.js": '"/images/a.png"', "AGENTS.md": "a.png", "embedded.svg": '<image href="/images/a.png"/>',
+    "foreign.json": '"https://outside.example/images/a.png"', ".editor/media.json": '"images/a.png"',
+  }, ["images/a.png"], { origins: ["https://native.example"] });
+  assert.deepEqual(users.get("images/a.png"), ["index.html", "embedded.svg", "app.js", "AGENTS.md"]);
+});
+
+test("Files usage follows template-relative URLs against their page, including dot segments", () => {
+  const users = assetUsers({
+    "nested/index.html": '<my-card></my-card>',
+    "components/card.html": '<img src="unused/../images/a.png">',
+  }, ["nested/images/a.png"], { origins: [], pages: ["nested/index.html"], components: { "my-card": "components/card.html" } });
+  assert.deepEqual(users.get("nested/images/a.png"), ["components/card.html"]);
+});

@@ -6,6 +6,7 @@ type Rule = "plan-read" | "plan-unresolved" | "plan-wait" | "reads-helper" | "pl
 
 // Exact counts keep a new compare in the same function from inheriting an exception.
 const allowlist: AllowlistEntry[] = [
+  { file: "src/controllers/media-usage-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Read-only usage check owns cancellation of obsolete batches; it never plans or writes edits." },
   { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "isCurrent" }, reason: "Agent menu load epoch pins the account and host, not edit staleness." },
   { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "ensure" }, reason: "Agent menu load epoch deduplicates lazy loads for the same account and host." },
   { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "start" }, reason: "Agent menu load epoch prevents a discovery retry after controller disposal." },

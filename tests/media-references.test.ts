@@ -108,3 +108,26 @@ test("CSS hexadecimal function-name escapes consume CRLF as one whitespace pair"
   const usage = mediaUsageIndex(["images/a.png"], { "index.html": '<link rel="stylesheet" href="/styles/site.css">', "styles/site.css": source }, ["index.html"]);
   assert.deepEqual(usage["images/a.png"].pages, ["index.html"]);
 });
+
+test("lazy attributes, preload srcsets, object data and SVG hrefs are references and rewrite", () => {
+  const source = '<img data-src="/a.png" data-srcset="/a.png 1x, /b.png 2x"><link imagesrcset="/a.png 1x"><object data="/a.png"></object><svg><image xlink:href="/a.png"/></svg><div data="/a.png"></div>';
+  const refs = scanMediaReferences("index.html", source);
+  assert.deepEqual(refs.map(ref => ref.attribute), ["data-src", "data-srcset", "data-srcset", "imagesrcset", "data", "xlink:href"]);
+  assert.equal(rewriteMediaReferences("index.html", source, "a.png", "renamed.png").match(/\/renamed.png/g)?.length, 5);
+});
+test("full own addresses resolve for usage but rewriting leaves them unchanged", () => {
+  const source = '<meta property="og:image" content="https://www.native.example/images/a.png"><img src="//native.example/images/a.png"><img src="https://outside.example/images/a.png">';
+  assert.deepEqual(scanMediaReferences("index.html", source, { origins: ["http://native.example"] }).map(ref => ref.path), ["images/a.png", "images/a.png"]);
+  assert.equal(rewriteMediaReferences("index.html", source, "images/a.png", "images/b.png"), source);
+});
+test("template HTML uses each page address, paired CSS uses its own address", () => {
+  const sources = {
+    "index.html": "<my-card></my-card>", "nested/index.html": "<my-card></my-card>",
+    "components/card.html": '<img src="images/a.png"><div style="background:url(images/b.png)"></div><style>.x{background:url(images/c.png)}</style>',
+    "components/card.css": '.x{background:url(images/d.png)}',
+  };
+  const paths = ["images/a.png", "nested/images/a.png", "images/b.png", "nested/images/b.png", "images/c.png", "nested/images/c.png", "components/images/d.png"];
+  const usage = mediaUsageIndex(paths, sources, ["index.html", "nested/index.html"], { "my-card": "components/card.html" });
+  for (const path of paths.slice(0, 6)) assert.deepEqual(usage[path].pages, [path.startsWith("nested/") ? "nested/index.html" : "index.html"]);
+  assert.deepEqual(usage["components/images/d.png"].pages, ["index.html", "nested/index.html"]);
+});
