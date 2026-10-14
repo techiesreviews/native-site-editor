@@ -2,7 +2,7 @@
 title: The wide use scanner, checked on open
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-46 runner)
 blocked_by: [11-usage-records]
 builder: sol
 phase: 4
