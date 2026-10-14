@@ -143,4 +143,7 @@ test("component shape opens first, crops at its ratio, names the badge and notes
   assert.deepEqual(frameChange(initial, { shape: "original", focus: { x: 20, y: 30 }, component }), { shape: "original", originalUnderComponent: true });
   assert.deepEqual(frameChange(initial, { shape: entry.id, focus: { x: 50, y: 50 }, component }, true), { focus: { x: 50, y: 50 } });
   assert.equal(componentFrame('<img style="aspect-ratio:auto;object-fit:contain">', undefined, "index.html", component).shape, "original");
+  // An inline cover alone repeats the component's own fit: the component's shape still shows.
+  assert.deepEqual(componentFrame('<img style="object-fit: cover">', undefined, "index.html", component).shape, entry.id);
+  assert.notDeepEqual(componentFrame('<img style="object-fit: contain">', undefined, "index.html", component).shape, entry.id);
 });

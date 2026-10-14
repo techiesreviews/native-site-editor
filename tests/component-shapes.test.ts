@@ -5,7 +5,7 @@ import { componentPicture, readComponentShape } from "../src/page-builder/compon
 
 const template = '<section><figure class="media"><slot name="image"><img src="fallback.svg"></slot></figure></section>';
 const image = '<img slot="image" class="picture" src="desk.svg">';
-const read = (css: string, host = '<photo-card>') => readComponentShape(css, template, "image", image, host);
+const read = (css: string, host = '<photo-card>') => readComponentShape(css, template, "image", `${host}${image}</photo-card>`, 0);
 for (const selector of [".media img", ".media > img", "section img", ":host img", "::slotted(img)", ".media ::slotted(img)"]) {
   test(`fixed shape through ${selector}`, () => {
     assert.deepEqual(read(`${selector} { aspect-ratio: 4 / 3; object-fit: cover }`), { value: "4 / 3", ratio: 4 / 3, label: "4:3" });
@@ -43,8 +43,8 @@ test("conditional rules are ignored; layer rules count; important beats specific
 });
 test("default slot and missing slots", () => {
   const css = ".media img { aspect-ratio: 4/3; object-fit: cover }";
-  assert.equal(readComponentShape(css, template.replace('name="image"', ""), "", "<img>", "<photo-card>")?.label, "4:3");
-  assert.equal(readComponentShape(css, template, "missing", image, "<photo-card>"), undefined);
+  assert.equal(readComponentShape(css, template.replace('name="image"', ""), "", "<photo-card><img></photo-card>", 0)?.label, "4:3");
+  assert.equal(readComponentShape(css, template, "missing", `<photo-card>${image}</photo-card>`, 0), undefined);
 });
 test("page helper requires an image directly in a custom element and both component files", () => {
   const page = '<html><body><photo-card data-layout="centered"><img slot="image" src="desk.svg"></photo-card><div><img></div></body></html>';
@@ -95,4 +95,27 @@ test("the starter's section split image has its 4:3 shape", () => {
   const files = new Map([`${dir}.css`, `${dir}.html`].map(path => [path.replace("fixtures/actual-starter/", ""), readFileSync(path, "utf8")]));
   const page = '<main><section-split data-layout="centered"><img slot="image" src="/media/images/desk.webp" alt="A desk"></section-split></main>';
   assert.deepEqual(componentPicture(page, [0, 0, 0], path => files.get(path)), { label: "Section split", shape: { value: "4 / 3", ratio: 4 / 3, label: "4:3" } });
+});
+
+test("structural pseudo-classes see the image's real siblings in the page", () => {
+  const css = "img { aspect-ratio: 4/3; object-fit: cover } ::slotted(img:first-child) { aspect-ratio: 1 }";
+  assert.equal(readComponentShape(css, template, "image", `<photo-card><h2 slot="title">Hi</h2>${image}</photo-card>`, 1)?.label, "4:3");
+  assert.equal(readComponentShape(css, template, "image", `<photo-card>${image}<h2 slot="title">Hi</h2></photo-card>`, 0)?.label, "Square");
+  assert.equal(readComponentShape(".media img:last-child { aspect-ratio: 1; object-fit: cover }", template, "image", `<photo-card>${image}<p></p></photo-card>`, 0), undefined);
+});
+
+test("a colon inside an attribute value or string is not a state", () => {
+  assert.equal(read('img[class=":wide"], .media img[slot="image"] { aspect-ratio: 4/3; object-fit: cover }')?.label, "4:3");
+  assert.equal(read('img[slot=":x"] { aspect-ratio: 1 } img { aspect-ratio: 4/3; object-fit: cover }')?.label, "4:3");
+});
+
+test("flat components are read; a folder component wins over a flat one", () => {
+  const page = '<main><photo-card><img slot="image" src="desk.svg"></photo-card></main>';
+  const files = new Map([["components/photo-card.html", template], ["components/photo-card.css", "img { aspect-ratio: 16/9; object-fit: cover }"]]);
+  assert.equal(componentPicture(page, [0, 0, 0], path => files.get(path))?.shape.label, "16:9");
+  files.set("components/photo-card/photo-card.html", template);
+  files.set("components/photo-card/photo-card.css", "img { aspect-ratio: 1; object-fit: cover }");
+  assert.equal(componentPicture(page, [0, 0, 0], path => files.get(path))?.shape.label, "Square");
+  files.delete("components/photo-card/photo-card.css");
+  assert.equal(componentPicture(page, [0, 0, 0], path => files.get(path)), undefined);
 });

@@ -331,7 +331,7 @@ const siblingsOf = (m: Match, el: SourceElement) =>
 // Pseudo-classes matched exactly; any other (`:hover`, `:focus-visible`, `:checked`, `:lang()` …) is a
 // state or condition the page may be in, so it counts as matching.
 /** Whether `selector` holds a pseudo-class the matcher cannot decide (a state such as `:hover`), which it counts as matching. */
-export const hasStatePseudo = (selector: string) => [...selector.matchAll(/(?<!:):([\w-]+)/g)].some(([, name]) => !EXACT.has(name.toLowerCase()));
+export const hasStatePseudo = (selector: string) => [...selector.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\[[^\]]*\]/g, "").matchAll(/(?<!:):([\w-]+)/g)].some(([, name]) => !EXACT.has(name.toLowerCase()));
 const EXACT = new Set(["is", "where", "matches", "-webkit-any", "not", "has", "root", "scope", "empty", "link", "any-link", "host", "host-context",
   "first-child", "last-child", "only-child", "first-of-type", "last-of-type", "only-of-type", "nth-child", "nth-last-child", "nth-of-type", "nth-last-of-type"]);
 

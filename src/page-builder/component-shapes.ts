@@ -32,14 +32,16 @@ function slottedParts(selector: string) {
  * the component's own rules: each selector's `::slotted()` twin (shared/slotted-css.ts) or its own
  * `::slotted()`, the slot's side matched in the template, the argument on the image. Resting
  * styles only: conditional rules (`@media` …) and state rules (`:hover` …) are left out.
+ * `instance` is the component element's whole source; the image is its `image`-th child element,
+ * so structural pseudo-classes (`::slotted(img:first-child)`) see the page's real siblings.
  */
-export function readComponentShape(css: string, template: string, slotName: string, imageTag: string, instanceTag: string): ComponentPictureShape | undefined {
+export function readComponentShape(css: string, template: string, slotName: string, instance: string, imageIndex: number): ComponentPictureShape | undefined {
   const tree = readSource(template), slot = tree.elements().find(node => node.type === "element" && node.name === "slot" && (tree.attribute(node, "name")?.value ?? "") === slotName);
-  const image = elements(parseSource(imageTag))[0], host = elements(parseSource(instanceTag))[0];
-  if (!slot || slot.type !== "element" || !image || !host) return undefined;
+  const host = elements(parseSource(instance))[0], image = host && elements(host.children)[imageIndex];
+  if (!slot || slot.type !== "element" || !image || image.name !== "img") return undefined;
   const roots = tree.children().filter((node): node is SourceElement => node.type === "element");
-  const inTemplate: Match = { html: template, top: roots, host, boundary: host, parents: new Map(roots.map(root => [root, host])), attributes: new Map([[host, attributes(instanceTag, host)]]) };
-  const onImage: Match = { html: imageTag, top: [image], boundary: image };
+  const inTemplate: Match = { html: template, top: roots, host, boundary: host, parents: new Map(roots.map(root => [root, host])), attributes: new Map([[host, attributes(instance, host)]]) };
+  const onImage: Match = { html: instance, top: [host], boundary: host };
   const { rules: flat, layers: layerOf, order } = flatRulesWithLayers(css, "");
   const rules: CascadeRule[] = [];
   flat.forEach((rule, index) => {
@@ -81,16 +83,22 @@ export function componentPicture(source: string, node: number[], read: (path: st
   if (!image || image.type !== "element" || image.name !== "img") return undefined;
   const parent = image.parent;
   if (!parent?.name.includes("-")) return undefined;
-  const base = `components/${parent.name}/${parent.name}`, css = read(`${base}.css`), html = read(`${base}.html`);
+  // A folder component wins over a flat one of the same tag, as nativeConventionComponents decides.
+  const folder = `components/${parent.name}/${parent.name}`, flat = `components/${parent.name}`;
+  const base = read(`${folder}.html`) !== undefined ? folder : flat, css = read(`${base}.css`), html = read(`${base}.html`);
   if (css === undefined || html === undefined) return undefined;
-  const inputs = [css, html, tagAttribute(source, image.tag, "slot")?.value ?? "", source.slice(image.tag.start, image.tag.end), source.slice(parent.tag.start, parent.tag.end)];
-  if (!shapeCache || inputs.some((input, index) => input !== shapeCache!.inputs[index])) {
-    shapeCache = { inputs, shape: readComponentShape(inputs[0], inputs[1], inputs[2], inputs[3], inputs[4]) };
+  const index = elements(parent.children).indexOf(image);
+  const inputs = [css, html, tagAttribute(source, image.tag, "slot")?.value ?? "", source.slice(parent.start, parent.end), String(index)];
+  if (!shapeCache || inputs.some((input, at) => input !== shapeCache!.inputs[at])) {
+    shapeCache = { inputs, shape: readComponentShape(inputs[0], inputs[1], inputs[2], inputs[3], index) };
   }
   return shapeCache.shape && { label: componentLabel(parent.name), shape: shapeCache.shape };
 }
 
-/** Inline shape declarations mean this place chose its own shape, even if the ratio happens to match. */
+/**
+ * The component's shape shows unless the place has its own: an inline `aspect-ratio`, even one
+ * that happens to match, or an `object-fit` other than the component's `cover`.
+ */
 export function componentPopupShape(tag: string, component?: ComponentPicture): PopupShape | undefined {
   if (!component || hasPlaceShape(tag)) return undefined;
   return { kind: "component", value: component.shape.value, label: `${component.label}'s shape (${component.shape.label})`, badge: `${component.label}'s shape` };

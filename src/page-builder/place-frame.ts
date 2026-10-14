@@ -102,10 +102,10 @@ function styleValues(style: string) {
   return (name: string) => values.get(name)?.value;
 }
 
-/** Any inline shape declaration overrides the component's default, including auto. */
+/** Whether the place sets its own shape over a component's (ratio and cover): any inline `aspect-ratio`, including auto, or an `object-fit` other than cover. */
 export function hasPlaceShape(tagText: string) {
-  const values = styleValues(inlineStyle(tagText));
-  return values("aspect-ratio") !== undefined || values("object-fit") !== undefined;
+  const values = styleValues(inlineStyle(tagText)), fit = values("object-fit");
+  return values("aspect-ratio") !== undefined || (fit !== undefined && fit.trim().toLowerCase() !== "cover");
 }
 
 function readFocus(raw: string | undefined): PlaceFocus | undefined {
