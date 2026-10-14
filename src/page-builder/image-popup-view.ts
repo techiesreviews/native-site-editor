@@ -33,6 +33,8 @@ export interface ImagePopupState {
   recrop: boolean;
   /** The place's shape kept around a re-opened Free trim (else Original). */
   around?: PopupShape;
+  /** The place's focus kept with `around`. */
+  aroundFocus?: PlaceFocus;
   /** The picture's revision, read before its bytes: Done trims that revision or refuses. */
   version?: string;
   /** The trimmed picture as shown before Done, and its size. */
@@ -187,7 +189,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       spot.style.width = `${w}px`; spot.style.height = `${h}px`;
       if (url && image.getAttribute("src") !== url) image.src = url;
       image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
-      image.style.objectPosition = !cut && dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
+      image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""
+        : dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
     }
   }
   picture.addEventListener("load", () => { layoutPicture(); drawPreviews(); });

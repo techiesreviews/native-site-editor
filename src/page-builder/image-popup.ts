@@ -82,6 +82,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     shape: start.shape, focus: read.focus ? { ...read.focus } : { x: 50, y: 50 }, boxes: undefined, busy: false,
   };
   if (restored) Object.assign(state, restoreCut(restored.trim, start.shape, picture!.size!));
+  if (state.around && read.focus) state.aroundFocus = { ...read.focus };
   if (!stamp.holds() || ports.source(target.path) !== source || !options.live()) return undefined;
   let replacement: MediaImage | undefined;
   let closed = false;
@@ -93,8 +94,11 @@ export async function openImagePopup(options: ImagePopupOptions) {
   // The shape the place keeps (around a Free trim, Original or a re-opened place's own) and what changes in it.
   const shapeNow = () => placeShape(state.shape, state.around);
   const kept = (shape = shapeNow()) => typeof shape === "string" && shape !== "free" ? { shape } : {};
+  // A trim's copy has its shape, so the place's focus goes to the middle; one kept around a
+  // re-opened Free trim keeps the place's focus too.
+  const trimFocus = () => state.aroundFocus ?? centred;
   const frameNow = () => frameChange(start, { shape: shapeNow(), focus: state.focus }, swapped());
-  const trimStyle = () => inlineStyle(writePlaceFrame(expected, { ...kept(), focus: centred }));
+  const trimStyle = () => inlineStyle(writePlaceFrame(expected, { ...kept(), focus: trimFocus() }));
 
   // The page shows the popup's look: the trimmed picture, or the shape and focus (and picture).
   const look = () => {
@@ -165,7 +169,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
         // The earlier trimmed copy is replaced when nothing else uses it.
         const previous = records?.files[placed]?.trimmedFrom && placed !== state.file ? placed : undefined;
         const { trimPlace } = await import("./place-trim");
-        await trimPlace(ports, options.workspaceContext, target, { source: state.file, sourceVersion: state.version, trim, previous, ...shape },
+        await trimPlace(ports, options.workspaceContext, target, { source: state.file, sourceVersion: state.version, trim, previous, ...shape, focus: trimFocus() },
           { ...proof, initialAlt }, () => !closed);
       } else if (!same && swapped()) {
         const image = replacement ?? mediaImageForPlacement(state.file, state.size ?? {}, (await options.workspaceContext()).paths);
@@ -197,7 +201,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
         const trimmed = read.trimmed || makesNewPicture(state.shape, state.cut);
         replacement = picked;
         Object.assign(state, { file: picked.path, url: loaded?.url, image: loaded?.image, size: loaded?.size, version: loaded?.version,
-          trimmable: Boolean(loaded?.size && trimmable(picked.path)), recrop: false, cut: uncut(), shape: shapeNow(), around: undefined, focus: { ...centred } });
+          trimmable: Boolean(loaded?.size && trimmable(picked.path)), recrop: false, cut: uncut(), shape: shapeNow(), around: undefined, aroundFocus: undefined, focus: { ...centred } });
         state.notice = replaceNotice(picked.path, state.shape, trimmed);
         view.draw(true);
         update();
@@ -210,7 +214,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
       if (shape === "free" && state.shape !== "free" && state.size) state.cut = { ...state.cut, rect: cutArea(state.size, state.shape, state.focus, state.cut) };
       else if (shape !== "free") state.cut = { ...state.cut, zoom: 1 };
       // A shape chosen here replaces the one a re-opened Free trim kept.
-      if (shape !== state.shape) state.around = undefined;
+      if (shape !== state.shape) state.around = state.aroundFocus = undefined;
       state.shape = shape; update();
     },
     focus: (focus: PlaceFocus) => { state.focus = focus; update(); },

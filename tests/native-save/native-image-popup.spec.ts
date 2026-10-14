@@ -208,7 +208,17 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   await frame(page).locator(".hero img").click();
   await expect(imageButton(page)).toHaveText("ImageTrimmed");
 
+  // Re-opened and left as it was, Done changes nothing.
+  const trimmed = await source(page), drafts = JSON.stringify(await storedDrafts(page));
+  await imageButton(page).click();
+  await expect(popup(page).locator(".image-popup__where")).toHaveText("quarters.webp");
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  expect(await source(page)).toBe(trimmed);
+  expect(JSON.stringify(await storedDrafts(page))).toBe(drafts);
+
   // Re-opening starts from the full original with the trim put back.
+  await frame(page).locator(".hero img").click();
   await imageButton(page).click();
   await expect(popup(page)).toBeVisible();
   await expect(popup(page).locator(".image-popup__where")).toHaveText("quarters.webp");

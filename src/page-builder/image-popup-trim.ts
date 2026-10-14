@@ -69,8 +69,8 @@ export function sameTrim(a: MediaTrim | undefined, b: MediaTrim | undefined) {
 
 /**
  * A re-crop starts from the full original with the earlier trim put back: the place's shape with
- * its zoom and focus when the trim has that shape, else Free with the trim's rectangle and the
- * place's own shape kept `around` it (a square copy in a 16:9 place stays 16:9).
+ * its zoom and focus when the trim has that shape and is more than its crop, else Free with the
+ * trim's rectangle and the place's own shape kept `around` it (a square copy in a 16:9 place stays 16:9).
  */
 export function restoreCut(trim: MediaTrim, shape: PopupShape, size: PictureSize): { shape: PopupShape; focus: PlaceFocus; cut: PopupCut; around?: PopupShape } {
   const turn = ([0, 90, 180, 270] as const).find(value => value === (trim.turn ?? 0)) ?? 0;
@@ -79,11 +79,13 @@ export function restoreCut(trim: MediaTrim, shape: PopupShape, size: PictureSize
   const { width, height } = turnedSize(size, turn), aspect = (trim.width * width) / (trim.height * height);
   const kept = shape === "free" ? "original" : shape, ratio = shapeRatio(kept) ?? width / height;
   const base = cutArea(size, kept, { x: 50, y: 50 }, { ...cut, zoom: 1 }), zoom = base.w / trim.width;
-  if (Math.abs(aspect / ratio - 1) > 0.01 || zoom < 0.99 || zoom > MAX_ZOOM + 0.01)
-    return { shape: "free", focus: { x: 50, y: 50 }, cut, ...kept === "original" ? {} : { around: kept } };
+  const free = { shape: "free" as const, focus: { x: 50, y: 50 }, cut, ...kept === "original" ? {} : { around: kept } };
+  if (Math.abs(aspect / ratio - 1) > 0.01 || zoom < 0.99 || zoom > MAX_ZOOM + 0.01) return free;
   const z = clamp(zoom, 1, MAX_ZOOM), w = base.w / z, h = base.h / z;
   const at = (offset: number, room: number) => room > 1e-6 ? clamp(offset / room) * 100 : 50;
-  return { shape: kept, focus: { x: at(trim.x, 1 - w), y: at(trim.y, 1 - h) }, cut: { ...cut, zoom: z, rect: { x: 0, y: 0, w: 1, h: 1 } } };
+  const shaped = { shape: kept, focus: { x: at(trim.x, 1 - w), y: at(trim.y, 1 - h) }, cut: { ...cut, zoom: z, rect: { x: 0, y: 0, w: 1, h: 1 } } };
+  // A trim that is only the shape's own crop would read as no trim: it stays a trim, as Free.
+  return makesNewPicture(shaped.shape, shaped.cut) ? shaped : free;
 }
 
 /** The shape the place keeps: Free trimming gives the copy its own shape (Original) unless a re-opened trim kept the place's. */

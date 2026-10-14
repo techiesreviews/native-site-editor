@@ -82,6 +82,12 @@ test("a re-crop starts from the original with the earlier trim put back", () => 
   assert.equal(placeShape("free"), "original");
   assert.equal(placeShape("square", "16:9"), "square");
   assert.equal(restoreCut(free, "original", wide).around, undefined);
+  // A trim that is only a shape's own crop (the square middle of a wide picture) stays a trim, as Free.
+  const middle = restoreCut({ x: 0.25, y: 0, width: 0.5, height: 1 }, "square", wide);
+  assert.equal(middle.shape, "free");
+  assert.equal(middle.around, "square");
+  assert.ok(makesNewPicture(middle.shape, middle.cut));
+  assert.ok(sameTrim(popupTrim(wide, middle.shape, middle.focus, middle.cut), { x: 0.25, y: 0, width: 0.5, height: 1 }));
   // Further in than the slider reaches: Free.
   assert.equal(restoreCut({ x: 0.45, y: 0.45, width: 0.05, height: 0.1 }, "square", wide).shape, "free");
 });
