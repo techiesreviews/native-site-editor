@@ -2,7 +2,7 @@
 title: The To check list
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-19 runner)
 blocked_by: [14-file-details]
 builder: claude
 phase: 1
