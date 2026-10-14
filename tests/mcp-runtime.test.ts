@@ -1559,3 +1559,36 @@ test("agent replacement refuses stale source bytes and records before committing
     descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker");
   }
 });
+
+test("agent removal, keep and restore retain asset proofs across a held library read", async () => {
+  for (const operation of ["remove_media", "keep_media", "restore_media"] as const) {
+    const f = agentMediaFixture();
+    const removedPath = "images/gone.webp";
+    if (operation === "restore_media") {
+      const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+      records.removed = [{ path: removedPath, sha: "gone-sha", date: new Date().toISOString().slice(0, 10) }];
+      f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+    }
+    const ctx = await f.controller.workspaceContext();
+    let arrive!: () => void, release!: () => void;
+    const reached = new Promise<void>(resolve => { arrive = resolve; });
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const read = ctx.read.bind(ctx);
+    let waiting = true, version = ctx.assetVersion(f.file);
+    const assetVersion = ctx.assetVersion.bind(ctx);
+    ctx.assetVersion = path => path === f.file ? version : assetVersion(path);
+    ctx.read = async path => {
+      if (waiting && path === "index.html") { waiting = false; arrive(); await held; }
+      return read(path);
+    };
+    const action = applyAgentMedia(ctx, mediaCommand(operation, { files: [operation === "restore_media" ? removedPath : f.file] }), target => f.controller.preparePlacement(target));
+    await reached;
+    const replacement = new Blob(["replacement"]);
+    version = "replacement-v2"; f.bytes.set(f.file, replacement);
+    const refused = assert.rejects(action, /changed|revision|stale/);
+    release(); await refused;
+    assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
+    assert.equal(f.bytes.get(f.file), replacement);
+    assert.ok(f.paths.includes(f.file));
+  }
+});

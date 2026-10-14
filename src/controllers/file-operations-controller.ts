@@ -451,7 +451,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     // A change meanwhile stops the reading; the guarded run below then refuses it as stale.
     if (ports.readMediaText && since.holds()) {
       const { isMediaTextFile } = await import("../page-builder/media-mentions");
-      const textFiles = since.holds() ? [...ports.nativeFiles().filter(isMediaTextFile), ...(target.folder || isRenamableMedia(target.path)) && ports.nativeFiles().includes(".editor/media.json") ? [".editor/media.json"] : []] : [];
+      const textFiles = since.holds() ? [...ports.nativeFiles().filter(isMediaTextFile), ...(agent || target.folder || isRenamableMedia(target.path)) && ports.nativeFiles().includes(".editor/media.json") ? [".editor/media.json"] : []] : [];
       try {
         for (let at = 0; at < textFiles.length && since.holds(); at += 12)
           await Promise.all(textFiles.slice(at, at + 12).map(async path => { readTexts.set(path, await ports.readMediaText!(path)); }));
@@ -460,12 +460,24 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const outcome = await ports.edits.run(async r => {
       r.exists(target.path);
       let found: MovableFile[];
-      try { found = await familyFiles(target, false); }
+      try {
+        found = await familyFiles(target, false);
+        if (agent) {
+          const { agentRemovalPaths } = await import("../page-builder/agent-media-removal");
+          const expanded = agentRemovalPaths(found.map(file => file.path), ports.nativeFiles());
+          const known = new Set(found.map(file => file.path));
+          for (const path of expanded) if (!known.has(path)) {
+            const members = await targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, false);
+            if (!members.length) return { refuse: `${path} is no longer available. Try again.` };
+            found.push(...members);
+          }
+        }
+      }
       catch (error) { return { refuse: error instanceof Error ? error.message : "The files could not be read." }; }
       if (!found.length) return { refuse: `${target.path} has no files to delete.` };
       for (const file of found) { r.exists(file.path); r.source(file.path); }
       let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } = {};
-      if (found.some(file => isRenamableMedia(file.path) || agent && file.path.startsWith("media/originals/"))) {
+      if (agent || found.some(file => isRenamableMedia(file.path))) {
         const { filesRemovalPlan } = await import("../page-builder/media-file-removal");
         const plan = await filesRemovalPlan(ports, r, found, since, ports.removalStores, agent);
         if ("refuse" in plan) return plan;

@@ -84,14 +84,14 @@ export async function applyAgentMedia(
     ctx.assertLive();
     const files = agentRemovalPaths(args.files!, ctx.paths);
     const outcome = report(`Agent removed ${files.length} files, unsaved.`, { files });
-    await host.remove(args.files!, false, true);
+    await host.remove(args.files!, false, true, versions);
     return outcome;
   }
   if (command.operation === "keep_media") {
     if (args.files!.some(file => !ctx.items.some(item => item.path === file))) throw new Error(OUTSIDE_MEDIA_REFUSED);
     const files = [...new Set(args.files!)].filter(file => !library.keep.includes(file));
     const outcome = report(files.length ? "Agent added Always keep, unsaved." : "These files already have Always keep.", { files });
-    if (files.length) await host.metadata(Object.fromEntries(files.map(file => [file, { alwaysKeep: true }])), true);
+    if (files.length) await host.metadata(Object.fromEntries(files.map(file => [file, { alwaysKeep: true }])), true, versions);
     return outcome;
   }
   if (command.operation === "restore_media") {
@@ -110,7 +110,7 @@ export async function applyAgentMedia(
       return { path, id: (entry.sha ?? entry.browserKey)! };
     });
     const outcome = report("Agent restored media families, unsaved.", { files: entries.map(entry => entry.path) });
-    await host.restore(entries, true);
+    await host.restore(entries, true, versions);
     return outcome;
   }
   if (command.operation === "replace_media") {

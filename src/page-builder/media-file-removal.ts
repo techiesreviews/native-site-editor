@@ -4,6 +4,7 @@ import type { Reads, Stamp } from "../guarded-edit";
 import type { MovableFile } from "../file-changes";
 import { gitBlobSha, removedCopies, uploadBytes, uploadKey, type UploadBytes } from "../uploads";
 import { isRenamableMedia } from "./media-names";
+import { isAgentMediaPath } from "../agent-media";
 import { mediaFamilyOf } from "./media-families";
 import * as records from "../../shared/media-records";
 
@@ -45,7 +46,7 @@ export async function filesRemovalPlan(ports: FileOperationsPorts, r: Reads, fou
     const originals = new Set(found.filter(file => isRenamableMedia(file.path)).flatMap(file => mediaFamilyOf(file.path, paths)?.originals ?? []));
     const files: records.RemovedPath[] = [], copies: { key: string; blob: Blob }[] = [];
     for (const file of found) {
-      if (!isRenamableMedia(file.path) && !originals.has(file.path)) continue;
+      if (!isRenamableMedia(file.path) && !originals.has(file.path) && !(agent && isAgentMediaPath(file.path))) continue;
       const held = draft(file.path);
       let blob: Blob | undefined;
       if (held?.upload && held.sourceSha && scope) blob = await stores().uploads.get(uploadKey(scope, held.sourceSha));

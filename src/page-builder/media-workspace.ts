@@ -172,6 +172,15 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const records = pruneRemoved(read, today(ctx), path => back.get(path));
     return { batch, text, metadata: records };
   };
+  // Agent actions carry the revisions seen before loading the library through every later await.
+  const expectedAssets = (ctx: MediaWorkspaceContext, batch: MediaWorkspaceBatch, expected?: Map<string, string | undefined>) => {
+    if (!expected) return;
+    for (const [path, version] of expected) batch.expectedAssets.set(path, version);
+    const live = batch.live;
+    batch.live = () => (live?.() ?? true) && expected.size === ctx.paths.length
+      && ctx.paths.every(path => expected.has(path) && expected.get(path) === ctx.assetVersion(path));
+    if (!batch.live()) throw new Error("Media changed while preparing image changes. Try again.");
+  };
   const assetGuard = (batch: MediaWorkspaceBatch, paths: string[]) => {
     for (const path of paths) {
       if (!batch.expectedPaths.includes(path)) throw new Error(`${path} is no longer in the image library.`);
@@ -671,9 +680,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         ...records.adding ? { adding: records.adding } : {}, ...ctx.repoSize === undefined ? {} : { repoSize: ctx.repoSize } };
     },
     async blob(path) { return active().blob(path); },
-    async metadata(changes, agent = false) {
+    async metadata(changes, agent = false, expected?: Map<string, string | undefined>) {
       const ctx = active();
       const { batch, metadata, text } = await prepare(ctx, agent ? "Agent added Always keep" : "Edit image metadata", true);
+      expectedAssets(ctx, batch, expected);
       recordsEdit(batch, metadata, metadataInto(batch, text, metadata, changes));
       await commit(ctx, batch);
     },
@@ -752,7 +762,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
     },
-    async remove(paths, unusedOnly = false, agent = false) {
+    async remove(paths, unusedOnly = false, agent = false, expected?: Map<string, string | undefined>) {
       const ctx = active();
       const rules = agent ? await import("./agent-media-removal") : undefined;
       ctx.assertLive();
@@ -761,6 +771,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const versions = familyVersions(ctx, unique);
       const { batch, text, metadata } = await prepare(ctx, agent ? `Agent removed ${unique.length} files` : "Delete images", true);
       for (const [member, version] of versions) batch.expectedAssets.set(member, version);
+      expectedAssets(ctx, batch, expected);
       assetGuard(batch, unique);
       if (rules) {
         const kept = rules.agentKeptRemovalProblem(unique, ctx.paths, metadata);
@@ -782,9 +793,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
       await sweep(ctx);
     },
-    async restore(entries: { path: string; id: string }[], agent = false) {
+    async restore(entries: { path: string; id: string }[], agent = false, expected?: Map<string, string | undefined>) {
       const ctx = active();
       const { batch, metadata } = await prepare(ctx, agent ? "Agent restored media files" : entries.length === 1 ? `Restore ${entries[0].path.split("/").pop()}` : "Restore files");
+      expectedAssets(ctx, batch, expected);
       const date = today(ctx), paths = [...batch.expectedPaths];
       let next = pruneRemoved(metadata, date);
       for (const entry of entries) {

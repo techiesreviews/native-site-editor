@@ -463,3 +463,58 @@ test("agent delete_file still protects Always keep after a Files Restore outside
   assert.equal(h.memory.steps().length, 1);
   assert.ok(h.memory.workspace.exists(imageTarget.path));
 });
+
+test("agent delete_file protects an Always keep TIFF directly and through its folder; Lex can delete both", async () => {
+  for (const folder of [false, true]) {
+    const path = "images/scan.tiff";
+    const h = fixture(true, { [path]: "scan", [MEDIA_RECORDS_PATH]: JSON.stringify({
+      version: 2, collections: [], files: { [path]: { alwaysKeep: true } },
+    }) });
+    const target = { path: folder ? "images" : path, name: folder ? "images" : "scan.tiff", folder };
+    assert.match(await h.controller.deleteFileTarget(target, undefined, true) ?? "", /scan.tiff.*Always keep/);
+    assert.deepEqual(h.memory.steps(), []);
+    assert.ok(h.memory.workspace.exists(path));
+    assert.equal(await h.controller.deleteFileTarget(target), undefined);
+    assert.equal(h.memory.workspace.exists(path), false);
+    assert.deepEqual(h.memory.steps(), ["operation"]);
+  }
+});
+
+test("agent delete_file expands copies, originals and partial folders into one recoverable family", async () => {
+  const { planRestore, removedToday } = await import("../src/page-builder/recently-removed");
+  for (const path of ["images/photo-480w.webp", "media/originals/photo.HEIC", "images"]) {
+    const h = fixture(true, imageFamily), folder = path === "images";
+    assert.equal(await h.controller.deleteFileTarget({ path, name: path, folder }, undefined, true), undefined);
+    const records = parseMediaRecords(h.memory.workspace.source(MEDIA_RECORDS_PATH));
+    assert.equal(records.removed?.length, 1);
+    const entry = records.removed![0];
+    assert.equal(entry.path, imageTarget.path);
+    assert.deepEqual(new Set([entry.path, ...entry.family!.map(member => member.path)]), new Set(Object.keys(imageFamily)));
+    for (const member of Object.keys(imageFamily)) assert.equal(h.memory.workspace.exists(member), false);
+    const plan = planRestore(records, { path: entry.path, id: entry.sha! }, h.memory.files(), removedToday(Date.now()));
+    assert.deepEqual(new Set(plan.members.map(member => member.path)), new Set(Object.keys(imageFamily)));
+    const outcome = await h.ports.edits.run(r => {
+      r.source(MEDIA_RECORDS_PATH);
+      for (const member of plan.members) r.exists(member.path);
+      return {
+        creates: plan.members.map(member => ({ path: member.path, content: new Map(Object.entries(imageFamily)).get(member.path)! })),
+        edits: new Map([[MEDIA_RECORDS_PATH, JSON.stringify(plan.records)]]),
+        done: "Restored family.", undone: "Undid restoring family.",
+      };
+    });
+    assert.ok(outcome.ok);
+    for (const member of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(member));
+    assert.deepEqual(h.memory.steps(), ["operation", "operation"]);
+    assert.equal(h.memory.undo(), true);
+    for (const member of Object.keys(imageFamily)) assert.equal(h.memory.workspace.exists(member), false);
+    assert.equal(h.memory.undo(), true);
+    for (const member of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(member));
+  }
+});
+
+test("agent delete_file checks uses outside a partial-family folder before removing anything", async () => {
+  const h = fixture(true, { ...imageFamily, "index.html": '<img src="/media/originals/photo.HEIC">' });
+  assert.match(await h.controller.deleteFileTarget({ path: "images", name: "images", folder: true }, undefined, true) ?? "", /index.html/);
+  assert.deepEqual(h.memory.steps(), []);
+  for (const member of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(member));
+});
