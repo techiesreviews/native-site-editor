@@ -363,7 +363,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     // Edits sorted by position, as one undo step.
     const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
-    if (range && node && ["video", "section"].includes(range.tag.name)) controls.push(...ports.mediaVideoControls?.(path, node, source) ?? []);
     const attribute = (name: string) => (range ? ports.startTagAttribute(source, range.tag, name) : undefined);
     // Links: the selected link, or the nearest link around the selection in
     // this file, takes an address as it is typed: a page of the site picked
@@ -620,6 +619,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
         onPress: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
       });
     }
+    // Looping video on a video; Background video on a section (lazy, media slice 64), after the move controls.
+    if (range && node && ["video", "section"].includes(range.tag.name)) controls.push(...ports.mediaVideoControls?.(path, node, source) ?? []);
     // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
     // Non-Sections have the steps' keys, but no move arrow buttons in the bar.
     if (!templateRoot && !section) controls.push(...ports.cardControls(selection, source));
