@@ -2,7 +2,7 @@
 title: Rename and Replace everywhere in details
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-54 runner)
 blocked_by: [52-rename-everywhere, 53-replace-everywhere, 14-file-details]
 builder: claude
 phase: 4
