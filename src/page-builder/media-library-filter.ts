@@ -17,7 +17,7 @@ export type MediaKind = "image" | "video" | "audio" | "document";
 export type MediaKindChoice = MediaKind | "all";
 const KINDS: [MediaKind, RegExp][] = [
   ["image", /\.(?:svg|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|heif)$/i],
-  ["video", /\.(?:mp4|m4v|webm|mov|ogv|mkv)$/i],
+  ["video", /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi)$/i],
   ["audio", /\.(?:mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i],
 ];
 export const mediaKind = (path: string): MediaKind => KINDS.find(([, pattern]) => pattern.test(path))?.[0] ?? "document";

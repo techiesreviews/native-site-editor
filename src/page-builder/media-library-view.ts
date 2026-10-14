@@ -1,3 +1,4 @@
+import { mediaStorageName } from "./media-storage";
 import { WARN_IMAGE_BYTES, uploadImageType } from "../uploads";
 import { createBusyLock } from "./media-busy-lock";
 import { createMediaByteCache, decodeImage } from "./media-byte-cache";
@@ -120,9 +121,9 @@ export function createMediaLibraryView(
   let chooseNext = false;
   const adding = createMediaAdding(grid, shell.adding, {
     hold: Boolean(modal),
-    select: id => { chosen = id; paintChoice(); },
+    select: (id, request) => { if (!fitsRequest(request)) { tell("This file does not fit this spot. Close to save it without placing."); return; } chosen = id; paintChoice(); },
     ready: (id, request) => {
-      if (!chooseNext || !filterMediaLibrary({ ...library, items: [{ path: request.file.name }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length) return;
+      if (!chooseNext || !fitsRequest(request)) return;
       chooseNext = false; chosen = id; paintChoice();
     },
     alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: collections.value, kind }),
@@ -263,12 +264,17 @@ export function createMediaLibraryView(
     }).catch(() => undefined);
   }
   /** Use: place the chosen file with today's markup; the picker closes once the place has it. */
+  function fitsRequest(request: MediaImportRequest) {
+    const path = mediaStorageName(request.file.name, request.result?.outputs[0]?.extension);
+    return filterMediaLibrary({ ...library, items: [{ path }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length > 0;
+  }
   function heldFile(id: string) { return adding.held().find(entry => entry.id === id); }
   function use() {
     const path = chosen, pick = options.onPick;
     if (!path || !pick) return;
     void task(async () => {
       const held = heldFile(path);
+      if (held && !fitsRequest(held.request)) throw new Error("This file does not fit this spot. Close to save it without placing.");
       let image: MediaImage;
       if (held) {
         // A held file's size is its main output's, or (stored as it is: SVG, GIF) read from its bytes.

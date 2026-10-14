@@ -89,3 +89,9 @@ test("Smallest files preparing words say slower; ordinary and settled words stay
   assert.equal(mediaAddingWords("preparing", "balanced"), "Preparing…");
   assert.equal(mediaAddingWords("ready", "smallest"), "Ready");
 });
+
+
+test("pending video names predict MP4 in the video folder", () => {
+  for (const extension of ["mp4", "m4v", "webm", "mov", "mkv", "ogv", "avi"])
+    assert.equal(mediaAddingPath("Clip." + extension), "media/videos/clip.mp4");
+});

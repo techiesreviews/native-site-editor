@@ -207,3 +207,12 @@ test("an empty description with unknown keys survives a round trip and unrelated
   assert.deepEqual(setMediaDescription(records, "a.png", "").files["a.png"].description, { text: "", future: "must survive" });
   assert.equal(parseMediaRecords('{"version":2,"collections":[],"files":{"a.png":{"description":{"text":""}}}}').files["a.png"].description, undefined);
 });
+
+
+test("fromGif is a validated flag that survives records, renaming and serialisation", () => {
+  const records = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "loop.mp4": { fromGif: true, still: "loop.webp" } } }));
+  assert.equal(parseMediaRecords(serializeMediaRecords(records)).files["loop.mp4"].fromGif, true);
+  assert.equal(renameMediaRecord(records, "loop.mp4", "new.mp4").files["new.mp4"].fromGif, true);
+  assert.throws(() => parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "loop.mp4": { fromGif: "yes" } } })), /fromGif must be a boolean/);
+  assert.deepEqual(parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "loop.gif": { fromGif: false } } })).files["loop.gif"], {});
+});

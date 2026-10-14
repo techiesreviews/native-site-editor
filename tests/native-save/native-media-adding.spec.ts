@@ -612,3 +612,78 @@ test("transparent PNG stays valid and no larger; oxipng WASM loads under editor 
   }, saved.toString("base64"));
   expect(pixels).toEqual([32, 32, 0, 0, 0, 0, 255, 0, 0, 255]);
 });
+
+/** Two 64 × 32 GIF frames, each 200 ms, with clear codes keeping LZW at three bits. */
+function animatedGif() {
+  const header = Buffer.from([71, 73, 70, 56, 57, 97, 64, 0, 32, 0, 128, 0, 0, 255, 0, 0, 0, 0, 255]);
+  const frame = (colour: number) => {
+    const codes = Array.from({ length: 64 * 32 }, () => [4, colour]).flat(); codes.push(5);
+    const pixels: number[] = []; let bits = 0, count = 0;
+    for (const code of codes) { bits |= code << count; count += 3; while (count >= 8) { pixels.push(bits & 255); bits >>= 8; count -= 8; } }
+    if (count) pixels.push(bits & 255);
+    const blocks: number[] = [];
+    for (let offset = 0; offset < pixels.length; offset += 255) { const block = pixels.slice(offset, offset + 255); blocks.push(block.length, ...block); }
+    return Buffer.from([33, 249, 4, 0, 20, 0, 0, 0, 44, 0, 0, 0, 0, 64, 0, 32, 0, 0, 2, ...blocks, 0]);
+  };
+  return Buffer.concat([header, frame(0), frame(1), Buffer.from([59])]);
+}
+async function shortVideo(page: Page) {
+  return page.evaluate(async () => {
+    const { loadVideoTools } = await import("/src/page-builder/video-prepare.ts");
+    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, QUALITY_MEDIUM } = await loadVideoTools();
+    const canvas = new OffscreenCanvas(64, 32), context = canvas.getContext("2d")!;
+    const target = new BufferTarget(), output = new Output({ format: new Mp4OutputFormat(), target });
+    const source = new CanvasSource(canvas, { codec: "avc", quality: QUALITY_MEDIUM });
+    output.addVideoTrack(source); await output.start();
+    for (let index = 0; index < 3; index++) {
+      context.fillStyle = ["red", "green", "blue"][index]; context.fillRect(0, 0, 64, 32);
+      await source.add(index * 0.5, 0.5);
+    }
+    source.close(); await output.finalize();
+    return btoa(String.fromCharCode(...new Uint8Array(target.buffer!)));
+  });
+}
+test("Media prepares a silent MP4 and animated GIF as H.264 MP4 with recorded WebP stills", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const video = await shortVideo(page);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const media = page.getByRole("region", { name: "Media", exact: true });
+  await expect(media.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  await media.locator('input[name="media-upload"]').setInputFiles([
+    { name: "Clip.mp4", mimeType: "video/mp4", buffer: Buffer.from(video, "base64") },
+    { name: "Loop.gif", mimeType: "image/gif", buffer: animatedGif() },
+  ]);
+  await expect(media.getByRole("region", { name: "Files being added", exact: true }).getByRole("status")).toHaveText("Added 2 files");
+  const records = JSON.parse((await storedDraft(page, ".editor/media.json"))!.content);
+  for (const name of ["clip", "loop"]) {
+    expect(records.files[`media/videos/${name}.mp4`].still).toBe(`media/videos/${name}.webp`);
+    await expect.poll(() => storedDraft(page, `media/videos/${name}.webp`)).toBeDefined();
+  }
+  expect(records.files["media/videos/loop.mp4"].fromGif).toBe(true);
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  for (const name of ["clip", "loop"]) {
+    const mp4 = await (await page.request.get(`${baseURL}/__demo/file?path=media/videos/${name}.mp4`)).body();
+    expect(mp4.subarray(4, 8).toString()).toBe("ftyp"); expect(mp4.includes(Buffer.from("avc1"))).toBe(true);
+    const webp = await (await page.request.get(`${baseURL}/__demo/file?path=media/videos/${name}.webp`)).body();
+    expect(webp.subarray(0, 4).toString()).toBe("RIFF"); expect(webp.subarray(8, 12).toString()).toBe("WEBP");
+  }
+});
+test("converted GIF cannot be chosen or used in an image picker; Close saves video without placement", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const before = await effectiveSource(page, baseURL, "index.html");
+  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Loop.gif", mimeType: "image/gif", buffer: animatedGif() });
+  const choice = picker.getByRole("button", { name: "Choose Loop.gif", exact: true });
+  await expect(choice).toBeEnabled(); await expect(choice).toHaveAttribute("aria-pressed", "false");
+  await choice.click(); await expect(picker.getByRole("button", { name: "Use image", exact: true })).toBeDisabled();
+  await expect(picker).toContainText("This file does not fit this spot");
+  await picker.getByRole("button", { name: "Close", exact: true }).click();
+  await expect.poll(() => storedDraft(page, "media/videos/loop.mp4")).toBeDefined();
+  expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
+});

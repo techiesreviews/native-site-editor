@@ -1,7 +1,7 @@
 import { mediaOriginalCapQuestion, mediaOriginalIsDuplicate, mediaOriginalProblem } from "./media-originals";
 import { isHeic } from "./media-heic";
 import { uploadProblem } from "../uploads";
-import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
+import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName, mediaVideoNeedsPreparation } from "./media-storage";
 import { largeDownloadNote, preparationFailure } from "./media-limits";
 import { decodeImage } from "./media-byte-cache";
 import { mediaKind } from "./media-library-filter";
@@ -10,11 +10,10 @@ import { createMediaWorkspace, type MediaWorkspaceContext } from "./media-worksp
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 
 export { mediaNeedsPreparation };
-/** By name, then a GIF's bytes: an animated GIF keeps its bytes until phase 5; a still one is prepared.
- * Animated PNG and WebP go to the worker to lose their personal details. */
+/** Videos and pictures share preparation; animated GIFs use the lazy video encoder. */
 export async function mediaFileNeedsPreparation(file: File) {
+  if (mediaVideoNeedsPreparation(file.name) || file.type.startsWith("video/") || /\.gif$/i.test(file.name)) return true;
   if (mediaNeedsPreparation(file.name)) return true;
-  if (/\.gif$/i.test(file.name)) return !mediaUntouched(file.name, new Uint8Array(await file.arrayBuffer()));
   // A HEIC's `ftyp` box comes first: sniff its head, never a whole video or PDF.
   return isHeic(file.name, file.type, new Uint8Array(await file.slice(0, 4096).arrayBuffer()));
 }
@@ -35,13 +34,16 @@ export const askToAddUnchanged: Ask = async (question, kind) => {
 
 export async function prepareMediaFile(file: File, _key: string, folder?: string, signal?: AbortSignal,
   encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows: Shown = browserShowsImage,
-  quality: MediaImageQuality = "balanced", keepOriginal = false): Promise<{ request: MediaImportRequest; warning?: string }> {
+  quality: MediaImageQuality = "balanced", keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality = "balanced",
+  video: typeof import("./video-prepare").prepareVideo = async (...args) => (await import("./video-prepare")).prepareVideo(...args)): Promise<{ request: MediaImportRequest; warning?: string }> {
   signal?.throwIfAborted();
-  let result;
+  let result: MediaOptimiseResult | undefined;
+  const gif = /\.gif$/i.test(file.name) && mediaUntouched(file.name, new Uint8Array(await file.arrayBuffer()));
+  const isVideo = gif || mediaVideoNeedsPreparation(file.name) || file.type.startsWith("video/");
   const needed = await mediaFileNeedsPreparation(file);
   signal?.throwIfAborted();
   if (needed) {
-    try { result = await encode(file, mediaImageRecipe(quality), signal, undefined, keepOriginal === true); }
+    try { result = isVideo ? await video(file, videoQuality, signal, gif) : await encode(file, mediaImageRecipe(quality), signal, undefined, keepOriginal === true); }
     catch (error) {
       if (signal?.aborted || error instanceof Error && error.name === "AbortError") throw error;
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -57,11 +59,11 @@ export async function prepareMediaFile(file: File, _key: string, folder?: string
     }
   }
   signal?.throwIfAborted();
-  for (const blob of result ? result.outputs.map(output => output.blob) : [file]) {
+  for (const blob of result ? [...result.outputs, ...result.still ? [result.still] : []].map(output => output.blob) : [file]) {
     const problem = uploadProblem({ name: file.name, size: blob.size });
     if (problem) throw new Error(problem);
   }
-  const original = keepOriginal === true && result ? await keptOriginal(file, result, signal, ask) : undefined;
+  const original = keepOriginal === true && !isVideo && result ? await keptOriginal(file, result, signal, ask) : undefined;
   signal?.throwIfAborted();
   if (original && /^media\/originals(?:\/|$)/i.test(folder?.replace(/^\/+|\/+$/g, "") ?? "")) {
     throw new Error(`${file.name}: Choose a website folder outside media/originals when keeping an original.`);
@@ -96,11 +98,11 @@ export async function keptOriginal(file: File, result: MediaOptimiseResult, sign
 
 /** One failed preparation leaves the other files available. */
 export async function prepareMedia(files: File[], key: string, folder?: string, signal?: AbortSignal,
-  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown, quality: MediaImageQuality = "balanced", keepOriginal = false) {
+  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown, quality: MediaImageQuality = "balanced", keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality = "balanced") {
   const requests: MediaImportRequest[] = [], errors: string[] = [], warnings: string[] = [];
   for (const file of files) {
     try {
-      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows, quality, keepOriginal);
+      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows, quality, keepOriginal, videoQuality);
       requests.push(prepared.request);
       if (prepared.warning) warnings.push(prepared.warning);
     } catch (error) {

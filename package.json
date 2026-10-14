@@ -51,6 +51,7 @@
     "@modelcontextprotocol/server": "^2.2.0",
     "@preact/signals-core": "^1.14.4",
     "blakejs": "^1.2.1",
+    "mediabunny": "1.61.4",
     "monaco-editor": "^0.56.0",
     "svgo": "4.1.0",
     "tweetnacl": "^1.0.3",

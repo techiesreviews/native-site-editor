@@ -19,9 +19,9 @@ export interface FilesAddingHost {
 }
 export interface FilesAddition { folder: string; host: FilesAddingHost; entries: FilesAddingEntry[] }
 export interface FilesAddingDeps {
-  prepare(file: File, key: string, folder: string, signal: AbortSignal, quality?: MediaImageQuality, keepOriginal?: boolean): Promise<{ request: MediaImportRequest; warning?: string }>;
+  prepare(file: File, key: string, folder: string, signal: AbortSignal, quality?: MediaImageQuality, keepOriginal?: boolean, videoQuality?: import("./video-prepare").VideoQuality): Promise<{ request: MediaImportRequest; warning?: string }>;
   /** The site's remembered image quality and Keep original (Adding settings), read once per addition. */
-  settings?(ctx: MediaWorkspaceContext): Promise<{ image: MediaImageQuality; keepOriginal: boolean }>;
+  settings?(ctx: MediaWorkspaceContext): Promise<{ image: MediaImageQuality; video?: import("./video-prepare").VideoQuality; keepOriginal: boolean }>;
   save(ctx: MediaWorkspaceContext, context: () => Promise<MediaWorkspaceContext>, requests: MediaImportRequest[]): Promise<string[]>;
   paint(): void;
 }
@@ -56,12 +56,12 @@ export function createFilesAdding(deps: FilesAddingDeps) {
   async function run(addition: FilesAddition): Promise<string[]> {
     const { host } = addition;
     if (!addition.entries.some(entry => entry.state === "waiting")) return [];
-    let ctx: MediaWorkspaceContext, quality: MediaImageQuality | undefined, keepOriginal = false;
+    let ctx: MediaWorkspaceContext, quality: MediaImageQuality | undefined, keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality | undefined;
     try {
       if (!host.live()) throw new Error(CHANGED);
       ctx = await host.context();
       const settings = await deps.settings?.(ctx);
-      quality = settings?.image; keepOriginal = settings?.keepOriginal === true;
+      quality = settings?.image; videoQuality = settings?.video; keepOriginal = settings?.keepOriginal === true;
       ctx.assertLive();
     } catch (error) { drop(addition, error); return []; }
     for (const entry of addition.entries) {
@@ -71,7 +71,7 @@ export function createFilesAdding(deps: FilesAddingDeps) {
       entry.quality = quality;
       set(entry, "preparing");
       try {
-        const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal, quality, keepOriginal);
+        const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal, quality, keepOriginal, videoQuality);
         // Cancelled meanwhile: the file is left alone.
         if (work.signal.aborted) continue;
         entry.request = prepared.request; entry.note = prepared.warning;

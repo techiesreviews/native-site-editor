@@ -1480,7 +1480,7 @@ async function main() {
       demoBannerPlugin(),
     ],
     worker: { format: "es" },
-    optimizeDeps: { ...monaco.optimizeDeps, exclude: ["@jsquash/webp", "@jsquash/avif"] },
+    optimizeDeps: { ...monaco.optimizeDeps, include: ["mediabunny"], exclude: ["@jsquash/webp", "@jsquash/avif"] },
     server: {
       host: "127.0.0.1",
       port: appPort,

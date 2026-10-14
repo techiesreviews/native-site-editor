@@ -166,3 +166,15 @@ test("a drop after a repository switch stops the old addition's preparation and 
   assert.deepEqual(runs.entries().map(entry => `${entry.file.name}:${entry.state}`), ["new.pdf:added"]);
   assert.deepEqual(errors, ["The repository or branch changed while adding files. Nothing was added."]);
 });
+
+
+test("Files additions pass the site's remembered video choice next to image quality", async () => {
+  let choice: unknown;
+  const runs = createFilesAdding({
+    settings: async () => ({ image: "smaller", video: "higher", keepOriginal: true }),
+    prepare: async (file, _key, folder, _signal, image, original, video) => { choice = [image, original, video]; return { request: { file, folder } }; },
+    save: async () => ["clips/video.mp4"], paint() {},
+  });
+  await runs.start("clips", [new File(["video"], "video.mp4")], { context: async () => ctx, live: () => true, announce() {}, error(error) { throw error; } });
+  assert.deepEqual(choice, ["smaller", true, "higher"]);
+});

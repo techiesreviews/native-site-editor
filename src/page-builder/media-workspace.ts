@@ -1,3 +1,4 @@
+import { mediaKind } from "./media-library-filter";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import { locateNativeElementRange } from "../native-source-location";
@@ -307,6 +308,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       reserved.add(upload.path); batch.uploads.push(upload);
     }
     const changes: Record<string, Partial<MediaMetadata>> = {};
+    const previews: MediaRecords["files"] = {};
     const inherited: MediaRecords["files"] = {};
     const paths: string[] = [], joins = new Map<string, string[]>();
     for (const request of requests) {
@@ -324,7 +326,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (result && (!first || first.variantWidth)) throw new Error("No primary image was encoded.");
       if (result?.outputs.some(output => !/^[a-z0-9]+$/i.test(output.extension) || output.extension !== first!.extension)) throw new Error("All responsive images must use the primary image format.");
       const outputs = result?.outputs ?? [{ blob: file, extension: "" }];
-      for (const output of outputs) {
+      for (const output of [...outputs, ...result?.still ? [result.still] : []]) {
         const problem = uploadProblem({ name: file.name, size: output.blob.size });
         if (problem) throw new Error(problem);
       }
@@ -333,13 +335,20 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const encoded = mediaStorageName(file.name, first?.extension);
       const family = (primary: string) => outputs.map(output => output.variantWidth ? mediaCopyName(primary, output.variantWidth) : primary);
       const primary = chooseMediaPath({ folder: dir, name: encoded,
-        copies: widths, original: request.original?.extension, paths: reserved });
+        copies: widths, original: request.original?.extension, still: result?.still?.extension, paths: reserved });
       ctx.assertLive();
       const familyPaths = family(primary);
       if (new Set(familyPaths).size !== familyPaths.length) throw new Error("Responsive image widths must be unique.");
       outputs.forEach((output, index) => {
         const path = familyPaths[index]; reserved.add(path); batch.uploads.push({ path, blob: output.blob });
       });
+      if (result?.still) {
+        if (mediaKind(primary) !== "video" || result.still.extension !== "webp" || result.still.variantWidth) throw new Error("The video still must be WebP.");
+        const path = primary.replace(/\.[^./]+$/, ".webp");
+        reserved.add(path); batch.uploads.push({ path, blob: result.still.blob });
+        previews[primary] = { still: path };
+      }
+      if (result?.fromGif) previews[primary] = { ...previews[primary], fromGif: true };
       if (request.original) {
         const { blob, extension } = request.original;
         const problem = uploadProblem({ name: file.name, size: blob.size }) ??
@@ -366,6 +375,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     }
     // New files join the viewed collection in the same batch: one Undo step.
     let next = applyMediaMetadata({ ...metadata, files: { ...metadata.files, ...inherited } }, changes);
+    for (const [path, record] of Object.entries(previews)) next.files[path] = { ...next.files[path], ...record };
     for (const [name, members] of joins) next = addToMediaCollection(next, name, members);
     if (place) {
       const source = await ctx.read(place.path);

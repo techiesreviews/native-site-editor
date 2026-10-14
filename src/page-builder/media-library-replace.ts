@@ -53,9 +53,9 @@ export async function replaceEverywhere(sheet: LibrarySheet, c: ReplaceContext, 
         if (problem) throw new Error(problem);
         // A picture already in Media is prepared again as at adding, with the site's settings, so it
         // brings its own responsive copies in one format; its kept original comes along as it is.
-        const data = await c.cache.get(image.path), { image: quality, keepOriginal } = mediaAddingSettings(library.adding);
+        const data = await c.cache.get(image.path), { image: quality, video: videoQuality, keepOriginal } = mediaAddingSettings(library.adding);
         const { request } = await prepareMediaFile(new File([data.blob], basename(image.path), { type: data.blob.type || uploadImageType(image.path) }),
-          library.key, undefined, undefined, undefined, askToAddUnchanged, undefined, quality, keepOriginal);
+          library.key, undefined, undefined, undefined, askToAddUnchanged, undefined, quality, keepOriginal, videoQuality);
         const main = request.result?.outputs.find(output => output.variantWidth === undefined);
         if (!request.result || !main) throw new Error(`${basename(image.path)} could not be prepared. Choose another picture.`);
         const kept = mediaFamilyOf(image.path, paths)?.originals[0];

@@ -263,7 +263,7 @@ test("animated GIF stays byte-identical; still GIF uses the recipe; quality can 
   const frame = Buffer.from([44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 44, 44, 0]);
   const bytes = Buffer.concat([header, frame, frame, Buffer.from([59])]), animated = new File([bytes], "animated.gif");
   const untouched = await prepareMediaFile(animated, "repo", undefined, undefined, async () => { throw new Error("must not encode animation"); });
-  assert.equal(untouched.request.result, undefined); assert.equal(untouched.request.file, animated);
+  assert.equal(untouched.request.result?.outputs[0].blob, animated); assert.equal(untouched.request.file, animated);
   assert.deepEqual(new Uint8Array(await untouched.request.file.arrayBuffer()), new Uint8Array(bytes));
   const still = new File([Buffer.concat([header, frame, Buffer.from([59])])], "still.gif");
   assert.equal(await mediaFileNeedsPreparation(still), true);
@@ -273,6 +273,30 @@ test("animated GIF stays byte-identical; still GIF uses the recipe; quality can 
   assert.equal((await prepareMedia([still], "repo", undefined, undefined, selected, undefined, undefined, "higher")).requests.length, 1);
 });
 
+test("video quality routes lazily and saves a numbered still with its record in one Undo", async () => {
+  const file = new File(["video"], "Holiday.MOV"), blob = new Blob(["mp4"]), picture = new Blob(["webp"]);
+  const prepared = await prepareMediaFile(file, "repo", undefined, undefined, async () => { throw new Error("image encoder called"); }, undefined, undefined, "smaller", true, "higher",
+    async (source, quality) => {
+      assert.equal(source, file); assert.equal(quality, "higher");
+      return { outputs: [{ blob, extension: "mp4" }], still: { blob: picture, extension: "webp" }, fromGif: true, before: 10, after: 3 };
+    });
+  assert.equal(prepared.request.folder, "media/videos"); assert.equal(prepared.request.original, undefined);
+  const f = fixture({ "media/videos/holiday.webp": "existing" });
+  assert.deepEqual(await f.host.import([prepared.request]), ["media/videos/holiday-2.mp4"]);
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["media/videos/holiday-2.mp4", "media/videos/holiday-2.webp"]);
+  assert.deepEqual(parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/videos/holiday-2.mp4"], { still: "media/videos/holiday-2.webp", fromGif: true });
+  assert.equal(f.history.length, 1); f.history[0].undo();
+  assert.equal(f.paths().has("media/videos/holiday-2.mp4"), false); assert.equal(f.paths().has("media/videos/holiday-2.webp"), false);
+  assert.equal(f.text().has(MEDIA_RECORDS_PATH), false);
+});
+test("video errors use unchanged confirmation; caps include the still", async () => {
+  const video = new File(["sound"], "clip.mp4"); let asked = false;
+  const result = await prepareMediaFile(video, "repo", undefined, undefined, undefined, async question => { asked = true; assert.match(question, /unchanged/); return true; }, undefined, "balanced", false, "balanced", async () => { throw new Error("sound cannot be kept"); });
+  assert.equal(asked, true); assert.equal(result.request.result, undefined);
+  await assert.rejects(prepareMediaFile(video, "repo", undefined, undefined, undefined, undefined, undefined, "balanced", false, "balanced", async () => ({
+    outputs: [{ blob: video, extension: "mp4" }], still: { blob: new Blob([new Uint8Array(MAX_UPLOAD_BYTES + 1)]), extension: "webp" }, before: 5, after: 5,
+  })), /20 MB/);
+});
 test("encoder fallback notes reach the shared adding summary", async () => {
   const note = "WebP could not be used in this browser. Used PNG instead.";
   const prepared = await prepareMediaFile(new File(["photo"], "photo.png"), "repo", undefined, undefined,

@@ -16,7 +16,7 @@ export interface MediaFileRecord {
   description?: { text: string; byAgent?: true; [key: string]: unknown };
   decorative?: true; alwaysKeep?: true; sharing?: true;
   trimmedFrom?: { source: string; trim: MediaTrim; [key: string]: unknown };
-  still?: string; subtitles?: string;
+  still?: string; subtitles?: string; fromGif?: true;
   [key: string]: unknown;
 }
 export interface OnlineVideoRecord {
@@ -114,7 +114,7 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     }
     if (Object.keys(places).length) out.places = places; else delete out.places;
   }
-  flags(out, ["decorative", "alwaysKeep", "sharing"], field);
+  flags(out, ["decorative", "alwaysKeep", "sharing", "fromGif"], field);
   optionalStrings(out, ["still", "subtitles"], field);
   if (out.trimmedFrom !== undefined) {
     const from = { ...object(out.trimmedFrom, `${field}.trimmedFrom`) };

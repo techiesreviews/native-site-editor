@@ -10,6 +10,8 @@ export const MEDIA_DOWNLOADS_FOLDER = "media/downloads";
 export const MEDIA_ORIGINALS_FOLDER = "media/originals";
 
 /** Raster pictures follow the image recipe; SVG is cleaned as vector artwork. Still GIFs are checked by bytes. */
+export const mediaVideoNeedsPreparation = (name: string) => /\.(?:mp4|m4v|webm|mov|mkv|ogv|avi)$/i.test(name);
+
 export const mediaNeedsPreparation = (name: string) => /\.(?:jpe?g|png|webp|avif|bmp|svg|heic|heif)$/i.test(name);
 
 /** No Files destination: new files go by the kind of the file stored, not the one dropped. */
@@ -35,7 +37,7 @@ const base = (path: string) => stem(path.slice(path.lastIndexOf("/") + 1));
 /** Reserve a whole family: adding it must neither adopt nor detach existing members.
  * Compared in lower case, since sites are cloned onto case-insensitive disks.
  * minimum skips earlier numbered addresses in a re-trimming chain (1 is the unnumbered name). */
-export function chooseMediaPath(options: { folder: string; name: string; copies: number[]; original?: string; paths: Iterable<string>; minimum?: number }): string {
+export function chooseMediaPath(options: { folder: string; name: string; copies: number[]; original?: string; still?: string; paths: Iterable<string>; minimum?: number }): string {
   const paths = [...new Set([...options.paths].map(path => path.toLowerCase()))];
   const existing = new Set(paths), stems = new Set(paths.map(stem));
   const folders = new Set(paths.flatMap(path => path.split("/").slice(0, -1).map((_, index, parts) => parts.slice(0, index + 1).join("/"))));
@@ -46,6 +48,7 @@ export function chooseMediaPath(options: { folder: string; name: string; copies:
   const main = (folder ? folder + "/" : "") + options.name;
   const taken = (candidate: string) => {
     const planned = [candidate, ...options.copies.map(width => mediaCopyName(candidate, width)),
+      ...options.still ? [candidate.replace(/\.[^./]+$/, "." + options.still)] : [],
       ...options.original ? [MEDIA_ORIGINALS_FOLDER + "/" + base(candidate) + "." + options.original] : []]
       .map(path => path.toLowerCase());
     if (planned.some(member => existing.has(member) || folders.has(member))) return true;

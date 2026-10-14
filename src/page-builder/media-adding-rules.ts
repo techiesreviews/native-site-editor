@@ -1,6 +1,6 @@
 import type { MediaImageQuality } from "./media-optimise";
 import { filterMediaLibrary, type MediaLibraryFilter } from "./media-library-filter";
-import { mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
+import { mediaKindFolder, mediaNeedsPreparation, mediaStorageName, mediaVideoNeedsPreparation } from "./media-storage";
 import type { MediaLibrary } from "./media-picker";
 
 /** One dropped file's way through automatic adding (ticket 06, "Adding by drop"). */
@@ -31,7 +31,7 @@ export function mediaAddingShown(library: Pick<MediaLibrary, "metadata" | "usage
 
 /** Predict the automatic destination before image preparation finishes. */
 export function mediaAddingPath(name: string) {
-  const output = mediaStorageName(name, /\.svg$/i.test(name) ? "svg" : mediaNeedsPreparation(name) ? "webp" : undefined);
+  const output = mediaStorageName(name, mediaVideoNeedsPreparation(name) ? "mp4" : /\.svg$/i.test(name) ? "svg" : mediaNeedsPreparation(name) ? "webp" : undefined);
   return mediaKindFolder(output) + "/" + output;
 }
 
