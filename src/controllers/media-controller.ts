@@ -254,7 +254,11 @@ export function createMediaController(ports: MediaControllerPorts) {
       const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
       ctx.assertLive();
       if (!current()) throw new Error("This image changed. Select it again.");
-      const records = withBackFiles(collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)));
+      const read = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
+      // Files back outside Media get their records from their present bytes: those bytes are proofs.
+      const expectedAssets = new Map<string, string | undefined>();
+      if (read.removed?.length) for (const path of new Set(removed.removedPaths(read))) expectedAssets.set(path, ctx.assetVersion(path));
+      const records = withBackFiles(read);
       const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
       if (!range || range.tag.name !== "img") return;
       const tag = html.startTags(source).find(tag => tag.start === range.tag.start);
@@ -273,7 +277,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       if (!edits.size) return;
       await ctx.applyBatch({ label: "Change Decorative image",
         expectedPaths: ctx.paths, expectedSources: new Map([[page, source], [io.MEDIA_RECORDS_PATH, metadata]]),
-        expectedAssets: new Map(), edits, moves: [], deletes: [], restores: [], uploads: [] });
+        expectedAssets, edits, moves: [], deletes: [], restores: [], uploads: [] });
       ctx.assertLive();
       decodeAlt = value => entities.decodeHtmlEntities(value, true);
       descriptions = rules; recordIO = io;

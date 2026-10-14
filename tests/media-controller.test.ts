@@ -252,6 +252,22 @@ test("a file brought back outside Media shows its kept records on the page at on
   assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
 });
 
+test("a Decorative press on a file back outside Media proves the bytes its records came back for", async () => {
+  const f = fixture();
+  const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [];
+  f.ports.applyBatch = async (_scope, _stamp, batch) => { batches.push(batch); };
+  f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: {}, removed: [
+    { path: "images/old.png", sha: "sha", date: new Date().toISOString().slice(0, 10), record: { collections: ["Work"] } },
+  ] }));
+  await f.controller.changePlace("index.html", [0, 0], true);
+  assert.deepEqual(f.errors, []);
+  // The transaction refuses when these bytes change before it applies (media-draft-transaction).
+  assert.deepEqual([...batches[0].expectedAssets], [["images/old.png", "sha"]]);
+  const written = JSON.parse(batches[0].edits.get(".editor/media.json")!);
+  assert.deepEqual(written.files["images/old.png"].collections, ["Work"]);
+  assert.deepEqual(written.removed ?? [], []);
+});
+
 test("a Decorative press refuses when the page is switched while records are read", async () => {
   let open = "index.html";
   const f = fixture({ openFile: () => open });
