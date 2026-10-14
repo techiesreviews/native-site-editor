@@ -212,7 +212,8 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await review.click();
   await pane(page).getByRole("button", { name: "Remove 2 files", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
-  await expect(pane(page).locator(".media-cleanup__notice")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
+  await expect(pane(page).locator(".media-cleanup__notice")).toHaveText("Removed 2 files.Undo");
+  await expect(pane(page).locator(".media-library__message")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toHaveCount(0);
   await expect(toggleCount(page)).toBeHidden();
 

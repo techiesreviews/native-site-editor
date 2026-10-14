@@ -84,7 +84,8 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
       const removed = h.memory.undo;
       if (removed && undoEntries(h.library().removed, removed).length !== removed.length) h.memory.undo = undefined;
       if (h.memory.undo && removed && h.adapter.restore) {
-        const notice = node("div", "media-cleanup__notice"); notice.setAttribute("role", "status");
+        // The status line below says where they went; the notice keeps only what Undo acts on.
+        const notice = node("div", "media-cleanup__notice");
         const again = button("Undo", () => void h.task(async () => {
           const entries = undoEntries(h.library().removed, removed);
           if (entries.length !== removed.length) { h.memory.undo = undefined; h.tell("Restore these files from More → Recently removed."); return; }
@@ -95,7 +96,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
           if (sheet.element.dataset.mode === "clean-up") draw();
         }), "button secondary");
         again.dataset.focusKey = "undo";
-        notice.append(node("span", "", cleanedMessage(removed)), again);
+        notice.append(node("span", "", cleanedMessage(removed).split(". ")[0] + "."), again);
         element.append(notice);
       }
       const ready = live?.state === "ready" && live.count > 0;
