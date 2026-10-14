@@ -2,7 +2,7 @@
 title: Improve images - what would change, per page and component
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-70 runner)
 blocked_by: [46-wide-use-scanner, 35-copies-for-older-images]
 builder: sol
 phase: 6
