@@ -178,7 +178,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   function draw(focusDot = false) {
     where.textContent = state.file.split("/").pop() ?? "";
     where.title = state.file;
-    const saidNotice = componentShapeNotice(state.shape, state.component) ?? state.notice;
+    // Replace's note and a component's "looks different" note can both stand.
+    const saidNotice = [state.notice, componentShapeNotice(state.shape, state.component)].filter(Boolean).join(" ") || undefined;
     notice.hidden = !saidNotice; notice.textContent = saidNotice ?? "";
     shapeText.textContent = shapeLabel(state.shape);
     shapeButton.setAttribute("aria-label", `Shape: ${shapeLabel(state.shape)}`);

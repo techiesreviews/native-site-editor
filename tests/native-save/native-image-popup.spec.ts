@@ -471,4 +471,49 @@ test("a Free trim on a component's picture shows the trimmed copy whole, not cro
   await expect.poll(tag).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
   expect(await tag()).toMatch(/aspect-ratio: auto/);
   await expect(image).toHaveCSS("aspect-ratio", "auto");
+  // Re-opened untouched, Done writes nothing.
+  const trimmed = await source(page);
+  await image.click();
+  await imageButton(page).click();
+  await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  expect(await source(page)).toBe(trimmed);
+});
+
+test("zoom on a component's own shape saves a copy the component still crops; Replace's note stands beside the component note", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  const image = await seedPhotoCard(page, baseURL);
+  const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
+  await image.click();
+  await imageButton(page).click();
+  // Square first, then Replace: both notes show.
+  await chooseShape(page, "Square");
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+  const note = popup(page).getByRole("status").filter({ hasText: "is in." });
+  await expect(note).toContainText("This Photo card will look different from the others.");
+  // Back to the component's shape, zoomed in: a trimmed copy, cropped by the component, with no shape of the place's own.
+  await chooseShape(page, "Photo card's shape (4:3)");
+  await expect(popup(page).getByRole("status").filter({ hasText: "will look different" })).toHaveCount(0);
+  await popup(page).getByRole("slider", { name: "Zoom" }).fill("200");
+  await expect(popup(page).getByRole("status").filter({ hasText: "Saves a new picture for this spot" })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
+  await expect.poll(tag).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+  expect(await tag()).not.toMatch(/aspect-ratio|object-fit/);
+  await expect(image).toHaveCSS("aspect-ratio", "4 / 3");
+  // Re-opened on the original with the zoom put back, on the component's shape; untouched, Done writes nothing.
+  const zoomed = await source(page);
+  await image.click();
+  await imageButton(page).click();
+  await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
+  await expect(popup(page).locator(".image-popup__zoom output")).toHaveText("200 %");
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  expect(await source(page)).toBe(zoomed);
 });
