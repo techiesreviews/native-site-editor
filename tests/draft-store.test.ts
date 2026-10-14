@@ -812,3 +812,39 @@ test("opening a recovered publish preserves event order and count while observer
   assert.deepEqual(seen, [["file", "opened", "published"], ["file", "base", "published"]]);
   assert.equal(notifications, 1);
 });
+
+test("tags join only themselves; typing, plain writes and close keep separate steps", async () => {
+  for (const next of ["move:2", true, false]) {
+    const { store } = setup();
+    store.open(scope, "a.html", { text: "A", baseSha: sha("a") });
+    store.edit({ scope, path: "a.html", history: "h", text: "B", group: "move:1" });
+    store.edit({ scope, path: "a.html", history: "h", text: "C", group: "move:1" });
+    assert.equal(store.hasOpenGroup("h", "move:1"), true);
+    assert.equal(store.hasOpenGroup("h", true), false);
+    store.edit({ scope, path: "a.html", history: "h", text: "D", group: next });
+    assert.ok((await store.undo("h")).ok);
+    assert.equal(store.text(scope, "a.html"), "C");
+    assert.ok((await store.undo("h")).ok);
+    assert.equal(store.text(scope, "a.html"), "A");
+  }
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "A", baseSha: sha("a") });
+  store.edit({ scope, path: "a.html", history: "h", text: "B", group: "move:1" });
+  store.closeGroup("h");
+  assert.equal(store.hasOpenGroup("h"), false);
+  store.edit({ scope, path: "a.html", history: "h", text: "C", group: "move:1" });
+  await store.undo("h");
+  assert.equal(store.text(scope, "a.html"), "B");
+});
+
+test("tagged groups stay closed when exposed by Undo or restored by Redo", async () => {
+  const { store } = setup();
+  store.open(scope, "a.html", { text: "A", baseSha: sha("a") });
+  store.edit({ scope, path: "a.html", history: "h", text: "B", group: "move:1" });
+  store.edit({ scope, path: "a.html", history: "h", text: "C", group: true });
+  await store.undo("h");
+  assert.equal(store.hasOpenGroup("h", "move:1"), false);
+  await store.undo("h");
+  await store.redo("h");
+  assert.equal(store.hasOpenGroup("h", "move:1"), false);
+});

@@ -211,10 +211,10 @@ const docRevision = (doc: Doc) => doc.stored ? sourceStore().get(doc.scope, doc.
 
 type RangeApi = {
   select(edit: Omit<RangeEdit, "text">): boolean;
-  replace(edit: RangeEdit, group: boolean, companion?: HistoryCompanion): void;
+  replace(edit: RangeEdit, group: boolean | string, companion?: HistoryCompanion): void;
   replaceMany(edits: RangeEdit[], companion?: HistoryCompanion): void;
   closeGroup(): void;
-  hasOpenGroup(): boolean;
+  hasOpenGroup(tag?: boolean | string): boolean;
   discardGroup(): boolean;
   reveal(start: number, end: number): void;
   focus(): void;
@@ -509,7 +509,7 @@ export function selectActiveRange(edit: Omit<RangeEdit, "text">) {
 // Inline edits stream keystrokes; `group` keeps them in one undo step until
 // `closeActiveEditGroup` is called.
 // A `companion` (another file changed with it, or the selection and what is said) is undone and redone with the edit.
-export function replaceActiveRange(edit: RangeEdit, group = false, companion?: HistoryCompanion) {
+export function replaceActiveRange(edit: RangeEdit, group: boolean | string = false, companion?: HistoryCompanion) {
   editorFor(edit.path).range.replace(edit, group, companion);
 }
 export function replaceActiveRanges(edits: RangeEdit[], companion?: HistoryCompanion) {
@@ -524,13 +524,13 @@ export function closeActiveEditGroup(path: string) {
 }
 // A closer for the typing group of the file as mounted now: it closes that
 // session's group later, even once another branch's file is mounted instead.
-export function editGroupCloser(path: string) {
+export function editGroupCloser(path: string, tag?: boolean | string) {
   const session = mounted.get(path)?.session;
-  return () => { if (session) sourceStore().closeGroup(session); };
+  return () => { if (session && sourceStore().hasOpenGroup(session, tag)) sourceStore().closeGroup(session); };
 }
 // Whether the file's last undo step is a typing group still open.
-export function hasOpenEditGroup(path: string) {
-  return mounted.get(path)?.range.hasOpenGroup() ?? false;
+export function hasOpenEditGroup(path: string, tag?: boolean | string) {
+  return mounted.get(path)?.range.hasOpenGroup(tag) ?? false;
 }
 // Takes the open group back (an inline field's Escape): the file returns to
 // where the group began and no undo step is left. False when it could not.
@@ -683,8 +683,8 @@ export function mountSourceEditor(
     closeGroup() {
       store.closeGroup(session);
     },
-    hasOpenGroup() {
-      return store.hasOpenGroup(session);
+    hasOpenGroup(tag) {
+      return store.hasOpenGroup(session, tag);
     },
     discardGroup() {
       return store.discardGroup(session);

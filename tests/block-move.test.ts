@@ -422,3 +422,34 @@ test("an empty path throws", () => {
   const f = setup();
   assert.throws(() => f.moves.move(f.at([]), { step: "up" }), /no element to move/);
 });
+
+test("placed-image moves use fresh tags on mounted and opening paths; plain pages do not", async () => {
+  const page = '<main><section><img sizes="100vw"></section><section>B</section></main>';
+  for (const open of [PAGE, "styles/site.css"]) {
+    const m = createMemoryWorkspace({ branch: { [PAGE]: page, "styles/site.css": "" }, open, site });
+    const edits = createGuardedEdits(m.workspace);
+    const checks: { source: string; node: number[]; tag: string }[] = [];
+    const ports = {
+      edits, editing: () => undefined, mounted: path => m.workspace.mounted(path),
+      forgetOpening: () => () => {},
+      recheck: (_path, source, node, tag) => { checks.push({ source, node, tag }); },
+    } satisfies BlockMovePorts;
+    const moves = createBlockMoves(ports);
+    const out = moves.move({ path: PAGE, node: [0, 0], painted: page }, { step: "down" });
+    if (open === PAGE) assert.equal(out.status, "moved");
+    else assert.equal(out.status, "pending");
+    assert.equal((out.status === "pending" ? await out.settled : out).status, "moved");
+    assert.equal(checks.length, 1);
+    assert.deepEqual(checks[0].node, [0, 1]);
+    assert.equal(checks[0].source, m.workspace.source(PAGE));
+    const first = checks[0].tag;
+    const again = moves.move({ path: PAGE, node: [0, 1], painted: checks[0].source }, { step: "up" });
+    assert.equal(again.status, "moved");
+    assert.notEqual(checks[1].tag, first);
+    assert.equal(m.steps().length, 2);
+    const plain = checks[1].source.replace('sizes="100vw"', 'data-sizes="100vw"');
+    m.typeInto(PAGE, plain);
+    moves.move({ path: PAGE, node: [0, 0], painted: plain }, { step: "down" });
+    assert.equal(checks.length, 2);
+  }
+});

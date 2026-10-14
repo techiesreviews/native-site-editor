@@ -10,7 +10,7 @@
 // The mounted page moves now, in the key's event (`edits.now`); any other
 // page opens first and the move settles later (`pending`, `edits.run`).
 
-import { isSectionTemplate } from "../../shared/html-source";
+import { isSectionTemplate, startTags, startTagAttribute } from "../../shared/html-source";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type PlanResult, type Reads, type StaleKey, type Stamp } from "../guarded-edit";
 import type { Mode } from "./component-mode";
 import { itemsSlotRule } from "./block-insert";
@@ -24,6 +24,8 @@ export interface BlockMovePorts {
   editing(): Pick<Mode, "template" | "tag"> | undefined;
   /** Whether `path` is the open, mounted file: the move is written now, in the key's event. */
   mounted(path: string): boolean;
+  /** Starts a lazy re-check after the move has written its tagged step. */
+  recheck?(path: string, source: string, node: number[], tag: string): void;
   /**
    * A page about to open for a move (it is not mounted): takes what recovery needs now (the editor's
    * kept model of it) and returns the recovery for a move that then goes stale because the bytes
@@ -88,6 +90,7 @@ export interface BlockMoves {
   move(at: MoveAt, to: MoveTo, options?: MoveOptions): MoveOutcome;
 }
 
+let moveId = 0;
 const STEPS = ["up", "down", "out", "in"] as const;
 const NOTHING: PlanResult = { done: "", undone: "" };
 const same = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((step, index) => step === b[index]);
@@ -154,8 +157,10 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
     if (!at.node.length) throw new Error("Block move: no element to move.");
     const { path } = at, stale = options.stale ?? STALE_MESSAGE;
     const template = ports.editing()?.template === path;
+    let movedSource: string | undefined, movedRoot: number[] | undefined;
     // The bytes the destination was measured on: a drop's, else the press's.
     const expected = "drop" in to ? to.painted : at.painted;
+    const tag = !template && ports.recheck && expected !== undefined && startTags(expected).some(tag => tag.name === "img" && startTagAttribute(expected, tag, "sizes")) ? `move:${++moveId}` : undefined;
     // A Section on the page as the press saw it: a template made a Section or not meanwhile is stale.
     const wasSection = !template && at.painted !== undefined && isSection(tagAt(at.painted, at.node), edits.peek);
     // What the plan came to: stale bytes, the moved element's path, the words for staying.
@@ -190,6 +195,8 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
       }
       const moved = [...planned.selection, ...at.node.slice(from.length)];
       after = moved;
+      movedRoot = planned.selection;
+      movedSource = source.slice(0, planned.edit.start) + planned.edit.text + source.slice(planned.edit.end);
       const { start, end, text, original } = planned.edit;
       return {
         edits: new Map([[path, [{ start, end, text, expected: original }]]]),
@@ -200,7 +207,10 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
 
     const settle = (outcome: Outcome): Settled => {
       if (outcome.ok) {
-        if (outcome.status === "applied" && after) return { status: "moved", node: after, ...(outcome.message ? { message: outcome.message } : {}) };
+        if (outcome.status === "applied" && after) {
+          if (tag && movedSource && movedRoot) ports.recheck?.(path, movedSource, movedRoot, tag);
+          return { status: "moved", node: after, ...(outcome.message ? { message: outcome.message } : {}) };
+        }
         return { status: "stayed", ...(stayed ? { message: stayed } : {}) };
       }
       if (outcome.reason === "stale") return { status: "stale", message: stale, changed: outcome.changed };
@@ -209,14 +219,14 @@ export function createBlockMoves(ports: BlockMovePorts): BlockMoves {
       return { status: "refused", message: outcome.message, ...(after ? { failed: true as const } : {}) };
     };
 
-    if (ports.mounted(path)) return settle(edits.now(plan, { since: options.since, guard: options.guard, anchor: path }));
+    if (ports.mounted(path)) return settle(edits.now(plan, { since: options.since, guard: options.guard, anchor: path, group: tag }));
     // The page opens first. Opening it may leave the page shown and Edit component mode: only the load counts.
     const held = options.since ?? edits.stamp();
     const changed = () => { const key = held.changed(); return key === "route" || key === "edit-mode" ? undefined : key; };
     const since: Stamp = { changed, holds: () => !changed() };
     const forget = ports.forgetOpening(path);
     const settled = edits.run(plan, {
-      since, anchor: path, openOnlyIfCurrent: true,
+      since, anchor: path, openOnlyIfCurrent: true, group: tag,
       // The page mounts only on the bytes the move was measured on.
       guard: () => (options.guard?.() ?? true) && edits.peek.source(path) === expected,
     }).then(outcome => {

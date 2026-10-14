@@ -22,7 +22,7 @@ export interface WorkspaceEditor {
   evictDraftModel(scope: DraftScope, path: string, proof: Proof): Proof | undefined;
   prepareHistorySources(edits: HistorySourceEdit[], persistent?: boolean): HistorySourceReceipt | undefined;
   replaceActiveRanges(edits: Range[], companion?: HistoryCompanion): void;
-  replaceActiveRange(edit: Range, group?: boolean, companion?: HistoryCompanion): void;
+  replaceActiveRange(edit: Range, group?: boolean | string, companion?: HistoryCompanion): void;
   closeActiveEditGroup(path: string): void;
   recordHistoryAction(path: string, undo: () => boolean, redo: () => boolean, dispose: () => void): boolean;
   holdHistoryRefresh(path: string): () => void;
@@ -113,7 +113,7 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
       // The hooks run on Undo and Redo before the text moves, so the preview selects in its new render;
       // one set per step: a keystroke joining the open typing group adds none (the store keeps the first).
       const companion = hooks && { undo: () => { hooks.undo(); }, redo: () => { hooks.redo(); }, perStep: true };
-      if (group && ranges.length === 1) editor.replaceActiveRange(ranges[0], true, companion);
+      if (group && ranges.length === 1) editor.replaceActiveRange(ranges[0], group, companion);
       else if (group) throw new Error("A typing group takes one range at a time.");
       else editor.replaceActiveRanges(ranges, companion);
     },

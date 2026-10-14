@@ -390,13 +390,13 @@ test("two writes to one path throw", async () => {
   await assert.rejects(edits.run(r => { r.source("old.html"); return { edits: new Map([["old.html", "x"]]), deletes: ["old.html"], done: "d", undone: "u" }; }), /written twice/);
 });
 
-test("now() with creates, with another file, with an async plan or with an unopened anchor throws; run() with a group throws", async () => {
+test("now() with creates, with another file, with an async plan or with an unopened anchor throws", async () => {
   const { edits } = setup();
   assert.throws(() => edits.now(() => ({ creates: [{ path: "x.html", content: "" }], done: "d", undone: "u" })), /cannot create/);
   assert.throws(() => edits.now(r => ({ edits: new Map([["about.html", r.source("about.html") + "!"]]), done: "d", undone: "u" })), /writes only its anchor/);
   assert.throws(() => edits.now((async () => ({ stayed: "s" })) as never), /synchronous plan/);
   assert.throws(() => edits.now(insertH2, { anchor: "about.html" }), /open and mounted/);
-  await assert.rejects(edits.run(insertH2, { group: "title" }), /now\(\) only/);
+  assert.equal((await edits.run(insertH2, { group: "title" })).ok, true);
 });
 
 // ---- Typing groups ----

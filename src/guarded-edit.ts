@@ -50,7 +50,7 @@ export interface RunOptions {
   guard?: () => boolean;
   /** The page whose history takes the step (default: the open file); `run` opens it when needed. */
   anchor?: string;
-  /** `now` only: consecutive edits with this key (typing in a field) stay one undo step. */
+  /** Consecutive range edits with this key stay one undo step. */
   group?: string;
   /** `run` only: the anchor mounts only while the stamp and guard still hold (a page whose action went stale meanwhile stays unopened). */
   openOnlyIfCurrent?: boolean;
@@ -166,7 +166,7 @@ export interface EditorWorkspace {
    * Replaces ranges of the mounted file `path` as one editor step (`group`: joins the open typing group),
    * with `hooks` on its Undo and Redo (a keystroke joining the open group keeps the group's own). Throws on failure.
    */
-  replaceRanges(path: string, edits: Required<RangeEdit>[], group: boolean, hooks?: HistoryHooks): void;
+  replaceRanges(path: string, edits: Required<RangeEdit>[], group: boolean | string, hooks?: HistoryHooks): void;
   /** Ends the open typing group of `path`. */
   closeGroup(path: string): void;
   /** Records a step in the history of the mounted `path`: false when it cannot. */
@@ -378,7 +378,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     };
     ws.select(after && { path: after.path, node: after.node }, flash);
     try {
-      ws.replaceRanges(path, rangesFor(path, writes, reads, key !== undefined), key !== undefined, hooks);
+      ws.replaceRanges(path, rangesFor(path, writes, reads, key !== undefined), key ?? false, hooks);
     } catch (error) {
       ws.select(undefined);
       group = undefined;
@@ -390,7 +390,6 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   }
 
   async function run(plan: (r: Reads) => PlanResult | Promise<PlanResult>, options: RunOptions = {}): Promise<Outcome> {
-    if (options.group !== undefined) misuse("`group` is for now() only.");
     closeGroup();
     const held = options.since ?? stamp();
     const guard = options.guard ?? (() => true);
@@ -422,7 +421,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     if (writes!.unchanged) return { ok: true, status: "unchanged" };
     const places = existence(writes!), missing = places.refusal();
     if (missing) return refused(missing);
-    if (anchor !== undefined && !result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result);
+    if (anchor !== undefined && !result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result, options.group);
     const after = result.select?.after, selects = after && !result.select?.historyOnly;
     if (selects) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
     let recorded = false;

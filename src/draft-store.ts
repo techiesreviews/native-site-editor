@@ -146,7 +146,7 @@ export interface EditInput {
   changes?: TextChange[];
   text?: string;
   /** Keep merging into the last step while it is open (inline typing), until `closeGroup`. */
-  group?: boolean;
+  group?: boolean | string;
   companion?: HistoryCompanion;
   /** False: change the text without a history step; histories touching the file are cleared. */
   record?: boolean;
@@ -205,7 +205,7 @@ interface Entry extends FileState {
 type Snapshot = (FileState & { revision: number }) | null;
 /** The persisted records on either side of a step: Undo and Redo put back these very records (their identity proves no foreign write). */
 type Records = { before: SavedDraft | undefined; after: SavedDraft | undefined };
-type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean; companions: HistoryCompanion[]; records: Records };
+type EditStep = { kind: "edit"; id: number; label: string; key: string; changes: TextChange[]; inverse: TextChange[]; before: number; after: number; group: boolean | string; companions: HistoryCompanion[]; records: Records };
 type ReceiptStep = { kind: "receipt"; id: number; label: string; files: { key: string; scope: DraftScope; path: string; before: Snapshot; after: Snapshot }[] };
 type ActionStep = { kind: "action"; id: number; label: string; undo: HistoryActionCallback; redo?: HistoryActionCallback; dispose?: () => void };
 type TypingState = { text: string; revision: number; version?: number; record?: SavedDraft };
@@ -324,6 +324,8 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     const found = journal(history);
     const top = found.undo.at(-1);
     if (top?.kind === "typing" && top.at !== top.end) top.end = top.at;
+    // A tagged action cannot reopen when a later step is undone.
+    if (top?.kind === "edit" && typeof top.group === "string") top.group = false;
     found.undo.push(step);
     clearRedo(found);
     emitHistory(history);
@@ -519,7 +521,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     if (input.record === false) { invalidate(key); return { ok: true }; }
     const found = journal(history);
     const last = found.undo.at(-1);
-    if (input.group && last?.kind === "edit" && last.group && last.key === key && last.after === before) {
+    if (input.group && last?.kind === "edit" && last.group === input.group && last.key === key && last.after === before) {
       // One step for the group: from its first state to now.
       const start = applyChanges(previous, last.inverse).text;
       last.changes = [diffRange(start, entry.text)];
@@ -532,15 +534,15 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
       return { ok: true, step: last.id };
     }
     const step: EditStep = { kind: "edit", id: ++steps, label: input.label ?? "Edit", key, changes: applied.changes, inverse: applied.inverse,
-      before, after: entry.revision, group: Boolean(input.group), companions: input.companion ? [input.companion] : [],
+      before, after: entry.revision, group: input.group || false, companions: input.companion ? [input.companion] : [],
       records: { before: recordBefore, after: entry.record } };
     pushStep(history, step);
     return { ok: true, step: step.id };
   }
   /** Whether the top step of `history` is a typing group still open. */
-  function hasOpenGroup(history: string) {
+  function hasOpenGroup(history: string, tag?: boolean | string) {
     const last = journals.get(history)?.undo.at(-1);
-    return last?.kind === "edit" && last.group;
+    return last?.kind === "edit" && Boolean(last.group) && (tag === undefined || last.group === tag);
   }
   function closeGroup(history: string) {
     const last = journals.get(history)?.undo.at(-1);
@@ -713,6 +715,7 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     batch(() => commitHistoryTyping(history));
     const found = journal(history);
     const step = candidate(found, direction);
+    if (step?.kind === "edit" && typeof step.group === "string") step.group = false;
     if (!step) return { ok: false, error: direction === "undo" ? "Nothing to undo." : "Nothing to redo." };
     const error = stepError(step, direction);
     if (error) {

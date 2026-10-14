@@ -1157,12 +1157,16 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!answer) throw new Error("The preview did not answer. Keep the editor tab visible and try again.");
       return answer.report;
     },
+    paintedSource(path: string) { return site?.routes[route] === path ? link.painted()?.[path] : undefined; },
     /** Measure a rendered image without resizing the visible preview. */
-    async measureImage(request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string }) {
+    async measureImage(request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string }, expectedSource?: string) {
       if (!validImageSize(request.image) || !validImageStyle(request.style) || (request.slot !== undefined && (typeof request.slot !== "string" || request.slot.length > 200))) throw new Error("Invalid image measurement.");
       if (!frameState.active || !site || !frameState.ready) throw new Error("The preview is not showing a page yet. Try again in a moment.");
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));
+      // The reply's render token proves these posted bytes were actually measured.
+      if (expectedSource !== undefined && (link.painted()?.[request.path] !== expectedSource || site.routes[route] !== request.path)) throw new Error("The moved page has not rendered.");
       const answer = await link.ask({ type: "measure-image", request }, 8000);
+      if (expectedSource !== undefined && link.painted()?.[request.path] !== expectedSource) throw new Error("The moved page changed.");
       if (!answer) throw new Error("The preview did not answer the image measurement.");
       if ("error" in answer.report) throw new Error(answer.report.error);
       const result = imageResult(answer.report.facts);

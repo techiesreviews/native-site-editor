@@ -854,6 +854,19 @@ const blockMoves = createBlockMoves({
   edits: guardedEdits,
   editing: () => componentTools?.mode.now(),
   mounted: path => appStore.openFile.value === path && Boolean(editorModule?.isMounted(path)),
+  recheck: (path, source, node, tag) => {
+    const stamp = guardedEdits.stamp(), close = editorModule!.editGroupCloser(path, tag);
+    let changed = false;
+    const stop = editorModule!.sourceStore().subscribe(event => {
+      if (event.type === "text" || event.type === "history") { changed = true; close(); }
+    });
+    const current = () => !changed && stamp.holds() && nativeEffectiveSource(path) === source && Boolean(editorModule?.hasOpenEditGroup(path, tag));
+    void import("./page-builder/media-move-recheck").then(module => module.recheckMove({
+      edits: guardedEdits, current, painted: () => nativePreview?.paintedSource(path),
+      measure: node => nativePreview!.measureImage({ path, node }, source),
+      close: () => { stop(); close(); },
+    }, path, source, node, tag)).catch(() => { stop(); close(); });
+  },
   forgetOpening: path => {
     const draft = draftScope();
     // A kept model of the page, forgotten when the open is refused: it holds bytes older than the draft's.

@@ -315,3 +315,43 @@ test("measuring a new picture for an image inside a narrow picture measures it u
   expect(imageResult(report.facts).widths.every(({ width }) => width > 100)).toBe(true);
   await expect(preview.locator("picture > img.hero-image")).toBeVisible();
 });
+
+// Default fixture: placed-image markup seeded into the starter page.
+test("moving a placed image to the top re-checks markup in the move's Undo step", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/source-editor.ts");
+    const source = editor.getMountedSource("index.html");
+    if (!source) throw new Error("Missing page");
+    const text = source.replace('class="hero-image"', 'sizes="160px" fetchpriority="high" class="hero-image"')
+      .replace('<section class="hero"', '<section style="min-height:1000px" class="hero"')
+      .replace('<section class="cards"', '<section style="min-height:1000px" class="cards"')
+      .replace('<section class="filler"', '<section class="moved-image" style="min-height:1000px"><img src="/images/placeholder.svg" style="width:320px;height:180px" sizes="auto, 320px" loading="lazy"></section>\n  <section class="filler"');
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: source.length, expected: source, text });
+  });
+  const preview = page.frameLocator(".native-preview-frame"), moved = preview.locator(".moved-image img"), former = preview.locator(".hero-image");
+  await expect(moved).toHaveAttribute("loading", "lazy");
+  const rows = page.getByRole("tree", { name: "Page structure" }).locator("[role=treeitem][aria-level='2']");
+  await rows.nth(2).click();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["hero", "moved-image", "cards", "filler"]);
+  await expect.poll(() => page.evaluate(async () => !(await import("/src/components/source-editor.ts")).hasOpenEditGroup("index.html"))).toBe(true);
+  await rows.nth(1).focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect(moved).not.toHaveAttribute("loading", "lazy");
+  await expect(moved).toHaveAttribute("sizes", "320px");
+  await expect(moved).toHaveAttribute("fetchpriority", "high");
+  await expect(former).toHaveAttribute("loading", "lazy");
+  await expect(former).toHaveAttribute("sizes", "auto, 160px");
+  await page.locator("#content [role='textbox']").first().focus();
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["hero", "moved-image", "cards", "filler"]);
+  await expect(moved).toHaveAttribute("loading", "lazy");
+  await expect(former).not.toHaveAttribute("loading", "lazy");
+  await expect(former).toHaveAttribute("fetchpriority", "high");
+  await page.keyboard.press("ControlOrMeta+Shift+Z");
+  await expect.poll(() => preview.locator("main > section").evaluateAll(nodes => nodes.map(node => node.className))).toEqual(["moved-image", "hero", "cards", "filler"]);
+  await expect(moved).not.toHaveAttribute("loading", "lazy");
+  await expect(former).toHaveAttribute("loading", "lazy");
+});

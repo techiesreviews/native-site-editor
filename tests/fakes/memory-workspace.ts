@@ -24,7 +24,7 @@ export function deferred<T = void>(): Deferred<T> {
   return { promise, resolve };
 }
 
-type Step = { kind: "range" | "operation"; path: string; undo(): boolean; redo(): boolean; dispose?(): void; group?: { open: boolean; revision: number; after: string }; hooks?: HistoryHooks };
+type Step = { kind: "range" | "operation"; path: string; undo(): boolean; redo(): boolean; dispose?(): void; group?: { open: boolean | string; revision: number; after: string }; hooks?: HistoryHooks };
 type Model = { text: string; version: number; session: number };
 /** A wait the test holds open: `reached` once the code under test waits on it, then `release()`. */
 export interface Hold { reached: Promise<void>; release(): void }
@@ -137,7 +137,7 @@ export function createMemoryWorkspace(init: {
 
   // The editor's range step (replaceActiveRanges): a typing group goes on while nothing else
   // moved its file since its last keystroke; `hooks` run once the step's Undo or Redo moved it.
-  function replaceRanges(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean, hooks?: HistoryHooks) {
+  function replaceRanges(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean | string, hooks?: HistoryHooks) {
     const model = models.get(path);
     if (!model) throw new Error("The active file changed or is read only.");
     let next = model.text;
@@ -148,7 +148,7 @@ export function createMemoryWorkspace(init: {
     const top = done.at(-1), before = model.text, revision = model.version;
     model.text = next; model.version = ++revisions;
     saveText(path, next);
-    if (group && top?.kind === "range" && top.path === path && top.group?.open && top.group.revision === revision) {
+    if (group && top?.kind === "range" && top.path === path && top.group?.open === group && top.group.revision === revision) {
       top.group.revision = model.version; top.group.after = next;
       return;
     }
@@ -170,7 +170,7 @@ export function createMemoryWorkspace(init: {
   // The port the module is built on. Its `source` is the module's own read; the
   // test's direct `source` below counts as an escaped read. `change` is the
   // editor's own range step with no hooks, as another action makes it.
-  const workspace: EditorWorkspace & { change(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean): void } = {
+  const workspace: EditorWorkspace & { change(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean | string): void } = {
     scope: () => scopeKey,
     draftScope: () => scope,
     generation: () => generation,
