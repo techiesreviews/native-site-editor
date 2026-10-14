@@ -150,6 +150,14 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [81 GitHub Pages project sites, ADR 0001 and the rules](tickets/81-github-pages-and-rules.md) | sol | 80 |
 | [82 Rewrite the media docs](tickets/82-media-docs.md) | sol | 81 |
 
+### Phase 8: UX and UI audit (Lex, 2026-10-14)
+
+Lex asked for a final UX and UI audit of every media screen against current Mobbin references and the Brizy popup Lex shared, aiming for minimal and easy. Fix slices from the audit are added here.
+
+| Slice | Builder | Blocked by |
+| --- | --- | --- |
+| [89 UX and UI audit, against Mobbin and Brizy](tickets/89-ux-ui-audit.md) | claude | 82 |
+
 ## Finding the frontier
 
 A slice is takeable when its ticket has `status: open`, an empty `assignee:`, and every ticket in `blocked_by` is `status: closed`. Take the lowest phase first, then the lowest number; slices on the frontier run in parallel, each in its own worktree, at most five Claude subagents at a time. Claim a slice by filling in `assignee:` before any work.
