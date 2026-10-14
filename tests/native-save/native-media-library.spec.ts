@@ -80,10 +80,16 @@ test("real optimisation worker resizes images and retains SVG and explicit origi
     const untouched = await optimiseMedia(svg, DEFAULT_MEDIA_OPTIMISE);
     const unsupported = new File(["original unsupported bytes"], "photo.heic");
     const kept = await optimiseMedia(unsupported, { ...DEFAULT_MEDIA_OPTIMISE, keepOriginal: true });
-    return { width: resized.outputs[0].width, height: resized.outputs[0].height, type: resized.outputs[0].blob.type, svg: await untouched.outputs[0].blob.text(), original: await kept.outputs[0].blob.text() };
+    const keptSvg = await optimiseMedia(new File([await svg.text()], "Logo.SVG", { type: "image/svg+xml" }), { ...DEFAULT_MEDIA_OPTIMISE, keepOriginal: true });
+    const summary = async (value: typeof kept) => ({ outputs: value.outputs.length, extension: value.outputs[0].extension, bytes: await value.outputs[0].blob.text(), before: value.before, after: value.after, note: value.note });
+    return { width: resized.outputs[0].width, height: resized.outputs[0].height, type: resized.outputs[0].blob.type, svg: await untouched.outputs[0].blob.text(), svgNote: untouched.note, kept: await summary(kept), keptSvg: await summary(keptSvg) };
   }, "/src/page-builder/media-optimise.ts");
   expect(result.width).toBe(64); expect(result.height).toBe(32); expect(result.type).toBe("image/webp");
-  expect(result.svg).toContain('<svg xmlns="http://www.w3.org/2000/svg"'); expect(result.original).toBe("original unsupported bytes");
+  expect(result.svg).toContain('<svg xmlns="http://www.w3.org/2000/svg"'); expect(result.svgNote).toBe("SVG and animated GIF are kept untouched, including their metadata.");
+  // Keep original returns the file as is and takes precedence over the SVG/GIF untouched case.
+  const keptNote = "Original bytes and metadata are kept. Unsupported formats may not display on the web.";
+  expect(result.kept).toEqual({ outputs: 1, extension: "heic", bytes: "original unsupported bytes", before: 26, after: 26, note: keptNote });
+  expect(result.keptSvg).toMatchObject({ outputs: 1, extension: "svg", note: keptNote }); expect(result.keptSvg.bytes).toBe(result.svg);
 });
 
 test("optimisation preview cannot replace a newer binary revision", async ({ page, baseURL }) => {
