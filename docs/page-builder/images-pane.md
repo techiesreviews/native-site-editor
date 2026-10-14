@@ -31,7 +31,14 @@ preview; `media-library-delete.ts` asks before deleting and moves focus afterwar
 `media-library-optimise.ts` is the Optimise sheet, with its stored per-repository
 settings and import requests in `media-library-optimise-rules.ts`; and
 `media-library-input.ts` wires search and Collections, arrow keys (by the grid's laid-out
-columns), the upload input and drops.
+columns), the upload input and drops. In the pane, dropped and chosen files start
+adding at once (`media-library-adding.ts`): each is prepared on the Optimise path with
+the stored settings while the grid stays usable, shows its progress on a tile of its
+own with a cancel, and the ready ones are saved in one batch that also joins the
+collection viewed at the drop (one Undo step). Its tray, "Files being added", keeps
+the total, Cancel, files that could not be added with Review… (the Optimise sheet)
+and Show new files; `media-adding-rules.ts` holds its pure rules. The Choose image
+modal still opens the Optimise sheet for drops and uploads.
 `media-busy-lock.ts` guards running changes, `media-byte-cache.ts` keeps decoded
 bytes, `media-library-refresh.ts` keeps forms and focus through a refresh, and
 `media-library-filter.ts` holds the pure rules: kinds, filtering and the no-results recovery. Phase 1 can replace the shell and grid
