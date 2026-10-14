@@ -35,6 +35,9 @@ export interface SavedDraft extends DraftScope {
   upload?: { size: number; type: string };
   mode?: "100755";
 }
+/** An existing file whose bytes were replaced (Replace everywhere): it holds no text, but is a change. */
+export const replacedBytes = (draft: Pick<SavedDraft, "baseSha" | "opaque" | "sourceSha">) =>
+  Boolean(draft.baseSha !== null && draft.opaque && draft.sourceSha && draft.sourceSha !== draft.baseSha);
 const prefix = "astro-site-editor:draft:v1:";
 export const draftKey = (scope: DraftScope, path: string) =>
   prefix +
@@ -204,7 +207,7 @@ export class DraftStore {
     return saved;
   }
   private put(value: SavedDraft) {
-    if (!value.deleted && ((value.baseSha !== null && value.content === value.original) ||
+    if (!value.deleted && ((value.baseSha !== null && value.content === value.original && !replacedBytes(value)) ||
         (!value.opaque && !value.upload && this.baseline?.(value, value.path) === value.content)))
       return this.drop(value, value.path);
     const key = draftKey(value, value.path);

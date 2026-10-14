@@ -395,15 +395,15 @@
 /* File details (media-manager ticket 06, tiles.html): its own screen with Back. A large,
    complete preview beside grouped information on wide screens, stacked on phones; Save and
    Cancel follow the fields and never cover them. */
-.media-library__body:has(> .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]):not([hidden])) .media-library__browse,
-.media-library:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]):not([hidden])) :is(.media-library__bar, .media-library__footer),
-.media-library--pane:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]):not([hidden])) .media-library__header { display: none; }
-.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]) {
+.media-library__body:has(> .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]):not([hidden])) .media-library__browse,
+.media-library:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]):not([hidden])) :is(.media-library__bar, .media-library__footer),
+.media-library--pane:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]):not([hidden])) .media-library__header { display: none; }
+.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]) {
   flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 8px;
   container: media-detail / inline-size;
 }
-.media-library--pane .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]) { padding: 8px 12px 20px; }
-.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]) button { align-self: auto; }
+.media-library--pane .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]) { padding: 8px 12px 20px; }
+.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]) button { align-self: auto; }
 .media-detail__head { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .media-detail__head h3 { font-size: var(--type-title); }
 .media-library .media-detail__back { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
@@ -508,6 +508,18 @@
 .media-remove__page { display: grid; min-width: 0; overflow-wrap: anywhere; }
 .media-remove__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .media-library :is(.media-remove__pages, .media-remove__actions) button { flex: none; min-height: 44px; border-radius: 22px; }
+
+/* Renaming in File details (ticket 15): the taken name with the next free one, the tidied name, and
+   "Keep the old address working". Replace everywhere's confirmation reuses Remove file's screen. */
+.media-detail__naming { display: grid; gap: 4px; margin-top: -6px; }
+.media-detail__naming:not(:has(> :not([hidden], :empty))) { display: none; }
+.media-library .media-detail__suggest { justify-self: start; min-height: 44px; padding: 0; text-decoration: underline; }
+.media-detail__forward { display: grid; }
+.media-detail__forward[hidden] { display: none; }
+.media-detail__forward .media-library__check + .media-library__hint { margin-top: -6px; }
+.media-replace__label { color: var(--muted); font-size: var(--type-small); }
+.media-library .media-replace__line { max-width: 760px; line-height: 1.5; }
+.media-library .media-replace__line:first-of-type { padding: 10px 12px; border-radius: var(--radius-small); background: var(--surface-subtle); }
 
 /* The Media picker (media-manager ticket 06, tiles.html): the Media pane in a smaller window, with
    only compatible files; full-screen on phones. A compact header names the place; the chosen

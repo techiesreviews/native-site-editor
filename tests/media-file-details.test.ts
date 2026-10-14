@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaDetailRename, mediaFamilyRows, mediaRenamedPath } from "../src/page-builder/media-file-details";
+import { canReplaceEverywhere, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaDetailRename, mediaFamilyRows, mediaNameCheck, mediaRenamedPath } from "../src/page-builder/media-file-details";
+import { tidyMediaName } from "../src/page-builder/media-names";
+
+/** Where the rename engine (media-workspace.ts renameInto) puts a typed name; the field must agree. */
+const mediaRenameTarget = (path: string, name: string) => {
+  const extension = /\.[^./]+$/.exec(path)?.[0] ?? "", typed = /\.[^./]+$/.exec(name)?.[0];
+  return path.slice(0, path.lastIndexOf("/") + 1) + tidyMediaName((typed ? name.slice(0, -typed.length) : name) + extension);
+};
 import { applyMediaMetadata, mediaMetadataView } from "../src/page-builder/media-metadata";
 import { parseMediaRecords, serializeMediaRecords } from "../shared/media-records";
 
@@ -44,6 +51,36 @@ test("the name asks for a rename only when changed, without folders, and lands i
   assert.deepEqual(mediaDetailRename("images/tram.webp", " Lisbon Tram.webp"), { name: "Lisbon Tram.webp" });
   assert.equal(mediaRenamedPath("images/tram.webp", "Lisbon Tram.webp"), "images/lisbon-tram.webp");
   assert.equal(mediaRenamedPath("tram.webp", "New.webp"), "new.webp");
+  // Tidied as the rename itself does (slice 52): any language, punctuation to hyphens, the file's own format.
+  assert.equal(mediaRenamedPath("images/tram.webp", "Café Ölçü!"), "images/café-ölçü.webp");
+  assert.equal(mediaRenamedPath("docs/Guide.PDF", "Price list"), "docs/price-list.pdf");
+  for (const [path, name] of [["images/tram.webp", "Lisbon Tram"], ["docs/Guide.PDF", "Price list.PDF"], ["a/Ö.png", "Ä b"]])
+    assert.equal(mediaRenamedPath(path, name), mediaRenameTarget(path, name));
+});
+
+test("the name field says a taken name is taken, for any member of the family, and suggests the next number", () => {
+  const paths = ["images/tram.webp", "images/tram-480.webp", "images/tram-960w.webp", "media/originals/tram.jpg",
+    "images/lisbon.webp", "images/bus-480.webp", "images/bus-2.webp", "media/originals/cart.jpg", "guide.pdf", "price-list.pdf"];
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "tram", paths), { state: "same" });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "Tram.webp", paths), { state: "same" });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "Lisbon", paths), { state: "taken", taken: "images/lisbon.webp", suggestion: "images/lisbon-2.webp" });
+  // A copy's name (bus-480) or the kept original's (cart.jpg) taken also counts; the number skips taken ones.
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "bus", paths), { state: "taken", taken: "images/bus.webp", suggestion: "images/bus-3.webp" });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "cart", paths), { state: "taken", taken: "images/cart.webp", suggestion: "images/cart-2.webp" });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "Old Tram", paths), { state: "free", to: "images/old-tram.webp" });
+  assert.deepEqual(mediaNameCheck("guide.pdf", "Price List", paths), { state: "taken", taken: "price-list.pdf", suggestion: "price-list-2.pdf" });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "tram.png", paths), { state: "problem", message: "Keep the webp format: only the name changes." });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", " ", paths), { state: "problem", message: "Enter a file name." });
+  assert.deepEqual(mediaNameCheck("images/tram.webp", "x/y", paths), { state: "problem", message: "Enter a file name without a folder." });
+});
+
+test("Replace everywhere is offered for a picture's main, not a copy, a Trimmed copy, an original or an SVG", () => {
+  const paths = ["images/tram.webp", "images/tram-480.webp", "logo.svg", "media/originals/tram.jpg", "images/tram-crop.webp", "a.gif", "doc.pdf"];
+  const metadata = { "images/tram-crop.webp": { tags: [], alt: "", trimmedFrom: { source: "images/tram.webp", trim: { x: 0, y: 0, width: 1, height: 1 } } } };
+  assert.equal(canReplaceEverywhere("images/tram.webp", paths, metadata), true);
+  assert.equal(canReplaceEverywhere("a.gif", paths, metadata), true);
+  for (const path of ["images/tram-480.webp", "logo.svg", "media/originals/tram.jpg", "images/tram-crop.webp", "doc.pdf"])
+    assert.equal(canReplaceEverywhere(path, paths, metadata), false, path);
 });
 
 test("Always keep is read, written only when changed, cleared, and survives saving", () => {

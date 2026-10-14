@@ -84,8 +84,11 @@ test("a taken name refuses the whole Save details", async ({ page, baseURL }) =>
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await panel.getByLabel("Description", { exact: true }).fill("Never saved");
   await panel.getByLabel("File name", { exact: true }).fill("placeholder.svg");
+  // The field says so before saving (slice 54), and Save keeps everything unsaved.
+  await expect(panel.getByText("placeholder.svg is taken.", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Use placeholder-2.svg", exact: true })).toBeVisible();
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
-  await expect(panel.locator(".media-library__message")).toContainText("images/placeholder.svg is taken. Try images/placeholder-2.svg.");
+  await expect(panel.getByLabel("File name", { exact: true })).toBeFocused();
   expect(await storedDraft(page, ".editor/media.json")).toBeUndefined();
   await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Never saved");
 });

@@ -14,7 +14,7 @@
 // it came from, so binary files move too. A folder is renamed, moved or
 // deleted file by file. This module has no DOM and no I/O: it reads and
 // writes a draft store given to it.
-import type { DraftScope, SavedDraft } from "./drafts";
+import { replacedBytes, type DraftScope, type SavedDraft } from "./drafts";
 import type { PublishFile } from "../shared/types";
 
 export type ChangeKind = "A" | "M" | "R" | "D";
@@ -50,7 +50,7 @@ export interface MovableFile {
 
 /** Whether a draft is a change at all. */
 export function isChanged(draft: SavedDraft) {
-  return Boolean(draft.deleted) || draft.baseSha === null || draft.content !== draft.original;
+  return Boolean(draft.deleted) || draft.baseSha === null || draft.content !== draft.original || replacedBytes(draft);
 }
 
 /** The drafts as changes, by path: a rename's two drafts are one change. */
@@ -118,7 +118,7 @@ export async function pruneUnchanged(
     let same: boolean;
     if (draft.deleted) same = !file;
     else if (!file || (draft.mode && file.mode !== draft.mode)) same = false;
-    else if (draft.baseSha === null && savedAsBlob(draft)) same = draft.sourceSha === file.sha;
+    else if ((draft.baseSha === null && savedAsBlob(draft)) || replacedBytes(draft)) same = draft.sourceSha === file.sha;
     else same = !draft.opaque && (await shaOf(draft.content)) === file.sha;
     if (!same) continue;
     const latest = store.get(scope, draft.path);
@@ -151,6 +151,8 @@ export function publishFiles(changes: FileChange[]): PublishFile[] {
       if (draft.deleted) out.push({ path: draft.path, baseSha: draft.baseSha, content: "", delete: true });
       else if (draft.baseSha === null && savedAsBlob(draft))
         out.push({ path: draft.path, baseSha: null, content: "", sha: draft.sourceSha, ...mode, ...(draft.movedFrom ? { movedFrom: draft.movedFrom } : {}) });
+      // New bytes over an existing file: published as their blob, guarded by the blob it began from.
+      else if (replacedBytes(draft)) out.push({ path: draft.path, baseSha: draft.baseSha, content: "", sha: draft.sourceSha, ...mode });
       else out.push({ path: draft.path, baseSha: draft.baseSha, content: draft.content, ...mode, ...(draft.movedFrom ? { movedFrom: draft.movedFrom } : {}) });
     }
   return out;

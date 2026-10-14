@@ -417,6 +417,20 @@ test("a deletion and a rename go into one commit: sha null for the removed paths
   assert.deepEqual(result.files, [{ path: "about/home.html", sha: moved }]);
 });
 
+test("new bytes over an existing file go in as their blob, guarded by the blob they began from", async () => {
+  const { github, calls } = fixture();
+  const replaced = "8".repeat(40);
+  const result = await publish(github, repo, { branch: "main", files: [{ path: "about/index.html", baseSha, content: "", sha: replaced }] });
+  const writes = calls.filter((call) => call.method !== "GET");
+  assert.deepEqual(writes[0].body, { base_tree: tree, tree: [{ path: "about/index.html", mode: "100644", type: "blob", sha: replaced }] });
+  assert.deepEqual(result.files, [{ path: "about/index.html", sha: replaced }]);
+  const changed = fixture({ conflict: true });
+  await assert.rejects(
+    () => publish(changed.github, repo, { branch: "main", files: [{ path: "about/index.html", baseSha, content: "", sha: replaced }] }),
+    (error: HttpError) => error.status === 409,
+  );
+});
+
 test("deleting a file that changed on GitHub since its base conflicts; one already gone is no change", async () => {
   const changed = fixture({ conflict: true });
   await assert.rejects(

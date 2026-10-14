@@ -299,6 +299,10 @@ export function createMediaLibraryView(
     const outputs = (paths: string[]) => paths.flatMap((path, at) =>
       taken[at].request.result?.outputs.map(output => output.variantWidth ? mediaVariantName(path, output.variantWidth) : path) ?? [path]);
     return {
+      chosen: () => {
+        const entry = adding.held().find(held => held.id === image.path);
+        return entry && { request: entry.request, take: () => void adding.take([entry.id]) };
+      },
       image: paths => index() < 0 ? image : { ...image, path: paths[index()], alt: mediaNameAlt(paths[index()]), variants: mediaVariants(paths[index()], outputs(paths)) },
       async save(place) {
         // Use takes the whole addition: files still being prepared stop, and every ready one is saved here.

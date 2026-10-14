@@ -230,9 +230,9 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     },
     /** The picker's ready files, not saved yet. */
     held() { return run.entries.filter(entry => entry.state === "ready" && entry.request).map(entry => ({ id: entry.id, request: entry.request! })); },
-    /** Hold the ready files for one save: they show Adding… and no other save takes them. */
-    take() {
-      const ready = run.entries.filter(entry => entry.state === "ready" && entry.request);
+    /** Hold the ready files (or those of `ids`) for one save: they show Adding… and no other save takes them. */
+    take(ids?: string[]) {
+      const ready = run.entries.filter(entry => entry.state === "ready" && entry.request && (!ids || ids.includes(entry.id)));
       ready.forEach(entry => set(entry, "adding"));
       return ready.map(entry => ({ id: entry.id, request: entry.request! }));
     },

@@ -1,7 +1,8 @@
-import { formatBytes, uploadFileName } from "../uploads";
-import { mediaFamilyOf } from "./media-families";
+import { formatBytes } from "../uploads";
+import { mediaFamilyOf, renamedFamily } from "./media-families";
+import { mediaFileName, suggestMediaName } from "./media-names";
 import { basename, mediaKind, parent } from "./media-library-filter";
-import type { MediaMetadata } from "./media-metadata";
+import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
 
 /** The pure rules behind File details (media build slice 14): its facts, the Image family
  * rows, what Save details writes and the new name it asks for. */
@@ -62,8 +63,39 @@ export function mediaDetailRename(path: string, name: string): { name: string } 
   return { name: next };
 }
 
-/** Where a renamed file ends up: the same folder, under the tidied name. */
+/** Where a renamed file ends up: the same folder, under the name tidied as the rename does (slice 52). */
 export const mediaRenamedPath = (path: string, name: string) => {
-  const folder = parent(path), file = uploadFileName(name);
+  const folder = parent(path), file = mediaFileName(path, name);
   return folder ? `${folder}/${file}` : file;
 };
+
+export type MediaNameCheck =
+  | { state: "same" }
+  | { state: "problem"; message: string }
+  | { state: "taken"; taken: string; suggestion: string }
+  | { state: "free"; to: string };
+
+/** What the File name field says before saving (ticket 15 "Renaming a media file"): nothing for the
+ * same name, a problem, a name taken by any member of the renamed family with the next numbered
+ * one, or where the file will go. The same family rule as the rename itself, over the listed `paths`;
+ * the rename still checks every repository path when saving. */
+export function mediaNameCheck(path: string, name: string, paths: string[]): MediaNameCheck {
+  const rename = mediaDetailRename(path, name);
+  if (!rename) return { state: "same" };
+  if ("error" in rename) return { state: "problem", message: rename.error };
+  const format = /\.[^./]+$/.exec(path)?.[0] ?? "", typed = /\.[^./]+$/.exec(rename.name)?.[0];
+  if (typed && typed.toLowerCase() !== format.toLowerCase())
+    return { state: "problem", message: `Keep the ${format.slice(1).toLowerCase()} format: only the name changes.` };
+  const to = mediaRenamedPath(path, rename.name);
+  if (to === path) return { state: "same" };
+  const family = mediaFamilyOf(path, paths);
+  const taken = (target: string) => (family ? renamedFamily(family, target) : [{ from: path, to: target }])
+    .some(move => move.from !== move.to && paths.includes(move.to));
+  return taken(to) ? { state: "taken", taken: to, suggestion: suggestMediaName(to, taken) } : { state: "free", to };
+}
+
+/** Whether File details offers Replace everywhere: a picture's main, not a Trimmed copy, not SVG. */
+export function canReplaceEverywhere(path: string, paths: string[], metadata: MediaMetadataMap): boolean {
+  return /\.(?:png|jpe?g|gif|webp|avif|bmp)$/i.test(path) && !/^media\/originals\//i.test(path) &&
+    !metadata[path]?.trimmedFrom && Boolean(mediaFamilyOf(path, paths));
+}

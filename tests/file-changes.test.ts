@@ -185,3 +185,23 @@ test("drafts that are GitHub's version now are dropped by blob SHA: a stale edit
   assert.deepEqual(dropped.sort(), ["gone.txt", "logo.png", "new.css", "stale.html"]);
   assert.deepEqual(kinds(store), ["D kept.txt", "M mine.html", "A other.css"]);
 });
+
+test("new bytes over an existing file (Replace everywhere) are kept, listed as a change, and published as their blob", () => {
+  const disk = memory(), store = new DraftStore(disk);
+  const replaced: SavedDraft = { ...scope, version: 1, path: "images/tram.png", baseSha: sha("a"), original: "", content: "",
+    sourceSha: sha("b"), opaque: true, upload: { size: 3, type: "image/png" }, updatedAt: 1 };
+  store.save(replaced);
+  assert.deepEqual(new DraftStore(disk).get(scope, "images/tram.png"), replaced);
+  assert.deepEqual(kinds(store), ["M images/tram.png"]);
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))), [{ path: "images/tram.png", baseSha: sha("a"), content: "", sha: sha("b") }]);
+  // The same bytes as the base are no change.
+  store.save({ ...replaced, sourceSha: sha("a") });
+  assert.equal(store.get(scope, "images/tram.png"), undefined);
+});
+
+test("a replaced file's draft is dropped once the branch holds its new blob", async () => {
+  const store = new DraftStore(memory());
+  store.save({ ...scope, version: 1, path: "a.png", baseSha: sha("a"), original: "", content: "", sourceSha: sha("b"), opaque: true, upload: { size: 1, type: "image/png" }, updatedAt: 1 });
+  assert.deepEqual(await pruneUnchanged(store, scope, store.list(scope), () => ({ sha: sha("a") })), []);
+  assert.deepEqual(await pruneUnchanged(store, scope, store.list(scope), () => ({ sha: sha("b") })), ["a.png"]);
+});

@@ -4,7 +4,8 @@ import { uploadImageType } from "../uploads";
 import { input, field, check } from "./media-library-fields";
 import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
 import { basename, mediaKind } from "./media-library-filter";
-import { mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaDetailRename, mediaFamilyRows, mediaRenamedPath } from "./media-file-details";
+import { canReplaceEverywhere, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
+import { isRenamableMedia, MediaNameTakenError } from "./media-names";
 import { keepPageFocus, usageSections } from "./media-library-usage";
 import { mediaUsageBadge, mediaUsageFor } from "./media-usage-text";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
@@ -70,7 +71,13 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   // In the picker, Back returns to the grid with the file still chosen; Use places it.
   const info = node("div", "media-detail__info"), form = node("form", "media-detail__form"); form.dataset.detailForm = "";
   info.append(form);
-  layout.append(renderPreview(h, path, data, meta), info);
+  // Replace everywhere (slice 54): in the Media pane, for a picture's main; its screens load when asked for.
+  const replace = !h.modal && h.adapter.replace && canReplaceEverywhere(path, library.items.map(item => item.path), library.metadata)
+    ? () => void h.task(async () => {
+      const { replaceEverywhere } = await import("./media-library-replace");
+      if (current()) await replaceEverywhere(sheet, { ...h, details: to => showMediaDetail(sheet, h, to) }, path);
+    }) : undefined;
+  layout.append(renderPreview(h, path, data, meta, replace), info);
   element.replaceChildren(head, layout);
   renderInformation(form, sheet, h, path, data, meta, current);
   h.sync();
@@ -86,7 +93,7 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
  * file's actions under it. */
 function renderPreview(
   { optimise, remove, task, tell }: Pick<DetailHost, "optimise" | "remove" | "task" | "tell">,
-  path: string, data: MediaBytes, meta: MediaMetadata,
+  path: string, data: MediaBytes, meta: MediaMetadata, replace?: () => void,
 ) {
   const view = node("div", "media-detail__view"), preview = node("figure", "media-detail__preview");
   const surface = () => {
@@ -102,6 +109,7 @@ function renderPreview(
   if (uploadImageType(path)) actions.append(button("Optimise image…", () => optimise(
     [new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]),
   )));
+  if (replace) actions.append(button("Replace everywhere…", replace));
   actions.append(button("Copy path", () => void task(async () => {
     await navigator.clipboard.writeText(`/${path}`); tell("Path copied.");
   })), button("Remove file…", () => remove([path])));
@@ -127,13 +135,15 @@ function renderInformation(
   const { adapter, task, refresh, tell, cache } = h, library = h.library(), image = mediaKind(path) === "image";
   const item = library.items.find(entry => entry.path === path);
   const name = input("File name", "text"); name.value = basename(path); name.autocomplete = "off";
-  // Today's rename handles images; renaming every kind comes with Rename everywhere (slice 54).
-  if (!uploadImageType(path)) name.disabled = true;
+  name.autocapitalize = "none"; name.spellcheck = false;
+  // Renaming renames the whole family and every mention (slice 52); kinds Media does not rename stay as they are.
+  if (!isRenamableMedia(path)) name.disabled = true;
+  const naming = renameField(name, path, library.items.map(entry => entry.path));
   const facts = node("dl", "media-detail__facts");
   for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width, height: data.height }), ...mediaMadeFrom(meta)]) {
     const row = node("div"); row.append(node("dt", "", fact.label), node("dd", "", fact.value)); facts.append(row);
   }
-  form.append(field("File name", name), facts);
+  form.append(field("File name", name), naming.element, facts);
   // The Always keep mark (slice 49): on for this file, or for a copy or original in its family.
   if (library.keep?.includes(path)) form.append(node("p", "media-library__keep-note", "Always keep: Clean up never suggests this file."));
   // Usage from the site's usage check; newer results repaint it in place.
@@ -207,6 +217,10 @@ function renderInformation(
       check("Decorative", decorative));
   }
   const keep = input("Always keep", "checkbox"); keep.checked = Boolean(meta.alwaysKeep);
+  // "Keep the old address working" is ticked for Always keep files (ticket 15) until Lex chooses.
+  const memberKept = Boolean(library.keep?.includes(path)) && !meta.alwaysKeep;
+  naming.follow(() => keep.checked || memberKept);
+  keep.addEventListener("change", () => naming.follow(() => keep.checked || memberKept));
   form.append(check("Always keep", keep), node("p", "media-library__hint", "Never suggested for clean-up. For files used outside the site."));
   const footer = node("footer", "media-detail__foot");
   const save = button("Save details", () => undefined, "button primary"); save.type = "submit";
@@ -215,8 +229,9 @@ function renderInformation(
   form.append(footer);
   form.addEventListener("submit", event => {
     event.preventDefault();
-    const rename = mediaDetailRename(path, name.value);
-    if (rename && "error" in rename) { tell(rename.error); name.focus(); return; }
+    const checked = naming.paint();
+    if (checked.state === "problem" || checked.state === "taken") { name.focus(); return; }
+    const rename = checked.state === "free" ? { name: name.value.trim() } : undefined, forward = naming.forward();
     const chosen = detailCollections(library.collections, library.collections.filter((_, index) => ticks[index].checked), fresh.value);
     if ("problem" in chosen) { problem.textContent = chosen.problem; fresh.focus(); return; }
     void task(async () => {
@@ -225,14 +240,59 @@ function renderInformation(
         name: name.value, description: description.value, decorative: decorative.checked, alwaysKeep: keep.checked,
       }), tags: chosen.tags };
       // One step: a refused rename saves nothing. A host without it saves fields only.
-      if (adapter.details) await adapter.details(path, changes, rename?.name);
-      else if (rename) throw new Error("Renaming is not available here.");
-      else await adapter.metadata({ [path]: changes });
+      try {
+        if (adapter.details) await adapter.details(path, changes, rename?.name, rename ? { keepOldAddress: forward } : undefined);
+        else if (rename) throw new Error("Renaming is not available here.");
+        else await adapter.metadata({ [path]: changes });
+      } catch (error) {
+        // A name taken by a file the list does not show: the field says so, with the next free one.
+        if (!(error instanceof MediaNameTakenError) || !current()) throw error;
+        naming.taken(error.taken, error.suggestion); name.focus(); return;
+      }
       if (!rename) { await refresh(); tell("Details saved as a draft."); return; }
       cache.clear(); await refresh();
       const to = mediaRenamedPath(path, rename.name);
       if (h.alive() && h.library().items.some(entry => entry.path === to)) await showMediaDetail(sheet, h, to);
-      tell("Details saved and the file renamed, with its uses updated, as drafts.");
+      tell(`Details saved and the file renamed, with its uses updated, as drafts.${forward ? " Its old address forwards to the new one." : ""}`);
     });
   });
+}
+
+/** Under the File name field (ticket 15 "Renaming a media file"): before saving it says a taken
+ * name is taken and offers the next numbered one, shows the tidied name, and offers "Keep the old
+ * address working", which follows Always keep until Lex ticks or unticks it. */
+function renameField(name: HTMLInputElement, path: string, paths: string[]) {
+  const element = node("div", "media-detail__naming");
+  const note = node("p", "media-library__problem"); note.id = `media-detail-name-${++fieldIds}`;
+  note.setAttribute("aria-live", "polite"); name.setAttribute("aria-describedby", note.id);
+  const suggest = button("", () => { name.value = suggest.dataset.name!; paint(); name.focus(); }, "text-button media-detail__suggest");
+  suggest.hidden = true;
+  const tidied = node("p", "media-library__hint");
+  const forward = input("Keep the old address working", "checkbox");
+  const choice = node("div", "media-detail__forward");
+  choice.append(check("Keep the old address working", forward),
+    node("p", "media-library__hint", "Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file."));
+  let touched = false;
+  forward.addEventListener("change", () => { touched = true; });
+  const taken = (file: string, suggestion: string) => {
+    note.textContent = `${basename(file)} is taken.`; name.setAttribute("aria-invalid", "true");
+    suggest.dataset.name = basename(suggestion); suggest.textContent = `Use ${basename(suggestion)}`; suggest.hidden = false;
+    tidied.textContent = ""; choice.hidden = true;
+  };
+  const paint = (): MediaNameCheck => {
+    const result = mediaNameCheck(path, name.value, paths);
+    note.textContent = result.state === "problem" ? result.message : ""; suggest.hidden = true;
+    name.setAttribute("aria-invalid", String(result.state === "problem"));
+    tidied.textContent = result.state === "free" && basename(result.to) !== name.value.trim() ? `Saved as ${basename(result.to)}` : "";
+    choice.hidden = result.state !== "free";
+    if (result.state === "taken") taken(result.taken, result.suggestion);
+    return result;
+  };
+  name.addEventListener("input", paint);
+  element.append(note, suggest, tidied, choice);
+  paint();
+  return {
+    element, paint, taken, forward: () => forward.checked,
+    follow(kept: () => boolean) { if (!touched) forward.checked = kept(); },
+  };
 }

@@ -64,8 +64,8 @@ export function validatePublish(value: unknown): PublishRequest {
       (file.delete !== undefined && file.delete !== true) ||
       // A deletion removes the blob it began from, and sends nothing.
       (file.delete && (file.baseSha === null || file.content !== "" || file.sha !== undefined)) ||
-      // A new path may be an existing blob instead of content.
-      (file.sha !== undefined && (!validSha(file.sha) || file.baseSha !== null || file.content !== "")) ||
+      // A new path, or new bytes over an existing file (Replace everywhere), may be a blob instead of content.
+      (file.sha !== undefined && (!validSha(file.sha) || file.content !== "" || file.sha === file.baseSha)) ||
       (file.mode !== undefined && file.mode !== "100644" && file.mode !== "100755") ||
       (file.movedFrom !== undefined && invalidPath(file.movedFrom))
     )

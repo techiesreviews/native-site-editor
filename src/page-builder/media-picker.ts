@@ -9,6 +9,7 @@ import type { MediaUsage } from "./media-references";
 import type { MediaUsageRecords } from "./media-usage";
 import type { MediaToCheckRow } from "./media-descriptions";
 import type { MediaAddingChoices } from "./media-settings";
+import type { MediaReplaceRequest } from "./media-workspace";
 import { createMediaLibraryView, type MediaLibraryView } from "./media-library-view";
 
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
@@ -39,6 +40,8 @@ export interface MediaPickerHost {
    * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
   check?(row: MediaToCheckRow, text?: string): Promise<void>;
   restore?(entries: { path: string; id: string }[]): Promise<void>;
+  /** Replace everywhere (ticket 15): the new picture takes over the file's name and address; returns its main path. */
+  replace?(request: MediaReplaceRequest): Promise<string>;
   /** A removed file's bytes (`id` as for `restore`), for Recently removed's pictures. */
   removedBlob?(entry: { path: string; id: string }): Promise<Blob>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
@@ -84,6 +87,9 @@ export interface MediaHeldFiles {
   /** Saves every ready file (files still preparing stop: `note` says so), with `place` unless it was
    * cancelled meanwhile: then the files are still saved, once, and `placed` is false. */
   save(place?: MediaPlacement): Promise<{ paths: string[]; placed: boolean; note: string }>;
+  /** The chosen file when it is a held one: its prepared request. `take()` keeps it out of every
+   * later save, for a caller that uses the prepared picture itself (Replace everywhere). */
+  chosen?(): { request: MediaImportRequest; take(): void } | undefined;
 }
 export interface MediaImportRequest {
   file: File; result?: MediaOptimiseResult; folder: string;
@@ -115,6 +121,8 @@ export interface MediaPickerOptions {
   /** MIME types, extensions or image/*, like a native file input's accept. */
   accept?: string;
   files?: File[];
+  /** Where the picker's window is placed; inside an open popover (the explorer) it keeps that open. */
+  within?: HTMLElement;
 }
 let host: MediaPickerHost | undefined;
 let closeActive: (() => void) | undefined;
@@ -147,8 +155,10 @@ export async function openMediaPicker(options: MediaPickerOptions = {}): Promise
   closeActive?.();
   if (!host) throw new Error("Open a repository before choosing an image.");
   const dialog = node("dialog", "media-library media-library--picker");
+  // Escape closes only the picker, not a popover it was placed in.
+  if (options.within) dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
   let used = false, closed = false;
-  const view = createMediaLibraryView(document.body, host, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
+  const view = createMediaLibraryView(options.within ?? document.body, host, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
     await options.onPick!(image, () => closed, held); used = !closed;
   }) }, dialog);
   const close = () => { dialog.close(); view.dispose(); };
