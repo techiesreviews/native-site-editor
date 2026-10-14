@@ -135,7 +135,7 @@ export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath
   const src = mediaAttribute(tagText, startTags(tagText)[0], "src");
   const path = src && mediaResolvePath(decodeHtmlEntities(src.value, true), pagePath);
   const trimmedFrom = path && records?.files[path]?.trimmedFrom;
-  return { shape, focus, ...(focus === undefined ? { focusRaw } : {}), trimmed: !!trimmedFrom, ...(trimmedFrom ? { source: trimmedFrom.source } : {}) };
+  return { file: path || undefined, shape, focus, ...(focus === undefined ? { focusRaw } : {}), trimmed: !!trimmedFrom, ...(trimmedFrom ? { source: trimmedFrom.source, trim: structuredClone(trimmedFrom.trim) } : {}) };
 }
 
 export type PlaceFramePorts = Pick<MediaControllerPorts, "source" | "openFile" | "restoreFile" | "viewingVersion" | "measureImage" | "locateElement" | "change">;

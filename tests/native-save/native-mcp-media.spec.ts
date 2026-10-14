@@ -161,3 +161,58 @@ test("an agent changes adding settings; the settings screen follows the draft an
     expect(JSON.stringify(restored)).toContain(".editor/media.json");
   } finally { await client.close(); }
 });
+
+test("an agent sets Square and focus, then trims that place; Media shows the copy and each Undo restores", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const library = page.getByRole("region", { name: "Media", exact: true });
+  await library.getByRole("button", { name: "More", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  const png = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 120; canvas.height = 80;
+    const ctx = canvas.getContext("2d")!; ctx.fillStyle = "#369"; ctx.fillRect(0, 0, 120, 80);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  await (await chooser).setFiles([{ name: "agent-frame.png", mimeType: "image/png", buffer: Buffer.from(png, "base64") }]);
+  await expect(library.getByRole("region", { name: "Files being added", exact: true }).getByRole("status")).toContainText("Added 1 file");
+  await page.locator("#explorer-toggle").click();
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const reply = await client.callTool({ name, arguments: { ...args, waitSeconds: 25 } });
+    expect(reply.isError, JSON.stringify(reply)).toBeFalsy();
+    return result(reply);
+  };
+  try {
+    const listed = await call("list_media"), file = listed.media.find((item: { path: string }) => item.path.includes("agent-frame")).path;
+    const inspection = await call("inspect_preview", { page: indexPath, selector: ".hero img", limit: 1 });
+    const element = inspection.result.elements[0].element;
+    await call("place_media", { path: indexPath, element, file });
+    const source = async () => (await call("read_file", { path: indexPath })).content;
+    const before = await source(), image = frame(page).locator(".hero img").first();
+    const shaped = await call("frame_image", { path: indexPath, element, shape: "square", focus: { x: 20, y: 70 } });
+    expect(shaped.state).toBe("applied"); expect(shaped.result.hash).toMatch(/^[a-f0-9]{64}$/);
+    await expect(image).toHaveCSS("aspect-ratio", "1 / 1");
+    await expect(image).toHaveCSS("object-position", "20% 70%");
+    await image.click();
+    await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__image")).toHaveText("ImageSquare");
+    const square = await source();
+    const trimmed = await call("frame_image", { path: indexPath, element, trim: { zoom: 2 } });
+    expect(trimmed.state).toBe("applied"); expect(trimmed.result.path).toMatch(/agent-frame-crop\.(webp|png)$/);
+    expect(trimmed.result.hash).toMatch(/^[a-f0-9]{64}$/);
+    await expect.poll(source).toContain(`src="/${trimmed.result.path}"`);
+    await expect(image).toHaveAttribute("width", "60"); await expect(image).toHaveAttribute("height", "40");
+    const read = await call("frame_image", { path: indexPath, element });
+    expect(read.result).toMatchObject({ file: trimmed.result.path, source: file, trimmed: true, shape: "square", focus: { x: 20, y: 70 },
+      trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } });
+    await page.locator("#explorer-toggle").click();
+    await page.getByRole("tab", { name: "Media", exact: true }).click();
+    await expect(library.getByRole("button", { name: `Details for ${trimmed.result.path}`, exact: true })).toBeVisible();
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(source).toBe(square);
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(source).toBe(before);
+  } finally { await client.close(); }
+});

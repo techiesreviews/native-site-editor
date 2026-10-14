@@ -8,7 +8,8 @@ import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
-import { agentMediaArgsProblem, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
+import { agentMediaArgsProblem } from "../shared/agent-media-args";
+import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
@@ -357,7 +358,7 @@ export interface AgentSiteActions {
   inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
   listMedia(request: { folder?: string; offset: number; limit: number }): Promise<string>;
   previewMedia(path: string): Promise<{ data: string; mimeType: string; width: number; height: number; originalWidth: number; originalHeight: number }>;
-  media(command: AgentCommand): Promise<void | { message: string; result: { report: string } }>;
+  media(command: AgentCommand): Promise<void | { message: string; result: Record<string, string> }>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
 }
@@ -462,7 +463,7 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     for (const candidate of [path, args.to, args.parent])
       if (typeof candidate === "string" && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
   if (command.operation === "write_file" && isMediaUploadWrite(path)) throw new Error(OUTSIDE_MEDIA_REFUSED);
-  const mediaProblem = agentMediaArgsProblem(command.operation, args);
+  const mediaProblem = agentMediaArgsProblem(command.operation, args, path);
   if (mediaProblem) throw new Conflict(mediaProblem);
   for (const candidate of [args.file, ...args.files ?? []])
     if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
@@ -583,6 +584,14 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     case "open_page":
       if (!(await actions.open(path))) throw new Error(`${path} could not be opened.`);
       return { message: `Opened ${path}.` };
+    case "frame_image": {
+      const source = await openPage(actions, path, command.expectedHash);
+      const node = parseOutlineId(args.element!)!;
+      const range = locateNativeElementRange(source, node);
+      if (!range || range.tag.name !== "img") throw new Conflict("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
+      const outcome = (await actions.media(command))!;
+      return { ...outcome, result: { ...outcome.result, hash: await hashOf(actions, path) } };
+    }
     case "place_media": {
       const source = await openPage(actions, path, command.expectedHash);
       const node = parseOutlineId(args.element!)!;

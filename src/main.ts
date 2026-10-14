@@ -4579,10 +4579,12 @@ const agentSiteActions: AgentSiteActions = {
     const since = guardedEdits.stamp("repository");
     const place = command.operation === "place_media"
       ? mediaController.preparePlacement({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
+    const frame = command.operation === "frame_image"
+      ? mediaController.prepareFrame({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
     const [media, listing] = await Promise.all([import("./agent-media-actions"), import("./agent-media")]);
     if (!since.holds()) throw new Error("The editor changed branch or revision.");
     const ctx = await mediaController.workspaceContext(listing.isAgentMediaPath);
-    return media.applyAgentMedia(ctx, command, () => place!);
+    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined);
   },
   legacy: applyAgentCommand,
 };

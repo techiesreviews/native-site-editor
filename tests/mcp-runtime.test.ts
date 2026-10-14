@@ -90,7 +90,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
+      "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
       "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
@@ -150,11 +150,11 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const servedMedia = mediaChapter(served);
     assert.ok(servedMedia?.startsWith("## Media\n"));
     assert.equal(servedMedia, mediaChapter(siteConventions));
-    for (const rule of ["adding_settings", "media/images/", "srcset"]) assert.ok(servedMedia.includes(rule));
+    for (const rule of ["adding_settings", "media/images/", "srcset", "### Shape, focus and trims", "frame_image", "whole new trim"]) assert.ok(servedMedia.includes(rule));
     assert.doesNotMatch(servedMedia.slice(1), /^## /m);
-    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings"])
+    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image"])
       assert.match(listing.find(tool => tool.name === name)!.description!, /Media chapter.*native-site:\/\/conventions/);
-    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media, changing collections or reading or changing adding settings/);
+    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media, changing collections, reading or changing adding settings, or using frame_image/);
     assert.ok(chapter.startsWith("## Components\n"));
     assert.doesNotMatch(chapter.slice(1), /^## /m);
     assert.match(chapter, /```html\n<section>[\s\S]*<\/section>\n```$/, "the chapter ends with its example template");
@@ -965,7 +965,7 @@ test("agent media editing tools validate before queueing and retain their comman
     }));
     const call = (name: string, args: Record<string, unknown>) => client!.callTool({ name, arguments: { ...args, waitSeconds: 0 } });
     const tools = (await client.listTools()).tools;
-    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings"]) {
+    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings", "frame_image"]) {
       assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, false);
       assert.match(tools.find(tool => tool.name === name)!.description!, /Unsaved until the user saves.*Media chapter.*native-site:\/\/conventions/);
     }
@@ -979,9 +979,20 @@ test("agent media editing tools validate before queueing and retain their comman
     assert.equal((await call("write_file", { path: "images/new.png", content: "bytes" })).isError, true);
     for (const args of [{ image: "speech" }, { video: "smallest" }, { audio: "smaller" }, { keepOriginal: "true" }, { reset: true, image: "smaller" }, { reset: true, keepOriginal: false }])
       assert.equal((await call("adding_settings", args)).isError, true);
+    for (const args of [
+      { path: "index.css", element: "1" }, { path: "index.html", element: "no" },
+      { path: "index.html", element: "1", shape: "free" },
+      { path: "index.html", element: "1", focus: { x: 101, y: 50 } },
+      { path: "index.html", element: "1", trim: { x: -0.1 } },
+      { path: "index.html", element: "1", trim: { x: 0.8, width: 0.5 } },
+      { path: "index.html", element: "1", trim: {} },
+      { path: "index.html", element: "1", trim: { zoom: 1, turn: 0, flipX: false } },
+    ]) assert.equal((await call("frame_image", args)).isError, true);
     assert.equal((await tab.hub()).commands?.length ?? 0, 0);
-    for (const name of ["describe_media", "change_collection", "adding_settings", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
+    for (const name of ["describe_media", "change_collection", "adding_settings", "frame_image", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
     const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+      ["frame_image", { path: "index.html", element: "1.0" }, "index.html", { element: "1.0" }],
+      ["frame_image", { path: "index.html", element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }, "index.html", { element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }],
       ["adding_settings", {}, "", {}],
       ["adding_settings", { image: "smaller", keepOriginal: true }, "", { image: "smaller", keepOriginal: true }],
       ["adding_settings", { reset: true }, "", { reset: true }],
@@ -1003,6 +1014,10 @@ test("agent media editing tools validate before queueing and retain their comman
         const settings = { image: expected.image ?? "balanced", video: "balanced", audio: "balanced", keepOriginal: expected.keepOriginal ?? false, isDefault: !expected.image, choices: MEDIA_ADDING_CHOICES };
         await tab.ack(id, command.grantId, "applied", { message: "Adding settings read.", result: { report: JSON.stringify(settings) } });
         assert.deepEqual(payload(await call(name, { ...args, requestId: id })).result, settings);
+      } else if (name === "frame_image") {
+        const report = { file: "images/a.png", shape: "original", focus: { x: 50, y: 50 }, trimmed: false };
+        await tab.ack(id, command.grantId, "applied", { message: "Image place read.", result: { report: JSON.stringify(report) } });
+        assert.deepEqual(payload(await call(name, { ...args, requestId: id })).result, report);
       } else await tab.ack(id, command.grantId, "applied");
     }
     assert.equal(payload(await call("write_file", { path: "images/new.svg", content: '<svg xmlns="http://www.w3.org/2000/svg"/>', requestId: "svg-still-text" })).state, "pending");
@@ -1017,7 +1032,8 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   ]);
   const paths = ["index.html", MEDIA_RECORDS_PATH, "images/old.png", file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
   const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
-  const batches: MediaWorkspaceBatch[] = [], history: (() => void)[] = [];
+  const bytes = new Map(paths.filter(path => /\.(png|webp|jpg)$/.test(path)).map(path => [path, new Blob(["picture"], { type: "image/webp" })]));
+  const batches: MediaWorkspaceBatch[] = [], history: (() => void)[] = [], labels: string[] = [];
   let pick: MediaPickerOptions | undefined;
   const module = {
     openMediaPicker: async (options) => { pick = options; }, closeMediaPicker() {},
@@ -1031,15 +1047,26 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
     findEntry: async (path) => paths.includes(path) ? { sha: path } : undefined,
     entry: (path) => paths.includes(path) ? { sha: path } : undefined,
     readText: async (_repo, sha) => text.get(sha) ?? "", rememberSource: (path, source) => { text.set(path, source); },
-    uploadedBlob: async () => undefined, readBlob: async () => new Blob(["picture"]),
+    uploadedBlob: async () => undefined, readBlob: async (_repo, _sha, path) => bytes.get(path)!,
     applyBatch: async (_scope, _stamp, batch) => {
-      const before = new Map(text); batches.push(batch);
+      assert.ok(batch.live?.() ?? true);
+      for (const [path, value] of batch.expectedSources) assert.equal(text.get(path), value);
+      const before = new Map(text), beforeBytes = new Map(bytes), beforePaths = [...paths];
+      batches.push(batch); labels.push(batch.label);
       for (const [path, value] of batch.edits) text.set(path, value);
-      history.push(() => { text.clear(); before.forEach((value, path) => text.set(path, value)); });
+      for (const { path, blob } of batch.uploads) { bytes.set(path, blob); if (!paths.includes(path)) paths.push(path); }
+      for (const path of batch.deletes) { bytes.delete(path); const index = paths.indexOf(path); if (index >= 0) paths.splice(index, 1); }
+      history.push(() => {
+        text.clear(); before.forEach((value, path) => text.set(path, value));
+        bytes.clear(); beforeBytes.forEach((value, path) => bytes.set(path, value));
+        paths.splice(0, paths.length, ...beforePaths);
+      });
     },
     openPage: async () => {}, load: async () => module,
     openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
-    change: (path, source, edits) => {
+    change: (path, source, edits, _node, message) => {
+      const before = text.get(path);
+      history.push(() => { if (before !== undefined) text.set(path, before); }); labels.push(message);
       for (const edit of [...edits].sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
       text.set(path, source); return true;
     },
@@ -1048,10 +1075,10 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
     galleryHost() { throw new Error("No DOM in this source test"); }, galleryVisible: () => false, mediaSelected: () => false, gallerySignature: () => "",
     refreshDescriptions() {}, announce() {}, error(error) { throw error; },
   } satisfies MediaControllerPorts;
-  return { file, text, paths, batches, history, controller: createMediaController(ports), pick: () => pick };
+  return { file, text, paths, bytes, ports, batches, history, labels, controller: createMediaController(ports), pick: () => pick };
 }
 function mediaCommand(operation: AgentCommand["operation"], args: AgentCommand["args"] = {}): AgentCommand {
-  return { id: "media-test", operation, args, path: operation === "place_media" ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
+  return { id: "media-test", operation, args, path: ["place_media", "frame_image"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
 }
 
 test("an agent placement equals the editor's markup for the same place, including picture replacement", async () => {
@@ -1059,11 +1086,16 @@ test("an agent placement equals the editor's markup for the same place, includin
   Object.defineProperty(globalThis, "Image", { configurable: true, value: class {
     src = ""; naturalWidth = 2400; naturalHeight = 1600; async decode() {}
   } });
+  const workerBefore = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: CopiesWorker });
   try {
-    for (const picture of [false, true]) for (const firstScreen of [false, true]) for (const decorative of [false, true]) {
+    for (const older of [false, true]) for (const picture of [false, true]) for (const firstScreen of [false, true]) for (const decorative of [false, true]) {
       const baseSource = picture ? '<section><picture><source srcset="/images/old.png"><img class="hero" src="/images/old.png" alt="Old"></picture></section>' : '<section><img src="/images/old.png" alt="Old"></section>';
       const source = decorative ? baseSource.replace('alt="Old"', 'alt=""') : baseSource;
       const editor = agentMediaFixture(source, firstScreen), agent = agentMediaFixture(source, firstScreen);
+      if (older) for (const fixture of [editor, agent]) {
+        fixture.paths.splice(fixture.paths.indexOf("media/images/photo-480.webp"), 3);
+      }
       if (decorative) for (const fixture of [editor, agent]) {
         const records = parseMediaRecords(fixture.text.get(MEDIA_RECORDS_PATH));
         records.files["images/old.png"].places = { "index.html": { decorative: true } };
@@ -1075,10 +1107,15 @@ test("an agent placement equals the editor's markup for the same place, includin
       await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("place_media", { file: agent.file, element: node.join(".") }), target => agent.controller.preparePlacement(target));
       assert.deepEqual(agent.text, editor.text);
       const placed = agent.text.get("index.html")!;
-      assert.match(placed, /srcset="\/media\/images\/photo-480.webp 480w, \/media\/images\/photo-960.webp 960w, \/media\/images\/photo.webp 2400w"/);
+      assert.ok(placed.includes(`srcset="/media/images/photo-480.webp 480w, /media/images/photo-960.webp 960w, ${older ? "/media/images/photo-1600.webp 1600w, " : ""}/media/images/photo.webp 2400w"`));
       assert.ok(placed.includes(`sizes="${firstScreen ? "" : "auto, "}(max-width: 600px) 100vw, 600px"`));
       assert.match(placed, /width="2400"/); assert.match(placed, /height="1600"/); assert.match(placed, /decoding="async"/); assert.match(placed, decorative ? /alt=""/ : /alt="Photo"/);
-      assert.equal(agent.batches.length, decorative ? 1 : 0);
+      assert.equal(agent.batches.length, decorative || older ? 1 : 0);
+      if (older) {
+        assert.deepEqual(agent.batches[0].uploads.map(upload => upload.path), ["media/images/photo-480.webp", "media/images/photo-960.webp", "media/images/photo-1600.webp"]);
+        assert.deepEqual(agent.batches[0].uploads, editor.batches[0].uploads);
+        assert.equal(agent.history.length, 1);
+      }
       if (decorative) assert.deepEqual({ ...parseMediaRecords(agent.text.get(MEDIA_RECORDS_PATH)).files[agent.file].places }, { "index.html": { decorative: true } });
       if (firstScreen) { assert.match(placed, /fetchpriority="high"/); assert.doesNotMatch(placed, /loading="lazy"/); }
       else { assert.match(placed, /loading="lazy"/); assert.doesNotMatch(placed, /fetchpriority/); }
@@ -1086,6 +1123,7 @@ test("an agent placement equals the editor's markup for the same place, includin
     }
   } finally {
     if (before) Object.defineProperty(globalThis, "Image", before); else Reflect.deleteProperty(globalThis, "Image");
+    if (workerBefore) Object.defineProperty(globalThis, "Worker", workerBefore); else Reflect.deleteProperty(globalThis, "Worker");
   }
 });
 
@@ -1117,4 +1155,149 @@ test("the tab reads, changes and resets adding settings with agent labels and no
   assert.equal(unreadable.isDefault, true); assert.match(unreadable.note, /unreadable/);
   await assert.rejects(apply({ image: "smaller" }), /media.json/);
   assert.equal(f.batches.length, 2);
+});
+
+class CopiesWorker {
+  onmessage?: (event: { data: { result: import("../src/page-builder/media-optimise").MediaOptimiseResult } }) => void;
+  postMessage(message: { copies: { widths: number[] } }) {
+    queueMicrotask(() => this.onmessage?.({ data: { result: { before: 100, after: 30,
+      outputs: message.copies.widths.map(width => ({ blob: new Blob(["copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width / 2 })) } } }));
+  }
+  terminate() {}
+}
+
+test("agent shape and focus use exactly the popup's framing and one page-only Undo step", async () => {
+  const { framePlace } = await import("../src/page-builder/place-frame");
+  for (const change of [
+    { shape: "square" as const, focus: { x: 20, y: 80 } },
+    { focus: { x: 75, y: 25 } }, { shape: "original" as const },
+  ]) {
+    const source = '<section><img src="/media/images/photo.webp" alt="Photo" width="2400" height="1600" srcset="/media/images/photo-480.webp 480w, /media/images/photo.webp 2400w" sizes="auto, 100vw" style="color:red; aspect-ratio:4/3;object-fit:cover;object-position:10% 40%"></section>';
+    const popup = agentMediaFixture(source, true), agent = agentMediaFixture(source, true);
+    const target = { path: "index.html", node: [0, 0] };
+    const expected = source.slice(source.indexOf("<img"), source.indexOf(">", source.indexOf("<img")) + 1);
+    const beforeRecords = agent.text.get(MEDIA_RECORDS_PATH);
+    await framePlace(popup.ports, target, change, { stamp: popup.ports.stamp(), epoch: 1, source, expected });
+    await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0", ...change }),
+      target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
+    assert.equal(agent.text.get("index.html"), popup.text.get("index.html"));
+    assert.equal(agent.text.get(MEDIA_RECORDS_PATH), beforeRecords);
+    assert.equal(agent.batches.length, 0); assert.equal(agent.history.length, 1);
+    assert.equal(agent.labels[0], change.shape !== undefined ? "Image shape changed" : "Focus point moved");
+    agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
+  }
+});
+
+test("agent trims and re-crops original bytes in one batch with copies, records and Undo; read reports provenance", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  const requests: { file: File; trim: import("../shared/media-records").MediaTrim; options: { quality: number } }[] = [];
+  class Worker {
+    onmessage?: (event: { data: { result: import("../src/page-builder/media-optimise").MediaOptimiseResult } }) => void;
+    postMessage(message: typeof requests[number]) {
+      requests.push(message);
+      queueMicrotask(() => this.onmessage?.({ data: { result: { before: 100, after: 30,
+        outputs: [{ blob: new Blob(["trim"], { type: "image/webp" }), extension: "webp", width: 1800, height: 1200 },
+          ...[480, 960, 1600].map(width => ({ blob: new Blob(["copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width * 2 / 3 }))] } } }));
+    }
+    terminate() {}
+  }
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: Worker });
+  try {
+    const source = '<section><picture><source srcset="/media/images/photo.webp"><img src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:4/3;object-fit:cover;object-position:20% 70%"></picture><img src="/media/images/photo.webp" alt="Photo"></section>';
+    const f = agentMediaFixture(source, true), original = f.bytes.get(f.file)!;
+    const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)); records.adding = { image: "smaller" };
+    f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+    const originalRecord = structuredClone(records.files[f.file]);
+    const apply = async (element: string, args: AgentCommand["args"] = {}) =>
+      applyAgentMedia(await f.controller.workspaceContext(), mediaCommand("frame_image", { element, ...args }),
+        target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target));
+    const initial = await apply("0.0.1");
+    assert.deepEqual(JSON.parse(initial!.result.report), { file: f.file, shape: "4:3", focus: { x: 20, y: 70 }, trimmed: false });
+    assert.equal(f.history.length, 0);
+    const first = await apply("0.0.1", { trim: { zoom: 2 } });
+    const crop = first!.result.path;
+    assert.equal(crop, "media/images/photo-crop.webp"); assert.match(first!.message, /photo-crop.webp/);
+    assert.equal(requests[0].file.name, "photo.webp"); assert.equal(requests[0].options.quality, 70);
+    assert.equal(await requests[0].file.text(), await original.text());
+    assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Picture trimmed"); assert.equal(f.history.length, 1);
+    assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), [crop, ...[480, 960, 1600].map(width => `media/images/photo-crop-${width}.webp`)]);
+    const page = f.text.get("index.html")!;
+    assert.doesNotMatch(page, /<picture|<source/);
+    assert.match(page, /src="\/media\/images\/photo-crop.webp"/);
+    assert.match(page, /srcset="\/media\/images\/photo-crop-480.webp 480w, \/media\/images\/photo-crop-960.webp 960w, \/media\/images\/photo-crop-1600.webp 1600w, \/media\/images\/photo-crop.webp 1800w"/);
+    assert.match(page, /width="1800"/); assert.match(page, /height="1200"/); assert.match(page, /fetchpriority="high"/);
+    assert.match(page, /style="aspect-ratio:4\/3;object-fit:cover;object-position:20% 70%"/);
+    assert.match(page, /<img src="\/media\/images\/photo.webp" alt="Photo">/);
+    const saved = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+    assert.deepEqual(saved.files[crop].trimmedFrom, { source: f.file, trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } });
+    assert.deepEqual(saved.files[f.file], originalRecord); assert.equal(f.bytes.get(f.file), original);
+    const read = JSON.parse((await apply("0.0"))!.result.report);
+    assert.deepEqual(read, { file: crop, shape: "4:3", focus: { x: 20, y: 70 }, trimmed: true, source: f.file, trim: saved.files[crop].trimmedFrom!.trim });
+    const second = await apply("0.0", { trim: { zoom: 4, turn: 90 }, shape: "square", focus: { x: 30, y: 60 } });
+    assert.equal(second!.result.path, "media/images/photo-crop-2.webp");
+    assert.equal(requests[1].file.name, "photo.webp"); assert.equal(await requests[1].file.text(), await original.text());
+    assert.deepEqual(requests[1].trim, { x: 0.375, y: 0.375, width: 0.25, height: 0.25, turn: 90 });
+    assert.deepEqual(f.batches[1].deletes, [crop, ...[480, 960, 1600].map(width => `media/images/photo-crop-${width}.webp`)]);
+    assert.match(f.text.get("index.html")!, /aspect-ratio: 1 \/ 1/); assert.match(f.text.get("index.html")!, /object-position: 30% 60%/);
+    assert.equal(f.history.length, 2);
+    f.history.pop()!(); assert.equal(f.text.get("index.html"), page); assert.ok(f.bytes.has(crop));
+    f.history.pop()!(); assert.equal(f.text.get("index.html"), source); assert.equal(f.bytes.get(f.file), original); assert.ok(!f.bytes.has(crop));
+  } finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
+});
+
+test("trim place refuses stale proofs, records, originals, old versions and component templates without saving", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  let during: () => void = () => {}, error: string | undefined;
+  class Worker {
+    onmessage?: (event: { data: { error?: string; result?: import("../src/page-builder/media-optimise").MediaOptimiseResult } }) => void;
+    postMessage() {
+      queueMicrotask(() => {
+        during();
+        this.onmessage?.({ data: error ? { error } : { result: { before: 10, after: 4,
+          outputs: [{ blob: new Blob(["trim"], { type: "image/webp" }), extension: "webp", width: 800, height: 600 }] } } });
+      });
+    }
+    terminate() {}
+  }
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: Worker });
+  try {
+    const setup = () => agentMediaFixture('<section><img src="/media/images/photo.webp" alt="Photo"></section>');
+    for (const race of ["read", "page", "records", "source", "version", "branch"] as const) {
+      const f = setup(), prepared = f.controller.prepareFrame({ path: "index.html", node: [0, 0] });
+      if (race === "read") {
+        f.ports.readBlob = async (_repo, _sha, path) => { f.ports.entry = path => ({ sha: path + "-changed" }); return f.bytes.get(path)!; };
+      }
+      during = () => {
+        if (race === "page") f.text.set("index.html", f.text.get("index.html")!.replace("Photo", "Changed"));
+        if (race === "records") f.text.set(MEDIA_RECORDS_PATH, '{"version":2,"files":{},"collections":[]}');
+        if (race === "source") f.ports.entry = path => ({ sha: path + "-changed" });
+        if (race === "version") f.ports.viewingVersion = () => true;
+        if (race === "branch") f.ports.stamp = () => ({ holds: () => false, changed: () => undefined });
+      };
+      // Captured stamps, not a freshly returned stamp, must be checked.
+      if (race === "branch") {
+        let live = true;
+        f.ports.stamp = () => ({ holds: () => live, changed: () => undefined });
+        const place = f.controller.prepareFrame({ path: "index.html", node: [0, 0] });
+        during = () => { live = false; };
+        await assert.rejects(place.trim({ trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } }), /changed|Nothing was saved/);
+      } else await assert.rejects(prepared.trim({ trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } }), /changed|Nothing was saved/);
+      assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
+    }
+    during = () => {};
+    for (const refusal of ["Animated pictures cannot be trimmed. Use a still picture.", "This picture cannot be trimmed. Use a still raster picture.", "A trimmed copy cannot keep the original bytes."]) {
+      const f = setup(); error = refusal;
+      await assert.rejects(f.controller.prepareFrame({ path: "index.html", node: [0, 0] }).trim({ trim: { x: 0, y: 0, width: 0.5, height: 1 } }), { message: refusal });
+      assert.equal(f.batches.length, 0);
+    }
+    error = undefined;
+    const f = setup();
+    const place = f.controller.prepareFrame({ path: "index.html", node: [0, 0] });
+    await assert.rejects(place.trim({ trim: { x: 0, y: 0, width: 1, height: 1 } }), /Nothing to trim/);
+    f.text.set(MEDIA_RECORDS_PATH, "{");
+    await assert.rejects(place.trim({ trim: { x: 0, y: 0, width: 0.5, height: 1 } }), /media.json/);
+    f.text.set("components/card/card.html", f.text.get("index.html")!);
+    await assert.rejects(f.controller.prepareFrame({ path: "components/card/card.html", node: [0, 0] }).trim({ trim: { x: 0, y: 0, width: 0.5, height: 1 } }), /component template/);
+    assert.equal(f.batches.length, 0);
+  } finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
 });

@@ -1,3 +1,6 @@
+import { agentMediaArgsProblem } from "../shared/agent-media-args";
+import { agentImageTrim } from "../shared/agent-image-frame";
+import type { createMediaController } from "./controllers/media-controller";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId, type AgentCommand } from "../shared/agent";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
@@ -10,8 +13,27 @@ import { mediaImageForPlacement, type MediaImage } from "./page-builder/media-ma
 export async function applyAgentMedia(
   ctx: MediaWorkspaceContext, command: AgentCommand,
   preparePlacement: (target: { path: string; node: number[] }) => (image: MediaImage, asset?: { path: string; version?: string }) => Promise<void>,
-) {
+  prepareFrame?: ReturnType<typeof createMediaController>["prepareFrame"],
+): Promise<void | { message: string; result: Record<string, string> }> {
   const args = command.args ?? {};
+  const problem = agentMediaArgsProblem(command.operation, args, command.path);
+  if (problem) throw new Error(problem);
+  if (command.operation === "frame_image") {
+    if (!prepareFrame) throw new Error("Image framing is unavailable.");
+    const place = prepareFrame({ path: command.path, node: parseOutlineId(args.element!)! });
+    const frame = { ...(args.shape !== undefined ? { shape: args.shape } : {}), ...(args.focus !== undefined ? { focus: args.focus } : {}) };
+    if (args.trim !== undefined) {
+      const path = await place.trim({ trim: agentImageTrim(args.trim), ...(Object.keys(frame).length ? { frame } : {}) });
+      return { message: `Picture trimmed: ${path}, unsaved.`, result: { path: path! } };
+    }
+    if (Object.keys(frame).length) {
+      await place.frame(frame);
+      return { message: args.shape !== undefined ? "Image shape changed, unsaved." : "Focus point moved, unsaved.", result: {} };
+    }
+    const metadata = await ctx.read(MEDIA_RECORDS_PATH); ctx.assertLive();
+    const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
+    return { message: "Image place read.", result: { report: JSON.stringify(await place.read(records)) } };
+  }
   if (command.operation === "place_media") {
     const file = args.file!;
     if (!ctx.items.some(item => item.path === file)) throw new Error(OUTSIDE_MEDIA_REFUSED);

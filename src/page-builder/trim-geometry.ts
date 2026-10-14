@@ -1,4 +1,6 @@
 import type { MediaTrim } from "../../shared/media-records";
+import { validTrim } from "../../shared/media-trim";
+export { validTrim, isTrim } from "../../shared/media-trim";
 
 /**
  * Trim coordinates are fractions of the turned frame, independent of source pixel size.
@@ -8,25 +10,6 @@ import type { MediaTrim } from "../../shared/media-records";
  * smaller rectangle. Output dimensions round to pixels, with a minimum of one pixel.
  * The matrix uses canvas setTransform order and draws the source bitmap at (0, 0).
  */
-const TOLERANCE = 1e-9;
-export function validTrim(trim: MediaTrim): boolean {
-  if (!trim || ![trim.x, trim.y, trim.width, trim.height, trim.straighten ?? 0].every(Number.isFinite))
-    throw new Error("The trim must contain finite numbers.");
-  if (trim.width <= 0 || trim.height <= 0) throw new Error("The trim must have a positive width and height.");
-  if (trim.x < -TOLERANCE || trim.y < -TOLERANCE || trim.x + trim.width > 1 + TOLERANCE || trim.y + trim.height > 1 + TOLERANCE)
-    throw new Error("The trim must stay inside the picture, between 0 and 1.");
-  if (![0, 90, 180, 270].includes(trim.turn ?? 0)) throw new Error("Turn the picture by 0, 90, 180 or 270 degrees.");
-  if (Math.abs(trim.straighten ?? 0) > 45) throw new Error("Straighten must be between -45 and 45 degrees.");
-  if ([trim.flipX, trim.flipY].some(value => value !== undefined && typeof value !== "boolean"))
-    throw new Error("Picture flips must be booleans.");
-  return true;
-}
-export function isTrim(trim: MediaTrim): boolean {
-  validTrim(trim);
-  return Math.abs(trim.x) > TOLERANCE || Math.abs(trim.y) > TOLERANCE ||
-    Math.abs(trim.width - 1) > TOLERANCE || Math.abs(trim.height - 1) > TOLERANCE ||
-    Boolean(trim.turn || trim.straighten || trim.flipX || trim.flipY);
-}
 type Matrix = [number, number, number, number, number, number];
 const multiply = ([a, b, c, d, e, f]: Matrix, [g, h, i, j, k, l]: Matrix): Matrix =>
   [a * g + c * h, b * g + d * h, a * i + c * j, b * i + d * j, a * k + c * l + e, b * k + d * l + f];

@@ -1,4 +1,5 @@
-import { agentMediaArgsProblem, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, agentResultLimit, type AgentCommand } from "../shared/agent";
+import { agentMediaArgsProblem } from "../shared/agent-media-args";
+import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, agentResultLimit, type AgentCommand } from "../shared/agent";
 import type { AgentHub, HubGrant } from "./agent-context";
 import type { EditorContext } from "../shared/types";
 import { HttpError } from "./github";
@@ -55,7 +56,7 @@ export function agentOperation(hub: AgentHub, action: any) {
     if (["write_file", "move_file", "delete_file"].includes(command.operation) &&
       [command.path, command.args?.to, command.args?.parent].some((path) => typeof path === "string" && touchesMediaRecords(path)))
       throw new HttpError(403, MEDIA_RECORDS_REFUSED);
-    const problem = agentMediaArgsProblem(command.operation, command.args ?? {});
+    const problem = agentMediaArgsProblem(command.operation, command.args ?? {}, command.path);
     if (problem) throw new HttpError(400, problem);
     if (command.operation === "write_file" && isMediaUploadWrite(command.path)) throw new HttpError(403, OUTSIDE_MEDIA_REFUSED);
     if ([command.args?.file, ...command.args?.files ?? []].some(path => typeof path === "string" && touchesMediaRecords(path))) throw new HttpError(403, MEDIA_RECORDS_REFUSED);

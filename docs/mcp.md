@@ -58,7 +58,7 @@ An agent watches for requests with `wait_for_requests` (the `watch_editor` promp
 
 ## Tools
 
-The server exposes 27 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
+The server exposes 28 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
 
 For listing, previewing, placing or describing media, changing collections and reading or changing adding settings, follow the Media chapter of `native-site://conventions`.
 
@@ -68,6 +68,7 @@ For listing, previewing, placing or describing media, changing collections and r
 | `list_files` | Every file path (optionally under a folder), with drafts applied and marked. |
 | `list_media` | Media families with kind, size, copies and originals, page and other uses, description (by agent or Decorative), collections, Always keep, drafts and Not checked yet. Page with `offset`/`limit` (default 100, maximum 200) and `nextOffset`; answered by the open tab. |
 | `preview_media` | A picture preview at most 512 px on its longest side, with original and preview dimensions and encoded bytes; pictures only, with a clear refusal for documents, video and audio. Answered by the open tab. |
+| `frame_image` | `path, element`, optional `shape` (original, square, 4:3, 16:9, 4:5), `focus {x, y}` in percent and `trim {x, y, width, height, zoom, turn, flipX, flipY, straighten}` relative to the original. With none of them it reads the place's file, shape, focus and trim. Shape and focus change only that place; a trim saves a Trimmed copy (`-crop`) from the site's own picture for that place. One unsaved Undo step. |
 | `place_media` | `path, element, file`: fill an existing page image with a file from Media, using the picker's markup and description rules. One unsaved Undo step. |
 | `describe_media` | `file` and exactly one of `text` / `decorative`; optional `page, element` for a place. Agent words carry the by-agent mark and appear in To check. One unsaved Undo step. |
 | `change_collection` | `action: new, add, take-out, rename, delete`, `name`, optional `to, files`. Uses Media's collection rules; taken names refuse, delete keeps files. One unsaved Undo step, even without a page open. |

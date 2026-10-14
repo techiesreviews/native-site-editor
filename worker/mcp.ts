@@ -17,9 +17,10 @@ import {
 } from "./agent-context";
 import { contextMaxAge } from "./agent-operations";
 import type { Env } from "./app";
+import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import {
   AGENT_TEXT_LIMIT,
-  agentMediaArgsProblem, isOutsideMediaAddress, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED,
+  isOutsideMediaAddress, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED,
   isPreviewablePicture,
   picturePreviewRefusal,
   QUESTION_TEXT_LIMIT,
@@ -302,7 +303,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   // An inspection's report arrives as JSON; the agent gets it as an object.
   function resultOf(command: AgentCommand) {
     const report = command.result?.report;
-    if (!["inspect_preview", "list_media", "adding_settings"].includes(command.operation) || typeof report !== "string") return command.result;
+    if (!["inspect_preview", "list_media", "adding_settings", "frame_image"].includes(command.operation) || typeof report !== "string") return command.result;
     try {
       return JSON.parse(report);
     } catch {
@@ -736,6 +737,28 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
 
   const mediaPath = z.string().min(1).max(1024);
+  server.registerTool("frame_image", {
+    description: "Read an image place's shape, focus and trim, or change them. Trim makes a copy from the site's own picture for this place. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({
+      path: mediaPath, element: mediaPath,
+      shape: z.enum(["original", "square", "4:3", "16:9", "4:5"]).optional(),
+      focus: z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }).optional(),
+      trim: z.object({
+        x: z.number().min(0).max(1).optional(), y: z.number().min(0).max(1).optional(),
+        width: z.number().positive().max(1).optional(), height: z.number().positive().max(1).optional(),
+        zoom: z.number().min(1).max(8).optional(), turn: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
+        flipX: z.boolean().optional(), flipY: z.boolean().optional(), straighten: z.number().min(-45).max(45).optional(),
+      }).optional(), requestId, waitSeconds,
+    }),
+    annotations: editing,
+  }, async ({ path, element, shape, focus, trim, requestId, waitSeconds }) => {
+    const args = { element, shape, focus, trim };
+    const problem = writablePathProblem(path) ?? agentMediaArgsProblem("frame_image", args, path);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("frame_image", context, { path, args, requestId, waitSeconds });
+  });
+
   server.registerTool("place_media", {
     description: "Place a file already in Media into an existing image element on a page. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ path: mediaPath, element: mediaPath, file: mediaPath, requestId, waitSeconds }),

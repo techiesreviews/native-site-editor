@@ -318,6 +318,28 @@ export function createMediaController(ports: MediaControllerPorts) {
     };
   }
 
+  function prepareFrame(target: { path: string; node: number[] }) {
+    const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
+    const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
+    if (!range || range.tag.name !== "img" || source === undefined) throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
+    const expected = source.slice(range.tag.start, range.tag.end), proof = { stamp, epoch, source, expected };
+    return {
+      async read(records?: import("../../shared/media-records").MediaRecords) {
+        const { readPlaceFrame } = await import("../page-builder/place-frame");
+        if (!stamp.holds() || ports.viewingVersion() || ports.source(target.path) !== source) throw new Error("This image changed. Select it again.");
+        return readPlaceFrame(expected, records, target.path);
+      },
+      async frame(change: import("../page-builder/place-frame").PlaceFrameChange) {
+        const { framePlace } = await import("../page-builder/place-frame");
+        await framePlace(ports, target, change, proof);
+      },
+      async trim(request: import("../page-builder/place-trim").PlaceTrimRequest) {
+        const { trimPlace } = await import("../page-builder/place-trim");
+        return trimPlace(ports, workspaceContext, target, request, proof);
+      },
+    };
+  }
+
   // The Image button's badge and popup (slice 39) load with the first image selected.
   let popups: ReturnType<typeof import("../page-builder/image-popups")["createImagePopups"]> | undefined;
   let popupsLoading: Promise<void> | undefined;
@@ -422,6 +444,6 @@ export function createMediaController(ports: MediaControllerPorts) {
     },
     shareImage: async (request: import("../page-builder/social-sharing").SocialSharingRequest) =>
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
-    workspaceContext, preparePlacement, chooseImage, choosePath, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareFrame, chooseImage, choosePath, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

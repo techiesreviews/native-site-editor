@@ -1,10 +1,9 @@
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { Stamp } from "../guarded-edit";
 import type { MediaWorkspaceContext } from "./media-workspace";
-import { mediaImageMarkup, mediaAttributes, mediaPictureUnwrap, type MediaMeasured, type MediaImage } from "./media-markup";
-import { mediaPageEdits } from "./media-page-markup";
+import type { MediaMeasured, MediaImage } from "./media-markup";
+import { mediaPlaceSwap } from "./media-place-swap";
 import type { MediaHeldFiles } from "./media-picker";
-import { readSource } from "./source-tree";
 import { locateNativeElementRange } from "../native-source-location";
 import type { PlaceFrameChange } from "./place-frame";
 
@@ -64,22 +63,9 @@ export async function placeMediaImage(
   const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
   // New copies were made from this revision of the main: a newer one refuses the whole step.
   if (copies?.uploads.length && !expectedAssets.has(image.path)) expectedAssets.set(image.path, mainVersion);
-  const parentNode = target.node.slice(0, -1), parent = locate(latest, parentNode);
-  const tree = parent?.tag.name === "picture" ? readSource(latest) : undefined;
-  const picture = tree?.elements().find(element => element.type === "element" && element.tag.start === parent!.tag.start);
-  const unwrap = mediaPictureUnwrap(latest, { start: range.tag.start, end: range.tag.end }, picture && tree!.range(picture));
-  const next = unwrap ? parentNode : target.node;
-  const note = (unwrap?.artDirected ? " The new picture is now used on all screens." : "") + copyNote;
-  const pageRules = mediaPageEdits(latest, measured, target.node, locate);
-  // Page places use the rules below; picker alt defaults belong to component and settings fields.
-  const swap = (alt: string | undefined, picked = image) => {
-    let markup = framed(mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, pageRules.placement, alt === undefined));
-    if (unwrap?.slot !== undefined) markup = mediaAttributes(markup, { slot: unwrap.slot });
-    const edits = [...pageRules.edits, ...(unwrap?.edits ?? []), { start: range.tag.start, end: range.tag.end, text: markup }];
-    let page = latest;
-    for (const edit of edits.sort((a, b) => b.start - a.start)) page = page.slice(0, edit.start) + edit.text + page.slice(edit.end);
-    return { markup, page, edits };
-  };
+  const placement = mediaPlaceSwap(latest, target, expected, image, measured, locate, framed);
+  const { swap, next } = placement;
+  const note = placement.note + copyNote;
   // Files added in the picker are saved with the placement and its records: one Undo step.
   if (held) {
     if (cancelled()) return;
