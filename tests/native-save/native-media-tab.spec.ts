@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { storedDraft } from "./drafts";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 async function open(page: Page, baseURL: string | undefined) {
@@ -126,8 +127,7 @@ test("image slot keeps its chooser modal while manager query survives", async ({
   await open(page, baseURL); await pane(page).getByLabel("Search media", { exact: true }).fill("studio-desk");
   await page.keyboard.press("Escape");
   await expect(page.locator("#explorer")).not.toBeVisible();
-  const frame = page.frameLocator(".native-preview-frame"); await frame.locator(".hero-image").click({ timeout: 10000 });
-  await page.getByRole("button", { name: "Choose image…", exact: true }).click({ timeout: 10000 });
+  const frame = page.frameLocator(".native-preview-frame"); await openPickerOn(page, frame.locator(".hero-image"));
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true }); await expect(chooser).toBeVisible();
   await chooser.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click({ timeout: 10000 });
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();

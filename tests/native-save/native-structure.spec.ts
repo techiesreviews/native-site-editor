@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 
 // The edit bar's section icons (move, duplicate, remove), image Address and
 // Alt text, and the accessibility fields that come with a selection.
@@ -96,12 +97,13 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await expect(page.locator("#status")).toHaveText("Alt text updated");
   await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
 
-  // Choose image… opens the repository's images; using one replaces the
+  // A double-click on the image opens the repository's images (the bar's Image
+  // button opens the image popup, native-image-popup.spec.ts); using one replaces the
   // image in the source as one step. (The bar's old Address field for an
   // image is gone, so a web address is no longer typed here.)
   await expect(bar(page).getByRole("button", { name: "Replace" })).toHaveCount(0);
   await expect(bar(page).getByRole("button", { name: "Address" })).toHaveCount(0);
-  await bar(page).getByRole("button", { name: "Choose image…" }).click();
+  await openPickerOn(page, image);
   const chooser = page.getByRole("dialog", { name: "Choose image" });
   await chooser.getByRole("button", { name: "Choose images/studio-desk.svg" }).click();
   await chooser.getByRole("button", { name: "Use image" }).click();
@@ -117,11 +119,11 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/studio-desk.svg" data-key="hero-image" alt="A sketch on the desk"`);
   // The place's own words stay as written through each replacement.
-  await bar(page).getByRole("button", { name: "Choose image…" }).click();
+  await openPickerOn(page, image);
   await chooser.getByRole("button", { name: "Choose images/placeholder.svg" }).click();
   await chooser.getByRole("button", { name: "Use image" }).click();
   await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/placeholder.svg" data-key="hero-image" alt="A sketch on the desk"`);
-  await bar(page).getByRole("button", { name: "Choose image…" }).click();
+  await openPickerOn(page, image);
   await chooser.getByRole("button", { name: "Choose images/studio-desk.svg" }).click();
   await chooser.getByRole("button", { name: "Use image" }).click();
   await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/studio-desk.svg" data-key="hero-image" alt="A sketch on the desk"`);
@@ -133,7 +135,7 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toBeVisible();
   await expect(bar(page).getByRole("button", { name: "Decorative", exact: true })).toHaveAttribute("aria-pressed", "false");
   // An empty alt stays empty through a replacement.
-  await bar(page).getByRole("button", { name: "Choose image…" }).click();
+  await openPickerOn(page, image);
   await chooser.getByRole("button", { name: "Choose images/placeholder.svg" }).click();
   await chooser.getByRole("button", { name: "Use image" }).click();
   await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/placeholder.svg" data-key="hero-image" alt=""`);

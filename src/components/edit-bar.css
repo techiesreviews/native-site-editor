@@ -248,6 +248,20 @@
   display: block;
   flex: none;
 }
+/* The Image button's state ("Square", "Trimmed"). */
+.edit-bar__badge {
+  margin-left: 2px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--hover);
+  font-size: var(--type-badge);
+  font-weight: 600;
+  line-height: 1.2;
+}
+.edit-bar__image[aria-expanded="true"] .edit-bar__badge {
+  background: color-mix(in oklch, var(--on-pressed) 24%, transparent);
+}
+.edit-bar__image[aria-expanded="true"],
 .edit-bar__address[aria-expanded="true"] {
   background: var(--pressed);
   color: var(--on-pressed);

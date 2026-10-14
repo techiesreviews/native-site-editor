@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { publishButton, showPublish } from "./publish";
 
 // Uploading images and other binary files (src/uploads.ts): the Media
@@ -57,7 +58,7 @@ async function editorText(page: Page) {
 async function openChooser(page: Page) {
   await frame(page).locator(".hero img").click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
-  await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, frame(page).locator(".hero img"));
   await expect(chooser(page)).toBeVisible();
   await expect(chooser(page).getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");

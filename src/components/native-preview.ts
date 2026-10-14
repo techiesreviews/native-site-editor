@@ -1170,8 +1170,19 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       if (!answer) throw new Error("The preview did not answer the image measurement.");
       if ("error" in answer.report) throw new Error(answer.report.error);
       const result = imageResult(answer.report.facts);
-      return { ...result, large: answer.report.large ?? result.large, images: answer.report.images ?? [] };
+      const boxes = answer.report.facts.map(({ viewport, width, height, fit }) => ({ viewport, width, height, fit }));
+      return { ...result, boxes, large: answer.report.large ?? result.large, images: answer.report.images ?? [] };
     },
+    /** The image popup's shape, focus or picture on the page before Done; no look drops it. */
+    imageLook(request: NativeNodeRequest, look?: { style?: string; src?: string }) {
+      if (frameState.active) link.send({ type: "image-look", request: look ? request : null, look });
+    },
+    /** The selection's box in the window, while the edit bar shows it. */
+    selectionBox() {
+      const at = editBar.selection(), box = frame.getBoundingClientRect();
+      return at && { top: box.top + at.top, left: box.left + at.left, bottom: box.top + at.bottom, right: box.left + at.right };
+    },
+    scrollBy(dy: number) { link.send({ type: "scroll-by", dy }); },
     /** Ends typing as Escape does: true once the runtime answered (after any text edit it posted). */
     finishTyping,
     /** The selection's container is selected (Escape on the block rail); above the top, nothing. */

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 
 // Choosing a replacement image is refused when the page's source changed
 // while the picker was open; nothing is written, and the edit made meanwhile
@@ -11,8 +12,7 @@ test("a source change while the picker is open refuses the replacement", async (
   await expect(frame(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
   const start = await source(page);
-  await frame(page).locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…" }).click();
+  await openPickerOn(page, frame(page).locator(".hero img"));
   const chooser = page.getByRole("dialog", { name: "Choose image" });
   await chooser.getByRole("button", { name: "Choose images/studio-desk.svg" }).click();
   // The image's own tag changes under the open picker.

@@ -73,6 +73,8 @@ export type HostMessage =
   | Host<"update", { id: number; payload: UpdatePayload }>
   | Host<"drop-probe", { id: number; x: number; y: number; moving: number[] | undefined; bands: boolean | undefined }>
   | Host<"patch-text", PatchText>
+  // The image popup's look shown before Done; `look` undefined drops it.
+  | Host<"image-look", { request: NativeNodeRequest | null; look?: { style?: string; src?: string } }>
   | Host<"finish-typing", { id: number }>
   | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>

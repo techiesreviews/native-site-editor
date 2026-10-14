@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { storedDraft } from "./drafts";
 
 async function open(page: Page, baseURL: string | undefined) {
@@ -325,8 +326,7 @@ test("renaming an image family keeps responsive copies when placing it on a page
     await expect.poll(async () => (await storedDraft(page, `images/garden-family-${width}w.svg`))?.movedFrom).toBe(`images/studio-desk-${width}w.svg`);
   }
   await closeLibrary(page);
-  await page.frameLocator(".native-preview-frame").locator(".hero-image").click();
-  await page.getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero-image"));
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
   await chooser.getByRole("button", { name: "Choose images/garden-family.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();

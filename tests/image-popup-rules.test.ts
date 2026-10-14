@@ -1,0 +1,117 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placeBadge, placePopup, popupMessage,
+  pictureHint, replaceNotice, shapeLabel, shapeRatio, sheetScroll, visibleArea,
+} from "../src/page-builder/image-popup-rules";
+import { writePlaceFrame } from "../src/page-builder/place-frame";
+import type { MediaRecords } from "../shared/media-records";
+
+test("the shape menu lists the prototype's shapes in order; Free waits for trimmed copies", () => {
+  assert.deepEqual(POPUP_SHAPES.map(shape => shape.label), ["Original", "Square", "4:3", "16:9", "Tall 4:5"]);
+  assert.equal(shapeLabel("4:5"), "Tall 4:5");
+  assert.equal(shapeLabel({ kind: "other", value: " 3 / 2 " }), "Custom (3 / 2)");
+});
+
+test("shape ratios: Original has none, a hand-written ratio is read, nonsense is none", () => {
+  assert.equal(shapeRatio("original"), undefined);
+  assert.equal(shapeRatio("square"), 1);
+  assert.equal(shapeRatio("16:9"), 16 / 9);
+  assert.equal(shapeRatio({ kind: "other", value: "3 / 2" }), 1.5);
+  assert.equal(shapeRatio({ kind: "other", value: "2" }), 2);
+  assert.equal(shapeRatio({ kind: "other", value: "auto" }), undefined);
+  assert.equal(focusApplies("original"), false);
+  assert.equal(focusApplies("4:3"), true);
+});
+
+test("the badge says Trimmed for a trimmed copy, else the shape", () => {
+  assert.equal(frameBadge({ shape: "original", trimmed: false }), "Original");
+  assert.equal(frameBadge({ shape: "square", trimmed: false }), "Square");
+  assert.equal(frameBadge({ shape: { kind: "other", value: "3 / 2" }, trimmed: false }), "Custom");
+  assert.equal(frameBadge({ shape: "square", trimmed: true }), "Trimmed");
+  const tag = writePlaceFrame('<img src="/media/desk-crop.webp">', { shape: "16:9" });
+  assert.equal(placeBadge(tag, undefined, "index.html"), "16:9");
+  const records = { version: 2, collections: [], files: { "media/desk-crop.webp": { trimmedFrom: { source: "media/desk.webp", trim: { x: 0, y: 0, width: 1, height: 1 } } } } } satisfies MediaRecords;
+  assert.equal(placeBadge(tag, records, "index.html"), "Trimmed");
+});
+
+test("the visible area follows object-fit: cover and the focus percentages", () => {
+  // A 2:1 picture in a square place: half its width shows, shared by the focus.
+  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 50, y: 50 }), { x: 0.25, y: 0, w: 0.5, h: 1 });
+  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 0, y: 50 }), { x: 0, y: 0, w: 0.5, h: 1 });
+  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 100, y: 50 }), { x: 0.5, y: 0, w: 0.5, h: 1 });
+  // A tall picture in a wide place crops top and bottom.
+  const tall = visibleArea({ width: 100, height: 200 }, 16 / 9, { x: 50, y: 20 });
+  assert.equal(tall.w, 1);
+  assert.ok(Math.abs(tall.h - 0.28125) < 1e-9 && Math.abs(tall.y - (1 - 0.28125) * 0.2) < 1e-9);
+  // Original, the same ratio or an unknown size show it whole; focus is kept on the picture.
+  assert.deepEqual(visibleArea({ width: 200, height: 100 }, undefined, { x: 10, y: 10 }), { x: 0, y: 0, w: 1, h: 1 });
+  assert.deepEqual(visibleArea({ width: 160, height: 90 }, 16 / 9, { x: 10, y: 10 }), { x: 0, y: 0, w: 1, h: 1 });
+  assert.deepEqual(visibleArea({}, 1, { x: 10, y: 10 }), { x: 0, y: 0, w: 1, h: 1 });
+  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 180, y: 50 }), { x: 0.5, y: 0, w: 0.5, h: 1 });
+});
+
+test("arrow keys move the dot 2 %, Shift 10 %, within the picture; other keys do nothing", () => {
+  assert.deepEqual(nudgeFocus({ x: 72, y: 40 }, "ArrowLeft"), { x: 70, y: 40 });
+  assert.deepEqual(nudgeFocus({ x: 72, y: 40 }, "ArrowDown", true), { x: 72, y: 50 });
+  assert.deepEqual(nudgeFocus({ x: 1, y: 99 }, "ArrowLeft"), { x: 0, y: 99 });
+  assert.deepEqual(nudgeFocus({ x: 50, y: 95 }, "ArrowDown", true), { x: 50, y: 100 });
+  assert.equal(nudgeFocus({ x: 50, y: 50 }, "Enter"), undefined);
+});
+
+test("a press puts the dot under the pointer, in whole percentages kept on the picture", () => {
+  const box = { left: 100, top: 50, width: 200, height: 100 };
+  assert.deepEqual(focusAt({ x: 150, y: 75 }, box), { x: 25, y: 25 });
+  assert.deepEqual(focusAt({ x: 0, y: 500 }, box), { x: 0, y: 100 });
+  assert.deepEqual(focusAt({ x: 10, y: 10 }, { left: 0, top: 0, width: 0, height: 0 }), { x: 50, y: 50 });
+});
+
+test("the message is blue for this spot only, yellow when a new picture is saved", () => {
+  assert.deepEqual([popupMessage({ newPicture: false }).tone, popupMessage({ newPicture: false }).text], ["info", "Only changes this spot"]);
+  assert.deepEqual([popupMessage({ newPicture: true }).tone, popupMessage({ newPicture: true }).text], ["new", "Saves a new picture for this spot"]);
+  assert.equal(popupMessage({ newPicture: true, recrop: true }).text, "Updates this spot's trimmed picture");
+  assert.equal(pictureHint("square"), "Drag the dot to what matters most.");
+  assert.equal(pictureHint("original"), "The whole picture shows.");
+});
+
+test("Replace says the shape stays, the picture is centred and a trim was dropped", () => {
+  assert.equal(replaceNotice("images/studio-desk.svg", "square", false), "studio-desk.svg is in. The Square shape stays and the picture is centred.");
+  assert.equal(replaceNotice("a.webp", "original", true), "a.webp is in. The shape stays Original. Trimming made for the old picture was dropped.");
+});
+
+test("Done writes only what changed", () => {
+  const start = { shape: "original" as const, focus: { x: 50, y: 50 } };
+  assert.equal(frameChange(start, { shape: "original", focus: { x: 50, y: 50 } }), undefined);
+  assert.deepEqual(frameChange(start, { shape: "square", focus: { x: 50, y: 50 } }), { shape: "square" });
+  assert.deepEqual(frameChange(start, { shape: "square", focus: { x: 72, y: 40 } }), { shape: "square", focus: { x: 72, y: 40 } });
+  assert.deepEqual(frameChange({ shape: "4:3", focus: { x: 20, y: 50 } }, { shape: "4:3", focus: { x: 30, y: 50 } }), { focus: { x: 30, y: 50 } });
+  assert.deepEqual(frameChange({ shape: "4:3", focus: { x: 20, y: 50 } }, { shape: "original", focus: { x: 30, y: 50 } }), { shape: "original" });
+  // A hand-written ratio stays unless another shape is chosen; its focus can still move.
+  const other = { kind: "other" as const, value: "3 / 2" };
+  assert.equal(frameChange({ shape: other, focus: { x: 50, y: 50 } }, { shape: { ...other }, focus: { x: 50, y: 50 } }), undefined);
+  assert.deepEqual(frameChange({ shape: other, focus: { x: 50, y: 50 } }, { shape: other, focus: { x: 60, y: 50 } }), { focus: { x: 60, y: 50 } });
+  // An unreadable focus (lengths) is kept unless the dot moved from the middle.
+  assert.equal(frameChange({ shape: "square", focus: undefined }, { shape: "square", focus: { x: 50, y: 50 } }), undefined);
+  // A replacement writes the centred focus even when unmoved; Original has none to write.
+  assert.deepEqual(frameChange({ shape: "square", focus: { x: 20, y: 20 } }, { shape: "square", focus: { x: 50, y: 50 } }, true), { focus: { x: 50, y: 50 } });
+  assert.equal(frameChange(start, { shape: "original", focus: { x: 50, y: 50 } }, true), undefined);
+});
+
+test("the popup stands left of the picture, else right, else below the bar, inside the window", () => {
+  const size = { width: 328, height: 400 }, view = { width: 1280, height: 800 };
+  const bar = { left: 700, top: 100, right: 1000, bottom: 140 };
+  assert.deepEqual(placePopup({ left: 700, top: 150, right: 1100, bottom: 450 }, bar, size, view), { side: "left", left: 358, top: 100 });
+  assert.deepEqual(placePopup({ left: 100, top: 150, right: 600, bottom: 450 }, { ...bar, left: 100, right: 400 }, size, view), { side: "right", left: 614, top: 100 });
+  assert.deepEqual(placePopup({ left: 100, top: 150, right: 1100, bottom: 450 }, { ...bar, left: 100, right: 400 }, size, view), { side: "below", left: 100, top: 148 });
+  // Kept inside the window at the bottom and right.
+  assert.deepEqual(placePopup({ left: 100, top: 650, right: 1100, bottom: 790 }, { left: 1100, top: 600, right: 1270, bottom: 640 }, size, view), { side: "below", left: 944, top: 392 });
+});
+
+test("on a phone the page scrolls so the picture sits above the sheet", () => {
+  assert.equal(sheetScroll({ left: 0, top: 100, right: 390, bottom: 300 }, 500, 60), 0);
+  assert.equal(sheetScroll({ left: 0, top: 400, right: 390, bottom: 600 }, 500, 60), 108);
+  // Taller than the room: its top shows.
+  assert.equal(sheetScroll({ left: 0, top: 200, right: 390, bottom: 900 }, 500, 60), 132);
+  // Scrolled above the frame: back down, just above the sheet.
+  assert.equal(sheetScroll({ left: 0, top: 0, right: 390, bottom: 100 }, 500, 60), -392);
+});

@@ -37,7 +37,8 @@ function declarations(style: string) {
   return parts;
 }
 const property = (plain: string) => plain.match(/^\s*([\w-]+)\s*:/)?.[1].toLowerCase();
-const inlineStyle = (text: string) => {
+/** An image tag's decoded inline style ("" without one). */
+export const inlineStyle = (text: string) => {
   const attr = mediaAttribute(text, startTags(text)[0], "style");
   return attr ? decodeHtmlEntities(attr.value, true) : "";
 };
@@ -84,7 +85,7 @@ export function writePlaceFrame(tagText: string, change: PlaceFrameChange): stri
   return mediaAttributes(tagText, { style: editStyle(inlineStyle(tagText), changes) });
 }
 
-/** Slice 39's Replace resets only focus; today's picker does not call this yet. */
+/** Replace resets only the focus (the image popup writes it through `placeMediaImage`'s frame). */
 export function resetPlaceFocus(tagText: string): string {
   return writePlaceFrame(tagText, { focus: { x: 50, y: 50 } });
 }

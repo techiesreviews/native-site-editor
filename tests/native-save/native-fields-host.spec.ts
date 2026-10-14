@@ -89,7 +89,7 @@ test("existing embeds expose native title and safe URL fields", async ({ page })
   expect(await source(page)).toBe(before);
 });
 
-test("images use Choose image and Alt while real hyperlinks retain Address", async ({ page }) => {
+test("images use the Image button and Alt while real hyperlinks retain Address", async ({ page }) => {
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const before = editor.getMountedSource("index.html")!;
@@ -97,7 +97,7 @@ test("images use Choose image and Alt while real hyperlinks retain Address", asy
     editor.replaceActiveRange({ path: "index.html", start, end: start, expected: "", text: '<img src="/images/studio-desk.svg" alt="Studio desk"><a href="/about/">Real hyperlink</a>\n' });
   });
   await frame(page).locator('img[alt="Studio desk"]').click();
-  await expect(bar(page).getByRole("button", { name: "Choose image…", exact: true })).toBeVisible();
+  await expect(bar(page).locator(".edit-bar__image")).toHaveAttribute("aria-haspopup", "dialog");
   await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
   await expect(bar(page).getByRole("button", { name: "Address", exact: true })).toHaveCount(0);
   await frame(page).getByRole("link", { name: "Real hyperlink", exact: true }).click();

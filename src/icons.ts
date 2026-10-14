@@ -26,6 +26,7 @@ import folder from "@phosphor-icons/core/regular/folder.svg?raw";
 import folderOpen from "@phosphor-icons/core/regular/folder-open.svg?raw";
 import gear from "@phosphor-icons/core/regular/gear.svg?raw";
 import house from "@phosphor-icons/core/regular/house.svg?raw";
+import imageSquare from "@phosphor-icons/core/regular/image-square.svg?raw";
 import link from "@phosphor-icons/core/regular/link.svg?raw";
 import linkBreak from "@phosphor-icons/core/regular/link-break.svg?raw";
 import linkSimple from "@phosphor-icons/core/regular/link-simple.svg?raw";
@@ -61,6 +62,7 @@ const icons = {
   folder,
   "folder-open": folderOpen,
   house,
+  "image-square": imageSquare,
   link,
   "link-break": linkBreak,
   "link-simple": linkSimple,

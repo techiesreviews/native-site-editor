@@ -63,6 +63,8 @@ export interface MediaControllerPorts {
   refreshDescriptions(): void;
   /** The place's name in the picker's heading: the page as the Pages tab names it. */
   placeLabel?(page: string): string | undefined;
+  /** Where the image popup stands and what it shows on the page before Done. */
+  imagePopup?: import("../page-builder/image-popup").ImagePopupHost;
   announce(message: string): void;
   error(error: unknown): void;
 }
@@ -316,6 +318,23 @@ export function createMediaController(ports: MediaControllerPorts) {
     };
   }
 
+  // The Image button's badge and popup (slice 39) load with the first image selected.
+  let popups: ReturnType<typeof import("../page-builder/image-popups")["createImagePopups"]> | undefined;
+  let popupsLoading: Promise<void> | undefined;
+  const loadPopups = () => popupsLoading ??= import("../page-builder/image-popups").then(module => {
+    popups = module.createImagePopups({ ports, workspaceContext, load, chooseImage, records: () => {
+      try { return recordIO && recordsScope === ports.identity() ? withBackFiles(recordIO.parseMediaRecords(ports.source(recordIO.MEDIA_RECORDS_PATH))) : undefined; } catch { return undefined; }
+    } });
+    ports.refreshDescriptions();
+  }, error => { popupsLoading = undefined; throw error; });
+  function placeFrame(page: string, node: number[], tag: string) {
+    if (!popups) void loadPopups().catch(() => {});
+    return popups?.placeFrame(page, node, tag);
+  }
+  async function editImage(target: { path: string; node: number[] }) {
+    try { await loadPopups(); await popups!.edit(target); } catch (error) { ports.error(error); }
+  }
+
   /** The Media picker for a value that holds an image's address (component fields, Site settings):
    * resolves to the chosen file's root path on Use, or undefined on Cancel. */
   async function choosePath(place: string, placement?: MediaPathPlacement): Promise<string | undefined> {
@@ -403,6 +422,6 @@ export function createMediaController(ports: MediaControllerPorts) {
     },
     shareImage: async (request: import("../page-builder/social-sharing").SocialSharingRequest) =>
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
-    workspaceContext, preparePlacement, chooseImage, choosePath, placeState, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, chooseImage, choosePath, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

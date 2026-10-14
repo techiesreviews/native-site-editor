@@ -1635,6 +1635,8 @@ const pageStructureController = createPageStructureController({
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   get chooseMediaForImage() { return chooseMediaForImage; },
   mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
+  mediaPlaceFrame: (page, node, tag) => mediaController.placeFrame(page, node, tag),
+  editImage: target => void mediaController.editImage(target),
   changeMediaPlace: (page, node, decorative) => mediaController.changePlace(page, node, decorative),
   get nativePictureSources() { return nativePictureSources; },
   // cardsController is declared later in this module: read it at call time.
@@ -2440,6 +2442,18 @@ const mediaController = createMediaController({
   applyBatch: applyMediaBatch,
   refreshDescriptions: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
   placeLabel: nativePageLabelOf,
+  imagePopup: {
+    image: () => nativePreview?.selectionBox(),
+    bar: () => document.querySelector<HTMLElement>(".edit-bar"),
+    frame: () => document.querySelector(".native-preview-frame")?.getBoundingClientRect(),
+    look: (target, look) => nativePreview?.imageLook(target, look),
+    scroll: dy => nativePreview?.scrollBy(dy),
+    // Read as the canvas reads its images, so the page can show a replacement too.
+    picture: async path => {
+      if (!nativeAssets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="/${encodeURI(path).replace(/&/g, "&amp;")}">` });
+      return nativeAssets.get(path);
+    },
+  },
   openPage: openAfter,
   load: loadMedia,
   openFile: () => appStore.openFile.value,

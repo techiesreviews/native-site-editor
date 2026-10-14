@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { publishButton, showPublish } from "./publish";
 import { effectiveSource, storedDraft, storedDrafts } from "./drafts";
 
@@ -35,8 +36,7 @@ async function detailedPhoto(page: Page) {
 test("Balanced adding saves a 2400px WebP main and three copies from a detailed 3000px JPEG", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const bytes = await detailedPhoto(page);
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Recipe.jpg", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") });
@@ -193,8 +193,7 @@ test("canvas drop prepares held tiles; only Use places; one Undo removes both", 
 test("Close saves every ready file once, cancels unfinished preparation, and places nothing", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = (await effectiveSource(page, baseURL, "index.html"))!;
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await page.evaluate(() => {
@@ -224,8 +223,7 @@ test("Close saves every ready file once, cancels unfinished preparation, and pla
 test("Use saves all ready files across picker additions with placement in one batch", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = (await effectiveSource(page, baseURL, "index.html"))!;
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   for (const name of ["first.svg", "second.svg"]) {
@@ -249,8 +247,7 @@ test("Use saves all ready files across picker additions with placement in one ba
 
 test("picker Review retains Optimise but reviewed files stay held until Use", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "reviewed.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
@@ -291,8 +288,7 @@ test("Files drop in a repository without a home page adds the file", async ({ pa
 test("cancelling a held file while Use reads its size places nothing", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = (await effectiveSource(page, baseURL, "index.html"))!;
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "held.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h12v12z"/></svg>') });
@@ -320,8 +316,7 @@ test("cancelling a held file while Use reads its size places nothing", async ({ 
 test("Use with a file still preparing saves the ready one and the placement in one Undo step", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = (await effectiveSource(page, baseURL, "index.html"))!;
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   // The encoder never answers, so the PNG stays in preparation while the SVG is ready.
@@ -548,8 +543,7 @@ test("Review… keeps the cleaned original when the site remembers Keep original
   await page.reload();
   await open(page, baseURL);
   const source = Buffer.from(await detailedPhoto(page), "base64");
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "reviewed.jpg", mimeType: "image/jpeg", buffer: withExif(source, 1) });
@@ -573,8 +567,7 @@ async function saveUploads(page: Page) {
 
 test("SVG worker removes scripts and onload, keeps artwork and places vector dimensions", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Clean.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60" onload="alert(1)"><script>alert(1)</script><path d="M0 0h120v60H0z" fill="red"/><text x="10" y="30">Artwork</text></svg>') });

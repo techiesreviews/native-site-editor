@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { storedDraft } from "./drafts";
 
 async function mount(page: Page, baseURL: string | undefined) {
@@ -320,8 +321,7 @@ test("the picker searches, filters by collection, shows details and keeps drafts
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   const frame = page.frameLocator(".native-preview-frame");
   const choose = async () => {
-    await frame.locator(".hero img").click();
-    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+    await openPickerOn(page, frame.locator(".hero img"));
     const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
     await expect(picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true })).toBeVisible();
     return picker;

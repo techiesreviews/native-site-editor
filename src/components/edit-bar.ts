@@ -37,6 +37,11 @@ export type EditBarControl =
       disabled?: boolean;
       // A toggle, reflected as aria-pressed.
       pressed?: boolean;
+      // Drawn before the label (the Image button), with a small state badge after it.
+      leading?: IconName;
+      badge?: string;
+      // Opens a popup of its own (the image popup): aria-haspopup, and whether it is open.
+      expanded?: boolean;
       className?: string;
       onPress: () => void;
     }
@@ -134,7 +139,7 @@ type AddressControl = Extract<EditBarControl, { kind: "address" }>;
 type PromptControl = Extract<EditBarControl, { kind: "prompt" }>;
 type FieldsControl = Extract<EditBarControl, { kind: "fields" }>;
 
-export type IconName = "link" | "unlink" | "up" | "down" | "left" | "right" | "add" | "duplicate" | "remove" | "ask";
+export type IconName = "link" | "unlink" | "up" | "down" | "left" | "right" | "add" | "duplicate" | "remove" | "ask" | "image";
 
 // The edit bar's icons by what they do, drawn from the editor's icon set.
 const iconNames: Record<IconName, PhosphorName> = {
@@ -148,6 +153,7 @@ const iconNames: Record<IconName, PhosphorName> = {
   duplicate: "copy",
   remove: "trash",
   ask: "sparkle",
+  image: "image-square",
 };
 
 const arrangeIcons = new Set<IconName>(["up", "down", "left", "right", "add", "duplicate", "remove"]);
@@ -940,7 +946,13 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         group = next;
       }
       if (control.kind === "button") {
-        const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
+        const item = button(control.icon ? "" : control.label, control.onPress, `edit-bar__button ${control.icon || control.leading ? "edit-bar__button--icon " : ""}${control.className ?? ""}`.trim());
+        if (control.leading) item.prepend(icon(control.leading));
+        if (control.badge) item.append(node("span", "edit-bar__badge", control.badge));
+        if (control.expanded !== undefined) {
+          item.setAttribute("aria-haspopup", "dialog");
+          item.setAttribute("aria-expanded", String(control.expanded));
+        }
         if (control.icon) {
           item.append(icon(control.icon));
           item.setAttribute("aria-label", control.label);
@@ -1062,6 +1074,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       if (pending) pending.at = at;
       position();
     },
+    /** The selection's rectangle in the frame. */
+    selection: () => rect,
     /** The pins moved or changed: the bar and Ask agent's note keep to them. */
     refit() {
       position();

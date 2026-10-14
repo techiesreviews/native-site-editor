@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 
 // Default fixture group: native-variants (541), on its separate blocks page.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -77,7 +78,7 @@ test("placeholder Choose image replaces its source and dimensions, keeps the sit
   const before = await source(page);
   await frame(page).locator("img").click();
   await expect(bar(page).getByRole("combobox", { name: "Variant", exact: true })).toHaveCount(0);
-  await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, frame(page).locator("img"));
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
   await chooser.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
@@ -89,7 +90,7 @@ test("placeholder Choose image replaces its source and dimensions, keeps the sit
   await undo(page);
   await expect.poll(() => source(page)).toBe(before);
   // The original asset remains available after replacement and undo.
-  await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
+  await openPickerOn(page, frame(page).locator("img"));
   await expect(chooser.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   // The fixture's alt="" is not marked Decorative, so the field reads Not described yet.

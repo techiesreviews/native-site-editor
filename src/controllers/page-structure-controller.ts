@@ -51,6 +51,10 @@ export interface PageStructurePorts {
   readonly mediaPlaceState?: (page: string, src: string, alt: string | undefined) => { state: "described" | "decorative" | "missing"; fileDecorative?: boolean } | undefined;
   readonly changeMediaPlace?: (page: string, node: number[], decorative: boolean) => Promise<void>;
   readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
+  /** The Image button's badge ("Square", "Trimmed") and whether its popup is open on this image. */
+  readonly mediaPlaceFrame?: (page: string, node: number[], tag: string) => { badge?: string; open: boolean } | undefined;
+  /** The image popup (shape, focus, Replace) for an image on a page. */
+  readonly editImage?: (target: { path: string; node: number[] }) => void;
   readonly nativePictureSources: (source: string, node: readonly number[]) => boolean;
   /** The card grid controls for a selection, move arrows already left out (cards controller). */
   cardControls(selection: NativePreviewSelection, source: string): EditBarControl[];
@@ -516,7 +520,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (range && selection.tag === "img") {
       const src = attribute("src");
       const alt = attribute("alt");
-      controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node) void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
+      // One Image button opens the image popup: picture, shape, focus and Replace (media ticket 09).
+      const frame = node && ports.mediaPlaceFrame?.(path, node, source.slice(range.tag.start, range.tag.end));
+      controls.push({ kind: "button", label: "Image", leading: "image", badge: frame?.badge, expanded: Boolean(frame?.open), className: "edit-bar__image",
+        title: `Picture, shape and focus${frame?.badge ? ` · ${frame.badge}` : ""}`,
+        onPress: () => { if (node) { if (ports.editImage) ports.editImage({ path, node }); else void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } } });
       const description = ports.mediaPlaceState?.(path, src?.value ?? "", alt?.value);
       controls.push({
         kind: "address",

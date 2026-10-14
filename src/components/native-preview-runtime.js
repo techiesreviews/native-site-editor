@@ -3746,6 +3746,26 @@ import { domView } from "../page-builder/rules/tree.ts";
     el.childNodes.forEach(function (c) { out += c.nodeType === 3 ? c.data : c.localName === "br" ? " " : c.nodeType === 1 ? textWithBreaks(c) : ""; });
     return out;
   }
+  // image-look: the image popup's shape, focus and replacement shown on the
+  // page before Done (src/page-builder/image-popup.ts). Kept across renders
+  // until the host drops it; the image's own attributes come back then.
+  var imageLook = null;
+  function setImageLook(request, look) {
+    var old = imageLook;
+    imageLook = null;
+    if (old && old.el.isConnected) Object.keys(old.saved).forEach(function (name) {
+      if (old.saved[name] === null) old.el.removeAttribute(name); else old.el.setAttribute(name, old.saved[name]);
+    });
+    if (old && old.el.parentNode) resolveAssets(old.el.parentNode);
+    var el = request && look ? resolveNodePath(request) : null;
+    if (el && el.localName === "img") {
+      imageLook = { el: el, request: request, look: look, saved: {} };
+      ["style", "src", "srcset", "sizes"].forEach(function (name) { imageLook.saved[name] = el.getAttribute(name); });
+      if (typeof look.style === "string") el.setAttribute("style", look.style);
+      if (typeof look.src === "string") { el.setAttribute("src", assetFor(look.src) || look.src); el.removeAttribute("srcset"); el.removeAttribute("sizes"); }
+    }
+    scheduleBoxes();
+  }
   // patch-text: a structure field's text set in place, ahead of its render;
   // "\n" becomes <br>, never markup. Only an element of text and <br>s takes it.
   var livePatch = null;
@@ -3948,11 +3968,17 @@ import { domView } from "../page-builder/rules/tree.ts";
     }
     if (msg.type === "assets") {
       showArrivedAssets(msg);
+      if (imageLook) setImageLook(imageLook.request, imageLook.look);
+      return;
+    }
+    if (msg.type === "image-look") {
+      setImageLook(msg.request, msg.look);
       return;
     }
     if (msg.type !== "update") return;
     apply(msg.payload || {});
     if (livePatch) patchText(livePatch.request, livePatch.text);
+    if (imageLook) setImageLook(imageLook.request, imageLook.look);
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });
   pageEl = document.getElementById("page");

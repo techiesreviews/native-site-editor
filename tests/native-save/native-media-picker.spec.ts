@@ -3,6 +3,7 @@
 // file, Use places it, Cancel keeps the placement; full-screen on phones.
 // Default fixture: index.html's hero image is images/placeholder.svg (no alt); images/studio-desk.svg is unused.
 import { expect, test, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { storedDraft } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -21,13 +22,13 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
 async function openPicker(page: Page) {
-  await frame(page).locator(".hero img").click();
-  await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
+  // A double-click on the selected image opens the picker (the bar's Image button opens the image popup).
+  await openPickerOn(page, frame(page).locator(".hero img"));
   await expect(picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true })).toBeVisible();
   await expect(picker(page)).not.toHaveAttribute("aria-busy", "true");
 }
 
-test("from the Edit bar: search, choose, Use places the new image; Cancel leaves it unchanged", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("from a double-click on the image: search, choose, Use places the new image; Cancel leaves it unchanged", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   const before = await source(page);

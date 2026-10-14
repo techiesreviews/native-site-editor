@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openPickerOn } from "./open-picker";
 import { imageResult } from "../../src/page-builder/image-sizes";
 import { readFrameMessage } from "../../src/components/preview-protocol";
 import { HOST_SOURCE, FRAME_SOURCE } from "../../src/components/preview-wire";
@@ -176,8 +177,7 @@ test("placed hero and lower image use measured responsive markup and load on the
   });
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   const choose = async (selector: string) => {
-    await preview.locator(selector).click();
-    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+    await openPickerOn(page, preview.locator(selector));
     await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   };
   await choose("img.hero-image");

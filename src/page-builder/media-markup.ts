@@ -7,7 +7,9 @@ export interface MediaVariant { path: string; width: number }
 export interface MediaImage {
   path: string; width?: number; height?: number; alt: string; variants?: MediaVariant[];
 }
-export interface MediaMeasured { sizes?: string; firstScreen: boolean; large: boolean; images: MediaPageImage[] }
+/** `boxes`: the place's rendered box per measured screen width (the image popup's previews). */
+export interface MediaMeasured { sizes?: string; firstScreen: boolean; large: boolean; images: MediaPageImage[]; boxes?: MediaBox[] }
+export interface MediaBox { viewport: number; width: number; height: number; fit: string }
 export interface MediaPageImage { node: number[]; firstScreen: boolean; large: boolean }
 export function mediaPriority(images: readonly MediaPageImage[]): number[] | undefined {
   return [...images].sort((a, b) => {
