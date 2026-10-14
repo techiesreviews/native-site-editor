@@ -106,8 +106,10 @@ test("an image in a selected Div drags itself, and the selection box follows the
   await page.mouse.move(...Object.values(await pointIn(page, "#contact h2", 0.5, 0.9)) as [number, number], { steps: 8 });
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Heading");
   await page.mouse.up();
-  await expect.poll(async () => flat(await source(page))).toMatch(/<h2>Get in touch<\/h2><img src="\/images\/placeholder.svg"[^>]*><p>/);
+  // The move's re-check (slice 88) makes the page's only image, now on the first screen, its priority holder.
+  await expect.poll(async () => flat(await source(page))).toMatch(/<h2>Get in touch<\/h2><img fetchpriority="high" src="\/images\/placeholder.svg"[^>]*><p>/);
   expect(flat(await source(page))).toContain('<div class="flow"><a class="btn" href="#">Button</a></div>');
+  // One Undo takes back the move and its re-check together.
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(original);
 });
