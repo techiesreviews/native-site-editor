@@ -133,3 +133,20 @@ test("all turn and flip combinations map non-square source corners in the specif
     }
   }
 });
+test("a shared copy's branches never reuse an address another branch used and removed", () => {
+  // Places A and B share -crop; A is re-cropped to -2, -3, -4, each predecessor removed (B keeps -crop).
+  let a = previous;
+  const paths = new Set([previous]);
+  for (const expected of [2, 3, 4]) {
+    const next = name([...paths], a);
+    assert.equal(next, `media/images/studio-lights-crop-${expected}.webp`);
+    if (a !== previous) paths.delete(a);
+    paths.add(next); a = next;
+  }
+  // B re-crops from -crop: -2 and -3 were removed, -4 is A's; B gets -5.
+  assert.equal(name([...paths], previous), "media/images/studio-lights-crop-5.webp");
+  // A removed address on the records' removed list counts too.
+  assert.equal(name([previous, "media/images/studio-lights-crop-9.webp"], previous), "media/images/studio-lights-crop-10.webp");
+  // Responsive copies and other folders are not chain numbers.
+  assert.equal(name(["media/images/studio-lights-crop-480.webp", "images/studio-lights-crop-7.webp"], previous), "media/images/studio-lights-crop-2.webp");
+});

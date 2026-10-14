@@ -592,7 +592,7 @@ function trimFixture() {
     { blob: new Blob(["small"], { type: "image/webp" }), extension: "webp", width: 480, height: 240, variantWidth: 480 },
   ], before: 8, after: 8 };
   const request = () => ({
-    source: "images/a.png", previous: oldTrim, trim: rectangle, result,
+    source: "images/a.png", previous: oldTrim, trim: rectangle, result, sourceVersion: f.versions.get("images/a.png"),
     place: {
       path: "index.html", source: f.text.get("index.html")!,
       records: { text: f.text.get(MEDIA_RECORDS_PATH) },
@@ -704,4 +704,12 @@ test("a re-trim never reuses an address on the Recently removed list", async () 
   const request = f.request();
   request.place.records = { text: f.text.get(MEDIA_RECORDS_PATH) };
   assert.equal(await f.host.trim(request), "media/images/a-crop-4.webp");
+});
+test("pixels prepared from an older original refuse without saving anything", async () => {
+  for (const sourceVersion of ["a-v0", undefined]) {
+    const f = trimFixture(), before = new Map(f.text);
+    await assert.rejects(f.host.trim({ ...f.request(), sourceVersion }), /changed while it was being trimmed/);
+    assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0); assert.deepEqual(f.text, before);
+    assert.ok(f.bytes.has(oldTrim));
+  }
 });

@@ -1,5 +1,5 @@
 import { removeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
-import { mediaFamilyOf } from "./media-families";
+import { mediaFamilyOf, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { chooseMediaPath, mediaCopyName, mediaStorageName, MEDIA_IMAGES_FOLDER } from "./media-storage";
 import { isTrim } from "./trim-geometry";
 
@@ -16,11 +16,22 @@ export function trimmedCopyPath(options: { source: string; extension: string; co
   if (!/^[a-z0-9]+$/i.test(options.extension)) throw new Error("Choose a supported image extension.");
   const source = mediaStorageName(options.source, options.extension).replace(/\.[^./]+$/, "");
   const base = source + "-crop", name = mediaStorageName(base + "." + options.extension, options.extension);
-  const previous = options.previous && mediaStorageName(options.previous).replace(/\.[^./]+$/, "");
-  const suffix = previous?.startsWith(base + "-") ? previous.slice(base.length + 1) : undefined;
-  const number = previous === base ? 1 : suffix && /^[1-9]\d*$/.test(suffix) ? Number(suffix) : 0;
-  if (!Number.isSafeInteger(number) || number >= Number.MAX_SAFE_INTEGER) throw new Error("This trim's name has too many numbered copies.");
   const paths = [...options.paths];
+  // The chain number of a -crop name for this source: 1 unnumbered, N for -crop-N; 0 otherwise.
+  // Responsive copy widths are copies, not chain numbers.
+  const chain = (path: string) => {
+    const stem = mediaStorageName(path).replace(/\.[^./]+$/, "");
+    if (stem === base) return 1;
+    const suffix = stem.startsWith(base + "-") ? stem.slice(base.length + 1) : "";
+    return /^[1-9]\d*$/.test(suffix) && !(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(Number(suffix)) ? Number(suffix) : 0;
+  };
+  // Never at or below any trimmed copy of this source that exists or was removed (the caller passes
+  // the removed list), nor below the previous one: shared copies branch, so a chain's own previous
+  // number alone could land on an address another branch used and removed.
+  const folder = MEDIA_IMAGES_FOLDER.toLowerCase() + "/";
+  const number = Math.max(options.previous ? chain(options.previous) : 0,
+    ...paths.filter(path => path.toLowerCase().startsWith(folder) && !path.slice(folder.length).includes("/")).map(chain));
+  if (!Number.isSafeInteger(number) || number >= Number.MAX_SAFE_INTEGER) throw new Error("This trim's name has too many numbered copies.");
   const path = chooseMediaPath({ folder: MEDIA_IMAGES_FOLDER, name, copies: options.copies, paths,
     minimum: number + 1 });
   const taken = new Set(paths.map(path => path.toLowerCase()));

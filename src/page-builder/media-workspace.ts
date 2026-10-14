@@ -91,6 +91,8 @@ function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWork
 
 export interface MediaTrimRequest {
   source: string; trim: MediaTrim; previous?: string; result: MediaOptimiseResult;
+  /** The source's revision (`assetVersion`) captured before its bytes were read for `result`. */
+  sourceVersion: string | undefined;
   place: {
     path: string; source: string; stale?: string; live?: () => boolean;
     records?: { text: string | undefined };
@@ -278,11 +280,14 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     await commit(ctx, batch);
     return paths;
   };
-  const trimCopy = async ({ source, trim, previous, result, place }: MediaTrimRequest) => {
+  const trimCopy = async ({ source, trim, previous, result, place, sourceVersion }: MediaTrimRequest) => {
     session?.assertLive();
     const ctx = await context();
     session?.assertLive(); ctx.assertLive();
+    // The pixels were made from this revision: a newer original refuses, so provenance stays true.
+    if (sourceVersion === undefined || ctx.assetVersion(source) !== sourceVersion) throw new Error(place.stale ?? `${source} changed while it was being trimmed. Nothing was saved.`);
     const versions = familyVersions(ctx, [source, ...previous ? familyPaths(previous, ctx.paths) : []]);
+    versions.set(source, sourceVersion);
     const { batch, metadata } = await prepare(ctx, "Picture trimmed");
     for (const [member, version] of versions) batch.expectedAssets.set(member, version);
     assetGuard(batch, [source, ...previous ? [previous] : []]);

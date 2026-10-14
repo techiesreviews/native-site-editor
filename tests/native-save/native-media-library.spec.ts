@@ -366,3 +366,35 @@ test("rename rewrites scripts, data, notes and settings with forwarding through 
     await expect.poll(async () => (await storedDraft(page, path))?.content).toBe(after);
   }
 });
+
+test("real worker trims, flips, turns and straightens a copy's pixels in the main and every responsive copy", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const result = await page.evaluate(async (modulePath) => {
+    const { prepareTrimmedCopy } = await import(modulePath) as typeof import("../../src/page-builder/trimmed-copy-prepare");
+    // 1200 × 600 in four colours: red top-left, green top-right, blue bottom-left, yellow bottom-right.
+    const canvas = document.createElement("canvas"); canvas.width = 1200; canvas.height = 600;
+    const ctx = canvas.getContext("2d")!;
+    for (const [x, y, colour] of [[0, 0, "#f00"], [600, 0, "#0f0"], [0, 300, "#00f"], [600, 300, "#ff0"]] as const) { ctx.fillStyle = colour; ctx.fillRect(x, y, 600, 300); }
+    const source = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/png"));
+    const named = (rgb: Uint8ClampedArray) => ({ "1,0,0": "red", "0,1,0": "green", "0,0,1": "blue", "1,1,0": "yellow" } as Record<string, string>)[[rgb[0], rgb[1], rgb[2]].map(value => value > 128 ? 1 : 0).join()] ?? "other";
+    const look = async (blob: Blob) => {
+      const bitmap = await createImageBitmap(blob), out = new OffscreenCanvas(bitmap.width, bitmap.height), c = out.getContext("2d")!;
+      c.drawImage(bitmap, 0, 0);
+      const at = (fx: number, fy: number) => named(c.getImageData(Math.floor(bitmap.width * fx), Math.floor(bitmap.height * fy), 1, 1).data);
+      return { width: bitmap.width, height: bitmap.height, left: at(.25, .5), right: at(.75, .5) };
+    };
+    // Flip left-right, turn clockwise, keep the top half of the turned frame (600 × 600).
+    const trimmed = await prepareTrimmedCopy(source, "quadrants.png", { x: 0, y: 0, width: 1, height: .5, turn: 90, flipX: true });
+    const straightened = await prepareTrimmedCopy(source, "quadrants.png", { x: .25, y: .25, width: .5, height: .5, straighten: 10 });
+    return {
+      outputs: await Promise.all(trimmed.outputs.map(async output => ({ variant: output.variantWidth, ...await look(output.blob) }))),
+      straightened: { width: straightened.outputs[0].width, height: straightened.outputs[0].height },
+    };
+  }, "/src/page-builder/trimmed-copy-prepare.ts");
+  // Flipped, the bottom row reads yellow | blue; turned clockwise, the left column becomes the top row,
+  // so the top half shows the flipped bottom-left (yellow) on the left and the flipped top-left (green) on the right.
+  expect(result.outputs[0]).toMatchObject({ variant: undefined, width: 600, height: 600, left: "yellow", right: "green" });
+  expect(result.outputs.map(output => output.variant)).toContain(480);
+  for (const output of result.outputs) expect(output).toMatchObject({ width: output.variant ?? 600, left: "yellow", right: "green" });
+  expect(result.straightened).toEqual({ width: 600, height: 300 });
+});
