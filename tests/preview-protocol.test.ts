@@ -238,3 +238,9 @@ test("stand-in dimensions are positive finite bounded CSS dimensions", async () 
   for (const bad of [null, false, "1200x600", [], {}]) assert.equal(validImageSize(bad), false);
   for (const width of [0, -1, NaN, Infinity, 100001]) assert.equal(validImageSize({ width, height: 600 }), false);
 });
+test("image measurement carries the target's rendered-box priority flag, a boolean only", () => {
+  const facts = cases["image-measured"].valid.report.facts;
+  const reply = readFrameMessage(message("image-measured", { id: 1, report: { facts, large: true } }));
+  assert.equal(reply?.type === "image-measured" && "facts" in reply.report && reply.report.large, true);
+  assert.equal(readFrameMessage(message("image-measured", { id: 1, report: { facts, large: "yes" } })), undefined);
+});

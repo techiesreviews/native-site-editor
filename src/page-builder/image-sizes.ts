@@ -1,7 +1,8 @@
 /** Widths are CSS pixels, independent of the visitor's device pixel ratio. */
 export type ImageWidth = { viewport: number; width: number };
 export type ImageFact = { viewport: number; viewportHeight: number; top: number; width: number; height: number; naturalWidth: number; naturalHeight: number; fit: string };
-export type ImageReport = { facts: ImageFact[]; images?: { node: number[]; firstScreen: boolean; large: boolean }[] } | { error: string };
+/** `large`: the target's rendered (border) box on a first screen, for loading priority. */
+export type ImageReport = { facts: ImageFact[]; images?: { node: number[]; firstScreen: boolean; large: boolean }[]; large?: boolean } | { error: string };
 
 // The first integer viewport on the upper side of `width <op> n`.
 const UPPER: Record<string, (n: number) => number> = { ">": (n) => Math.floor(n) + 1, ">=": Math.ceil, "<": Math.ceil, "<=": (n) => Math.floor(n) + 1 };

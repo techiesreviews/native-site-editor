@@ -437,6 +437,24 @@ test("Choose image… places the picked file on the instance that opened the pic
   expect(await storedDraft(page, "components/media-card/media-card.html")).toBeUndefined();
 });
 
+test("a first image fill is measured on the instance's fallback, and its rendered box decides priority", async ({ page, baseURL }) => {
+  // 200 × 200 px of picture, 240 × 240 px rendered with its padding: large only by the rendered box.
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure class="media-card">\n  <slot name="image"><img src="/images/placeholder.svg" alt="Placeholder" style="display:block;box-sizing:content-box;width:200px;height:200px;padding:20px"></slot>\n</figure>\n` } });
+  const about = await page.request.get(`${baseURL}/__demo/file?path=about%2Findex.html`);
+  const aboutSource = (await about.text()).replace(`<section class="prose" data-key="prose">`, `<media-card data-key="first"></media-card>\n  <section class="prose" data-key="prose">`);
+  await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "about/index.html", content: aboutSource } });
+  await open(page, baseURL, "about/index.html");
+  await row(page, "Media card").first().click();
+  await expandInstance(row(page, "Media card").first());
+  await (await chooseImage(page)).getByRole("button", { name: "Use image", exact: true }).click();
+  const filled = frame(page).locator('media-card[data-key="first"] > img');
+  await expect(filled).toHaveAttribute("src", /^data:image\/svg\+xml/);
+  // On the first screen: it loads straight away, as the page's priority image.
+  await expect(filled).not.toHaveAttribute("loading", /./);
+  await expect(filled).toHaveAttribute("fetchpriority", "high");
+  expect(await storedDraft(page, "components/media-card/media-card.html")).toBeUndefined();
+});
+
 for (const action of ["delete", "reorder"] as const) {
   test(`a chosen image is refused after an instance ${action} while the picker is open`, async ({ page, baseURL }) => {
     await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "components/media-card/media-card.html", content: `<figure><slot name="image"><img src="/images/placeholder.svg" alt="Placeholder"></slot></figure>\n` } });

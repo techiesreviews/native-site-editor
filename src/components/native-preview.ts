@@ -1165,7 +1165,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       const answer = await link.ask({ type: "measure-image", request }, 8000);
       if (!answer) throw new Error("The preview did not answer the image measurement.");
       if ("error" in answer.report) throw new Error(answer.report.error);
-      return { ...imageResult(answer.report.facts), images: answer.report.images ?? [] };
+      const result = imageResult(answer.report.facts);
+      return { ...result, large: answer.report.large ?? result.large, images: answer.report.images ?? [] };
     },
     /** Ends typing as Escape does: true once the runtime answered (after any text edit it posted). */
     finishTyping,

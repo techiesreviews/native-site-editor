@@ -3363,6 +3363,8 @@ import { domView } from "../page-builder/rules/tree.ts";
       sheets(document, config.sheets[0]);
       visit(document);
       if (!target) throw new Error("The image could not be cloned.");
+      // A first slot fill shows the slot and its wrappers, which the preview hides while unfilled.
+      if (config.slot) for (var up = target; up; up = up.parentElement) up.removeAttribute("data-native-empty");
       if (config.image) {
         if (target.parentElement.localName === "picture") target.parentElement.querySelectorAll("source").forEach(function (source) { source.remove(); });
         target.removeAttribute("srcset"); target.removeAttribute("sizes");
@@ -3398,7 +3400,8 @@ import { domView } from "../page-builder/rules/tree.ts";
               var box = image.getBoundingClientRect(), first = box.top >= 0 && box.top < innerHeight && box.width > 0 && box.height > 0;
               pageImages.push({ node: JSON.parse(image.getAttribute("data-native-measure-node")), firstScreen: first, large: first && box.width * box.height >= 50000 });
             });
-            answer({ images: pageImages, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
+            var device = innerWidth === 390 || innerWidth === 1280;
+            answer({ images: pageImages, large: device && rect.top >= 0 && rect.top < innerHeight && rect.width * rect.height >= 50000, facts: [{ viewport: innerWidth, viewportHeight: innerHeight, top: w || h ? rect.top : innerHeight, width: Math.max(0, w), height: Math.max(0, h), naturalWidth: target.naturalWidth, naturalHeight: target.naturalHeight, fit: style.objectFit }] });
           } catch (error) { answer({ error: String(error && error.message || error) }); }
         }
         read();
@@ -3419,7 +3422,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       // Stamp the render we cloned, even if a new render arrived meanwhile.
       emit("image-measured", { id: msg.id, context: context, report: report });
     }
-    var widths, facts = [], pageImages = [], at = 0;
+    var widths, facts = [], pageImages = [], large = false, at = 0;
     function next() {
       if (state.context !== context) { finish({ error: "The preview changed during image measurement." }); return; }
       frame.style.setProperty("width", widths[at] + "px", "important");
@@ -3435,11 +3438,12 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (data.type !== "image-measured" || data.id !== msg.id) return;
       if (data.report.error) { finish(data.report); return; }
       facts.push(data.report.facts[0]);
+      large = large || data.report.large === true;
       (data.report.images || []).forEach(function (image, i) {
         if (!pageImages[i]) pageImages[i] = image;
         else { pageImages[i].firstScreen = pageImages[i].firstScreen || image.firstScreen; pageImages[i].large = pageImages[i].large || image.large; }
       });
-      if (++at === widths.length) finish({ facts: facts, images: pageImages });
+      if (++at === widths.length) finish({ facts: facts, images: pageImages, large: large });
       else next();
     }
     try {
@@ -3536,7 +3540,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       var config = doc.createElement("script");
       config.id = "ase-image-measure";
       config.type = "application/json";
-      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin }).replace(/</g, "\\u003c");
+      config.textContent = JSON.stringify({ id: msg.id, context: context, sheets: sources, image: standin, slot: typeof slotName === "string" }).replace(/</g, "\\u003c");
       doc.head.appendChild(config);
       var script = doc.createElement("script");
       script.src = runtimeUrl;

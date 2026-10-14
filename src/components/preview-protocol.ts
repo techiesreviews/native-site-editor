@@ -323,7 +323,8 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
           images.push({ node: item.node, firstScreen: item.firstScreen, large: item.large });
         }
       }
-      return facts.every((fact) => fact !== undefined) ? { ...base(raw.type), id: raw.id, report: { facts, ...(images ? { images } : {}) } } : undefined;
+      if (report.large !== undefined && typeof report.large !== "boolean") return undefined;
+      return facts.every((fact) => fact !== undefined) ? { ...base(raw.type), id: raw.id, report: { facts, ...(images ? { images } : {}), ...(typeof report.large === "boolean" ? { large: report.large } : {}) } } : undefined;
     }
     case "inspect-result":
       return { ...base(raw.type), id: Number(raw.id), report: raw.report };
