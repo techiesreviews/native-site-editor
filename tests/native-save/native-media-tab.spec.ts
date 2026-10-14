@@ -566,3 +566,27 @@ test("Collections is a native select that works with arrows and Enter and shorte
   })).toBe(true);
   await page.evaluate(() => (window as any).mixedProbe.dispose());
 });
+
+test("without customizable selects, Collections stays a plain native select with the same keys and row", async ({ page, baseURL }) => {
+  await mountMixedLibrary(page, baseURL);
+  // A browser without appearance: base-select draws the ordinary control.
+  await page.addStyleTag({ content: ".media-library .media-library__collections, .media-library__collections::picker(select) { appearance: auto !important; }" });
+  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const search = library.getByLabel("Search media", { exact: true }), more = library.getByRole("button", { name: "More", exact: true });
+  await expect.poll(() => collections.evaluate(select => getComputedStyle(select).appearance)).not.toBe("base-select");
+  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch"]);
+  await search.focus(); await page.keyboard.press("Tab"); await expect(collections).toBeFocused();
+  await page.keyboard.press("Tab"); await expect(more).toBeFocused();
+  const before = await collections.boundingBox();
+  expect(before?.height).toBe(44);
+  await collections.focus(); await page.keyboard.press("ArrowDown");
+  await expect(collections).toHaveValue("Studio");
+  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg", "media/studio-tour.mp4"]);
+  await page.keyboard.press("ArrowDown");
+  await expect(collections).toHaveValue("Studio portraits from the spring campaign and the summer launch");
+  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg"]);
+  // The long name stays inside the control: the row keeps its widths.
+  expect(await collections.boundingBox()).toEqual(before);
+  expect((await more.boundingBox())!.x + 44).toBeLessThanOrEqual(1280);
+  await page.evaluate(() => (window as any).mixedProbe.dispose());
+});
