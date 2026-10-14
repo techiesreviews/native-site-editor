@@ -406,6 +406,12 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const key = ports.nativeFiles().sort().join("\n"), drafts = targetDrafts(target);
     const indexed = await ports.ensureNativeTextIndex();
     if (indexed && since.holds()) { ports.errorMessage(new Error(indexed)); return indexed; }
+    // Uploaded and moved files hold no source to record: their draft revisions are the proof.
+    const opaqueDrafts = () => {
+      const scope = ports.draftScope();
+      return JSON.stringify(scope ? ports.draftStore().list(scope).filter(draft => draft.opaque).map(draft => [draft.path, draft.sourceSha, Boolean(draft.deleted)]).sort() : []);
+    };
+    const opaque = opaqueDrafts();
     const readTexts = new Map<string, string | undefined>();
     if (ports.readMediaText) {
       const { isMediaTextFile } = await import("../page-builder/media-mentions");
@@ -457,7 +463,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       return { deletes: found.map(file => file.path),
         done: target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`,
         undone: `Undid deleting ${target.path}.` };
-    }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key && targetDrafts(target) === drafts });
+    }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key && targetDrafts(target) === drafts && opaqueDrafts() === opaque });
     if (cancelled) { if (!outcome.ok) ports.announce(cancel); return "Cancelled."; }
     const error = !outcome.ok && outcome.reason === "stale" ? changed : outcome.message;
     if (error) { ports.errorMessage(new Error(error)); if (!outcome.ok && outcome.reason === "refused") ports.refuse(error); return error; }

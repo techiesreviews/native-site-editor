@@ -261,3 +261,16 @@ test("library load and Delete unused read scripts, notes and SVG text, while ren
   await f.host.rename!("images/unused.png", "renamed.png");
   assert.equal(f.text.get("app.js"), 'const image = "/images/unused.png"');
 });
+
+test("an uploaded SVG the host holds no source for is proved by its revision, so other renames still apply", async () => {
+  const f = fixture();
+  f.paths.add("images/logo.svg"); f.bytes.set("images/logo.svg", new Blob(["<svg/>"])); f.versions.set("images/logo.svg", "upload-v1");
+  const read = f.context.read.bind(f.context);
+  f.context.read = async (path) => path === "images/logo.svg" ? "<svg/>" : read(path);
+  await f.host.load();
+  await f.host.rename!("images/a.png", "b.png");
+  assert.equal(f.batches.length, 1);
+  assert.equal(f.batches[0].expectedSources.has("images/logo.svg"), false);
+  assert.equal(f.batches[0].expectedAssets.get("images/logo.svg"), "upload-v1");
+  assert.ok(f.paths.has("images/b.png"));
+});

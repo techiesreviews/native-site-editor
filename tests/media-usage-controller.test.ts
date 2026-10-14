@@ -84,3 +84,17 @@ test("an edit during a read stops that check from publishing a stale result", as
   assert.equal(controller.usageRecords()?.families[0].checked, true);
   controller.dispose();
 });
+
+test("a file with no held source is read again on every check, so a replacement is judged by its new bytes", async () => {
+  const f = fixture();
+  let text = '<svg><image href="/images/a.png"/></svg>';
+  f.ports.read = async (path: string) => path === "note0.txt" ? text : "";
+  const controller = createMediaUsageController(f.ports);
+  f.gate.resolve(); controller.refresh(); await turn(); await turn();
+  assert.deepEqual(controller.usageRecords()?.families[0].otherUses.map(use => use.file), ["note0.txt"]);
+  text = "nothing here";
+  controller.refresh(); await turn(); await turn();
+  assert.deepEqual(controller.usageRecords()?.families[0].otherUses, []);
+  assert.equal(controller.usageRecords()?.families[0].checked, true);
+  controller.dispose();
+});

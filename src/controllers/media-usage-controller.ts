@@ -18,8 +18,7 @@ export interface MediaUsageCheckPorts {
 export function createMediaUsageController(ports: MediaUsageCheckPorts) {
   let generation = 0, scheduled = false, disposed = false;
   let records: MediaUsageRecords | undefined;
-  let cacheKey = "";
-  let cache: Record<string, string | undefined> = {};
+  let lastKey = "";
   const listeners = new Set<(records: MediaUsageRecords | undefined) => void>();
   const publish = (value: MediaUsageRecords | undefined) => {
     records = value; ports.changed(value);
@@ -30,15 +29,16 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
     const live = () => !disposed && epoch === generation && key === ports.key();
     if (!key) { publish(undefined); return; }
     // Old records stay on show while the same site is checked again; another site starts empty.
-    if (key !== cacheKey) { cache = {}; cacheKey = key; if (records) publish(undefined); }
+    if (key !== lastKey) { lastKey = key; if (records) publish(undefined); }
     try { await ports.settled(); } catch { if (live()) publish(undefined); return; }
     if (!live()) return;
     const files = ports.files(), text = files.filter(isMediaTextFile);
     const sources: Record<string, string | undefined> = {};
     for (const file of text) {
       const source = ports.source(file);
+      // No private cache: the host holds unchanged text, and an uploaded or moved file is read
+      // again on every check, so a replaced one is never judged by its old bytes.
       if (source !== undefined) sources[file] = source;
-      else if (cache[file] !== undefined) sources[file] = cache[file];
     }
     const emit = () => publish(mediaUsageRecords({ media: ports.media?.() ?? files.filter(isMediaFile), files: text, sources,
       pages: ports.pages(), components: ports.components(), site: { origins: mediaOwnOrigins(ports.url(), sources.CNAME) } }));
@@ -49,7 +49,7 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
         try { return [file, await ports.read(file)] as const; } catch { return [file, undefined] as const; }
       }));
       if (!live()) return;
-      for (const [file, source] of values) { cache[file] = source; sources[file] = ports.source(file) ?? source; }
+      for (const [file, source] of values) sources[file] = ports.source(file) ?? source;
       emit();
     }
   }

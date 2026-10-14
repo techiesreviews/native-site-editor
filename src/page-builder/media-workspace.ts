@@ -102,7 +102,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     };
     for (const item of ctx.items) batch.expectedAssets.set(item.path, ctx.assetVersion(item.path));
     const text = usage ? await sources(ctx, batch.expectedPaths) : {};
-    for (const [path, value] of Object.entries(text)) batch.expectedSources.set(path, value);
+    // Media files (SVG is text too) are proved by their asset revision, which also covers
+    // uploads and moves whose bytes the host holds no source for.
+    const media = new Set(ctx.items.map((item) => item.path));
+    for (const [path, value] of Object.entries(text)) if (!media.has(path)) batch.expectedSources.set(path, value);
     const metadata = await ctx.read(MEDIA_RECORDS_PATH);
     ctx.assertLive();
     batch.expectedSources.set(MEDIA_RECORDS_PATH, metadata);
