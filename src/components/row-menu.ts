@@ -1,4 +1,5 @@
 import { button, node } from "../ui/dom";
+import { icon } from "../icons";
 import "./row-menu.css";
 
 export interface MenuItem {
@@ -8,6 +9,10 @@ export interface MenuItem {
   shortcut?: string;
   /** Why the action is unavailable: the item shows it and does nothing. */
   disabled?: string;
+  /** A choice among its section's items: shown checked or not (`menuitemradio`). */
+  checked?: boolean;
+  /** Consecutive items with the same section form a group under that heading. */
+  section?: string;
 }
 
 /**
@@ -24,7 +29,7 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
   element.hidden = true;
   host.append(element);
   let opener: HTMLElement | undefined;
-  const items = () => [...element.querySelectorAll<HTMLButtonElement>("[role='menuitem']")];
+  const items = () => [...element.querySelectorAll<HTMLButtonElement>("[role^='menuitem']")];
   function close(returnFocus: boolean) {
     if (element.hidden) return;
     element.hidden = true;
@@ -53,7 +58,9 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
       close(false);
       api.opener = opener = anchor;
       element.setAttribute("aria-label", label ?? anchor.getAttribute("aria-label") ?? "Actions");
-      element.replaceChildren(...entries.map((entry) => {
+      element.replaceChildren();
+      let group: HTMLElement | undefined;
+      for (const entry of entries) {
         const item = button("", () => {
           if (entry.disabled) return;
           close(false);
@@ -75,10 +82,21 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
           item.append(hint);
           item.setAttribute("aria-keyshortcuts", entry.shortcut);
         }
-        item.setAttribute("role", "menuitem");
+        item.setAttribute("role", entry.checked === undefined ? "menuitem" : "menuitemradio");
+        if (entry.checked !== undefined) item.setAttribute("aria-checked", String(entry.checked));
+        if (entry.checked) item.append(icon("check", 16, "row-menu__check"));
         item.tabIndex = -1;
-        return item;
-      }));
+        if (entry.section !== group?.getAttribute("aria-label")) {
+          group = entry.section ? node("div", "row-menu__group") : undefined;
+          if (group) {
+            group.setAttribute("role", "group"); group.setAttribute("aria-label", entry.section!);
+            const heading = node("span", "row-menu__section", entry.section);
+            heading.setAttribute("aria-hidden", "true");
+            group.append(heading); element.append(group);
+          }
+        }
+        (group ?? element).append(item);
+      }
       element.hidden = false;
       if (anchor.getAttribute("aria-haspopup")) anchor.setAttribute("aria-expanded", "true");
       const rect = anchor.getBoundingClientRect();

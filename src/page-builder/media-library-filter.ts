@@ -1,6 +1,5 @@
 import { uploadImageType } from "../uploads";
 import { mediaFamilies } from "./media-families";
-import type { MediaMetadataMap } from "./media-metadata";
 import type { MediaLibrary } from "./media-picker";
 
 export function accepts(path: string, accept?: string) {
@@ -13,25 +12,42 @@ export function accepts(path: string, accept?: string) {
   });
 }
 
-export function mediaLibraryTags(metadata: MediaMetadataMap) {
-  return [...new Set(Object.values(metadata).flatMap((entry) => entry.tags))].sort();
-}
+/** What a file is, from its extension: the kinds More offers. Documents are PDFs and other downloads. */
+export type MediaKind = "image" | "video" | "audio" | "document";
+export type MediaKindChoice = MediaKind | "all";
+const KINDS: [MediaKind, RegExp][] = [
+  ["image", /\.(?:svg|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|heif)$/i],
+  ["video", /\.(?:mp4|m4v|webm|mov|ogv|mkv)$/i],
+  ["audio", /\.(?:mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i],
+];
+export const mediaKind = (path: string): MediaKind => KINDS.find(([, pattern]) => pattern.test(path))?.[0] ?? "document";
 
 export interface MediaLibraryFilter {
-  query: string; folder: string; tag: string; sort: string; accept?: string;
+  query: string;
+  /** A collection's name; empty for All collections. */
+  collection: string;
+  kind: MediaKindChoice;
+  accept?: string;
 }
 
+/** Search respects the kind and the collection; results are in name order. */
 export function filterMediaLibrary(library: MediaLibrary, options: MediaLibraryFilter) {
   const query = options.query.trim().toLowerCase();
   return library.items.filter((item) => {
     const meta = library.metadata[item.path];
-    return accepts(item.path, options.accept) && (!options.folder || parent(item.path) === (options.folder === "/" ? "" : options.folder)) &&
-      (!options.tag || meta?.tags.includes(options.tag)) &&
+    return accepts(item.path, options.accept) && (options.kind === "all" || mediaKind(item.path) === options.kind) &&
+      (!options.collection || meta?.tags.includes(options.collection)) &&
       `${item.path} ${meta?.alt ?? ""} ${meta?.tags.join(" ") ?? ""} ${library.usage[item.path]?.alts.join(" ") ?? ""}`.toLowerCase().includes(query);
-  }).sort((a, b) =>
-    options.sort === "size" ? (b.size ?? 0) - (a.size ?? 0) || a.path.localeCompare(b.path)
-    : options.sort === "date" ? (b.date ?? 0) - (a.date ?? 0) || a.path.localeCompare(b.path)
-    : a.path.localeCompare(b.path));
+  }).sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** When nothing matches, the one step back towards all media: first the kind, then the
+ * collection, then the search. Nothing when no filter is narrowing (an empty library). */
+export function mediaLibraryRecovery(options: MediaLibraryFilter): { label: string; change: Partial<MediaLibraryFilter> } | undefined {
+  const searching = Boolean(options.query.trim());
+  if (options.kind !== "all") return { label: searching ? "Search all media" : "Show all media", change: { kind: "all" } };
+  if (options.collection) return { label: searching ? "Search all collections" : "Show all collections", change: { collection: "" } };
+  if (searching) return { label: "Clear search", change: { query: "" } };
 }
 
 /** One tile per Image family: each family's copies and kept originals are left out,

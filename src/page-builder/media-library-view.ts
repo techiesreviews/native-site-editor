@@ -8,11 +8,12 @@ import { showMediaDetail } from "./media-library-details";
 import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
-import { mediaFamilyUsage } from "./media-library-filter";
+import { mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { createRowMenu } from "../components/row-menu";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import {
   detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
-  dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryFolders,
+  dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
 } from "./media-library-refresh";
 import "./media-picker.css";
 import type { MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
@@ -26,7 +27,7 @@ export interface MediaLibraryView {
 }
 let viewId = 0;
 
-/** The Images pane, or the Choose image modal when `modal` is given. It owns the
+/** The Media pane, or the Choose image modal when `modal` is given. It owns the
  * state; the parts it composes get what they need as arguments. */
 export function createMediaLibraryView(
   container: HTMLElement, adapter: MediaPickerHost,
@@ -57,10 +58,12 @@ export function createMediaLibraryView(
     deleteUnused: () => remove([...selected].filter((path) => !library.usage[path]?.files.length), true),
     clear: () => { selected.clear(); draw(); },
   }, modal);
-  const { dialog, grid, folders, summary, message } = shell;
-  let alive = true, tag = "", refreshVersion = 0, loadingLibrary = false;
+  const { dialog, grid, collections, summary, message } = shell;
+  let alive = true, kind: MediaKindChoice = "all", refreshVersion = 0, loadingLibrary = false;
   let library: MediaLibrary, refreshedKey: string | undefined;
   const sheet: LibrarySheet = { element: shell.sheet, version: 0 };
+  // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
+  const more = createRowMenu(modal ?? container);
   const listeners = new AbortController(), selected = new Set<string>(), observers = new Set<IntersectionObserver>();
   const busyLock = createBusyLock({ root: dialog, signal: listeners.signal, tell,
     alive: () => alive, loading: () => loadingLibrary });
@@ -75,6 +78,7 @@ export function createMediaLibraryView(
     if (!alive) return;
     alive = false; sheet.version++; sheet.work?.abort(); listeners.abort();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); cache.dispose();
+    more.close(false); more.element.remove();
     modal?.removeEventListener("close", dispose); dialog.replaceChildren(); dialog.remove();
   }
   modal?.addEventListener("close", dispose, { once: true });
@@ -101,7 +105,7 @@ export function createMediaLibraryView(
     library = { ...next, usage: mediaFamilyUsage(next) };
     refreshedKey = inputKey;
     pruneLibrarySelection(library.items, selected);
-    rebuildLibraryFolders(folders, library.items);
+    rebuildLibraryCollections(collections, library.collections);
     draw();
     if (sheet.path) {
       if (library.items.some((item) => item.path === sheet.path)) {
@@ -119,18 +123,35 @@ export function createMediaLibraryView(
   }
   function draw() {
     if (!alive || !library) return;
-    tag = drawLibraryGrid(shell, library, { tag, selected, observers, accept: options.accept, modal: Boolean(modal) }, {
+    drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal) }, {
       alive: () => alive, bytes: path => cache.get(path), sync: () => busyLock.sync(),
       details: (path, focusUsage) => void details(path, focusUsage),
-      setTag: value => { tag = value; draw(); }, restoreFocus: !sheet.focus,
+      recover, restoreFocus: !sheet.focus,
     });
   }
+  function recover(change: Partial<MediaLibraryFilter>) {
+    if (change.kind) kind = change.kind;
+    if (change.collection !== undefined) collections.value = change.collection;
+    if (change.query !== undefined) shell.search.value = change.query;
+    draw(); shell.search.focus();
+  }
+  // More: adding first, then the kinds.
+  const kinds: [MediaKindChoice, string][] = [["all", "All"], ["image", "Images"], ["video", "Video"], ["audio", "Audio"], ["document", "Documents"]];
+  shell.more.addEventListener("click", () => {
+    if (more.isOpen() && more.opener === shell.more) { more.close(true); return; }
+    more.open(shell.more, [
+      { label: "Add new file", run: () => shell.uploadInput.click() },
+      ...kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
+        kind = value; draw(); shell.more.focus();
+      } })),
+    ], undefined, "More");
+  }, { signal: listeners.signal });
   function details(path: string, focusUsage = false, background = false) {
     return showMediaDetail(sheet, detailHost, path, focusUsage, background);
   }
   function remove(paths: string[], unusedOnly = false) { confirmMediaDelete(sheet, grid, context, paths, unusedOnly); }
   function optimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
-    showMediaOptimise(sheet, context, folders.value, files, existing, receipts);
+    showMediaOptimise(sheet, context, "", files, existing, receipts);
   }
   wireMediaLibraryInput(shell, {
     draw, busy: () => busyLock.busy, loaded: () => Boolean(library), optimise: files => optimise(files), tell,

@@ -1,7 +1,7 @@
 # Media library and optimisation
 
 The Media tab (formerly Images) browses repository files, searches filenames/default
-alt text/tags, filters folders and tags, reports page usage, and offers metadata,
+alt text/collections, narrows by collection and kind, reports page usage, and offers metadata,
 rename, deletion and optimisation. Image insertion produces ordinary `<img>` markup with escaped
 alt text, intrinsic dimensions, lazy loading, async decoding and responsive sources
 when available. Existing classes, source keys, slots and styles survive replacing
@@ -136,7 +136,7 @@ Dispose before replacing/removing a host, then mount again when needed. Remount
 reads effective drafts from the adapter rather than resetting repository state.
 
 The common implementation lives in `media-library-view.ts`. It serves search,
-folders, tags, usage, metadata, selection, uploads, optimisation, rename and delete
+collections, kinds, usage, metadata, selection, uploads, optimisation, rename and delete
 for both surfaces. `openMediaPicker({ onPick, accept, files })` remains the modal
 selection API and `closeMediaPicker()` closes only that modal. The pane has no
 dialog, backdrop, Close button or focus trap. Its narrow layout uses the editor's
@@ -163,7 +163,7 @@ ASE_TEST_PORT=5366 npm run test:browser -- tests/native-save/native-media-pane.s
 ```
 
 Background loads and host refreshes expose `aria-busy` without locking Search,
-Folder, Sort or image details. Repository mutations lock controls without removing
+Collections or image details. Repository mutations lock controls without removing
 keyboard focus; unavailable controls are visibly dimmed. A metadata form remains
 visible during a refresh, but Save waits for the fresh repository snapshot. Cancel
 can abort browser optimisation previews and is unavailable once
@@ -171,7 +171,17 @@ a transaction starts. Modal Close dismisses the picker without rolling back an
 already started transaction. Uploads attempted during a mutation show feedback.
 
 The persistent Media tab uses a bounded `min(55dvh, 560px)` height and one scroll
-area for its toolbar, grid and details. The grid is Tiles (media-manager ticket 06):
+area for its One bar, grid and details. The One bar (media-manager ticket 06) is a
+single row, even on phones, of 44 px controls 8 px apart: **Search**, the
+**Collections** dropdown and **More**. Collections is a native `<select>` (All
+collections, then each collection) that takes the editor's look, Phosphor caret and
+check where the browser supports customizable selects (`appearance: base-select`) and
+stays a plain select elsewhere; long names shorten in the closed control. More opens
+a menu: **Add new file** (the file chooser), then **Show** All, Images, Video, Audio
+or Documents (PDFs and other downloads). Search respects the chosen kind and
+collection; when nothing matches, one button steps back: to all media, then all
+collections, then clearing the search (`mediaLibraryRecovery`). The pane has no
+heading or separate Add button; the explorer's tab names it. The grid is Tiles (media-manager ticket 06):
 square crops, one per Image family (`mediaLibraryTiles`), 3 across below a 520 px
 browse width, 4 below 800 px and 6 above; the explorer widens to
 `min(1040px, 100vw - 32px)` while Media shows, so phones get 3, tablets 4 and wide
@@ -181,15 +191,14 @@ always on touch, over a blurred gradient. A file the browser cannot draw gets a
 clean surface with its type. Narrow details replace the grid, with Back
 to grid reachable in that same scroll area. The modal retains its two-column layout.
 
-In explorer panes narrower than 600px, opening details hides the browse-only
-Search, Folder, Sort, tag filters and upload action. Back to grid restores those
-controls with their query, folder, sort and selection intact. A compact image
+In explorer panes narrower than 600px, opening details hides the One bar and shows
+the Media heading as the details' title. Back to grid restores the bar with its
+search, collection, kind and selection intact. A compact image
 preview leaves the metadata heading and default alt field visible immediately;
 remaining metadata and file actions share the pane's single scroll area. The
 modal keeps its browsing tools and two-column layout.
 
-Refreshes restore a replaced focused thumbnail, usage button or tag chip by its
-image path or tag value. A keyboard detail request made while loading finishes
+Refreshes restore a replaced focused thumbnail or usage button by its image path. A keyboard detail request made while loading finishes
 with focus on Back to grid, provided focus has not moved elsewhere. Refreshes
 refuse new delete confirmations and invalidate existing confirmations so current
 usage must be reviewed before deleting. Detached confirmation controls cannot

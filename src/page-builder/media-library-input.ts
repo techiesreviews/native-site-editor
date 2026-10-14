@@ -11,12 +11,15 @@ export interface LibraryInputHost {
 
 /** Filters redraw, arrow keys move through thumbnails, and uploads or drops open Optimise. */
 export function wireMediaLibraryInput(
-  { search, folders, sort, grid, uploadInput, dialog }: LibraryShell, h: LibraryInputHost, signal: AbortSignal,
+  { search, collections, grid, uploadInput, dialog }: LibraryShell, h: LibraryInputHost, signal: AbortSignal,
 ) {
   const { draw, tell } = h;
   search.addEventListener("input", draw, { signal });
-  folders.addEventListener("change", draw, { signal });
-  sort.addEventListener("change", draw, { signal });
+  collections.addEventListener("change", draw, { signal });
+  // Escape in the open Collections list closes only the list, not the explorer around it.
+  collections.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && selectIsOpen(collections)) event.stopPropagation();
+  }, { signal });
   grid.addEventListener("keydown", (event) => {
     const buttons = [...grid.querySelectorAll<HTMLButtonElement>(".media-library__thumbnail")];
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
@@ -44,4 +47,9 @@ export function wireMediaLibraryInput(
 export function mediaLibraryArrowStep(key: string, at: number, count: number, columns: number) {
   const jump = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[key];
   return jump === undefined ? undefined : Math.max(0, Math.min(count - 1, at + jump));
+}
+
+/** A customizable select's list is open (`:open`); browsers without it draw their own list. */
+function selectIsOpen(select: HTMLSelectElement) {
+  try { return select.matches(":open"); } catch { return false; }
 }

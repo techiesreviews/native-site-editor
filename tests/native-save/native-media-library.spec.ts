@@ -17,7 +17,7 @@ test("image library searches repository images and shows transitive page usage",
   const panel = library(page);
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await expect.poll(() => panel.locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  await panel.getByLabel("Search images", { exact: true }).fill("studio-desk");
+  await panel.getByLabel("Search media", { exact: true }).fill("studio-desk");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await expect(panel.getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();

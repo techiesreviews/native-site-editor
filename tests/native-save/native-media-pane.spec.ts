@@ -28,9 +28,8 @@ test("persistent pane searches, filters, shows details and retains drafts throug
   await mount(page, baseURL);
   const panel = pane(page);
   await expect(page.locator("dialog.media-library")).toHaveCount(0);
-  await panel.getByLabel("Search images", { exact: true }).fill("studio-desk");
+  await panel.getByLabel("Search media", { exact: true }).fill("studio-desk");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
-  await panel.getByLabel("Folder", { exact: true }).selectOption("images");
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await expect(panel.getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
   await panel.getByLabel("Default alt text", { exact: true }).fill("Persistent studio");
@@ -42,7 +41,7 @@ test("persistent pane searches, filters, shows details and retains drafts throug
   await page.evaluate(() => { document.querySelector<HTMLElement>("#media-pane-harness")!.hidden = false; });
   await expect(panel.getByLabel("Default alt text", { exact: true })).toHaveValue("Persistent studio");
   await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { remount(): Promise<void> } }).mediaPaneHarness.remount(); });
-  await panel.getByRole("button", { name: "pane-tag", exact: true }).click();
+  await panel.getByLabel("Collections", { exact: true }).selectOption("pane-tag");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await expect(panel.getByLabel("Default alt text", { exact: true })).toHaveValue("Persistent studio");
@@ -234,7 +233,7 @@ for (const focusTarget of ["search", "outside", "detail"] as const) {
     const panel = pane(page);
     await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
     await expect(panel.getByLabel("Default alt text", { exact: true })).toBeVisible();
-    const target = focusTarget === "search" ? panel.getByLabel("Search images", { exact: true }) : focusTarget === "detail" ? panel.getByLabel("Default alt text", { exact: true }) : page.locator("#explorer-toggle");
+    const target = focusTarget === "search" ? panel.getByLabel("Search media", { exact: true }) : focusTarget === "detail" ? panel.getByLabel("Default alt text", { exact: true }) : page.locator("#explorer-toggle");
     await target.focus();
     await expect(target).toBeFocused();
     await page.evaluate(() => { (window as any).backgroundRefresh = (window as any).backgroundFailure.refresh(); });

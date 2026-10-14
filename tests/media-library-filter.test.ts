@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accepts, filterMediaLibrary, mediaFamilyUsage, mediaLibraryTags, mediaLibraryTiles } from "../src/page-builder/media-library-filter";
+import { accepts, filterMediaLibrary, mediaFamilyUsage, mediaKind, mediaLibraryRecovery, mediaLibraryTiles } from "../src/page-builder/media-library-filter";
 import type { MediaLibrary, MediaLibraryItem } from "../src/page-builder/media-picker";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -20,7 +20,7 @@ const library = {
 } satisfies MediaLibrary;
 
 function paths(options: Partial<MediaLibraryFilter> = {}, source: MediaLibrary = library) {
-  return filterMediaLibrary(source, { query: "", folder: "", tag: "", sort: "name", ...options }).map(item => item.path);
+  return filterMediaLibrary(source, { query: "", collection: "", kind: "all", ...options }).map(item => item.path);
 }
 
 test("search trims and ignores case across path, default alt, tags and usage alts", () => {
@@ -42,37 +42,65 @@ test("accept supports extensions, image wildcard, MIME and comma separated choic
   assert.deepEqual(paths({ accept: "video/*" }), []);
 });
 
-test("folder distinguishes all, repository root and exact sub-folder", () => {
-  assert.equal(paths({ folder: "" }).length, 4);
-  assert.deepEqual(paths({ folder: "/" }), ["root.PNG"]);
-  assert.deepEqual(paths({ folder: "images" }), ["images/a.webp", "images/B.jpg"]);
-  assert.deepEqual(paths({ folder: "images/sub" }), ["images/sub/c.svg"]);
+test("a collection is exact and combines with search, kind and accept", () => {
+  assert.deepEqual(paths({ collection: "summer" }), ["images/B.jpg", "root.PNG"]);
+  assert.deepEqual(paths({ collection: "people" }), []);
+  assert.deepEqual(paths({ collection: "summer", query: "portrait", accept: ".jpg" }), ["images/B.jpg"]);
+  assert.deepEqual(paths({ collection: "summer", kind: "video" }), []);
 });
 
-test("tags are unique and sorted; tag filter is exact and combines with other filters", () => {
-  assert.deepEqual(mediaLibraryTags(library.metadata), ["People", "summer"]);
-  assert.deepEqual(mediaLibraryTags({}), []);
-  assert.deepEqual(paths({ tag: "summer" }), ["images/B.jpg", "root.PNG"]);
-  assert.deepEqual(paths({ tag: "people" }), []);
-  assert.deepEqual(paths({ tag: "summer", folder: "images", query: "portrait", accept: ".jpg" }), ["images/B.jpg"]);
+test("results are in name order and the library is left as it was", () => {
+  const items: MediaLibraryItem[] = [{ path: "z.jpg" }, { path: "b.jpg", size: 30 }, { path: "a.jpg", date: 40 }];
+  const source = { key: "order", items, metadata: {}, collections: [], usage: {} } satisfies MediaLibrary;
+  assert.deepEqual(paths({}, source), ["a.jpg", "b.jpg", "z.jpg"]);
+  assert.deepEqual(items.map(item => item.path), ["z.jpg", "b.jpg", "a.jpg"]);
 });
 
-test("name sorts paths; date and size descend with path tie-breaks and missing values as zero", () => {
-  const items: MediaLibraryItem[] = [
-    { path: "z.jpg" }, { path: "b.jpg", size: 30, date: 40 },
-    { path: "a.jpg", size: 30, date: 40 }, { path: "c.jpg", size: 10, date: 50 },
-    { path: "d.jpg", size: 0, date: 0 },
-  ];
-  const source = { key: "sort", items, metadata: {}, collections: [], usage: {} } satisfies MediaLibrary;
-  assert.deepEqual(paths({ sort: "name" }, source), ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "z.jpg"]);
-  assert.deepEqual(paths({ sort: "size" }, source), ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "z.jpg"]);
-  assert.deepEqual(paths({ sort: "date" }, source), ["c.jpg", "a.jpg", "b.jpg", "d.jpg", "z.jpg"]);
-  assert.deepEqual(items.map(item => item.path), ["z.jpg", "b.jpg", "a.jpg", "c.jpg", "d.jpg"]);
+test("each file has one kind from its extension; Documents are PDFs and every other download", () => {
+  assert.deepEqual(["a.JPG", "b.webp", "c.svg", "d.heic", "e.avif"].map(mediaKind), ["image", "image", "image", "image", "image"]);
+  assert.deepEqual(["clip.mp4", "clip.WEBM", "clip.mov"].map(mediaKind), ["video", "video", "video"]);
+  assert.deepEqual(["song.mp3", "song.m4a", "song.wav", "song.ogg"].map(mediaKind), ["audio", "audio", "audio", "audio"]);
+  assert.deepEqual(["guide.pdf", "brief.docx", "pack.zip", "README"].map(mediaKind), ["document", "document", "document", "document"]);
+});
+
+const mixed = {
+  key: "mixed",
+  items: [
+    { path: "media/studio.webp" }, { path: "media/studio-tour.mp4" }, { path: "media/studio-intro.mp3" },
+    { path: "media/studio-guide.pdf" }, { path: "media/brief.zip" }, { path: "media/beach.jpg" },
+  ],
+  metadata: { "media/studio.webp": { alt: "", tags: ["Studio"] }, "media/studio-tour.mp4": { alt: "", tags: ["Studio"] } },
+  collections: ["Studio", "Empty"], usage: {},
+} satisfies MediaLibrary;
+
+test("search respects the kind: Images, Video, Audio and Documents each narrow the same search", () => {
+  assert.deepEqual(paths({ query: "studio" }, mixed), ["media/studio-guide.pdf", "media/studio-intro.mp3", "media/studio-tour.mp4", "media/studio.webp"]);
+  assert.deepEqual(paths({ query: "studio", kind: "image" }, mixed), ["media/studio.webp"]);
+  assert.deepEqual(paths({ query: "studio", kind: "video" }, mixed), ["media/studio-tour.mp4"]);
+  assert.deepEqual(paths({ query: "studio", kind: "audio" }, mixed), ["media/studio-intro.mp3"]);
+  assert.deepEqual(paths({ query: "studio", kind: "document" }, mixed), ["media/studio-guide.pdf"]);
+  assert.deepEqual(paths({ kind: "document" }, mixed), ["media/brief.zip", "media/studio-guide.pdf"]);
+  assert.deepEqual(paths({ query: "beach", kind: "video" }, mixed), []);
+  assert.deepEqual(paths({ query: "studio", kind: "video", collection: "Studio" }, mixed), ["media/studio-tour.mp4"]);
+});
+
+test("when nothing matches, recovery steps back to all media first, then all collections, then clears the search", () => {
+  const filter = { query: "", collection: "", kind: "all" as const };
+  // A search hidden by the kind finds its file under All.
+  const kind = mediaLibraryRecovery({ ...filter, query: "beach", kind: "video" });
+  assert.deepEqual(kind, { label: "Search all media", change: { kind: "all" } });
+  assert.deepEqual(paths({ query: "beach", kind: "video", ...kind?.change }, mixed), ["media/beach.jpg"]);
+  assert.deepEqual(mediaLibraryRecovery({ ...filter, kind: "audio", collection: "Empty" }), { label: "Show all media", change: { kind: "all" } });
+  assert.deepEqual(mediaLibraryRecovery({ ...filter, collection: "Empty" }), { label: "Show all collections", change: { collection: "" } });
+  assert.deepEqual(mediaLibraryRecovery({ ...filter, collection: "Studio", query: "beach" }), { label: "Search all collections", change: { collection: "" } });
+  assert.deepEqual(mediaLibraryRecovery({ ...filter, query: "  absent " }), { label: "Clear search", change: { query: "" } });
+  assert.equal(mediaLibraryRecovery({ ...filter, query: "   " }), undefined);
+  assert.equal(mediaLibraryRecovery(filter), undefined);
 });
 
 test("empty libraries and unmatched filters return no results", () => {
   assert.deepEqual(paths({ query: "absent" }), []);
-  assert.deepEqual(paths({ folder: "missing" }), []);
+  assert.deepEqual(paths({ collection: "missing" }), []);
   assert.deepEqual(paths({}, { key: "empty", items: [], metadata: {}, collections: [], usage: {} }), []);
 });
 

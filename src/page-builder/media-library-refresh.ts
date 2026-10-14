@@ -1,5 +1,4 @@
 import type { MediaLibrary } from "./media-picker";
-import { parent } from "./media-library-filter";
 
 export const detailIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify([
   value?.metadata[path] ?? { tags: [], alt: "" }, value?.usage[path],
@@ -7,20 +6,17 @@ export const detailIdentity = (value: MediaLibrary | undefined, path: string) =>
 ]);
 export const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
 
-export function libraryFolders(items: MediaLibrary["items"]) {
-  return [...new Set(items.map((item) => parent(item.path)))].sort();
-}
-
 export function pruneLibrarySelection(items: MediaLibrary["items"], selected: Set<string>) {
   for (const path of [...selected]) if (!items.some((item) => item.path === path)) selected.delete(path);
 }
 
-export function rebuildLibraryFolders(folders: HTMLSelectElement, items: MediaLibrary["items"]) {
-  const folder = folders.value;
-  folders.replaceChildren(new Option("All folders", ""),
-    ...libraryFolders(items).map((path) => new Option(path || "Repository root", path || "/")));
-  folders.value = folder;
-  if (folders.selectedIndex < 0) folders.selectedIndex = 0;
+/** All collections, then each collection in the library's order; a vanished choice falls back to All. */
+export function rebuildLibraryCollections(select: HTMLSelectElement, collections: string[]) {
+  const chosen = select.value;
+  // The customizable select's button (showing the chosen option) stays first.
+  select.replaceChildren(...[...select.children].filter(child => !(child instanceof HTMLOptionElement)),
+    new Option("All collections", ""), ...collections.map(name => new Option(name, name)));
+  select.value = collections.includes(chosen) ? chosen : "";
 }
 
 export function captureDetailForm(sheet: HTMLElement, preserve: boolean) {

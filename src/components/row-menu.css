@@ -34,3 +34,8 @@
 .pages-menu__item[aria-disabled="true"] { flex-wrap: wrap; color: var(--muted); cursor: default; }
 .pages-menu__item[aria-disabled="true"]:hover { background: none; }
 .row-menu__note { flex-basis: 100%; max-width: 260px; font-size: var(--type-small); line-height: 1.4; white-space: normal; text-align: left; }
+
+/* Choices (menuitemradio) in titled groups: the chosen one is checked. */
+.row-menu__group { display: flex; flex-direction: column; gap: 2px; }
+.row-menu__section { padding: 8px 8px 2px; color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.row-menu__check { margin: 0 0 0 auto; color: var(--primary); }

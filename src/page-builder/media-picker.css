@@ -16,13 +16,8 @@
 .media-library__header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .media-library__header > div { flex: 1; min-width: 0; display: grid; gap: 5px; }
 .media-library__muted, .media-library__hint { color: var(--muted); font-size: var(--type-small); }
-.media-library__toolbar { display: flex; gap: 10px; padding: 16px 24px 10px; }
 .media-library input:not([type="checkbox"]), .media-library select { min-height: var(--size-control); min-width: 0; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 6px 10px; background: var(--surface-input); color: var(--text); }
-.media-library__toolbar input { flex: 1; }
-.media-library__chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 24px 14px; border-bottom: 1px solid var(--line); }
-.media-library__chip { background: none; color: var(--muted); border: 1px solid var(--control-line); padding: 0 10px; }
-.media-library__chip[aria-pressed="true"] { background: var(--current); color: var(--text); font-weight: 600; }
-.media-library__chip:hover, .media-library__page:hover { background: var(--hover); }
+.media-library__page:hover { background: var(--hover); }
 .media-library__body { flex: 1; display: flex; min-height: 0; }
 .media-library__browse { flex: 1; min-width: 0; overflow: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
 .media-library input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
@@ -47,9 +42,6 @@
   .media-library { width: calc(100vw - 16px); height: calc(100dvh - 16px); }
   .media-library__header { padding: 12px; flex-wrap: wrap; }
   .media-library__header > div { flex-basis: 100%; }
-  .media-library__toolbar { padding: 12px; flex-wrap: wrap; }
-  .media-library__toolbar input { flex-basis: 100%; }
-  .media-library__chips { padding: 0 12px 12px; }
   .media-library__browse { padding: 12px; }
   .media-library__body:has(.media-library__sheet:not([hidden])) .media-library__browse { display: none; }
   .media-library__sheet { width: 100%; border-left: none; }
@@ -67,9 +59,6 @@
 }
 .media-library--pane[hidden] { display: none; }
 .media-library--pane .media-library__header { padding: 12px; flex-wrap: wrap; }
-.media-library--pane .media-library__toolbar { padding: 12px; flex-wrap: wrap; }
-.media-library--pane .media-library__toolbar input { flex-basis: 100%; }
-.media-library--pane .media-library__chips { padding: 0 12px 12px; }
 .media-library--pane .media-library__browse { padding: 12px; }
 .media-library--pane .media-library__footer { padding: 12px; }
 @container (max-width: 600px) {
@@ -83,27 +72,18 @@
 .media-library--pane .media-library__header { align-items: start; gap: 10px; padding: 16px 12px 12px; }
 .media-library--pane .media-library__header > div { flex-basis: 100%; gap: 6px; }
 .media-library--pane h2 { font-size: var(--type-base); }
-.media-library--pane .media-library__toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding-top: 4px; }
-.media-library--pane .media-library__toolbar input { grid-column: 1 / -1; width: 100%; box-sizing: border-box; }
-.media-library--pane .media-library__toolbar select { width: 100%; }
 .media-library--pane .media-library__body { flex: none; min-height: 0; }
 .media-library--pane .media-library__browse, .media-library--pane .media-library__sheet { overflow: visible; }
 .media-library--pane .media-library__sheet { box-sizing: border-box; gap: 14px; padding: 16px 12px; }
 .media-library--pane .media-library__preview { width: 100%; height: 150px; }
 .media-library--pane .media-library__footer { line-height: 1.5; }
 
-/* Browse tools give way to the selected image in the explorer's compact pane. */
-.media-library--pane .media-library__header { align-items: center; flex-wrap: nowrap; padding: 12px; }
-.media-library--pane .media-library__header > div { flex-basis: auto; }
-.media-library--pane .media-library__header h2 { display: none; }
-.media-library--pane .media-library__header > button { flex-shrink: 0; }
+/* The explorer's tab names the pane, so its heading shows only as the title of compact
+   details; browse tools give way to the selected file there. */
+.media-library--pane .media-library__header { display: none; padding: 10px 12px; }
 @container (max-width: 600px) {
-  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__toolbar,
-  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__chips,
-  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__header p,
-  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__header > button { display: none; }
-  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__header h2 { display: block; }
-  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__header { padding-block: 10px; }
+  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__bar { display: none; }
+  .media-library--pane:has(.media-library__sheet:not([hidden])) .media-library__header { display: flex; }
   .media-library--pane .media-library__sheet { gap: 10px; padding-top: 12px; }
   .media-library--pane .media-library__preview { height: 120px; max-height: 120px; }
 }
@@ -172,8 +152,43 @@
 .media-library__card.is-file :is(.media-library__usage, .media-library__select)::before { background: var(--hover); backdrop-filter: none; mask-image: none; border-radius: 50%; }
 .media-library__card.is-file .media-library__usage:focus-visible, .media-library__card.is-file .media-library__select input:focus-visible { outline-color: var(--focus); }
 
-/* With room, search and the two choices share one row. */
-@container (min-width: 560px) {
-  .media-library--pane .media-library__toolbar { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
-  .media-library--pane .media-library__toolbar input { grid-column: auto; }
+/* One bar (media-manager ticket 06, tiles.html): search, Collections and More on one row,
+   even on phones; 44 px high, 8 px apart. */
+.media-library__bar { display: grid; grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr) 44px; gap: 8px; align-items: center; padding: 16px 24px 4px; }
+dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr); }
+.media-library--pane .media-library__bar { padding: 12px 12px 0; }
+/* Phones: search and Collections share the row, so both stay readable; long names shorten. */
+@container (max-width: 540px) { .media-library--pane .media-library__bar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) 44px; } }
+.media-library .media-library__bar > * { height: 44px; min-height: 44px; box-sizing: border-box; }
+.media-library__search { position: relative; min-width: 0; }
+.media-library__search::before {
+  content: ""; position: absolute; inset: 0 auto 0 12px; width: 18px; background: var(--muted); pointer-events: none;
+  mask: url("@phosphor-icons/core/regular/magnifying-glass.svg") center / 18px no-repeat;
 }
+.media-library .media-library__search input { width: 100%; height: 100%; padding: 0 8px 0 38px; border-radius: 22px; }
+.media-library .media-library__collections { width: 100%; padding: 0 12px; border-radius: 12px; font-weight: 600; text-overflow: ellipsis; }
+.media-library .media-library__more { width: 44px; padding: 0; border: 1px solid var(--control-line); border-radius: 12px; background: var(--surface-input); color: var(--text); }
+.media-library .media-library__more:is(:hover, [aria-expanded="true"]) { background: var(--hover); }
+/* Collections stays a native select; where the browser can, it takes the editor's look:
+   a quiet surface, long names shortened when closed, Phosphor's caret and check. */
+@supports (appearance: base-select) and selector(::picker(select)) {
+  .media-library .media-library__collections, .media-library__collections::picker(select) { appearance: base-select; }
+  .media-library .media-library__collections { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .media-library .media-library__collections > button { display: flex; flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; }
+  .media-library__collections selectedcontent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .media-library__collections::picker-icon { content: ""; width: 18px; height: 18px; background: var(--muted); mask: var(--icon-caret-down) center / contain no-repeat; }
+  .media-library__collections::picker(select) {
+    max-height: 330px; margin-block: 6px; padding: 6px; overflow: auto; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow);
+  }
+  .media-library__collections option { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 12px; border-radius: 8px; overflow-wrap: anywhere; }
+  .media-library__collections option:is(:hover, :focus-visible) { background: var(--hover); }
+  .media-library__collections option:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+  .media-library__collections option:checked { background: var(--current); font-weight: 600; }
+  .media-library__collections option::checkmark {
+    content: ""; order: 1; flex: none; width: 18px; height: 18px; margin-left: auto; background: var(--primary);
+    mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat;
+  }
+}
+.media-library__empty:has(> button) { text-align: center; }
+.media-library__empty > button { margin-top: 12px; }

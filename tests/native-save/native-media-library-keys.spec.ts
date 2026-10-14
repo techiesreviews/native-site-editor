@@ -19,9 +19,9 @@ test("arrow keys browse the image grid by card and row; Enter opens details", as
     host.style.cssText = "position:fixed;inset:20px;background:white;z-index:1000";
     document.body.append(host);
     const view = createMediaLibraryView(host, {
-      async load() { return { key: "keys", items: paths.map((path) => ({ path, version: "A" })), metadata: {}, usage: {} }; },
+      async load() { return { key: "keys", items: paths.map((path) => ({ path, version: "A" })), metadata: {}, collections: [], usage: {} }; },
       async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-      async metadata() {}, async rename() {}, async remove() {}, async openPage() {},
+      async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {},
       async import() { return []; },
     });
     await view.ready;

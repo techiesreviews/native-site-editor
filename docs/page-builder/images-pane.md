@@ -22,19 +22,19 @@ width follows the explorer; details replace browsing at small container widths.
 In `src/page-builder/`, `media-library-view.ts` composes the view and owns its
 state; each part gets what it needs as arguments and changes nothing of another's.
 `media-library-shell.ts` builds the frame and controls, `media-library-fields.ts`
-supplies the small control helpers, and `media-library-grid.ts` draws the tag chips,
-summary and one square tile per Image family, loads thumbnails as they scroll into view and keeps browse focus.
+supplies the small control helpers, and `media-library-grid.ts` draws the
+screen-reader count, one square tile per Image family or the no-results way back, loads thumbnails as they scroll into view and keeps browse focus.
 Details, delete and Optimise share one side sheet, `media-library-sheet.ts`: its
 version makes an earlier screen's callbacks stale. `media-library-details.ts` renders
 the metadata form, the usage list, the file actions and the picker's insertion
 preview; `media-library-delete.ts` asks before deleting and moves focus afterwards;
 `media-library-optimise.ts` is the Optimise sheet, with its stored per-repository
 settings and import requests in `media-library-optimise-rules.ts`; and
-`media-library-input.ts` wires filters, arrow keys (by the grid's laid-out
+`media-library-input.ts` wires search and Collections, arrow keys (by the grid's laid-out
 columns), the upload input and drops.
 `media-busy-lock.ts` guards running changes, `media-byte-cache.ts` keeps decoded
 bytes, `media-library-refresh.ts` keeps forms and focus through a refresh, and
-`media-library-filter.ts` filters and sorts. Phase 1 can replace the shell and grid
+`media-library-filter.ts` holds the pure rules: kinds, filtering and the no-results recovery. Phase 1 can replace the shell and grid
 while the sheet screens keep working.
 
 Switching to Pages or Files keeps unfinished metadata fields. Repository changes mark a hidden Media pane for refresh when it is shown again. A refresh keeps the current detail form when its image, metadata and references are unchanged; changed references or image bytes retain unfinished metadata, while metadata Undo and Redo show the restored source values. A completed image operation and the host draft listener share an exact source revision so they do not reload the same revision twice.
