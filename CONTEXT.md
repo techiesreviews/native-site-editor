@@ -138,7 +138,7 @@ Making a saved version of a GitHub project's site available at its public addres
 The deployment state of a saved change in a GitHub project: Saved, Building, Live, or Failed. Hidden for local folder projects; Saved to folder describes a disk write instead.
 
 **Put on GitHub…**:
-A planned secondary action in a local folder project's overview menu leading to a GitHub transfer flow. The entry is decided; the transfer flow remains open in [Decide whether a folder can be put on GitHub](docs/wayfinder/local-folders/tickets/09-put-a-folder-on-github.md).
+A planned secondary action in a local folder project's overview menu that makes a one-time copy of its allowed saved site files into a new, separate GitHub repository and project. The folder project remains independent, with no automatic sync; see [Decide whether a folder can be put on GitHub](docs/wayfinder/local-folders/tickets/09-put-a-folder-on-github.md#resolution-2026-10-14).
 
 **Local site address**:
 A user-supplied address of the user's own local server, such as `http://localhost:3000`. Separate from the public address in Site settings; it does not change generated links. (Planned in ADR 0002.)
