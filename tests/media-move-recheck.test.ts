@@ -119,7 +119,7 @@ test("timeout before the moved bytes paint: no measurement, no rewrite, group cl
 });
 
 test("a page of images without sizes: the large first-screen one takes priority, no sizes written", () => {
-  const page = '<main><section><img fetchpriority="high" src="old.svg"></section><section><img src="big.svg"></section></main>';
+  const page = '<main><section><img fetchpriority="high" src="old.svg"></section><section><img loading="lazy" src="big.svg"></section></main>';
   const report: MediaMeasured = { sizes: "100vw", firstScreen: true, large: true, images: [
     { node: [0, 0, 0], firstScreen: false, large: false },
     { node: [0, 1, 0], firstScreen: true, large: true },
@@ -192,4 +192,27 @@ test("other bytes painted for good during a pass: no second measurement, the dea
   assert.equal(f.store.text(f.scope, f.path), source);
   assert.equal(f.closed(), 1);
   assert.equal(f.store.hasOpenGroup("h"), false);
+});
+
+test("a retry keeps the first deadline: a late failure then a pass that never settles ends at 10 s", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = setup();
+  let calls = 0;
+  const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
+  f.ports.measure = () => {
+    calls++;
+    if (calls === 1) return new Promise((_resolve, reject) => setTimeout(() => reject(new Error("no answer")), 6000));
+    return new Promise<MediaMeasured>(() => {});
+  };
+  const pending = recheckMove(f.ports, f.path, source, [0, 0], f.tag);
+  await flush();
+  context.mock.timers.tick(6000);
+  await flush();
+  assert.equal(calls, 2);
+  assert.equal(f.closed(), 0);
+  context.mock.timers.tick(4000);
+  await pending;
+  assert.equal(f.closed(), 1);
+  assert.equal(f.store.hasOpenGroup("h"), false);
+  assert.equal(f.store.text(f.scope, f.path), source);
 });

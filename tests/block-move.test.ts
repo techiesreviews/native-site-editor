@@ -447,21 +447,22 @@ test("placed-image moves use fresh tags on mounted and opening paths; plain page
     assert.equal(again.status, "moved");
     assert.notEqual(checks[1].tag, first);
     assert.equal(m.steps().length, 2);
-    // No placed image or priority holder: an image-free block moves without a re-check...
+    // An image-free block on a page with any image is re-checked: the image may cross the fold.
     const plain = checks[1].source.replace('sizes="100vw"', 'data-sizes="100vw"');
     m.typeInto(PAGE, plain);
     assert.equal(moves.move({ path: PAGE, node: [0, 1], painted: plain }, { step: "up" }).status, "moved");
-    assert.equal(checks.length, 2);
-    // ...but a moved hand-written image is re-checked (it may become or stop being the priority image).
-    const later = m.workspace.source(PAGE)!;
-    assert.equal(moves.move({ path: PAGE, node: [0, 1], painted: later }, { step: "up" }).status, "moved");
     assert.equal(checks.length, 3);
     assert.deepEqual(checks[2].node, [0, 0]);
+    // A page without images moves without one.
+    const bare = m.workspace.source(PAGE)!.replace(/<img[^>]*>/, "");
+    m.typeInto(PAGE, bare);
+    assert.equal(moves.move({ path: PAGE, node: [0, 1], painted: bare }, { step: "up" }).status, "moved");
+    assert.equal(checks.length, 3);
   }
 });
 
-test("a priority holder without sizes makes any move on its page a re-check", () => {
-  const page = '<main><section><img fetchpriority="high" src="a.svg"></section><section>B</section></main>';
+test("a lazy image without sizes (a placed SVG) makes any move on its page a re-check", () => {
+  const page = '<main><section><img loading="lazy" src="a.svg"></section><section>B</section></main>';
   const m = createMemoryWorkspace({ branch: { [PAGE]: page }, open: PAGE, site });
   const checks: number[][] = [];
   const moves = createBlockMoves({
