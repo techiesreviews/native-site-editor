@@ -74,6 +74,8 @@ export function createNativeSettings(ports: SettingsPorts) {
         live: () => stamp.holds() && [...expected].every(([path, source]) => ports.guardedEdits.peek.source(path) === source), edits });
       // A repository switched while the old one finished: never adopt the new one's proof.
       if (!repository.holds()) throw new Error(changed);
+      // A framed picture is never linked in place of its copy (an animated one cannot be copied).
+      if (trim && !result) throw new Error("This picture cannot be made into a sharing copy. Choose a still picture. Nothing was applied.");
       if (result && !result.reused) refreshProof();
       return result;
     };

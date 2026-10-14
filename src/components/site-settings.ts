@@ -212,9 +212,9 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
     opening = true;
     const before = input.value, staged = stagedFrame(input), links = new Map([[frame.file, frame.value]]);
     try {
-      const { openSocialImagePopup } = await import("../page-builder/social-image-popup");
+      const { openSocialImagePopup, SOCIAL_ANIMATED } = await import("../page-builder/social-image-popup");
       if (!dialog.root.isConnected || input.value !== before) return;
-      popup = await openSocialImagePopup({ button: control, file: staged?.file ?? frame.file, trim: staged?.trim ?? frame.trim,
+      const opened = await openSocialImagePopup({ button: control, file: staged?.file ?? frame.file, trim: staged?.trim ?? frame.trim,
         card: { title: options.title(), site: frame.site },
         picture: path => handlers.imageUrl(links.get(path) ?? `/${path}`),
         choose: async () => {
@@ -235,6 +235,9 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
         },
         closed: () => { popup = undefined; },
       });
+      // A moving picture cannot be framed: the picker offers another; one that cannot be read opens it too.
+      if (opened === "animated" && dialog.root.isConnected) dialog.status.textContent = SOCIAL_ANIMATED;
+      popup = typeof opened === "object" ? opened : undefined;
       if (!popup && dialog.root.isConnected && input.value === before) await choose();
     } catch (error) {
       if (dialog.root.isConnected) dialog.status.textContent = error instanceof Error ? error.message : String(error);

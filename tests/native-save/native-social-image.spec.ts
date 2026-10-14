@@ -3,6 +3,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { openPageSettingsFromPages } from "./settings-entry";
+import { animatedGif } from "./animated-gif";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const panel = (page: Page) => page.getByRole("dialog", { name: "Site settings", exact: true });
@@ -175,6 +176,21 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await expect(field).toHaveValue(first);
   await expect(image).toBeFocused();
 
+  // Done and then the settings' Cancel change nothing.
+  await image.click();
+  await expect(dot).toBeFocused();
+  await page.keyboard.press("Shift+ArrowDown");
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(field).toHaveValue("/images/sharing-source.png");
+  const drafts = JSON.stringify(await storedDrafts(page));
+  await panel(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(panel(page)).not.toBeVisible();
+  expect(JSON.stringify(await storedDrafts(page))).toBe(drafts);
+  await pages(page);
+  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
+  await expect(field).toHaveValue(first);
+
   // Move the frame to the top, Done: the field holds the picture until Apply.
   await image.click();
   await expect(dot).toBeFocused();
@@ -210,4 +226,22 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   // One Undo puts the first copy back.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain(`content="${first}"`);
+});
+
+test("an animated picture is not framed: the Image button says so and offers the picker", async ({ page, baseURL }) => {
+  await fixture(page, baseURL, true);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "images/moving.gif", base64: animatedGif().toString("base64") } })).status()).toBe(204);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await pages(page); await openPageSettingsFromPages(page);
+  const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
+  await settings.getByRole("tab", { name: "Social", exact: true }).click();
+  await settings.getByLabel("Social image", { exact: true }).fill("/images/moving.gif");
+  await settings.getByRole("button", { name: "Image", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Social image", exact: true })).toHaveCount(0);
+  await expect(settings).toContainText("Animated pictures cannot be framed for sharing. Choose a still picture.");
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(settings.getByLabel("Social image", { exact: true })).toHaveValue("/images/moving.gif");
 });
