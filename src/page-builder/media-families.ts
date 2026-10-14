@@ -13,6 +13,7 @@ const originalPath = (path: string) => /^media\/originals\//i.test(path);
 const stem = (path: string) => path.replace(/\.[^./]+$/, "");
 const base = (path: string) => stem(path).slice(stem(path).lastIndexOf("/") + 1);
 const extension = (path: string) => path.slice(stem(path).length);
+const format = (path: string) => extension(path).toLowerCase().replace(".jpeg", ".jpg");
 
 function responsiveCopyName(path: string): { stem: string; width: number } | undefined {
   const match = /^(.*)-([1-9][0-9]*)(w?)$/.exec(stem(path));
@@ -21,6 +22,14 @@ function responsiveCopyName(path: string): { stem: string; width: number } | und
   // Bare numbers are copies only at generated widths; "w" allows any positive width.
   if (!Number.isSafeInteger(width) || (!match[3] && !(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(width))) return;
   return { stem: match[1], width };
+}
+
+function adoptedCopyName(path: string): { stem: string; width: number; set?: boolean } | undefined {
+  const wordpress = /^(.*)-([1-9][0-9]*)x([1-9][0-9]*)$/.exec(stem(path));
+  if (wordpress && Number(wordpress[2]) <= 10000 && Number.isSafeInteger(Number(wordpress[3])))
+    return { stem: wordpress[1], width: Number(wordpress[2]) };
+  const bare = /^(.*)-([1-9][0-9]*)$/.exec(stem(path)), width = Number(bare?.[2]);
+  if (bare && width >= 100 && width <= 10000 && !(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(width)) return { stem: bare[1], width, set: true };
 }
 
 /** A responsive copy whose main image is gone: no other image outside `media/originals/` has its base name. */
@@ -34,14 +43,22 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
   const families = new Map<string, MediaFamily>(images.map(main => [main, { main, copies: [], originals: [] }]));
   const byStem = new Map<string, string[]>();
   for (const path of images) byStem.set(stem(path), [...(byStem.get(stem(path)) ?? []), path]);
+  const setFormats = new Map<string, string[]>();
+  for (const path of images) {
+    const member = adoptedCopyName(path);
+    if (member?.set) setFormats.set(member.stem, [...setFormats.get(member.stem) ?? [], format(path)]);
+  }
   // Shorter stems are resolved first, so an attached copy cannot claim another copy.
   for (const path of [...images].sort((a, b) => stem(a).length - stem(b).length)) {
-    const copy = responsiveCopyName(path);
+    const copy = responsiveCopyName(path) ?? adoptedCopyName(path);
     if (!copy) continue;
     const candidates = (byStem.get(copy.stem) ?? []).filter(main => families.has(main));
     const sameExtension = candidates.find(main => extension(main).toLowerCase() === extension(path).toLowerCase());
     const main = sameExtension ?? (candidates.length === 1 ? candidates[0] : undefined);
     if (!main) continue;
+    // A hand-made set: two or more bare numbers beside a main in another format.
+    if ("set" in copy && copy.set && (sameExtension || format(path) === format(main)
+      || (setFormats.get(copy.stem) ?? []).filter(other => other !== format(main)).length < 2)) continue;
     families.get(main)!.copies.push({ path, width: copy.width });
     families.delete(path);
   }

@@ -30,6 +30,7 @@ export async function mediaSmallerMain(main: Blob, source: { size: number; strip
   return candidates.reduce<Blob>((chosen, candidate) => candidate && candidate.size < chosen.size ? candidate : chosen, main);
 }
 export function mediaCopyIsSmaller(copy: Blob, main: Blob) { return copy.size < main.size; }
+export interface MediaCopiesOptions { widths: number[]; format: MediaOptimiseOptions["format"] }
 export interface MediaOutput { blob: Blob; width?: number; height?: number; extension: string; variantWidth?: number }
 export interface MediaOptimiseResult { outputs: MediaOutput[]; trim?: MediaTrim; before: number; after: number; note?: string; original?: MediaOutput }
 
@@ -57,7 +58,7 @@ export function validateMediaOptimiseOptions(options: MediaOptimiseOptions) {
 }
 
 /** Vite emits a same-origin script; never a blob: worker under the editor CSP. */
-export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?: AbortSignal, trim?: MediaTrim, original = false): Promise<MediaOptimiseResult> {
+export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?: AbortSignal, trim?: MediaTrim, original = false, copies?: MediaCopiesOptions): Promise<MediaOptimiseResult> {
   return new Promise((resolve, reject) => {
     validateMediaOptimiseOptions(options);
     if (signal?.aborted) { reject(new DOMException("Image optimisation cancelled.", "AbortError")); return; }
@@ -75,6 +76,6 @@ export function optimiseMedia(file: File, options: MediaOptimiseOptions, signal?
     }
     worker.onmessage = (event: MessageEvent<{ error?: string; result?: MediaOptimiseResult }>) => finish(event.data.error ? new Error(event.data.error) : undefined, event.data.result);
     worker.onerror = () => finish(new Error("Image optimisation is unavailable in this browser. Keep the original to upload it."));
-    worker.postMessage({ file, options, ...(trim ? { trim } : {}), ...(original ? { original } : {}) });
+    worker.postMessage({ file, options, ...(copies ? { copies } : {}), ...(trim ? { trim } : {}), ...(original ? { original } : {}) });
   });
 }

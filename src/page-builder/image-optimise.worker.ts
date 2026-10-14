@@ -1,16 +1,15 @@
 import type { MediaTrim } from "../../shared/media-records";
 import { socialImageTrim, socialImageSize } from "./social-geometry";
 import { trimGeometry, isTrim, validTrim } from "./trim-geometry";
-import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, mediaAnimatedOutput, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
+import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, mediaAnimatedOutput, validateMediaOptimiseOptions, type MediaCopiesOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
 
 import { cleanedMediaOriginal } from "./media-originals";
 import { loadHeicDecoder, loadPngSqueezer, loadSvgCleaner, type MediaCodecs } from "./media-codecs";
 import { decodeMediaBitmap, isHeic } from "./media-heic";
-import { strippedImageSource } from "./media-image-bytes";
+import { gifIsAnimated, pngIsAnimated, webpIsAnimated, strippedImageSource } from "./media-image-bytes";
 
 import { createMediaEncoder } from "./media-encoders";
 
-const encodeImage = createMediaEncoder();
 function sourceType(file: File, bytes: Uint8Array) {
   if (bytes[0] === 255 && bytes[1] === 216) return "image/jpeg";
   if (bytes[0] === 137 && bytes[1] === 80) return "image/png";
@@ -33,8 +32,9 @@ function imagePixels(bitmap: ImageBitmap, trim?: MediaTrim): ImageBitmap | Offsc
 
 /** Codecs are injectable so worker tests can run without WASM. */
 export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, loadPngSqueezer, loadSvgCleaner }) {
-  self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions; trim?: MediaTrim; original?: boolean }>) => {
-    const { file, options, trim, original } = event.data;
+  const encodeImage = createMediaEncoder();
+  self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimiseOptions; trim?: MediaTrim; original?: boolean; copies?: MediaCopiesOptions }>) => {
+    const { file, options, trim, original, copies } = event.data;
     try {
       validateMediaOptimiseOptions(options);
       if (options.sharing && (options.keepOriginal || original || options.responsive || options.format !== "jpeg"))
@@ -44,6 +44,10 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
       if (trim && options.keepOriginal) throw new Error("A trimmed copy cannot keep the original bytes.");
       if (trim && original) throw new Error("A trimmed copy has no kept original; its source is already in the site.");
       const bytes = new Uint8Array(await file.arrayBuffer());
+      if (copies && (gifIsAnimated(bytes) || pngIsAnimated(bytes) || webpIsAnimated(bytes))) {
+        self.postMessage({ result: { outputs: [], before: file.size, after: 0 } satisfies MediaOptimiseResult });
+        return;
+      }
       const heic = isHeic(file.name, file.type, bytes), svg = /\.svg$/i.test(file.name) || file.type === "image/svg+xml";
       // Keep original never skips SVG clean-up, nor makes a HEIC the website image.
       if (options.keepOriginal && !svg && !heic) {
@@ -97,8 +101,8 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
           return;
         }
         const picture = imagePixels(bitmap, trim);
-        const size = mediaDimensions(picture.width, picture.height, options.maxWidth);
-        let settings = options;
+        const size = mediaDimensions(picture.width, picture.height, copies ? null : options.maxWidth);
+        let settings = copies ? { ...options, format: copies.format } : options;
         const notes = new Set<string>();
         const encode = (canvas: OffscreenCanvas, type: string, quality: number, speed?: number) =>
           encodeImage(canvas, type, quality, speed, text => notes.add(text));
@@ -115,7 +119,26 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
         const pixels = ctx.getImageData(0, 0, size.width, height).data;
         let transparent = false;
         for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { transparent = true; break; }
-        if (transparent) settings = mediaTransparentOptions(settings);
+        if (transparent) {
+          settings = mediaTransparentOptions(options);
+          // An ambiguous recipe name may require the main's own format; keep that safe plan.
+          if (copies && copies.format !== options.format) settings = { ...settings, format: copies.format };
+        }
+        if (copies) {
+          const outputs: MediaOutput[] = [];
+          for (const width of copies.widths) {
+            if (!Number.isInteger(width) || width < 1 || width >= picture.width) continue;
+            const copy = canvasAt(width);
+            const encoded = await encode(copy.canvas, `image/${settings.format}`, settings.quality, settings.speed);
+            if (settings.format === "avif" && encoded.type === "image/webp") settings = mediaImageRecipe();
+            if (encoded.type === `image/${settings.format}` && mediaCopyIsSmaller(encoded, file)) outputs.push({
+              blob: encoded, width, height: copy.height, variantWidth: width,
+              extension: encoded.type === "image/jpeg" ? "jpg" : encoded.type.slice(6),
+            });
+          }
+          self.postMessage({ result: { outputs, before: file.size, after: outputs.reduce((sum, output) => sum + output.blob.size, 0) } satisfies MediaOptimiseResult });
+          return;
+        }
         let blob = await encode(canvas, `image/${settings.format}`, settings.quality, settings.speed);
         // A failed AVIF encoder used Balanced; its copies must use that recipe too.
         if (settings.format === "avif" && blob.type !== "image/avif") settings = mediaImageRecipe();

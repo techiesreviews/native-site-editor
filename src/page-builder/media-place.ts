@@ -26,6 +26,8 @@ export async function placeMediaImage(
     import("./media-references"), import("../../shared/html-source"),
     import("./html-entities"), workspaceContext(), import("./media-collections"), frame && import("./place-frame"),
   ]);
+  const expectedPaths = [...ctx.paths];
+  const mainVersion = ctx.assetVersion(image.path);
   const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
   ctx.assertLive();
   // A new shape is measured with its style standing in, as `framePlace` does.
@@ -44,12 +46,30 @@ export async function placeMediaImage(
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
+  let copies: Awaited<ReturnType<typeof import("./media-older-copies")["makeOlderCopies"]>>;
+  let copyNote = "";
+  const older = await import("./media-older-copies");
+  ctx.assertLive();
+  if (!cancelled() && !/^components\//.test(target.path) && older.olderCopyWidths({ path: image.path, width: image.width, paths: ctx.paths }).length) {
+    try { copies = await older.makeOlderCopies(ctx, image, older.olderCopiesQuality(records.adding)); }
+    catch (error) {
+      if (cancelled() || (error instanceof DOMException && error.name === "AbortError")) return;
+      copyNote = older.OLDER_COPIES_FAILED;
+    }
+    ctx.assertLive();
+  }
+  if (cancelled()) return;
+  if (!stamp.holds() || ports.source(target.path) !== latest || ports.source(io.MEDIA_RECORDS_PATH) !== metadata) throw new Error(changed);
+  if (copies?.uploads.length) image = { ...image, variants: copies.variants };
+  const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
+  // New copies were made from this revision of the main: a newer one refuses the whole step.
+  if (copies?.uploads.length && !expectedAssets.has(image.path)) expectedAssets.set(image.path, mainVersion);
   const parentNode = target.node.slice(0, -1), parent = locate(latest, parentNode);
   const tree = parent?.tag.name === "picture" ? readSource(latest) : undefined;
   const picture = tree?.elements().find(element => element.type === "element" && element.tag.start === parent!.tag.start);
   const unwrap = mediaPictureUnwrap(latest, { start: range.tag.start, end: range.tag.end }, picture && tree!.range(picture));
   const next = unwrap ? parentNode : target.node;
-  const note = unwrap?.artDirected ? " The new picture is now used on all screens." : "";
+  const note = (unwrap?.artDirected ? " The new picture is now used on all screens." : "") + copyNote;
   const pageRules = mediaPageEdits(latest, measured, target.node, locate);
   // Page places use the rules below; picker alt defaults belong to component and settings fields.
   const swap = (alt: string | undefined, picked = image) => {
@@ -64,8 +84,9 @@ export async function placeMediaImage(
   if (held) {
     if (cancelled()) return;
     const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata },
+      ...copies?.uploads.length ? { uploads: copies.uploads, expectedAssets, expectedPaths } : {},
       apply: (paths, _requests, current) => {
-        const picked = held.image(paths), after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page);
+        const selected = held.image(paths), picked = copies?.uploads.length ? { ...selected, variants: copies.variants } : selected, after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page);
         return { page: swap(after.alt, picked).page, records: after.records };
       } });
     ports.announce(saved.placed ? `Image replaced${note ? "." + note : ""}${saved.note ? "." + saved.note : ""}` : `Added ${saved.paths.join(", ")}.${saved.note}`);
@@ -77,14 +98,14 @@ export async function placeMediaImage(
   // Cancel while the records were read: the placement stays.
   if (cancelled()) return;
   // Agent decoding captures the file revision before its first await.
-  if (proof.asset && ctx.assetVersion(proof.asset.path) !== proof.asset.version) throw new Error("The image changed while preparing placement. Try again.");
-  if (after.records === records || !readable) {
+  if ([...expectedAssets].some(([path, version]) => ctx.assetVersion(path) !== version)) throw new Error("The image changed while preparing placement. Try again.");
+  if (!copies?.uploads.length && (after.records === records || !readable)) {
     if (!ports.change(target.path, latest, edits, next, "Image replaced")) throw new Error("The image could not be replaced.");
     if (note) ports.announce(`Image replaced.${note}`);
     return;
   }
-  await ctx.applyBatch({ label: "Image replaced", expectedPaths: ctx.paths,
-    expectedSources: new Map([[target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets: proof.asset ? new Map([[proof.asset.path, proof.asset.version]]) : new Map(),
-    edits: new Map([[target.path, page], [io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)]]), moves: [], deletes: [], restores: [], uploads: [] });
+  await ctx.applyBatch({ label: "Image replaced", expectedPaths,
+    expectedSources: new Map([[target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets, ...copies?.uploads.length ? { live: () => !cancelled() && stamp.holds() } : {},
+    edits: new Map([[target.path, page], ...readable && after.records !== records ? [[io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)] as [string, string]] : []]), moves: [], deletes: [], restores: [], uploads: copies?.uploads ?? [] });
   ports.announce(`Image replaced${note ? "." + note : ""}`);
 }

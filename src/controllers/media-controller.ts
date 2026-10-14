@@ -345,7 +345,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     return new Promise(resolve => {
       openMediaPicker({ accept: "image/*", place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
         const { placeMediaPath } = await import("../page-builder/media-page-markup");
-        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve);
+        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext);
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });

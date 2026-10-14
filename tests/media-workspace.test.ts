@@ -974,3 +974,18 @@ test("failed Replace everywhere commit never announces picture cleanup", async (
   await assert.rejects(f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] }, notice: text => { told.push(text); } }), /Draft storage failed/);
   assert.deepEqual(told, []); assert.equal(f.text.get("index.html"), source);
 });
+
+test("held additions reserve older copies and save them with the page in one Undo", async () => {
+  const f = fixture(), before = f.text.get("index.html")!, main = f.bytes.get("images/a.png");
+  const uploads = [{ path: "images/old-480.webp", blob: new Blob(["copy"], { type: "image/webp" }) }];
+  const paths = await f.host.import([{ file: new File(["held"], "old-480.webp", { type: "image/webp" }), folder: "images" }], {
+    path: "index.html", source: before, uploads, expectedPaths: [...f.paths], expectedAssets: new Map([["images/a.png", f.versions.get("images/a.png")]]),
+    apply: () => '<img src="/images/a.png" srcset="/images/old-480.webp 480w">',
+  });
+  assert.deepEqual(paths, ["images/old-480-2.webp"]);
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Add images"); assert.equal(f.batches[0].uploads.length, 2); assert.equal(f.history.length, 1);
+  assert.equal(f.bytes.get("images/a.png"), main);
+  f.history.pop()!();
+  assert.equal(f.text.get("index.html"), before);
+  assert.equal(f.paths.has(uploads[0].path), false); assert.equal(f.paths.has(paths[0]), false);
+});

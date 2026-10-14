@@ -61,6 +61,9 @@ export interface MediaUsageSource {
 }
 /** A captured page source transformed inside the upload transaction. */
 export interface MediaPlacement {
+  uploads?: { path: string; blob: Blob }[];
+  expectedAssets?: Map<string, string | undefined>;
+  expectedPaths?: string[];
   path: string; source: string;
   /** The refusal when the page changed before the batch; a generic one otherwise. */
   stale?: string;

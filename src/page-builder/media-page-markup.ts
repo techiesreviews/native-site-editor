@@ -1,9 +1,11 @@
+import { MEDIA_RECORDS_PATH } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import { locateNativeElementRange, readPage } from "../native-source-location";
 import { mediaAttributes, mediaImageMarkup, mediaPlacement, mediaPriority, mediaUrl, type MediaImage, type MediaMeasured } from "./media-markup";
 import { mediaAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import type { MediaControllerPorts } from "../controllers/media-controller";
+import type { MediaWorkspaceContext } from "./media-workspace";
 import type { Stamp } from "../guarded-edit";
 import type { MediaHeldFiles, MediaPathPlacement } from "./media-picker";
 
@@ -75,10 +77,34 @@ export async function prepareMediaPath(ports: Pick<MediaControllerPorts, "measur
 export async function placeMediaPath(
   ports: MediaControllerPorts, stamp: Stamp, placement: MediaPathPlacement | undefined,
   image: MediaImage, cancelled: () => boolean, held: MediaHeldFiles | undefined,
-  resolve: (value: string | undefined) => void,
+  resolve: (value: string | undefined) => void, workspaceContext: () => Promise<MediaWorkspaceContext>,
 ) {
   if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
   if (cancelled()) { resolve(undefined); return; }
+  let ctx: MediaWorkspaceContext | undefined, metadata: string | undefined;
+  let copies: Awaited<ReturnType<typeof import("./media-older-copies")["makeOlderCopies"]>>;
+  let expectedPaths: string[] | undefined;
+  let version: string | undefined, copyNote = "";
+  if (placement && !/^components\//.test(placement.path)) {
+    ctx = await workspaceContext();
+    expectedPaths = [...ctx.paths];
+    version = ctx.assetVersion(image.path);
+    const [older, records] = await Promise.all([import("./media-older-copies"), import("../../shared/media-records")]);
+    ctx.assertLive();
+    metadata = await ctx.read(records.MEDIA_RECORDS_PATH);
+    ctx.assertLive();
+    if (!cancelled() && older.olderCopyWidths({ path: image.path, width: image.width, paths: ctx.paths }).length) {
+      let adding;
+      try { adding = records.parseMediaRecords(metadata).adding; } catch { /* Unreadable records use Balanced. */ }
+      try { copies = await older.makeOlderCopies(ctx, image, older.olderCopiesQuality(adding)); }
+      catch (error) {
+        if (cancelled() || (error instanceof DOMException && error.name === "AbortError")) { resolve(undefined); return; }
+        copyNote = older.OLDER_COPIES_FAILED;
+      }
+      ctx.assertLive();
+    }
+    if (copies?.uploads.length) image = { ...image, variants: copies.variants };
+  }
   let transform: ((picked: MediaImage) => string) | undefined;
   if (placement) {
     if (!stamp.holds() || ports.source(placement.path) !== placement.source) {
@@ -92,19 +118,35 @@ export async function placeMediaPath(
     }
     if (cancelled()) { resolve(undefined); return; }
   }
+  if (cancelled()) { resolve(undefined); return; }
+  if (ctx && copies?.uploads.length) {
+    ctx.assertLive();
+    if (ctx.assetVersion(image.path) !== version || ports.source(MEDIA_RECORDS_PATH) !== metadata) throw new Error("The image or records changed while preparing placement. Try again.");
+  }
   if (!held) {
     if (placement && transform) {
       const page = transform(image);
-      if (!ports.change(placement.path, placement.source, [{ start: 0, end: placement.source.length, text: page }], placement.node ?? [], "Image replaced")) throw new Error("The image could not be replaced.");
+      if (ctx && copies?.uploads.length) {
+        await ctx.applyBatch({ label: "Image replaced", expectedPaths: expectedPaths!,
+          expectedSources: new Map([[placement.path, placement.source], [MEDIA_RECORDS_PATH, metadata]]),
+          expectedAssets: new Map([[image.path, version]]), live: () => !cancelled() && stamp.holds(),
+          edits: new Map([[placement.path, page]]), uploads: copies.uploads, moves: [], deletes: [], restores: [] });
+      } else if (!ports.change(placement.path, placement.source, [{ start: 0, end: placement.source.length, text: page }], placement.node ?? [], "Image replaced")) throw new Error("The image could not be replaced.");
+      if (copyNote) ports.announce(`Image replaced.${copyNote}`);
       placement.placed = true;
     }
     resolve(mediaUrl(image.path)); return;
   }
   // Files added in the picker are saved with the value's placement: one Undo step.
   const saved = await held.save(placement && { path: placement.path, source: placement.source, stale: placement.stale,
-    live: () => !cancelled() && stamp.holds(), apply: paths => transform!(held.image(paths)) });
+    live: () => !cancelled() && stamp.holds(),
+    ...copies?.uploads.length ? { uploads: copies.uploads, expectedPaths, expectedAssets: new Map([[image.path, version]]), records: { text: metadata } } : {},
+    apply: paths => {
+      const picked = held.image(paths);
+      return transform!(copies?.uploads.length ? { ...picked, variants: copies.variants } : picked);
+    } });
   if (placement && saved.placed) placement.placed = true;
-  if (saved.note) ports.announce(saved.note.trim());
+  if (saved.note || copyNote) ports.announce(`${copyNote ? "Image replaced." + copyNote : ""}${saved.note}`.trim());
   // Cancelled while saving: the files are added, the value keeps what it had.
   resolve(cancelled() && !saved.placed ? undefined : mediaUrl(held.image(saved.paths).path));
 }

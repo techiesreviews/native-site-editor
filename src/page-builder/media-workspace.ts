@@ -300,7 +300,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     session?.assertLive();
     ctx.assertLive();
     const { batch, text, metadata } = await prepare(ctx, "Add images", requests.some((item) => item.replaceFrom));
+    if (place?.expectedPaths) batch.expectedPaths = place.expectedPaths;
+    for (const [path, version] of place?.expectedAssets ?? []) batch.expectedAssets.set(path, version);
     const reserved = new Set(batch.expectedPaths);
+    for (const upload of place?.uploads ?? []) {
+      reserved.add(upload.path); batch.uploads.push(upload);
+    }
     const changes: Record<string, Partial<MediaMetadata>> = {};
     const inherited: MediaRecords["files"] = {};
     const paths: string[] = [], joins = new Map<string, string[]>();

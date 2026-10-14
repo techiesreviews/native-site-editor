@@ -359,3 +359,59 @@ test("worker squeezes final PNGs before copies gate, keeps larger or failed sque
     names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
   }
 });
+
+test("copies-only worker never encodes a main, keeps only smaller requested copies, and skips animation", async () => {
+  const names = ["self", "OffscreenCanvas", "createImageBitmap"], descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+  const calls: { width: number; type: string; quality?: number }[] = [];
+  let transparent = false, decoded = 0, wrongType = false;
+  type Result = import("../src/page-builder/media-optimise").MediaOptimiseResult;
+  type Message = { file: File; options: import("../src/page-builder/media-optimise").MediaOptimiseOptions; copies: import("../src/page-builder/media-optimise").MediaCopiesOptions };
+  let result: Result | undefined;
+  const scope = {
+    onmessage: undefined as undefined | ((event: { data: Message }) => Promise<void>),
+    postMessage(value: { result?: Result; error?: string }) { assert.equal(value.error, undefined); result = value.result; },
+  };
+  class Canvas {
+    constructor(readonly width: number, readonly height: number) {}
+    getContext() { return { drawImage() {}, getImageData() { return { data: new Uint8Array([0, 0, 0, transparent ? 128 : 255]) }; } }; }
+    async convertToBlob(options: { type: string; quality?: number }) {
+      calls.push({ width: this.width, ...options });
+      return new Blob([new Uint8Array(this.width === 960 ? 100 : 20)], { type: wrongType ? "image/png" : options.type });
+    }
+  }
+  Object.defineProperty(globalThis, "self", { configurable: true, value: scope });
+  Object.defineProperty(globalThis, "OffscreenCanvas", { configurable: true, value: Canvas });
+  Object.defineProperty(globalThis, "createImageBitmap", { configurable: true, value: async () => { decoded++; return { width: 2000, height: 1000, close() {} }; } });
+  try {
+    const { installMediaOptimiser } = await import("../src/page-builder/image-optimise.worker");
+    installMediaOptimiser({ loadPngSqueezer: async () => { throw new Error("not needed"); }, loadHeicDecoder: async () => { throw new Error("unused"); }, loadSvgCleaner: async () => svgCleaner });
+    const run = async (file = new File([new Uint8Array(100)], "old.jpg"), options = mediaImageRecipe(), format = options.format) => {
+      result = undefined; calls.length = 0;
+      await scope.onmessage!({ data: { file, options, copies: { widths: [480, 960, 1600, 2000, 2400], format } } });
+      assert.ok(result); return result;
+    };
+    assert.deepEqual((await run()).outputs.map(output => output.variantWidth), [480, 1600]);
+    assert.deepEqual(calls.map(call => call.width), [480, 960, 1600]);
+    assert.ok(calls.every(call => call.type === "image/webp" && call.quality === .8));
+    transparent = true;
+    assert.ok((await run(undefined, mediaImageRecipe("smallest"))).outputs.every(output => output.extension === "webp"));
+    assert.ok(calls.every(call => call.type === "image/webp" && call.quality === .8));
+    const forced = await run(undefined, mediaImageRecipe("smallest"), "png");
+    assert.deepEqual(forced.outputs.map(output => output.variantWidth), [480, 1600]);
+    assert.ok(forced.outputs.every(output => output.extension === "png"));
+    assert.ok(calls.every(call => call.type === "image/png" && call.quality === .8));
+    const before = decoded;
+    const gif = new Uint8Array([71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59]);
+    for (const [name, bytes] of [["moving.gif", gif], ["moving.png", png([pngChunk("acTL", new Uint8Array(8))])],
+      ["moving.webp", webp([webpChunk("ANIM", new Uint8Array(6)), webpChunk("ANMF", ascii("frame"))])]] as const) {
+      assert.deepEqual((await run(new File([bytes], name))).outputs, []);
+      assert.deepEqual(calls, []);
+    }
+    assert.equal(decoded, before);
+    wrongType = true;
+    assert.deepEqual((await run()).outputs, []); wrongType = false;
+
+  } finally {
+    names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
+  }
+});

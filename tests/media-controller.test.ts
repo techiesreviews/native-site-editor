@@ -7,7 +7,7 @@ import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 import { placeMediaImage } from "../src/page-builder/media-place";
 import type { MediaHeldFiles } from "../src/page-builder/media-picker";
-import { readSource } from "../src/page-builder/source-tree";
+import { readSource, type SourceNode } from "../src/page-builder/source-tree";
 import { startTags } from "../shared/html-source.ts";
 
 function fixture(overrides: Partial<MediaControllerPorts> = {}) {
@@ -483,4 +483,142 @@ test("held picker files unwrap a picture through the single save transaction", a
   assert.equal(pages.length, 1); assert.equal(f.changes.length, 0);
   assert.doesNotMatch(pages[0], /<picture|<source/); assert.match(pages[0], /slot="photo"/);
   assert.deepEqual(told, ["Image replaced. The new picture is now used on all screens."]);
+});
+
+test("older placement batches copies and srcset, carries held uploads, and handles failure, cancel and drift", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  let fail = false, requests = 0, during: () => void = () => {};
+  class Worker {
+    onmessage?: (event: { data: { result?: import("../src/page-builder/media-optimise").MediaOptimiseResult; error?: string } }) => void;
+    onerror?: () => void;
+    postMessage(message: { file: File; copies: { widths: number[]; format: string } }) {
+      requests++;
+      assert.deepEqual(message.copies.widths, [480, 960, 1600]);
+      queueMicrotask(() => {
+        during();
+        this.onmessage?.({ data: fail ? { error: "decode failed" } : { result: { before: 100, after: 30,
+          outputs: message.copies.widths.map(width => ({ blob: new Blob(["copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width / 2 })) } } });
+      });
+    }
+    terminate() {}
+  }
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: Worker });
+  try {
+    const setup = () => {
+      const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [], told: string[] = [];
+      const f = fixture({ applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); }, announce: text => { told.push(text); } });
+      f.ports.workspace = () => ({ repo: f.scope.repo, scope: f.scope, identity: "workspace:1", site: { routes: { "/": "index.html" }, components: {} }, nativePaths: ["index.html", "images/old.png"], drafts: { list: () => f.records, get: () => undefined, save: () => true, remove: () => true } });
+      return { f, batches, told };
+    };
+    const image = { path: "images/old.png", alt: "Old", width: 2000, height: 1000 };
+    const first = setup();
+    await first.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await first.f.pick()!.onPick!(image, () => false);
+    assert.equal(first.f.changes.length, 0); assert.equal(first.batches.length, 1);
+    const batch = first.batches[0];
+    assert.equal(batch.label, "Image replaced");
+    assert.deepEqual(batch.uploads.map(upload => upload.path), ["images/old-480.webp", "images/old-960.webp", "images/old-1600.webp"]);
+    assert.match(batch.edits.get("index.html")!, /srcset="\/images\/old-480.webp 480w, \/images\/old-960.webp 960w, \/images\/old-1600.webp 1600w, \/images\/old.png 2000w"/);
+    assert.equal(batch.expectedAssets.get(image.path), "sha");
+    const heldCase = setup();
+    let captured: import("../src/page-builder/media-picker").MediaPlacement | undefined;
+    const held: MediaHeldFiles = { image: () => image, save: async place => { captured = place; return { paths: [], placed: true, note: "" }; } };
+    await heldCase.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await heldCase.f.pick()!.onPick!(image, () => false, held);
+    assert.equal(captured?.uploads?.length, 3); assert.equal(captured?.expectedAssets?.get(image.path), "sha");
+    const applied = captured!.apply([], [], { version: 2, collections: [], files: {} });
+    assert.match(typeof applied === "string" ? applied : applied.page, /old-480.webp 480w/);
+    fail = true;
+    const failed = setup(); await failed.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await failed.f.pick()!.onPick!(image, () => false);
+    assert.equal(failed.f.changes.length, 1); assert.equal(failed.batches.length, 0);
+    assert.deepEqual(failed.told, ["Image replaced. Smaller copies could not be made, so the full-size picture is used."]);
+    fail = false;
+    let cancelled = false; during = () => { cancelled = true; };
+    const cancel = setup(); await cancel.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await cancel.f.pick()!.onPick!(image, () => cancelled);
+    assert.equal(cancel.f.changes.length + cancel.batches.length, 0);
+    const drift = setup(); during = () => { drift.f.ports.entry = () => ({ sha: "changed", size: 12 }); };
+    await drift.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await assert.rejects(async () => drift.f.pick()!.onPick!(image, () => false), /image changed while preparing/);
+    assert.equal(drift.f.changes.length + drift.batches.length, 0);
+    const adopted = setup(); during = () => {};
+    const current = adopted.f.ports.workspace();
+    adopted.f.ports.workspace = () => ({ ...current!, nativePaths: ["index.html", "images/old.png", "images/old-480x320.png"] });
+    const before = requests;
+    await adopted.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await adopted.f.pick()!.onPick!({ ...image, variants: [{ path: "images/old-480x320.png", width: 480 }] }, () => false);
+    assert.equal(requests, before); assert.equal(adopted.batches.length, 0);
+    assert.match(adopted.f.changes[0], /old-480x320.png 480w/);
+  } finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
+});
+
+test("page slot placement batches older copies while component fallback stays unchanged", async () => {
+  // Balanced fixture only: supply the browser adapter with the source tree, without HTML repairs.
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "document", { configurable: true, value: {
+    createElement: () => {
+      let content: unknown;
+      return {
+        set innerHTML(markup: string) {
+          const tree = readSource(markup);
+          class Element {
+            children: Element[];
+            constructor(readonly node?: SourceNode, readonly parentNode: Element | null = null) {
+              this.children = tree.children(node).map(child => new Element(child, this));
+            }
+            get nodeType() { return this.node ? 1 : 11; }
+            get localName() { return this.node?.type === "element" ? this.node.name : ""; }
+            get parentElement() { return this.parentNode?.node ? this.parentNode : null; }
+            get childNodes() { return this.children; }
+            getAttribute(name: string) { return this.node ? tree.attribute(this.node, name)?.value ?? null : null; }
+            hasAttribute(name: string) { return this.getAttribute(name) !== null; }
+            contains(other: Element): boolean { return this === other || this.children.some(child => child.contains(other)); }
+            querySelectorAll(selector: string): Element[] {
+              const all = this.children.flatMap(child => [child, ...child.querySelectorAll("*")]);
+              const attribute = /^\[([^=\]]+)(?:="([^"]*)")?\]$/.exec(selector);
+              return selector === "*" ? all : all.filter(child => attribute
+                ? child.hasAttribute(attribute[1]) && (attribute[2] === undefined || child.getAttribute(attribute[1]) === attribute[2])
+                : child.localName === selector);
+            }
+          }
+          content = new Element();
+        },
+        get content() { return content; },
+      };
+    },
+  } });
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  let requests = 0;
+  class Worker {
+    onmessage?: (event: { data: { result: import("../src/page-builder/media-optimise").MediaOptimiseResult } }) => void;
+    onerror?: () => void;
+    postMessage() {
+      requests++;
+      queueMicrotask(() => this.onmessage?.({ data: { result: { before: 100, after: 3,
+        outputs: [480, 960, 1600].map(width => ({ blob: new Blob(["x"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width / 2 })) } } }));
+    }
+    terminate() {}
+  }
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: Worker });
+  try {
+    const { placeMediaPath } = await import("../src/page-builder/media-page-markup");
+    const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [];
+    const f = fixture({ applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); } });
+    const image = { path: "images/old.png", width: 2000, height: 1000, alt: "" };
+    const source = f.sources.get("index.html")!;
+    const place = { path: "index.html", source, edit: (url: string) => `<section><img src="${url}" alt="new"></section>`, placed: false };
+    await placeMediaPath(f.ports, f.ports.stamp(), place, image, () => false, undefined, () => {}, () => f.controller.workspaceContext());
+    assert.equal(place.placed, true); assert.equal(batches.length, 1); assert.equal(batches[0].uploads.length, 3);
+    assert.match(batches[0].edits.get("index.html")!, /old-480.webp 480w/);
+    assert.equal(batches[0].expectedSources.get(".editor/media.json"), f.sources.get(".editor/media.json"));
+    const before = requests;
+    const component = { ...place, path: "components/card.html", placed: false };
+    f.sources.set(component.path, source);
+    await placeMediaPath(f.ports, f.ports.stamp(), component, image, () => false, undefined, () => {}, () => { throw new Error("Components do not need a workspace"); });
+    assert.equal(requests, before); assert.equal(f.changes.length, 1); assert.doesNotMatch(f.changes[0], /srcset/);
+  } finally {
+    descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker");
+    documentDescriptor ? Object.defineProperty(globalThis, "document", documentDescriptor) : Reflect.deleteProperty(globalThis, "document");
+  }
 });

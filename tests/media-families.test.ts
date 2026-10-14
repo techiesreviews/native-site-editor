@@ -84,3 +84,49 @@ test("the Always keep mark shows on kept files and on the main of a family with 
   assert.deepEqual([...alwaysKeptFiles(paths, new Set(["images/logo.png"]))], ["images/logo.png"]);
   assert.equal(alwaysKeptFiles(paths, new Set()).size, 0);
 });
+
+test("WordPress dimensions and cross-format handmade sets are adopted without widening leftovers", () => {
+  const paths = ["images/photo.jpg", "images/photo-480x320.jpg", "images/photo-1024x683.webp",
+    "panel.jpg", "panel-400.webp", "panel-800.webp", "panel-1200.webp",
+    "report.jpg", "report-2024.webp", "maxresdefault.jpg", "maxresdefault-34.jpg", "maxresdefault-71.jpg", "panel-2.webp"];
+  assert.deepEqual(mediaFamilyOf(paths[0], paths)?.copies, [{ path: paths[1], width: 480 }, { path: paths[2], width: 1024 }]);
+  assert.deepEqual(mediaFamilyOf("panel.jpg", paths)?.copies.map(copy => copy.width), [400, 800, 1200]);
+  for (const path of paths.slice(8)) assert.ok(mediaFamilyOf(path, paths), path);
+  assert.deepEqual(renamedFamily(mediaFamilyOf(paths[0], paths)!, "new/garden.jpg"), [
+    { from: paths[0], to: "new/garden.jpg" }, { from: paths[1], to: "new/garden-480x320.jpg" }, { from: paths[2], to: "new/garden-1024x683.webp" },
+  ]);
+  assert.deepEqual(renamedFamily(mediaFamilyOf("panel.jpg", paths)!, "new/panel.jpg").map(move => move.to),
+    ["new/panel.jpg", "new/panel-400.webp", "new/panel-800.webp", "new/panel-1200.webp"]);
+  for (const path of ["photo-480x320.jpg", "panel-400.webp"]) assert.equal(isLeftoverCopy(path, [path]), false);
+  for (const suffix of ["-0x320.jpg", "-480x0.jpg", "-10001x320.jpg", "-0480x320.jpg", "-99.webp", "-10001.webp"]) {
+    const path = "photo" + suffix; assert.ok(mediaFamilyOf(path, ["photo.jpg", path]));
+  }
+  assert.ok(mediaFamilyOf("photo-400.jpeg", ["photo.jpg", "photo-400.jpeg", "photo-800.jpeg"]));
+  assert.ok(mediaFamilyOf("photo-400.webp", ["photo.jpg", "photo-400.webp", "photo-480.webp"]));
+});
+
+import { olderCopyWidths, olderCopyPaths, olderCopyFormat } from "../src/page-builder/media-older-copies";
+
+test("older widths use every existing copy family and prepare only eligible mains", () => {
+  for (const copies of [["photo-480.webp"], ["photo-480w.webp"], ["photo-480x320.jpg"], ["photo-400.webp", "photo-800.webp"]]) {
+    const paths = ["photo.jpg", ...copies];
+    assert.deepEqual(olderCopyWidths({ path: paths[0], width: 2000, paths }), []);
+    assert.deepEqual(olderCopyWidths({ path: copies[0], width: 2000, paths }), []);
+  }
+  for (const [width, expected] of [[2000, [480, 960, 1600]], [800, [480]], [400, []], [undefined, []]] as const)
+    assert.deepEqual(olderCopyWidths({ path: "photo.jpg", width, paths: ["photo.jpg"] }), expected);
+  for (const path of ["logo.svg", "media/originals/photo.jpg", "photo.bmp", "missing.jpg"])
+    assert.deepEqual(olderCopyWidths({ path, width: 2000, paths: ["logo.svg", "media/originals/photo.jpg", "photo.bmp"] }), []);
+});
+
+test("older copy plans preserve the exact stem, reject taken files and folders, and preserve other families", () => {
+  const main = "images/Old Photo.JPG", widths = [480, 960, 1600];
+  assert.deepEqual(olderCopyPaths(main, widths, "webp", [main]), widths.map(width => `images/Old Photo-${width}.webp`));
+  for (const taken of ["images/old photo-480.WEBP", "images/Old Photo-480.webp/child", "images"])
+    assert.deepEqual(olderCopyPaths(main, widths, "webp", [main, taken]), []);
+  const ambiguous = ["photo.jpg", "photo.png"];
+  assert.deepEqual(olderCopyPaths("photo.jpg", widths, "webp", ambiguous), []);
+  assert.equal(olderCopyFormat("photo.jpg", widths, "avif", ambiguous), "jpg");
+  assert.equal(olderCopyFormat("photo.gif", widths, "webp", ["photo.gif", "photo.png"]), undefined);
+  assert.deepEqual(olderCopyPaths("photo.jpg", widths, "webp", ["photo.jpg", "photo-480w.webp"]), []);
+});

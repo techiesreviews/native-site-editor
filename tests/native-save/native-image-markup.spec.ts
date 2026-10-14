@@ -366,3 +366,47 @@ test("moving a placed image to the top re-checks markup in the move's Undo step"
   await expect(former).toHaveAttribute("fetchpriority", "high");
   await expect(moved).toHaveAttribute("loading", "lazy");
 });
+
+// Default fixture group, nightly: existing repository bytes stay unchanged; placement and copies undo together.
+test("placing an older 2000px JPEG adopts new copies in one Undo without changing its bytes", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const base64 = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 2000; canvas.height = 1000;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let seed = 35;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = seed & 255; pixels.data[i + 1] = seed >>> 8 & 255; pixels.data[i + 2] = seed >>> 16 & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/jpeg", .95).split(",")[1];
+  });
+  const main = "images/Older Photo.jpg";
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: main, base64 } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
+  const before = await source(), hero = page.frameLocator(".native-preview-frame").locator("img.hero-image");
+  await hero.click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await picker.getByRole("button", { name: `Choose ${main}`, exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  // Read the same durable draft store as the other native-save specs.
+  const copies = [480, 960, 1600].map(width => `images/Older Photo-${width}.webp`);
+  const stored = async () => {
+    const { storedDrafts } = await import("./drafts");
+    return storedDrafts(page);
+  };
+  await expect.poll(async () => (await stored()).filter(draft => copies.includes(draft.path)).length).toBe(3);
+  const markup = (await source()).match(/<img\b[^>]*class="hero-image"[^>]*>/)![0];
+  for (const width of [480, 960, 1600]) expect(markup).toContain(`/images/Older%20Photo-${width}.webp ${width}w`);
+  expect((await stored()).some(draft => draft.path === main)).toBe(false);
+  const repository = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(main)}`);
+  expect((await repository.body()).equals(Buffer.from(base64, "base64"))).toBe(true);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(source).toBe(before);
+  await expect.poll(async () => (await stored()).filter(draft => copies.includes(draft.path)).length).toBe(0);
+  expect((await stored()).some(draft => draft.path === main)).toBe(false);
+});
