@@ -1,8 +1,8 @@
 ---
 title: The new .editor/media.json shape, with migration
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-05 runner)
 blocked_by: [01-bring-dev-level]
 builder: sol
 phase: 0
