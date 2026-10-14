@@ -44,6 +44,8 @@ export function showUsageDialog(h: UsageDialogHost, path: string) {
   footer.append(button("File details", () => { dialog.close(); h.details(path); }), button("Close", () => dialog.close(), "button primary"));
   dialog.append(header, body, footer);
   function render() {
+    // A newer result keeps keyboard focus on the same page, or the dialog when that page is gone.
+    const active = document.activeElement, focused = active instanceof HTMLButtonElement && body.contains(active) ? active.textContent : undefined;
     const records = h.records(), record = mediaUsageFor(records, path), checked = record.checked;
     state.textContent = mediaUsageBadge(record).label;
     const pages = node("section"), other = node("section");
@@ -69,6 +71,7 @@ export function showUsageDialog(h: UsageDialogHost, path: string) {
       ? `Some site files could not be read: ${records.unreadable.join(", ")}.`
       : "The site's files are still being checked.") : undefined;
     body.replaceChildren(...[pages, other, note].filter(part => part !== undefined));
+    if (focused !== undefined) ([...body.querySelectorAll("button")].find(page => page.textContent === focused) ?? closer).focus();
   }
   render();
   // Escape closes only this dialog, not the explorer around it.

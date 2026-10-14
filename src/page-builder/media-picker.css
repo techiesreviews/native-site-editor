@@ -253,7 +253,11 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 .media-library__grid--list .media-library__card.is-file .media-library__thumbnail { color: var(--text); }
 .media-library__grid--list .media-library__card.is-file .media-library__thumbnail > svg { color: var(--muted); }
 .media-library__grid--list .media-library__format { display: none; }
-.media-library__grid--list .media-library__name { position: static; grid-column: 2; grid-row: 1 / span 2; min-width: 0; padding: 0; opacity: 1; font-weight: 500; font-size: var(--type-base); text-shadow: none; }
+/* The list shows complete names (ticket 06): they wrap instead of shortening. */
+.media-library__grid--list .media-library__name {
+  position: static; grid-column: 2; grid-row: 1 / span 2; min-width: 0; padding: 0; opacity: 1; font-weight: 500; font-size: var(--type-base); text-shadow: none;
+  white-space: normal; overflow-wrap: anywhere; text-overflow: clip;
+}
 .media-library__grid--list .media-library__name::before, .media-library__grid--list .media-library__name::after { display: none; }
 .media-library__size { grid-column: 3; grid-row: 1 / span 2; color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .media-library .media-library__grid--list .media-library__usage {

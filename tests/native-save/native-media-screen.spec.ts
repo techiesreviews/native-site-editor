@@ -77,38 +77,48 @@ test("tapping a badge opens the usage words and page names; Escape keeps the exp
   await context.close();
 });
 
-test("Not checked yet and other uses show apart, and newer results repaint the badges in place", async ({ page, baseURL }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
+const LONG = "images/a-very-long-photograph-name-from-the-studio-shoot-in-october.png";
+/** A Media view on a usage source the test steps through: first a check still reading, then a finished one. */
+async function mountUsage(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
-  await page.evaluate(async () => {
+  await page.evaluate(async long => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
     type Records = import("../../src/page-builder/media-usage").MediaUsageRecords;
     const family = (main: string, change: object) => ({ main, members: [main], checked: false, pages: [], otherUses: [], ...change });
-    let records: Records = { reach: "text", pending: ["notes.md"], unreadable: [], families: [family("images/feed.png", { pages: ["index.html"] }), family("images/spare.png", {})] };
-    const listeners = new Set<() => void>();
+    const paths = ["images/feed.png", "images/shared.png", "images/spare.png", long];
+    let records: Records = { reach: "text", pending: ["notes.md"], unreadable: [], families: [family("images/feed.png", { pages: ["index.html", "about/index.html"] })] };
+    const listeners = new Set<() => void>(), opened: string[] = [];
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
     document.body.append(host);
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#2f6d3a"/></svg>';
     const view = createMediaLibraryView(host, {
-      async load() { return { key: "usage", items: [{ path: "images/feed.png", version: "A" }, { path: "images/spare.png", version: "A" }], metadata: {}, collections: [], usage: {} }; },
+      async load() { return { key: "usage", items: paths.map(path => ({ path, version: "A", size: 2048 })), metadata: {}, collections: [], usage: {} }; },
       async blob() { return new Blob([svg], { type: "image/svg+xml" }); },
-      async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {}, async import() { return []; },
+      async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async import() { return []; },
+      async openPage(page) { opened.push(page); },
       usage: { records: () => records, onChange(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     });
     Object.assign(window, { usageProbe: {
       checked() {
         records = { reach: "text", pending: [], unreadable: [], families: [
-          family("images/feed.png", { checked: true, otherUses: [{ file: "feed.xml", kind: "feed" }, { file: "notes.md", kind: "notes" }] }),
-          family("images/spare.png", { checked: true }),
+          family("images/feed.png", { checked: true, pages: ["about/index.html"], otherUses: [{ file: "feed.xml", kind: "feed" }] }),
+          family("images/shared.png", { checked: true, otherUses: [{ file: "feed.xml", kind: "feed" }, { file: "notes.md", kind: "notes" }] }),
+          family("images/spare.png", { checked: true }), family(long, { checked: true }),
         ] };
         for (const listener of listeners) listener();
       },
+      opened: () => opened,
       dispose: () => { view.dispose(); host.remove(); },
     } });
     await view.ready;
-  });
+  }, LONG);
+}
+
+test("Not checked yet and other uses show apart, and newer results repaint the badges in place", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await mountUsage(page, baseURL);
   const library = pane(page), feed = tile(page, "images/feed.png");
   // Pages found so far are not a count yet: the check has not finished.
   const unchecked = feed.getByRole("button", { name: "Not checked yet", exact: true });
@@ -120,22 +130,49 @@ test("Not checked yet and other uses show apart, and newer results repaint the b
   await expect(usage.getByText("Not checked yet", { exact: true })).toBeVisible();
   await expect(usage.getByRole("button", { name: "index.html", exact: true })).toBeVisible();
   await expect(usage.getByText("The site's files are still being checked.", { exact: true })).toBeVisible();
+  // A newer result keeps keyboard focus on a page that is still listed.
+  await usage.getByRole("button", { name: "about/index.html", exact: true }).focus();
   await page.evaluate(() => (window as any).usageProbe.checked());
-  // The open dialog and the badges follow the newer result; the tile keeps its picture.
-  await expect(usage.getByText("0 pages · Other uses found", { exact: true })).toBeVisible();
-  await expect(usage.getByRole("heading", { name: "Other uses · 2", exact: true })).toBeVisible();
-  await expect(usage.getByText("feed.xml", { exact: true })).toBeVisible();
+  await expect(usage.getByText("Used on 1 page", { exact: true })).toBeVisible();
+  await expect(usage.getByRole("button", { name: "index.html", exact: true })).toHaveCount(0);
+  await expect(usage.getByRole("button", { name: "about/index.html", exact: true })).toBeFocused();
   await expect(usage.getByText("Feed or sitemap", { exact: true })).toBeVisible();
-  await usage.getByRole("button", { name: "Close", exact: true }).click();
-  const other = feed.getByRole("button", { name: "0 pages · Other uses found", exact: true });
-  await expect(other).toBeFocused();
-  await expect(other.locator(".media-library__count")).toHaveText("0");
+  await page.keyboard.press("Enter");
+  await expect(usage).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).usageProbe.opened())).toEqual(["about/index.html"]);
+  // The badges follow the newer result; the tile keeps its picture.
+  await expect(feed.getByRole("button", { name: "Used on 1 page", exact: true }).locator(".media-library__count")).toHaveText("1");
   await expect(feed.locator('img[data-probe="kept"]')).toHaveCount(1);
+  const shared = tile(page, "images/shared.png"), other = shared.getByRole("button", { name: "0 pages · Other uses found", exact: true });
+  await expect(other.locator(".media-library__count")).toHaveText("0");
   await expect(tile(page, "images/spare.png").getByRole("button", { name: "No uses found", exact: true })).toBeVisible();
+  await other.click();
+  const sharedUsage = page.getByRole("dialog", { name: "shared.png", exact: true });
+  await expect(sharedUsage.getByRole("heading", { name: "Other uses · 2", exact: true })).toBeVisible();
+  await expect(sharedUsage.getByText("No page uses found.", { exact: true })).toBeVisible();
+  await sharedUsage.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(other).toBeFocused();
   // File details from the usage dialog opens the file's details.
   await other.click();
-  await usage.getByRole("button", { name: "File details", exact: true }).click();
+  await sharedUsage.getByRole("button", { name: "File details", exact: true }).click();
   await expect(library.getByRole("button", { name: "Back to grid", exact: true })).toBeFocused();
+  await page.evaluate(() => (window as any).usageProbe.dispose());
+});
+
+test("the list shows a long name in full on a phone, apart from its selection and usage", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mountUsage(page, baseURL);
+  await page.evaluate(() => (window as any).usageProbe.checked());
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
+  const row = tile(page, LONG), name = row.locator(".media-library__name");
+  await expect(name).toHaveText(LONG.split("/").pop()!);
+  expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+  await expect(row.locator(".media-library__size")).toHaveText(/^\d+ (B|KB)$/);
+  const [select, usage, box] = await Promise.all([row.locator(".media-library__select").boundingBox(), row.locator(".media-library__usage").boundingBox(), name.boundingBox()]);
+  for (const target of [select!, usage!]) expect(Math.min(target.width, target.height)).toBeGreaterThanOrEqual(44);
+  expect(select!.x + select!.width).toBeLessThanOrEqual(box!.x);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(usage!.x);
   await page.evaluate(() => (window as any).usageProbe.dispose());
 });
 
