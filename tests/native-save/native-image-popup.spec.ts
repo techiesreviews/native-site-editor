@@ -236,9 +236,25 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(again.files["media/images/quarters-crop-2.webp"].trimmedFrom.source).toBe(original);
   expect(again.files["media/images/quarters-crop.webp"]).toBeUndefined();
   expect(again.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop.webp");
+  // Replace on a trimmed spot, then zoom: the copy is cut from the new picture; the old copy, used nowhere else, goes.
+  await frame(page).locator(".hero img").click();
+  await expect(imageButton(page)).toHaveText("ImageTrimmed");
+  await imageButton(page).click();
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Second.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Second.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page).getByRole("status").filter({ hasText: "Trimming made for the old picture was dropped." })).toBeVisible();
+  await popup(page).getByRole("slider", { name: "Zoom" }).fill("200");
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(() => heroTag(page), { timeout: 30_000 }).toMatch(/src="\/media\/images\/second-crop\.webp"/);
+  const replaced = await records(page);
+  expect(replaced.files["media/images/second-crop.webp"].trimmedFrom.source).toBe("media/images/second.webp");
+  expect(replaced.files["media/images/quarters-crop-2.webp"]).toBeUndefined();
+  expect(replaced.files[original]?.trimmedFrom).toBeUndefined();
   // Done was one Undo step: the earlier copy is back in the spot.
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
 });
 
 test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spot changes", async ({ page, baseURL }) => {

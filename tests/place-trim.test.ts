@@ -14,9 +14,10 @@ test("a popup trim refuses when the original changed since the popup read it, or
     restoreFile: async () => undefined, measureImage: async () => undefined, announce: () => { announced++; },
     locateElement: () => ({ tag: { name: "img", start: 0, end: page.length } }),
   };
+  const versions: Record<string, string> = { "media/images/desk.webp": "sha-new" };
   const ctx = {
     assertLive: () => {}, items: [{ path: "media/images/desk.webp" }], paths: ["index.html", "media/images/desk.webp"],
-    assetVersion: (path: string) => path === "media/images/desk.webp" ? "sha-new" : undefined,
+    assetVersion: (path: string) => versions[path],
     read: async () => undefined, blob: async () => { reads++; return new Blob(); },
   };
   // eslint-disable-next-line no-restricted-syntax -- trimPlace refuses before it uses more of the ports than these.
@@ -29,6 +30,10 @@ test("a popup trim refuses when the original changed since the popup read it, or
   for (const sourceVersion of ["sha-old", undefined])
     await assert.rejects(trimPlace(fakePorts, context, target, { trim, source: "media/images/desk.webp", sourceVersion }, proof),
       /changed while trimming\. Nothing was saved\./);
+  // A picture chosen in the popup that is not in Media refuses too, with its revision matching.
+  versions["media/images/elsewhere.webp"] = "sha-x";
+  await assert.rejects(trimPlace(fakePorts, context, target, { trim, source: "media/images/elsewhere.webp", sourceVersion: "sha-x" }, proof),
+    /Choose a picture already in Media\./);
   assert.equal(reads, 0);
   assert.equal(announced, 0);
 });
