@@ -23,8 +23,9 @@ export async function applyAgentMedia(
     const place = prepareFrame({ path: command.path, node: parseOutlineId(args.element!)! });
     const frame = { ...(args.shape !== undefined ? { shape: args.shape } : {}), ...(args.focus !== undefined ? { focus: args.focus } : {}) };
     if (args.trim !== undefined) {
-      const path = await place.trim({ trim: agentImageTrim(args.trim), ...(Object.keys(frame).length ? { frame } : {}) });
-      return { message: `Picture trimmed: ${path}, unsaved.`, result: { path: path! } };
+      const trimmed = await place.trim({ trim: agentImageTrim(args.trim), ...(Object.keys(frame).length ? { frame } : {}) });
+      if (!trimmed) throw new Error("The trim was cancelled. Nothing was saved.");
+      return { message: `Picture trimmed: ${trimmed.path}, unsaved.${trimmed.note}`, result: { path: trimmed.path } };
     }
     if (Object.keys(frame).length) {
       await place.frame(frame);

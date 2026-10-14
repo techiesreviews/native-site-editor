@@ -64,6 +64,7 @@ export async function trimPlace(
   check();
   if (cancelled()) return;
   const host = createMediaWorkspace(async () => ctx);
+  let note = "";
   const path = await host.trim({ source, previous, trim: request.trim, result, sourceVersion,
     place: { path: target.path, source: proof.source, records: { text: metadata }, stale,
       live: () => { check(); return !cancelled(); },
@@ -71,7 +72,8 @@ export async function trimPlace(
         check();
         const image: MediaImage = { path, width: main.width, height: main.height, alt: "",
           variants: result.outputs.flatMap(output => output.variantWidth ? [{ path: mediaCopyName(path, output.variantWidth), width: output.variantWidth }] : []) };
-        const { swap } = mediaPlaceSwap(proof.source, target, proof.expected, image, measured, locate, framed);
+        const { swap, note: swapNote } = mediaPlaceSwap(proof.source, target, proof.expected, image, measured, locate, framed);
+        note = swapNote;
         const after = swapPlaceImage(records, target.path, file, path, mediaExistingAlt(proof.expected), swap(undefined).page);
         // The original's record, like its pixels, stays unchanged; place marks carry to the copy.
         if (records.files[source]) after.records = { ...after.records, files: { ...after.records.files, [source]: records.files[source] } };
@@ -79,6 +81,7 @@ export async function trimPlace(
       },
     },
   });
-  ports.announce(`Picture trimmed: ${path}`);
-  return path;
+  // Trimming inside an art-directed <picture> says so, as Replace does.
+  ports.announce(`Picture trimmed: ${path}.${note}`);
+  return { path, note };
 }

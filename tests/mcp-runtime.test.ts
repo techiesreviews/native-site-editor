@@ -1188,7 +1188,8 @@ test("agent shape and focus use exactly the popup's framing and one page-only Un
   }
 });
 
-test("agent trims and re-crops original bytes in one batch with copies, records and Undo; read reports provenance", async () => {
+/** Runs with a fake image worker that answers every trim with an 1800 px main and three copies. */
+async function withTrimWorker(run: (requests: { file: File; trim: import("../shared/media-records").MediaTrim; options: { quality: number } }[]) => Promise<void>) {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
   const requests: { file: File; trim: import("../shared/media-records").MediaTrim; options: { quality: number } }[] = [];
   class Worker {
@@ -1202,48 +1203,77 @@ test("agent trims and re-crops original bytes in one batch with copies, records 
     terminate() {}
   }
   Object.defineProperty(globalThis, "Worker", { configurable: true, value: Worker });
-  try {
-    const source = '<section><picture><source srcset="/media/images/photo.webp"><img src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:4/3;object-fit:cover;object-position:20% 70%"></picture><img src="/media/images/photo.webp" alt="Photo"></section>';
-    const f = agentMediaFixture(source, true), original = f.bytes.get(f.file)!;
-    const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)); records.adding = { image: "smaller" };
+  try { await run(requests); }
+  finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
+}
+
+test("agent trims and re-crops original bytes in one batch with copies, records and Undo; read reports provenance", () => withTrimWorker(async requests => {
+  const source = '<section><picture><source srcset="/media/images/photo.webp"><img src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:4/3;object-fit:cover;object-position:20% 70%"></picture><img src="/media/images/photo.webp" alt="Photo"></section>';
+  const f = agentMediaFixture(source, true), original = f.bytes.get(f.file)!;
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)); records.adding = { image: "smaller" };
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  const originalRecord = structuredClone(records.files[f.file]);
+  const apply = async (element: string, args: AgentCommand["args"] = {}) =>
+    applyAgentMedia(await f.controller.workspaceContext(), mediaCommand("frame_image", { element, ...args }),
+      target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target));
+  const initial = await apply("0.0.1");
+  assert.deepEqual(JSON.parse(initial!.result.report), { file: f.file, shape: "4:3", focus: { x: 20, y: 70 }, trimmed: false });
+  assert.equal(f.history.length, 0);
+  const first = await apply("0.0.1", { trim: { zoom: 2 } });
+  const crop = first!.result.path;
+  assert.equal(crop, "media/images/photo-crop.webp"); assert.match(first!.message, /photo-crop.webp/);
+  assert.equal(requests[0].file.name, "photo.webp"); assert.equal(requests[0].options.quality, 70);
+  assert.equal(await requests[0].file.text(), await original.text());
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Picture trimmed"); assert.equal(f.history.length, 1);
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), [crop, ...[480, 960, 1600].map(width => `media/images/photo-crop-${width}.webp`)]);
+  const page = f.text.get("index.html")!;
+  assert.doesNotMatch(page, /<picture|<source/);
+  assert.match(page, /src="\/media\/images\/photo-crop.webp"/);
+  assert.match(page, /srcset="\/media\/images\/photo-crop-480.webp 480w, \/media\/images\/photo-crop-960.webp 960w, \/media\/images\/photo-crop-1600.webp 1600w, \/media\/images\/photo-crop.webp 1800w"/);
+  assert.match(page, /width="1800"/); assert.match(page, /height="1200"/); assert.match(page, /fetchpriority="high"/);
+  assert.match(page, /style="aspect-ratio:4\/3;object-fit:cover;object-position:20% 70%"/);
+  assert.match(page, /<img src="\/media\/images\/photo.webp" alt="Photo">/);
+  const saved = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  assert.deepEqual(saved.files[crop].trimmedFrom, { source: f.file, trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } });
+  assert.deepEqual(saved.files[f.file], originalRecord); assert.equal(f.bytes.get(f.file), original);
+  const read = JSON.parse((await apply("0.0"))!.result.report);
+  assert.deepEqual(read, { file: crop, shape: "4:3", focus: { x: 20, y: 70 }, trimmed: true, source: f.file, trim: saved.files[crop].trimmedFrom!.trim });
+  const second = await apply("0.0", { trim: { zoom: 4, turn: 90 }, shape: "square", focus: { x: 30, y: 60 } });
+  assert.equal(second!.result.path, "media/images/photo-crop-2.webp");
+  assert.equal(requests[1].file.name, "photo.webp"); assert.equal(await requests[1].file.text(), await original.text());
+  assert.deepEqual(requests[1].trim, { x: 0.375, y: 0.375, width: 0.25, height: 0.25, turn: 90 });
+  assert.deepEqual(f.batches[1].deletes, [crop, ...[480, 960, 1600].map(width => `media/images/photo-crop-${width}.webp`)]);
+  assert.match(f.text.get("index.html")!, /aspect-ratio: 1 \/ 1/); assert.match(f.text.get("index.html")!, /object-position: 30% 60%/);
+  assert.equal(f.history.length, 2);
+  f.history.pop()!(); assert.equal(f.text.get("index.html"), page); assert.ok(f.bytes.has(crop));
+  f.history.pop()!(); assert.equal(f.text.get("index.html"), source); assert.equal(f.bytes.get(f.file), original); assert.ok(!f.bytes.has(crop));
+}));
+
+test("agent trims inside an art-directed picture say so, and carry the place's Decorative and own words to the copy", () => withTrimWorker(async () => {
+  for (const mark of ["decorative", "agentText"] as const) {
+    const alt = mark === "decorative" ? "" : "Close-up of the desk";
+    const source = `<section><picture><source media="(max-width: 600px)" srcset="/media/images/photo-480.webp"><img src="/media/images/photo.webp" alt="${alt}"></picture></section>`;
+    const f = agentMediaFixture(source, true);
+    const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+    records.files[f.file].places = { "index.html": mark === "decorative" ? { decorative: true } : { agentText: alt } };
     f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
-    const originalRecord = structuredClone(records.files[f.file]);
-    const apply = async (element: string, args: AgentCommand["args"] = {}) =>
-      applyAgentMedia(await f.controller.workspaceContext(), mediaCommand("frame_image", { element, ...args }),
-        target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target));
-    const initial = await apply("0.0.1");
-    assert.deepEqual(JSON.parse(initial!.result.report), { file: f.file, shape: "4:3", focus: { x: 20, y: 70 }, trimmed: false });
-    assert.equal(f.history.length, 0);
-    const first = await apply("0.0.1", { trim: { zoom: 2 } });
-    const crop = first!.result.path;
-    assert.equal(crop, "media/images/photo-crop.webp"); assert.match(first!.message, /photo-crop.webp/);
-    assert.equal(requests[0].file.name, "photo.webp"); assert.equal(requests[0].options.quality, 70);
-    assert.equal(await requests[0].file.text(), await original.text());
-    assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Picture trimmed"); assert.equal(f.history.length, 1);
-    assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), [crop, ...[480, 960, 1600].map(width => `media/images/photo-crop-${width}.webp`)]);
+    const originalRecord = structuredClone(records.files[f.file]), recordsBefore = f.text.get(MEDIA_RECORDS_PATH);
+    const done = await applyAgentMedia(await f.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0.1", trim: { zoom: 2 } }),
+      target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target));
+    const crop = done!.result.path;
+    assert.equal(crop, "media/images/photo-crop.webp");
+    assert.match(done!.message, /The new picture is now used on all screens\./);
     const page = f.text.get("index.html")!;
     assert.doesNotMatch(page, /<picture|<source/);
-    assert.match(page, /src="\/media\/images\/photo-crop.webp"/);
-    assert.match(page, /srcset="\/media\/images\/photo-crop-480.webp 480w, \/media\/images\/photo-crop-960.webp 960w, \/media\/images\/photo-crop-1600.webp 1600w, \/media\/images\/photo-crop.webp 1800w"/);
-    assert.match(page, /width="1800"/); assert.match(page, /height="1200"/); assert.match(page, /fetchpriority="high"/);
-    assert.match(page, /style="aspect-ratio:4\/3;object-fit:cover;object-position:20% 70%"/);
-    assert.match(page, /<img src="\/media\/images\/photo.webp" alt="Photo">/);
+    assert.ok(page.includes(`src="/media/images/photo-crop.webp"`) && page.includes(`alt="${alt}"`), page);
     const saved = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
-    assert.deepEqual(saved.files[crop].trimmedFrom, { source: f.file, trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } });
-    assert.deepEqual(saved.files[f.file], originalRecord); assert.equal(f.bytes.get(f.file), original);
-    const read = JSON.parse((await apply("0.0"))!.result.report);
-    assert.deepEqual(read, { file: crop, shape: "4:3", focus: { x: 20, y: 70 }, trimmed: true, source: f.file, trim: saved.files[crop].trimmedFrom!.trim });
-    const second = await apply("0.0", { trim: { zoom: 4, turn: 90 }, shape: "square", focus: { x: 30, y: 60 } });
-    assert.equal(second!.result.path, "media/images/photo-crop-2.webp");
-    assert.equal(requests[1].file.name, "photo.webp"); assert.equal(await requests[1].file.text(), await original.text());
-    assert.deepEqual(requests[1].trim, { x: 0.375, y: 0.375, width: 0.25, height: 0.25, turn: 90 });
-    assert.deepEqual(f.batches[1].deletes, [crop, ...[480, 960, 1600].map(width => `media/images/photo-crop-${width}.webp`)]);
-    assert.match(f.text.get("index.html")!, /aspect-ratio: 1 \/ 1/); assert.match(f.text.get("index.html")!, /object-position: 30% 60%/);
-    assert.equal(f.history.length, 2);
-    f.history.pop()!(); assert.equal(f.text.get("index.html"), page); assert.ok(f.bytes.has(crop));
-    f.history.pop()!(); assert.equal(f.text.get("index.html"), source); assert.equal(f.bytes.get(f.file), original); assert.ok(!f.bytes.has(crop));
-  } finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
-});
+    assert.deepEqual({ ...saved.files[crop].places?.["index.html"] }, mark === "decorative" ? { decorative: true } : { agentText: alt });
+    assert.equal(JSON.stringify(saved.files[f.file]), JSON.stringify(originalRecord));
+    assert.equal(f.history.length, 1);
+    f.history.pop()!();
+    assert.equal(f.text.get("index.html"), source); assert.equal(f.text.get(MEDIA_RECORDS_PATH), recordsBefore); assert.ok(!f.bytes.has(crop));
+  }
+}));
 
 test("trim place refuses stale proofs, records, originals, old versions and component templates without saving", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
