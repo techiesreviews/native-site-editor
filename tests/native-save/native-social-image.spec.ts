@@ -35,7 +35,7 @@ async function chooseDefault(page: Page) {
   await page.getByRole("button", { name: "Site settings", exact: true }).click();
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   // An empty Social image: its Image button opens the picker for still pictures.
-  await panel(page).getByRole("button", { name: "Default social image: choose the picture and its sharing frame", exact: true }).click();
+  await panel(page).getByRole("button", { name: "Image", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/sharing-source.png", exact: true })).toBeVisible();
   await expect(picker.getByRole("button", { name: /^Choose .*\.svg$/ })).toHaveCount(0);
@@ -125,7 +125,7 @@ test("choosing the picture a page already links still makes its sharing copy", a
   await settings.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(settings.getByLabel("Social image", { exact: true })).toHaveValue("/images/sharing-source.png");
   // A still picture opens the popup; Done with the frame left in the middle still makes its copy.
-  await settings.getByRole("button", { name: "Social image: choose the picture and its sharing frame", exact: true }).click();
+  await settings.getByRole("button", { name: "Image", exact: true }).click();
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });
   await expect(popup).toContainText("sharing-source.png");
   await expect(popup.locator(".image-popup__card b")).toHaveText("Native Studio");
@@ -153,7 +153,7 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   const field = panel(page).getByLabel("Default social image", { exact: true });
   await expect(field).toHaveValue(first);
-  const image = panel(page).getByRole("button", { name: "Default social image: choose the picture and its sharing frame", exact: true });
+  const image = panel(page).getByRole("button", { name: "Image", exact: true });
   await image.click();
   // The copy re-opens on its picture, fixed to the sharing shape: no shape menu, Turn or large editor.
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });

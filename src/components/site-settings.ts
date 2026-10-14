@@ -242,7 +242,6 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
   };
   const control = button("", () => { void press(); }, "site-settings__link site-settings__image");
   control.append(icon("image-square", 16), node("span", "", "Image"));
-  control.setAttribute("aria-label", `${place}: choose the picture and its sharing frame`);
   control.title = "Choose the picture and the 1200 × 630 frame sharing services show";
   control.setAttribute("aria-expanded", "false");
   return control;
