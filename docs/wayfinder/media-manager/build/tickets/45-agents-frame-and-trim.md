@@ -1,8 +1,8 @@
 ---
 title: Agents set shape and focus, and trim
 type: task (AFK)
-status: open
-assignee:
+status: in progress
+assignee: claude (mm-45 runner)
 blocked_by: [38-place-shape-and-focus, 40-trimmed-copies, 37-agents-adding]
 builder: sol
 phase: 3
