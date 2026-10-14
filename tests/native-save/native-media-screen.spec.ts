@@ -2,6 +2,7 @@
 // Default fixture: images/placeholder.svg is on index.html; images/studio-desk.svg is on no page.
 import { test, expect, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { publishButton, showPublish } from "./publish";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const tile = (page: Page, path: string) => pane(page).locator(`.media-library__card[data-path="${path}"]`);
 async function open(page: Page, baseURL: string | undefined, file = "index.html") {
@@ -330,4 +331,94 @@ test("a host without one-step details refuses a rename and writes nothing", asyn
   await expect(library.locator(".media-library__message")).toContainText("Renaming is not available here.");
   expect(await page.evaluate(() => (window as any).noDetailsProbe.calls)).toEqual([]);
   await page.evaluate(() => (window as any).noDetailsProbe.dispose());
+});
+
+// To check (slice 19): agent-written descriptions wait with a by-agent mark until OK or Edit.
+async function seed(page: Page, baseURL: string | undefined, files: [string, string][]) {
+  await page.goto(baseURL!);
+  for (const [path, content] of files)
+    expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+}
+async function toCheck(page: Page, label: string) {
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: label, exact: true }).click();
+  await expect(pane(page).getByRole("heading", { name: "To check", exact: true })).toBeFocused();
+}
+const agentMark = (page: Page, path: string) => tile(page, path).getByRole("img", { name: "By agent", exact: true });
+
+test("To check lists an agent's description; OK clears the mark, and it stays cleared after Publish", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await seed(page, baseURL, [[".editor/media.json", JSON.stringify({ version: 2, collections: [],
+    files: { "images/placeholder.svg": { description: { text: "A green placeholder, by an agent", byAgent: true } } } })]]);
+  await open(page, baseURL);
+  const library = pane(page);
+  await expect(agentMark(page, "images/placeholder.svg")).toBeVisible();
+  await expect(agentMark(page, "images/studio-desk.svg")).toHaveCount(0);
+  await details(page, "images/placeholder.svg");
+  await expect(library.getByText("By agent: press OK in To check, or change the words here.", { exact: true })).toBeVisible();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+
+  await toCheck(page, "To check (1)");
+  const row = library.locator(".media-check__row");
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText("placeholder.svg");
+  await expect(row.locator(".media-check__words")).toHaveText("A green placeholder, by an agent");
+  await row.getByRole("button", { name: "OK placeholder.svg", exact: true }).click();
+  await expect(library.getByText(/^Nothing to check\./)).toBeVisible();
+  await expect(library.getByRole("heading", { name: "To check", exact: true })).toBeFocused();
+  await expect.poll(() => records(page)).not.toContain("byAgent");
+  expect(JSON.parse(await records(page)).files["images/placeholder.svg"].description).toEqual({ text: "A green placeholder, by an agent" });
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(library.getByRole("button", { name: "More", exact: true })).toBeFocused();
+  await expect(agentMark(page, "images/placeholder.svg")).toHaveCount(0);
+
+  // Publish saves the checked description; after a reload nothing waits.
+  await showPublish(page);
+  for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  const saved = await (await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(".editor/media.json")}`)).text();
+  expect(JSON.parse(saved).files["images/placeholder.svg"].description).toEqual({ text: "A green placeholder, by an agent" });
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await expect(library.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
+  await expect(agentMark(page, "images/placeholder.svg")).toHaveCount(0);
+  await toCheck(page, "To check");
+  await expect(library.getByText(/^Nothing to check\./)).toBeVisible();
+});
+
+test("To check edits an agent's own words for a place on the page, in one Undo step", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(baseURL!);
+  const home = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await seed(page, baseURL, [
+    ["index.html", home.replace('data-key="hero-image">', 'data-key="hero-image" alt="Agent words for the hero">')],
+    [".editor/media.json", JSON.stringify({ version: 2, collections: [],
+      files: { "images/placeholder.svg": { places: { "index.html": { agentText: "Agent words for the hero" } } } } })],
+  ]);
+  await open(page, baseURL);
+  const library = pane(page), hero = page.frameLocator(".native-preview-frame").locator(".hero-image");
+  await expect(agentMark(page, "images/placeholder.svg")).toBeVisible();
+  await toCheck(page, "To check (1)");
+  const row = library.locator(".media-check__row");
+  await expect(row).toContainText("Own words on Home");
+  await row.getByRole("button", { name: "Edit placeholder.svg on Home", exact: true }).click();
+  const words = library.getByRole("textbox", { name: "Description for placeholder.svg on Home", exact: true });
+  await expect(words).toBeFocused(); await expect(words).toHaveValue("Agent words for the hero");
+  await words.fill("A calm green hero picture");
+  await library.getByRole("button", { name: "Save placeholder.svg on Home", exact: true }).click();
+  await expect(library.getByText(/^Nothing to check\./)).toBeVisible();
+  await expect(hero).toHaveAttribute("alt", "A calm green hero picture");
+  await expect.poll(() => records(page)).not.toContain("agentText");
+  // One Undo brings back the agent's words and the row.
+  await page.locator(".code-editor__undo").first().click();
+  await expect(hero).toHaveAttribute("alt", "Agent words for the hero");
+  // Undo sits outside the explorer, which closes; it reopens on To check with the row back.
+  if (!(await library.isVisible())) await page.locator("#explorer-toggle").click();
+  await expect(row).toHaveCount(1);
+  await expect(row.locator(".media-check__words")).toHaveText("Agent words for the hero");
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(agentMark(page, "images/placeholder.svg")).toBeVisible();
 });

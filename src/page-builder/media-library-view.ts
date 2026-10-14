@@ -13,6 +13,7 @@ import { mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from 
 import { createRowMenu, type MenuItem } from "../components/row-menu";
 import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
 import { filesLabel } from "./media-collection-choices";
+import { showToCheck, toCheckLabel } from "./media-library-to-check";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import {
   detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
@@ -171,7 +172,7 @@ export function createMediaLibraryView(
     rebuildLibraryCollections(collections, library.collections, !modal, followed ?? collections.value);
     followed = undefined;
     draw();
-    if (!shell.sheet.hidden && shell.sheet.dataset.mode === "collections") sheet.redraw?.();
+    if (!shell.sheet.hidden && (shell.sheet.dataset.mode === "collections" || shell.sheet.dataset.mode === "to-check")) sheet.redraw?.();
     if (sheet.path) {
       if (library.items.some((item) => item.path === sheet.path)) {
         const path = sheet.path;
@@ -225,6 +226,10 @@ export function createMediaLibraryView(
       { label: "Add new file", run: () => shell.uploadInput.click() },
       // Clean up, with the tab's count, is an action like adding; the choices follow.
       ...cleanUp ? [{ ...cleanUp.item(), run: () => cleanUp.open() }] : [],
+      // To check (ticket 13), with its count: agent-written descriptions waiting for OK or Edit.
+      ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
+        if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
+      } }] : [],
       ...kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
         kind = value; draw(); shell.more.focus();
       } })),

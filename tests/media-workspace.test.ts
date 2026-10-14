@@ -373,3 +373,54 @@ test("File details renames a whole family with its fields in one step; a taken c
   await assert.rejects(taken.host.details!("images/a.png", { alt: "A garden", decorative: false, alwaysKeep: true }, "garden.png"), /already exists/);
   assert.equal(taken.batches.length, 0); assert.deepEqual(taken.text, untouched);
 });
+
+test("To check: load lists agent words; OK clears a file's mark and keeps its words, as one Undo step", async () => {
+  const f = fixture();
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { description: { text: "Agent alt", byAgent: true } } } }));
+  assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", text: "Agent alt" }]);
+  await f.host.check!({ file: "images/a.png" });
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Description checked");
+  assert.deepEqual([...f.batches[0].edits.keys()], [MEDIA_RECORDS_PATH]);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "Agent alt" });
+  assert.deepEqual((await f.host.load()).toCheck, []);
+  // A row that is already checked refuses and writes nothing.
+  await assert.rejects(f.host.check!({ file: "images/a.png" }), /changed meanwhile/);
+  assert.equal(f.batches.length, 1);
+  f.history.pop()!();
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description?.byAgent, true);
+});
+
+test("To check: Lex's edit of a file description updates the places using it and clears the mark", async () => {
+  const f = fixture();
+  f.text.set("index.html", '<img src="/images/a.png" alt="Agent alt"><img src="/images/a.png" alt="Own">');
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { description: { text: "Agent alt", byAgent: true } } } }));
+  await f.host.load();
+  await assert.rejects(f.host.check!({ file: "images/a.png" }, "  "), /Write the description/);
+  await f.host.check!({ file: "images/a.png" }, "Lex's words ");
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Edit description");
+  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Lex\'s words"><img src="/images/a.png" alt="Own">');
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, { text: "Lex's words" });
+  f.history.pop()!();
+  assert.ok(f.text.get("index.html")!.includes('alt="Agent alt"'));
+});
+
+test("To check: a place's agent words clear on OK, or on Lex's words written into the page in the same step", async () => {
+  const records = JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { places: { "index.html": { agentText: "Agent place" } } } } });
+  const f = fixture();
+  f.text.set("index.html", '<img src="/images/a.png" alt="Agent place">');
+  f.text.set(MEDIA_RECORDS_PATH, records);
+  assert.deepEqual((await f.host.load()).toCheck, [{ file: "images/a.png", page: "index.html", text: "Agent place" }]);
+  await f.host.check!({ file: "images/a.png", page: "index.html" });
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].places, undefined);
+  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Agent place">');
+  f.history.pop()!();
+  await f.host.load();
+  await f.host.check!({ file: "images/a.png", page: "index.html" }, "Lex place");
+  assert.equal(f.batches.length, 2);
+  assert.deepEqual([...f.batches[1].edits.keys()].sort(), [MEDIA_RECORDS_PATH, "index.html"].sort());
+  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Lex place">');
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].places, undefined);
+  f.history.pop()!();
+  assert.equal(f.text.get("index.html"), '<img src="/images/a.png" alt="Agent place">');
+  assert.equal(f.text.get(MEDIA_RECORDS_PATH), records);
+});

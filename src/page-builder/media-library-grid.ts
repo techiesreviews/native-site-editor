@@ -87,6 +87,12 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
       keep.setAttribute("role", "img"); keep.setAttribute("aria-label", "Always keep");
       card.classList.add("is-kept"); card.append(keep);
     }
+    // By agent (ticket 13): words an agent wrote for this file wait in To check.
+    if (library.toCheck?.some(row => row.file === item.path)) {
+      const agent = node("span", "media-library__agent"); agent.title = "By agent: see To check in More";
+      agent.setAttribute("role", "img"); agent.setAttribute("aria-label", "By agent");
+      card.classList.add("is-by-agent"); card.append(agent);
+    }
     grid.append(card);
     // A file the browser cannot draw gets a clean surface with its type, not a broken picture.
     const noPreview = () => {

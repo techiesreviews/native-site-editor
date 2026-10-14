@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMediaRecords, serializeMediaRecords, renameMediaRecord, setMediaDescription } from "../shared/media-records";
-import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription } from "../src/page-builder/media-descriptions";
+import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits } from "../src/page-builder/media-descriptions";
+import { mediaMetadataView } from "../src/page-builder/media-metadata";
 
 const file = "images/a.png", page = "news/index.html";
 const empty = () => parseMediaRecords(undefined);
@@ -119,4 +120,36 @@ test("place validation rejects bad types, drops empty entries, preserves unknown
   const next = setMediaPlaceAgentText(records, "a", "__proto__", "Words");
   assert.equal(next.files.a.places?.__proto__.agentText, "Words");
   assert.equal(Object.getPrototypeOf(next.files.a.places), null);
+});
+
+test("To check lists agent descriptions of listed files, then agent words still on their page", () => {
+  let records = setMediaDescription(empty(), "images/b.png", "Agent words for b", true);
+  records = setMediaDescription(records, file, "Checked words");
+  records = setMediaPlaceAgentText(records, file, page, "Agent place words");
+  records = setMediaPlaceAgentText(records, file, "about/index.html", "Edited away");
+  records = setMediaPlaceAgentText(records, file, "gone/index.html", "No page");
+  records = setMediaDescription(records, "images/removed.png", "Not listed", true);
+  const sources = {
+    [page]: '<img src="/images/a.png" alt="Agent place words"><img src="/images/a.png" alt="Checked words">',
+    "about/index.html": '<img src="/images/a.png" alt="Lex changed this">',
+  };
+  assert.deepEqual(mediaToCheck(records, ["images/b.png", file], sources), [
+    { file, page, text: "Agent place words" },
+    { file: "images/b.png", text: "Agent words for b" },
+  ]);
+  // OK clears each mark and the row goes; the words stay.
+  const checked = confirmMediaDescription(confirmMediaDescription(records, "images/b.png"), file, page);
+  assert.deepEqual(mediaToCheck(checked, ["images/b.png", file], sources), []);
+  assert.equal(checked.files["images/b.png"].description?.text, "Agent words for b");
+  // The mark survives saving (serialize and parse).
+  assert.equal(mediaToCheck(parseMediaRecords(serializeMediaRecords(records)), ["images/b.png", file], sources).length, 2);
+  // Details read the file's mark.
+  assert.equal(mediaMetadataView(records)["images/b.png"].byAgent, true);
+  assert.equal(mediaMetadataView(checked)["images/b.png"].byAgent, undefined);
+});
+
+test("Lex's words for a place replace only the agent's on that file's images", () => {
+  const source = '<img src="/images/a.png" alt="Agent &amp; words"><img src="/images/a.png" alt="Other"><img src="/images/b.png" alt="Agent &amp; words">';
+  assert.equal(placeWordsEdits(source, file, page, "Agent & words", 'Mine "now"'),
+    '<img src="/images/a.png" alt="Mine &quot;now&quot;"><img src="/images/a.png" alt="Other"><img src="/images/b.png" alt="Agent &amp; words">');
 });

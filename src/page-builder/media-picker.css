@@ -386,15 +386,15 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 /* File details (media-manager ticket 06, tiles.html): its own screen with Back. A large,
    complete preview beside grouped information on wide screens, stacked on phones; Save and
    Cancel follow the fields and never cover them. */
-.media-library__body:has(> .media-library__sheet[data-mode="details"]:not([hidden])) .media-library__browse,
-.media-library:has(.media-library__sheet[data-mode="details"]:not([hidden])) :is(.media-library__bar, .media-library__footer),
-.media-library--pane:has(.media-library__sheet[data-mode="details"]:not([hidden])) .media-library__header { display: none; }
-.media-library .media-library__sheet[data-mode="details"] {
+.media-library__body:has(> .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]):not([hidden])) .media-library__browse,
+.media-library:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"]):not([hidden])) :is(.media-library__bar, .media-library__footer),
+.media-library--pane:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"]):not([hidden])) .media-library__header { display: none; }
+.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]) {
   flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 8px;
   container: media-detail / inline-size;
 }
-.media-library--pane .media-library__sheet[data-mode="details"] { padding: 8px 12px 20px; }
-.media-library .media-library__sheet[data-mode="details"] button { align-self: auto; }
+.media-library--pane .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]) { padding: 8px 12px 20px; }
+.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]) button { align-self: auto; }
 .media-detail__head { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .media-detail__head h3 { font-size: var(--type-title); }
 .media-library .media-detail__back { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
@@ -443,7 +443,7 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 .media-detail__form .media-library__memberships { gap: 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .media-detail__form .media-library__memberships legend { float: left; width: 100%; padding: 0 0 4px; }
 .media-detail__form > .media-library__field > span:first-child { font-weight: 600; }
-.media-detail__form textarea {
+.media-detail__form textarea, .media-check__field {
   box-sizing: border-box; width: 100%; min-height: 92px; resize: vertical; padding: 8px 10px; font: inherit;
   border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text);
 }
@@ -455,4 +455,38 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 @container media-detail (max-width: 479px) { .media-library .media-detail__foot button { flex: 1; } }
 .media-detail__insert { display: grid; gap: 10px; padding: 14px; border-radius: 10px; background: var(--surface-subtle); }
 .media-library .media-detail__insert button { justify-self: start; }
-@media (max-width: 700px) { .media-detail__form textarea { font-size: 16px; } }
+@media (max-width: 700px) { .media-detail__form textarea, .media-check__field { font-size: 16px; } }
+
+/* By agent (ticket 13): a mark on the tile beside Always keep, and a line under Description. */
+.media-library__agent { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: rgb(10 18 32 / .62); pointer-events: none; }
+.media-library__agent::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/robot.svg") center / contain no-repeat; }
+.media-library__card.is-kept .media-library__agent { right: 34px; }
+.media-library__card.is-by-agent .media-library__name { padding-right: 34px; }
+.media-library__card.is-kept.is-by-agent .media-library__name { padding-right: 62px; }
+.media-library__grid--list .media-library__agent { right: auto; bottom: 4px; left: 78px; width: 20px; height: 20px; }
+.media-library__grid--list .media-library__card.is-kept .media-library__agent { left: 54px; }
+.media-library__grid--list .media-library__agent::after { width: 12px; height: 12px; }
+.media-library__grid--list .media-library__card.is-by-agent .media-library__name { padding-right: 0; }
+.media-library__by-agent { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--type-small); }
+.media-library__by-agent::before, .media-check__text > span:nth-child(2)::before { content: ""; flex: none; width: 16px; height: 16px; background: currentColor; mask: url("@phosphor-icons/core/regular/robot.svg") center / contain no-repeat; }
+
+/* To check: its own screen with Back, like File details; one row per description, with the
+   picture, the words, and OK and Edit (a field with Save and Cancel while editing). */
+.media-check__list { display: grid; max-width: 760px; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.media-check__row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.media-check__preview { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); }
+.media-check__preview img { width: 100%; height: 100%; object-fit: cover; }
+.media-check__preview.is-file { align-content: center; gap: 2px; color: var(--muted); }
+.media-check__preview .media-library__format { color: var(--text); font-size: 11px; }
+.media-check__text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.media-check__text > span:nth-child(2) { display: flex; align-items: center; gap: 6px; }
+.media-library .media-check__words { margin-top: 4px; white-space: pre-wrap; }
+.media-check__field { margin-top: 6px; }
+.media-check__actions { display: flex; gap: 8px; }
+.media-library .media-check__actions button { min-width: 64px; min-height: 44px; border-radius: 22px; }
+.media-check__empty { padding: 24px 0; color: var(--muted); }
+@container media-detail (max-width: 479px) {
+  .media-check__row { grid-template-columns: 56px minmax(0, 1fr); }
+  .media-check__preview { width: 56px; height: 56px; }
+  .media-check__actions { grid-column: 2; }
+}

@@ -1,5 +1,5 @@
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
-import { descriptionPlaceEdits } from "./media-descriptions";
+import { confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
@@ -224,7 +224,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const metadata = mediaMetadataView(records);
       return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
-        keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))] };
+        keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
+        toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text) };
     },
     async blob(path) { return active().blob(path); },
     async metadata(changes) {
@@ -271,6 +272,31 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       for (const [member, version] of versions) batch.expectedAssets.set(member, version);
       assetGuard(batch, [...versions.keys()]);
       recordsEdit(batch, metadata, renameInto(batch, text, metadata, path, name));
+      await commit(ctx, batch);
+    },
+    async check({ file, page }, text) {
+      // To check: a row that is no longer there (checked elsewhere, words changed) refuses.
+      const ctx = active();
+      const words = text?.trim();
+      const { batch, text: sources, metadata } = await prepare(ctx, "Description checked", true);
+      const row = mediaToCheck(metadata, [file], sources).find(entry => entry.page === page);
+      if (!row) throw new Error("These words changed meanwhile. Look at To check again.");
+      if (words === "") throw new Error("Write the description, or press OK to keep these words.");
+      const edit = words !== undefined && words !== row.text;
+      if (edit) batch.label = "Edit description";
+      let next: MediaRecords;
+      if (page === undefined) {
+        // Lex's words go through the usual description change: places using it follow, the mark goes.
+        next = edit ? metadataInto(batch, sources, metadata, { [file]: { alt: words } }) : confirmMediaDescription(metadata, file);
+      } else {
+        // A place's own words: the page's alt and the record's mark change in one step.
+        next = setMediaPlaceAgentText(metadata, file, page, undefined);
+        if (edit) {
+          const edited = placeWordsEdits(sources[page], file, page, row.text, words);
+          if (edited !== sources[page]) batch.edits.set(page, edited);
+        }
+      }
+      recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
     },
     async remove(paths, unusedOnly = false) {

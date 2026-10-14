@@ -62,12 +62,7 @@ export function descriptionPlaceEdits(records: MediaRecords, file: string, page:
   if (!/\.html$/i.test(page) || before.text === after.text && before.decorative === after.decorative) return source;
   const target = after.decorative ? "" : after.text;
   const placeDecorative = Boolean(records.files[file]?.places?.[page]?.decorative);
-  const edits = startTags(source).flatMap(tag => {
-    if (tag.name !== "img" || source[tag.end - 1] !== ">") return [];
-    const src = startTagAttribute(source, tag, "src");
-    if (!src || mediaResolvePath(decodeHtmlEntities(src.value, true), page) !== file) return [];
-    const attribute = startTagAttribute(source, tag, "alt");
-    const alt = attribute ? decodeHtmlEntities(attribute.value, true) : undefined;
+  const edits = placeImages(source, file, page).flatMap(({ tag, attribute, alt }) => {
     // Places using the description follow it; own words and Decorative places stay.
     // Not described yet (absent, or empty without a Decorative mark) takes new text;
     // an emptied, undecorated description never writes alt="" over an absent alt.
@@ -76,6 +71,46 @@ export function descriptionPlaceEdits(records: MediaRecords, file: string, page:
     const text = ` alt="${mediaEscape(target)}"`;
     return [{ start: attribute?.start ?? tag.nameEnd, end: attribute?.end ?? tag.nameEnd, text }];
   });
+  for (const edit of edits.reverse()) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
+  return source;
+}
+
+/** One row of To check (ticket 13): agent-written words Lex has not checked yet. Without
+ * `page` it is the file's description; with it, the agent's own words for that place. */
+export interface MediaToCheckRow { file: string; page?: string; text: string }
+
+/** The img tags on `page` that show `file`, with their decoded alt. */
+function placeImages(source: string, file: string, page: string) {
+  return startTags(source).flatMap(tag => {
+    if (tag.name !== "img" || source[tag.end - 1] !== ">") return [];
+    const src = startTagAttribute(source, tag, "src");
+    if (!src || mediaResolvePath(decodeHtmlEntities(src.value, true), page) !== file) return [];
+    const attribute = startTagAttribute(source, tag, "alt");
+    return [{ tag, attribute, alt: attribute ? decodeHtmlEntities(attribute.value, true) : undefined }];
+  });
+}
+
+/** To check, in file order: each listed file whose description an agent wrote, then each
+ * place where the agent's own words are still on the page (`sources` holds the pages). */
+export function mediaToCheck(records: MediaRecords, files: string[], sources: Record<string, string>): MediaToCheckRow[] {
+  const rows: MediaToCheckRow[] = [];
+  for (const file of [...files].sort()) {
+    const record = records.files[file];
+    if (!record) continue;
+    if (record.description?.byAgent && record.description.text) rows.push({ file, text: record.description.text });
+    for (const [page, place] of Object.entries(record.places ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+      const text = place.agentText, source = sources[page];
+      if (text && source !== undefined && /\.html$/i.test(page) && placeImages(source, file, page).some(image => image.alt === text))
+        rows.push({ file, page, text });
+    }
+  }
+  return rows;
+}
+
+/** Lex's words for a place replace the agent's wherever they still show `file` on the page. */
+export function placeWordsEdits(source: string, file: string, page: string, from: string, to: string): string {
+  const edits = placeImages(source, file, page).filter(image => image.alt === from && image.attribute)
+    .map(image => ({ start: image.attribute!.start, end: image.attribute!.end, text: ` alt="${mediaEscape(to)}"` }));
   for (const edit of edits.reverse()) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   return source;
 }
