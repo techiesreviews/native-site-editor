@@ -2,7 +2,7 @@
 title: Agents remove, keep, restore, rename and replace
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-55 runner)
 blocked_by: [50-clean-up-review, 51-recently-removed-list, 54-rename-and-replace-in-details, 45-agents-frame-and-trim]
 builder: sol
 phase: 4
