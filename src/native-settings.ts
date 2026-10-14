@@ -26,7 +26,8 @@ interface SettingsPorts {
   nativeSiteReadForCreate: () => Promise<string | undefined>;
   /** The Media picker for an image setting; the chosen file's root path, or undefined on Cancel. */
   choosePath: (place: string) => Promise<string | undefined>;
-  shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean } | undefined>;
+  /** `reused`: the value is already a sharing copy; nothing was written, the caller writes `address`. */
+  shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean; reused?: true } | undefined>;
   nativeEffectiveSource: (path: string) => string | undefined;
   loadNativeAssets: (sources: Record<string, string>, changed: () => void) => Promise<void>;
 }
@@ -59,29 +60,33 @@ export function createNativeSettings(ports: SettingsPorts) {
       since = ports.guardedEdits.stamp();
       baseline = new Map(shown.map(path => [path, ports.guardedEdits.peek.source(path)] as const));
     };
-    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"]) => {
+    // `depends`: every file the edits were planned from (Site settings: config and every page), proved through preparation.
+    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = []) => {
       if (stale() || sourcesChanged()) throw new Error(changed);
-      const stamp = since;
-      const expected = new Map([...baseline, [NATIVE_CONFIG_PATH, ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH)]]);
+      const stamp = since, repository = ports.guardedEdits.stamp("repository");
+      const expected = new Map([...baseline, ...[NATIVE_CONFIG_PATH, ...depends].map(path => [path, ports.guardedEdits.peek.source(path)] as const)]);
       const result = await ports.shareImage({ value, previous, page,
         siteUrl: nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
         canonical: readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical,
         expectedSources: expected,
         live: () => stamp.holds() && [...expected].every(([path, source]) => ports.guardedEdits.peek.source(path) === source), edits });
-      if (result) refreshProof();
+      // A repository switched while the old one finished: never adopt the new one's proof.
+      if (!repository.holds()) throw new Error(changed);
+      if (result && !result.reused) refreshProof();
       return result;
     };
     return createSiteSettings({
       socialNote: () => socialImageAddress(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, "").missingAddress ? SOCIAL_IMAGE_NOTE : undefined,
       async applyPage(path, fields) {
         const source = ports.guardedEdits.peek.source(path);
-        if (fields["og:image"] !== undefined && source !== undefined && fields["og:image"] !== readHeadSettings(source)["og:image"]) {
+        if (fields["og:image"] !== undefined && source !== undefined) {
           const shared = await share(fields["og:image"], readHeadSettings(source)["og:image"], path, address => {
             let next = source;
             for (const [field, value] of Object.entries({ ...fields, "og:image": address })) next = upsertHeadTag(next, field as HeadField, value);
             return new Map([[path, { source, text: next }]]);
           });
-          if (shared) {
+          if (shared?.reused) fields["og:image"] = shared.address;
+          else if (shared) {
             fields["og:image"] = shared.address;
             return undefined;
           }
@@ -114,7 +119,7 @@ export function createNativeSettings(ports: SettingsPorts) {
         if (site) {
           const home = site.routes["/"], config = ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH);
           const before = readSiteIdentity(config, ports.guardedEdits.peek.source(home) ?? "");
-          if (values.socialImage !== before.socialImage) {
+          if (values.socialImage !== before.socialImage || values.socialImageChosen) {
             const expected = new Map([NATIVE_CONFIG_PATH, ...new Set(Object.values(site.routes))].map(path => [path, ports.guardedEdits.peek.source(path)] as const));
             const shared = await share(values.socialImage, before.socialImage, home, address => {
               const nextValues = { ...values, socialImage: address };
@@ -128,11 +133,9 @@ export function createNativeSettings(ports: SettingsPorts) {
                 if (text !== source) edits.set(path, { source, text });
               }
               return edits;
-            });
-            if (shared) {
-              values.socialImage = shared.address;
-              return undefined;
-            }
+            }, [...expected.keys()]);
+            if (shared) values.socialImage = shared.address;
+            if (shared && !shared.reused) return undefined;
           }
         }
         return applied(await ports.guardedEdits.run(r => checkShown(r) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));

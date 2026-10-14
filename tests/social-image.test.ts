@@ -80,3 +80,23 @@ test("authored outside, SVG and missing paths bypass media records and worker pr
     assert.equal(result, undefined); assert.equal(contexts, value === "/missing.png" ? 1 : 0);
   }
 });
+
+test("an existing sharing copy is linked at the full address without a new copy", async () => {
+  const { shareImage } = await import("../src/page-builder/social-sharing");
+  const path = "media/images/a-social.jpg";
+  const records = JSON.stringify({ version: 2, collections: [], files: { [path]: { sharing: true, trimmedFrom: { source: "images/a.png", trim: { x: 0, y: 0.1, width: 1, height: 0.8 } } } } });
+  const never = () => { throw new Error("A reused sharing copy must not be prepared or written."); };
+  const context = async () => ({
+    key: "reuse", scope: { account: "owner", repoId: 1, repo: "owner/repo", branch: "main" },
+    drafts: { get: () => undefined, save: never, remove: never },
+    paths: [path, "images/a.png", ".editor/media.json"], items: [], pages: [], components: {}, assertLive() {},
+    read: async (file: string) => file === ".editor/media.json" ? records : undefined,
+    blob: never, assetVersion: () => "v1", applyBatch: never, openPage: never,
+  } satisfies MediaWorkspaceContext);
+  const request = { value: "/" + path, previous: "", page: "index.html", expectedSources: new Map(), live: () => true, edits: never };
+  assert.deepEqual(await shareImage(context, { ...request, siteUrl: "https://site.example/" }, never),
+    { address: "https://site.example/" + path, missingAddress: false, reused: true });
+  // Saved earlier without an address: once the site has one, choosing it again links it fully.
+  assert.equal((await shareImage(context, { ...request, value: "https://site.example/" + path, siteUrl: "https://site.example" }, never))?.address, "https://site.example/" + path);
+  assert.equal((await shareImage(context, request, never))?.missingAddress, true);
+});

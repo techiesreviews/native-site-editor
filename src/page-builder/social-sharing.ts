@@ -21,6 +21,8 @@ export async function shareImage(context: () => Promise<MediaWorkspaceContext>, 
   const recordText = await ctx.read(MEDIA_RECORDS_PATH); assert(); ctx.assertLive();
   const records = parseMediaRecords(recordText);
   const options = { ...request, paths: ctx.paths, records };
+  // An existing sharing copy is linked at the site's full address as it is: no new copy.
+  if (records.files[candidate]?.sharing) return { ...socialImageAddress(request.siteUrl, candidate), reused: true as const };
   const source = socialImageSource(options);
   if (!source) return undefined;
   const sourceVersion = ctx.assetVersion(source);
@@ -39,6 +41,8 @@ export async function shareImage(context: () => Promise<MediaWorkspaceContext>, 
   }).share({ source, sourceVersion, result, trim: result.trim, previous, live: () => request.live(),
     expectedSources: new Map([...request.expectedSources, [MEDIA_RECORDS_PATH, recordText]]),
     edits(path) { address = socialImageAddress(request.siteUrl, path); return request.edits(address.address); } });
+  // Clean-up after the commit may outlast the repository: no success is announced for another one.
+  ctx.assertLive();
   announce("Social image set as a draft." + (address.missingAddress ? " The image was linked without a web address. " + SOCIAL_IMAGE_NOTE : ""));
   return { path, ...address };
 }

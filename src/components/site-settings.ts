@@ -5,7 +5,9 @@ import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from
 import type { NavigationLink } from "../page-builder/site-navigation";
 import "./site-settings.css";
 
-export interface SiteSettingsValues { name: string; favicon: string; socialImage: string }
+export interface SiteSettingsValues { name: string; favicon: string; socialImage: string;
+  /** The social image was chosen in the picker during this dialog (even the one already set): it gets a sharing copy. */
+  socialImageChosen?: boolean }
 export interface SitePageChoice { route: string; label: string; file: string }
 export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
@@ -173,6 +175,7 @@ async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: 
     // A picker may outlive its dialog or edits made while it is open.
     if (value && dialog.root.isConnected && input.value === before) {
       input.value = value;
+      input.dataset.chosen = value;
       refresh?.();
     }
   } catch (error) {
@@ -290,6 +293,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         const desired: Partial<Record<HeadField, string>> = { title: title.value, description: description.value, "og:image": image.value, canonical: canonical.value, robots: hidden.checked === /\b(noindex|none)\b/i.test(values.robots) ? values.robots : withSearchHidden(values.robots, hidden.checked), "theme-color": theme.value };
         const fields: Partial<Record<HeadField, string>> = {};
         for (const [field, value] of Object.entries(desired)) if (value !== values[field as HeadField]) fields[field as HeadField] = value;
+        // A picture chosen again (an older image already linked) still gets its sharing copy.
+        if (image.dataset.chosen === image.value && image.value) fields["og:image"] = image.value;
         // Compare independent values with the resulting authored value or
         // page fallback. Unlinking can preserve old social text without typing.
         const effectiveTitle = authoredTitle ? values["og:title"] : title.value;
@@ -340,7 +345,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         const error = await handlers.open404();
         if (error) dialog.status.textContent = error; else dialog.root.close();
       }, "site-settings__link"));
-      applyButton(dialog, "Apply site settings", () => handlers.applySite({ name: name.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim() }));
+      applyButton(dialog, "Apply site settings", () => handlers.applySite({ name: name.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim(),
+        ...image.dataset.chosen === image.value && image.value ? { socialImageChosen: true } : {} }));
       dialog.show();
     },
     navigation(options: { path: string; source: string; links: NavigationLink[]; pages: SitePageChoice[]; shared: boolean }) {

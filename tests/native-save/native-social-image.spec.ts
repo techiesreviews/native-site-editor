@@ -100,3 +100,27 @@ test("page social image and other page fields share one draft batch and preview 
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
 });
+
+test("choosing the picture a page already links still makes its sharing copy", async ({ page, baseURL }) => {
+  await fixture(page, baseURL, true);
+  const home = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  const tag = '<meta property="og:image" content="/images/sharing-source.png">';
+  const linked = /<meta property="og:image"[^>]*>/.test(home) ? home.replace(/<meta property="og:image"[^>]*>/, tag) : home.replace("</head>", `  ${tag}\n</head>`);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: linked } })).status()).toBe(204);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await pages(page); await openPageSettingsFromPages(page);
+  const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
+  await settings.getByRole("tab", { name: "Social", exact: true }).click();
+  await expect(settings.getByLabel("Social image", { exact: true })).toHaveValue("/images/sharing-source.png");
+  await settings.getByRole("button", { name: "Choose social image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await picker.getByRole("button", { name: "Choose images/sharing-source.png", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await settings.getByRole("button", { name: "Apply page settings", exact: true }).click();
+  await expect(settings).not.toBeVisible();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content)
+    .toContain('property="og:image" content="https://sharing.example/media/images/sharing-source-social.jpg"');
+  expect(await output(page, "media/images/sharing-source-social.jpg")).toEqual({ width: 1200, height: 630, type: "image/jpeg" });
+});
