@@ -92,10 +92,12 @@ test("placeholder Choose image replaces its source and dimensions, keeps the sit
   await bar(page).getByRole("button", { name: "Choose image…", exact: true }).click();
   await expect(chooser.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
-  await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
+  // The fixture's alt="" is not marked Decorative, so the field reads Not described yet.
+  await bar(page).getByRole("button", { name: "Not described yet", exact: true }).click();
   await page.getByRole("textbox", { name: "Alt text", exact: true }).fill("Neutral image placeholder");
   await page.keyboard.press("Enter");
   await expect.poll(() => source(page)).toBe(before.replace('alt=""', 'alt="Neutral image placeholder"'));
+  await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
   await undo(page);
   await expect.poll(() => source(page)).toBe(before);
 });

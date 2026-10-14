@@ -110,7 +110,8 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await expect.poll(() => editorText(page, "#content")).toContain(`<img width="320" height="180" loading="lazy" decoding="async" class="hero-image" src="/images/studio-desk.svg" data-key="hero-image" alt="Placeholder">`);
   await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
 
-  // A written alt is kept; emptied, the image is decorative.
+  // A written alt is kept; emptied, it is Not described yet (Decorative is
+  // its own toggle, since alt="" alone cannot tell the two apart).
   await bar(page).getByRole("button", { name: "Alt text", exact: true }).click();
   await popover(page).getByRole("textbox", { name: "Alt text" }).fill("A sketch on the desk");
   await page.keyboard.press("Enter");
@@ -131,8 +132,10 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await popover(page).getByRole("textbox", { name: "Alt text" }).fill("");
   await page.keyboard.press("Enter");
   await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/studio-desk.svg" data-key="hero-image" alt=""`);
-  await expect(page.locator("#status")).toHaveText("Image marked decorative");
-  // A decorative image stays decorative through a replacement.
+  await expect(page.locator("#status")).toHaveText("Alt text removed");
+  await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Decorative", exact: true })).toHaveAttribute("aria-pressed", "false");
+  // An empty alt stays empty through a replacement.
   await bar(page).getByRole("button", { name: "Choose image…" }).click();
   await chooser.getByRole("button", { name: "Details for images/placeholder.svg" }).click();
   await expect(chooser.getByRole("textbox", { name: "Alt text for insertion" })).toHaveValue("");
