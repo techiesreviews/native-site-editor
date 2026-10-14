@@ -6,8 +6,9 @@ const binaryFile = (path: string) => /\.(?:png|jpe?g|gif|webp|avif|heic|heif|ico
 const siteFile = (path: string) => !/(?:^|\/)(?:node_modules|\.git)(?:\/|$)/.test(path) && path !== ".editor/media.json";
 /** Unknown formats are text: retaining an extra file is safer than missing a use. */
 export function isMediaTextFile(path: string): boolean { return siteFile(path) && !binaryFile(path); }
-/** Known media formats for the on-open check; callers can supply additional downloads. */
-export function isMediaFile(path: string): boolean { return siteFile(path) && (binaryFile(path) || /\.svg$/i.test(path)); }
+/** Known media formats for the on-open check; callers can supply additional downloads. Subtitles
+ * count too (text, like SVG), so a use of a video's subtitles keeps its family. */
+export function isMediaFile(path: string): boolean { return siteFile(path) && (binaryFile(path) || /\.(?:svg|vtt|srt)$/i.test(path)); }
 function kindFor(file: string): MediaOtherUseKind {
   if (file.startsWith(".editor/") || /^(?:_redirects|_headers|CNAME)$/i.test(file)) return "settings";
   if (/\.(?:[cm]?js|jsx|tsx?)$/i.test(file)) return "script";

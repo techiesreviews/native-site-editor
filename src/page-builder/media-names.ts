@@ -4,7 +4,7 @@ const stem = (path: string) => path.replace(/\.[^./]+$/, "");
 const extension = (path: string) => path.slice(stem(path).length);
 
 /** Media kinds the media plan renames (what the Media screen lists); fonts, archives and the rest are plain files. */
-export const isRenamableMedia = (path: string) => /\.(?:svg|png|jpe?g|gif|webp|avif|heic|heif|ico|bmp|mp4|m4v|webm|mov|ogv|mp3|m4a|aac|wav|ogg|oga|opus|flac|pdf)$/i.test(path);
+export const isRenamableMedia = (path: string) => /\.(?:svg|png|jpe?g|gif|webp|avif|heic|heif|ico|bmp|mp4|m4v|webm|mov|ogv|mkv|avi|mpe?g|mp3|m4a|aac|wav|ogg|oga|opus|flac|aiff?|pdf)$/i.test(path);
 
 /** Basename only; the caller supplies the actual file format. */
 export function tidyMediaName(name: string): string {

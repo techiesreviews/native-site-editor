@@ -194,3 +194,16 @@ test("a video's still and subtitles are never suggested apart: the video's famil
   const kept = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "media/videos/clip.webp": { alwaysKeep: true } } }));
   assert.deepEqual(mediaCleanUpSuggestions({ usage: unusedUsage(media), records: kept }).groups.flatMap(group => group.items.map(item => item.main)), ["media/downloads/report.pdf"]);
 });
+
+import { isMediaFile } from "../src/page-builder/media-mentions";
+
+test("the on-open check counts subtitles as media: a page using only the subtitles keeps the video's family", () => {
+  const files = ["index.html", "media/videos/clip.mp4", "media/videos/clip.webp", "media/videos/clip.vtt", "styles/site.css"];
+  const media = files.filter(isMediaFile);
+  assert.deepEqual(media, ["media/videos/clip.mp4", "media/videos/clip.webp", "media/videos/clip.vtt"]);
+  const usage = mediaUsageRecords({ media, sources: { "index.html": '<track src="/media/videos/clip.vtt">', "styles/site.css": "" }, pages: ["index.html"] });
+  assert.equal(mediaCleanUpSuggestions({ usage, records: emptyRecords() }).count, 0);
+  const kept = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "media/videos/clip.vtt": { alwaysKeep: true } } }));
+  assert.equal(mediaCleanUpSuggestions({ usage: unusedUsage(media), records: kept }).count, 0);
+  assert.equal(mediaCleanUpSuggestions({ usage: unusedUsage(media), records: emptyRecords() }).count, 1);
+});

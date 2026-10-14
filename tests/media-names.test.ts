@@ -18,6 +18,8 @@ test("tidy basenames preserve languages, combining marks and actual formats", ()
   assert.equal(suggestMediaName("photo.webp", name => name === "photo-2.webp"), "photo-3.webp");
   assert.equal(isRenamableMedia("guide.PDF"), true);
   assert.equal(isRenamableMedia("archive.zip"), false);
+  // Every video and audio kind Media lists can be renamed, so its family follows.
+  for (const path of ["a.mkv", "a.avi", "a.MPEG", "a.mpg", "a.aif", "a.aiff"]) assert.equal(isRenamableMedia(path), true, path);
   assert.equal(new MediaNameTakenError("a", "b").message, "a is taken. Try b.");
 });
 
