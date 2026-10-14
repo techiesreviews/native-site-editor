@@ -51,6 +51,8 @@ export interface PageStructurePorts {
   readonly mediaPlaceState?: (page: string, src: string, alt: string | undefined) => { state: "described" | "decorative" | "missing"; fileDecorative?: boolean } | undefined;
   readonly changeMediaPlace?: (page: string, node: number[], decorative: boolean) => Promise<void>;
   readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
+  /** Lazy video and section-background controls. */
+  readonly mediaVideoControls?: (page: string, node: number[], source: string) => EditBarControl[];
   /** The Image button's badge ("Square", "Trimmed") and whether its popup is open on this image. */
   readonly mediaPlaceFrame?: (page: string, node: number[], tag: string) => { badge?: string; open: boolean } | undefined;
   /** The image popup (shape, focus, Replace) for an image on a page. */
@@ -361,6 +363,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     // Edits sorted by position, as one undo step.
     const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
+    if (range && node && ["video", "section"].includes(range.tag.name)) controls.push(...ports.mediaVideoControls?.(path, node, source) ?? []);
     const attribute = (name: string) => (range ? ports.startTagAttribute(source, range.tag, name) : undefined);
     // Links: the selected link, or the nearest link around the selection in
     // this file, takes an address as it is typed: a page of the site picked

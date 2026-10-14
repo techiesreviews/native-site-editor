@@ -61,6 +61,8 @@ export interface MediaUsageSource {
 }
 /** A captured page source transformed inside the upload transaction. */
 export interface MediaPlacement {
+  /** The placement and newly added files share this Undo label. */
+  label?: string;
   uploads?: { path: string; blob: Blob }[];
   expectedAssets?: Map<string, string | undefined>;
   expectedPaths?: string[];
@@ -154,14 +156,16 @@ export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOp
 /** The Media picker (media-manager ticket 06): the Media pane's view in a smaller window, with only
  * compatible files; Use confirms, Cancel keeps the existing placement. Files dropped onto a place
  * (`files`) are added inside it and chosen, never placed without Use. */
-export async function openMediaPicker(options: MediaPickerOptions = {}): Promise<void> {
+export async function openMediaPicker(options: MediaPickerOptions & { adapter?: MediaPickerHost } = {}): Promise<void> {
   closeActive?.();
-  if (!host) throw new Error("Open a repository before choosing an image.");
+  // A picker for other kinds (background videos) brings its own listing; the Media screen stays as it is.
+  const adapter = options.adapter ?? host;
+  if (!adapter) throw new Error("Open a repository before choosing an image.");
   const dialog = node("dialog", "media-library media-library--picker");
   // Escape closes only the picker, not a popover it was placed in.
   if (options.within) dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
   let used = false, closed = false;
-  const view = createMediaLibraryView(options.within ?? document.body, host, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
+  const view = createMediaLibraryView(options.within ?? document.body, adapter, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
     await options.onPick!(image, () => closed, held); used = !closed;
   }) }, dialog);
   const close = () => { dialog.close(); view.dispose(); };

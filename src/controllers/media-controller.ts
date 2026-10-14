@@ -23,7 +23,7 @@ export interface MediaWorkspaceSnapshot {
   drafts: DraftAccess & { list(scope: DraftScope): SavedDraft[] };
 }
 export interface MediaModule {
-  openMediaPicker: (options: MediaPickerOptions) => Promise<void>;
+  openMediaPicker: (options: MediaPickerOptions & { adapter?: import("../page-builder/media-picker").MediaPickerHost }) => Promise<void>;
   closeMediaPicker: () => void;
   mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: import("../page-builder/media-picker").MediaCleanUpMount }) => MediaLibraryView;
 }
@@ -38,6 +38,7 @@ export interface MediaControllerPorts {
   identity(): string;
   stamp(): Stamp;
   generation(): number;
+  selected?(path: string, node: number[]): boolean;
   source(path: string, scope?: DraftScope): string | undefined;
   listPaths(workspace: MediaWorkspaceSnapshot): Promise<string[]>;
   findEntry(path: string): Promise<{ sha: string; size?: number } | undefined>;
@@ -373,6 +374,25 @@ export function createMediaController(ports: MediaControllerPorts) {
     });
   }
 
+  let videos: ReturnType<typeof import("../page-builder/media-video-place")["createVideoPlaces"]> | undefined;
+  let videosLoading: Promise<void> | undefined;
+  const loadVideos = () => videosLoading ??= import("../page-builder/media-video-place").then(module => {
+    videos = module.createVideoPlaces(ports, workspaceContext, load, {
+      records: () => usage?.usageRecords(), pageLabel: page => ports.placeLabel?.(page),
+      onChange: listener => { usageListeners.add(listener); return () => { usageListeners.delete(listener); }; } });
+    ports.refreshDescriptions();
+  }, error => { videosLoading = undefined; throw error; });
+  function videoControls(path: string, node: number[], source: string) {
+    if (!videos) void loadVideos().catch(error => ports.error(error));
+    return videos?.controls(path, node, source) ?? [];
+  }
+  async function chooseBackground(target: { path: string; node: number[] }) {
+    const source = ports.source(target.path), stamp = ports.stamp();
+    if (source === undefined || ports.viewingVersion()) return;
+    await loadVideos();
+    if (stamp.holds() && ports.source(target.path) === source) await videos!.chooseBackground(target, source);
+  }
+
   let gallery: MediaLibraryView | undefined;
   let galleryScope = "", signature = "", refreshNeeded = false, opening = 0;
   let observer: { disconnect(): void } | undefined;
@@ -444,6 +464,6 @@ export function createMediaController(ports: MediaControllerPorts) {
     },
     shareImage: async (request: import("../page-builder/social-sharing").SocialSharingRequest) =>
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
-    workspaceContext, preparePlacement, prepareFrame, chooseImage, choosePath, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareFrame, chooseImage, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

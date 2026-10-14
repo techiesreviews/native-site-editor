@@ -65,7 +65,7 @@ function editStyle(style: string, changes: Record<string, string | undefined>) {
 
 export function writePlaceFrame(tagText: string, change: PlaceFrameChange): string {
   const tag = startTags(tagText)[0];
-  if (!tag || tag.name !== "img" || tagText[tag.end - 1] !== ">") throw new Error("Choose an image place.");
+  if (!tag || (tag.name !== "img" && !(tag.name === "video" && mediaAttribute(tagText, tag, "muted") && mediaAttribute(tagText, tag, "loop"))) || tagText[tag.end - 1] !== ">") throw new Error("Choose an image place.");
   const changes: Record<string, string | undefined> = {};
   if (change.shape !== undefined) {
     if (change.shape !== "original" && !Object.hasOwn(ratios, change.shape)) throw new Error("Free trimming needs a trimmed copy.");

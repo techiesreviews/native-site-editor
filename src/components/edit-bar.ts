@@ -123,6 +123,8 @@ export interface SelectControl {
   onChange: (value: string) => void;
 }
 export interface CheckboxControl {
+  title?: string;
+  disabled?: boolean;
   kind: "checkbox";
   label: string;
   checked: boolean;
@@ -802,6 +804,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const check = document.createElement("input");
     check.type = "checkbox";
     check.checked = control.checked;
+    check.disabled = Boolean(control.disabled);
+    if (control.title) field.title = control.title;
     check.setAttribute("aria-label", control.note ? `${control.label} (${control.note})` : control.label);
     check.addEventListener("change", () => control.onChange(check.checked));
     field.append(check, node("span", "edit-bar__caption", control.label));

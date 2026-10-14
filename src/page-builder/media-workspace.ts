@@ -300,7 +300,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const ctx = await context();
     session?.assertLive();
     ctx.assertLive();
-    const { batch, text, metadata } = await prepare(ctx, "Add images", requests.some((item) => item.replaceFrom));
+    const { batch, text, metadata } = await prepare(ctx, place?.label ?? "Add images", requests.some((item) => item.replaceFrom));
     if (place?.expectedPaths) batch.expectedPaths = place.expectedPaths;
     for (const [path, version] of place?.expectedAssets ?? []) batch.expectedAssets.set(path, version);
     const reserved = new Set(batch.expectedPaths);

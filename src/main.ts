@@ -1635,6 +1635,7 @@ const pageStructureController = createPageStructureController({
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   get chooseMediaForImage() { return chooseMediaForImage; },
   mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
+  mediaVideoControls: (page, node, source) => mediaController.videoControls(page, node, source),
   mediaPlaceFrame: (page, node, tag) => mediaController.placeFrame(page, node, tag),
   editImage: target => void mediaController.editImage(target),
   changeMediaPlace: (page, node, decorative) => mediaController.changePlace(page, node, decorative),
@@ -1677,7 +1678,7 @@ function applyNativeTextEdit(...args: Parameters<typeof pageStructureController.
 function nativeInstanceContent(source: string, node: readonly number[], tag: string): boolean {
   const range = locateNativeElementRange(source, [...node]);
   if (!range || range.tag.name !== tag) return false;
-  if (["img", "picture", "a", "button"].includes(tag)) return true;
+  if (["img", "picture", "video", "a", "button"].includes(tag)) return true;
   const route = nativePreview?.route();
   if (route && gridOfItem(source, [...node], { route, routes: nativeSite?.routes ?? {}, isSection: isNativeSectionTag })) return true;
   if (!range.close || !TEXT_TAGS.has(tag)) return false;
@@ -2419,6 +2420,7 @@ const mediaController = createMediaController({
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
   generation: () => generation,
+  selected: (path, node) => appStore.selection.value?.path === path && appStore.selection.value.node?.join(".") === node.join("."),
   source: (path, scope) => mediaTextSource(path, scope),
   listPaths: async () => {
     const repo = appStore.repository.value, snapshot = appStore.snapshot.value;

@@ -147,6 +147,13 @@ import { domView } from "../page-builder/rules/tree.ts";
     return key in assetUrls ? assetUrls[key] : null;
   }
   function resolveAssets(fragment) {
+    // Media stays still and selectable on the canvas, including native controls.
+    fragment.querySelectorAll("video").forEach(function (el) {
+      el.removeAttribute("autoplay");
+      el.removeAttribute("controls");
+      el.setAttribute("preload", "none");
+      el.pause();
+    });
     fragment.querySelectorAll("img[srcset],source[srcset]").forEach(function (el) {
       el.setAttribute("srcset", el.getAttribute("srcset").replace(/([^,\s]+)(\s+[^,]+)?/g, function (all, url, descriptor) {
         return (assetFor(url) || url) + (descriptor || "");
