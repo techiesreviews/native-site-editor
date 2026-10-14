@@ -1,12 +1,12 @@
 import type { MediaRecords } from "../../shared/media-records";
-import { mediaFamilies } from "./media-families";
+import { familyMembers, mediaFamilies } from "./media-families";
 
 /** Agent removals always operate on the whole family, even when a copy was named. */
 export function agentRemovalPaths(files: string[], paths: string[]): string[] {
   const families = mediaFamilies(paths);
   return [...new Set(files.flatMap(path => {
-    const family = families.find(family => [family.main, ...family.copies.map(copy => copy.path), ...family.originals].includes(path));
-    return family ? [family.main, ...family.copies.map(copy => copy.path), ...family.originals] : [path];
+    const family = families.find(family => familyMembers(family).includes(path));
+    return family ? familyMembers(family) : [path];
   }))];
 }
 

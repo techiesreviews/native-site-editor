@@ -517,6 +517,7 @@ test("agent delete_file checks uses outside a partial-family folder before remov
   assert.match(await h.controller.deleteFileTarget({ path: "images", name: "images", folder: true }, undefined, true) ?? "", /index.html/);
   assert.deepEqual(h.memory.steps(), []);
   for (const member of Object.keys(imageFamily)) assert.ok(h.memory.workspace.exists(member));
+});
 
 test("Files delete of a video names and keeps its still and unsaved subtitles, so Restore brings back all three", async () => {
   const video = { "media/videos/clip.mp4": "mp4", "media/videos/clip.webp": "webp", "media/videos/clip.vtt": "WEBVTT" };

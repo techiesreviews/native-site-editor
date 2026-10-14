@@ -11,3 +11,9 @@ test("agent family removal expands copies and originals, deduplicates, and prese
   assert.match(agentKeptRemovalProblem([paths[1]], paths, records)!, /media\/originals\/photo.jpg.*Always keep/);
   assert.equal(agentKeptRemovalProblem([paths[3]], paths, records), undefined);
 });
+
+test("agents removing a video's still or subtitles take the whole video family (slice 59)", async () => {
+  const { agentRemovalPaths } = await import("../src/page-builder/agent-media-removal");
+  const paths = ["media/videos/clip.mp4", "media/videos/clip.webp", "media/videos/clip.vtt", "index.html"];
+  assert.deepEqual(agentRemovalPaths(["media/videos/clip.webp"], paths), ["media/videos/clip.mp4", "media/videos/clip.webp", "media/videos/clip.vtt"]);
+});

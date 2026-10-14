@@ -1,6 +1,6 @@
 import { MEDIA_RECORDS_PATH, parseMediaRecords, renameMediaRecord, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { editNativeRedirects } from "../native-page-moves";
-import { mediaFamilyOf, renamedFamily } from "./media-families";
+import { mediaFamilyOf, renamedFamily, familyMembers } from "./media-families";
 import { isMediaTextFile } from "./media-mentions";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { mediaResolvePath, scanMediaUrlTokens, walkMediaReferencePages, scanMediaReferences } from "./media-references";
@@ -211,7 +211,7 @@ export function filesMediaRenamePlan(input: {
   if (missing) return { refuse: `${missing} is not loaded, so the files that use this cannot be checked; nothing was moved.` };
   const records = parseMediaRecords(input.source(MEDIA_RECORDS_PATH));
   const family = mediaFamilyOf(from, paths);
-  const kept = [from, ...family?.copies.map(copy => copy.path) ?? [], ...family?.originals ?? []].some(path => Boolean(records.files[path]?.alwaysKeep));
+  const kept = (family ? familyMembers(family) : [from]).some(path => Boolean(records.files[path]?.alwaysKeep));
   sources._redirects = input.source("_redirects");
   const plan = planMediaRename({ from, to, paths, sources, records,
     site: { origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
