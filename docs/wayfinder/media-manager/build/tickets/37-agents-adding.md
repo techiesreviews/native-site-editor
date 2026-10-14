@@ -2,7 +2,7 @@
 title: Agents place with the same markup and may change settings
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-37 runner)
 blocked_by: [33-placed-image-markup, 26-adding-settings, 22-media-chapter-and-mcp-docs]
 builder: sol
 phase: 2
