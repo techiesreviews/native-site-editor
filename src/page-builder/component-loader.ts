@@ -54,22 +54,27 @@ export function addComponentLoaderScript(source: string): string | undefined {
   if (!head?.close) return;
   const link = headElements(head).filter(element => element.name === "link" &&
     (attribute(source, element, "rel") ?? "").toLowerCase().split(/\s+/).includes("stylesheet")).at(-1);
+  return insertHeadLine(source, head, COMPONENT_LOADER_SCRIPT, link);
+}
+
+/** Inserts one head line using the document’s line endings and surrounding indentation. */
+export function insertHeadLine(source: string, head: SourceElement, line: string, link?: SourceElement): string {
   const newline = source.includes("\r\n") ? "\r\n" : "\n";
-  const at = link?.end ?? head.close.start;
+  const at = link?.end ?? head.close!.start;
   const lineStart = source.lastIndexOf("\n", at - 1) + 1;
   const indent = /^[\t ]*/.exec(source.slice(lineStart, at))![0];
   if (link) {
     // When the link shares its line with another tag, give that tag its own line too.
     const tail = source.slice(at);
     const breakAfter = /^[\t ]*\r?\n/.test(tail) ? "" : newline + indent;
-    return source.slice(0, at) + newline + indent + COMPONENT_LOADER_SCRIPT + breakAfter + tail;
+    return source.slice(0, at) + newline + indent + line + breakAfter + tail;
   }
   if (/^[\t ]*$/.test(source.slice(lineStart, at))) {
     const previousStart = source.lastIndexOf("\n", Math.max(0, lineStart - 2)) + 1;
     const previousIndent = /^[\t ]*/.exec(source.slice(previousStart, lineStart))![0];
-    return source.slice(0, lineStart) + previousIndent + COMPONENT_LOADER_SCRIPT + newline + source.slice(lineStart);
+    return source.slice(0, lineStart) + previousIndent + line + newline + source.slice(lineStart);
   }
-  return source.slice(0, at) + newline + indent + COMPONENT_LOADER_SCRIPT + newline + indent + source.slice(at);
+  return source.slice(0, at) + newline + indent + line + newline + indent + source.slice(at);
 }
 
 /** Reads selector preludes, including grouping and nested rules, without treating declarations as selectors. */
