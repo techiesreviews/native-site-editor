@@ -8,11 +8,3 @@
 .media-count[hidden] { display: none; }
 .explorer-toggle > .media-count { margin-inline-start: -4px; }
 
-.media-clean-up { display: grid; gap: 4px; margin-bottom: 12px; padding: 12px; border-radius: var(--radius); background: var(--surface-subtle); }
-.media-clean-up[hidden] { display: none; }
-.media-clean-up__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.media-clean-up__heading { flex: 1; display: flex; align-items: center; margin: 0; font-size: var(--type-base); }
-.media-clean-up__heading:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-.media-clean-up__head .button { min-height: var(--size-control); }
-.media-clean-up__group { margin: 8px 0 0; font-weight: 600; }
-.media-clean-up__files { margin: 0; padding-inline-start: 20px; overflow-wrap: anywhere; }

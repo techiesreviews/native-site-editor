@@ -95,10 +95,8 @@ export function createMediaLibraryView(
   const sheet: LibrarySheet = { element: shell.sheet, version: 0 };
   // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
   const more = createRowMenu(modal ?? container);
-  // Clean up (slice 49): More's item after Add new file opens the host's panel above the grid.
-  const cleanUpSlot = options.cleanUp && !modal ? document.createElement("div") : undefined;
-  if (cleanUpSlot) { cleanUpSlot.className = "media-clean-up"; cleanUpSlot.hidden = true; shell.browse.prepend(cleanUpSlot); }
-  const cleanUp = cleanUpSlot && options.cleanUp?.(cleanUpSlot, () => shell.more.focus());
+  // Clean up (slices 49, 50): More's item after Add new file opens the review; it redraws with each check.
+  const cleanUp = modal ? undefined : options.cleanUp?.(), cleanUpMemory: { undo?: string[] } = {};
   const listeners = new AbortController(), selected = new Set<string>(), observers = new Set<IntersectionObserver>();
   const busyLock = createBusyLock({ root: dialog, signal: listeners.signal, tell,
     alive: () => alive, loading: () => loadingLibrary });
@@ -112,6 +110,7 @@ export function createMediaLibraryView(
   const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise,
     remove: (paths: string[]) => remove(paths, () => void details(paths[0])) };
   // Each newer usage result repaints the badges and an open usage dialog.
+  const stopCleanUp = cleanUp?.onChange(() => { if (alive && shell.sheet.dataset.mode === "clean-up") sheet.redraw?.(); });
   const stopUsage = adapter.usage?.onChange(() => {
     if (!alive) return;
     repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh(); sheet.repaint?.();
@@ -174,7 +173,7 @@ export function createMediaLibraryView(
     if (rest.length) void adapter.import(rest.map(entry => entry.request)).then(
       paths => options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`), error => options.report?.error(error));
     else if (notAdded) options.report?.announce(notAdded.trim());
-    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close(); adding.dispose();
+    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); cache.dispose();
     more.close(false); more.element.remove();
     modal?.removeEventListener("close", closed); dialog.replaceChildren(); dialog.remove();
@@ -353,7 +352,10 @@ export function createMediaLibraryView(
         if (alive && library) showAddingSettings(sheet, { ...context, close: () => closeSheet(shell.more) });
       }, false) }] : [],
       // Clean up, with the tab's count, is an action like adding; the choices follow.
-      ...cleanUp ? [{ ...cleanUp.item(), run: () => cleanUp.open() }] : [],
+      ...cleanUp ? [{ ...cleanUp.item(), run: () => void task(async () => {
+        const { showCleanUp } = await import("./media-library-clean-up");
+        if (alive && library) showCleanUp(sheet, { ...context, cleanUp, memory: cleanUpMemory, close: () => closeSheet(shell.more) });
+      }, false) }] : [],
       // Recently removed (ticket 10): removed files for 30 days, each with Restore; loaded when opened.
       ...!modal && adapter.restore ? [{ label: "Recently removed", run: () => void task(async () => {
         const { showRecentlyRemoved } = await import("./media-library-recently-removed");

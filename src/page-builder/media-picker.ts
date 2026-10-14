@@ -1,4 +1,5 @@
 import type { AddingSettings, MediaRecords, RemovedMedia } from "../../shared/media-records";
+import type { MediaCleanUpSuggestions } from "./media-clean-up";
 import type { MediaCollectionChange } from "./media-collections";
 import { node } from "../ui/dom";
 import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
@@ -91,10 +92,16 @@ export interface MediaImportRequest {
   /** A new file joins this collection in the same Undo step (adding while viewing it). */
   collection?: string;
 }
-/** Clean up in the Media pane: More's item (with the count) and the panel it opens. */
-export interface MediaCleanUpEntry { item(): { label: string; disabled?: string }; open(): void }
-/** The host draws Clean up into `slot`, above the grid; `closed` returns focus to More. */
-export type MediaCleanUpMount = (slot: HTMLElement, closed: () => void) => MediaCleanUpEntry;
+/** Clean up in the Media pane: More's item (with the count), and for the review it opens the
+ * suggestions, whether the badge shows, and Dismiss. */
+export interface MediaCleanUpEntry {
+  item(): { label: string; disabled?: string };
+  state(): { suggestions: MediaCleanUpSuggestions; badge: { show: boolean } } | undefined;
+  dismiss(): void;
+  /** Called after each newer state; returns the unsubscribe. */
+  onChange(listener: () => void): () => void;
+}
+export type MediaCleanUpMount = () => MediaCleanUpEntry;
 export interface MediaPickerOptions {
   /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open.
    * `cancelled` turns true when the picker closes meanwhile (Cancel): nothing may be placed after it. */

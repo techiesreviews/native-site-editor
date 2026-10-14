@@ -75,23 +75,19 @@ export function createMediaController(ports: MediaControllerPorts) {
   // Clean up's count rides in the usage chunk: no clean-up code runs at boot.
   let cleanUp: ReturnType<typeof import("./media-clean-up-controller")["createMediaCleanUpController"]> | undefined;
   let cleanUpView: typeof import("../page-builder/media-clean-up-view") | undefined;
-  let panel: { slot: HTMLElement; open: boolean; closed: () => void } | undefined;
+  const cleanUpListeners = new Set<() => void>();
   function drawCleanUp() {
     if (!cleanUp || !cleanUpView || !ports.cleanUp) return;
-    const state = cleanUp.state();
-    cleanUpView.drawMediaCount(ports.cleanUp.marks(), state.badge);
-    const live = panel;
-    if (live?.slot.isConnected) cleanUpView.drawCleanUpPanel(live.slot, state, live.open, {
-      dismiss: () => cleanUp?.dismiss(),
-      close: () => { live.open = false; drawCleanUp(); live.closed(); },
-    });
+    cleanUpView.drawMediaCount(ports.cleanUp.marks(), cleanUp.state().badge);
+    for (const listener of cleanUpListeners) listener();
   }
-  // More's Clean up item: its label carries the count; the panel opens above the grid.
-  function mountCleanUp(slot: HTMLElement, closed: () => void) {
-    const live = panel = { slot, open: false as boolean, closed };
+  // More's Clean up item carries the count; the pane's review (slice 50) reads the suggestions.
+  function mountCleanUp() {
     return {
       item: () => cleanUp?.item() ?? { label: "Clean up", disabled: "Still checking which files are used." },
-      open: () => { live.open = true; drawCleanUp(); },
+      state: () => cleanUp?.state(),
+      dismiss: () => cleanUp?.dismiss(),
+      onChange: (listener: () => void) => { cleanUpListeners.add(listener); return () => { cleanUpListeners.delete(listener); }; },
     };
   }
   function refreshUsage() {
