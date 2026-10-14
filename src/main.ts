@@ -171,7 +171,7 @@ function lazyModule<T>(load: () => Promise<T>) {
 }
 const loadHistory = lazyModule(() => import("./components/commit-history"));
 // The media picker and the media workspace behind it (its batches are staged by applyMediaBatch).
-const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction")]));
+const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction"), import("../shared/media-records")]));
 const loadMedia = lazyModule(async () => {
   const [module, [{ createMediaWorkspace }]] = await Promise.all([import("./page-builder/media-picker"), loadMediaWorkspace()]);
   module.configureMediaPicker(createMediaWorkspace(mediaController.workspaceContext));
@@ -2530,14 +2530,17 @@ function chooseMediaForImage(target: { path: string; node: number[]; width?: num
 async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch) {
   // Undo is recorded on the page open when the batch was asked for; a switch while loading refuses.
   const openAtStart = appStore.openFile.value;
-  const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }] = await loadMediaWorkspace();
+  const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = await loadMediaWorkspace();
   const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
   assertLive();
   if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   const editor = editorModule;
-  // With no editable file open, the step waits for the next one (mediaHistoryHome).
+  // With no editable file open, the step waits for the next one (mediaHistoryHome). A page that
+  // opens later is not proven over this step's text, so changes to page text still need one open.
   const historyPath = appStore.openFile.value, historyHost = historyPath ? editor.captureHistoryHost(historyPath) : undefined;
+  if (!historyHost && [...batch.edits.keys()].some(path => path !== MEDIA_RECORDS_PATH)) throw new Error("Open a page before changing images that pages use.");
   const identity = mediaIdentity();
+  const recordOn = (path: string, undo: () => boolean, redo: () => boolean | Promise<boolean>) => editor.recordHistoryAction(path, undo, redo);
   await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
     scope, store: draftStore(), bytes: uploadBytes(), stamp,
     paths: () => nativeFiles(scope), source: path => nativeEffectiveSource(path, scope),
@@ -2545,7 +2548,12 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
     entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: nativeEffectiveSource(path, scope) } : undefined; },
     modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
-    history: (undo, redo) => historyHost && historyPath ? editor.recordHistoryAction(historyPath, undo, redo) : mediaHistoryHome.hold(identity, undo, redo),
+    history: (undo, redo) => {
+      if (historyHost && historyPath) return recordOn(historyPath, undo, redo);
+      // A file that opened while the change was prepared takes it now.
+      const opened = appStore.openFile.value;
+      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo) : mediaHistoryHome.hold(identity, undo, redo);
+    },
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
     announce,
   }));
