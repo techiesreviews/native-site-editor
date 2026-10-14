@@ -2,7 +2,7 @@
 title: Looping video per place, and section backgrounds
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-64 runner)
 blocked_by: [62-player-markup, 38-place-shape-and-focus]
 builder: sol
 phase: 5
