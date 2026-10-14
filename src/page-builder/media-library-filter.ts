@@ -1,5 +1,6 @@
+import { mediaKind as fileKind, TEXT_PATH } from "../../shared/agent";
 import { uploadImageType } from "../uploads";
-import { mediaFamilies } from "./media-families";
+import { mediaFamilies, familyMembers } from "./media-families";
 import type { MediaLibrary } from "./media-picker";
 
 export function accepts(path: string, accept?: string) {
@@ -21,6 +22,13 @@ const KINDS: [MediaKind, RegExp][] = [
   ["audio", /\.(?:mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i],
 ];
 export const mediaKind = (path: string): MediaKind => KINDS.find(([, pattern]) => pattern.test(path))?.[0] ?? "document";
+
+/** What Media lists, and agents too (slice 20): pictures, video, audio, PDFs and other downloads;
+ * never pages, styles, scripts, fonts, source files or the editor's own files. */
+export function isMediaLibraryPath(path: string) {
+  return !/^(?:node_modules|\.github|\.editor)\//.test(path) && !/(?:^|\/)\.[^/]*$/.test(path) &&
+    (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !/\.(?:ts|tsx|jsx|map|lock|yaml|yml|toml|woff2?|ttf|otf|eot)$/i.test(path));
+}
 
 export interface MediaLibraryFilter {
   query: string;
@@ -53,8 +61,37 @@ export function mediaLibraryRecovery(options: MediaLibraryFilter): { label: stri
 /** One tile per Image family: each family's copies and kept originals are left out,
  * its main stays. Files outside any family (not images) pass through. */
 export function mediaLibraryTiles<T extends { path: string }>(items: T[]): T[] {
-  const members = new Set(mediaFamilies(items.map(item => item.path)).flatMap(family => [...family.copies.map(copy => copy.path), ...family.originals]));
+  const members = new Set(mediaFamilies(items.map(item => item.path)).flatMap(family => familyMembers(family).slice(1)));
   return items.filter(item => !members.has(item.path));
+}
+
+/** Each video's or PDF's still picture, by its main: the tile draws it instead of the file. */
+export function mediaTileStills(paths: string[]): Map<string, string> {
+  return new Map(mediaFamilies(paths).flatMap(family => family.still ? [[family.main, family.still] as const] : []));
+}
+
+/** A length as a player shows it: 0:05, 12:34, 1:02:03 (whole seconds, at least 1). */
+export function formatMediaLength(seconds: number): string {
+  const total = Math.max(1, Math.round(seconds)), s = String(total % 60).padStart(2, "0"), m = Math.floor(total / 60) % 60, h = Math.floor(total / 3600);
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+/** The type picture a file without a picture shows (ticket 12 "In the editor"). */
+export type MediaTypePicture = "file" | "video" | "audio" | "pdf" | "archive" | "text" | "sheet" | "slides" | "subtitles";
+const TYPE_PICTURES: [MediaTypePicture, RegExp][] = [
+  ["pdf", /\.pdf$/i], ["archive", /\.(?:zip|gz|tgz|tar|7z|rar|bz2|xz)$/i], ["sheet", /\.(?:xlsx?|ods|csv|numbers)$/i],
+  ["slides", /\.(?:pptx?|odp|key)$/i], ["text", /\.(?:docx?|odt|rtf|pages|txt|md|epub)$/i], ["subtitles", /\.(?:vtt|srt)$/i],
+];
+
+/** How a tile shows its file: the picture it draws (an image itself, a video's still, a PDF's first
+ * page), the type picture otherwise, its type, its length and the corner fact (the length, or the type
+ * of a picture that is not an image). */
+export function mediaTileLook(path: string, still?: string, duration?: number) {
+  const kind = mediaKind(path), type = /\.([^./]+)$/.exec(path)?.[1].toUpperCase() ?? "FILE";
+  const length = (kind === "video" || kind === "audio") && duration && Number.isFinite(duration) && duration > 0 ? formatMediaLength(duration) : undefined;
+  const picture = kind === "image" ? path : still;
+  const icon: MediaTypePicture = kind === "video" || kind === "audio" ? kind : kind === "image" ? "file" : TYPE_PICTURES.find(([, test]) => test.test(path))?.[0] ?? "file";
+  return { picture, icon, type, length, fact: length ?? (picture && kind !== "image" ? type : undefined) };
 }
 
 /** Each Image family's main carries the usage of all its members (a page that shows only a
@@ -63,7 +100,7 @@ export function mediaFamilyUsage(library: Pick<MediaLibrary, "items" | "usage">)
   const usage = { ...library.usage };
   const once = (values: string[]) => [...new Set(values)];
   for (const family of mediaFamilies(library.items.map(item => item.path))) {
-    const found = [family.main, ...family.copies.map(copy => copy.path), ...family.originals]
+    const found = familyMembers(family)
       .flatMap(path => library.usage[path] ? [library.usage[path]] : []);
     if (found.length < 2 && (found.length === 0 || library.usage[family.main])) continue;
     usage[family.main] = {

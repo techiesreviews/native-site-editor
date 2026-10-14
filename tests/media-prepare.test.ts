@@ -278,13 +278,13 @@ test("video quality routes lazily and saves a numbered still with its record in 
   const prepared = await prepareMediaFile(file, "repo", undefined, undefined, async () => { throw new Error("image encoder called"); }, undefined, undefined, "smaller", true, "higher",
     async (source, quality) => {
       assert.equal(source, file); assert.equal(quality, "higher");
-      return { outputs: [{ blob, extension: "mp4" }], still: { blob: picture, extension: "webp" }, fromGif: true, before: 10, after: 3 };
+      return { outputs: [{ blob, extension: "mp4" }], still: { blob: picture, extension: "webp" }, fromGif: true, duration: 12.345, before: 10, after: 3 };
     });
   assert.equal(prepared.request.folder, "media/videos"); assert.equal(prepared.request.original, undefined);
   const f = fixture({ "media/videos/holiday.webp": "existing" });
   assert.deepEqual(await f.host.import([prepared.request]), ["media/videos/holiday-2.mp4"]);
   assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["media/videos/holiday-2.mp4", "media/videos/holiday-2.webp"]);
-  assert.deepEqual(parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/videos/holiday-2.mp4"], { still: "media/videos/holiday-2.webp", fromGif: true });
+  assert.deepEqual(parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/videos/holiday-2.mp4"], { still: "media/videos/holiday-2.webp", fromGif: true, duration: 12.35 });
   assert.equal(f.history.length, 1); f.history[0].undo();
   assert.equal(f.paths().has("media/videos/holiday-2.mp4"), false); assert.equal(f.paths().has("media/videos/holiday-2.webp"), false);
   assert.equal(f.text().has(MEDIA_RECORDS_PATH), false);

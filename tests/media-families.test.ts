@@ -36,7 +36,7 @@ test("conflict numbers and trimmed copies stay separate, with their own copies",
 
 test("orphan copies are their own files; non-images do not participate", () => {
   assert.deepEqual(mediaFamilies(["lone-480.webp", "other-480w.webp", "notes.txt"]), [
-    { main: "lone-480.webp", copies: [], originals: [] }, { main: "other-480w.webp", copies: [], originals: [] },
+    { main: "lone-480.webp", copies: [], originals: [], subtitles: [] }, { main: "other-480w.webp", copies: [], originals: [], subtitles: [] },
   ]);
 });
 
@@ -130,4 +130,45 @@ test("older copy plans preserve the exact stem, reject taken files and folders, 
   assert.equal(olderCopyFormat("photo.jpg", widths, "avif", ambiguous), "jpg");
   assert.equal(olderCopyFormat("photo.gif", widths, "webp", ["photo.gif", "photo.png"]), undefined);
   assert.deepEqual(olderCopyPaths("photo.jpg", widths, "webp", ["photo.jpg", "photo-480w.webp"]), []);
+});
+
+import { familyMembers } from "../src/page-builder/media-families";
+
+test("a video's or PDF's still picture and subtitles join its family by its exact name", () => {
+  const paths = ["media/videos/holiday.mp4", "media/videos/holiday.webp", "media/videos/holiday.vtt",
+    "media/downloads/report.pdf", "media/downloads/report.webp", "media/audio/talk.mp3", "media/audio/talk.srt", "media/images/holiday.webp"];
+  assert.deepEqual(mediaFamilyOf("media/videos/holiday.mp4", paths), { main: "media/videos/holiday.mp4", copies: [], originals: [], still: "media/videos/holiday.webp", subtitles: ["media/videos/holiday.vtt"] });
+  assert.equal(mediaFamilyOf("media/downloads/report.pdf", paths)?.still, "media/downloads/report.webp");
+  // Audio has subtitles, never a still; a picture in another folder stays its own image.
+  assert.deepEqual(mediaFamilyOf("media/audio/talk.mp3", paths)?.subtitles, ["media/audio/talk.srt"]);
+  assert.ok(mediaFamilyOf("media/images/holiday.webp", paths));
+  // The members are hidden from the grid: one tile per family.
+  assert.deepEqual(mediaFamilies(paths).map(family => family.main).sort(), ["media/audio/talk.mp3", "media/downloads/report.pdf", "media/images/holiday.webp", "media/videos/holiday.mp4"]);
+  assert.deepEqual(familyMembers(mediaFamilyOf("media/videos/holiday.mp4", paths)!), ["media/videos/holiday.mp4", "media/videos/holiday.webp", "media/videos/holiday.vtt"]);
+});
+
+test("a still needs one owner and must be a lone picture; other names stay their own files", () => {
+  // Two owners (a video and a PDF of one name), two pictures, or a picture with copies: no still.
+  for (const paths of [["a.mp4", "a.pdf", "a.webp"], ["a.mp4", "a.webp", "a.jpg"], ["a.mp4", "a.webp", "a-480w.webp"], ["a.mp4", "media/originals/a.webp"]]) {
+    assert.equal(mediaFamilyOf("a.mp4", paths)?.still, undefined, paths.join());
+  }
+  assert.ok(mediaFamilyOf("a.webp", ["a.mp4", "a.pdf", "a.webp"]));
+  // Subtitles beside a video and an audio file of one name belong to neither; nearby names never join.
+  assert.deepEqual(mediaFamilyOf("a.mp4", ["a.mp4", "a.mp3", "a.vtt"])?.subtitles, []);
+  assert.deepEqual(mediaFamilyOf("a.mp4", ["a.mp4", "a-2.webp", "b/a.webp", "a.en.vtt", "A.webp"]), { main: "a.mp4", copies: [], originals: [], subtitles: [] });
+  // Other downloads have no family; an image keeps its own (a still of nothing).
+  assert.equal(mediaFamilyOf("notes.zip", ["notes.zip", "notes.webp"]), undefined);
+  // A kept original still finds its picture when a video shares the base name in another folder.
+  assert.deepEqual(mediaFamilyOf("media/images/a.webp", ["media/images/a.webp", "media/videos/a.mp4", "media/originals/a.jpg"])?.originals, ["media/originals/a.jpg"]);
+});
+
+test("renaming a video takes its still and subtitles beside it, with the new name", () => {
+  const family = mediaFamilyOf("media/videos/holiday.mp4", ["media/videos/holiday.mp4", "media/videos/holiday.webp", "media/videos/holiday.vtt"])!;
+  assert.deepEqual(renamedFamily(family, "media/videos/summer.mp4"), [
+    { from: "media/videos/holiday.mp4", to: "media/videos/summer.mp4" },
+    { from: "media/videos/holiday.webp", to: "media/videos/summer.webp" },
+    { from: "media/videos/holiday.vtt", to: "media/videos/summer.vtt" },
+  ]);
+  // Always keep on the still marks the video's tile.
+  assert.deepEqual([...alwaysKeptFiles(familyMembers(family), new Set(["media/videos/holiday.webp"]))].sort(), ["media/videos/holiday.mp4", "media/videos/holiday.webp"]);
 });

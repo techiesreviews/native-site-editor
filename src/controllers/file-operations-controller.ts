@@ -1,4 +1,4 @@
-import { mediaFamilyOf, renamedFamily } from "../page-builder/media-families";
+import { mediaFamilyOf, renamedFamily, familyMembers } from "../page-builder/media-families";
 import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
 import type { GuardedEdits, Reads, PlanResult } from "../guarded-edit";
 import { pageLinkSources } from "./pages-controller";
@@ -71,7 +71,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   // members renamed away stay where they went.
   function familyRestore(path: string, state: FileOperationsTreeState) {
     const family = mediaFamilyOf(path, [path, ...ports.nativeFiles(), ...state.deleted.keys()]);
-    const members = family ? [...family.copies.map(copy => copy.path), ...family.originals] : [];
+    const members = family ? familyMembers(family).slice(1) : [];
     return [path, ...members.filter(member => state.deleted.has(member) && !state.deleted.get(member)!.movedTo)];
   }
 
@@ -154,7 +154,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
   async function familyFiles(target: FileRowTarget, withText: boolean): Promise<MovableFile[]> {
     const family = targetFamily(target);
     if (!family) return targetFiles(target, withText);
-    const paths = [family.main, ...family.copies.map(copy => copy.path), ...family.originals];
+    const paths = familyMembers(family);
     const out: MovableFile[] = [];
     for (const path of paths) {
       const files = await targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, withText);
@@ -422,7 +422,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     const scope = ports.draftScope(), prefix = `${target.path}/`;
     const drafts = scope ? ports.draftStore().list(scope) : [];
     const family = targetFamily(target);
-    const members = new Set(family ? [family.main, ...family.copies.map(copy => copy.path), ...family.originals] : [target.path]);
+    const members = new Set(family ? familyMembers(family) : [target.path]);
     return JSON.stringify(drafts.filter(draft => members.has(draft.path) || (target.folder && draft.path.startsWith(prefix))).sort((a, b) => a.path.localeCompare(b.path)));
   }
 
@@ -504,9 +504,11 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       const members = family ? [
         ...(family.copies.length ? [`${family.copies.length} smaller ${family.copies.length === 1 ? "copy" : "copies"}`] : []),
         ...(family.originals.length ? [`${family.originals.length} kept ${family.originals.length === 1 ? "original" : "originals"}`] : []),
+        ...(family.still ? [/\.pdf$/i.test(family.main) ? "first-page picture" : "still picture"] : []),
+        ...(family.subtitles.length ? [family.subtitles.length === 1 ? "subtitles file" : `${family.subtitles.length} subtitles files`] : []),
       ] : [];
       const ok = await ports.confirmDialog()?.ask({ title, notes: [
-        ...(members.length ? [`Its ${members.join(" and ")} ${family!.copies.length + family!.originals.length === 1 ? "is" : "are"} deleted with it.`] : []),
+        ...(members.length ? [`Its ${members.join(" and ")} ${familyMembers(family!).length === 2 ? "is" : "are"} deleted with it.`] : []),
         ...(links ? [links] : []),
         onGitHub ? count === 1 ? "It is removed from GitHub when you save. Until then, Restore brings it back." : "They are removed from GitHub when you save. Until then, Restore brings them back."
           : count === 1 ? "It is not on GitHub yet, so this discards it." : "They are not on GitHub yet, so this discards them.",

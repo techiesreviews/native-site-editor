@@ -3,7 +3,7 @@ import { icon } from "../icons";
 import { uploadImageType } from "../uploads";
 import { input, field, check } from "./media-library-fields";
 import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
-import { basename, mediaKind } from "./media-library-filter";
+import { basename, mediaKind, mediaTileLook, mediaTileStills } from "./media-library-filter";
 import { canReplaceEverywhere, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
 import { isRenamableMedia, MediaNameTakenError } from "./media-names";
 import { keepPageFocus, usageSections } from "./media-library-usage";
@@ -77,7 +77,8 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
       const { replaceEverywhere } = await import("./media-library-replace");
       if (current()) await replaceEverywhere(sheet, { ...h, details: to => showMediaDetail(sheet, h, to) }, path);
     }) : undefined;
-  layout.append(renderPreview(h, path, data, meta, replace), info);
+  const still = mediaTileStills(library.items.map(item => item.path)).get(path);
+  layout.append(renderPreview(h, path, data, meta, still, replace), info);
   element.replaceChildren(head, layout);
   renderInformation(form, sheet, h, path, data, meta, current);
   h.sync();
@@ -89,20 +90,43 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   if (sheet.focus?.path === path) sheet.focus = undefined;
 }
 
-/** The complete picture (a clean surface with its type when there is none to draw), and the
- * file's actions under it. */
+/** The complete picture (a clean surface with its type's picture when there is none to draw), a
+ * playable video or audio file, a PDF's first page, and the file's actions under it. */
 function renderPreview(
-  { optimise, remove, task, tell }: Pick<DetailHost, "optimise" | "remove" | "task" | "tell">,
-  path: string, data: MediaBytes, meta: MediaMetadata, replace?: () => void,
+  { optimise, remove, task, tell, cache }: Pick<DetailHost, "optimise" | "remove" | "task" | "tell" | "cache">,
+  path: string, data: MediaBytes, meta: MediaMetadata, still: string | undefined, replace?: () => void,
 ) {
   const view = node("div", "media-detail__view"), preview = node("figure", "media-detail__preview");
+  const look = mediaTileLook(path, still, meta.duration), kind = mediaKind(path);
+  preview.dataset.type = look.icon;
+  const typePicture = () => { const picture = node("span", "media-library__type-picture"); picture.setAttribute("aria-hidden", "true"); return picture; };
   const surface = () => {
     preview.classList.add("is-file");
-    preview.replaceChildren(icon("file", 40), node("span", "media-library__format", path.split(".").pop()?.toUpperCase() ?? "FILE"));
+    preview.replaceChildren(typePicture(), node("span", "media-library__format", look.type));
   };
-  if (mediaKind(path) === "image") {
+  const stillUrl = (use: (url: string) => void, failed?: () => void) => {
+    if (still) void cache.get(still).then(bytes => use(bytes.url), () => failed?.());
+  };
+  if (kind === "image") {
     const image = node("img"); image.src = data.url; image.alt = meta.alt;
     image.addEventListener("error", surface, { once: true });
+    preview.append(image);
+  } else if (kind === "video") {
+    // Plays here with sound, from its still picture; nothing plays until pressed.
+    const video = node("video"); video.controls = true; video.playsInline = true; video.preload = "metadata"; video.src = data.url;
+    video.setAttribute("aria-label", basename(path));
+    video.addEventListener("error", surface, { once: true });
+    stillUrl(url => { video.poster = url; });
+    preview.append(video);
+  } else if (kind === "audio") {
+    surface();
+    const audio = node("audio"); audio.controls = true; audio.preload = "metadata"; audio.src = data.url;
+    audio.setAttribute("aria-label", basename(path));
+    preview.append(audio);
+  } else if (look.picture) {
+    const image = node("img"); image.alt = "";
+    image.addEventListener("error", surface, { once: true });
+    stillUrl(url => { image.src = url; }, surface);
     preview.append(image);
   } else surface();
   const actions = node("div", "media-detail__actions");
@@ -140,7 +164,7 @@ function renderInformation(
   if (!isRenamableMedia(path)) name.disabled = true;
   const naming = renameField(name, path, library.items.map(entry => entry.path));
   const facts = node("dl", "media-detail__facts");
-  for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width, height: data.height }), ...mediaMadeFrom(meta)]) {
+  for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width, height: data.height, duration: meta.duration }), ...mediaMadeFrom(meta)]) {
     const row = node("div"); row.append(node("dt", "", fact.label), node("dd", "", fact.value)); facts.append(row);
   }
   form.append(field("File name", name), naming.element, facts);
@@ -176,7 +200,7 @@ function renderInformation(
       line.append(label, node("span", "", row.size ?? ""));
       return line;
     });
-    form.append(disclosure("family", "Copies and original", node("span", "", String(family.length)), rows));
+    form.append(disclosure("family", image ? "Copies and original" : "Files with it", node("span", "", String(family.length)), rows));
   }
   // Collections work like tags (ticket 15, slice 16): tick the ones the file is in, or name a new one.
   const group = node("fieldset", "media-library__memberships media-detail__group");

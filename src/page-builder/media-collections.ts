@@ -1,5 +1,5 @@
 import { parseMediaRecords, setMediaCollections, type MediaFileRecord, type MediaRecords } from "../../shared/media-records";
-import { mediaFamilies } from "./media-families";
+import { mediaFamilies, familyMembers } from "./media-families";
 
 export type MediaCollectionChange =
   | { kind: "new"; name: string; paths?: string[] }
@@ -73,7 +73,7 @@ const dateFolder = /^(?:\d{4}|\d{1,2}|\d{4}-\d{1,2}(?:-\d{1,2})?)$/;
 export function startingMediaCollections(paths: string[]): MediaRecords {
   let records = parseMediaRecords(undefined);
   const families = mediaFamilies(paths);
-  const members = new Set(families.flatMap(family => [...family.copies.map(copy => copy.path), ...family.originals]));
+  const members = new Set(families.flatMap(family => familyMembers(family).slice(1)));
   for (const path of paths) {
     if (members.has(path) || /^media\/originals\//i.test(path)) continue;
     const folder = path.split("/").slice(0, -1).reverse().find(part => !part.startsWith(".") && !storageFolders.has(part.toLowerCase()) && !dateFolder.test(part));

@@ -1,7 +1,7 @@
 import { formatBytes } from "../uploads";
 import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaFileName, suggestMediaName } from "./media-names";
-import { basename, mediaKind, parent } from "./media-library-filter";
+import { basename, formatMediaLength, mediaKind, parent } from "./media-library-filter";
 import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
 
 /** The pure rules behind File details (media build slice 14): its facts, the Image family
@@ -11,10 +11,12 @@ const KIND_NAMES = { image: "Image", video: "Video", audio: "Audio", document: "
 
 export interface MediaDetailFact { label: string; value: string }
 
-/** Kind, size, dimensions (when the picture was read) and folder, in that order. */
-export function mediaDetailFacts(file: { path: string; size?: number; width?: number; height?: number }): MediaDetailFact[] {
-  const facts: MediaDetailFact[] = [{ label: "Kind", value: KIND_NAMES[mediaKind(file.path)] }];
+/** Kind, size, length (a video's or audio file's, when recorded), dimensions (when the picture was
+ * read) and folder, in that order. */
+export function mediaDetailFacts(file: { path: string; size?: number; width?: number; height?: number; duration?: number }): MediaDetailFact[] {
+  const kind = mediaKind(file.path), facts: MediaDetailFact[] = [{ label: "Kind", value: KIND_NAMES[kind] }];
   if (file.size !== undefined) facts.push({ label: "Size", value: formatBytes(file.size) });
+  if ((kind === "video" || kind === "audio") && file.duration && file.duration > 0) facts.push({ label: "Length", value: formatMediaLength(file.duration) });
   if (file.width && file.height) facts.push({ label: "Dimensions", value: `${file.width} × ${file.height}` });
   facts.push({ label: "Folder", value: parent(file.path) || "Site root" });
   return facts;
@@ -27,10 +29,9 @@ export function mediaMadeFrom(record: Pick<MediaMetadata, "trimmedFrom">): Media
 
 export interface MediaFamilyRow { path: string; label: string; size?: string; original?: true }
 
-/** The responsive copies (narrowest first) and kept originals of the image whose main is
- * `path`; undefined for anything that is not an image family's main. */
+/** The responsive copies (narrowest first) and kept originals of the image whose main is `path`, or
+ * a video's or PDF's still picture and subtitles; undefined for anything that is not a family's main. */
 export function mediaFamilyRows(path: string, items: { path: string; size?: number }[]): MediaFamilyRow[] | undefined {
-  if (mediaKind(path) !== "image") return undefined;
   const family = mediaFamilyOf(path, items.map(item => item.path));
   if (!family) return undefined;
   const size = (member: string) => {
@@ -40,6 +41,8 @@ export function mediaFamilyRows(path: string, items: { path: string; size?: numb
   return [
     ...family.copies.map(copy => ({ path: copy.path, label: `Smaller copy · ${copy.width} px wide`, ...size(copy.path) })),
     ...family.originals.map(original => ({ path: original, label: "Original, kept", original: true as const, ...size(original) })),
+    ...family.still ? [{ path: family.still, label: /\.pdf$/i.test(path) ? "First page picture" : "Still picture", ...size(family.still) }] : [],
+    ...family.subtitles.map(subtitles => ({ path: subtitles, label: "Subtitles", ...size(subtitles) })),
   ];
 }
 

@@ -1,5 +1,5 @@
 import { removeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
-import { mediaFamilies, mediaFamilyOf } from "./media-families";
+import { mediaFamilies, mediaFamilyOf, familyMembers } from "./media-families";
 import { chooseMediaPath, mediaCopyName, mediaStorageName, MEDIA_IMAGES_FOLDER } from "./media-storage";
 import { isTrim } from "./trim-geometry";
 
@@ -47,7 +47,7 @@ export function planTrimmedCopy(options: { records: MediaRecords; source: string
   if (path === source || path === previous) throw new Error("A trimmed copy must have a fresh address.");
   const paths = [...options.paths ?? Object.keys(records.files)];
   const family = previous ? mediaFamilyOf(previous, paths) : undefined;
-  const members = previous ? [previous, ...family?.copies.map(copy => copy.path) ?? [], ...family?.originals ?? []] : [];
+  const members = previous ? family ? familyMembers(family) : [previous] : [];
   const removes = !options.previousStillUsed && !members.some(member => records.files[member]?.alwaysKeep) ?
     members.filter(member => member !== source) : [];
   const carry = records.files[previous ?? source];

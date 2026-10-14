@@ -1,5 +1,5 @@
 import { removeMediaRecords, type MediaRecords, type RemovedMedia, type RemovedPath } from "../../shared/media-records";
-import { mediaFamilyOf } from "./media-families";
+import { mediaFamilyOf, familyMembers } from "./media-families";
 import type { UploadBytes } from "../uploads";
 
 export const RECENTLY_REMOVED_DAYS = 30;
@@ -77,7 +77,7 @@ export function recordFileRemovals(records: MediaRecords, files: RemovedPath[], 
   const members = new Map(files.filter(file => file.sha || file.browserKey).map(file => [file.path, file]));
   const familyPaths = (path: string) => {
     const family = mediaFamilyOf(path, paths);
-    return [path, ...family?.copies.map(copy => copy.path) ?? [], ...family?.originals ?? []];
+    return family ? familyMembers(family) : [path];
   };
   for (const file of [...members.values()].sort((a, b) => familyPaths(b.path).length - familyPaths(a.path).length)) {
     if (!members.has(file.path)) continue;

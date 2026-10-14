@@ -59,13 +59,15 @@ function fake(options: { keep?: boolean; encoder?: boolean; pending?: boolean; s
 }
 
 test("fake Mediabunny: keep bypasses encoder; conversions pass recipe, strip tags and cover tracks", async () => {
-  const keep = fake({ keep: true, encoder: false });
-  assert.equal(await prepareAudio(new File(["mp3"], "small.mp3"), "speech", undefined, keep.deps), undefined);
+  const keep = fake({ keep: true, encoder: false }), small = new File(["mp3"], "Small.MP3");
+  // Kept bytes come back unchanged with their length, for Media's tile.
+  const kept = await prepareAudio(small, "speech", undefined, keep.deps);
+  assert.equal(kept?.outputs[0].blob, small); assert.equal(kept?.outputs[0].extension, "mp3"); assert.equal(kept?.duration, 1);
   assert.equal(keep.disposed(), 1);
   for (const [quality, bitrate] of [["balanced", 96_000], ["higher", 128_000], ["speech", 64_000]] as const) {
     const f = fake({ sampleRate: 22050 });
     const result = await prepareAudio(new File(["wav"], "sound.wav"), quality, undefined, f.deps);
-    assert.equal(result?.outputs[0].extension, "m4a"); assert.equal(result?.outputs[0].blob.type, "audio/mp4");
+    assert.equal(result?.outputs[0].extension, "m4a"); assert.equal(result?.outputs[0].blob.type, "audio/mp4"); assert.equal(result?.duration, 1);
     const recipe = f.recipe() as { audio: unknown; video: unknown; tags: unknown; tracks: string };
     assert.deepEqual(recipe.audio, { codec: "aac", bitrate, numberOfChannels: quality === "speech" ? 1 : 2, sampleRate: 48000, forceTranscode: true });
     assert.deepEqual(recipe.tags, {}); assert.deepEqual(recipe.video, { discard: true }); assert.equal(recipe.tracks, "primary");

@@ -1,4 +1,4 @@
-import { mediaFamilyOf } from "./media-families";
+import { mediaFamilyOf, familyMembers } from "./media-families";
 import { basename } from "./media-library-filter";
 import type { MediaMetadataMap } from "./media-metadata";
 
@@ -14,7 +14,7 @@ const format = (path: string) => /\.([^./]+)$/.exec(path)?.[1].toLowerCase() ?? 
 /** A refusal for the picture chosen in the picker, or undefined when it can take the old one's place. */
 export function replaceChoiceProblem(path: string, chosen: string, paths: string[]): string | undefined {
   const family = mediaFamilyOf(path, paths);
-  const members = family ? [path, ...family.copies.map(copy => copy.path), ...family.originals] : [path];
+  const members = family ? familyMembers(family) : [path];
   if (members.includes(chosen)) return "That is the picture being replaced. Choose a different one.";
   if (!/^(?:png|jpe?g|webp|avif)$/.test(format(chosen))) return "Choose a JPEG, PNG, WebP or AVIF picture.";
   return undefined;
@@ -76,6 +76,6 @@ export function replacedMessage(path: string, pages: number): string {
 /** How many Trimmed copies were made from the old picture's family. */
 export function trimsOf(path: string, paths: string[], metadata: MediaMetadataMap): number {
   const family = mediaFamilyOf(path, paths);
-  const members = new Set(family ? [path, ...family.copies.map(copy => copy.path), ...family.originals] : [path]);
+  const members = new Set(family ? familyMembers(family) : [path]);
   return Object.values(metadata).filter(meta => meta.trimmedFrom && members.has(meta.trimmedFrom.source)).length;
 }

@@ -710,7 +710,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   server.registerTool(
     "list_media",
     {
-      description: "List media with kind, size, Image family (copies, originals), uses (pages and other uses), description (by agent, or Decorative), collections, Always keep and Not checked yet; page with offset/limit and nextOffset. Follow the Media chapter of the native-site://conventions resource for the rules.",
+      description: "List media with kind, size, family (copies, originals, still, subtitles), uses (pages and other uses), description (by agent, or Decorative), collections, Always keep and Not checked yet; page with offset/limit and nextOffset. Follow the Media chapter of the native-site://conventions resource for the rules.",
       inputSchema: z.object({ folder: z.string().max(1024).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(200).optional(), requestId, waitSeconds }),
       annotations: readOnly,
     },

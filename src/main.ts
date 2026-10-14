@@ -173,7 +173,8 @@ const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/
 const loadMedia = lazyModule(async () => {
   const [module, [{ createMediaWorkspace }]] = await Promise.all([import("./page-builder/media-picker"), loadMediaWorkspace()]);
   // Usage badges read the site's usage check, which runs on open.
-  module.configureMediaPicker({ ...createMediaWorkspace(mediaController.workspaceContext),
+  // Media lists every kind (pictures, video, audio, PDFs and other downloads); pickers narrow by `accept`.
+  module.configureMediaPicker({ ...createMediaWorkspace(() => mediaController.workspaceContext(module.isMediaLibraryPath)),
     usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener), pageLabel: nativePageLabelOf } });
   return module;
 });

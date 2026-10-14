@@ -17,6 +17,8 @@ export interface MediaFileRecord {
   decorative?: true; alwaysKeep?: true; sharing?: true;
   trimmedFrom?: { source: string; trim: MediaTrim; [key: string]: unknown };
   still?: string; subtitles?: string; fromGif?: true;
+  /** A video's or audio file's length in seconds, recorded when it was added. */
+  duration?: number;
   [key: string]: unknown;
 }
 export interface OnlineVideoRecord {

@@ -179,3 +179,18 @@ test("a Trimmed copy family is apart from its source: each is suggested only whe
   ] }]);
   assert.equal(sourceUsed.count, 1);
 });
+
+test("a video's still and subtitles are never suggested apart: the video's family goes, or stays, whole", () => {
+  const media = ["media/videos/clip.mp4", "media/videos/clip.webp", "media/videos/clip.vtt", "media/downloads/report.pdf", "media/downloads/report.webp"];
+  const unused = mediaCleanUpSuggestions({ usage: unusedUsage(media), records: emptyRecords(), sizes: { "media/videos/clip.mp4": 100, "media/videos/clip.webp": 10, "media/videos/clip.vtt": 1 } });
+  assert.deepEqual(unused.groups.map(group => group.items.map(item => [item.main, item.members, item.size])), [[
+    ["media/downloads/report.pdf", ["media/downloads/report.pdf", "media/downloads/report.webp"], 0],
+    ["media/videos/clip.mp4", ["media/videos/clip.mp4", "media/videos/clip.webp", "media/videos/clip.vtt"], 111],
+  ]]);
+  // A page showing only the still (a poster elsewhere) keeps the video's family.
+  const usage = mediaUsageRecords({ media, sources: { "index.html": '<img src="media/videos/clip.webp" alt="">' }, pages: ["index.html"] });
+  assert.deepEqual(mediaCleanUpSuggestions({ usage, records: emptyRecords() }).groups.flatMap(group => group.items.map(item => item.main)), ["media/downloads/report.pdf"]);
+  // Always keep on the still keeps the whole family.
+  const kept = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "media/videos/clip.webp": { alwaysKeep: true } } }));
+  assert.deepEqual(mediaCleanUpSuggestions({ usage: unusedUsage(media), records: kept }).groups.flatMap(group => group.items.map(item => item.main)), ["media/downloads/report.pdf"]);
+});

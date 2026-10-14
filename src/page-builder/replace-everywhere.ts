@@ -5,7 +5,7 @@ import type { MediaRecords } from "../../shared/media-records";
 import { declarationRanges } from "../styles-index";
 import { editNativeRedirects } from "../native-page-moves";
 import { uploadProblem } from "../uploads";
-import { mediaFamilyOf, alwaysKeptFiles } from "./media-families";
+import { mediaFamilyOf, alwaysKeptFiles, familyMembers } from "./media-families";
 import { scanMediaUrlTokens } from "./media-references";
 import { mediaCopyName } from "./media-storage";
 import { mediaOriginalPath } from "./media-originals";
@@ -19,7 +19,7 @@ export function replacementFamilies(path: string, paths: string[], records: Medi
   if (records.files[path]?.trimmedFrom) throw new Error("Replace the original picture, not a Trimmed copy.");
   const members = (main: string) => {
     const family = mediaFamilyOf(main, paths);
-    return family ? [main, ...family.copies.map(copy => copy.path), ...family.originals] : [main];
+    return family ? familyMembers(family) : [main];
   };
   const family = members(path);
   const trims = Object.entries(records.files).filter(([, record]) => record.trimmedFrom && family.includes(record.trimmedFrom.source)).map(([main]) => main);

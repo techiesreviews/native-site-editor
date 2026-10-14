@@ -1,10 +1,9 @@
 import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
-import { basename, filterMediaLibrary, mediaLibraryRecovery, mediaLibraryTiles, nameEnds, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, filterMediaLibrary, mediaLibraryRecovery, mediaLibraryTiles, mediaTileLook, mediaTileStills, nameEnds, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import type { MediaBytes } from "./media-byte-cache";
 import { syncSelectionBar, type LibraryShell } from "./media-library-shell";
 import type { MediaLibrary } from "./media-picker";
-import { icon } from "../icons";
 import { formatBytes } from "../uploads";
 import { paintUsageBadge } from "./media-library-usage";
 import type { MediaUsageRecords } from "./media-usage";
@@ -45,7 +44,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     usage: active.classList.contains("media-library__usage"),
   } : undefined;
   observers.forEach((observer) => observer.disconnect()); observers.clear();
-  const tiles = mediaLibraryTiles(library.items);
+  const tiles = mediaLibraryTiles(library.items), stills = mediaTileStills(library.items.map(item => item.path));
   const filter: MediaLibraryFilter = { query: search.value, collection: collections.value, kind: state.kind, accept: state.accept };
   const filtered = filterMediaLibrary({ ...library, items: tiles }, filter);
   summary.textContent = `${filtered.length} of ${tiles.length} files${collections.value ? ` · ${collections.value}` : ""}`;
@@ -67,8 +66,11 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   }
   for (const item of filtered) {
     const card = node("article", "media-library__card"); card.dataset.path = item.path;
+    // A video shows its still and length, audio a sound picture and length, a PDF its first page (ticket 12).
+    const look = mediaTileLook(item.path, stills.get(item.path), library.metadata[item.path]?.duration);
+    card.dataset.type = look.icon;
     const thumb = button("", () => state.modal ? h.choose(item.path) : h.details(item.path), "media-library__thumbnail");
-    thumb.setAttribute("aria-label", `${state.modal ? "Choose" : "Details for"} ${item.path}`);
+    thumb.setAttribute("aria-label", `${state.modal ? "Choose" : "Details for"} ${item.path}${look.length ? `, ${look.length}` : ""}`);
     // The tile crops the picture to a square; the stored file is untouched.
     const image = node("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
     // The name's two ends: where the phone list shortens a name, it keeps the end and extension.
@@ -92,10 +94,16 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     // The number counts distinct pages; hover and focus show its words, a tap the page names.
     const used = button("", () => h.usage(item.path), "media-library__usage");
     used.setAttribute("aria-haspopup", "dialog"); paintUsageBadge(used, h.records(), item.path);
-    // The list's size sits with the name, so phones can stack them.
-    const size = node("span", "media-library__size", item.size === undefined ? "" : formatBytes(item.size));
+    // The list's size (and length) sits with the name, so phones can stack them.
+    const size = node("span", "media-library__size");
+    const sizeText = () => { size.textContent = [item.size === undefined ? "" : formatBytes(item.size), look.length ?? ""].filter(Boolean).join(" · "); };
+    sizeText();
     if (list) thumb.append(size);
     card.append(node("span", "media-library__shade"), thumb, selectLabel, used);
+    if (look.fact && !list) {
+      const fact = node("span", "media-library__fact", look.fact); fact.setAttribute("aria-hidden", "true");
+      card.classList.add("has-fact"); card.append(fact);
+    }
     if (library.keep?.includes(item.path)) {
       const keep = node("span", "media-library__keep"); keep.title = "Always keep";
       keep.setAttribute("role", "img"); keep.setAttribute("aria-label", "Always keep");
@@ -108,23 +116,31 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
       card.classList.add("is-by-agent"); card.append(agent);
     }
     grid.append(card);
-    // A file the browser cannot draw gets a clean surface with its type, not a broken picture.
-    const noPreview = () => {
-      if (!h.alive() || !card.isConnected || card.classList.contains("is-file")) return;
+    // A file with no picture to draw gets a clean surface with its type's picture, not a broken picture.
+    const surface = () => {
+      if (card.classList.contains("is-file")) return;
       card.classList.add("is-file"); image.remove();
-      thumb.prepend(icon("file", 28), node("span", "media-library__format", item.path.split(".").pop()?.toUpperCase() ?? "FILE"));
+      const picture = node("span", "media-library__type-picture"); picture.setAttribute("aria-hidden", "true");
+      thumb.prepend(picture, node("span", "media-library__format", look.type));
     };
+    const noPreview = () => { if (h.alive() && card.isConnected) surface(); };
     image.addEventListener("error", noPreview);
-    // Observe thumbnails rather than downloading the whole repository on open.
-    const observer = new IntersectionObserver((entries) => {
-      if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
-      observer.disconnect();
-      void h.bytes(item.path).then((data) => {
-        if (!h.alive() || !card.isConnected) return;
-        item.size = data.blob.size; size.textContent = formatBytes(item.size); image.src = data.url;
-      }).catch(noPreview);
-    }, { root: state.modal ? browse : dialog, rootMargin: "200px" });
-    observers.add(observer); observer.observe(card);
+    const preview = look.picture;
+    if (!preview) surface();
+    else {
+      // Observe thumbnails rather than downloading the whole repository on open; a video's or PDF's
+      // tile loads only its still picture.
+      const observer = new IntersectionObserver((entries) => {
+        if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        void h.bytes(preview).then((data) => {
+          if (!h.alive() || !card.isConnected) return;
+          if (preview === item.path) { item.size = data.blob.size; sizeText(); }
+          image.src = data.url;
+        }).catch(noPreview);
+      }, { root: state.modal ? browse : dialog, rootMargin: "200px" });
+      observers.add(observer); observer.observe(card);
+    }
   }
   h.sync();
   if (browseFocus && h.restoreFocus && document.activeElement === document.body && !active?.isConnected) {

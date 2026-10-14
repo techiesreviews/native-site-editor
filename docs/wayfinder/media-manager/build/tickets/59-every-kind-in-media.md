@@ -1,7 +1,7 @@
 ---
 title: Every kind in Media
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-59 runner)
 blocked_by: [57-video-preparation, 58-audio-and-document-preparation, 12-usage-badges-and-list]
 builder: claude

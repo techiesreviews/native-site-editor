@@ -17,6 +17,9 @@ test("facts give kind, size, dimensions when read and folder", () => {
     { label: "Dimensions", value: "2400 × 1345" }, { label: "Folder", value: "images/team" },
   ]);
   assert.deepEqual(mediaDetailFacts({ path: "guide.pdf" }), [{ label: "Kind", value: "Document" }, { label: "Folder", value: "Site root" }]);
+  // A video's or audio file's recorded length follows its size.
+  assert.deepEqual(mediaDetailFacts({ path: "v/clip.mp4", size: 1024, duration: 75 }).map(fact => fact.label + " " + fact.value), ["Kind Video", "Size 1 KB", "Length 1:15", "Folder v"]);
+  assert.equal(mediaDetailFacts({ path: "guide.pdf", duration: 75 }).some(fact => fact.label === "Length"), false);
   assert.equal(mediaDetailFacts({ path: "media/intro.mp4", size: 10, width: 0, height: 0 })[0].value, "Video");
 });
 
@@ -34,7 +37,12 @@ test("the Image family lists copies narrowest first, then kept originals, with k
   assert.deepEqual(mediaFamilyRows("images/other.png", items), []);
   // A copy is not a family's main; other kinds have no Image family.
   assert.equal(mediaFamilyRows("images/tram-480w.webp", items), undefined);
-  assert.equal(mediaFamilyRows("guide.pdf", [{ path: "guide.pdf" }]), undefined);
+  assert.deepEqual(mediaFamilyRows("guide.pdf", [{ path: "guide.pdf" }]), []);
+  assert.equal(mediaFamilyRows("notes.zip", [{ path: "notes.zip" }]), undefined);
+  // A video's still and subtitles, and a PDF's first page, are listed with it.
+  const files = [{ path: "v/clip.mp4" }, { path: "v/clip.webp", size: 2048 }, { path: "v/clip.vtt" }, { path: "d/report.pdf" }, { path: "d/report.webp" }];
+  assert.deepEqual(mediaFamilyRows("v/clip.mp4", files), [{ path: "v/clip.webp", label: "Still picture", size: "2 KB" }, { path: "v/clip.vtt", label: "Subtitles" }]);
+  assert.deepEqual(mediaFamilyRows("d/report.pdf", files), [{ path: "d/report.webp", label: "First page picture" }]);
 });
 
 test("Save details writes description fields only for images; Decorative has no description", () => {
@@ -99,4 +107,13 @@ test("trimmed copies show Made from even when the source no longer exists", () =
   const meta = mediaMetadataView(records)["media/images/photo-crop.webp"];
   assert.deepEqual(mediaMadeFrom(meta), [{ label: "Made from", value: "Original Photo.jpg" }]);
   assert.deepEqual(mediaMadeFrom({}), []);
+});
+
+
+test("a recorded length reaches File details and tiles; a wrong one is left out, never refused", () => {
+  const records = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: {
+    "a.mp4": { duration: 12.35 }, "b.mp4": { duration: "12" }, "c.mp3": { duration: -1 }, "d.mp3": { duration: 0 },
+  } }));
+  const view = mediaMetadataView(records);
+  assert.deepEqual(["a.mp4", "b.mp4", "c.mp3", "d.mp3"].map(path => view[path].duration), [12.35, undefined, undefined, undefined]);
 });

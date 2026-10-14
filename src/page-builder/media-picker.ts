@@ -11,6 +11,7 @@ import type { MediaToCheckRow } from "./media-descriptions";
 import type { MediaAddingChoices } from "./media-settings";
 import type { MediaReplaceRequest } from "./media-workspace";
 import { createMediaLibraryView, type MediaLibraryView } from "./media-library-view";
+export { isMediaLibraryPath } from "./media-library-filter";
 
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {

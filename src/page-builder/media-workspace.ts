@@ -14,7 +14,7 @@ import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
-import { alwaysKeptFiles, mediaFamilyOf } from "./media-families";
+import { alwaysKeptFiles, mediaFamilyOf, familyMembers } from "./media-families";
 import { mediaEscape } from "./media-markup";
 import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-rename";
 import { mediaOriginalPath, mediaOriginalProblem } from "./media-originals";
@@ -300,7 +300,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const familyPaths = (path: string, paths: string[]) => {
     const family = mediaFamilyOf(path, paths);
-    return family ? [path, ...family.copies.map(copy => copy.path), ...family.originals] : [path];
+    return family ? familyMembers(family) : [path];
   };
   const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
     new Map(paths.map(path => [path, ctx.assetVersion(path)]));
@@ -359,6 +359,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         previews[primary] = { still: path };
       }
       if (result?.fromGif) previews[primary] = { ...previews[primary], fromGif: true };
+      if (result?.duration && Number.isFinite(result.duration) && result.duration > 0 && /^(?:video|audio)$/.test(mediaKind(primary)))
+        previews[primary] = { ...previews[primary], duration: Math.round(result.duration * 100) / 100 };
       if (request.original) {
         const { blob, extension } = request.original;
         const problem = uploadProblem({ name: file.name, size: blob.size }) ??

@@ -154,3 +154,40 @@ test("nameEnds treats dot files, long extensions and no extension as stems", () 
 test("nameEnds never splits a character made of two code units", () => {
   assert.deepEqual(nameEnds("holiday-🎉🎉🎉🎉.png"), ["holiday-", "🎉🎉🎉🎉.png"]);
 });
+
+import { formatMediaLength, isMediaLibraryPath, mediaTileLook, mediaTileStills } from "../src/page-builder/media-library-filter";
+
+test("Media lists every kind and leaves the site's own files out", () => {
+  for (const path of ["media/images/a.webp", "logo.svg", "media/videos/a.mp4", "media/audio/a.mp3", "media/downloads/a.pdf", "files/archive.zip", "media/videos/a.vtt", "media/originals/a.jpg"])
+    assert.equal(isMediaLibraryPath(path), true, path);
+  for (const path of ["index.html", "styles/site.css", "scripts/media-player.js", "fonts/a.woff2", ".editor/media.json", "CNAME", "_redirects", "src/a.ts", "a/.gitkeep", "node_modules/x/a.png", "notes.md", "data.json"])
+    assert.equal(isMediaLibraryPath(path), false, path);
+});
+
+test("a length reads as a player shows it", () => {
+  assert.deepEqual([0.2, 4.6, 59.5, 61, 754, 3723].map(formatMediaLength), ["0:01", "0:05", "1:00", "1:01", "12:34", "1:02:03"]);
+});
+
+test("each kind's tile: a still and length, a sound picture and length, a first page, a type picture", () => {
+  const paths = ["v/clip.mp4", "v/clip.webp", "d/report.pdf", "d/report.webp", "v/raw.mov", "d/guide.pdf"];
+  const stills = mediaTileStills(paths);
+  assert.deepEqual(mediaTileLook("v/clip.mp4", stills.get("v/clip.mp4"), 12.4), { picture: "v/clip.webp", icon: "video", type: "MP4", length: "0:12", fact: "0:12" });
+  assert.deepEqual(mediaTileLook("a/talk.mp3", undefined, 95), { picture: undefined, icon: "audio", type: "MP3", length: "1:35", fact: "1:35" });
+  assert.deepEqual(mediaTileLook("d/report.pdf", stills.get("d/report.pdf")), { picture: "d/report.webp", icon: "pdf", type: "PDF", length: undefined, fact: "PDF" });
+  // Without a still or a recorded length: the type picture, and the type in its middle only.
+  assert.deepEqual(mediaTileLook("v/raw.mov", stills.get("v/raw.mov")), { picture: undefined, icon: "video", type: "MOV", length: undefined, fact: undefined });
+  assert.deepEqual(mediaTileLook("d/guide.pdf"), { picture: undefined, icon: "pdf", type: "PDF", length: undefined, fact: undefined });
+  assert.equal(mediaTileLook("v/clip.mp4", "v/clip.webp").fact, "MP4");
+  assert.deepEqual(["a.zip", "a.docx", "a.csv", "a.key", "a.vtt", "a.bin"].map(path => mediaTileLook(path).icon), ["archive", "text", "sheet", "slides", "subtitles", "file"]);
+  // Pictures draw themselves and carry no corner fact; a bad length is no length.
+  assert.deepEqual(mediaTileLook("a.png", undefined, 3), { picture: "a.png", icon: "file", type: "PNG", length: undefined, fact: undefined });
+  assert.equal(mediaTileLook("a.mp3", undefined, Number.NaN).length, undefined);
+  // The grid hides the still: one tile for the video, and Video narrows to it.
+  const items = paths.map(path => ({ path }));
+  const tiles = mediaLibraryTiles(items).map(item => item.path);
+  assert.deepEqual(tiles, ["v/clip.mp4", "d/report.pdf", "v/raw.mov", "d/guide.pdf"]);
+  const only = (kind: MediaLibraryFilter["kind"]) => filterMediaLibrary({ ...library, items: mediaLibraryTiles(items) }, { query: "", collection: "", kind }).map(item => item.path);
+  assert.deepEqual(only("video"), ["v/clip.mp4", "v/raw.mov"]);
+  assert.deepEqual(only("document"), ["d/guide.pdf", "d/report.pdf"]);
+  assert.deepEqual(only("image"), []);
+});

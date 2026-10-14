@@ -25,6 +25,8 @@ export interface AudioPrepareDeps {
   aacFallback?: () => Promise<boolean>;
 }
 
+const seconds = (duration: number) => Number.isFinite(duration) && duration > 0 ? { duration } : {};
+
 export async function prepareAudio(file: File, quality: AudioQuality, signal?: AbortSignal,
   deps: AudioPrepareDeps = {}): Promise<MediaOptimiseResult | undefined> {
   signal?.throwIfAborted();
@@ -43,7 +45,8 @@ export async function prepareAudio(file: File, quality: AudioQuality, signal?: A
     ]);
     signal?.throwIfAborted();
     const plan = audioPlan({ codec, channels, bitrate: stats.averageBitrate, duration, container: container.name, size: file.size }, quality, MAX_UPLOAD_BYTES);
-    if (plan.kind === "keep") return;
+    // Kept bytes still carry their length, for Media's tile.
+    if (plan.kind === "keep") return { outputs: [{ blob: file, extension: /\.([a-z0-9]+)$/i.exec(file.name)?.[1].toLowerCase() ?? "" }], before: file.size, after: file.size, ...seconds(duration) };
     const options = { numberOfChannels: plan.channels, sampleRate: [44100, 48000].includes(sampleRate) ? sampleRate : 48000, bitrate: plan.bitrate };
     if (!await bunny.canEncodeAudio("aac", options) && !await deps.aacFallback?.()) throw new Error("AAC encoding is unavailable in this browser.");
     signal?.throwIfAborted();
@@ -60,7 +63,7 @@ export async function prepareAudio(file: File, quality: AudioQuality, signal?: A
     signal?.throwIfAborted();
     if (!target.buffer) throw new Error("No audio was encoded.");
     const blob = new Blob([target.buffer], { type: "audio/mp4" });
-    return { outputs: [{ blob, extension: "m4a" }], before: file.size, after: blob.size };
+    return { outputs: [{ blob, extension: "m4a" }], before: file.size, after: blob.size, ...seconds(duration) };
   } finally {
     signal?.removeEventListener("abort", abort);
     input.dispose();

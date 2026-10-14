@@ -1,17 +1,14 @@
-import { MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, MEDIA_PREVIEW_SIZE, TEXT_PATH, isPreviewablePicture, mediaKind, picturePreviewRefusal, textBytes } from "../shared/agent";
+import { MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, MEDIA_PREVIEW_SIZE, isPreviewablePicture, mediaKind, picturePreviewRefusal, textBytes } from "../shared/agent";
 import { MEDIA_RECORDS_PATH, type MediaRecords } from "../shared/media-records";
 import { isImagePath } from "./native-structure";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
-import { mediaFamilies } from "./page-builder/media-families";
+import { mediaFamilies, familyMembers, type MediaFamily } from "./page-builder/media-families";
 import { fileDescriptionState } from "./page-builder/media-descriptions";
 import { mediaUsageFor, mediaUsageRecords, mediaUsageState, type MediaUsageRecords } from "./page-builder/media-usage";
 import type { MediaWorkspaceContext } from "./page-builder/media-workspace";
 
-/** Source, editor and dependency files are not media; unknown downloads remain visible. */
-export function isAgentMediaPath(path: string) {
-  return !/^(?:node_modules|\.github|\.editor)\//.test(path) && !/(?:^|\/)\.[^/]*$/.test(path) &&
-    (mediaKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !/\.(?:ts|tsx|jsx|map|lock|yaml|yml|toml|woff2?|ttf|otf|eot)$/i.test(path));
-}
+/** Source, editor and dependency files are not media; unknown downloads remain visible. Media lists the same. */
+export { isMediaLibraryPath as isAgentMediaPath } from "./page-builder/media-library-filter";
 
 export interface MediaListInput {
   items: { path: string; size?: number; draft?: boolean }[];
@@ -28,21 +25,22 @@ export interface MediaListInput {
 export function mediaListReport(input: MediaListInput) {
   const items = new Map(input.items.map(item => [item.path, item]));
   const families = mediaFamilies(input.paths);
-  const members = new Set(families.flatMap(family => [family.main, ...family.copies.map(copy => copy.path), ...family.originals]));
+  const members = new Set(families.flatMap(family => familyMembers(family)));
   const prefix = input.folder ? `${input.folder.replace(/\/+$/, "")}/` : "";
   const all = [
-    ...families.filter(family => [family.main, ...family.copies.map(copy => copy.path), ...family.originals].some(path => items.has(path))),
-    ...input.items.filter(item => !members.has(item.path)).map(item => ({ main: item.path, copies: [], originals: [] })),
+    ...families.filter(family => familyMembers(family).some(path => items.has(path))),
+    ...input.items.filter(item => !members.has(item.path)).map((item): MediaFamily => ({ main: item.path, copies: [], originals: [], subtitles: [] })),
   ].filter(family => family.main.startsWith(prefix)).sort((a, b) => a.main.localeCompare(b.main));
   const media = all.slice(input.offset, input.offset + input.limit).map(family => {
     const item = items.get(family.main), record = input.records?.files[family.main];
     const description = fileDescriptionState(record), usage = mediaUsageFor(input.usage, family.main);
-    const paths = [family.main, ...family.copies.map(copy => copy.path), ...family.originals];
+    const paths = familyMembers(family);
     const sizes = paths.map(path => items.get(path)?.size);
     return {
       path: family.main, kind: mediaKind(family.main),
       ...(item?.size !== undefined ? { size: item.size } : {}),
-      ...(paths.length > 1 ? { family: { copies: family.copies.map(copy => copy.path), originals: family.originals },
+      ...(paths.length > 1 ? { family: { copies: family.copies.map(copy => copy.path), originals: family.originals,
+        ...family.still ? { still: family.still } : {}, ...family.subtitles.length ? { subtitles: family.subtitles } : {} },
         ...(sizes.every(size => size !== undefined) ? { totalSize: sizes.reduce((total, size) => total + size, 0) } : {}) } : {}),
       uses: { checked: usage.checked, state: mediaUsageState(usage), ...(usage.pages.length ? { pages: usage.pages } : {}), ...(usage.otherUses.length ? { other: usage.otherUses } : {}) },
       ...(description.state === "decorative" ? { decorative: true } : description.state === "described" ? { description: { text: description.text, ...(description.byAgent ? { byAgent: true } : {}) } } : { described: false }),

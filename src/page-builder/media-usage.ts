@@ -1,5 +1,5 @@
 import { isMediaTextFile, mediaMentions, type MediaSite } from "./media-mentions";
-import { mediaFamilies } from "./media-families";
+import { mediaFamilies, familyMembers } from "./media-families";
 import { scanMediaReferences, walkMediaReferencePages } from "./media-references";
 import type { MediaReference } from "./media-references";
 // The lookups live apart so the Media screen can use them without loading the scanner.
@@ -33,7 +33,7 @@ export function mediaUsageRecords(input: {
   const pending = (input.files ?? []).filter(file => isMediaTextFile(file) && !Object.hasOwn(input.sources, file));
   const families: MediaUsageRecord[] = mediaFamilies(input.media).map(family => ({
     main: family.main,
-    members: [family.main, ...family.copies.map(copy => copy.path), ...family.originals],
+    members: familyMembers(family),
     checked: unreadable.length === 0 && pending.length === 0,
     pages: [],
     otherUses: [],

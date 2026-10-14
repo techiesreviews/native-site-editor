@@ -1,5 +1,5 @@
 import { mediaKind } from "./media-library-filter";
-import { mediaFamilies, type MediaFamily } from "./media-families";
+import { mediaFamilies, type MediaFamily, familyMembers } from "./media-families";
 import { mediaVariantName } from "./media-markup";
 import { suggestMediaName, tidyMediaName } from "./media-names";
 
@@ -28,7 +28,7 @@ export function mediaStorageName(incoming: string, outputExtension?: string): st
 
 export const mediaCopyName = (main: string, width: number): string => mediaVariantName(main, width);
 
-const members = (family: MediaFamily) => [family.main, ...family.copies.map(copy => copy.path), ...family.originals].sort();
+const members = (family: MediaFamily) => familyMembers(family).sort();
 const signature = (family: MediaFamily) => members(family).join("\n");
 const signatures = (paths: string[]) => new Map(mediaFamilies(paths).map(family => [family.main, signature(family)]));
 

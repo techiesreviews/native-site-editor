@@ -7,6 +7,8 @@ export interface MediaMetadata {
   byAgent?: boolean;
   /** Read only: provenance of a trimmed copy, even when its source is gone. */
   trimmedFrom?: MediaFileRecord["trimmedFrom"];
+  /** Read only: a video's or audio file's recorded length in seconds. */
+  duration?: number;
 }
 export type MediaMetadataMap = Record<string, MediaMetadata>;
 
@@ -19,6 +21,8 @@ export function mediaMetadataView(records: MediaRecords): MediaMetadataMap {
   const out: MediaMetadataMap = Object.create(null);
   for (const [path, record] of Object.entries(records.files)) out[path] = { tags: [...record.collections ?? []], alt: record.description?.text ?? "", ...(record.decorative ? { decorative: true } : {}), ...(record.alwaysKeep ? { alwaysKeep: true } : {}),
     ...(record.trimmedFrom ? { trimmedFrom: structuredClone(record.trimmedFrom) } : {}),
+    // Read leniently: a wrong length is left out, never a reason to refuse the records.
+    ...(typeof record.duration === "number" && Number.isFinite(record.duration) && record.duration > 0 ? { duration: record.duration } : {}),
     ...(record.description?.byAgent && record.description.text ? { byAgent: true } : {}) };
   return out;
 }

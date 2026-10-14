@@ -90,7 +90,7 @@ export async function prepareVideo(file: File, quality: VideoQuality = "balanced
     const picture = await still(canvas, deps);
     signal?.throwIfAborted();
     const blob = new Blob([target.buffer!], { type: "video/mp4" });
-    return { outputs: [{ blob, extension: "mp4", ...size }], still: picture, before: file.size, after: blob.size };
+    return { outputs: [{ blob, extension: "mp4", ...size }], still: picture, duration, before: file.size, after: blob.size };
   } catch (error) {
     if (conversion) await conversion.cancel();
     if (signal?.aborted) throw cancelled();
@@ -138,7 +138,7 @@ async function prepareGif(file: File, quality: VideoQuality, signal: AbortSignal
     }
     source!.close(); await output!.finalize(); signal?.throwIfAborted();
     const blob = new Blob([target.buffer!], { type: "video/mp4" });
-    return { outputs: [{ blob, extension: "mp4", width: canvas!.width, height: canvas!.height }], still: picture, fromGif: true as const, before: file.size, after: blob.size };
+    return { outputs: [{ blob, extension: "mp4", width: canvas!.width, height: canvas!.height }], still: picture, fromGif: true as const, duration: timestamp, before: file.size, after: blob.size };
   } catch (error) { await output?.cancel(); if (signal?.aborted) throw cancelled(); throw error; }
   finally { signal?.removeEventListener("abort", abort); decoder.close(); }
 }
