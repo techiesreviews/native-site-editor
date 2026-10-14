@@ -32,7 +32,7 @@ const next = png(600, 400, [0, 0, 0], true);
 
 /** Home and About show images/tram.webp (40 × 30); About also shows images/old.png; images/next.png and
  * images/lisbon.webp are other pictures in Media. */
-async function seed(page: Page, baseURL: string | undefined) {
+async function seed(page: Page, baseURL: string | undefined, extra: Record<string, { content: string }> = {}) {
   await page.goto(baseURL!);
   const webp = await page.evaluate(async () => {
     const canvas = new OffscreenCanvas(40, 30), context = canvas.getContext("2d")!;
@@ -48,6 +48,7 @@ async function seed(page: Page, baseURL: string | undefined) {
     "index.html": { content: home.replace('src="/images/placeholder.svg"', 'src="/images/tram.webp"') },
     "about/index.html": { content: about.replace('<section class="prose"',
       '<img class="about-image" src="/images/tram.webp" alt="Tram">\n  <img class="old-image" src="/images/old.png" alt="">\n  <section class="prose"') },
+    ...extra,
   };
   for (const [path, data] of Object.entries(files))
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, ...data } })).status()).toBe(204);
@@ -198,6 +199,13 @@ test("after Replace everywhere the canvas shows the new picture, and Publish put
   expect((await page.request.get(`${baseURL}/__demo/file?path=images/tram-480.webp`)).ok()).toBe(true);
   // Published: no draft is left for it.
   expect(await storedDraft(page, "images/tram.webp")).toBeUndefined();
+});
+
+test("with Keep original on, a picture from Media keeps its own original when it replaces another, and stays as it is", async ({ page, baseURL }) => {
+  await seed(page, baseURL, { ".editor/media.json": { content: '{"version":2,"collections":[],"files":{},"adding":{"keepOriginal":true}}' } });
+  await replaceWithNext(page);
+  await expect.poll(async () => Boolean(await storedDraft(page, "media/originals/tram.png"))).toBe(true);
+  expect(await storedDraft(page, "images/next.png")).toBeUndefined();
 });
 
 test("Replace everywhere with a picture added in the picker: prepared, a new format forwarding when ticked, never added on its own", async ({ page, baseURL }) => {

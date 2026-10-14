@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DraftStore, type SavedDraft } from "../src/drafts.ts";
 import { deleteFile, duplicateFile, keepAsNewFile, listChanges, moveBack, moveFile, pruneUnchanged, publishFiles, restoreFile, settleDeletedUpstream, textBlobSha } from "../src/file-changes.ts";
+import { memoryUploadBytes, sweepUploads, uploadKey } from "../src/uploads.ts";
 import { copyPath, filesLinkingTo, linkNote, protectedPathProblem, renameSelection } from "../src/native-files.ts";
 
 function memory() {
@@ -250,4 +251,21 @@ test("pruning keeps a replacement that changed while the branch was compared", a
   release();
   assert.deepEqual(await pruning, []);
   assert.equal(store.get(scope, "b.png")?.sourceSha, sha("c"));
+});
+
+test("a replaced file renamed and then deleted keeps its new bytes for Restore", async () => {
+  const store = new DraftStore(memory());
+  store.save(replacedDraft("a.png"));
+  moveFile(store, scope, { path: "a.png", sha: sha("a") }, "b.png");
+  assert.equal(deleteFile(store, scope, { path: "b.png" }), "deleted");
+  assert.deepEqual(kinds(store), ["D a.png"]);
+  const marker = store.get(scope, "a.png")!;
+  assert.deepEqual([marker.sourceSha, Boolean(marker.upload)], [sha("b"), true]);
+  // The upload sweep keeps the bytes a deletion holds.
+  const bytes = memoryUploadBytes();
+  await bytes.put(uploadKey(scope, sha("b")), new Blob(["new"]));
+  await sweepUploads(bytes, scope, store.list(scope));
+  assert.ok(await bytes.get(uploadKey(scope, sha("b"))));
+  restoreFile(store, scope, "a.png");
+  assert.deepEqual(publishFiles(listChanges(store.list(scope))), [{ path: "a.png", baseSha: sha("a"), content: "", sha: sha("b") }]);
 });

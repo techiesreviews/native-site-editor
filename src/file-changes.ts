@@ -179,7 +179,8 @@ export function deleteFile(store: DraftAccess, scope: DraftScope, file: MovableF
     const origin = draft.movedFrom ? store.get(scope, draft.movedFrom) : undefined;
     if (origin?.deleted && origin.movedTo === file.path) {
       const { movedTo: _, ...plain } = origin;
-      store.save({ ...plain, updatedAt: now });
+      // Replaced bytes the renamed file carried stay with the deletion, for Restore.
+      store.save({ ...plain, updatedAt: now, ...replacement(draft, origin.baseSha) });
       return "deleted";
     }
     return "discarded";
