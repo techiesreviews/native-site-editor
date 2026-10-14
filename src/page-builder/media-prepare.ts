@@ -4,7 +4,7 @@ import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName
 import { largeDownloadNote, preparationFailure } from "./media-limits";
 import { decodeImage } from "./media-byte-cache";
 import { mediaKind } from "./media-library-filter";
-import { optimiseMedia, mediaImageRecipe, mediaUntouched, type MediaImageQuality } from "./media-optimise";
+import { optimiseMedia, mediaImageRecipe, mediaUntouched, type MediaImageQuality, type MediaOptimiseResult } from "./media-optimise";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 
@@ -58,21 +58,7 @@ export async function prepareMediaFile(file: File, _key: string, folder?: string
     const problem = uploadProblem({ name: file.name, size: blob.size });
     if (problem) throw new Error(problem);
   }
-  let original = keepOriginal === true ? result?.original : undefined;
-  if (original) {
-    const problem = mediaOriginalProblem(new Uint8Array(await original.blob.arrayBuffer()), original.extension);
-    if (problem) throw new Error(`${file.name}: ${problem}`);
-    if (await mediaOriginalIsDuplicate(original.blob, result!.outputs[0].blob)) original = undefined;
-    if (original) {
-      const question = mediaOriginalCapQuestion(file.name, original.blob.size);
-      if (question) {
-        const accepted = ask ? await ask(question, "original") : false;
-        signal?.throwIfAborted();
-        if (!accepted) throw new Error(`${file.name} was not added.`);
-        original = undefined;
-      }
-    }
-  }
+  const original = keepOriginal === true && result ? await keptOriginal(file, result, signal, ask) : undefined;
   signal?.throwIfAborted();
   if (original && /^media\/originals(?:\/|$)/i.test(folder?.replace(/^\/+|\/+$/g, "") ?? "")) {
     throw new Error(`${file.name}: Choose a website folder outside media/originals when keeping an original.`);
@@ -82,6 +68,22 @@ export async function prepareMediaFile(file: File, _key: string, folder?: string
     ({ name: output.variantWidth ? mediaCopyName(name, output.variantWidth) : name, size: output.blob.size })) : [{ name, size: file.size }];
   const largest = outputs.reduce((a, b) => a.size >= b.size ? a : b);
   return { request: { file, result, ...original ? { original } : {}, folder: mediaPreparationFolder(folder, name) }, warning: [result?.note, largeDownloadNote(largest)].filter(Boolean).join(" ") || undefined };
+}
+
+/** The cleaned original kept beside a prepared file (Keep original), shared by adding and Review….
+ * Undefined when it would duplicate the website main, or when the user accepts adding without an original
+ * over the cap; throws when the original stays unsafe or the user declines. */
+export async function keptOriginal(file: File, result: MediaOptimiseResult, signal?: AbortSignal, ask?: Ask) {
+  const original = result.original;
+  if (!original) return;
+  const problem = mediaOriginalProblem(new Uint8Array(await original.blob.arrayBuffer()), original.extension);
+  if (problem) throw new Error(`${file.name}: ${problem}`);
+  if (await mediaOriginalIsDuplicate(original.blob, result.outputs[0].blob)) return;
+  const question = mediaOriginalCapQuestion(file.name, original.blob.size);
+  if (!question) return original;
+  const accepted = ask ? await ask(question, "original") : false;
+  signal?.throwIfAborted();
+  if (!accepted) throw new Error(`${file.name} was not added.`);
 }
 
 /** One failed preparation leaves the other files available. */

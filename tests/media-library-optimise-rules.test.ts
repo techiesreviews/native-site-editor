@@ -55,7 +55,7 @@ test("new files join the viewed collection; existing files and All collections j
 
 test("the Optimise sheet starts from the site's Adding settings, not stored browser defaults", () => {
   assert.deepEqual(mediaOptimiseStart(undefined), { maxWidth: 2400, quality: 80, format: "webp", responsive: true, keepOriginal: false });
-  assert.deepEqual(mediaOptimiseStart({ image: "higher", keepOriginal: true }), { maxWidth: null, quality: 90, format: "webp", responsive: true, keepOriginal: true });
+  assert.deepEqual(mediaOptimiseStart({ image: "higher", keepOriginal: true }), { maxWidth: null, quality: 90, format: "webp", responsive: true, keepOriginal: false });
   assert.deepEqual(mediaOptimiseStart({ image: "smallest" }), { maxWidth: 2400, quality: 50, format: "avif", speed: 8, responsive: true, keepOriginal: false });
   assert.deepEqual(mediaOptimiseStart({ image: "smaller", video: "higher", audio: "speech" }), { maxWidth: 1600, quality: 70, format: "webp", responsive: true, keepOriginal: false });
 });

@@ -531,3 +531,25 @@ test("Keep original saves a full-size JPEG without Exif/GPS and links it from th
   expect(website.ok()).toBe(true);
   expect((await website.body()).subarray(8, 12).toString()).toBe("WEBP");
 });
+
+test("Review… keeps the cleaned original when the site remembers Keep original", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".editor/media.json", content: '{"version":2,"collections":[],"files":{},"adding":{"keepOriginal":true}}' } })).status()).toBe(204);
+  await page.reload();
+  await open(page, baseURL);
+  const source = Buffer.from(await detailedPhoto(page), "base64");
+  await page.frameLocator(".native-preview-frame").locator(".hero img").click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "reviewed.jpg", mimeType: "image/jpeg", buffer: withExif(source, 1) });
+  await expect(picker.locator('.media-library__pending[data-state="ready"]')).toHaveCount(1);
+  await picker.getByRole("button", { name: "Review…", exact: true }).click();
+  await picker.getByRole("button", { name: "Preview optimisation", exact: true }).click();
+  await picker.getByRole("button", { name: "Add to library", exact: true }).click();
+  await picker.getByRole("button", { name: "Choose reviewed.jpg", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect.poll(() => storedDraft(page, "media/images/reviewed.webp")).toBeDefined();
+  await expect.poll(() => storedDraft(page, "media/originals/reviewed.jpg")).toBeDefined();
+});

@@ -5,17 +5,18 @@ import { mediaAddingSettings } from "./media-settings";
 import type { MediaMetadataMap } from "./media-metadata";
 import type { MediaImportRequest } from "./media-picker";
 
-/** The Optimise sheet starts from the site's Adding settings (its image choice and Keep original);
- * changes in the sheet are for its files only and are not remembered. */
+/** The Optimise sheet starts from the site's image choice; changes in the sheet are for its files
+ * only and are not remembered. Its "Keep original bytes" box (store the file as it is, metadata
+ * included) starts off: the site's Keep original keeps a cleaned original beside the website
+ * version instead (slice 27), so it never stores location data. */
 export function mediaOptimiseStart(adding: AddingSettings | undefined): MediaOptimiseOptions {
-  const site = mediaAddingSettings(adding);
-  return { ...mediaImageRecipe(site.image), keepOriginal: site.keepOriginal };
+  return mediaImageRecipe(mediaAddingSettings(adding).image);
 }
 
 /** One import request per prepared file, refusing folders with . or .. segments;
  * new files join `collection` when one is viewed. */
 export function buildMediaImportRequests(
-  prepared: readonly Pick<MediaImportRequest, "file" | "result">[], existing: boolean,
+  prepared: readonly Pick<MediaImportRequest, "file" | "result" | "original">[], existing: boolean,
   destination: string, metadata: MediaMetadataMap, update: boolean,
   receipts: ReadonlyMap<string, string | undefined>, collection = "",
 ): MediaImportRequest[] {

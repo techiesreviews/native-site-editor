@@ -6,6 +6,8 @@ import { cancellation } from "./media-busy-lock";
 import { input, select, field, check } from "./media-library-fields";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 import { mediaImageRecipe, mediaSavings, optimiseMedia, type MediaOptimiseResult, type MediaOptimiseOptions } from "./media-optimise";
+import { askToAddUnchanged, keptOriginal } from "./media-prepare";
+import type { MediaImportRequest } from "./media-picker";
 
 type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell">;
 
@@ -39,7 +41,7 @@ export function showMediaOptimise(
     "Optimised copies are new files. Originals stay available. Existing alt text and classes stay intact."));
   else element.append(field("Destination folder", destination));
   const results = node("div", "media-library__results");
-  let prepared: { file: File; result: MediaOptimiseResult }[] = [];
+  let prepared: { file: File; result: MediaOptimiseResult; original?: MediaImportRequest["original"] }[] = [];
   let prepareVersion = 0;
   const add = button(existing ? "Add optimised copies" : "Add to library", () => void task(async () => {
     const requests = buildMediaImportRequests(
@@ -58,12 +60,23 @@ export function showMediaOptimise(
     sheet.work?.abort();
     const controller = new AbortController(); sheet.work = controller;
     const request = ++prepareVersion, panel = sheet.version;
+    // New files keep a cleaned original when the site remembers Keep original; "Keep original bytes"
+    // stores the file unchanged, and Optimise heavy images leaves the existing file in place.
+    const keep = !existing && !settings.keepOriginal && c.library().adding?.keepOriginal === true;
+    const skipped: string[] = [];
     for (const file of files) {
-      const result = await optimiseMedia(file, settings, controller.signal);
+      const result = await optimiseMedia(file, settings, controller.signal, undefined, keep);
       if (!c.alive() || panel !== sheet.version || request !== prepareVersion) return;
-      prepared.push({ file, result });
+      let original;
+      try { original = keep ? await keptOriginal(file, result, controller.signal, askToAddUnchanged) : undefined; }
+      catch (error) {
+        if (controller.signal.aborted) throw error;
+        skipped.push(error instanceof Error ? error.message : `${file.name} was not added.`); continue;
+      }
+      if (!c.alive() || panel !== sheet.version || request !== prepareVersion) return;
+      prepared.push({ file, result, ...original ? { original } : {} });
     }
-    results.replaceChildren();
+    results.replaceChildren(...skipped.map(message => node("p", "media-library__hint", message)));
     for (const { file, result } of prepared) {
       const preview = node("img", "media-library__preview"); preview.alt = ""; preview.src = cache.objectUrl(result.outputs[0].blob);
       const savings = mediaSavings(result.before, result.after);
@@ -72,7 +85,7 @@ export function showMediaOptimise(
         node("p", "media-library__hint",
           `${result.outputs.length - 1} responsive variants · ${formatBytes(result.outputs.reduce((sum, output) => sum + output.blob.size, 0))} total${result.note ? ` · ${result.note}` : " · Metadata stripped"}`));
     }
-    add.disabled = false;
+    add.disabled = !prepared.length;
   }, true, true));
   for (const control of [width, quality, format, responsive, original]) control.addEventListener("input", () => {
     prepareVersion++; sheet.work?.abort(); prepared = [];

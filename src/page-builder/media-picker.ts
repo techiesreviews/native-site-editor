@@ -13,7 +13,6 @@ import { createMediaLibraryView, type MediaLibraryView } from "./media-library-v
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {
   key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
-  /** The site's Adding settings: its remembered choices over the defaults (`media-settings.ts`). */ adding?: AddingSettings;
   /** Files that show the Always keep mark: each kept file and the main of each family with a kept member. */
   keep?: string[];
   /** To check: agent-written words Lex has not checked, in file order. */
