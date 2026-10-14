@@ -1,6 +1,6 @@
 # Native Site Editor starter
 
-A small studio site in plain HTML, CSS and one short browser script, ready to open in [Native Site Editor](https://editor.techies.tools). The repository is the site: there is no build step and nothing to install. Any static host serves it as it is.
+A small studio site in plain HTML, CSS and two short browser scripts (the component loader and a media player), ready to open in [Native Site Editor](https://editor.techies.tools). The repository is the site: there is no build step and nothing to install. Any static host serves it as it is.
 
 ## See it locally
 
@@ -21,6 +21,8 @@ styles/site.css                      shared styles; @imports the other files in 
 components/components.js             the component loader
 components/<tag>/<tag>.html, .css    a component's template and styles
 images/                              images
+scripts/media-player.js              the video and audio player
+styles/media-player.css              its look and the download cards
 robots.txt                           served as is
 .editor/config.json                  editor-only settings (site name and URL)
 ```

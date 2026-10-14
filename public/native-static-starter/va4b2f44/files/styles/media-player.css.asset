@@ -1,0 +1,590 @@
+/* The media player's look (scripts/media-player.js builds the players) and
+   the download cards. Linked on pages that hold media, after site.css:
+     <link rel="stylesheet" href="/styles/media-player.css">
+   Everything takes the site's colour roles, fonts, space and shapes from
+   tokens.css, so the players follow --brand, the visitor's light or dark
+   setting and the band's data-tone. Its layer comes after the shared ones;
+   a page's own unlayered CSS still wins. */
+@layer media-player {
+  .media-player {
+    position: relative;
+    color: var(--ink);
+    font-family: var(--font-body);
+  }
+
+  .media-player [hidden] {
+    display: none;
+  }
+
+  .media-player > video {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Buttons: round, the icon in the text colour. */
+  .media-player button {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    min-width: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: none;
+    color: inherit;
+    font: 600 var(--text-s) / 1 var(--font-body);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .media-player button:hover {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+
+  .media-player button svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+  }
+
+  .media-player button[aria-pressed="true"]:not(.media-mute) {
+    background: color-mix(in srgb, currentColor 16%, transparent);
+  }
+
+  .media-player :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Play/pause: the accent fill, like the site's buttons. */
+  .media-player .media-toggle {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  .media-player .media-toggle:hover {
+    background: var(--accent);
+    filter: brightness(0.92);
+  }
+
+  .media-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3xs);
+  }
+
+  .media-time {
+    min-width: 4ch;
+    padding-inline: var(--space-3xs);
+    font-size: var(--text-s);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  /* The timeline: an accent fill over a soft track, an accent knob. */
+  .media-timeline {
+    --media-track: color-mix(in srgb, currentColor 22%, transparent);
+    flex: 1;
+    min-width: 48px;
+    height: 24px;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    appearance: none;
+  }
+
+  .media-timeline:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
+  .media-timeline::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background:
+      linear-gradient(var(--accent) 0 0) 0 / var(--media-progress, 0%) 100% no-repeat,
+      var(--media-track);
+  }
+
+  .media-timeline::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--accent);
+    appearance: none;
+  }
+
+  .media-timeline::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--media-track);
+  }
+
+  .media-timeline::-moz-range-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .media-timeline::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .media-timeline:focus-visible {
+    border-radius: var(--radius-s);
+  }
+
+  /* Video: the still with a large play button over it, until it starts. */
+  .media-start {
+    position: absolute;
+    inset: 0;
+  }
+
+  .media-player .media-start,
+  .media-player .media-start:hover {
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    background: none;
+  }
+
+  .media-player .media-start:focus-visible {
+    outline: none;
+  }
+
+  .media-start-disc {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    color: var(--on-accent);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+  }
+
+  .media-player .media-start-disc svg {
+    width: 40px;
+    height: 40px;
+    margin-left: 4px;
+  }
+
+  .media-start:hover .media-start-disc {
+    filter: brightness(0.92);
+  }
+
+  .media-start:focus-visible .media-start-disc {
+    outline: 3px solid var(--surface);
+    outline-offset: 2px;
+  }
+
+  /* Video: once it plays, the bar floats over the bottom of the picture on
+     the site's surface colour. */
+  .media-player[data-kind="video"] .media-bar,
+  .media-player[data-kind="online"] .media-bar {
+    position: absolute;
+    inset: auto var(--space-xs) var(--space-xs);
+    padding: var(--space-3xs);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    box-shadow: 0 2px 12px rgb(0 0 0 / 0.25);
+    transition: opacity 0.2s ease-out;
+  }
+
+  .media-player[data-idle] {
+    cursor: none;
+  }
+
+  .media-player[data-idle] .media-bar {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .media-speed {
+    padding-inline: var(--space-2xs);
+  }
+
+  /* A narrow player puts the timeline on a row of its own above the
+     buttons, so every button stays. */
+  .media-player[data-kind="video"][data-narrow] .media-bar,
+  .media-player[data-kind="online"][data-narrow] .media-bar {
+    flex-wrap: wrap;
+    border-radius: var(--radius-l);
+  }
+
+  .media-player[data-narrow] .media-timeline {
+    flex-basis: 100%;
+    order: -1;
+    padding-inline: var(--space-2xs);
+  }
+
+  .media-player[data-narrow] .media-mute {
+    margin-left: auto;
+  }
+
+  /* The total time stays in the timeline's spoken value. */
+  .media-player[data-narrow] .media-timeline + .media-time {
+    display: none;
+  }
+
+  /* Full screen: the picture letterboxed on black, the bar at the bottom. */
+  .media-player:fullscreen {
+    display: grid;
+    background: #000;
+  }
+
+  .media-player:fullscreen > video {
+    object-fit: contain;
+  }
+
+  .media-player:-webkit-full-screen {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    background: #000;
+  }
+
+  .media-player:-webkit-full-screen > video {
+    object-fit: contain;
+  }
+
+  /* Online video (YouTube, Vimeo) without the script: a link to the video
+     showing its still and the same play button as the site's videos. */
+  .online-video {
+    position: relative;
+    display: block;
+  }
+
+  .online-video > img,
+  .media-player[data-kind="online"] > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .online-video::before,
+  .online-video::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+  }
+
+  .online-video::before {
+    width: 64px;
+    height: 64px;
+    margin: -32px 0 0 -32px;
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.3);
+  }
+
+  .online-video::after {
+    width: 22px;
+    height: 26px;
+    margin: -13px 0 0 -8px;
+    background: var(--on-accent);
+    clip-path: polygon(0 0, 100% 50%, 0 100%);
+  }
+
+  .online-video:hover::before {
+    filter: brightness(0.92);
+  }
+
+  .online-video:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  /* Online video with the script: the still covers the service's player
+     until it plays; then the player shows, a clear surface over it takes
+     clicks for the site's bar, and the still waits behind. Without a still
+     the player keeps the usual video shape. */
+  .media-player[data-kind="online"] {
+    isolation: isolate;
+    background: #000;
+  }
+
+  .media-player[data-kind="online"]:not(:has(> img)) {
+    aspect-ratio: 16 / 9;
+  }
+
+  .media-player[data-kind="online"] > img {
+    position: relative;
+    z-index: 1;
+  }
+
+  .media-player[data-kind="online"][data-started] > img,
+  .media-player[data-kind="online"][data-state="service"] > img {
+    z-index: -1;
+  }
+
+  .media-frame {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    pointer-events: none;
+  }
+
+  .media-player[data-state="service"] > .media-frame {
+    pointer-events: auto;
+  }
+
+  .media-surface {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+
+  .media-player:not([data-started]) > .media-surface,
+  .media-player[data-state="service"] > .media-surface {
+    display: none;
+  }
+
+  .media-player[data-kind="online"] > .media-start,
+  .media-player[data-kind="online"] > .media-bar {
+    z-index: 2;
+  }
+
+  /* While the service loads, the play button breathes. */
+  .media-start[aria-busy="true"] .media-start-disc {
+    animation: media-loading 1.2s ease-in-out infinite alternate;
+  }
+
+  @keyframes media-loading {
+    to {
+      opacity: 0.6;
+    }
+  }
+
+  .media-player:fullscreen[data-kind="online"] > img {
+    object-fit: contain;
+  }
+
+  /* Looping video: the picture fills its place (a picture spot sets the
+     shape); one small round button in the corner. */
+  .media-player[data-kind="loop"] > video {
+    object-fit: cover;
+  }
+
+  .media-corner {
+    position: absolute;
+    right: var(--space-xs);
+    bottom: var(--space-xs);
+    z-index: 1;
+  }
+
+  .media-player .media-corner,
+  .media-corner {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    color: var(--ink);
+    box-shadow: 0 1px 6px rgb(0 0 0 / 0.25);
+    cursor: pointer;
+  }
+
+  .media-player .media-corner:hover,
+  .media-corner:hover {
+    background: var(--surface);
+  }
+
+  .media-corner svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+  }
+
+  .media-corner:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Background video: fills its section behind the text. */
+  :has(> video[data-background]) {
+    position: relative;
+    isolation: isolate;
+  }
+
+  video[data-background] {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+
+  /* Audio: a card on the site's surface. */
+  .media-player[data-kind="audio"] {
+    display: grid;
+    gap: var(--space-2xs);
+    max-width: var(--reading-width);
+    padding: var(--space-2xs) var(--space-xs);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+  }
+
+  .media-player .media-transcript-toggle {
+    justify-self: start;
+    min-width: 0;
+    height: auto;
+    padding: var(--space-3xs) var(--space-2xs);
+    border-radius: var(--radius-s);
+    color: var(--accent);
+    font-weight: 400;
+    text-decoration: underline;
+  }
+
+  .media-transcript {
+    display: grid;
+    gap: var(--space-2xs);
+    max-height: 16rem;
+    overflow: auto;
+    padding: var(--space-2xs);
+    border-top: 1px solid var(--line);
+    font-size: var(--text-s);
+  }
+
+  .media-transcript:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .media-transcript p {
+    margin: 0;
+  }
+
+  .media-transcript a {
+    color: var(--accent);
+  }
+
+  /* Download cards: the first page (or a file picture), the file's name,
+     type and size, and Open (PDFs open in the browser) or Download.
+       <a class="download-card" href="/media/menu.pdf">
+         <img src="/media/menu.page-1.webp" alt="" width="240" height="340">
+         <span class="download-card-name">Menu</span>
+         <span class="download-card-meta">PDF · 240 KB</span>
+         <span class="download-card-action">Open</span>
+       </a>
+     Other files carry the download attribute and read Download. */
+  .download-card {
+    display: grid;
+    grid-template:
+      "picture name action" auto
+      "picture meta action" auto / 56px 1fr auto;
+    align-items: center;
+    column-gap: var(--space-s);
+    row-gap: var(--space-3xs);
+    max-width: 36rem;
+    padding: var(--space-xs);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--font-body);
+    text-decoration: none;
+  }
+
+  .download-card > img,
+  .download-card:not(:has(> img))::before {
+    grid-area: picture;
+    width: 56px;
+    height: 72px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background-color: var(--page);
+  }
+
+  .download-card > img {
+    object-fit: cover;
+    object-position: top;
+  }
+
+  /* No picture: a page with a folded corner. */
+  .download-card:not(:has(> img))::before {
+    content: "";
+    box-sizing: border-box;
+    background-image: linear-gradient(225deg, var(--surface) 12px, var(--line) 12px 13px, transparent 13px);
+  }
+
+  .download-card-name {
+    grid-area: name;
+    align-self: end;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .download-card-meta {
+    grid-area: meta;
+    align-self: start;
+    color: var(--muted);
+    font-size: var(--text-s);
+  }
+
+  .download-card-action {
+    grid-area: action;
+    padding: var(--space-2xs) var(--space-s);
+    border-radius: var(--radius-full);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: var(--text-s);
+    font-weight: 600;
+  }
+
+  .download-card:hover {
+    border-color: var(--accent);
+  }
+
+  .download-card:hover .download-card-action {
+    filter: brightness(0.92);
+  }
+
+  .download-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  @media (width < 30rem) {
+    .download-card {
+      grid-template:
+        "picture name" auto
+        "picture meta" auto
+        "picture action" auto / 56px 1fr;
+    }
+
+    .download-card-action {
+      justify-self: start;
+      margin-top: var(--space-3xs);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .media-player[data-kind="video"] .media-bar,
+    .media-player[data-kind="online"] .media-bar {
+      transition: none;
+    }
+
+    .media-start[aria-busy="true"] .media-start-disc {
+      animation: none;
+    }
+  }
+}

@@ -8,7 +8,7 @@ its own assets by setting `STARTER_SOURCE`:
 | `STARTER_SOURCE` | Starter site |
 | --- | --- |
 | unset | template repository tarball (production and generic deploys) |
-| `native-static` | `public/native-static-starter/v6a20035/`, read through `ASSETS` only |
+| `native-static` | `public/native-static-starter/va4b2f44/`, read through `ASSETS` only |
 | anything else | Create site and Start your site fail with a clear error |
 
 Both entry points, Create site (`POST /api/repositories` with
@@ -24,10 +24,12 @@ npx wrangler dev --var STARTER_SOURCE:native-static
 
 ## The vendored files
 
-`v6a20035` is starter commit `6a20035`: six ready routes (`index.html`,
-`about/`, three `work/` pages, `404.html`), `styles/` (including `tones.css`),
-`images/`, `robots.txt`, `components/` (templates, CSS and `components.js`) and
-`AGENTS.md`, copied byte for byte.
+`va4b2f44` is starter commit `a4b2f44` (its `dev` branch): six ready routes
+(`index.html`, `about/`, three `work/` pages, `404.html`), `styles/` (including
+`tones.css` and `media-player.css`), `scripts/` (the media player, which no
+page links yet), `images/`, `robots.txt`, `components/` (templates, CSS and
+`components.js`) and `AGENTS.md` (with the Components and Media chapters),
+copied byte for byte.
 Each route loads `<script type="module" src="/components/components.js"></script>`;
 the site loader fetches component templates and CSS without a build step.
 Each file is stored as
@@ -40,4 +42,7 @@ and noindex taken out). Damage is an error; there is no fallback to the
 template.
 
 To move to a new starter version, add a new `v<sha>` folder from the
-starter's tracked website files and update `NATIVE_STARTER_VERSION`.
+starter's tracked website files (everything except `.assetsignore`,
+`CLAUDE.md`, `.gitignore`, `README.md`, `wrangler.jsonc` and `.github/`;
+`.editor/config.json` goes inline in the manifest), remove the old folder and
+update `NATIVE_STARTER_VERSION`.
