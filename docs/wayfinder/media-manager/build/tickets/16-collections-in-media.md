@@ -2,7 +2,7 @@
 title: Collections in Media
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-16 runner)
 blocked_by: [10-one-bar, 15-collection-records]
 builder: claude
 phase: 1
