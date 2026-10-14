@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -6,7 +7,7 @@ import { mediaListReport } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";
 import { requestOperation } from "../worker/agent-requests.ts";
-import { componentsChapter } from "../worker/site-conventions.ts";
+import { componentsChapter, mediaChapter, siteConventions } from "../worker/site-conventions.ts";
 import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 
@@ -83,6 +84,11 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
+    const documentation = readFileSync(new URL("../docs/mcp.md", import.meta.url), "utf8");
+    for (const name of tools) assert.ok(documentation.includes(`\`${name}\``), `docs/mcp.md must list ${name}`);
+    const documentedCount = documentation.match(/The server exposes (\d+) tools/);
+    assert.ok(documentedCount, "docs/mcp.md must state the tool count");
+    assert.equal(Number(documentedCount[1]), listing.length);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
 
     // The site: settings, pages as a tree with their head details, the
@@ -129,7 +135,15 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.doesNotMatch(conventions, /src\/(?:pages|components|styles|public)|page comment|native\.json/);
     // The Components chapter, from its heading to the next `## `, is the one
     // source of how components are made; the starter's AGENTS.md copies it.
-    const chapter = componentsChapter(((await client.readResource({ uri: "native-site://conventions" })).contents[0] as { text: string }).text)!;
+    const served = ((await client.readResource({ uri: "native-site://conventions" })).contents[0] as { text: string }).text;
+    const chapter = componentsChapter(served)!;
+    const servedMedia = mediaChapter(served);
+    assert.ok(servedMedia?.startsWith("## Media\n"));
+    assert.equal(servedMedia, mediaChapter(siteConventions));
+    assert.doesNotMatch(servedMedia.slice(1), /^## /m);
+    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection"])
+      assert.match(listing.find(tool => tool.name === name)!.description!, /Media chapter.*native-site:\/\/conventions/);
+    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media or changing collections/);
     assert.ok(chapter.startsWith("## Components\n"));
     assert.doesNotMatch(chapter.slice(1), /^## /m);
     assert.match(chapter, /```html\n<section>[\s\S]*<\/section>\n```$/, "the chapter ends with its example template");
