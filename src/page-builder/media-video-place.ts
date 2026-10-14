@@ -6,6 +6,7 @@ import type { MediaHeldFiles, MediaUsageSource } from "./media-picker";
 import type { MediaImage } from "./media-markup";
 import type { MediaModule } from "../controllers/media-controller";
 import { locateNativeElementRange } from "../native-source-location";
+import type { ElementRange } from "../../shared/html-source";
 import { isImagePath } from "../native-structure";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../../shared/media-records";
 import { mediaAttribute } from "./media-attributes";
@@ -15,9 +16,13 @@ import { isPictureSpot, PICTURE_SPOT_MESSAGE, readLooping, readSectionBackground
 
 export const isVideoPath = (path: string) => /\.(?:mp4|m4v|webm|mov|ogv)$/i.test(path);
 type Context = (include?: (path: string) => boolean) => Promise<MediaWorkspaceContext>;
-export function createVideoPlaces(ports: MediaControllerPorts, context: Context, load: () => Promise<MediaModule>, usage?: MediaUsageSource) {
+export type VideoPlacePorts = Pick<MediaControllerPorts, "stamp" | "generation" | "source" | "viewingVersion" | "openFile" | "restoreFile"
+  | "locateElement" | "selected" | "placeLabel" | "error" | "announce">;
+export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load: () => Promise<Pick<MediaModule, "openMediaPicker">>, usage?: MediaUsageSource) {
+  // The controller's locator when it has one (tests), else the page's own.
+  const locate = (source: string, node: number[]) => (ports.locateElement ?? locateNativeElementRange)(source, node) as ElementRange | undefined;
   function controls(path: string, node: number[], source: string): EditBarControl[] {
-    const range = locateNativeElementRange(source, node);
+    const range = locate(source, node);
     if (!range) return [];
     const tag = source.slice(range.tag.start, range.tag.end);
     if (range.tag.name === "video" && !mediaAttribute(source, range.tag, "data-background")) {
@@ -27,7 +32,7 @@ export function createVideoPlaces(ports: MediaControllerPorts, context: Context,
         onChange: on => { void change(path, node, source, on ? "Video loops silently" : "Video plays with sound on tap", on ? "looping-video" : undefined,
           page => {
             // Children (a subtitles track) stay, so switching looping off again loses nothing.
-            const current = locateNativeElementRange(page, node)!;
+            const current = locate(page, node)!;
             return page.slice(0, current.tag.start) + writeLooping(tag, on) + page.slice(current.tag.end);
           }).catch(error => ports.error(error)); } }];
     }
@@ -39,7 +44,7 @@ export function createVideoPlaces(ports: MediaControllerPorts, context: Context,
       } }] : []];
   }
   function background(source: string, node: number[], video?: { path: string; still?: string }) {
-    const range = locateNativeElementRange(source, node);
+    const range = locate(source, node);
     if (!range) throw new Error("Choose a section.");
     for (const edit of sectionBackgroundEdits(source, range, video).sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
     return source;
@@ -54,20 +59,26 @@ export function createVideoPlaces(ports: MediaControllerPorts, context: Context,
     assert();
     if (ports.openFile() !== path) { await ports.restoreFile(path, epoch); assert(); }
     const ctx = await context(); assert(); ctx.assertLive();
+    // An existing chosen file (other held files may be saved with it): its revision, taken before any
+    // further await and kept to the save; a file removed meanwhile is refused.
+    const existing = !!picked && !held?.chosen?.();
+    const version = existing ? ctx.assetVersion(picked!.path) : undefined;
+    if (existing && version === undefined) throw new Error(`${picked!.path} is no longer in Media. Choose the video again.`);
+    const unchanged = () => { if (existing && ctx.assetVersion(picked!.path) !== version) throw new Error("The video changed while it was being placed. Choose it again."); };
     const metadata = picked ? await ctx.read(MEDIA_RECORDS_PATH) : undefined;
-    assert(); ctx.assertLive();
+    assert(); ctx.assertLive(); unchanged();
     const record = picked ? parseMediaRecords(metadata).files[picked.path] : undefined;
     let next = edit(source, record);
     const expectedSources = new Map<string, string | undefined>([[path, source]]);
     if (picked) expectedSources.set(MEDIA_RECORDS_PATH, metadata);
     const expectedAssets = new Map<string, string | undefined>();
-    if (picked && !held) expectedAssets.set(picked.path, ctx.assetVersion(picked.path));
+    if (existing) expectedAssets.set(picked!.path, version);
     let plan;
     if (kind) {
       const input = { pages: [path], sources: { [path]: next }, exists: (file: string) => ctx.paths.includes(file), kinds: [kind] };
       plan = mediaPlayerPlan(input);
       if (plan?.creates.length) {
-        const files = await starterPlayerFiles(); assert(); ctx.assertLive();
+        const files = await starterPlayerFiles(); assert(); ctx.assertLive(); unchanged();
         plan = mediaPlayerPlan({ ...input, files });
       }
       if (plan?.notes.length) throw new Error(plan.notes.join(" "));
@@ -98,7 +109,7 @@ export function createVideoPlaces(ports: MediaControllerPorts, context: Context,
     const adapter = { ...createMediaWorkspace(() => context(path => isImagePath(path) || isVideoPath(path))), usage };
     await openMediaPicker({ adapter, accept: ".mp4,.m4v,.webm,.mov,.ogv", place: `${ports.placeLabel?.(target.path) ?? target.path} · Background video`, report: ports,
       onPick: async (video, cancelled, held) => {
-        if (!isVideoPath(video.path) && !held) throw new Error("Choose a video file.");
+        if (!isVideoPath(video.path) && !held?.chosen?.()) throw new Error("Choose a video file.");
         await change(target.path, target.node, source, "Background video set", "background-video",
           (page, record) => background(page, target.node, { path: video.path, still: record?.still }), video, cancelled, held, since);
       } });
