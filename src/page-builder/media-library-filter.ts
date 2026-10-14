@@ -27,7 +27,7 @@ export const mediaKind = (path: string): MediaKind => KINDS.find(([, pattern]) =
  * never pages, styles, scripts, fonts, source files or the editor's own files. */
 export function isMediaLibraryPath(path: string) {
   return !/^(?:node_modules|\.github|\.editor)\//.test(path) && !/(?:^|\/)\.[^/]*$/.test(path) &&
-    (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !/\.(?:ts|tsx|jsx|map|lock|yaml|yml|toml|woff2?|ttf|otf|eot)$/i.test(path));
+    (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !/\.(?:[cm]?ts|tsx|jsx|cjs|map|lock|ya?ml|toml|jsonc|json5|ini|env|sh|ps1|py|rb|php|vue|svelte|astro|s[ac]ss|less|njk|liquid|hbs|woff2?|ttf|otf|eot)$/i.test(path));
 }
 
 export interface MediaLibraryFilter {
@@ -70,9 +70,9 @@ export function mediaTileStills(paths: string[]): Map<string, string> {
   return new Map(mediaFamilies(paths).flatMap(family => family.still ? [[family.main, family.still] as const] : []));
 }
 
-/** A length as a player shows it: 0:05, 12:34, 1:02:03 (whole seconds, at least 1). */
+/** A length as the browser's player shows it: 0:05, 12:34, 1:02:03 (whole seconds counted down, at least 1). */
 export function formatMediaLength(seconds: number): string {
-  const total = Math.max(1, Math.round(seconds)), s = String(total % 60).padStart(2, "0"), m = Math.floor(total / 60) % 60, h = Math.floor(total / 3600);
+  const total = Math.max(1, Math.floor(seconds)), s = String(total % 60).padStart(2, "0"), m = Math.floor(total / 60) % 60, h = Math.floor(total / 3600);
   return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 

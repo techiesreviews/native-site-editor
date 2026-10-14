@@ -160,18 +160,18 @@ import { formatMediaLength, isMediaLibraryPath, mediaTileLook, mediaTileStills }
 test("Media lists every kind and leaves the site's own files out", () => {
   for (const path of ["media/images/a.webp", "logo.svg", "media/videos/a.mp4", "media/audio/a.mp3", "media/downloads/a.pdf", "files/archive.zip", "media/videos/a.vtt", "media/originals/a.jpg"])
     assert.equal(isMediaLibraryPath(path), true, path);
-  for (const path of ["index.html", "styles/site.css", "scripts/media-player.js", "fonts/a.woff2", ".editor/media.json", "CNAME", "_redirects", "src/a.ts", "a/.gitkeep", "node_modules/x/a.png", "notes.md", "data.json"])
+  for (const path of ["index.html", "styles/site.css", "scripts/media-player.js", "fonts/a.woff2", ".editor/media.json", "CNAME", "_redirects", "src/a.ts", "a/.gitkeep", "node_modules/x/a.png", "notes.md", "data.json", "wrangler.jsonc", "build.sh", "eleventy.config.cjs", "styles/site.scss"])
     assert.equal(isMediaLibraryPath(path), false, path);
 });
 
 test("a length reads as a player shows it", () => {
-  assert.deepEqual([0.2, 4.6, 59.5, 61, 754, 3723].map(formatMediaLength), ["0:01", "0:05", "1:00", "1:01", "12:34", "1:02:03"]);
+  assert.deepEqual([0.2, 4.6, 59.5, 61, 754, 3723].map(formatMediaLength), ["0:01", "0:04", "0:59", "1:01", "12:34", "1:02:03"]);
 });
 
 test("each kind's tile: a still and length, a sound picture and length, a first page, a type picture", () => {
   const paths = ["v/clip.mp4", "v/clip.webp", "d/report.pdf", "d/report.webp", "v/raw.mov", "d/guide.pdf"];
   const stills = mediaTileStills(paths);
-  assert.deepEqual(mediaTileLook("v/clip.mp4", stills.get("v/clip.mp4"), 12.4), { picture: "v/clip.webp", icon: "video", type: "MP4", length: "0:12", fact: "0:12" });
+  assert.deepEqual(mediaTileLook("v/clip.mp4", stills.get("v/clip.mp4"), 12.9), { picture: "v/clip.webp", icon: "video", type: "MP4", length: "0:12", fact: "0:12" });
   assert.deepEqual(mediaTileLook("a/talk.mp3", undefined, 95), { picture: undefined, icon: "audio", type: "MP3", length: "1:35", fact: "1:35" });
   assert.deepEqual(mediaTileLook("d/report.pdf", stills.get("d/report.pdf")), { picture: "d/report.webp", icon: "pdf", type: "PDF", length: undefined, fact: "PDF" });
   // Without a still or a recorded length: the type picture, and the type in its middle only.

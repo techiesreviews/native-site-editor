@@ -989,3 +989,20 @@ test("held additions reserve older copies and save them with the page in one Und
   assert.equal(f.text.get("index.html"), before);
   assert.equal(f.paths.has(uploads[0].path), false); assert.equal(f.paths.has(paths[0]), false);
 });
+
+test("a video's still and subtitles are removed and renamed with it, in one Undo", async () => {
+  const f = fixture(), video = "media/videos/clip.mp4", members = ["media/videos/clip.webp", "media/videos/clip.vtt"];
+  for (const path of [video, ...members]) { f.paths.add(path); f.bytes.set(path, new Blob([path])); f.versions.set(path, path + ":v1"); }
+  f.text.set(members[1], "WEBVTT\n");
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { [video]: { still: members[0], subtitles: members[1], duration: 12 } } }));
+  await f.host.load(); await f.host.rename(video, "harbour.mp4");
+  assert.deepEqual(f.batches[0].moves.map(move => move.to), ["media/videos/harbour.mp4", "media/videos/harbour.webp", "media/videos/harbour.vtt"]);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/harbour.mp4"],
+    { still: "media/videos/harbour.webp", subtitles: "media/videos/harbour.vtt", duration: 12 });
+  assert.equal(f.history.length, 1); f.history.pop()!();
+  await f.host.load(); await f.host.remove([video]);
+  assert.deepEqual(f.batches.at(-1)!.deletes, [video, ...members]);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[video], undefined);
+  f.history.pop()!();
+  for (const path of [video, ...members]) assert.ok(f.bytes.has(path));
+});

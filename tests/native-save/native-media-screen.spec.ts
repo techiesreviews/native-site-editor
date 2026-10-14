@@ -1,8 +1,9 @@
-// The Media screen (media-manager build slices 12 and 14): usage badges on the tiles, the list view and File details.
+// The Media screen (media-manager build slices 12, 14 and 59): usage badges on the tiles, the list view, File details and every kind.
 // Default fixture: images/placeholder.svg is on index.html; images/studio-desk.svg is on no page.
 import { test, expect, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 import { publishButton, showPublish } from "./publish";
+import { onePagePdf } from "./pdf-fixture";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const tile = (page: Page, path: string) => pane(page).locator(`.media-library__card[data-path="${path}"]`);
 async function open(page: Page, baseURL: string | undefined, file = "index.html") {
@@ -591,4 +592,94 @@ test("To check edits an agent's own words for a place on the page, in one Undo s
   await expect(row.locator(".media-check__words")).toHaveText("Agent words for the hero");
   await library.getByRole("button", { name: "Back", exact: true }).click();
   await expect(agentMark(page, "images/placeholder.svg")).toBeVisible();
+});
+
+// Every kind (slice 59): a short silent H.264 MP4 made in the page (Playwright's Chromium encodes H.264).
+async function shortVideo(page: Page) {
+  return page.evaluate(async () => {
+    const { loadVideoTools } = await import("/src/page-builder/video-prepare.ts");
+    const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, QUALITY_MEDIUM } = await loadVideoTools();
+    const canvas = new OffscreenCanvas(64, 32), context = canvas.getContext("2d")!;
+    const target = new BufferTarget(), output = new Output({ format: new Mp4OutputFormat(), target });
+    const source = new CanvasSource(canvas, { codec: "avc", quality: QUALITY_MEDIUM });
+    output.addVideoTrack(source); await output.start();
+    for (let index = 0; index < 3; index++) {
+      context.fillStyle = ["red", "green", "blue"][index]; context.fillRect(0, 0, 64, 32);
+      await source.add(index * 0.5, 0.5);
+    }
+    source.close(); await output.finalize();
+    return btoa(String.fromCharCode(...new Uint8Array(target.buffer!)));
+  });
+}
+
+test("a video, an audio file, a PDF and a download show their tiles and lengths; kinds narrow to each; details play", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const video = await shortVideo(page);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const library = pane(page);
+  await expect(library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  // Media's own chooser takes every kind, as drops do.
+  const chooser = library.locator('input[name="media-upload"]');
+  await expect(chooser).toHaveAttribute("accept", "");
+  // MPEG-1 Layer III, 128 kbps, 44.1 kHz: kept unchanged, with its length.
+  const frame = Buffer.alloc(417); frame.set([0xff, 0xfb, 0x90, 0x00]);
+  await chooser.setInputFiles([
+    { name: "Clip.mp4", mimeType: "video/mp4", buffer: Buffer.from(video, "base64") },
+    { name: "Track.mp3", mimeType: "audio/mpeg", buffer: Buffer.concat(Array.from({ length: 40 }, () => frame)) },
+    { name: "Report.pdf", mimeType: "application/pdf", buffer: onePagePdf() },
+    { name: "Notes.zip", mimeType: "application/zip", buffer: Buffer.from("PK\u0005\u0006" + "\u0000".repeat(18)) },
+  ]);
+  await expect(library.getByRole("region", { name: "Files being added", exact: true }).getByRole("status")).toHaveText("Added 4 files", { timeout: 30_000 });
+  await library.getByRole("button", { name: "Dismiss", exact: true }).click();
+  // A video shows its still picture and length; its still is no tile of its own.
+  const clip = tile(page, "media/videos/clip.mp4");
+  await expect(clip.getByRole("button", { name: "Details for media/videos/clip.mp4, 0:01", exact: true })).toBeVisible();
+  await expect.poll(() => clip.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(clip.locator(".media-library__fact")).toHaveText("0:01");
+  await expect(tile(page, "media/videos/clip.webp")).toHaveCount(0);
+  // Audio: a sound picture on a clean surface, its type and length.
+  const track = tile(page, "media/audio/track.mp3");
+  await expect(track).toHaveClass(/is-file/); await expect(track).toHaveAttribute("data-type", "audio");
+  await expect(track.locator(".media-library__format")).toHaveText("MP3");
+  await expect(track.locator(".media-library__fact")).toHaveText("0:01");
+  await expect(track.locator(".media-library__type-picture")).toBeVisible();
+  // A PDF shows its first page; another download its type's picture.
+  const report = tile(page, "media/downloads/report.pdf");
+  await expect.poll(() => report.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(report.locator(".media-library__fact")).toHaveText("PDF");
+  await expect(tile(page, "media/downloads/report.webp")).toHaveCount(0);
+  const notes = tile(page, "media/downloads/notes.zip");
+  await expect(notes).toHaveAttribute("data-type", "archive"); await expect(notes.locator(".media-library__format")).toHaveText("ZIP");
+  await expect(notes.locator(".media-library__fact")).toHaveCount(0);
+  // The usage words on a tile with no picture sit on the light popup with dark text.
+  await notes.locator(".media-library__usage").hover();
+  const words = notes.locator(".media-library__usage-label");
+  await expect(words).toBeVisible();
+  expect(await words.evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe("rgba(10, 18, 32, 0.8)");
+  // Each kind in More narrows to its files.
+  const shown = () => library.locator(".media-library__card").evaluateAll(cards => cards.map(card => (card as HTMLElement).dataset.path));
+  for (const [kind, paths] of [
+    ["Video", ["media/videos/clip.mp4"]], ["Audio", ["media/audio/track.mp3"]],
+    ["Documents", ["media/downloads/notes.zip", "media/downloads/report.pdf"]], ["Images", ["images/placeholder.svg", "images/studio-desk.svg"]],
+  ] as const) {
+    await view(page, kind);
+    await expect.poll(shown).toEqual(paths);
+  }
+  // Details play the video from its still, list the still with it and show the length; audio plays too.
+  await view(page, "All");
+  await clip.getByRole("button", { name: "Details for media/videos/clip.mp4, 0:01", exact: true }).click();
+  const player = library.locator(".media-detail__preview video");
+  await expect(player).toHaveAttribute("controls", "");
+  await expect.poll(() => player.evaluate(element => (element as HTMLVideoElement).poster)).toMatch(/^blob:/);
+  await expect(library.locator(".media-detail__facts").getByText("0:01", { exact: true })).toBeVisible();
+  const family = library.locator('details[data-part="family"]');
+  await family.locator("summary").click();
+  await expect(family).toContainText("Files with it");
+  await expect(family).toContainText("clip.webp · Still picture");
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await track.getByRole("button", { name: "Details for media/audio/track.mp3, 0:01", exact: true }).click();
+  await expect(library.locator(".media-detail__preview audio")).toHaveAttribute("controls", "");
 });
