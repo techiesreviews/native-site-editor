@@ -2,7 +2,7 @@
 title: The Clean up review
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-50 runner)
 blocked_by: [48-recently-removed, 49-media-tab-badge]
 builder: claude
 phase: 4
