@@ -1,8 +1,8 @@
 ---
 title: Split the library view - busy lock, byte cache, refresh, filter
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-03 runner)
 blocked_by: [02-remove-legacy-workspace-members]
 builder: sol
 phase: 0
