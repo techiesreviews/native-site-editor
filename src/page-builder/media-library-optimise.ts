@@ -10,10 +10,11 @@ import type { MediaImportRequest } from "./media-picker";
 
 type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell">;
 
-/** The Optimise sheet; `folder` is the folder filter, the default destination for new files. */
+/** The Optimise sheet; `folder` is the folder filter, the default destination for new files,
+ * which join `collection` (the one being viewed when they were dropped). */
 export function showMediaOptimise(
   sheet: LibrarySheet, c: OptimiseContext, folder: string,
-  files: File[], existing = false, receipts = new Map<string, string | undefined>(),
+  files: File[], existing = false, receipts = new Map<string, string | undefined>(), collection = "",
 ) {
   const { element } = sheet, { task, cache, tell } = c;
   if (!c.alive()) return;
@@ -42,7 +43,7 @@ export function showMediaOptimise(
   let prepareVersion = 0;
   const add = button(existing ? "Add optimised copies" : "Add to library", () => void task(async () => {
     const requests = buildMediaImportRequests(
-      prepared, existing, destination.value, c.library().metadata, update.checked, receipts,
+      prepared, existing, destination.value, c.library().metadata, update.checked, receipts, collection,
     );
     await c.adapter.import(requests);
     cache.clear(); await c.refresh(); element.hidden = true; tell("Images added as drafts. Choose an image to use it on the page.");

@@ -271,3 +271,93 @@ test("New collection from the selection bar holds both files in one Undo step; R
   await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.deleted).toBeUndefined();
   await expect.poll(() => members(page, "Pair")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
 });
+
+// Adding by drop (ticket 17): SVGs keep their bytes on today's Optimise path, so names stay predictable.
+const svg = (fill: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"><rect width="12" height="12" fill="${fill}"/></svg>`;
+async function dropOnMedia(page: Page, files: { name: string; text: string }[]) {
+  await pane(page).evaluate((element, files) => {
+    const transfer = new DataTransfer();
+    for (const file of files) transfer.items.add(new File([file.text], file.name, { type: "image/svg+xml" }));
+    for (const type of ["dragenter", "dragover", "drop"])
+      element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
+  }, files);
+}
+/** Holds the first image preparation until released; later ones run at once. */
+async function holdFirstPreparation(page: Page) {
+  let release: (() => void) | undefined, held = false;
+  await page.route("**/src/page-builder/image-optimise.worker.ts*", async route => {
+    if (!held) { held = true; await new Promise<void>(resolve => { release = resolve; }); }
+    await route.continue().catch(() => undefined);
+  });
+  return { started: () => expect.poll(() => Boolean(release)).toBe(true), free: () => release!() };
+}
+const tray = (page: Page) => pane(page).getByRole("region", { name: "Files being added", exact: true });
+
+test("dropping two images while viewing a collection adds both to it in one Undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  await newCollectionFromManage(page, "Studio picks");
+  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await collections.selectOption("Studio picks");
+  await expect.poll(() => tileNames(page)).toEqual([]);
+  await dropOnMedia(page, [{ name: "red-dot.svg", text: svg("red") }, { name: "blue-dot.svg", text: svg("blue") }]);
+  await expect(tray(page)).toBeVisible();
+  await expect(tray(page).getByRole("status")).toHaveText("Added 2 files");
+  await expect.poll(() => tileNames(page)).toEqual(["images/blue-dot.svg", "images/red-dot.svg"]);
+  await expect(library.locator(".media-library__pending")).toHaveCount(0);
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["images/blue-dot.svg", "images/red-dot.svg"]);
+  expect((await storedDraft(page, "images/red-dot.svg"))?.deleted).toBeUndefined();
+  // One Undo step takes both files and their membership away.
+  await page.keyboard.press("Escape");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDraft(page, "images/red-dot.svg"))?.path).toBeUndefined();
+  await expect.poll(async () => (await storedDraft(page, "images/blue-dot.svg"))?.path).toBeUndefined();
+  await expect.poll(() => members(page, "Studio picks")).toEqual([]);
+});
+
+test("cancelling one file mid-way keeps the other; the grid stays usable while files are prepared", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page);
+  const hold = await holdFirstPreparation(page);
+  await dropOnMedia(page, [{ name: "slow.svg", text: svg("red") }, { name: "quick.svg", text: svg("blue") }]);
+  await hold.started();
+  // Progress on the new tiles: the first is being prepared, the second waits.
+  const slow = library.locator(".media-library__pending", { hasText: "slow.svg" });
+  await expect(slow).toContainText("Preparing…");
+  await expect(library.locator(".media-library__pending", { hasText: "quick.svg" })).toContainText("Waiting");
+  await expect(tray(page).getByRole("status")).toHaveText("Adding 2 files");
+  await expect(tray(page).getByRole("progressbar", { name: "Files added" })).toBeVisible();
+  // The grid stays usable: search narrows while the files are prepared.
+  await library.getByLabel("Search media", { exact: true }).fill("studio");
+  await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
+  await library.getByLabel("Search media", { exact: true }).fill("");
+  await library.getByRole("button", { name: "Cancel adding slow.svg", exact: true }).click();
+  await expect(slow).toHaveCount(0);
+  hold.free();
+  await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
+  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/quick.svg", "images/studio-desk.svg"]);
+  expect(await storedDraft(page, "images/slow.svg")).toBeUndefined();
+  // Dismiss closes the tray.
+  await tray(page).getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(tray(page)).toBeHidden();
+});
+
+test("files added while a search hides them offer Show new files; Add new file follows the same path and under All stores no records", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const library = pane(page), search = library.getByLabel("Search media", { exact: true });
+  const recordsBefore = await storedDraft(page, ".editor/media.json");
+  await search.fill("studio");
+  await library.getByRole("button", { name: "More", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await (await chooser).setFiles([{ name: "zebra.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg("black")) }]);
+  await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
+  await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
+  await tray(page).getByRole("button", { name: "Show new files", exact: true }).click();
+  await expect(search).toHaveValue("");
+  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "images/zebra.svg"]);
+  await expect(tray(page).getByRole("button", { name: "Show new files", exact: true })).toBeHidden();
+  expect((await storedDraft(page, "images/zebra.svg"))?.deleted).toBeUndefined();
+  // Under All collections, nothing joins a collection: the records are as before.
+  expect(await storedDraft(page, ".editor/media.json")).toEqual(recordsBefore);
+});

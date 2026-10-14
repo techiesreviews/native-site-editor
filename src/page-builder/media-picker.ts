@@ -34,6 +34,8 @@ export interface MediaUsageSource {
 export interface MediaImportRequest {
   file: File; result: MediaOptimiseResult; folder: string;
   replaceFrom?: string; metadata?: MediaMetadata; expectedAssetVersion?: string;
+  /** A new file joins this collection in the same Undo step (adding while viewing it). */
+  collection?: string;
 }
 /** Clean up in the Media pane: More's item (with the count) and the panel it opens. */
 export interface MediaCleanUpEntry { item(): { label: string; disabled?: string }; open(): void }

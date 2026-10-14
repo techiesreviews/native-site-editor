@@ -23,11 +23,12 @@ export function writeMediaOptimiseDefaults(
   catch { /* Encoding still works without storage. */ }
 }
 
-/** One import request per prepared file, refusing folders with . or .. segments. */
+/** One import request per prepared file, refusing folders with . or .. segments;
+ * new files join `collection` when one is viewed. */
 export function buildMediaImportRequests(
   prepared: readonly Pick<MediaImportRequest, "file" | "result">[], existing: boolean,
   destination: string, metadata: MediaMetadataMap, update: boolean,
-  receipts: ReadonlyMap<string, string | undefined>,
+  receipts: ReadonlyMap<string, string | undefined>, collection = "",
 ): MediaImportRequest[] {
   const requests: MediaImportRequest[] = [];
   for (const item of prepared) {
@@ -36,7 +37,7 @@ export function buildMediaImportRequests(
       throw new Error("Choose a repository folder without . or .. segments.");
     requests.push({ ...item, folder, metadata: existing ? metadata[item.file.name] : undefined,
       replaceFrom: existing && update ? item.file.name : undefined,
-      expectedAssetVersion: receipts.get(item.file.name) });
+      expectedAssetVersion: receipts.get(item.file.name), ...!existing && collection ? { collection } : {} });
   }
   return requests;
 }

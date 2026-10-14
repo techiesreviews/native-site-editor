@@ -89,3 +89,9 @@ test("imports refuse dot segments and backslashes in destination or existing-fil
   }
   assert.deepEqual(buildMediaImportRequests([], false, "..", {}, false, receipts), []);
 });
+
+test("new files join the viewed collection; existing files and All collections join none", () => {
+  assert.equal(buildMediaImportRequests(prepared, false, "images", metadata, true, new Map(), "Studio picks")[0].collection, "Studio picks");
+  assert.equal("collection" in buildMediaImportRequests(prepared, false, "images", metadata, true, new Map(), "")[0], false);
+  assert.equal("collection" in buildMediaImportRequests(prepared, true, "images", metadata, true, receipts, "Studio picks")[0], false);
+});

@@ -111,6 +111,32 @@ test("upload families, copied metadata and reference replacement share one trans
   assert.equal(f.bytes.has("images/a.webp"), false); assert.equal(f.paths.has("images/a-480w.webp"), false);
   assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
 });
+test("new files join the viewed collection in the same batch; without one the records stay as they were", async () => {
+  const f = fixture(); await f.host.load();
+  await f.host.collections({ kind: "new", name: "Studio picks" });
+  const before = f.text.get(MEDIA_RECORDS_PATH);
+  const request = (name: string, collection?: string) => ({
+    file: new File(["bytes"], name), result: { outputs: [{ blob: new Blob([name], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 },
+    folder: "images", ...collection ? { collection } : {},
+  });
+  // Under All collections: the same upload as before, records untouched.
+  assert.deepEqual(await f.host.import([request("plain.png")]), ["images/plain.webp"]);
+  assert.equal(f.text.get(MEDIA_RECORDS_PATH), before);
+  // Viewing a collection: both files and their memberships in one batch, one Undo step.
+  const batches = f.batches.length, steps = f.history.length;
+  assert.deepEqual(await f.host.import([request("one.png", "Studio picks"), request("two.png", "Studio picks")]), ["images/one.webp", "images/two.webp"]);
+  assert.equal(f.batches.length, batches + 1); assert.equal(f.history.length, steps + 1);
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  assert.deepEqual(records.files["images/one.webp"].collections, ["Studio picks"]);
+  assert.deepEqual(records.files["images/two.webp"].collections, ["Studio picks"]);
+  assert.equal(records.files["images/plain.webp"], undefined);
+  f.history.pop()!();
+  assert.equal(f.bytes.has("images/one.webp"), false);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/one.webp"], undefined);
+  // A collection removed meanwhile refuses the whole batch: nothing half-added.
+  await assert.rejects(f.host.import([request("three.png", "Gone")]), /no collection called "Gone"/);
+  assert.equal(f.bytes.has("images/three.webp"), false);
+});
 test("staging failure and commit failure restore owned bytes, paths and drafts without partial uploads", async () => {
   for (const failStage of [true, false]) {
     const f = fixture(); await f.host.load(); failStage ? f.failStage() : f.failCommit();

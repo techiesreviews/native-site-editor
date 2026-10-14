@@ -13,6 +13,7 @@ export function createBusyLock(ports: MediaBusyLockPorts) {
   let busy = false;
   let pendingTasks = 0;
   let cancellableTask = false;
+  let waiting: (() => void)[] = [];
   async function task(work: () => Promise<void>, lock = true, canCancel = false) {
     if (!ports.alive()) return;
     if (lock && ports.loading()) { ports.tell("Repository images are refreshing. Wait for them to finish before making a change."); return; }
@@ -27,12 +28,20 @@ export function createBusyLock(ports: MediaBusyLockPorts) {
     finally {
       if (lock) { busy = false; cancellableTask = false; }
       pendingTasks--;
-      if (!pendingTasks) ports.root.removeAttribute("aria-busy");
+      if (!pendingTasks) {
+        ports.root.removeAttribute("aria-busy");
+        const ready = waiting; waiting = []; ready.forEach(resume => resume());
+      }
       setBusyControls();
     }
   }
+  /** Resolves once no change (or refresh) is running. */
+  function idle() {
+    return pendingTasks ? new Promise<void>(resume => { waiting.push(resume); }) : Promise.resolve();
+  }
+  /** Close, and cancelling files being added, always work; a cancellable change's Cancel while it runs. */
   function canUseCancellation(control: Element) {
-    return control.getAttribute("data-media-cancel") === "close" || cancellableTask && control.hasAttribute("data-media-cancel");
+    return ["close", "adding"].includes(control.getAttribute("data-media-cancel") ?? "") || cancellableTask && control.hasAttribute("data-media-cancel");
   }
   function setBusyControls() {
     for (const control of ports.root.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>("input,button,select")) {
@@ -54,5 +63,5 @@ export function createBusyLock(ports: MediaBusyLockPorts) {
     event.preventDefault(); event.stopImmediatePropagation();
     ports.tell("An image change is in progress. Wait for it to finish before making another change.");
   }, { capture: true, signal: ports.signal });
-  return { task, cancellation, sync: setBusyControls, get busy() { return busy; } };
+  return { task, idle, cancellation, sync: setBusyControls, get busy() { return busy; } };
 }

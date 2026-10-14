@@ -127,9 +127,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const next = serializeMediaRecords(records);
     if (next !== serializeMediaRecords(before)) batch.edits.set(MEDIA_RECORDS_PATH, next);
   };
-  const metadataEdit = (batch: MediaWorkspaceBatch, records: MediaRecords, changes: Record<string, Partial<MediaMetadata> | null>) => {
-    recordsEdit(batch, records, applyMediaMetadata(records, changes));
-  };
   const rewriteInto = (batch: MediaWorkspaceBatch, text: Record<string, string>, from: string, to: string) => {
     for (const [path, source] of Object.entries(text)) {
       if (!/\.(?:html|css)$/i.test(path)) continue;
@@ -149,7 +146,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const { batch, text, metadata } = await prepare(ctx, "Add images", requests.some((item) => item.replaceFrom));
     const reserved = new Set(batch.expectedPaths);
     const changes: Record<string, Partial<MediaMetadata>> = {};
-    const paths: string[] = [];
+    const paths: string[] = [], joins = new Map<string, string[]>();
     for (const request of requests) {
       const { file, result, folder, replaceFrom } = request;
       if (folder.split("/").some((part) => part === "." || part === "..") || /[\\\u0000-\u001f]/.test(folder)) throw new Error("Choose a repository folder without . or .. segments.");
@@ -167,6 +164,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         const path = familyPaths[index]; reserved.add(path); batch.uploads.push({ path, blob: output.blob });
       });
       if (request.metadata) changes[primary] = request.metadata;
+      if (request.collection) joins.set(request.collection, [...joins.get(request.collection) ?? [], primary]);
       if (replaceFrom) {
         assetGuard(batch, [replaceFrom]);
         if (!request.expectedAssetVersion) throw new Error("The original image revision was not captured. Reopen its optimisation preview.");
@@ -176,7 +174,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       }
       paths.push(primary);
     }
-    metadataEdit(batch, metadata, changes);
+    // New files join the viewed collection in the same batch: one Undo step.
+    let next = applyMediaMetadata(metadata, changes);
+    for (const [name, members] of joins) next = addToMediaCollection(next, name, members);
+    recordsEdit(batch, metadata, next);
     await commit(ctx, batch);
     return paths;
   };

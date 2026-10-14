@@ -8,6 +8,7 @@ import { showMediaDetail } from "./media-library-details";
 import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
+import { createMediaAdding } from "./media-library-adding";
 import { mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
 import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
@@ -103,6 +104,13 @@ export function createMediaLibraryView(
     if (!alive) return;
     repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh();
   });
+  // The pane adds dropped and chosen files at once; the chooser keeps Optimise until slice 18.
+  const adding = modal ? undefined : createMediaAdding(grid, shell.adding, {
+    alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: collections.value, kind }),
+    import: requests => adapter.import(requests), task: work => task(work), idle: () => busyLock.idle(),
+    refresh: async () => { cache.clear(); await refresh(); }, show: recover, tell,
+    review: (files, collection) => showMediaOptimise(sheet, context, "", files, false, new Map(), collection),
+  });
   const collectionHost: CollectionScreensHost = {
     ...context, close: () => closeSheet(collections),
     follow: (from, to) => { if (viewing === from) followed = to; },
@@ -131,7 +139,7 @@ export function createMediaLibraryView(
   }
   function dispose() {
     if (!alive) return;
-    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close();
+    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close(); adding?.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); cache.dispose();
     more.close(false); more.element.remove();
     modal?.removeEventListener("close", dispose); dialog.replaceChildren(); dialog.remove();
@@ -186,6 +194,7 @@ export function createMediaLibraryView(
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
       recover, restoreFocus: !sheet.focus,
     });
+    adding?.paint();
   }
   function usage(path: string) {
     usageDialog?.close();
@@ -237,7 +246,12 @@ export function createMediaLibraryView(
     showMediaOptimise(sheet, context, "", files, existing, receipts);
   }
   wireMediaLibraryInput(shell, {
-    draw, busy: () => busyLock.busy, loaded: () => Boolean(library), optimise: files => optimise(files), tell,
+    draw, loaded: () => Boolean(library), tell,
+    add: files => {
+      if (adding) adding.start(files);
+      else if (busyLock.busy) tell("An image change is in progress. Wait for it to finish before uploading images.");
+      else optimise(files);
+    },
     viewing: () => viewing, manage: () => { if (library) showManageCollections(sheet, collectionHost); },
   }, listeners.signal);
   const ready = task(async () => {

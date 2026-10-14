@@ -69,16 +69,19 @@ export function createMediaLibraryShell(
   setIcon(bulkMore, "dots-three", 20);
   bulkTools.append(bulkMore, button("Clear", actions.clear));
   bulk.append(bulkCount, bulkActions, bulkTools);
+  // Files being added (ticket 06): the total, Cancel, files that could not be added, Show new files.
+  const adding = node("section", "media-library__adding"); adding.hidden = true;
+  adding.setAttribute("aria-label", "Files being added");
   const grid = node("div", "media-library__grid"); grid.setAttribute("aria-label", "Media library");
   grid.append(node("p", "media-library__empty", "Reading media…"));
   const sheet = node("aside", "media-library__sheet"); sheet.hidden = true;
-  browse.append(summary, grid, bulk); body.append(browse, sheet);
+  browse.append(summary, adding, grid, bulk); body.append(browse, sheet);
   const message = node("p", "media-library__message"); message.setAttribute("role", "status");
-  const footer = node("footer", "media-library__footer", `Drop images anywhere here · Enter opens details · Arrow keys browse${modal ? " · Esc closes" : ""}`);
+  const footer = node("footer", "media-library__footer", `Drop ${modal ? "images" : "files"} anywhere here · Enter opens details · Arrow keys browse${modal ? " · Esc closes" : ""}`);
   dialog.append(header, toolbar, body, message, footer);
   container.append(dialog);
   if (modal) { modal.showModal(); search.focus(); }
-  return { dialog, close, search, collections, more, browse, summary, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput };
+  return { dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput };
 }
 
 /** Show the selection bar while files are selected: Take out only inside a collection. */

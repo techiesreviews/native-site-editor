@@ -319,3 +319,61 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
 .media-library__grid--list .media-library__card.is-kept .media-library__name { padding-right: 0; }
 .media-library__keep-note { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; }
 .media-library__keep-note::before { content: ""; flex: none; width: 16px; height: 16px; background: currentColor; mask: url("@phosphor-icons/core/regular/push-pin.svg") center / contain no-repeat; }
+
+/* Adding by drop (ticket 06): where dropped files will land, their tiles with progress and a
+   cancel each, and the tray with the total, Cancel and files that could not be added. */
+.media-library.is-dropping .media-library__browse { outline: 2px dashed var(--primary); outline-offset: -6px; border-radius: var(--radius); }
+.media-library__pending {
+  position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; display: grid; place-items: center;
+  border-radius: var(--radius-small); background: var(--surface-subtle); color: #fff;
+}
+.media-library__pending-preview { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
+.media-library__pending-preview img { width: 100%; height: 100%; object-fit: cover; opacity: .55; filter: saturate(.6); }
+.media-library__pending::before { content: ""; position: absolute; inset: 0; background: rgb(10 18 32 / .38); pointer-events: none; }
+.media-library__pending-state {
+  position: relative; padding: 4px 10px; border-radius: 999px; background: rgb(10 18 32 / .62);
+  font-size: var(--type-small); font-weight: 600; white-space: nowrap;
+}
+.media-library__pending-name {
+  position: absolute; inset: auto 0 6px; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: var(--type-small); font-weight: 600; text-shadow: 0 1px 2px #0009;
+}
+.media-library__pending-bar { position: absolute; inset: auto 0 0; height: 4px; overflow: hidden; background: rgb(255 255 255 / .25); }
+.media-library__pending-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 0; background: var(--primary); transition: width .3s ease-out; }
+.media-library__pending[data-state="ready"] .media-library__pending-bar::after { width: 100%; }
+.media-library__pending:is([data-state="preparing"], [data-state="adding"], [data-state="added"]) .media-library__pending-bar::after {
+  width: 40%; animation: media-adding 1.2s ease-in-out infinite;
+}
+@keyframes media-adding { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) {
+  .media-library__pending:is([data-state="preparing"], [data-state="adding"], [data-state="added"]) .media-library__pending-bar::after { width: 60%; animation: none; }
+}
+.media-library .media-library__pending-cancel {
+  position: absolute; top: 0; right: 0; z-index: 1; width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: none; color: #fff; filter: drop-shadow(0 1px 2px #0009);
+}
+.media-library .media-library__pending-cancel:is(:hover, :focus-visible) { background: rgb(10 18 32 / .45); }
+.media-library .media-library__pending-cancel:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+.media-library__pending:is([data-state="adding"], [data-state="added"]) .media-library__pending-cancel { display: none; }
+.media-library__grid--list .media-library__pending { aspect-ratio: auto; min-height: 56px; border-radius: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); place-items: center start; padding-left: 52px; }
+.media-library__grid--list .media-library__pending::before { display: none; }
+.media-library__grid--list .media-library__pending-preview { inset: 6px auto 6px 0; width: 44px; border-radius: var(--radius-small); overflow: hidden; background: var(--surface-subtle); }
+.media-library__grid--list .media-library__pending-state { background: none; padding: 0; color: var(--muted); font-weight: 500; grid-row: 2; }
+.media-library__grid--list .media-library__pending-name { position: static; padding: 0 52px 0 0; max-width: 100%; color: var(--text); text-shadow: none; font-size: var(--type-base); font-weight: 500; }
+.media-library__grid--list .media-library__pending-bar { inset: auto 52px 0 52px; background: var(--line); }
+.media-library__grid--list .media-library__pending-cancel { top: 6px; color: var(--text); filter: none; }
+
+.media-library__adding { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.media-library__adding[hidden] { display: none; }
+.media-library__adding-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.media-library__adding-status { flex: 1 1 10em; margin: 0; font-weight: 600; }
+.media-library__adding-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-library__adding-actions button { min-height: 44px; }
+.media-library__adding-actions button[hidden], .media-library__adding-bar[hidden] { display: none; }
+.media-library .media-library__adding-dismiss { width: 44px; padding: 0; display: grid; place-items: center; }
+.media-library__adding-bar { width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; background: var(--line); accent-color: var(--primary); }
+.media-library__adding-bar::-webkit-progress-bar { background: var(--line); }
+.media-library__adding-bar::-webkit-progress-value { background: var(--primary); border-radius: 3px; }
+.media-library__adding-bar::-moz-progress-bar { background: var(--primary); }
+.media-library__adding-failed { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
+.media-library__adding-failed:empty { display: none; }
