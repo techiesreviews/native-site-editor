@@ -2,7 +2,7 @@
 title: The editor's security policy for media and video frames
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-56 runner)
 blocked_by: [01-bring-dev-level]
 builder: sol
 phase: 5
