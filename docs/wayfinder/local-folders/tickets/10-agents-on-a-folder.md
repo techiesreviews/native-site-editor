@@ -2,7 +2,7 @@
 title: Decide how agents connect to a folder
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + Codex (grilling, T3 578a58fb)
 blocked_by: [04-research-agents-on-a-folder]
 ---
 
