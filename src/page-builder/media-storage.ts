@@ -53,6 +53,8 @@ export function chooseMediaPath(options: { folder: string; name: string; copies:
     if (stems.has(stem(candidate.toLowerCase())) || originalBases.has(base(candidate.toLowerCase()))) return true;
     const after = signatures([...paths, ...planned]);
     for (const [family, members] of before) if (after.get(family) !== members) return true;
+    // A kept original must join this main's family: a same-named main in another folder would leave it on its own.
+    if (options.original && !after.get(planned[0])?.split("\n").includes(planned.at(-1)!)) return true;
     // No family the new files are in may take an existing file. (Files dropped into media/originals/
     // stay apart from each other, so this must not require them to form one family.)
     const own = new Set(planned);

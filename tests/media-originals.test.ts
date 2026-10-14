@@ -1,3 +1,4 @@
+import { mediaFamilyRows } from "../src/page-builder/media-file-details";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanedMediaOriginal, mediaOriginalCapQuestion, mediaOriginalIsDuplicate, mediaOriginalPath, mediaOriginalProblem } from "../src/page-builder/media-originals";
@@ -95,6 +96,16 @@ test("family paths share the chosen main base, including Files destinations and 
     f.history[0].undo(); assert.equal(f.paths().has(main), false); assert.equal(f.paths().has("media/originals/holiday-2.jpg"), false);
     assert.equal(f.paths().has("media/originals/holiday.jpg"), true);
   }
+});
+test("a same-named main in another folder numbers the new family, so its original stays in it", async () => {
+  const f = fixture({ "images/holiday.webp": "existing" });
+  const prepared = await prepareMediaFile(new File([photo()], "Holiday.JPG"), "repo", "chosen", undefined, encoder, undefined, undefined, "balanced", true);
+  assert.deepEqual(await f.host.import([prepared.request]), ["chosen/holiday-2.webp"]);
+  assert.equal(f.batches[0].uploads.at(-1)!.path, "media/originals/holiday-2.jpg");
+  const items = ["images/holiday.webp", ...f.batches[0].uploads.map(upload => upload.path)].map(path => ({ path }));
+  assert.deepEqual(mediaLibraryTiles(items).map(item => item.path).sort(), ["chosen/holiday-2.webp", "images/holiday.webp"]);
+  assert.deepEqual(mediaFamilyRows("chosen/holiday-2.webp", items)?.filter(row => row.original).map(row => row.path), ["media/originals/holiday-2.jpg"]);
+  assert.deepEqual(mediaFamilyRows("images/holiday.webp", items), []);
 });
 test("unchanged files, accepted Add unchanged, and identical cleaned mains have no duplicate", async () => {
   for (const name of ["logo.svg", "guide.pdf", "movie.mp4", "song.mp3"]) {
