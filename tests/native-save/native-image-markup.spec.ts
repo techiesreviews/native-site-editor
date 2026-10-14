@@ -274,9 +274,7 @@ test("picker replacement removes picture sources, keeps image class, and one Und
   await expect(preview.locator("picture > img.hero-image")).toBeVisible();
   const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
   const before = await source();
-  await hero.click();
-  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  const picker = await openPickerOn(page, hero);
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Picture cleanup.svg", mimeType: "image/svg+xml",
     buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80"><rect width="160" height="80" fill="green"/></svg>') });
