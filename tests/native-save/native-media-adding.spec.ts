@@ -39,14 +39,14 @@ test("Balanced adding saves a 2400px WebP main and three copies from a detailed 
   await expect(picker.getByRole("button", { name: "Choose Recipe.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect.poll(() => storedDraft(page, "images/recipe-1600w.webp")).toBeDefined();
+  await expect.poll(() => storedDraft(page, "media/images/recipe-1600.webp")).toBeDefined();
   await showPublish(page);
   for (const box of await page.locator("#publish-files .publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   let mainBytes = 0;
   for (const width of [2400, 480, 960, 1600]) {
-    const path = `images/recipe${width === 2400 ? "" : `-${width}w`}.webp`;
+    const path = `media/images/recipe${width === 2400 ? "" : `-${width}`}.webp`;
     const response = await page.request.get(`${baseURL}/__demo/file?${new URLSearchParams({ path })}`);
     expect(response.ok(), path).toBe(true);
     const saved = await response.body();
