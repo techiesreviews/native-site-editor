@@ -1,4 +1,5 @@
 import { staticAssetHeaders } from "./production-headers";
+import { testCsp } from "./test-csp";
 // Native Site Editor save test / demo server.
 //
 // Unlike the warm-preview server, this needs NO Astro build. It serves the real
@@ -1117,7 +1118,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     const path = url.pathname;
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      testCsp,
     );
 
     // Test control channel (never part of the real product, never public demo).

@@ -138,7 +138,7 @@ scripts/agents/review.sh "$PWD" .scratch/review-brief.md .scratch/review
 - **Preparation** ([07](../tickets/07-one-upload-path.md#resolution-2026-10-13), [02](../tickets/02-research-optimising-every-media-kind.md#resolution-2026-10-11)): Mediabunny H.264 MP4 with a WebP still; GIF → silent looping MP4; AAC rules; PDF first-page preview (pdf.js); file-type pictures.
 - **The site's player** ([12](../tickets/12-video-audio-and-documents.md#resolution-2026-10-13)): one shared script and style in the starter for the video bar, audio player, corner pause button and the YouTube/Vimeo layer; browser controls without it.
 - **Placing**: every kind through the picker; the Add panel's Image becomes Media; Looping video per place, in picture spots and section backgrounds; Online videos by pasting an address; subtitles; the edit bar's play button; the canvas stays still.
-- **Security policy**: `media-src 'self' blob:` and YouTube/Vimeo frames in `public/_headers:5`, kept in step with `tests/native-save/server.ts:1116-1118`.
+- **Security policy**: `media-src 'self' blob:` and frames from `https://www.youtube-nocookie.com`, `https://www.youtube.com` and `https://player.vimeo.com` in `public/_headers:5`, kept in step with `tests/native-save/test-csp.ts` (used by the test server).
 - **Agents**: place, loop, stills, subtitles, re-place Online videos.
 
 ### Phase 6: Improve images
