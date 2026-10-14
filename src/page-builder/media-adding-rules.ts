@@ -1,11 +1,9 @@
-import { basename, filterMediaLibrary, type MediaLibraryFilter } from "./media-library-filter";
+import { filterMediaLibrary, type MediaLibraryFilter } from "./media-library-filter";
+import { mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
 import type { MediaLibrary } from "./media-picker";
 
 /** One dropped file's way through automatic adding (ticket 06, "Adding by drop"). */
 export type MediaAddingState = "waiting" | "preparing" | "ready" | "adding" | "added" | "failed" | "cancelled";
-
-/** Today's upload folder until slice 24 decides `media/images/`. */
-export const MEDIA_ADDING_FOLDER = "images";
 
 const files = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 
@@ -30,8 +28,11 @@ export function mediaAddingShown(library: Pick<MediaLibrary, "metadata" | "usage
   return filterMediaLibrary({ key: "", collections: [], items: [{ path }], metadata, usage: library.usage }, filter).length > 0;
 }
 
-/** Where a file being prepared will be found: today's folder and its dropped name. */
-export const mediaAddingPath = (name: string) => `${MEDIA_ADDING_FOLDER}/${basename(name)}`;
+/** Predict the automatic destination before raster preparation finishes. */
+export function mediaAddingPath(name: string) {
+  const output = mediaStorageName(name, mediaNeedsPreparation(name) ? "webp" : undefined);
+  return mediaKindFolder(output) + "/" + output;
+}
 
 /** "Show new files": clear the search and kind; from another collection, view the one they joined. */
 export function mediaAddingReveal(filter: MediaLibraryFilter, collection: string): Partial<MediaLibraryFilter> {

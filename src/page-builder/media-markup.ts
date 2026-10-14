@@ -1,4 +1,4 @@
-import { mediaFamilyOf } from "./media-families";
+import { mediaFamilyOf, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
@@ -66,7 +66,7 @@ export function mediaNameAlt(path: string) {
 
 export function mediaVariantName(path: string, width: number) {
   if (!Number.isInteger(width) || width < 1) throw new Error("Variant width must be a positive integer.");
-  return path.replace(/(\.[^./]+)$/, `-${width}w$1`);
+  return path.replace(/(\.[^./]+)$/, `-${width}${(RESPONSIVE_COPY_WIDTHS as readonly number[]).includes(width) ? "" : "w"}$1`);
 }
 
 export function mediaVariants(path: string, paths: string[]): MediaVariant[] {

@@ -1,5 +1,5 @@
-import { DEFAULT_IMAGE_FOLDER, uploadProblem, uploadFileName } from "../uploads";
-import { mediaVariantName } from "./media-markup";
+import { uploadProblem } from "../uploads";
+import { mediaCopyName, mediaKindFolder, mediaNeedsPreparation, mediaStorageName } from "./media-storage";
 import { largeDownloadNote, preparationFailure } from "./media-limits";
 import { decodeImage } from "./media-byte-cache";
 import { mediaKind } from "./media-library-filter";
@@ -8,9 +8,8 @@ import { readMediaOptimiseDefaults } from "./media-library-optimise-rules";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 
-/** Raster pictures use stored Optimise settings; other files retain their bytes. */
-export const mediaNeedsPreparation = (name: string) => /\.(?:jpe?g|png|webp|avif|bmp)$/i.test(name);
-export const mediaPreparationFolder = (folder?: string) => folder ?? DEFAULT_IMAGE_FOLDER;
+export { mediaNeedsPreparation };
+export const mediaPreparationFolder = (folder?: string, path = "image.webp") => folder ?? mediaKindFolder(path);
 
 type Ask = (question: string) => Promise<boolean>;
 type Shown = (file: Blob) => Promise<boolean>;
@@ -48,13 +47,11 @@ export async function prepareMediaFile(file: File, key: string, folder?: string,
     const problem = uploadProblem({ name: file.name, size: blob.size });
     if (problem) throw new Error(problem);
   }
-  const name = uploadFileName(file.name);
-  const outputs = result ? result.outputs.map(output => {
-    const primary = `${name.replace(/\.[^.]+$/, "")}.${output.extension}`;
-    return { name: output.variantWidth ? mediaVariantName(primary, output.variantWidth) : primary, size: output.blob.size };
-  }) : [{ name, size: file.size }];
+  const name = mediaStorageName(file.name, result?.outputs[0]?.extension);
+  const outputs = result ? result.outputs.map(output =>
+    ({ name: output.variantWidth ? mediaCopyName(name, output.variantWidth) : name, size: output.blob.size })) : [{ name, size: file.size }];
   const largest = outputs.reduce((a, b) => a.size >= b.size ? a : b);
-  return { request: { file, result, folder: mediaPreparationFolder(folder) }, warning: largeDownloadNote(largest) };
+  return { request: { file, result, folder: mediaPreparationFolder(folder, name) }, warning: largeDownloadNote(largest) };
 }
 
 /** One failed preparation leaves the other files available. */

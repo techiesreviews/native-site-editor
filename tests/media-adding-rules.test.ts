@@ -21,7 +21,7 @@ test("the tray counts files settled out of those still being added; cancelled fi
 
 test("a file being added shows where the view would show it: its collection, kind and search", () => {
   const path = mediaAddingPath("Downloads/Team photo.png");
-  assert.equal(path, "images/Team photo.png");
+  assert.equal(path, "media/images/team-photo.webp");
   assert.equal(mediaAddingShown(none, all, path, ""), true);
   assert.equal(mediaAddingShown(none, all, path, "Studio picks"), true);
   // Viewing the collection it joins, or another one.

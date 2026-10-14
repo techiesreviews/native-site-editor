@@ -104,11 +104,11 @@ test("upload families, copied metadata and reference replacement share one trans
     { file: new File(["second"], "a.png"), result: { outputs: [output("second")], before: 6, after: 6 }, folder: "images" },
   ]);
   assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
-  assert.deepEqual(f.batches[0].uploads.map((item) => item.path), ["images/a.webp", "images/a-480w.webp", "images/a-2.webp"]);
-  assert.ok(f.text.get("index.html")!.includes("/images/a.webp"));
-  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.webp"].description?.text, "Default");
+  assert.deepEqual(f.batches[0].uploads.map((item) => item.path), ["images/a-2.webp", "images/a-2-480.webp", "images/a-3.webp"]);
+  assert.ok(f.text.get("index.html")!.includes("/images/a-2.webp"));
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a-2.webp"].description?.text, "Default");
   f.history.pop()!();
-  assert.equal(f.bytes.has("images/a.webp"), false); assert.equal(f.paths.has("images/a-480w.webp"), false);
+  assert.equal(f.bytes.has("images/a-2.webp"), false); assert.equal(f.paths.has("images/a-2-480.webp"), false);
   assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
 });
 test("new files join the viewed collection in the same batch; without one the records stay as they were", async () => {

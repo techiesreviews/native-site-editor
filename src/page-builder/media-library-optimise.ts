@@ -29,7 +29,7 @@ export function showMediaOptimise(
   const responsive = input("Responsive sizes", "checkbox"); responsive.checked = defaults.responsive;
   const original = input("Keep original", "checkbox"); original.checked = defaults.keepOriginal;
   const update = input("Update existing references", "checkbox"); update.checked = true;
-  const destination = input("Upload folder", "text"); destination.value = folder && folder !== "/" ? folder : "images";
+  const destination = input("Upload folder", "text"); destination.value = folder && folder !== "/" ? folder : "media/images";
   element.append(field("Max width (px)", width), field("Format", format), field("Quality", quality),
     check("Responsive sizes · 480 / 960 / 1600 px", responsive), check("Keep original bytes and metadata", original),
     node("p", "media-library__hint",

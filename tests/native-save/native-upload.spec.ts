@@ -103,25 +103,25 @@ async function committed(page: Page, path: string) {
   return response.ok() ? Buffer.from(await response.body()) : undefined;
 }
 
-test("Add new file in the Media picker adds to images/ and chooses it; Use places it; it survives a reload and saves byte for byte", async ({ page, baseURL }) => {
+test("Add new file in the Media picker adds to media/images/ and chooses it; Use places it; it survives a reload and saves byte for byte", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openChooser(page);
   const upload = page.waitForEvent("filechooser");
   await chooser(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
   await (await upload).setFiles({ name: "Team Photo.svg", mimeType: "image/svg+xml", buffer: svg });
-  await addedThenUse(page, "Team Photo.svg", "images/team-photo.svg");
+  await addedThenUse(page, "Team Photo.svg", "media/images/team-photo.svg");
 
   // The image points at the new file, its alt stays empty until described, and the preview shows the bytes.
-  await expect.poll(() => editorText(page)).toContain(`<img alt="" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/images/team-photo.svg" data-key="hero-image">`);
+  await expect.poll(() => editorText(page)).toContain(`<img alt="" width="1" height="1" loading="lazy" decoding="async" class="hero-image" src="/media/images/team-photo.svg" data-key="hero-image">`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", `data:image/svg+xml;base64,${svg.toString("base64")}`);
 
   // It is an A change, uploaded, with the page's edit beside it.
   await showPublish(page);
   await expect(panel(page)).toBeVisible();
   const files = panel(page).locator(".publish-menu__file");
-  await expect(files).toHaveText([/images\/team-photo\.svg/, /index\.html/]);
-  await expect(files.first().locator(".publish-menu__status [aria-hidden]")).toHaveText("A");
+  await expect(files).toHaveText([/index\.html/, /media\/images\/team-photo\.svg/]);
+  await expect(files.last().locator(".publish-menu__status [aria-hidden]")).toHaveText("A");
   await expect(panel(page).locator(".publish-menu__note").first()).toHaveText(`Uploaded, ${svg.length} B`);
   await page.keyboard.press("Escape");
   expect(await storedUploads(page)).toBe(1);
@@ -131,7 +131,7 @@ test("Add new file in the Media picker adds to images/ and chooses it; Use place
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/, { timeout: 30_000 });
   // The picker now lists the draft image beside the repository's images.
   await openChooser(page);
-  await chooser(page).getByRole("button", { name: "Choose images/team-photo.svg", exact: true }).click();
+  await chooser(page).getByRole("button", { name: "Choose media/images/team-photo.svg", exact: true }).click();
   await expect(chooser(page).locator(".media-library__chosen-text")).toHaveText("team-photo.svg");
   await chooser(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(chooser(page)).toBeHidden();
@@ -141,8 +141,8 @@ test("Add new file in the Media picker adds to images/ and chooses it; Use place
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  expect((await committed(page, "images/team-photo.svg"))?.equals(svg)).toBe(true);
-  expect((await committed(page, indexPath))?.toString()).toContain(`src="/images/team-photo.svg"`);
+  expect((await committed(page, "media/images/team-photo.svg"))?.equals(svg)).toBe(true);
+  expect((await committed(page, indexPath))?.toString()).toContain(`src="/media/images/team-photo.svg"`);
   await expect.poll(() => storedUploads(page)).toBe(0);
   await expect(saveTrigger(page)).toBeDisabled();
 });
@@ -151,19 +151,19 @@ test("a file dropped on the Media picker is added and chosen; Discard in the Sav
   await open(page, baseURL);
   await openChooser(page);
   await dropFiles(page, "dialog.media-library", [{ name: "placeholder.svg", type: "image/svg+xml", base64: svg.toString("base64") }]);
-  await addedThenUse(page, "placeholder.svg", "images/placeholder-2.svg");
-  // The name is taken on the branch: a suffix, never an overwrite.
-  await expect.poll(() => editorText(page)).toContain(`src="/images/placeholder-2.svg"`);
+  await addedThenUse(page, "placeholder.svg", "media/images/placeholder.svg");
+  // The existing image stays in images/; this addition uses the new media folder.
+  await expect.poll(() => editorText(page)).toContain(`src="/media/images/placeholder.svg"`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
   await expect(status(page)).toHaveText("Image replaced");
 
   await showPublish(page);
   await expect(panel(page).locator(".publish-menu__file")).toHaveCount(2);
-  await panel(page).getByRole("button", { name: "Discard images/placeholder-2.svg" }).click();
+  await panel(page).getByRole("button", { name: "Discard media/images/placeholder.svg" }).click();
   await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
   await page.keyboard.press("Escape");
   // The page still names it, but nothing is there to show.
-  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", "/images/placeholder-2.svg");
+  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", "/media/images/placeholder.svg");
   await expect.poll(() => storedUploads(page)).toBe(0);
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });

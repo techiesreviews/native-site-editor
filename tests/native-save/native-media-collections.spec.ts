@@ -312,15 +312,15 @@ test("dropping two images while viewing a collection adds both to it in one Undo
   await dropOnMedia(page, [{ name: "red-dot.svg", text: svg("red") }, { name: "blue-dot.svg", text: svg("blue") }]);
   await expect(tray(page)).toBeVisible();
   await expect(tray(page).getByRole("status")).toHaveText("Added 2 files");
-  await expect.poll(() => tileNames(page)).toEqual(["images/blue-dot.svg", "images/red-dot.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/blue-dot.svg", "media/images/red-dot.svg"]);
   await expect(library.locator(".media-library__pending")).toHaveCount(0);
-  await expect.poll(() => members(page, "Studio picks")).toEqual(["images/blue-dot.svg", "images/red-dot.svg"]);
-  expect((await storedDraft(page, "images/red-dot.svg"))?.deleted).toBeUndefined();
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["media/images/blue-dot.svg", "media/images/red-dot.svg"]);
+  expect((await storedDraft(page, "media/images/red-dot.svg"))?.deleted).toBeUndefined();
   // One Undo step takes both files and their membership away.
   await page.keyboard.press("Escape");
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(async () => (await storedDraft(page, "images/red-dot.svg"))?.path).toBeUndefined();
-  await expect.poll(async () => (await storedDraft(page, "images/blue-dot.svg"))?.path).toBeUndefined();
+  await expect.poll(async () => (await storedDraft(page, "media/images/red-dot.svg"))?.path).toBeUndefined();
+  await expect.poll(async () => (await storedDraft(page, "media/images/blue-dot.svg"))?.path).toBeUndefined();
   await expect.poll(() => members(page, "Studio picks")).toEqual([]);
 });
 
@@ -344,8 +344,8 @@ test("cancelling one file mid-way keeps the other; the grid stays usable while f
   await expect(slow).toHaveCount(0);
   hold.free();
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
-  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/quick.svg", "images/studio-desk.svg"]);
-  expect(await storedDraft(page, "images/slow.webp")).toBeUndefined();
+  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "media/images/quick.svg"]);
+  expect(await storedDraft(page, "media/images/slow.webp")).toBeUndefined();
   // Dismiss closes the tray.
   await tray(page).getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(tray(page)).toBeHidden();
@@ -364,9 +364,9 @@ test("files added while a search hides them offer Show new files; Add new file f
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
   await tray(page).getByRole("button", { name: "Show new files", exact: true }).click();
   await expect(search).toHaveValue("");
-  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "images/zebra.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "media/images/zebra.svg"]);
   await expect(tray(page).getByRole("button", { name: "Show new files", exact: true })).toBeHidden();
-  expect((await storedDraft(page, "images/zebra.svg"))?.deleted).toBeUndefined();
+  expect((await storedDraft(page, "media/images/zebra.svg"))?.deleted).toBeUndefined();
   // Under All collections, nothing joins a collection: the records are as before.
   expect(await storedDraft(page, ".editor/media.json")).toEqual(recordsBefore);
 });
@@ -387,8 +387,8 @@ test("renaming the collection while its files are prepared: they join it under i
   await expect(collections).toHaveValue("Picks");
   hold.free();
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
-  await expect.poll(() => members(page, "Picks")).toEqual(["images/late.webp"]);
-  await expect.poll(() => tileNames(page)).toEqual(["images/late.webp"]);
+  await expect.poll(() => members(page, "Picks")).toEqual(["media/images/late.webp"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/late.webp"]);
 });
 
 test("Review… stops automatic adding and opens Optimise for the files not added yet, in the same collection", async ({ page, baseURL }) => {
@@ -409,9 +409,9 @@ test("Review… stops automatic adding and opens Optimise for the files not adde
   // Nothing is added behind the sheet's back; its own Add to library adds them once.
   await library.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await library.getByRole("button", { name: "Add to library", exact: true }).click();
-  await expect.poll(() => members(page, "Studio picks")).toEqual(["images/first.webp", "images/second.svg"]);
-  await expect.poll(() => tileNames(page)).toEqual(["images/first.webp", "images/second.svg"]);
-  expect(await storedDraft(page, "images/first-2.svg")).toBeUndefined();
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["media/images/first.webp", "media/images/second.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/first.webp", "media/images/second.svg"]);
+  expect(await storedDraft(page, "media/images/first-2.svg")).toBeUndefined();
 });
 
 test("a file that cannot be prepared stays in the tray with its reason and Review…; the others join the collection once", async ({ page, baseURL }) => {
@@ -429,8 +429,8 @@ test("a file that cannot be prepared stays in the tray with its reason and Revie
   }, svg("red"));
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file · 1 could not be added");
   await expect(tray(page).getByRole("listitem")).toHaveText(/^broken\.png: .+/);
-  await expect.poll(() => members(page, "Studio picks")).toEqual(["images/good.svg"]);
-  await expect.poll(() => tileNames(page)).toEqual(["images/good.svg"]);
+  await expect.poll(() => members(page, "Studio picks")).toEqual(["media/images/good.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/good.svg"]);
   // Review… offers only the failed file to today's Optimise sheet.
   await tray(page).getByRole("button", { name: "Review…", exact: true }).click();
   await expect(library.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible();
@@ -438,7 +438,7 @@ test("a file that cannot be prepared stays in the tray with its reason and Revie
   // The tray keeps the file that was added; the failed one moved to the sheet.
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
   await expect(tray(page).getByRole("listitem")).toHaveCount(0);
-  expect(await storedDraft(page, "images/good-2.svg")).toBeUndefined();
+  expect(await storedDraft(page, "media/images/good-2.svg")).toBeUndefined();
 });
 
 test("a cancelled drop whose save was waiting never takes a later drop's files: each drop saves once", async ({ page, baseURL }) => {

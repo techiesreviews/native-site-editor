@@ -7,14 +7,15 @@ import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
-import { uploadProblem, uploadPath, uploadFileName } from "../uploads";
+import { uploadProblem } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { alwaysKeptFiles, mediaFamilyOf } from "./media-families";
-import { mediaEscape, mediaVariantName } from "./media-markup";
+import { mediaEscape } from "./media-markup";
 import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-rename";
+import { mediaStorageName, mediaCopyName, chooseMediaPath } from "./media-storage";
 import { mediaUsageIndex, rewriteMediaReferences } from "./media-references";
 import type { MediaPlacement, MediaImportRequest, MediaLibraryItem } from "./media-picker";
 
@@ -218,11 +219,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         const problem = uploadProblem({ name: file.name, size: output.blob.size });
         if (problem) throw new Error(problem);
       }
-      const name = uploadFileName(file.name);
-      const encoded = first ? `${name.replace(/\.[^.]+$/, "")}.${first.extension}` : name;
-      const family = (primary: string) => outputs.map(output => output.variantWidth ? mediaVariantName(primary, output.variantWidth) : primary);
-      const primary = await uploadPath(dir, encoded, path => family(path).some(candidate =>
-        reserved.has(candidate) || [...reserved].some(existing => existing.startsWith(`${candidate}/`))));
+      const widths = outputs.flatMap(output => output.variantWidth ? [output.variantWidth] : []);
+      if (new Set(widths).size !== widths.length) throw new Error("Responsive image widths must be unique.");
+      const encoded = mediaStorageName(file.name, first?.extension);
+      const family = (primary: string) => outputs.map(output => output.variantWidth ? mediaCopyName(primary, output.variantWidth) : primary);
+      const primary = chooseMediaPath({ folder: dir, name: encoded,
+        copies: widths, paths: reserved });
       ctx.assertLive();
       const familyPaths = family(primary);
       if (new Set(familyPaths).size !== familyPaths.length) throw new Error("Responsive image widths must be unique.");

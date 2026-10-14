@@ -9,7 +9,7 @@ export const isRenamableMedia = (path: string) => /\.(?:svg|png|jpe?g|gif|webp|a
 /** Basename only; the caller supplies the actual file format. */
 export function tidyMediaName(name: string): string {
   const base = name.split(/[\\/]/).at(-1) ?? "";
-  const tidy = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
+  const tidy = (value: string) => value.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "");
   const ext = extension(base).slice(1).toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   return (tidy(stem(base)) || "media") + (ext ? "." + ext : "");
 }

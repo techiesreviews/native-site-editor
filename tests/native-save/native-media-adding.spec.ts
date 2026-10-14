@@ -18,10 +18,10 @@ async function photo(page: Page) {
 async function undoAddition(page: Page, baseURL: string | undefined, before: string) {
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
-  await expect.poll(async () => (await storedDrafts(page)).filter(draft => draft.path.startsWith("images/added")).length).toBe(0);
+  await expect.poll(async () => (await storedDrafts(page)).filter(draft => draft.path.startsWith("media/images/added")).length).toBe(0);
   await page.locator(".code-editor__redo").first().click();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("/images/added.webp");
-  await expect.poll(() => storedDraft(page, "images/added-480w.webp")).toBeDefined();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("/media/images/added.webp");
+  await expect.poll(() => storedDraft(page, "media/images/added-480.webp")).toBeDefined();
 }
 
 test("Structure upload prepares and places; one Undo removes placement and family", { tag: "@smoke" }, async ({ page, baseURL }) => {
@@ -45,11 +45,11 @@ test("Structure upload prepares and places; one Undo removes placement and famil
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Added.png", mimeType: "image/png", buffer: Buffer.from(bytes, "base64") });
   await expect(picker.getByRole("button", { name: "Choose Added.png", exact: true })).toHaveAttribute("aria-pressed", "true");
-  expect(await storedDraft(page, "images/added.webp")).toBeUndefined();
+  expect(await storedDraft(page, "media/images/added.webp")).toBeUndefined();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/added.webp"');
-  for (const path of ["images/added.webp", "images/added-480w.webp", "images/added-960w.webp", "images/added-1600w.webp"])
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/media/images/added.webp"');
+  for (const path of ["media/images/added.webp", "media/images/added-480.webp", "media/images/added-960.webp", "media/images/added-1600.webp"])
     await expect.poll(() => storedDraft(page, path)).toBeDefined();
   await undoAddition(page, baseURL, before);
 });
@@ -66,11 +66,11 @@ test("canvas drop prepares held tiles; only Use places; one Undo removes both", 
   await expect(picker).toBeVisible();
   await expect(picker.locator('.media-library__pending[data-state="ready"]')).toHaveCount(1);
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
-  expect(await storedDraft(page, "images/added.webp")).toBeUndefined();
+  expect(await storedDraft(page, "media/images/added.webp")).toBeUndefined();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/added.webp"');
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('srcset="/images/added-480w.webp 480w');
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/media/images/added.webp"');
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('srcset="/media/images/added-480.webp 480w');
   await undoAddition(page, baseURL, before);
 });
 
@@ -95,10 +95,10 @@ test("Close saves every ready file once, cancels unfinished preparation, and pla
   await expect(picker).toBeHidden();
   await expect(page.locator("#status")).toContainText("1 file still being prepared was not added");
   expect(await effectiveSource(page, baseURL, "index.html")).toBe(before);
-  expect(await storedDraft(page, "images/unfinished.webp")).toBeUndefined();
-  await expect.poll(() => storedDraft(page, "images/added.svg")).toBeDefined();
+  expect(await storedDraft(page, "media/images/unfinished.webp")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, "media/images/added.svg")).toBeDefined();
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => storedDraft(page, "images/added.svg")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, "media/images/added.svg")).toBeUndefined();
 });
 
 test("Use saves all ready files across picker additions with placement in one batch", async ({ page, baseURL }) => {
@@ -112,19 +112,19 @@ test("Use saves all ready files across picker additions with placement in one ba
     await picker.locator('input[name="media-upload"]').setInputFiles({ name, mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
     await expect(picker.getByRole("button", { name: `Choose ${name}`, exact: true })).toBeEnabled();
   }
-  expect(await storedDraft(page, "images/first.svg")).toBeUndefined();
+  expect(await storedDraft(page, "media/images/first.svg")).toBeUndefined();
   await picker.getByRole("button", { name: "Choose second.svg", exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect.poll(() => storedDraft(page, "images/first.svg")).toBeDefined();
-  await expect.poll(() => storedDraft(page, "images/second.svg")).toBeDefined();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('/images/second.svg');
+  await expect.poll(() => storedDraft(page, "media/images/first.svg")).toBeDefined();
+  await expect.poll(() => storedDraft(page, "media/images/second.svg")).toBeDefined();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('/media/images/second.svg');
   // An SVG stored as it is still carries its own size into the placed markup.
   const placed = /<img\b[^>]*\/images\/second\.svg[^>]*>/.exec((await storedDraft(page, "index.html"))!.content)![0];
   expect(placed).toContain('width="12"'); expect(placed).toContain('height="12"');
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
-  for (const path of ["images/first.svg", "images/second.svg"]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
+  for (const path of ["media/images/first.svg", "media/images/second.svg"]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
 });
 
 test("picker Review retains Optimise but reviewed files stay held until Use", async ({ page, baseURL }) => {
@@ -141,12 +141,12 @@ test("picker Review retains Optimise but reviewed files stay held until Use", as
   await expect(picker.getByRole("button", { name: "Add to library", exact: true })).toBeEnabled();
   await picker.getByRole("button", { name: "Add to library", exact: true }).click();
   await expect(picker.getByRole("button", { name: "Choose reviewed.svg", exact: true })).toBeEnabled();
-  expect(await storedDraft(page, "images/reviewed.svg")).toBeUndefined();
+  expect(await storedDraft(page, "media/images/reviewed.svg")).toBeUndefined();
   await picker.getByRole("button", { name: "Choose reviewed.svg", exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
-  await expect.poll(() => storedDraft(page, "images/reviewed.svg")).toBeDefined();
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('/images/reviewed.svg');
+  await expect.poll(() => storedDraft(page, "media/images/reviewed.svg")).toBeDefined();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('/media/images/reviewed.svg');
 });
 
 test("Files drop in a repository without a home page adds the file", async ({ page, baseURL }) => {
@@ -215,9 +215,28 @@ test("Use with a file still preparing saves the ready one and the placement in o
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
   await expect(page.locator("#status")).toHaveText("Image replaced. 1 file still being prepared was not added.");
-  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("/images/ready.svg");
-  expect(await storedDraft(page, "images/slow.webp")).toBeUndefined();
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain("/media/images/ready.svg");
+  expect(await storedDraft(page, "media/images/slow.webp")).toBeUndefined();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
-  await expect.poll(() => storedDraft(page, "images/ready.svg")).toBeUndefined();
+  await expect.poll(() => storedDraft(page, "media/images/ready.svg")).toBeUndefined();
+});
+
+
+test("two photos with the same incoming name keep separate numbered families", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const media = page.getByRole("region", { name: "Media", exact: true });
+  await expect(media.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
+  const bytes = await photo(page);
+  await media.locator('input[name="media-upload"]').setInputFiles([
+    { name: "Holiday Photo.JPG", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") },
+    { name: "Holiday Photo.JPG", mimeType: "image/jpeg", buffer: Buffer.from(bytes, "base64") },
+  ]);
+  await expect(media.getByRole("region", { name: "Files being added", exact: true }).getByRole("status")).toHaveText("Added 2 files");
+  for (const base of ["holiday-photo", "holiday-photo-2"]) {
+    for (const suffix of ["", "-480", "-960", "-1600"])
+      await expect.poll(() => storedDraft(page, `media/images/${base}${suffix}.webp`)).toBeDefined();
+  }
 });

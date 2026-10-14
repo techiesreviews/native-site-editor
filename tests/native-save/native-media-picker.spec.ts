@@ -170,7 +170,7 @@ test("a file dropped on a page's image is added and chosen in the picker, placed
   await expect(picker(page).getByRole("button", { name: "Choose Dropped Photo.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
   expect(await source(page)).toBe(before);
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
-  await expect.poll(() => source(page)).toContain('src="/images/dropped-photo.svg"');
+  await expect.poll(() => source(page)).toContain('src="/media/images/dropped-photo.svg"');
 });
 
 test("Site settings' Choose favicon… opens the picker over the settings and fills the field on Use", async ({ page, baseURL }) => {

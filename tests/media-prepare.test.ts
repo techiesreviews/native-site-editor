@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { addPreparedMedia, prepareMedia, prepareMediaFile, mediaNeedsPreparation, mediaPreparationFolder } from "../src/page-builder/media-prepare";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { DEFAULT_MEDIA_OPTIMISE, type optimiseMedia } from "../src/page-builder/media-optimise";
-import { MAX_UPLOAD_BYTES, uploadFileName } from "../src/uploads";
+import { MAX_UPLOAD_BYTES } from "../src/uploads";
+import { mediaStorageName } from "../src/page-builder/media-storage";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords } from "../shared/media-records";
 
 const encode: typeof optimiseMedia = async (_file, settings) => {
@@ -56,7 +57,7 @@ test("all entrances share requests, uploads and records in one addition", async 
   }
 });
 test("Files folder wins, including root", async () => {
-  assert.equal(mediaPreparationFolder(), "images");
+  assert.equal(mediaPreparationFolder(), "media/images");
   for (const folder of ["", "downloads"]) {
     const f = fixture(), prepared = await prepareMedia([new File(["bytes"], "CNAME")], "repo", folder, undefined, encode);
     assert.deepEqual(await f.host.import(prepared.requests), [folder ? `${folder}/cname` : "cname"]);
@@ -68,7 +69,7 @@ test("as-is kinds retain their bytes and exact sanitised names, including no ext
     const file = new File([new Uint8Array([0, 255, 128, 7])], name);
     const { request } = await prepareMediaFile(file, "repo", "", undefined, async () => { throw new Error("must not encode"); });
     const f = fixture(); await f.host.import([request]);
-    assert.equal(f.batches[0].uploads[0].path, uploadFileName(name));
+    assert.equal(f.batches[0].uploads[0].path, mediaStorageName(name));
     assert.equal(f.batches[0].uploads[0].blob, file);
     assert.deepEqual([...new Uint8Array(await f.batches[0].uploads[0].blob.arrayBuffer())], [0, 255, 128, 7]);
   }
@@ -90,8 +91,8 @@ test("add and place registers one history action; Undo and Redo restore both", a
   const { requests } = await prepareMedia([new File(["picture"], "photo.png")], "repo", undefined, undefined, encode);
   await f.host.import(requests, { path: "index.html", source, apply: paths => `<img src="/${paths[0]}">` });
   assert.equal(f.history.length, 1); assert.match(f.text().get("index.html")!, /photo.webp/);
-  assert.equal(f.paths().has("images/photo-480w.webp"), true);
-  f.history[0].undo(); assert.equal(f.text().get("index.html"), source); assert.equal(f.paths().has("images/photo.webp"), false);
+  assert.equal(f.paths().has("media/images/photo-480.webp"), true);
+  f.history[0].undo(); assert.equal(f.text().get("index.html"), source); assert.equal(f.paths().has("media/images/photo.webp"), false);
   f.history[0].redo(); assert.match(f.text().get("index.html")!, /photo.webp/); assert.equal(f.bytes().size, 2);
 });
 test("stale placement refuses files and page together", async () => {
@@ -125,13 +126,13 @@ test("replacement carries every record field instead of its metadata view", asyn
   const f = fixture({ "index.html": '<img src="/images/old.png">', [MEDIA_RECORDS_PATH]: serializeMediaRecords({ version: 2, collections: ["Studio"], files: { "images/old.png": record } }) });
   const { requests } = await prepareMedia([new File(["picture"], "old.png")], "repo", undefined, undefined, encode);
   await f.host.import(requests.map(request => ({ ...request, replaceFrom: "images/old.png", expectedAssetVersion: "v1", metadata: { tags: ["Studio"], alt: "Agent words" } })));
-  assert.deepEqual(JSON.parse(JSON.stringify(parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["images/old.webp"])), record);
+  assert.deepEqual(JSON.parse(JSON.stringify(parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/images/old.webp"])), record);
 });
 test("file segments are refused and folder paths are reserved with conflict numbering", async () => {
-  const f = fixture({ "images/file": "bytes", "images/photo.webp/child.txt": "child" });
+  const f = fixture({ "images/file": "bytes", "media/images/photo.webp/child.txt": "child" });
   await assert.rejects(f.host.import([{ file: new File(["bytes"], "a.txt"), folder: "images/file/deep" }]), /is a file/);
   const { requests } = await prepareMedia([new File(["picture"], "photo.png")], "repo", undefined, undefined, encode);
-  assert.deepEqual(await f.host.import(requests), ["images/photo-2.webp"]);
+  assert.deepEqual(await f.host.import(requests), ["media/images/photo-2.webp"]);
 });
 
 test("preparation reads settings for the repository and honours cancellation", async () => {
@@ -161,7 +162,7 @@ test("a placement cancelled before commit saves nothing; the files can then be s
   await assert.rejects(f.host.import(requests, { path: "index.html", source, live: () => wanted, apply: paths => { wanted = false; return `<img src="/${paths[0]}">`; } }), /Cancelled before the change was saved/);
   assert.equal(f.history.length, 0); assert.equal(f.text().get("index.html"), source); assert.equal(f.bytes().size, 0);
   await f.host.import(requests);
-  assert.equal(f.history.length, 1); assert.equal(f.text().get("index.html"), source); assert.equal(f.paths().has("images/photo.webp"), true);
+  assert.equal(f.history.length, 1); assert.equal(f.text().get("index.html"), source); assert.equal(f.paths().has("media/images/photo.webp"), true);
 });
 
 test("a placement decided on older records refuses newer ones", async () => {
@@ -232,4 +233,24 @@ test("failure cannot bypass personal-detail removal, and accepted unchanged file
   bytes.set([0xff, 0xd8, 0xff, 0xda, 0, 2]); bytes.set([0xff, 0xd9], bytes.length - 2);
   const clean = await prepareMedia([new File([bytes], "photo.jpg")], "repo", undefined, undefined, fail, async () => true, async () => true);
   assert.equal(clean.requests.length, 1); assert.equal(clean.warnings.length, 1); assert.match(clean.warnings[0], /photo.jpg is 1.0 MB/);
+});
+
+test("automatic folders follow each output kind; explicit Files folders win", async () => {
+  for (const [name, folder] of [["picture.jpg", "media/images"], ["logo.svg", "media/images"], ["movie.mp4", "media/videos"],
+    ["song.m4a", "media/audio"], ["guide.pdf", "media/downloads"], ["archive.zip", "media/downloads"]]) {
+    const file = new File(["bytes"], name);
+    assert.equal((await prepareMediaFile(file, "repo", undefined, undefined, encode)).request.folder, folder);
+    for (const explicit of ["", "chosen/folder"]) assert.equal((await prepareMediaFile(file, "repo", explicit, undefined, encode)).request.folder, explicit);
+  }
+});
+
+test("duplicate incoming photos reserve numbered families in one batch", async () => {
+  const f = fixture();
+  const encodeFamily: typeof optimiseMedia = async () => ({ before: 10, after: 4,
+    outputs: [{ blob: new Blob(["main"]), extension: "webp" },
+      ...[480, 960, 1600].map(variantWidth => ({ blob: new Blob(["copy"]), extension: "webp", variantWidth }))] });
+  const { requests } = await prepareMedia([new File(["one"], "Holiday Photo.JPG"), new File(["two"], "Holiday Photo.JPG")], "repo", undefined, undefined, encodeFamily);
+  assert.deepEqual(await f.host.import(requests), ["media/images/holiday-photo.webp", "media/images/holiday-photo-2.webp"]);
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path),
+    ["holiday-photo", "holiday-photo-2"].flatMap(base => ["", "-480", "-960", "-1600"].map(suffix => `media/images/${base}${suffix}.webp`)));
 });

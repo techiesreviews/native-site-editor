@@ -13,7 +13,7 @@ test("image insertion preserves unrelated source and escapes alt while adding re
 });
 test("responsive variants are sorted, deduplicated and do not upscale", () => {
   assert.equal(mediaSrcset({ path: "a.png", alt: "", width: 960, variants: [{ path: "a-1600w.png", width: 1600 }, { path: "a-480w.png", width: 480 }, { path: "other-480w.png", width: 480 }] }), "/other-480w.png 480w, /a.png 960w");
-  assert.equal(mediaVariantName("images/a.png", 480), "images/a-480w.png"); assert.throws(() => mediaVariantName("a.png", 0));
+  assert.equal(mediaVariantName("images/a.png", 480), "images/a-480.png"); assert.throws(() => mediaVariantName("a.png", 0));
   assert.deepEqual(mediaVariants("images/a.png", ["images/a.png", "images/a-960w.png", "images/a-480w.png", "images/ab-480w.png"]), [{ path: "images/a-480w.png", width: 480 }, { path: "images/a-960w.png", width: 960 }]);
 });
 test("image replacement leaves attribute-name lookalikes in quoted values intact", () => {
