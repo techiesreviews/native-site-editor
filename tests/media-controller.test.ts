@@ -5,6 +5,9 @@ import type { SavedDraft } from "../src/drafts.ts";
 import type { MediaPickerOptions } from "../src/page-builder/media-picker.ts";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
+import { placeMediaImage } from "../src/page-builder/media-place";
+import type { MediaHeldFiles } from "../src/page-builder/media-picker";
+import { readSource } from "../src/page-builder/source-tree";
 import { startTags } from "../shared/html-source.ts";
 
 function fixture(overrides: Partial<MediaControllerPorts> = {}) {
@@ -428,4 +431,56 @@ for (const changed of ["page", "records", "repository"] as const) test(`measurem
   await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
   await assert.rejects(f.pick()!.onPick!({ path: "images/new.png", alt: "" }, () => false), /changed/);
   assert.equal(f.changes.length, 0);
+});
+
+for (const artDirected of [false, true]) test(`picker unwraps a picture in one change; art direction ${artDirected}`, async () => {
+  const calls: Parameters<MediaControllerPorts["change"]>[] = [], told: string[] = [];
+  const f = fixture({
+    locateElement: (source, node) => { const tree = readSource(source), element = tree.at(node); return element && tree.range(element); },
+    change: (...args) => { calls.push(args); return true; }, announce: text => { told.push(text); },
+  });
+  const source = `<section>\n<picture slot="hero"><source ${artDirected ? 'MEDIA="(max-width: 600px)"' : 'type="image/avif"'} srcset="/images/old.avif"><img class="hero" src="/images/old.png" alt="Old alt"></picture>\n</section>`;
+  f.sources.set("index.html", source);
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0, 1] });
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+  assert.equal(calls.length, 1); assert.deepEqual(calls[0][3], [0, 0]);
+  const page = [...calls[0][2]].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+  assert.doesNotMatch(page, /<source|<picture/); assert.match(page, /class="hero"/); assert.match(page, /slot="hero"/); assert.match(page, /src="\/images\/new.png"/);
+  assert.deepEqual(told, artDirected ? ["Image replaced. The new picture is now used on all screens."] : []);
+});
+test("Decorative picture cleanup and records share one batch", async () => {
+  const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [], told: string[] = [];
+  const f = fixture({
+    locateElement: (source, node) => { const tree = readSource(source), element = tree.at(node); return element && tree.range(element); },
+    applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); }, announce: text => { told.push(text); },
+  });
+  f.sources.set("index.html", '<section><picture><source media="(max-width:600px)" srcset="/images/old.avif"><img src="/images/old.png" alt=""></picture></section>');
+  f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { places: { "index.html": { decorative: true } } } } }));
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0, 1] });
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+  assert.equal(f.changes.length, 0); assert.equal(batches.length, 1);
+  assert.doesNotMatch(batches[0].edits.get("index.html")!, /<picture|<source/);
+  assert.deepEqual(JSON.parse(batches[0].edits.get(".editor/media.json")!).files["images/new.png"].places, { "index.html": { decorative: true } });
+  assert.deepEqual(told, ["Image replaced. The new picture is now used on all screens."]);
+});
+
+test("held picker files unwrap a picture through the single save transaction", async () => {
+  const told: string[] = [], pages: string[] = [];
+  const f = fixture({ locateElement: (source, node) => { const tree = readSource(source), element = tree.at(node); return element && tree.range(element); }, announce: text => { told.push(text); } });
+  const source = '<section><picture slot="photo"><source media="phone" srcset="/old.avif"><img src="/images/old.png" alt="Old alt"></picture></section>';
+  f.sources.set("index.html", source);
+  const image = { path: "images/new.svg", alt: "New" }, tree = readSource(source), expected = source.slice(tree.range(tree.at([0, 0, 1])!)!.start, tree.range(tree.at([0, 0, 1])!)!.end);
+  const held: MediaHeldFiles = {
+    image: () => image,
+    save: async place => {
+      const after = place!.apply([image.path], [], { version: 2, collections: [], files: {} });
+      pages.push(typeof after === "string" ? after : after.page);
+      return { paths: [image.path], placed: true, note: "" };
+    },
+  };
+  await placeMediaImage(f.ports, () => f.controller.workspaceContext(), { path: "index.html", node: [0, 0, 1] }, image,
+    { stamp: f.ports.stamp(), epoch: 0, source, expected, initialAlt: "Old alt" }, () => false, held);
+  assert.equal(pages.length, 1); assert.equal(f.changes.length, 0);
+  assert.doesNotMatch(pages[0], /<picture|<source/); assert.match(pages[0], /slot="photo"/);
+  assert.deepEqual(told, ["Image replaced. The new picture is now used on all screens."]);
 });

@@ -107,6 +107,7 @@ export interface MediaReplaceRequest {
   result: MediaOptimiseResult;
   original?: { blob: Blob; extension: string };
   keepOldAddress?: boolean;
+  notice?: (text: string) => void;
   live?: () => boolean;
 }
 
@@ -522,6 +523,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     batch.overwrites = plan.uploads.filter(upload => batch.expectedPaths.includes(upload.path)).map(upload => upload.path);
     for (const upload of plan.uploads) if (!batch.expectedAssets.has(upload.path)) batch.expectedAssets.set(upload.path, versions.get(upload.path));
     await commit(ctx, batch);
+    if (plan.artDirected.length) request.notice?.("The new picture is now used on all screens.");
     await sweep(ctx);
     return plan.main;
   };

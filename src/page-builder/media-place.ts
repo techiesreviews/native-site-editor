@@ -1,9 +1,10 @@
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { Stamp } from "../guarded-edit";
 import type { MediaWorkspaceContext } from "./media-workspace";
-import { mediaImageMarkup, type MediaMeasured, type MediaImage } from "./media-markup";
+import { mediaImageMarkup, mediaAttributes, mediaPictureUnwrap, type MediaMeasured, type MediaImage } from "./media-markup";
 import { mediaPageEdits } from "./media-page-markup";
 import type { MediaHeldFiles } from "./media-picker";
+import { readSource } from "./source-tree";
 import { locateNativeElementRange } from "../native-source-location";
 
 /** The picker's Use and agent placement share this exact swap and transaction. */
@@ -38,11 +39,18 @@ export async function placeMediaImage(
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
+  const parentNode = target.node.slice(0, -1), parent = locate(latest, parentNode);
+  const tree = parent?.tag.name === "picture" ? readSource(latest) : undefined;
+  const picture = tree?.elements().find(element => element.type === "element" && element.tag.start === parent!.tag.start);
+  const unwrap = mediaPictureUnwrap(latest, { start: range.tag.start, end: range.tag.end }, picture && tree!.range(picture));
+  const next = unwrap ? parentNode : target.node;
+  const note = unwrap?.artDirected ? " The new picture is now used on all screens." : "";
   const pageRules = mediaPageEdits(latest, measured, target.node, locate);
   // Page places use the rules below; picker alt defaults belong to component and settings fields.
   const swap = (alt: string | undefined, picked = image) => {
-    const markup = mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, pageRules.placement, alt === undefined);
-    const edits = [...pageRules.edits, { start: range.tag.start, end: range.tag.end, text: markup }];
+    let markup = mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, pageRules.placement, alt === undefined);
+    if (unwrap?.slot !== undefined) markup = mediaAttributes(markup, { slot: unwrap.slot });
+    const edits = [...pageRules.edits, ...(unwrap?.edits ?? []), { start: range.tag.start, end: range.tag.end, text: markup }];
     let page = latest;
     for (const edit of edits.sort((a, b) => b.start - a.start)) page = page.slice(0, edit.start) + edit.text + page.slice(edit.end);
     return { markup, page, edits };
@@ -55,7 +63,7 @@ export async function placeMediaImage(
         const picked = held.image(paths), after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page);
         return { page: swap(after.alt, picked).page, records: after.records };
       } });
-    ports.announce(saved.placed ? `Image replaced${saved.note && `.${saved.note}`}` : `Added ${saved.paths.join(", ")}.${saved.note}`);
+    ports.announce(saved.placed ? `Image replaced${note ? "." + note : ""}${saved.note ? "." + saved.note : ""}` : `Added ${saved.paths.join(", ")}.${saved.note}`);
     return;
   }
   // Whether the old file stays on the page does not depend on the alt, only on the new src.
@@ -66,11 +74,12 @@ export async function placeMediaImage(
   // Agent decoding captures the file revision before its first await.
   if (proof.asset && ctx.assetVersion(proof.asset.path) !== proof.asset.version) throw new Error("The image changed while preparing placement. Try again.");
   if (after.records === records || !readable) {
-    if (!ports.change(target.path, latest, edits, target.node, "Image replaced")) throw new Error("The image could not be replaced.");
+    if (!ports.change(target.path, latest, edits, next, "Image replaced")) throw new Error("The image could not be replaced.");
+    if (note) ports.announce(`Image replaced.${note}`);
     return;
   }
   await ctx.applyBatch({ label: "Image replaced", expectedPaths: ctx.paths,
     expectedSources: new Map([[target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets: proof.asset ? new Map([[proof.asset.path, proof.asset.version]]) : new Map(),
     edits: new Map([[target.path, page], [io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)]]), moves: [], deletes: [], restores: [], uploads: [] });
-  ports.announce("Image replaced");
+  ports.announce(`Image replaced${note ? "." + note : ""}`);
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaImageMarkup, mediaPlacement, mediaPriority, mediaSrcset } from "../src/page-builder/media-markup";
+import { mediaImageMarkup, mediaAttributes, mediaPictureUnwrap, mediaPlacement, mediaPriority, mediaSrcset } from "../src/page-builder/media-markup";
 import { mediaPageEdits } from "../src/page-builder/media-page-markup";
 import { readSource } from "../src/page-builder/source-tree";
 
@@ -77,4 +77,29 @@ test("a placement re-checks other placed images across the fold both ways; hand-
   assert.match(after, /<img sizes="50vw" class="up">/);
   assert.match(after, /<img sizes="auto, 40vw" class="down" loading="lazy">|<img loading="lazy" sizes="auto, 40vw" class="down">/);
   assert.match(after, /<img class="plain" loading="lazy">/);
+});
+
+for (const [sources, artDirected] of [
+  ["", false], ['<source type="image/avif" srcset="old.avif">', false],
+  ['<source MEDIA="(max-width: 600px)" srcset="phone.jpg">', true],
+  ['<source media="  " srcset="old.jpg">', false],
+] as const) test(`picture cleanup preserves image attributes and surrounding whitespace: ${sources}`, () => {
+  const tag = `<img class="hero" alt='A &#38; B' data-note="keep" style="object-fit:cover" id="photo">`;
+  const source = ` \n<picture slot="hero&amp;photo" class="discard">${sources}<!-- discard -->\n${tag}\n</picture>\n `;
+  const tree = readSource(source), picture = tree.at([0])!, img = tree.children(picture).find(child => child.type === "element" && child.name === "img")!;
+  const unwrap = mediaPictureUnwrap(source, tree.range(img)!, tree.range(picture));
+  assert.ok(unwrap); assert.equal(unwrap.artDirected, artDirected); assert.equal(unwrap.slot, "hero&photo");
+  const markup = mediaAttributes(mediaImageMarkup(image, tag, undefined, true), { slot: unwrap.slot });
+  const edits = [...unwrap.edits, { start: tree.range(img)!.start, end: tree.range(img)!.end, text: markup }];
+  const result = edits.sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+  assert.equal(result, ` \n${markup}\n `);
+  assert.doesNotMatch(result, /<picture|<source|discard/);
+  for (const attribute of ['class="hero"', "alt='A &#38; B'", 'data-note="keep"', 'style="object-fit:cover"', 'id="photo"', 'slot="hero&amp;photo"']) assert.ok(result.includes(attribute));
+});
+test("picture cleanup leaves an image's own slot and refuses a non-picture parent", () => {
+  const source = '<picture slot="wrapper"><img slot="own"></picture><section><img></section>';
+  const tree = readSource(source), picture = tree.at([0])!, img = tree.at([0, 0])!;
+  assert.equal(mediaPictureUnwrap(source, tree.range(img)!, tree.range(picture))?.slot, undefined);
+  assert.equal(mediaPictureUnwrap(source, tree.range(tree.at([1, 0])!)!, tree.range(tree.at([1])!)), undefined);
+  assert.equal(mediaPictureUnwrap(source, tree.range(img)!, undefined), undefined);
 });

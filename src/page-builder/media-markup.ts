@@ -1,5 +1,6 @@
 import { mediaFamilyOf, RESPONSIVE_COPY_WIDTHS } from "./media-families";
-import { startTags } from "../../shared/html-source";
+import { startTags, type ElementRange } from "../../shared/html-source";
+import { readSource, tagAttribute } from "./source-tree";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
 
 export interface MediaVariant { path: string; width: number }
@@ -75,4 +76,16 @@ export function mediaVariantName(path: string, width: number) {
 
 export function mediaVariants(path: string, paths: string[]): MediaVariant[] {
   return mediaFamilyOf(path, paths)?.copies ?? [];
+}
+
+/** Remove a picture's sources and wrapper without touching its image's opening tag. */
+export function mediaPictureUnwrap(source: string, img: Pick<ElementRange, "start" | "end">, picture: ElementRange | undefined) {
+  if (picture?.tag.name !== "picture") return undefined;
+  const tree = readSource(source, { from: picture.tag.end, to: picture.close?.start ?? picture.end });
+  const children = tree.children();
+  const image = children.find(child => child.type === "element" && child.name === "img" && child.start === img.start);
+  if (!image) return undefined;
+  const artDirected = children.some(child => child.type === "element" && child.name === "source" && !!tree.attribute(child, "media")?.value.trim());
+  const slot = tree.attribute(image, "slot") ? undefined : tagAttribute(source, picture.tag, "slot")?.value;
+  return { edits: [{ start: picture.start, end: img.start, text: "" }, { start: img.end, end: picture.end, text: "" }], artDirected, slot };
 }

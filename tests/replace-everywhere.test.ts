@@ -280,3 +280,21 @@ test("a responsive copy that stays at its address keeps its record", async () =>
   const p = await plan({}, { records: copyKept });
   assert.deepEqual(p.records.files[copy], { alwaysKeep: true, credit: "Copy" });
 });
+
+test("Replace everywhere removes format and art-directed sources outside the family, carrying slots", async () => {
+  const p = await plan({
+    "index.html": `<picture slot="hero&amp;photo"><source type="image/avif" srcset="/media/hero.avif"><source srcset="/${gone} 960w"><img class="hero" src="/${path}" alt="Words" data-note="keep"></picture>`,
+    "phone.html": `<picture><source MEDIA="(max-width: 600px)" srcset="/media/hero.avif"><img src="/${path}"></picture><picture><source media="wide" srcset="/${copy}"><img src="/${trim}" width="300" height="200"></picture>`,
+  });
+  assert.doesNotMatch(p.edits.get("index.html")!, /<picture|<source/);
+  assert.match(p.edits.get("index.html")!, /slot="hero&amp;photo"/);
+  assert.ok(p.edits.get("index.html")!.includes(`src="/${path}?v=${await mainHash}"`));
+  assert.match(p.edits.get("index.html")!, /class="hero"/); assert.match(p.edits.get("index.html")!, /alt="Words" data-note="keep"/);
+  assert.doesNotMatch(p.edits.get("phone.html")!, /<picture|<source/);
+  assert.deepEqual(p.artDirected, ["phone.html"]);
+});
+test("a picture showing another file stays wrapped while its family source is rewritten", async () => {
+  const p = await plan({ "index.html": `<picture slot="hero"><source srcset="/${copy} 480w"><img src="/media/other.jpg"></picture>` });
+  assert.equal(p.edits.get("index.html"), `<picture slot="hero"><source srcset="/${copy}?v=${await copyHash} 480w"><img src="/media/other.jpg"></picture>`);
+  assert.deepEqual(p.artDirected, []);
+});

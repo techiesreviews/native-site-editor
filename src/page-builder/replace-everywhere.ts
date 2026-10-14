@@ -1,3 +1,5 @@
+import { mediaPictureUnwrap, mediaEscape } from "./media-markup";
+import { readSource } from "./source-tree";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import type { MediaRecords } from "../../shared/media-records";
 import { declarationRanges } from "../styles-index";
@@ -117,12 +119,26 @@ export function planMediaReplace(input: ReplaceInput) {
   rewriteMediaMentions(renameInput, mapping, { reference(file, start, end, path, attribute) {
     const list = refs.get(file) ?? []; list.push({ start, end, path, attribute }); refs.set(file, list);
   } });
-  const sources = { ...input.sources };
+  const sources = { ...input.sources }, artDirected: string[] = [];
   for (const [file, references] of refs) {
     if (!/\.html?$/i.test(file)) continue;
     const source = sources[file]!, edits: Edit[] = [];
+    const tree = readSource(source), removed: Edit[] = [];
+    for (const element of tree.elements()) {
+      if (element.type !== "element" || element.name !== "img" || element.parent?.name !== "picture") continue;
+      const shown = references.find(ref => ref.start >= element.tag.start && ref.end <= element.tag.end && ["src", "data-src", "srcset", "data-srcset"].includes(ref.attribute ?? ""));
+      if (!shown) continue;
+      const range = tree.range(element), picture = tree.range(element.parent);
+      const unwrap = range && mediaPictureUnwrap(source, range, picture);
+      if (!unwrap) continue;
+      removed.push(...unwrap.edits);
+      if (unwrap.slot !== undefined) edits.push({ start: element.tag.nameEnd, end: element.tag.nameEnd, text: ` slot="${mediaEscape(unwrap.slot)}"` });
+      if (unwrap.artDirected && !artDirected.includes(file)) artDirected.push(file);
+    }
+    edits.push(...removed);
     const tokens = scanMediaUrlTokens(file, source);
     for (const tag of startTags(source)) {
+      if (removed.some(edit => tag.start >= edit.start && tag.end <= edit.end)) continue;
       const own = references.filter(ref => ref.start >= tag.start && ref.end <= tag.end);
       for (const name of ["srcset", "data-srcset", "imagesrcset"]) {
         const attr = startTagAttribute(source, tag, name);
@@ -185,7 +201,7 @@ export function planMediaReplace(input: ReplaceInput) {
   }
   for (const record of Object.values(next.files)) if (record.trimmedFrom && family.includes(record.trimmedFrom.source)) record.trimmedFrom.source = mapping.get(record.trimmedFrom.source)!;
   const kept = alwaysKeptFiles(paths, new Set(Object.keys(records.files).filter(file => records.files[file].alwaysKeep)));
-  return { main, uploads, deletes: family.filter(member => !uploads.some(upload => upload.path === member)), edits, records: next,
+  return { main, uploads, artDirected, deletes: family.filter(member => !uploads.some(upload => upload.path === member)), edits, records: next,
     family, trims: trims.map(main => ({ main, members: members(main), kept: kept.has(main) })) };
 }
 

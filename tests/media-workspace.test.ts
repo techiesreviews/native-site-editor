@@ -947,3 +947,24 @@ test("sharing keeps previous copies still mentioned anywhere or when text cannot
     assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[f.previous].sharing, true);
   }
 });
+
+for (const artDirected of [false, true]) test(`Replace everywhere notice follows commit and one Undo restores picture: ${artDirected}`, async () => {
+  const f = fixture(), told: string[] = [];
+  const source = `<picture slot="hero"><source ${artDirected ? 'media="phone"' : 'type="image/avif"'} srcset="/images/outside.avif"><img class="hero" src="/images/a.png"></picture>`;
+  f.text.set("index.html", source);
+  await f.host.load();
+  const next = await f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] },
+    notice: text => { assert.equal(f.history.length, 1); assert.doesNotMatch(f.text.get("index.html")!, /<picture|<source/); told.push(text); },
+  });
+  assert.equal(next, "images/a.png"); assert.equal(f.batches.length, 1);
+  assert.doesNotMatch(f.text.get("index.html")!, /<picture|<source/);
+  assert.deepEqual(told, artDirected ? ["The new picture is now used on all screens."] : []);
+  f.history.pop()!(); assert.equal(f.text.get("index.html"), source);
+});
+test("failed Replace everywhere commit never announces picture cleanup", async () => {
+  const f = fixture(), told: string[] = [];
+  const source = '<picture><source media="phone" srcset="/images/outside.avif"><img src="/images/a.png"></picture>';
+  f.text.set("index.html", source); await f.host.load(); f.failCommit();
+  await assert.rejects(f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] }, notice: text => { told.push(text); } }), /Draft storage failed/);
+  assert.deepEqual(told, []); assert.equal(f.text.get("index.html"), source);
+});

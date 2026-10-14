@@ -258,3 +258,35 @@ test("a 16:9 cover style stand-in measures its new shape without changing the vi
   expect(await measure(page, { path: "index.html", node: [1, 0, 2], style: "x".repeat(16385) })).toEqual({ error: "Invalid image style." });
   await expect(page.frameLocator(".native-preview-frame").locator("iframe")).toHaveCount(0);
 });
+
+// Default fixture group. Replacing a picture is one undoable page and media change.
+test("picker replacement removes picture sources, keeps image class, and one Undo restores them", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const preview = page.frameLocator(".native-preview-frame"), hero = preview.locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html")!;
+    const image = source.match(/<img\b[^>]*class="hero-image"[^>]*>/)![0], start = source.indexOf(image);
+    editor.replaceActiveRange({ path: "index.html", start, end: start + image.length, expected: image,
+      text: `<picture><source type="image/svg+xml" srcset="/images/placeholder.svg">${image}</picture>` });
+  });
+  await expect(preview.locator("picture > img.hero-image")).toBeVisible();
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
+  const before = await source();
+  await hero.click();
+  await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Choose image…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Picture cleanup.svg", mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="80"><rect width="160" height="80" fill="green"/></svg>') });
+  await expect(picker.getByRole("button", { name: "Choose Picture cleanup.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect.poll(source).not.toMatch(/<source|<picture/i);
+  expect(await source()).toMatch(/<img\b[^>]*class="hero-image"/);
+  await expect(hero).toHaveAttribute("src", /^data:/);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(source).toBe(before);
+  await expect(preview.locator("picture > img.hero-image")).toBeVisible();
+});
