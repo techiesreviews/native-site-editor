@@ -305,3 +305,11 @@ test("Replace everywhere cleans up an art-directed picture inside template conte
   assert.ok(page.includes(`<div><img class="hero" src="/${path}?v=${await mainHash}"></div>`));
   assert.deepEqual(p.artDirected, ["index.html"]);
 });
+test("adjacent pictures: only the replaced image's picture is unwrapped, and both can be", async () => {
+  const other = `<picture><source type="image/avif" srcset="/media/other.avif"><img src="/media/other.jpg"></picture>`;
+  const one = await plan({ "index.html": `<p>a</p><picture><source type="image/avif" srcset="/media/hero.avif"><img src="/${path}"></picture>${other}<template><picture><img src="/${path}"></picture>${other}</template>` });
+  assert.equal(one.edits.get("index.html"), `<p>a</p><img src="/${path}?v=${await mainHash}">${other}<template><img src="/${path}?v=${await mainHash}">${other}</template>`);
+  const both = await plan({ "index.html": `<picture><img src="/${path}"></picture>\n<picture><source media="wide" srcset="/media/x.avif"><img class="b" src="/${path}"></picture>` });
+  assert.equal(both.edits.get("index.html"), `<img src="/${path}?v=${await mainHash}">\n<img class="b" src="/${path}?v=${await mainHash}">`);
+  assert.deepEqual(both.artDirected, ["index.html"]);
+});
