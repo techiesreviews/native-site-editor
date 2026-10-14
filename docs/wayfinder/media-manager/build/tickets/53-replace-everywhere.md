@@ -2,7 +2,7 @@
 title: Replace everywhere
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-53 runner)
 blocked_by: [46-wide-use-scanner, 48-recently-removed]
 builder: sol
 phase: 4
