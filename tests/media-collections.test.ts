@@ -100,8 +100,9 @@ function workspace(initial: string | undefined, paths = [a, b]) {
     historyCurrent: () => true, history: (undo, redo) => home.hold("site", undo, redo), refresh: () => {}, announce: () => {},
   };
   const reads: string[] = [], batches: string[] = [];
+  // SVG is text the usage scan reads (slice 46), so the fake gives it content.
   const ctx: MediaWorkspaceContext = { key: "site", scope, drafts: store, get paths() { return host.paths(); }, items: paths.map(path => ({ path })), pages: [], components: {},
-    assertLive() {}, read: async path => { reads.push(path); return read(path); }, blob: async () => new Blob(), assetVersion: path => host.assetVersion(path),
+    assertLive() {}, read: async path => { reads.push(path); return /\.svg$/i.test(path) ? "<svg/>" : read(path); }, blob: async () => new Blob(), assetVersion: path => host.assetVersion(path),
     applyBatch: async batch => { assert.deepEqual([...batch.edits.keys()], [MEDIA_RECORDS_PATH]); batches.push(batch.label); await applyMediaWorkspaceBatch(batch, mediaDraftTransaction(host)); }, openPage: async () => {},
   };
   return { picker: createMediaWorkspace(async () => ctx), drafts, read: () => read(MEDIA_RECORDS_PATH), reads, batches,
