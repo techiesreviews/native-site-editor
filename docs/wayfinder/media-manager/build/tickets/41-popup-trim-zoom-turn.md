@@ -2,7 +2,7 @@
 title: Trim, zoom and turn in the popup
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-41 runner)
 blocked_by: [39-image-button-and-popup, 40-trimmed-copies]
 builder: claude
 phase: 3
