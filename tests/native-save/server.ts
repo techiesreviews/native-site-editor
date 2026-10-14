@@ -166,6 +166,7 @@ import { tarball } from "../tar-helper.ts";
 import { NATIVE_STARTER_VERSION } from "../../worker/starter.ts";
 import { monacoTrim } from "../../vite-monaco-trim.ts";
 import { previewRuntime } from "../../vite-preview-runtime.ts";
+import { pdfjsAssets } from "../../vite-pdfjs-assets.ts";
 
 const appPort = Number(process.env.ASE_NATIVE_SAVE_PORT ?? 5206);
 const demoMode = process.env.ASE_NATIVE_SAVE_DEMO === "1";
@@ -1474,6 +1475,7 @@ async function main() {
     plugins: [
       monaco.plugin,
       previewRuntime(),
+      pdfjsAssets(),
       { name: "ase-native-save-worker", apply: "serve", configureServer(server) {
         server.middlewares.use(workerMiddleware());
       } },

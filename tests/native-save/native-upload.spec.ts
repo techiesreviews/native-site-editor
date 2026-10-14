@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { expect, test, type Page } from "@playwright/test";
 import { openPickerOn } from "./open-picker";
 import { publishButton, showPublish } from "./publish";
+
+const require = createRequire(import.meta.url);
 
 // Uploading images and other binary files (src/uploads.ts): the Media
 // picker's Add new file and drop, the Files tab's Upload files… and drop
@@ -288,6 +292,12 @@ test("a valid one-page PDF keeps its bytes and commits a matching WebP first-pag
   expect(preview?.subarray(8, 12).toString()).toBe("WEBP");
   const records = JSON.parse((await committed(page, ".editor/media.json"))!.toString());
   expect(records.files["media/downloads/report.pdf"].still).toBe("media/downloads/report.webp");
+  // pdf.js's decoding data is served beside the editor (scans, CJK text, unembedded fonts, colour profiles).
+  const version = JSON.parse(readFileSync(require.resolve("pdfjs-dist/package.json"), "utf8")).version;
+  for (const file of ["wasm/openjpeg.wasm", "cmaps/Adobe-Japan1-UCS2.bcmap", "standard_fonts/LiberationSans-Regular.ttf", "iccs/CGATS001Compat-v2-micro.icc"]) {
+    const response = await page.request.get(`${baseURL}/assets/pdfjs-${version}/${file}`);
+    expect(response.status(), file).toBe(200);
+  }
 });
 
 test("a small 128 kbps MP3 is committed unchanged in media/audio", async ({ page, baseURL }) => {

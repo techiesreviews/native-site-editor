@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pdfPreviewSize, preparePdf, type PdfPreviewDeps } from "../src/page-builder/pdf-preview";
+import { pdfjsAssetOptions, pdfPreviewSize, preparePdf, type PdfPreviewDeps } from "../src/page-builder/pdf-preview";
 import { prepareMediaFile } from "../src/page-builder/media-prepare";
 import { createMediaWorkspace, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
@@ -38,6 +38,23 @@ function fake(options: { broken?: boolean; pending?: boolean; png?: boolean } = 
   const deps: PdfPreviewDeps = { pdfjs, canvas: () => canvas, encode: async () => new Blob(["preview"], { type: options.png ? "image/png" : "image/webp" }) };
   return { deps, loaded: () => loaded, destroyed: () => destroyed, rendered: () => rendered, copied: () => copied };
 }
+test("pdf.js gets its CMaps, standard fonts, WASM decoders and ICC profiles from the versioned assets folder", async () => {
+  assert.deepEqual(pdfjsAssetOptions("6.4.299"), { cMapUrl: "/assets/pdfjs-6.4.299/cmaps/", cMapPacked: true,
+    standardFontDataUrl: "/assets/pdfjs-6.4.299/standard_fonts/", wasmUrl: "/assets/pdfjs-6.4.299/wasm/", iccUrl: "/assets/pdfjs-6.4.299/iccs/" });
+  assert.equal(pdfjsAssetOptions("1.0.0", "/editor").wasmUrl, "/editor/assets/pdfjs-1.0.0/wasm/");
+  let seen: Record<string, unknown> | undefined;
+  const f = fake();
+  const inner = f.deps.pdfjs!;
+  const deps: PdfPreviewDeps = { ...f.deps, pdfjs: async () => {
+    const pdf = await inner();
+    return { version: "6.4.299", getDocument: ((settings: Record<string, unknown>) => { seen = settings; return pdf.getDocument(settings as never); }) as typeof pdf.getDocument };
+  } };
+  assert.ok((await preparePdf(file, undefined, deps))?.still);
+  assert.equal(seen?.wasmUrl, "/assets/pdfjs-6.4.299/wasm/");
+  assert.equal(seen?.cMapUrl, "/assets/pdfjs-6.4.299/cmaps/");
+  assert.equal(seen?.standardFontDataUrl, "/assets/pdfjs-6.4.299/standard_fonts/");
+  assert.equal(seen?.iccUrl, "/assets/pdfjs-6.4.299/iccs/");
+});
 test("page size fits 960 by 1440 without enlargement", () => {
   assert.deepEqual(pdfPreviewSize(1200, 1800), { width: 960, height: 1440 });
   assert.deepEqual(pdfPreviewSize(2000, 1000), { width: 960, height: 480 });

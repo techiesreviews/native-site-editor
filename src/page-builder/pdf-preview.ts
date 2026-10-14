@@ -8,9 +8,17 @@ export function pdfPreviewSize(width: number, height: number) {
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
+/** Where the build publishes pdf.js's decoding data (`vite-pdfjs-assets.ts`): Adobe CMaps for CJK text,
+ * standard fonts for unembedded text, WASM for JPEG 2000/JBIG2 scans and ICC colour profiles.
+ * Without them pdf.js may quietly draw an empty page. */
+export function pdfjsAssetOptions(version: string, base = "/") {
+  const root = `${base.replace(/\/?$/, "/")}assets/pdfjs-${version}/`;
+  return { cMapUrl: root + "cmaps/", cMapPacked: true, standardFontDataUrl: root + "standard_fonts/", wasmUrl: root + "wasm/", iccUrl: root + "iccs/" };
+}
+
 type PdfModule = typeof import("pdfjs-dist");
 export interface PdfPreviewDeps {
-  pdfjs?: () => Promise<Pick<PdfModule, "getDocument">>;
+  pdfjs?: () => Promise<Pick<PdfModule, "getDocument"> & Partial<Pick<PdfModule, "version">>>;
   canvas?: () => HTMLCanvasElement;
   encode?: (canvas: HTMLCanvasElement) => Promise<Blob>;
   timeout?: number;
@@ -64,7 +72,7 @@ export async function preparePdf(file: File, signal?: AbortSignal, deps: PdfPrev
     // pdf.js transfers this copy; the website's original File is never handed to it.
     const data = new Uint8Array(await file.arrayBuffer()).slice();
     work.signal.throwIfAborted();
-    const options = { data, isEvalSupported: false };
+    const options = { data, isEvalSupported: false, ...pdf.version ? pdfjsAssetOptions(pdf.version, import.meta.env?.BASE_URL) : {} };
     task = pdf.getDocument(options);
     const document = await task.promise;
     work.signal.throwIfAborted();
