@@ -645,7 +645,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       const { context } = await current();
       const page = context.pages && findPageRef(context.pages, ref);
       const path = page?.file ?? ref;
-      const problem = writablePathProblem(path);
+      const problem = writablePathProblem(path, { readOnly: true });
       if (problem) return failure(problem);
       return queue("open_page", context, { path, requestId, waitSeconds: waitSeconds ?? 5 });
     },

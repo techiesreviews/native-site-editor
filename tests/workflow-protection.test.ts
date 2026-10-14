@@ -3,13 +3,14 @@
 // /api/publish writes them only when the user confirmed (`allowWorkflows`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitProtectedEdits, touchesGithubConfig, touchesWorkflows } from "../shared/protected-paths.ts";
+import { splitProtectedEdits, touchesGithubConfig, touchesWorkflows, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { writablePathProblem } from "../worker/site-files.ts";
 import { agentOperation } from "../worker/agent-operations.ts";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site.ts";
 import { validatePublish } from "../worker/publish.ts";
 import { HttpError } from "../worker/github.ts";
 import type { AgentCommand } from "../shared/agent.ts";
+import type { AgentHub } from "../worker/agent-context.ts";
 
 const spellings = [
   ".github/workflows/deploy.yml",
@@ -63,6 +64,56 @@ const command = (extra: Partial<AgentCommand>): AgentCommand => ({
   state: "pending",
   createdAt: 1,
   ...extra,
+});
+
+const mediaSpellings = [
+  ".editor/media.json", ".Editor/Media.JSON", "./.editor//media.json",
+  ".editor/./media.json", "staged/../.editor/media.json", ".editor./media.json. ",
+  ".editor\\media.json", ".editor/media.json/", ".editor", "./.Editor//",
+];
+const otherMediaPaths = [".editor/other.json", ".editor/config.json", "media.json", "images/.editor/media.json", ".editorx/media.json", ".editor/media.json/other.json"];
+
+test("media records and their containing folder are protected however spelled; other editor files stay writable", () => {
+  for (const path of mediaSpellings) {
+    assert.equal(touchesMediaRecords(path), true, path);
+    assert.equal(writablePathProblem(path), MEDIA_RECORDS_REFUSED, path);
+  }
+  for (const path of otherMediaPaths) {
+    assert.equal(touchesMediaRecords(path), false, path);
+    assert.equal(writablePathProblem(path), undefined, path);
+  }
+  assert.equal(writablePathProblem(".editor/media.json", { readOnly: true }), undefined);
+  assert.match(writablePathProblem("../file.json", { readOnly: true }) ?? "", /Invalid path/);
+});
+
+test("the hub and editor refuse direct media record changes before touching drafts, while opening is allowed", async () => {
+  const hub = (): AgentHub => ({
+    kind: "agent-hub", login: "lex", expiresAt: Date.now() + 60_000, grants: [],
+    updatedAt: Date.now(),
+    context: { repository: { id: 1, fullName: "lex/site" }, branch: "main", commit: "c".repeat(40), file: null, drafts: [] },
+  });
+  const touched: string[] = [];
+  const actions = {
+    open: async (path: string) => { touched.push(path); return true; },
+  } satisfies Pick<AgentSiteActions, "open">;
+  // Only open is supplied: refusals must happen before any editing port is used.
+  const editorActions = actions as AgentSiteActions;
+  for (const path of mediaSpellings) {
+    for (const operation of ["write_file", "move_file", "delete_file"] as const) {
+      for (const extra of [{ path }, { args: { to: path } }, { args: { parent: path } }]) {
+        const value = command({ operation, ...extra });
+        assert.throws(() => agentOperation(hub(), { type: "queue", command: value }),
+          (error: HttpError) => error.status === 403 && error.message === MEDIA_RECORDS_REFUSED);
+        await assert.rejects(applySiteCommand(editorActions, value), { message: MEDIA_RECORDS_REFUSED });
+      }
+    }
+  }
+  assert.deepEqual(touched, []);
+  const opening = command({ operation: "open_page", path: ".editor/media.json" });
+  assert.equal(agentOperation(hub(), { type: "queue", command: opening }), opening);
+  await applySiteCommand(editorActions, opening);
+  assert.deepEqual(touched, [".editor/media.json"]);
+  assert.doesNotThrow(() => agentOperation(hub(), { type: "queue", command: command({ operation: "write_file", path: ".editor/other.json" }) }));
 });
 
 test("the hub refuses a queued change that reaches the workflows as a path or a move's destination", () => {

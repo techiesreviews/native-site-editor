@@ -4,6 +4,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { INSPECTION_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
 import { requestOperation } from "../worker/agent-requests.ts";
 import { componentsChapter } from "../worker/site-conventions.ts";
+import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 
 test("applyReplacements needs each old text exactly once, or all", () => {
@@ -253,6 +254,31 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
       assert.equal((await call("move_file", { path: "styles/site.css", to: path, waitSeconds: 0 })).isError, true, `move to ${path}`);
       assert.equal((await call("move_file", { path, to: "elsewhere", waitSeconds: 0 })).isError, true, `move from ${path}`);
     }
+    // Media records are readable, but only Media in the editor changes them.
+    for (const path of [".editor/media.json", ".Editor/media.json", "./.editor//media.json", ".editor", "./.Editor//"]) {
+      const operations = [
+        ["write_file", { path, content: "x" }],
+        ["edit_file", { path, expectedHash: css.hash, edits: [{ oldText: "x", newText: "y" }] }],
+        ["delete_file", { path }],
+        ["move_file", { path, to: "elsewhere" }],
+        ["move_file", { path: "styles/site.css", to: path }],
+      ] as const;
+      for (const [name, args] of operations) {
+        const refused = await call(name, { ...args, waitSeconds: 0 });
+        assert.equal(refused.isError, true, `${name} ${path}`);
+        assert.ok(JSON.stringify(refused).includes(MEDIA_RECORDS_REFUSED), `${name} ${path}`);
+      }
+    }
+    const records = await call("read_file", { path: ".editor/media.json" });
+    assert.ok(!records.isError);
+    assert.equal(payload(records).content, files[".editor/media.json"]);
+    const openedRecords = await call("open_page", { page: ".editor/media.json", requestId: "open-media-records", waitSeconds: 0 });
+    assert.ok(!openedRecords.isError, JSON.stringify(openedRecords));
+    assert.equal(payload(openedRecords).state, "pending");
+    const openCommand = (await tab.hub()).commands.find((item: any) => item.id === "open-media-records");
+    assert.equal(openCommand.operation, "open_page");
+    await tab.claim(openCommand.id, openCommand.grantId);
+    await tab.ack(openCommand.id, openCommand.grantId, "applied");
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "pending");
     assert.equal((await call("write_file", { path: "styles/extra.css", content: "a {}\n", waitSeconds: 0 })).isError, true, "one waiting change per file");
 

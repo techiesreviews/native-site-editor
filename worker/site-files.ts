@@ -1,7 +1,7 @@
 // Repository files as the connected editor tab sees them, for the MCP site
 // tools: GitHub at the revision the tab shows, overlaid with the tab's
 // browser drafts (new, changed, renamed and deleted files).
-import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
+import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { AGENT_TEXT_LIMIT, TEXT_PATH, textHash } from "../shared/agent";
 import { EMPTY_COMMIT, type EditorContext, type Repository, type TreeEntry } from "../shared/types";
 import { HttpError, type GitHub } from "./github";
@@ -222,8 +222,10 @@ function draftProblem(path: string, draft: Draft) {
   return new HttpError(409, `The editor tab did not share ${path}'s unsaved draft. Reload the editor, or ask the user to save it first.`);
 }
 
-/** Paths agents may write: text files outside Git internals and workflows. */
-export function writablePathProblem(path: string): string | undefined {
+/** Paths agents may write; read-only opening also permits the media records. */
+export function writablePathProblem(path: string, { readOnly = false }: { readOnly?: boolean } = {}): string | undefined {
+  if (touchesGithubConfig(path)) return GITHUB_CONFIG_REFUSED;
+  if (!readOnly && touchesMediaRecords(path)) return MEDIA_RECORDS_REFUSED;
   if (
     !path ||
     path.length > 1024 ||
@@ -239,6 +241,5 @@ export function writablePathProblem(path: string): string | undefined {
     /[\\\u0000-\u001f]/.test(path)
   )
     return "Invalid path. Use a repository path such as about/index.html.";
-  if (touchesGithubConfig(path)) return GITHUB_CONFIG_REFUSED;
   return undefined;
 }

@@ -23,6 +23,7 @@ export const repo = {
 const page = (title: string, body: string) =>
   `<!doctype html>\n<html lang="en">\n<head>\n  <title>${title}</title>\n  <link rel="stylesheet" href="/styles/site.css">\n  <script type="module" src="/components/components.js"></script>\n</head>\n<body>\n${body}</body>\n</html>\n`;
 export const files: Record<string, string> = {
+  ".editor/media.json": '{"version":2,"collections":[],"files":{}}\n',
   "index.html": page("Home", `<site-header></site-header>\n<main>\n  <section class="hero" data-key="hero">\n    <h1>Welcome</h1>\n  </section>\n  <feature-block data-key="feature"><h2 slot="title">Fast</h2></feature-block>\n</main>\n`),
   "about/index.html": page("About", `<main>\n  <section><h1>About us</h1></section>\n</main>\n`),
   "404.html": page("Page not found", `<main>\n  <section><h1>Page not found</h1></section>\n</main>\n`),

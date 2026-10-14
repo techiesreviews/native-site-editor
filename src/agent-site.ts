@@ -5,7 +5,7 @@
 // with Undo. main.ts supplies the editor's state and actions.
 import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
-import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
+import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
@@ -453,6 +453,10 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   // path, a move's destination, or a folder that holds them.
   for (const candidate of [path, args.to, args.parent])
     if (typeof candidate === "string" && touchesGithubConfig(candidate)) throw new Error(GITHUB_CONFIG_REFUSED);
+  // edit_file queues write_file after applying its replacements.
+  if (["write_file", "move_file", "delete_file"].includes(command.operation))
+    for (const candidate of [path, args.to, args.parent])
+      if (typeof candidate === "string" && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
   switch (command.operation) {
     case "update_active_draft":
     case "create_file_draft":
