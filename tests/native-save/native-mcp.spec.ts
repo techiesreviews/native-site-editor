@@ -897,3 +897,31 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await client.close();
   }
 });
+
+test("media tools list starter images with uses and preview a picture at most 512 px", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  try {
+    const listed = await client.callTool({ name: "list_media", arguments: { waitSeconds: 25 } });
+    expect(listed.isError).toBeFalsy();
+    const report = result(listed);
+    const picture = report.media.find((item: { path: string }) => item.path === "images/placeholder.svg");
+    expect(picture.kind).toBe("image");
+    expect(picture.uses.checked).toBe(true);
+    expect(picture.uses.pages).toContain("index.html");
+    const preview = await client.callTool({ name: "preview_media", arguments: { path: picture.path, waitSeconds: 25 } });
+    expect(preview.isError).toBeFalsy();
+    const content = preview.content as { type: string; data?: string; mimeType?: string; text?: string }[];
+    expect(content[0].type).toBe("image");
+    expect(content[0].mimeType).toMatch(/^image\/(webp|jpeg)$/);
+    const dimensions = JSON.parse(content[1].text!);
+    expect(dimensions.width).toBeGreaterThan(0);
+    expect(dimensions.height).toBeGreaterThan(0);
+    expect(Math.max(dimensions.width, dimensions.height)).toBeLessThanOrEqual(512);
+    const decoded = await page.evaluate(async ({ data, mimeType }) => {
+      const image = await createImageBitmap(await (await fetch(`data:${mimeType};base64,${data}`)).blob());
+      const dimensions = { width: image.width, height: image.height }; image.close(); return dimensions;
+    }, { data: content[0].data, mimeType: content[0].mimeType });
+    expect(decoded).toEqual({ width: dimensions.width, height: dimensions.height });
+  } finally { await client.close(); }
+});

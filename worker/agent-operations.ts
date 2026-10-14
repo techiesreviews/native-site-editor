@@ -1,4 +1,4 @@
-import { INSPECTION_LIMIT, type AgentCommand } from "../shared/agent";
+import { agentResultLimit, type AgentCommand } from "../shared/agent";
 import type { AgentHub, HubGrant } from "./agent-context";
 import type { EditorContext } from "../shared/types";
 import { HttpError } from "./github";
@@ -153,8 +153,7 @@ export function agentOperation(hub: AgentHub, action: any) {
       command.state = action.state;
       command.message = String(action.message ?? "").slice(0, 500);
       const result = action.result;
-      // An inspection's report is larger; other results are a few fields.
-      const limit = command.operation === "inspect_preview" ? 2 * INSPECTION_LIMIT : 2048;
+      const limit = agentResultLimit(command.operation);
       if (result && typeof result === "object" && JSON.stringify(result).length <= limit) {
         command.result = Object.fromEntries(
           Object.entries(result).filter(([, value]) =>

@@ -60,7 +60,7 @@ export function createMediaController(ports: MediaControllerPorts) {
   let loaded: MediaModule | undefined;
   const load = async () => loaded = await ports.load();
 
-  async function workspaceContext(): Promise<MediaWorkspaceContext> {
+  async function workspaceContext(include: (path: string) => boolean = isImagePath): Promise<MediaWorkspaceContext> {
     const workspace = ports.workspace();
     if (!workspace) throw new Error("Choose a repository before opening Images.");
     const { repo, scope, drafts, site } = workspace;
@@ -82,7 +82,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     };
     return {
       key: `${scope.account}:${scope.repoId}`, scope, drafts, paths,
-      items: paths.filter(isImagePath).map((path) => {
+      items: paths.filter(include).map((path) => {
         const draft = drafts.get(scope, path), entry = ports.entry(path);
         return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };
       }),

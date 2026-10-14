@@ -22,7 +22,9 @@ export type AgentOperation =
   | "move_file"
   | "delete_file"
   | "open_page"
-  | "inspect_preview";
+  | "inspect_preview"
+  | "list_media"
+  | "preview_media";
 
 export interface AgentCommand {
   id: string;
@@ -79,10 +81,43 @@ export interface AgentCommandArgs {
   element?: string;
   selector?: string;
   limit?: number;
+  folder?: string;
+  offset?: number;
 }
 
 /** The most an inspect_preview report may be, as JSON. */
 export const INSPECTION_LIMIT = 24 * 1024;
+
+/** Maximum JSON report and base64 preview sizes sent by the editor tab. */
+export const MEDIA_LIST_LIMIT = 40 * 1024;
+export const MEDIA_PREVIEW_LIMIT = 96 * 1024;
+export const MEDIA_PREVIEW_SIZE = 512;
+
+/** The most JSON the hub keeps of a command's result: reads that report back get room, other results are a few fields. */
+export function agentResultLimit(operation: AgentOperation) {
+  if (operation === "inspect_preview") return 2 * INSPECTION_LIMIT;
+  // Reports are JSON strings inside JSON: quotes and backslashes need slack.
+  if (operation === "list_media") return 2 * MEDIA_LIST_LIMIT + 2048;
+  if (operation === "preview_media") return MEDIA_PREVIEW_LIMIT + 2048;
+  return 2048;
+}
+/** The largest result any operation may send; the tab's acknowledgement carries it. */
+export const AGENT_RESULT_MAX = Math.max(...(["inspect_preview", "list_media", "preview_media"] as const).map(agentResultLimit));
+
+export const isPreviewablePicture = (path: string) => /\.(?:jpe?g|png|webp|gif|avif|svg)$/i.test(path);
+export function mediaKind(path: string): "image" | "video" | "audio" | "document" | "other" {
+  if (/\.(?:jpe?g|png|webp|gif|avif|svg|ico|bmp|tiff?|heic|heif)$/i.test(path)) return "image";
+  if (/\.(?:mp4|webm|mov|m4v|avi|mkv|ogv|mpeg|mpg)$/i.test(path)) return "video";
+  if (/\.(?:mp3|wav|ogg|oga|m4a|aac|flac|opus|aiff?)$/i.test(path)) return "audio";
+  if (/\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|epub|csv)$/i.test(path)) return "document";
+  return "other";
+}
+export function picturePreviewRefusal(path: string) {
+  const kind = mediaKind(path), format = /\.([^./]+)$/.exec(path)?.[1].toUpperCase();
+  const what = kind === "image" ? `in an image format the preview cannot show${format ? ` (${format})` : ""}`
+    : kind === "other" ? "not a picture" : `a ${kind}${format ? ` (${format})` : ""}, not a picture`;
+  return `${path} is ${what}; preview_media shows pictures only. list_media gives its description and uses.`;
+}
 
 /** The most text one file's draft holds for agents to read or write, in UTF-8 bytes. */
 export const AGENT_TEXT_LIMIT = 1024 * 1024;

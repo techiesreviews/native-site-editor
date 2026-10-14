@@ -1,6 +1,6 @@
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
-import { INSPECTION_LIMIT } from "../shared/agent";
+import { AGENT_RESULT_MAX } from "../shared/agent";
 import {
   authenticateAgent,
   createGrant,
@@ -623,8 +623,8 @@ async function route(
       return json({ id: command.id, state: command.state });
     }
     if (path === "/api/agent/ack" && request.method === "POST") {
-      // Room for an inspect_preview report (JSON inside JSON).
-      const data = await requestJson(request, 2 * INSPECTION_LIMIT + 8192);
+      // Room for the largest result (an inspection or media report, a picture preview) and the rest of the body.
+      const data = await requestJson(request, AGENT_RESULT_MAX + 8192);
       const command = await operateHub(env, sessionId, {
         type: "ack",
         id: data?.id,

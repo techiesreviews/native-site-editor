@@ -7,7 +7,7 @@ import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
-import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
+import { AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import type { SavedDraft } from "./drafts";
 import { listChanges } from "./file-changes";
@@ -354,6 +354,8 @@ export interface AgentSiteActions {
   deleteFile(path: string): Promise<string | undefined>;
   /** The preview's inspection of the page `path` shows (see native-preview.ts `inspect`). */
   inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
+  listMedia(request: { folder?: string; offset: number; limit: number }): Promise<string>;
+  previewMedia(path: string): Promise<{ data: string; mimeType: string; width: number; height: number; originalWidth: number; originalHeight: number }>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
 }
@@ -382,7 +384,7 @@ export function agentAnswers<D extends {
   };
 }
 
-class Conflict extends Error {}
+export class Conflict extends Error {}
 
 interface InspectionReport {
   error?: string;
@@ -574,6 +576,15 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     case "open_page":
       if (!(await actions.open(path))) throw new Error(`${path} could not be opened.`);
       return { message: `Opened ${path}.` };
+    case "list_media": {
+      const report = await actions.listMedia({ folder: args.folder, offset: args.offset ?? 0, limit: args.limit ?? 100 });
+      const { count, total } = JSON.parse(report);
+      return { message: `Listed ${count} of ${total} media files.`, result: { report } };
+    }
+    case "preview_media": {
+      if (!isPreviewablePicture(path)) throw new Error(picturePreviewRefusal(path));
+      return { message: `Previewed ${path}.`, result: { ...await actions.previewMedia(path) } };
+    }
     case "inspect_preview": {
       const node = args.element !== undefined ? parseOutlineId(args.element) : undefined;
       if (args.element !== undefined && !node) throw new Conflict(`${args.element} is not an element id.`);

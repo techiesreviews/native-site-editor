@@ -4694,6 +4694,23 @@ const agentSiteActions: AgentSiteActions = {
     if (!nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
     return nativePreview.inspect(request);
   },
+  async listMedia(request) {
+    const since = guardedEdits.stamp("repository");
+    const media = await import("./agent-media");
+    if (!since.holds()) throw new Error("The editor changed branch or revision.");
+    const ctx = await mediaController.workspaceContext(media.isAgentMediaPath);
+    return media.listWorkspaceMedia(ctx, request);
+  },
+  async previewMedia(path) {
+    const ctx = await mediaController.workspaceContext();
+    if (!ctx.paths.includes(path)) throw new (await loadAgentSite()).Conflict(`${path} is not in the site. list_media lists the media.`);
+    const blob = await ctx.blob(path);
+    const media = await import("./agent-media");
+    ctx.assertLive();
+    const preview = await media.previewPicture(blob, path);
+    ctx.assertLive();
+    return preview;
+  },
   legacy: applyAgentCommand,
 };
 async function applyAgentSiteCommand(command: AgentCommand) {

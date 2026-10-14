@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { INSPECTION_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
+import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
+import { mediaListReport } from "../src/agent-media.ts";
+import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
+import { parseMediaRecords } from "../shared/media-records.ts";
 import { requestOperation } from "../worker/agent-requests.ts";
 import { componentsChapter } from "../worker/site-conventions.ts";
 import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
@@ -77,7 +80,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "create_page", "delete_file", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
-      "inspect_preview", "list_files", "make_component", "move_file", "move_section", "open_page", "read_file", "remove_section", "reply_to_request", "set_page_details",
+      "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
@@ -853,4 +856,73 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     await client?.close();
     await worker.dispose();
   }
+});
+
+test("media tools ask the tab for family reports and picture previews and refuse PDFs before queueing", async () => {
+  const { worker } = await startWorker();
+  let client: Client | undefined;
+  try {
+    const { cookie } = await signIn(worker), tab = editorTab(worker, cookie);
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    await tab.share(await siteContext());
+    client = new Client({ name: "media-test", version: "1.0.0" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker),
+    }));
+    const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
+    const tools = (await client.listTools()).tools;
+    for (const name of ["list_media", "preview_media"]) assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, true);
+    const refused = await call("preview_media", { path: "files/menu.pdf", waitSeconds: 0 });
+    assert.equal(refused.isError, true);
+    assert.match(JSON.stringify(refused), /document \(PDF\)/);
+    assert.equal((await tab.hub()).commands?.length ?? 0, 0);
+    for (const path of ["movie.mp4", "song.mp3", ".github/image.png"]) assert.equal((await call("preview_media", { path, waitSeconds: 0 })).isError, true);
+    assert.equal((await call("list_media", { offset: -1 })).isError, true);
+    assert.equal((await call("list_media", { limit: 201 })).isError, true);
+    const media = ["images/photo.webp", "images/photo-480w.webp", "media/originals/photo.jpg", "files/menu.pdf"];
+    const report = mediaListReport({ items: media.map(path => ({ path, size: 10 })), paths: media, offset: 0, limit: 100,
+      records: parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "images/photo.webp": { description: { text: "Soup", byAgent: true } }, "files/menu.pdf": { description: { text: "Menu".repeat(1000) } } } })),
+      usage: mediaUsageRecords({ media, sources: { "index.html": undefined }, pages: ["index.html"] }),
+    });
+    assert.equal(payload(await call("list_media", { requestId: "media-list", waitSeconds: 0 })).state, "pending");
+    const command = (await tab.hub()).commands.find((item: any) => item.id === "media-list");
+    assert.equal(command.path, "");
+    assert.deepEqual(command.args, { offset: 0, limit: 100 });
+    await tab.claim(command.id, command.grantId);
+    await tab.ack(command.id, command.grantId, "applied", { result: { report: JSON.stringify(report) } });
+    const done = payload(await call("list_media", { requestId: command.id, waitSeconds: 0 }));
+    assert.deepEqual(done, report);
+    assert.deepEqual(done.media[1].family, { copies: [media[1]], originals: [media[2]] });
+    assert.deepEqual(done.media[1].description, { text: "Soup", byAgent: true });
+    assert.equal(done.media[1].uses.checked, false);
+    assert.deepEqual(done.notChecked, ["index.html"]);
+    assert.deepEqual(payload(await call("get_command_status", { requestId: command.id })).result, report);
+
+    await call("preview_media", { path: media[0], requestId: "media-preview", waitSeconds: 0 });
+    const preview = (await tab.hub()).commands.find((item: any) => item.id === "media-preview");
+    await tab.claim(preview.id, preview.grantId);
+    const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    await tab.ack(preview.id, preview.grantId, "applied", { result: { data, mimeType: "image/png", width: 1, height: 1, originalWidth: 1, originalHeight: 1 } });
+    const picture = await call("preview_media", { path: media[0], requestId: preview.id, waitSeconds: 0 });
+    assert.deepEqual(picture.content, [{ type: "image", data, mimeType: "image/png" }, { type: "text", text: JSON.stringify({ path: media[0], width: 1, height: 1, originalWidth: 1, originalHeight: 1, bytes: Buffer.from(data, "base64").length }) }]);
+    for (const [name, limit] of [["list_media", 2 * MEDIA_LIST_LIMIT + 2048], ["preview_media", MEDIA_PREVIEW_LIMIT + 2048]] as const) {
+      await call(name, { ...(name === "preview_media" ? { path: media[0] } : {}), requestId: `oversize-${name}`, waitSeconds: 0 });
+      const large = (await tab.hub()).commands.find((item: any) => item.id === `oversize-${name}`);
+      await tab.claim(large.id, large.grantId);
+      // The tab's acknowledgement is accepted; only the result past the limit is not kept.
+      assert.equal((await tab.ack(large.id, large.grantId, "applied", { result: { data: "x".repeat(limit + 1) } })).status, 200);
+      const stored = await call("get_command_status", { requestId: large.id });
+      if (name === "list_media") assert.deepEqual([payload(stored).state, payload(stored).result], ["applied", undefined]);
+      else assert.match(payload(stored), /too large to send/);
+    }
+    await call("preview_media", { path: media[0], requestId: "full-preview", waitSeconds: 0 });
+    const full = (await tab.hub()).commands.find((item: any) => item.id === "full-preview");
+    await tab.claim(full.id, full.grantId);
+    const fullData = "A".repeat(MEDIA_PREVIEW_LIMIT);
+    assert.equal((await tab.ack(full.id, full.grantId, "applied", { result: { data: fullData, mimeType: "image/webp", width: 512, height: 512, originalWidth: 4000, originalHeight: 4000 } })).status, 200);
+    assert.equal(((await call("preview_media", { path: media[0], requestId: full.id, waitSeconds: 0 })).content as any[])[0].data, fullData);
+    const dropped = await call("preview_media", { path: media[0], requestId: "oversize-preview_media", waitSeconds: 0 });
+    assert.equal(dropped.isError, true);
+    assert.match(JSON.stringify(dropped), /too large to send/);
+  } finally { await client?.close(); await worker.dispose(); }
 });

@@ -19,6 +19,8 @@ import { contextMaxAge } from "./agent-operations";
 import type { Env } from "./app";
 import {
   AGENT_TEXT_LIMIT,
+  isPreviewablePicture,
+  picturePreviewRefusal,
   QUESTION_TEXT_LIMIT,
   REPLY_TEXT_LIMIT,
   applyReplacements,
@@ -29,6 +31,7 @@ import {
   type AgentOperation,
   type AgentRequest,
 } from "../shared/agent";
+import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { requestForAgent, requestIdPattern } from "./agent-requests";
 import type { AgentPageOutline, EditorContext } from "../shared/types";
 import { NATIVE_NOT_FOUND_ROUTE, nativeLinkTarget } from "../shared/native-routes";
@@ -291,12 +294,13 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       const hub = await getHub(env, grant.sessionId);
       result = hub?.commands?.find((item) => item.id === id && item.grantId === connection.id) ?? result;
     }
+    if (operation === "list_media" && result.state === "applied" && typeof result.result?.report === "string") return text(resultOf(result));
     return status(result);
   }
   // An inspection's report arrives as JSON; the agent gets it as an object.
   function resultOf(command: AgentCommand) {
     const report = command.result?.report;
-    if (command.operation !== "inspect_preview" || typeof report !== "string") return command.result;
+    if (!["inspect_preview", "list_media"].includes(command.operation) || typeof report !== "string") return command.result;
     try {
       return JSON.parse(report);
     } catch {
@@ -304,6 +308,19 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     }
   }
   function status(command: AgentCommand) {
+    if (command.operation === "preview_media" && command.state === "applied") {
+      const result = command.result;
+      if (typeof result?.data === "string" && typeof result.mimeType === "string") {
+        const { data, mimeType, width, height, originalWidth, originalHeight } = result;
+        const bytes = Math.floor(data.length * 3 / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
+        return { content: [
+          { type: "image" as const, data, mimeType },
+          { type: "text" as const, text: JSON.stringify({ path: command.path, width, height, originalWidth, originalHeight, bytes }) },
+        ] };
+      }
+      // The hub keeps no result past its size limit.
+      return failure(`The editor made a preview of ${command.path}, but it was too large to send. Try again.`);
+    }
     const body = {
       requestId: command.id,
       state: command.state,
@@ -683,6 +700,34 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds: waitSeconds ?? 15,
       });
+    },
+  );
+
+  server.registerTool(
+    "list_media",
+    {
+      description: "List media with kind, size, Image family (copies, originals), uses (pages and other uses), description (by agent, or Decorative), collections, Always keep and Not checked yet; page with offset/limit and nextOffset. Follow the Media chapter of the native-site://conventions resource for the rules.",
+      inputSchema: z.object({ folder: z.string().max(1024).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(200).optional(), requestId, waitSeconds }),
+      annotations: readOnly,
+    },
+    async ({ folder, offset, limit, requestId, waitSeconds }) => {
+      if (folder && touchesGithubConfig(folder)) return failure(GITHUB_CONFIG_REFUSED);
+      const { context } = await current();
+      return queue("list_media", context, { path: folder ?? "", args: { ...(folder !== undefined ? { folder } : {}), offset: offset ?? 0, limit: limit ?? 100 }, requestId, waitSeconds });
+    },
+  );
+  server.registerTool(
+    "preview_media",
+    {
+      description: "Return a picture preview no wider or taller than 512 px, with its dimensions and original dimensions. Follow the Media chapter of the native-site://conventions resource for the rules.",
+      inputSchema: z.object({ path: z.string().min(1).max(1024), requestId, waitSeconds }),
+      annotations: readOnly,
+    },
+    async ({ path, requestId, waitSeconds }) => {
+      if (touchesGithubConfig(path)) return failure(GITHUB_CONFIG_REFUSED);
+      if (!isPreviewablePicture(path)) return failure(picturePreviewRefusal(path));
+      const { context } = await current();
+      return queue("preview_media", context, { path, requestId, waitSeconds });
     },
   );
 

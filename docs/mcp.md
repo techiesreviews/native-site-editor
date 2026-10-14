@@ -58,12 +58,14 @@ An agent watches for requests with `wait_for_requests` (the `watch_editor` promp
 
 ## Tools
 
-Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
+The server exposes 23 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
 
 | Tool | What it does |
 | --- | --- |
 | `get_site` | Repository, branch, revision, context age; the open file and page and the element selected in the preview; how many requests wait for an agent (`openRequests`); the settings (`.editor/config.json`: file, site name and address); pages as a tree by URL (file, and the title and description from each page's `<head>`, new); the not-found page (`404.html`); components (template, stylesheet, whether it is a section component, slot names); the stylesheets the pages link, each with the files it `@import`s; unsaved changes (A/M/R/D); pending changes. |
 | `list_files` | Every file path (optionally under a folder), with drafts applied and marked. |
+| `list_media` | Media families with kind, size, copies and originals, page and other uses, description (by agent or Decorative), collections, Always keep, drafts and Not checked yet. Page with `offset`/`limit` (default 100, maximum 200) and `nextOffset`; answered by the open tab. |
+| `preview_media` | A picture preview at most 512 px on its longest side, with original and preview dimensions and encoded bytes; pictures only, with a clear refusal for documents, video and audio. Answered by the open tab. Both media tools follow the Media chapter of `native-site://conventions`. |
 | `read_file` | Any text file: a draft up to 1 MB, else GitHub (up to 1 MB); with its content hash. |
 | `export_site` | The whole site, or one folder, in one call: every text file with drafts applied and its hash, binaries by path, SHA and size. Saved texts are read from GitHub in batched GraphQL queries (100 blobs each) and kept by SHA; text past about 4 MB is listed as `omitted`. |
 | `get_page` | A page by URL (`/about/`, `/about`, `/about/index.html`, `/404.html`) or file: route, title, description, source, hash, and the outline of its `<body>`: the containers that hold sections and each section's id (`1.2`: element-child indexes from `<body>`), tag, `data-key`, heading or text, and a section component's slot text. |
@@ -72,6 +74,7 @@ Start with `get_site`. Reads come from what the editor tab last reported (pages,
 | `create_page` | The Pages tab's New page: title, optional parent URL (a folder page) and slug. Writes `<parent folder>/<slug>/index.html`, a copy of the home page's document with the new `<title>` (and `og:title`), the description cleared, `<link rel="canonical">` and `og:url` set to the site's address (`site.url` in `.editor/config.json`) plus the new URL, or removed when the site has none, and `<main>` emptied. Returns the file and URL. |
 | `set_page_details` | Title and/or description in the page's `<head>` (`<title>`, `<meta name="description">`, and `og:title`/`og:description` when present). |
 | `add_section` | A section component's new instance, with its own copy of the slot text, before or after a section (default: the end), given the page hash. |
+| `make_component` | Turn a selected whole element into a component with slots, as Make component in the editor does. |
 | `move_section` | A section before or after a sibling section, given the page hash. |
 | `remove_section` | A section removed, given the page hash. |
 | `move_file` | The Files tab's rename or move of a file or folder: a page's URL follows it (move a folder page's folder to take its subpages along), root links to it are rewritten in every page, template and stylesheet, and `keepOldUrl` adds `/old/ /new/ 301` to `_redirects` at the root (default: yes for a page already on GitHub). |
