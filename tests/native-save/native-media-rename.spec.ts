@@ -226,7 +226,7 @@ test("Replace everywhere with a picture added in the picker: prepared, a new for
   await expect(use).toBeEnabled({ timeout: 30_000 });
   await use.click();
   await expect(media.getByRole("heading", { name: "Replace old.png everywhere?", exact: true })).toBeVisible();
-  await expect(media.getByText("The new picture is WEBP, so the address becomes /images/old.webp. Every mention on the site is updated.", { exact: true })).toBeVisible();
+  await expect(media.getByText("The new picture is a WebP picture, so its address becomes /images/old.webp. Every mention on the site is updated.", { exact: true })).toBeVisible();
   const forward = media.getByRole("checkbox", { name: "Keep the old address working", exact: true });
   await expect(forward).not.toBeChecked();
   await forward.check();

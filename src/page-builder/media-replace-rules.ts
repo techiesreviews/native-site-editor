@@ -8,6 +8,7 @@ import type { MediaMetadataMap } from "./media-metadata";
 /** The picker shows what the engine accepts as a new picture: photos and screenshots. */
 export const REPLACE_ACCEPT = "image/png,image/jpeg,image/webp,image/avif";
 
+const FORMATS: Record<string, string> = { webp: "a WebP", png: "a PNG", jpg: "a JPEG", jpeg: "a JPEG", avif: "an AVIF" };
 const format = (path: string) => /\.([^./]+)$/.exec(path)?.[1].toLowerCase() ?? "";
 
 /** A refusal for the picture chosen in the picker, or undefined when it can take the old one's place. */
@@ -50,7 +51,7 @@ export function replaceNotice({ path, next, pages, trims, kept }: ReplaceNoticeI
     pages ? `${pages === 1 ? "1 page shows" : `${pages} pages show`} ${name}. ${pages === 1 ? "It" : "They"} will show the new picture instead, as will links to it from other sites.`
       : `No page shows ${name} yet. Links to it will show the new picture.`,
     same ? `It keeps the name and address /${path}. Visitors' browsers fetch the new picture at once.`
-      : `The new picture is ${extension.toUpperCase()}, so the address becomes /${address}. Every mention on the site is updated.`,
+      : `The new picture is ${FORMATS[extension] ?? `a ${extension.toUpperCase()}`} picture, so its address becomes /${address}. Every mention on the site is updated.`,
   ];
   if (pages) lines.push("Each place keeps its shape; its focus point goes back to the middle.");
   if (trims) lines.push(`${trims === 1 ? "1 trimmed copy of it is" : `${trims} trimmed copies of it are`} replaced by the new picture in the same shape.`);

@@ -44,7 +44,7 @@ test("the confirmation says where it shows, that the address stays, and where th
 test("a new format changes the address and offers Keep the old address working, ticked for Always keep", () => {
   const notice = replaceNotice({ path: "images/tram.jpg", next: { name: "photo.heic", extension: "webp" }, pages: 1, trims: 0, kept: true });
   assert.equal(notice.address, "images/tram.webp");
-  assert.equal(notice.lines[1], "The new picture is WEBP, so the address becomes /images/tram.webp. Every mention on the site is updated.");
+  assert.equal(notice.lines[1], "The new picture is a WebP picture, so its address becomes /images/tram.webp. Every mention on the site is updated.");
   assert.deepEqual(notice.forward, { label: "Keep the old address working", checked: true,
     hint: "Links from other sites to /images/tram.jpg forward to the new address, on hosts that read the site's _redirects file." });
   assert.equal(replaceNotice({ path: "a.JPG", next: { name: "b", extension: "jpg" }, pages: 0, trims: 0, kept: false }).forward, undefined);
