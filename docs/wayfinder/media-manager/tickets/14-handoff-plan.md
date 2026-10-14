@@ -1,7 +1,7 @@
 ---
 title: Write the handoff plan
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [06-prototype-media-manager-look, 07-one-upload-path, 08-responsive-image-output, 09-prototype-crop-and-focus, 10-safe-clean-up, 11-fix-all-existing-images, 12-video-audio-and-documents, 13-what-agents-may-do, 15-collections-and-file-names]
 ---
@@ -23,3 +23,15 @@ Turn every decision on this map into a build plan: phases and small slices in a 
 - 2026-10-14: **How far the sub-folder fix goes.** Lex chose **the whole site, as its own last stage**: pictures, page links, Change URL forwarding and components all work from a sub-folder, after the media stages. Declined: media only (sub-folder sites would keep broken menu links and components). This amends ADR 0001's "root links … not from a subfolder" rule once built.
 - 2026-10-14: **How sub-folder sites work.** Lex chose **follow the site's address**: the full address in Site settings (including `/my-site/`) decides the prefix the editor writes on every link and picture; sites at the top of their own domain (techies.review, the starter) are unchanged; changing the address later (for example to an own domain) updates every address in one go. Declined: links relative to each page (`../media/photo.webp`), which would need a one-time rewrite of every existing site (about 1,700 addresses on techies-reviews) and adjusting copied page parts.
 - 2026-10-14: **Real phone and Safari checks.** Lex chose **Lex checks from a short list**: stages that need it end with a few things to try on Lex's iPhone with the preview editor, and Lex reports problems in a sentence. Declined: desktop-only testing with phone and Safari checks just before release; a paid remote real-device service.
+
+## Resolution (2026-10-14)
+
+Lex confirmed the build plan, including the connecting details marked ★ in it, by choosing **Yes, confirm and close 14**. Only this planning ticket closes; no editor code, push or deployment is authorised by it.
+
+**The plan.** [build/README.md](../build/README.md) (phases, slice tables, frontier, per-stage wrap-up), [build/spec.md](../build/spec.md) (ground rules, flow per slice, builders, reviews, requirements by phase, test plan, screenshots and phone checks, build checks, decisions, out of scope) and 82 slices in [build/tickets/](../build/tickets/), committed locally on `dev` at `1c230549`. Eight stages: 0 Groundwork (legacy `media-workspace.ts` members removed, `media-library-view.ts` split on research 04's seams, new `.editor/media.json` shape protected from direct agent writes, Image families for `-480w` and `-480`), 1 the new Media screen, 2 adding and pictures on pages, 3 the image popup, 4 clean-up, renaming and Replace everywhere, 5 video, audio and downloads, 6 Improve images, 7 sites in sub-folders, site-wide. 54 slices go to Sol, 28 to Claude.
+
+**Lex's decisions** (dated under Comments): the new Media screen ships first, adding and pictures on pages second; Sol builds most and Claude builds the screens judged by eye; **every code review goes to GPT-6.1 Sol through read-only `codex exec`**; one screenshot set per stage (starter site, computer and phone), replacing the per-push habit for this build; stages run without pausing; agents gain each stage's abilities within that stage; Lex checks real iPhone and Safari behaviour from a short list at the stages that need it. Building happens on `dev`, deployed with `npm run deploy:preview` only, never to production until Lex says; starter changes go on the starter's own `dev` branch. Tests per feature: unit tests plus one `@smoke` e2e spec (12 new smoke specs). Docs rewritten: `docs/page-builder/media.md`, `images-pane.md`, `asset-references.md`, plus `docs/mcp.md` and a Media chapter in the site conventions copied into the starter's `AGENTS.md`.
+
+**Sub-folder fog cleared.** Handled in this build as its own last stage, site-wide: the full address in Site settings (for example `https://yourname.github.io/my-site/`) gives the prefix the editor writes on every link and picture; sites at a domain root are unchanged; changing the address rewrites every address in one go. This amends ADR 0001's root-link rule when built (slice 81). Declined: leaving it out, planning it later, media only, and page-relative addresses.
+
+**Clarified:** AVIF in Improve images follows ticket 11's resolution (the site's remembered setting), not research 02's advice. Build checks collected from all resolutions are in [spec.md](../build/spec.md#build-checks); the first slice brings local `dev` level with `origin/dev`, which holds the runner tooling.

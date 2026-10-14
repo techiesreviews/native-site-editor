@@ -136,7 +136,7 @@ Making a saved version of the site available at its public address through the s
 The state of a saved change: Saved, Building, Live, or Failed, according to the available deployment information.
 
 **Site settings**:
-The site's name and public address used by the editor when creating and updating page details.
+The site's name and public address used by the editor when creating and updating page details. When the address includes a sub-folder (for example `https://yourname.github.io/my-site/`), the editor writes every link and picture address under that sub-folder, and changing the address updates them all. (Planned in the media-manager build, stage 7.)
 
 **Agent connection**:
 An authorized connection through which an external agent reads the site and proposes changes as drafts. It follows the project shown by the sharing editor tab; the user reviews and saves changes.
