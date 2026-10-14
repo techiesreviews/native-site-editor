@@ -38,6 +38,8 @@ export interface MediaPickerHost {
    * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
   check?(row: MediaToCheckRow, text?: string): Promise<void>;
   restore?(entries: { path: string; id: string }[]): Promise<void>;
+  /** A removed file's bytes (`id` as for `restore`), for Recently removed's pictures. */
+  removedBlob?(entry: { path: string; id: string }): Promise<Blob>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]>;
   /** Adding settings: remember changed choices for this site, or "reset" to the defaults. One Undo step. */

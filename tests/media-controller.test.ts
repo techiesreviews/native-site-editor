@@ -233,6 +233,25 @@ test("place Decorative writes page and records atomically; unmark leaves empty a
   assert.equal(f.controller.placeState("index.html", "/images/old.png", "old.png")?.byAgent, true);
 });
 
+test("a file brought back outside Media shows its kept records on the page at once", async () => {
+  const removed = (sha: string) => JSON.stringify({ version: 2, collections: [], files: {}, removed: [
+    { path: "images/old.png", sha, date: new Date().toISOString().slice(0, 10), record: { places: { "index.html": { decorative: true } } } },
+  ] });
+  const f = fixture();
+  f.sources.set(".editor/media.json", removed("sha"));
+  f.controller.placeState("index.html", "/images/old.png", "");
+  await new Promise(resolve => setTimeout(resolve, 0));
+  // The branch holds the removed blob again (Files' or Save's Restore): its Decorative mark is back.
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "decorative");
+  // Other bytes at that address are not the removed file.
+  f.sources.set(".editor/media.json", removed("another"));
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
+  // Still deleted as a draft: not back.
+  f.sources.set(".editor/media.json", removed("sha"));
+  f.records.push({ ...f.scope, version: 1, path: "images/old.png", baseSha: "sha", original: "", content: "", deleted: true, updatedAt: 1 } as never);
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
+});
+
 test("a Decorative press refuses when the page is switched while records are read", async () => {
   let open = "index.html";
   const f = fixture({ openFile: () => open });

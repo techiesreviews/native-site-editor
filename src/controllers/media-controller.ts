@@ -175,6 +175,11 @@ export function createMediaController(ports: MediaControllerPorts) {
         const type = uploadImageType(path);
         return type && blob.type !== type ? new Blob([blob], { type }) : blob;
       },
+      historyBlob: async (sha, path) => {
+        assertLive();
+        const blob = await ports.readBlob(repo, sha, path); assertLive();
+        return blob;
+      },
       assetVersion: (path) => {
         assertLive();
         const record = drafts.get(scope, path);
@@ -188,13 +193,25 @@ export function createMediaController(ports: MediaControllerPorts) {
   // Keep record parsing and description rules in the lazy media chunk.
   let descriptions: typeof import("../page-builder/media-descriptions") | undefined;
   let recordIO: typeof import("../../shared/media-records") | undefined;
+  let removedRules: typeof import("../page-builder/recently-removed") | undefined;
+  /** The Git blob SHA of a path's present bytes when known without reading them (an edited text
+   * file is not), so a file brought back outside Media (Files' or Save's Restore) gets its records. */
+  function presentBlob(path: string) {
+    const workspace = ports.workspace();
+    const draft = workspace?.drafts.get(workspace.scope, path);
+    if (draft) return draft.deleted || !draft.opaque ? undefined : draft.sourceSha;
+    return ports.entry(path)?.sha;
+  }
+  const withBackFiles = <T extends import("../../shared/media-records").MediaRecords>(records: T): T =>
+    records.removed?.length && removedRules ? removedRules.pruneRemoved(records, removedRules.removedToday(Date.now()), presentBlob) as T : records;
   let recordsScope = "";
   let warming: Promise<void> | undefined;
   async function warmDescriptions() {
     const identity = ports.identity(), stamp = ports.stamp();
-    const [rules, io, references, entities, ctx] = await Promise.all([
+    const [rules, io, references, entities, ctx, removed] = await Promise.all([
       import("../page-builder/media-descriptions"), import("../../shared/media-records"),
       import("../page-builder/media-references"), import("../page-builder/html-entities"), workspaceContext(),
+      import("../page-builder/recently-removed"),
     ]);
     if (!stamp.holds() || identity !== ports.identity()) return;
     const source = await ctx.read(io.MEDIA_RECORDS_PATH);
@@ -203,7 +220,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     io.parseMediaRecords(source);
     resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page);
     decodeAlt = value => entities.decodeHtmlEntities(value, true);
-    descriptions = rules; recordIO = io; recordsScope = identity;
+    descriptions = rules; recordIO = io; removedRules = removed; recordsScope = identity;
     ports.refreshDescriptions();
   }
   function placeState(page: string, src: string, alt: string | undefined) {
@@ -212,7 +229,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       return undefined;
     }
     try {
-      const records = recordIO.parseMediaRecords(ports.source(recordIO.MEDIA_RECORDS_PATH));
+      const records = withBackFiles(recordIO.parseMediaRecords(ports.source(recordIO.MEDIA_RECORDS_PATH)));
       const file = resolveFile(page, src);
       return file ? { ...descriptions.placeDescriptionState(records, file, page, alt === undefined ? undefined : decodeAlt(alt)), fileDecorative: Boolean(records.files[file]?.decorative) } : undefined;
     } catch { return undefined; }
@@ -226,16 +243,18 @@ export function createMediaController(ports: MediaControllerPorts) {
     // The batch records Undo on the open page, so that page must still be the one marked.
     const current = () => stamp.holds() && !ports.viewingVersion() && ports.openFile() === page && ports.source(page) === source;
     try {
-      const [rules, io, references, html, entities, ctx, collections] = await Promise.all([
+      const [rules, io, references, html, entities, ctx, collections, removed] = await Promise.all([
         import("../page-builder/media-descriptions"), import("../../shared/media-records"),
         import("../page-builder/media-references"), import("../../shared/html-source"),
         import("../page-builder/html-entities"), workspaceContext(), import("../page-builder/media-collections"),
+        import("../page-builder/recently-removed"),
       ]);
+      removedRules = removed;
       if (!current()) throw new Error("This image changed. Select it again.");
       const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
       ctx.assertLive();
       if (!current()) throw new Error("This image changed. Select it again.");
-      const records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
+      const records = withBackFiles(collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)));
       const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
       if (!range || range.tag.name !== "img") return;
       const tag = html.startTags(source).find(tag => tag.start === range.tag.start);

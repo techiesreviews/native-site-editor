@@ -60,7 +60,7 @@ export function createMediaLibraryView(
       selected.clear(); await refresh(); keepFocus();
       tell(`Took ${filesLabel(paths.length)} out of "${name}". ${paths.length === 1 ? "It stays" : "They stay"} in Media under All.`);
     }),
-    remove: () => remove([...selected]),
+    remove: () => remove([...selected], () => { if (!shell.removeFiles.hidden) shell.removeFiles.focus(); }),
     more: opener => openMenu(opener, "More for selected files", [
       { label: "Select all shown", run: () => {
         for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card")) selected.add(card.dataset.path!);
@@ -108,7 +108,9 @@ export function createMediaLibraryView(
     alive: () => alive, library: () => library, loading: () => loadingLibrary,
     tell, task, refresh, adapter, cache, sync: () => busyLock.sync(),
   };
-  const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise, remove };
+  // From File details, Cancel and Back return to them.
+  const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise,
+    remove: (paths: string[]) => remove(paths, () => void details(paths[0])) };
   // Each newer usage result repaints the badges and an open usage dialog.
   const stopUsage = adapter.usage?.onChange(() => {
     if (!alive) return;
@@ -352,6 +354,11 @@ export function createMediaLibraryView(
       }, false) }] : [],
       // Clean up, with the tab's count, is an action like adding; the choices follow.
       ...cleanUp ? [{ ...cleanUp.item(), run: () => cleanUp.open() }] : [],
+      // Recently removed (ticket 10): removed files for 30 days, each with Restore; loaded when opened.
+      ...!modal && adapter.restore ? [{ label: "Recently removed", run: () => void task(async () => {
+        const { showRecentlyRemoved } = await import("./media-library-recently-removed");
+        if (alive && library) showRecentlyRemoved(sheet, { ...context, close: () => closeSheet(shell.more) });
+      }, false) }] : [],
       // To check (ticket 13), with its count: agent-written descriptions waiting for OK or Edit.
       ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
         if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
@@ -373,7 +380,10 @@ export function createMediaLibraryView(
   function details(path: string, background = false) {
     return showMediaDetail(sheet, detailHost, path, background);
   }
-  function remove(paths: string[], unusedOnly = false) { confirmMediaDelete(sheet, grid, context, paths, unusedOnly); }
+  function remove(paths: string[], back?: () => void) {
+    confirmMediaDelete(sheet, grid, { ...context, pageLabel: page => adapter.usage?.pageLabel?.(page),
+      openPage: page => void task(async () => { await adapter.openPage(page); shell.close(); }) }, paths, false, back);
+  }
   function optimise(files: File[], existing = false, receipts = new Map<string, string | undefined>()) {
     showMediaOptimise(sheet, context, "", files, existing, receipts);
   }

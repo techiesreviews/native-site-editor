@@ -395,15 +395,15 @@
 /* File details (media-manager ticket 06, tiles.html): its own screen with Back. A large,
    complete preview beside grouped information on wide screens, stacked on phones; Save and
    Cancel follow the fields and never cover them. */
-.media-library__body:has(> .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]):not([hidden])) .media-library__browse,
-.media-library:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"]):not([hidden])) :is(.media-library__bar, .media-library__footer),
-.media-library--pane:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"]):not([hidden])) .media-library__header { display: none; }
-.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]) {
+.media-library__body:has(> .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]):not([hidden])) .media-library__browse,
+.media-library:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]):not([hidden])) :is(.media-library__bar, .media-library__footer),
+.media-library--pane:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]):not([hidden])) .media-library__header { display: none; }
+.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]) {
   flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 8px;
   container: media-detail / inline-size;
 }
-.media-library--pane .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]) { padding: 8px 12px 20px; }
-.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"]) button { align-self: auto; }
+.media-library--pane .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]) { padding: 8px 12px 20px; }
+.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="recently-removed"]) button { align-self: auto; }
 .media-detail__head { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .media-detail__head h3 { font-size: var(--type-title); }
 .media-library .media-detail__back { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
@@ -498,6 +498,16 @@
   .media-check__preview { width: 56px; height: 56px; }
   .media-check__actions { grid-column: 2; }
 }
+
+/* Remove file and Recently removed (ticket 10): own screens like File details, with To check's rows
+   (without its by-agent mark). The warning names the pages, each with Open page. */
+:is(.media-removed__list, .media-remove__files) .media-check__text > span::before { content: none; }
+.media-library .media-remove__warning { max-width: 760px; padding: 10px 12px; border-radius: var(--radius-small); background: var(--warning-bg); color: var(--warning-fg); }
+.media-remove__pages { display: grid; max-width: 760px; margin: 0; padding: 0; list-style: none; }
+.media-remove__pages li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+.media-remove__page { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.media-remove__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.media-library :is(.media-remove__pages, .media-remove__actions) button { flex: none; min-height: 44px; border-radius: 22px; }
 
 /* The Media picker (media-manager ticket 06, tiles.html): the Media pane in a smaller window, with
    only compatible files; full-screen on phones. A compact header names the place; the chosen

@@ -8,7 +8,7 @@ import type { MediaPickerHost } from "./media-picker";
 import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { pageUsesFile, strandsAgentWords, setMediaPlaceDecorative, confirmMediaDescription, descriptionPlaceEdits, mediaToCheck, placeWordsEdits, setMediaPlaceAgentText } from "./media-descriptions";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
-import { gitBlobSha, type UploadBytes, uploadProblem } from "../uploads";
+import { gitBlobSha, type UploadBytes, uploadImageType, uploadProblem } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
@@ -85,6 +85,8 @@ export interface MediaWorkspaceContext {
   assertLive(): void;
   read(path: string): Promise<string | undefined>;
   blob(path: string): Promise<Blob>;
+  /** A blob's bytes from the repository's history by its SHA (Recently removed's pictures). */
+  historyBlob?(sha: string, path: string): Promise<Blob>;
   /** Effective binary revision: branch SHA or draft SHA plus its change state. */
   assetVersion(path: string): string | undefined;
   applyBatch(batch: MediaWorkspaceBatch): Promise<void>;
@@ -614,6 +616,15 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
       await sweep(ctx);
+    },
+    async removedBlob({ path, id }) {
+      // A removed file's picture for Recently removed: its history blob, or this browser's copy.
+      const ctx = active();
+      const blob = id.startsWith("removed:") ? await ctx.removedCopies?.get(id) : await ctx.historyBlob?.(id, path);
+      ctx.assertLive();
+      if (!blob) throw new Error(`${path} has no picture to show.`);
+      const type = uploadImageType(path);
+      return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
   } satisfies MediaPickerHost & { trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };

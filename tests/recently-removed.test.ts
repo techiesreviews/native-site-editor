@@ -218,3 +218,15 @@ test("edited SVG and unsaved upload use browser copies; an opaque repository mov
     else assert.equal(restored.sourceSha, "source-blob");
   }
 });
+
+test("Recently removed's pictures come from history by blob SHA or from the browser copy, typed for display", async () => {
+  const f = engine(); Object.assign(f.context, { historyBlob: async (sha: string, path: string) => new Blob([`${sha}:${path}`]) });
+  await f.workspace.load(); await f.workspace.remove(["a.png"]);
+  const entry = (await f.workspace.load()).removed![0];
+  const picture = await f.workspace.removedBlob({ path: entry.path, id: entry.sha! });
+  assert.equal(await picture.text(), "blob-main:a.png"); assert.equal(picture.type, "image/png");
+  const local = engine(false); await local.workspace.load(); await local.workspace.remove(["a.png"]);
+  const kept = (await local.workspace.load()).removed![0];
+  assert.equal(await (await local.workspace.removedBlob({ path: kept.path, id: kept.browserKey! })).text(), "a.png");
+  await assert.rejects(local.workspace.removedBlob({ path: "a.png", id: "removed:2026-10-14:gone" }), /no picture/);
+});
