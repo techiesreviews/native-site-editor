@@ -73,13 +73,13 @@ test("adapter replacement invalidates old pane and disposal blocks late loads", 
     let mutations = 0;
     const adapter: import("../../src/page-builder/media-picker").MediaPickerHost = {
       load: () => new Promise(resolve => { release = resolve; }), blob: async () => new Blob(),
-      metadata: async () => { mutations++; }, import: async () => [], rename: async () => { mutations++; },
+      metadata: async () => { mutations++; }, collections: async () => {}, import: async () => [], rename: async () => { mutations++; },
       remove: async () => { mutations++; }, openPage: async () => {},
     };
     configureMediaPicker(adapter);
     const oldRemoved = host.childElementCount === 0;
     const view = mountMediaLibrary(host); view.dispose();
-    release({ key: "late", items: [], metadata: {}, usage: {} }); await view.ready;
+    release({ key: "late", items: [], metadata: {}, collections: [], usage: {} }); await view.ready;
     await view.refresh();
     return { oldRemoved, children: host.childElementCount, mutations };
   });
@@ -144,12 +144,12 @@ for (const removed of [false, true]) {
       let loads = 0; let mutations = 0;
       const library = (fresh: boolean): import("../../src/page-builder/media-picker").MediaLibrary => ({
         key: "detail-race", items: fresh && removed ? [] : [{ path, version: "same" }],
-        metadata: { [path]: { alt: fresh ? "Restored alt" : "Stale alt", tags: [fresh ? "restored" : "stale"] } }, usage: {},
+        metadata: { [path]: { alt: fresh ? "Restored alt" : "Stale alt", tags: [fresh ? "restored" : "stale"] } }, collections: [], usage: {},
       });
       const adapter: import("../../src/page-builder/media-picker").MediaPickerHost = {
         load: async () => { if (++loads === 1) return library(false); await new Promise<void>(resolve => { releaseLoad = resolve; }); return library(true); },
         blob: () => new Promise(resolve => { releaseBlob = resolve; }),
-        metadata: async () => { mutations++; }, import: async () => [], rename: async () => {},
+        metadata: async () => { mutations++; }, collections: async () => {}, import: async () => [], rename: async () => {},
         remove: async () => {}, openPage: async () => {},
       };
       const view = createMediaLibraryView(host, adapter); await view.ready;
@@ -182,10 +182,10 @@ test("refresh preserves the visible form but rejects Save while metadata reload 
     const adapter: import("../../src/page-builder/media-picker").MediaPickerHost = {
       load: async () => {
         if (++loads > 1) await new Promise<void>(resolve => { release = resolve; });
-        return { key: "form-race", items: [{ path }], metadata: { [path]: { alt: loads === 1 ? "Old alt" : "Restored alt", tags: [] } }, usage: {} };
+        return { key: "form-race", items: [{ path }], metadata: { [path]: { alt: loads === 1 ? "Old alt" : "Restored alt", tags: [] } }, collections: [], usage: {} };
       },
       blob: async () => new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'], { type: "image/svg+xml" }),
-      metadata: async () => { mutations++; }, import: async () => [], rename: async () => {},
+      metadata: async () => { mutations++; }, collections: async () => {}, import: async () => [], rename: async () => {},
       remove: async () => {}, openPage: async () => {},
     };
     const view = createMediaLibraryView(host, adapter); await view.ready;
@@ -222,12 +222,12 @@ for (const focusTarget of ["search", "outside", "detail"] as const) {
       host.style.width = "800px";
       let loads = 0;
       const view = createMediaLibraryView(host, {
-        async load() { return { key: "background-failure", items: [{ path: "images/a.svg", version: String(++loads) }], metadata: {}, usage: {} }; },
+        async load() { return { key: "background-failure", items: [{ path: "images/a.svg", version: String(++loads) }], metadata: {}, collections: [], usage: {} }; },
         async blob() {
           if (loads > 1) return new Promise<Blob>((_resolve, reject) => { (window as any).rejectBackgroundBlob = () => reject(new Error("Background image failed")); });
           return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" });
         },
-        async metadata() {}, async import() { return []; }, async rename() {}, async remove() {}, async openPage() {},
+        async metadata() {}, async collections() {}, async import() { return []; }, async rename() {}, async remove() {}, async openPage() {},
       });
       Object.assign(window, { backgroundFailure: view }); await view.ready;
     });
@@ -256,9 +256,9 @@ for (const lastImage of [false, true]) {
       const host = document.querySelector<HTMLElement>("#media-pane-harness")!;
       let deleted = false, loads = 0;
       const view = createMediaLibraryView(host, {
-        async load() { loads++; return { key: "delete-race", items: (deleted ? [] : [{ path: "images/a.svg" }]).concat(lastImage ? [] : [{ path: "images/b.svg" }]), metadata: {}, usage: {} }; },
+        async load() { loads++; return { key: "delete-race", items: (deleted ? [] : [{ path: "images/a.svg" }]).concat(lastImage ? [] : [{ path: "images/b.svg" }]), metadata: {}, collections: [], usage: {} }; },
         async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-        async metadata() {}, async import() { return []; }, async rename() {},
+        async metadata() {}, async collections() {}, async import() { return []; }, async rename() {},
         async remove() { await new Promise<void>(resolve => { (window as any).releaseImageDelete = resolve; }); deleted = true; },
         async openPage() {},
       });
@@ -290,12 +290,12 @@ test("a failed direct image load can be retried without refreshing the library",
     const host = document.querySelector<HTMLElement>("#media-pane-harness")!;
     let fail = true;
     const view = createMediaLibraryView(host, {
-      async load() { return { key: "direct-retry", items: [{ path: "images/a.svg" }], metadata: {}, usage: {} }; },
+      async load() { return { key: "direct-retry", items: [{ path: "images/a.svg" }], metadata: {}, collections: [], usage: {} }; },
       async blob() {
         if (fail) throw new Error("Direct image failed");
         return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" });
       },
-      async metadata() {}, async import() { return []; }, async rename() {}, async remove() {}, async openPage() {},
+      async metadata() {}, async collections() {}, async import() { return []; }, async rename() {}, async remove() {}, async openPage() {},
     });
     Object.assign(window, { directRetry: { view, succeed: () => { fail = false; } } }); await view.ready;
   });

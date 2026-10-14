@@ -154,16 +154,16 @@ export function createMediaController(ports: MediaControllerPorts) {
     // The batch records Undo on the open page, so that page must still be the one marked.
     const current = () => stamp.holds() && !ports.viewingVersion() && ports.openFile() === page && ports.source(page) === source;
     try {
-      const [rules, io, references, html, entities, ctx] = await Promise.all([
+      const [rules, io, references, html, entities, ctx, collections] = await Promise.all([
         import("../page-builder/media-descriptions"), import("../../shared/media-records"),
         import("../page-builder/media-references"), import("../../shared/html-source"),
-        import("../page-builder/html-entities"), workspaceContext(),
+        import("../page-builder/html-entities"), workspaceContext(), import("../page-builder/media-collections"),
       ]);
       if (!current()) throw new Error("This image changed. Select it again.");
       const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
       ctx.assertLive();
       if (!current()) throw new Error("This image changed. Select it again.");
-      const records = io.parseMediaRecords(metadata);
+      const records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
       const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
       if (!range || range.tag.name !== "img") return;
       const tag = html.startTags(source).find(tag => tag.start === range.tag.start);

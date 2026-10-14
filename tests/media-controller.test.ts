@@ -212,3 +212,18 @@ test("place marking refuses unreadable records, page drift during reads and repo
     if (fault !== "page") assert.equal(f.sources.get("index.html"), original);
   }
 });
+
+test("Decorative's first save preserves starting collections before the library opens", async () => {
+  const f = fixture();
+  const workspace = f.ports.workspace()!;
+  f.ports.workspace = () => ({ ...workspace, nativePaths: [...workspace.nativePaths ?? [], "images/logos/mark.png"] });
+  f.ports.findEntry = async () => undefined;
+  f.ports.applyBatch = async (_scope, _stamp, batch) => {
+    for (const [path, source] of batch.edits) f.sources.set(path, source);
+  };
+  await f.controller.changePlace("index.html", [0, 0], true);
+  assert.deepEqual(f.errors, []);
+  const saved = JSON.parse(f.sources.get(".editor/media.json")!);
+  assert.deepEqual(saved.collections, ["Logos"]);
+  assert.deepEqual(saved.files["images/logos/mark.png"].collections, ["Logos"]);
+});

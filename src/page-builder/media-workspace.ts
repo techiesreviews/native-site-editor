@@ -1,8 +1,9 @@
+import { readSiteMediaRecords, createMediaCollection, addToMediaCollection, takeOutOfMediaCollection, renameMediaCollection, deleteMediaCollection } from "./media-collections";
 import { descriptionPlaceEdits } from "./media-descriptions";
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { MEDIA_RECORDS_PATH, serializeMediaRecords, renameMediaRecord, removeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaVariantName } from "./media-markup";
@@ -97,7 +98,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const metadata = await ctx.read(MEDIA_RECORDS_PATH);
     ctx.assertLive();
     batch.expectedSources.set(MEDIA_RECORDS_PATH, metadata);
-    return { batch, text, metadata: parseMediaRecords(metadata) };
+    return { batch, text, metadata: readSiteMediaRecords(metadata, ctx.items.map(item => item.path)) };
   };
   const assetGuard = (batch: MediaWorkspaceBatch, paths: string[]) => {
     for (const path of paths) {
@@ -174,8 +175,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       session = await context();
       const ctx = active();
       const text = await sources(ctx);
-      const metadata = mediaMetadataView(parseMediaRecords(await ctx.read(MEDIA_RECORDS_PATH))); ctx.assertLive();
-      return { key: ctx.key, items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: mediaUsageIndex(ctx.items.map((item) => item.path), text, ctx.pages, ctx.components) };
+      const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
+      const metadata = mediaMetadataView(records);
+      return { key: ctx.key, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: mediaUsageIndex(ctx.items.map((item) => item.path), text, ctx.pages, ctx.components) };
     },
     async blob(path) { return active().blob(path); },
     async metadata(changes) {
@@ -191,6 +193,22 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
             { text: after?.description?.text ?? "", decorative: Boolean(after?.decorative) });
           if (edited !== original) batch.edits.set(page, edited);
         }
+      }
+      recordsEdit(batch, metadata, next);
+      await commit(ctx, batch);
+    },
+    async collections(change) {
+      const ctx = active();
+      const labels = { new: "New collection", add: "Add to collection", "take-out": "Take out of collection", rename: "Rename collection", delete: "Delete collection" };
+      const { batch, metadata } = await prepare(ctx, labels[change.kind]);
+      if ("paths" in change && change.paths?.some(path => !ctx.items.some(item => item.path === path))) throw new Error("Some files are no longer in the media library.");
+      let next: MediaRecords;
+      switch (change.kind) {
+        case "new": next = createMediaCollection(metadata, change.name, change.paths); break;
+        case "add": next = addToMediaCollection(metadata, change.name, change.paths); break;
+        case "take-out": next = takeOutOfMediaCollection(metadata, change.name, change.paths); break;
+        case "rename": next = renameMediaCollection(metadata, change.from, change.to); break;
+        case "delete": next = deleteMediaCollection(metadata, change.name); break;
       }
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);

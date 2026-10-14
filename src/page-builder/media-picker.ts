@@ -1,3 +1,4 @@
+import type { MediaCollectionChange } from "./media-collections";
 import { node } from "../ui/dom";
 import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
 import type { MediaImage } from "./media-markup";
@@ -7,13 +8,14 @@ import { createMediaLibraryView, type MediaLibraryView } from "./media-library-v
 
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {
-  key: string; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
+  key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
 }
 export interface MediaPickerHost {
   begin?(): void;
   load(): Promise<MediaLibrary>;
   blob(path: string): Promise<Blob>;
   metadata(changes: Record<string, Partial<MediaMetadata> | null>): Promise<void>;
+  collections(change: MediaCollectionChange): Promise<void>;
   rename(path: string, name: string): Promise<void>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[]): Promise<string[]>;

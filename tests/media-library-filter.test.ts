@@ -16,7 +16,7 @@ const library = {
     "images/B.jpg": { alt: "Summer Portrait", tags: ["People", "summer"] },
     "root.PNG": { alt: "", tags: ["summer"] },
   },
-  usage: { "images/a.webp": { pages: ["index.html"], files: ["index.html"], alts: ["Golden SUNSET"] } },
+  collections: [], usage: { "images/a.webp": { pages: ["index.html"], files: ["index.html"], alts: ["Golden SUNSET"] } },
 } satisfies MediaLibrary;
 
 function paths(options: Partial<MediaLibraryFilter> = {}, source: MediaLibrary = library) {
@@ -63,7 +63,7 @@ test("name sorts paths; date and size descend with path tie-breaks and missing v
     { path: "a.jpg", size: 30, date: 40 }, { path: "c.jpg", size: 10, date: 50 },
     { path: "d.jpg", size: 0, date: 0 },
   ];
-  const source = { key: "sort", items, metadata: {}, usage: {} } satisfies MediaLibrary;
+  const source = { key: "sort", items, metadata: {}, collections: [], usage: {} } satisfies MediaLibrary;
   assert.deepEqual(paths({ sort: "name" }, source), ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "z.jpg"]);
   assert.deepEqual(paths({ sort: "size" }, source), ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "z.jpg"]);
   assert.deepEqual(paths({ sort: "date" }, source), ["c.jpg", "a.jpg", "b.jpg", "d.jpg", "z.jpg"]);
@@ -73,5 +73,5 @@ test("name sorts paths; date and size descend with path tie-breaks and missing v
 test("empty libraries and unmatched filters return no results", () => {
   assert.deepEqual(paths({ query: "absent" }), []);
   assert.deepEqual(paths({ folder: "missing" }), []);
-  assert.deepEqual(paths({}, { key: "empty", items: [], metadata: {}, usage: {} }), []);
+  assert.deepEqual(paths({}, { key: "empty", items: [], metadata: {}, collections: [], usage: {} }), []);
 });

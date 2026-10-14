@@ -154,10 +154,10 @@ test("busy image action explains blocked controls and keeps Save focus after its
     let metadata = {alt:"",tags:[] as string[]}, renames=0;
     const host = document.createElement("div");host.style.cssText="position:fixed;inset:20px;background:white;z-index:1000";document.body.append(host);
     const view = createMediaLibraryView(host,{
-      async load(){return {key:"busy",items:[{path:"images/a.svg",version:"A"}],metadata:{"images/a.svg":metadata},usage:{}};},
+      async load(){return {key:"busy",items:[{path:"images/a.svg",version:"A"}],metadata:{"images/a.svg":metadata},collections: [], usage:{}};},
       async blob(){return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'],{type:"image/svg+xml"});},
       async metadata(changes){await new Promise<void>(resolve => {(window as any).releaseImageWrite=resolve;});metadata={alt:changes["images/a.svg"]?.alt ?? "",tags:[]};},
-      async rename(){renames++;},async remove(){},async openPage(){},
+      async collections() {}, async rename(){renames++;},async remove(){},async openPage(){},
     });
     Object.assign(window,{busyImageProbe:{state:()=>renames,dispose:()=>{view.dispose();host.remove();}}});await view.ready;
   });
@@ -200,10 +200,10 @@ test("background image loads preserve typing, folders and details", async ({ pag
     const view = createMediaLibraryView(host, {
       async load() {
         if (delay) await new Promise<void>(resolve => { (window as any).releaseImageLoad = resolve; });
-        return { key: "load", items: [{ path: "images/a.svg", version: "A" }], metadata: {}, usage: {} };
+        return { key: "load", items: [{ path: "images/a.svg", version: "A" }], metadata: {}, collections: [], usage: {} };
       },
       async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-      async metadata() {}, async rename() {}, async remove() {}, async openPage() {},
+      async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {},
     });
     Object.assign(window, { loadImageProbe: { refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); }, instant: () => { delay = false; } } });
   });
@@ -278,10 +278,10 @@ async function mountDelayedReferences(page: Page, baseURL: string | undefined) {
       async load() {
         const fresh = ++loads > 1;
         if (fresh) await new Promise<void>(resolve => { (window as any).releaseFocusLoad = resolve; });
-        return { key: "focus", items: [{ path: "images/a.svg", version: "A" }], metadata: { "images/a.svg": { alt: "", tags: ["portrait"] } }, usage: fresh ? { "images/a.svg": { pages: ["index.html"], files: ["index.html"], alts: ["New reference"] } } : {} };
+        return { key: "focus", items: [{ path: "images/a.svg", version: "A" }], metadata: { "images/a.svg": { alt: "", tags: ["portrait"] } }, collections: [], usage: fresh ? { "images/a.svg": { pages: ["index.html"], files: ["index.html"], alts: ["New reference"] } } : {} };
       },
       async blob() { return new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'], { type: "image/svg+xml" }); },
-      async metadata() {}, async rename() {}, async remove() { removed++; }, async openPage() {},
+      async metadata() {}, async collections() {}, async rename() {}, async remove() { removed++; }, async openPage() {},
     });
     Object.assign(window, { focusProbe: { refresh: () => { void view.refresh(); }, removed: () => removed, dispose: () => { view.dispose(); host.remove(); } } });
     await view.ready;
@@ -363,8 +363,8 @@ test("a failed detail image clears its focus request and later refresh preserves
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
     const host = document.createElement("div"); host.style.cssText = "position:fixed;right:0;top:60px;width:440px;height:600px;z-index:1000;background:var(--surface)"; document.body.append(host);
     const view = createMediaLibraryView(host, {
-      async load() { return { key: "failure", items: [{ path: "images/broken.svg", version: "A" }], metadata: {}, usage: {} }; },
-      async blob() { throw new Error("Image fetch failed"); }, async metadata() {}, async rename() {}, async remove() {}, async openPage() {},
+      async load() { return { key: "failure", items: [{ path: "images/broken.svg", version: "A" }], metadata: {}, collections: [], usage: {} }; },
+      async blob() { throw new Error("Image fetch failed"); }, async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {},
     });
     Object.assign(window, { failedFocusProbe: { refresh: () => view.refresh(), dispose: () => { view.dispose(); host.remove(); } } }); await view.ready;
   });
