@@ -32,6 +32,7 @@ import {
   type AgentOperation,
   type AgentRequest,
 } from "../shared/agent";
+import { MEDIA_ADDING_VALUES } from "../shared/media-records";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { requestForAgent, requestIdPattern } from "./agent-requests";
 import type { AgentPageOutline, EditorContext } from "../shared/types";
@@ -301,7 +302,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   // An inspection's report arrives as JSON; the agent gets it as an object.
   function resultOf(command: AgentCommand) {
     const report = command.result?.report;
-    if (!["inspect_preview", "list_media"].includes(command.operation) || typeof report !== "string") return command.result;
+    if (!["inspect_preview", "list_media", "adding_settings"].includes(command.operation) || typeof report !== "string") return command.result;
     try {
       return JSON.parse(report);
     } catch {
@@ -769,6 +770,18 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (problem) return failure(problem);
     const { context } = await current();
     return queue("change_collection", context, { path: "", args, requestId, waitSeconds });
+  });
+
+  server.registerTool("adding_settings", {
+    description: "Read or change the site's Adding settings for files the user adds later; never adds or re-prepares media. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ image: z.enum(MEDIA_ADDING_VALUES.image).optional(), video: z.enum(MEDIA_ADDING_VALUES.video).optional(), audio: z.enum(MEDIA_ADDING_VALUES.audio).optional(), keepOriginal: z.boolean().optional(), reset: z.boolean().optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ image, video, audio, keepOriginal, reset, requestId, waitSeconds }) => {
+    const args = { image, video, audio, keepOriginal, reset };
+    const problem = agentMediaArgsProblem("adding_settings", args);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("adding_settings", context, { path: "", args, requestId, waitSeconds });
   });
 
   // ---- Sections ----

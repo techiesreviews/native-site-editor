@@ -129,3 +129,35 @@ test("an agent describes and places a picture already in Media; To check lists i
     await expect.poll(async () => (await call("read_file", { path: indexPath })).content).toBe(originalSource);
   } finally { await client.close(); }
 });
+
+
+test("an agent changes adding settings; the settings screen follows the draft and one Undo restores defaults", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const client = await connectAgent(page, baseURL);
+  try {
+    const reply = await client.callTool({ name: "adding_settings", arguments: { image: "smaller", waitSeconds: 25 } });
+    expect(reply.isError, JSON.stringify(reply)).toBeFalsy();
+    const changed = result(reply);
+    expect(changed.state).toBe("applied");
+    expect(changed.result.image).toBe("smaller");
+    expect(changed.result.isDefault).toBe(false);
+    expect(changed.result.choices.image[0]).toEqual(["smaller", "Smaller files", "Up to 1,600 pixels wide"]);
+    const records = async () => result(await client.callTool({ name: "read_file", arguments: { path: ".editor/media.json" } }));
+    expect(JSON.parse((await records()).content).adding.image).toBe("smaller");
+    await page.locator("#explorer-toggle").click();
+    await page.getByRole("tab", { name: "Media", exact: true }).click();
+    const library = page.getByRole("region", { name: "Media", exact: true });
+    await library.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Adding settings", exact: true }).click();
+    const images = library.locator("fieldset").filter({ has: page.getByText("Images", { exact: true }) });
+    await expect(images.getByRole("radio", { name: /Smaller files/ })).toBeChecked();
+    await page.locator(".code-editor__undo").first().click();
+    const read = result(await client.callTool({ name: "adding_settings", arguments: { waitSeconds: 25 } }));
+    expect(read.result.image).toBe("balanced");
+    expect(read.result.isDefault).toBe(true);
+    const restored = await client.callTool({ name: "read_file", arguments: { path: ".editor/media.json" } });
+    // Undo removes the records file created by this sole change.
+    expect(restored.isError).toBe(true);
+    expect(JSON.stringify(restored)).toContain(".editor/media.json");
+  } finally { await client.close(); }
+});

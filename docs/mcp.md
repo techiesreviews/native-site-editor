@@ -58,9 +58,9 @@ An agent watches for requests with `wait_for_requests` (the `watch_editor` promp
 
 ## Tools
 
-The server exposes 26 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
+The server exposes 27 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied.
 
-For listing, previewing, placing or describing media and changing collections, follow the Media chapter of `native-site://conventions`.
+For listing, previewing, placing or describing media, changing collections and reading or changing adding settings, follow the Media chapter of `native-site://conventions`.
 
 | Tool | What it does |
 | --- | --- |
@@ -71,6 +71,7 @@ For listing, previewing, placing or describing media and changing collections, f
 | `place_media` | `path, element, file`: fill an existing page image with a file from Media, using the picker's markup and description rules. One unsaved Undo step. |
 | `describe_media` | `file` and exactly one of `text` / `decorative`; optional `page, element` for a place. Agent words carry the by-agent mark and appear in To check. One unsaved Undo step. |
 | `change_collection` | `action: new, add, take-out, rename, delete`, `name`, optional `to, files`. Uses Media's collection rules; taken names refuse, delete keeps files. One unsaved Undo step, even without a page open. |
+| `adding_settings` | Read or change the site's picture, video and audio quality and Keep original for files the user adds later. With no choices it reads; `reset: true` resets defaults and cannot be combined with choices. Returns current settings, whether they are defaults, and choices with plain hints. Changes are unsaved, labelled as the agent's and undoable. |
 | `read_file` | Any text file: a draft up to 1 MB, else GitHub (up to 1 MB); with its content hash. |
 | `export_site` | The whole site, or one folder, in one call: every text file with drafts applied and its hash, binaries by path, SHA and size. Saved texts are read from GitHub in batched GraphQL queries (100 blobs each) and kept by SHA; text past about 4 MB is listed as `omitted`. |
 | `get_page` | A page by URL (`/about/`, `/about`, `/about/index.html`, `/404.html`) or file: route, title, description, source, hash, and the outline of its `<body>`: the containers that hold sections and each section's id (`1.2`: element-child indexes from `<body>`), tag, `data-key`, heading or text, and a section component's slot text. |

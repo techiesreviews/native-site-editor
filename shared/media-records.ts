@@ -30,10 +30,16 @@ export interface RemovedPath {
 export interface RemovedMedia extends RemovedPath {
   date: string; family?: RemovedPath[]; record?: MediaFileRecord;
 }
+export const MEDIA_ADDING_VALUES = {
+  image: ["smaller", "balanced", "higher", "smallest"],
+  video: ["smaller", "balanced", "higher"],
+  audio: ["balanced", "higher", "speech"],
+} as const;
+
 export interface AddingSettings {
-  image?: "smaller" | "balanced" | "higher" | "smallest";
-  video?: "smaller" | "balanced" | "higher";
-  audio?: "balanced" | "higher" | "speech";
+  image?: typeof MEDIA_ADDING_VALUES.image[number];
+  video?: typeof MEDIA_ADDING_VALUES.video[number];
+  audio?: typeof MEDIA_ADDING_VALUES.audio[number];
   keepOriginal?: boolean;
   [key: string]: unknown;
 }
@@ -167,8 +173,7 @@ function readRecords(value: Record<string, unknown>): MediaRecords {
   }
   if (value.adding !== undefined) {
     const adding = { ...object(value.adding, "adding") };
-    const options = { image: ["smaller", "balanced", "higher", "smallest"], video: ["smaller", "balanced", "higher"], audio: ["balanced", "higher", "speech"] };
-    for (const [key, choices] of Object.entries(options)) if (adding[key] !== undefined && !choices.includes(adding[key] as string)) invalid(`adding.${key}`);
+    for (const [key, choices] of Object.entries(MEDIA_ADDING_VALUES)) if (adding[key] !== undefined && !choices.some(choice => choice === adding[key])) invalid(`adding.${key}`);
     flags(adding, ["keepOriginal"], "adding");
     if (Object.keys(adding).length) out.adding = adding as AddingSettings; else delete out.adding;
   }

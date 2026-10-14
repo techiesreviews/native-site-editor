@@ -692,10 +692,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     import: importMedia,
-    async adding(change) {
+    async adding(change, agent = false) {
       // Adding settings live in the site's records, so they travel with the site and undo like any change.
       const ctx = active();
-      const { batch, metadata } = await prepare(ctx, change === "reset" ? "Reset adding settings" : "Change adding settings");
+      const { batch, metadata } = await prepare(ctx, agent ? change === "reset" ? "Agent reset adding settings" : "Agent changed adding settings" : change === "reset" ? "Reset adding settings" : "Change adding settings");
       recordsEdit(batch, metadata, change === "reset" ? resetMediaAddingSettings(metadata) : setMediaAddingSettings(metadata, change));
       await commit(ctx, batch);
     },

@@ -10,7 +10,7 @@ import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
 import { basename, filterMediaLibrary, mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
-import { mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
+import { mediaImageForPlacement, mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
 import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
@@ -278,9 +278,11 @@ export function createMediaLibraryView(
         image = { path, width: size.width, height: size.height, alt: "", variants: [] };
       } else {
         if (path.startsWith("pending:")) throw new Error(CANCELLED);
-        const data = await cache.get(path), meta = library.metadata[path];
-        image = { path, width: data.width, height: data.height, variants: mediaVariants(path, library.items.map(item => item.path)),
-          alt: meta?.decorative ? "" : meta?.alt || mediaNameAlt(path) };
+        const data = await cache.get(path);
+        image = mediaImageForPlacement(path, data, library.items.map(item => item.path));
+        const meta = library.metadata[path];
+        // Component and settings pickers have their own Alt field; page placement resolves descriptions.
+        image.alt = meta?.decorative ? "" : meta?.alt || mediaNameAlt(path);
       }
       // Cancel or Close while the picture was read: nothing is placed.
       if (!alive) return;

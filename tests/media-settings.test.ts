@@ -139,3 +139,18 @@ test("Files adding reads the site's image quality once per addition and prepares
   assert.deepEqual(reads, ["repo"]);
   assert.deepEqual(used, ["smaller", "smaller"]);
 });
+
+
+test("agent adding changes and resets keep their own labels; unchanged settings create no batch", async () => {
+  const { workspace, batches } = site();
+  await workspace.load();
+  await workspace.adding({ image: "balanced", keepOriginal: false }, true);
+  await workspace.adding("reset", true);
+  assert.equal(batches.length, 0);
+  await workspace.adding({ image: "smaller" }, true);
+  assert.equal(batches[0].label, "Agent changed adding settings");
+  await workspace.adding({ image: "smaller" }, true);
+  assert.equal(batches.length, 1);
+  await workspace.adding("reset", true);
+  assert.equal(batches[1].label, "Agent reset adding settings");
+});

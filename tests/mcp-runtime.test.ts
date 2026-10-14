@@ -1,8 +1,18 @@
+import { MEDIA_ADDING_CHOICES, MEDIA_ADDING_DEFAULTS } from "../src/page-builder/media-settings";
+import { applyAgentMedia } from "../src/agent-media-actions";
+import type { AgentCommand } from "../shared/agent";
+import { createMediaController, type MediaControllerPorts } from "../src/controllers/media-controller";
+import type { MediaModule } from "../src/controllers/media-controller";
+import type { MediaPickerOptions } from "../src/page-builder/media-picker";
+import type { MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
+import { readSource } from "../src/page-builder/source-tree";
+import { mediaImageForPlacement } from "../src/page-builder/media-markup";
+import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, applyReplacements, textHash } from "../shared/agent.ts";
+import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, agentResultLimit, applyReplacements, textHash } from "../shared/agent.ts";
 import { mediaListReport } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";
@@ -80,7 +90,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.doesNotMatch(JSON.stringify(listing), /src\/|page comment|native\.json|#\//);
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
-      "add_section", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
+      "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "get_command_status", "get_page", "get_selection", "get_site",
       "inspect_preview", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_section", "reply_to_request", "set_page_details",
       "wait_for_requests", "write_file",
     ]);
@@ -140,10 +150,11 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const servedMedia = mediaChapter(served);
     assert.ok(servedMedia?.startsWith("## Media\n"));
     assert.equal(servedMedia, mediaChapter(siteConventions));
+    for (const rule of ["adding_settings", "media/images/", "srcset"]) assert.ok(servedMedia.includes(rule));
     assert.doesNotMatch(servedMedia.slice(1), /^## /m);
-    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection"])
+    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings"])
       assert.match(listing.find(tool => tool.name === name)!.description!, /Media chapter.*native-site:\/\/conventions/);
-    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media or changing collections/);
+    assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media, changing collections or reading or changing adding settings/);
     assert.ok(chapter.startsWith("## Components\n"));
     assert.doesNotMatch(chapter.slice(1), /^## /m);
     assert.match(chapter, /```html\n<section>[\s\S]*<\/section>\n```$/, "the chapter ends with its example template");
@@ -954,7 +965,7 @@ test("agent media editing tools validate before queueing and retain their comman
     }));
     const call = (name: string, args: Record<string, unknown>) => client!.callTool({ name, arguments: { ...args, waitSeconds: 0 } });
     const tools = (await client.listTools()).tools;
-    for (const name of ["place_media", "describe_media", "change_collection"]) {
+    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings"]) {
       assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, false);
       assert.match(tools.find(tool => tool.name === name)!.description!, /Unsaved until the user saves.*Media chapter.*native-site:\/\/conventions/);
     }
@@ -966,9 +977,14 @@ test("agent media editing tools validate before queueing and retain their comman
     for (const args of [{ action: "rename", name: "Trip" }, { action: "add", name: "Trip" }, { action: "take-out", name: "Trip", files: [] }]) assert.equal((await call("change_collection", args)).isError, true);
     for (const args of [{ file: "images/a.png", text: "" }, { file: "images/a.png", text: "Words", decorative: true }, { file: "images/a.png" }]) assert.equal((await call("describe_media", args)).isError, true);
     assert.equal((await call("write_file", { path: "images/new.png", content: "bytes" })).isError, true);
+    for (const args of [{ image: "speech" }, { video: "smallest" }, { audio: "smaller" }, { keepOriginal: "true" }, { reset: true, image: "smaller" }, { reset: true, keepOriginal: false }])
+      assert.equal((await call("adding_settings", args)).isError, true);
     assert.equal((await tab.hub()).commands?.length ?? 0, 0);
-    for (const name of ["describe_media", "change_collection", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
+    for (const name of ["describe_media", "change_collection", "adding_settings", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
     const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+      ["adding_settings", {}, "", {}],
+      ["adding_settings", { image: "smaller", keepOriginal: true }, "", { image: "smaller", keepOriginal: true }],
+      ["adding_settings", { reset: true }, "", { reset: true }],
       ["place_media", { path: "index.html", element: "1.0", file: "images/a.png" }, "index.html", { element: "1.0", file: "images/a.png" }],
       ["describe_media", { file: "images/a.png", text: "A garden" }, "images/a.png", { file: "images/a.png", text: "A garden" }],
       ["describe_media", { file: "images/a.png", page: "index.html", element: "1", decorative: false }, "index.html", { file: "images/a.png", page: "index.html", element: "1", decorative: false }],
@@ -983,8 +999,122 @@ test("agent media editing tools validate before queueing and retain their comman
       const command = (await tab.hub()).commands.find((item: any) => item.id === id);
       assert.equal(command.operation, name); assert.equal(command.path, path); assert.deepEqual(command.args, expected);
       await tab.claim(id, command.grantId);
-      await tab.ack(id, command.grantId, "applied");
+      if (name === "adding_settings") {
+        const settings = { image: expected.image ?? "balanced", video: "balanced", audio: "balanced", keepOriginal: expected.keepOriginal ?? false, isDefault: !expected.image, choices: MEDIA_ADDING_CHOICES };
+        await tab.ack(id, command.grantId, "applied", { message: "Adding settings read.", result: { report: JSON.stringify(settings) } });
+        assert.deepEqual(payload(await call(name, { ...args, requestId: id })).result, settings);
+      } else await tab.ack(id, command.grantId, "applied");
     }
     assert.equal(payload(await call("write_file", { path: "images/new.svg", content: '<svg xmlns="http://www.w3.org/2000/svg"/>', requestId: "svg-still-text" })).state, "pending");
   } finally { await client?.close(); await worker.dispose(); }
+});
+
+function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Old"></section>', measured = false) {
+  const file = "media/images/photo.webp";
+  const text = new Map([
+    ["index.html", source],
+    [MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { description: { text: "Old" } }, [file]: { description: { text: "Photo" } } } })],
+  ]);
+  const paths = ["index.html", MEDIA_RECORDS_PATH, "images/old.png", file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
+  const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+  const batches: MediaWorkspaceBatch[] = [], history: (() => void)[] = [];
+  let pick: MediaPickerOptions | undefined;
+  const module = {
+    openMediaPicker: async (options) => { pick = options; }, closeMediaPicker() {},
+    mountMediaLibrary() { throw new Error("No gallery in this source test"); },
+  } satisfies MediaModule;
+  const ports = {
+    workspace: () => ({ repo: scope.repo, scope, identity: "site", site: { routes: { "/": "index.html" }, components: {} }, nativePaths: paths,
+      drafts: { list: () => [], get: () => undefined, save: () => true, remove: () => true } }),
+    stamp: () => ({ holds: () => true, changed: () => undefined }), identity: () => "site", generation: () => 1,
+    source: (path) => text.get(path), listPaths: async () => paths,
+    findEntry: async (path) => paths.includes(path) ? { sha: path } : undefined,
+    entry: (path) => paths.includes(path) ? { sha: path } : undefined,
+    readText: async (_repo, sha) => text.get(sha) ?? "", rememberSource: (path, source) => { text.set(path, source); },
+    uploadedBlob: async () => undefined, readBlob: async () => new Blob(["picture"]),
+    applyBatch: async (_scope, _stamp, batch) => {
+      const before = new Map(text); batches.push(batch);
+      for (const [path, value] of batch.edits) text.set(path, value);
+      history.push(() => { text.clear(); before.forEach((value, path) => text.set(path, value)); });
+    },
+    openPage: async () => {}, load: async () => module,
+    openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
+    change: (path, source, edits) => {
+      for (const edit of [...edits].sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
+      text.set(path, source); return true;
+    },
+    locateElement: (source, node) => { const tree = readSource(source), element = tree.at(node); return element && tree.range(element); },
+    measureImage: async (_path, node) => ({ sizes: "(max-width: 600px) 100vw, 600px", firstScreen: measured, large: true, images: [{ node, firstScreen: measured, large: true }] }),
+    galleryHost() { throw new Error("No DOM in this source test"); }, galleryVisible: () => false, mediaSelected: () => false, gallerySignature: () => "",
+    refreshDescriptions() {}, announce() {}, error(error) { throw error; },
+  } satisfies MediaControllerPorts;
+  return { file, text, paths, batches, history, controller: createMediaController(ports), pick: () => pick };
+}
+function mediaCommand(operation: AgentCommand["operation"], args: AgentCommand["args"] = {}): AgentCommand {
+  return { id: "media-test", operation, args, path: operation === "place_media" ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
+}
+
+test("an agent placement equals the editor's markup for the same place, including picture replacement", async () => {
+  const before = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: class {
+    src = ""; naturalWidth = 2400; naturalHeight = 1600; async decode() {}
+  } });
+  try {
+    for (const picture of [false, true]) for (const firstScreen of [false, true]) for (const decorative of [false, true]) {
+      const baseSource = picture ? '<section><picture><source srcset="/images/old.png"><img class="hero" src="/images/old.png" alt="Old"></picture></section>' : '<section><img src="/images/old.png" alt="Old"></section>';
+      const source = decorative ? baseSource.replace('alt="Old"', 'alt=""') : baseSource;
+      const editor = agentMediaFixture(source, firstScreen), agent = agentMediaFixture(source, firstScreen);
+      if (decorative) for (const fixture of [editor, agent]) {
+        const records = parseMediaRecords(fixture.text.get(MEDIA_RECORDS_PATH));
+        records.files["images/old.png"].places = { "index.html": { decorative: true } };
+        fixture.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+      }
+      const node = picture ? [0, 0, 1] : [0, 0];
+      await editor.controller.chooseImage({ path: "index.html", node });
+      await editor.pick()!.onPick!(mediaImageForPlacement(editor.file, { width: 2400, height: 1600 }, editor.paths), () => false);
+      await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("place_media", { file: agent.file, element: node.join(".") }), target => agent.controller.preparePlacement(target));
+      assert.deepEqual(agent.text, editor.text);
+      const placed = agent.text.get("index.html")!;
+      assert.match(placed, /srcset="\/media\/images\/photo-480.webp 480w, \/media\/images\/photo-960.webp 960w, \/media\/images\/photo.webp 2400w"/);
+      assert.ok(placed.includes(`sizes="${firstScreen ? "" : "auto, "}(max-width: 600px) 100vw, 600px"`));
+      assert.match(placed, /width="2400"/); assert.match(placed, /height="1600"/); assert.match(placed, /decoding="async"/); assert.match(placed, decorative ? /alt=""/ : /alt="Photo"/);
+      assert.equal(agent.batches.length, decorative ? 1 : 0);
+      if (decorative) assert.deepEqual({ ...parseMediaRecords(agent.text.get(MEDIA_RECORDS_PATH)).files[agent.file].places }, { "index.html": { decorative: true } });
+      if (firstScreen) { assert.match(placed, /fetchpriority="high"/); assert.doesNotMatch(placed, /loading="lazy"/); }
+      else { assert.match(placed, /loading="lazy"/); assert.doesNotMatch(placed, /fetchpriority/); }
+      assert.doesNotMatch(placed, /<picture|<source|originals/);
+    }
+  } finally {
+    if (before) Object.defineProperty(globalThis, "Image", before); else Reflect.deleteProperty(globalThis, "Image");
+  }
+});
+
+test("the tab reads, changes and resets adding settings with agent labels and no empty Undo step", async () => {
+  const f = agentMediaFixture(), ctx = await f.controller.workspaceContext();
+  const apply = (args: AgentCommand["args"]) => applyAgentMedia(ctx, mediaCommand("adding_settings", args), target => f.controller.preparePlacement(target));
+  const read = await apply({});
+  assert.equal(read!.message, "Adding settings read.");
+  assert.ok(Buffer.byteLength(JSON.stringify(read!.result)) <= agentResultLimit("adding_settings"));
+  assert.deepEqual(JSON.parse(read!.result.report), { ...MEDIA_ADDING_DEFAULTS, isDefault: true, choices: MEDIA_ADDING_CHOICES });
+  assert.equal(f.batches.length, 0);
+  const changed = await apply({ image: "smaller", keepOriginal: true });
+  assert.equal(changed!.message, "Adding settings changed, unsaved.");
+  assert.equal(JSON.parse(changed!.result.report).image, "smaller");
+  assert.equal(JSON.parse(changed!.result.report).isDefault, false);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).adding, { image: "smaller", keepOriginal: true });
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Agent changed adding settings");
+  assert.deepEqual([...f.batches[0].edits.keys()], [MEDIA_RECORDS_PATH]);
+  await apply({ image: "smaller", keepOriginal: true }); assert.equal(f.batches.length, 1);
+  const reset = await apply({ reset: true });
+  assert.equal(reset!.message, "Adding settings reset, unsaved.");
+  assert.equal(JSON.parse(reset!.result.report).isDefault, true);
+  assert.equal(f.batches[1].label, "Agent reset adding settings");
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).adding, undefined);
+  f.history.pop()!(); assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).adding?.image, "smaller");
+  f.history.pop()!(); assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).adding, undefined);
+  f.text.set(MEDIA_RECORDS_PATH, "{");
+  const unreadable = JSON.parse((await apply({}))!.result.report);
+  assert.equal(unreadable.isDefault, true); assert.match(unreadable.note, /unreadable/);
+  await assert.rejects(apply({ image: "smaller" }), /media.json/);
+  assert.equal(f.batches.length, 2);
 });

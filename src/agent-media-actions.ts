@@ -2,8 +2,9 @@ import { OUTSIDE_MEDIA_REFUSED, parseOutlineId, type AgentCommand } from "../sha
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./page-builder/media-workspace";
+import { MEDIA_ADDING_CHOICES, mediaAddingSettings, mediaAddingIsDefault } from "./page-builder/media-settings";
 import { createMediaByteCache } from "./page-builder/media-byte-cache";
-import { mediaVariants, type MediaImage } from "./page-builder/media-markup";
+import { mediaImageForPlacement, type MediaImage } from "./page-builder/media-markup";
 
 /** Loaded only when an agent changes Media. All writes use the editor's media transactions. */
 export async function applyAgentMedia(
@@ -25,18 +26,27 @@ export async function applyAgentMedia(
     try {
       const data = await cache.get(file); ctx.assertLive();
       if (ctx.assetVersion(file) !== version) throw new Error("The image changed while preparing placement. Try again.");
-      let alt = "";
-      try {
-        const records = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path));
-        const record = records.files[file];
-        alt = record?.decorative ? "" : record?.description?.text || alt;
-      } catch { /* Unreadable records do not block placement and are never written. */ }
-      ctx.assertLive();
-      await place({ path: file, width: data.width, height: data.height, variants: mediaVariants(file, ctx.items.map(item => item.path)), alt }, { path: file, version });
+      await place(mediaImageForPlacement(file, data, ctx.items.map(item => item.path)), { path: file, version });
     } finally { cache.dispose(); }
     return;
   }
   const host = createMediaWorkspace(async () => ctx);
+  if (command.operation === "adding_settings") {
+    const { image, video, audio, keepOriginal, reset } = args;
+    const change = Object.fromEntries(Object.entries({ image, video, audio, keepOriginal }).filter(([, value]) => value !== undefined));
+    const changing = reset === true || Object.keys(change).length > 0;
+    if (changing) {
+      await host.load(); ctx.assertLive();
+      await host.adding(reset ? "reset" : change, true);
+    }
+    let records, note;
+    const source = await ctx.read(MEDIA_RECORDS_PATH); ctx.assertLive();
+    try { records = readSiteMediaRecords(source, ctx.items.map(item => item.path)); }
+    catch { note = "Media records are unreadable; reporting the default adding settings."; }
+    const settings = mediaAddingSettings(records?.adding);
+    return { message: changing ? reset ? "Adding settings reset, unsaved." : "Adding settings changed, unsaved." : "Adding settings read.",
+      result: { report: JSON.stringify({ ...settings, isDefault: mediaAddingIsDefault(settings), choices: MEDIA_ADDING_CHOICES, ...note ? { note } : {} }) } };
+  }
   await host.load(); ctx.assertLive();
   if (command.operation === "describe_media") {
     await host.describe(args.file!, args);

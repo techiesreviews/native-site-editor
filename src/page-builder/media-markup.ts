@@ -89,3 +89,8 @@ export function mediaPictureUnwrap(source: string, img: Pick<ElementRange, "star
   const slot = tree.attribute(image, "slot") ? undefined : tagAttribute(source, picture.tag, "slot")?.value;
   return { edits: [{ start: picture.start, end: img.start, text: "" }, { start: img.end, end: picture.end, text: "" }], artDirected, slot };
 }
+
+/** Build the image the picker and agents pass to the shared placement transaction. */
+export function mediaImageForPlacement(path: string, size: { width?: number; height?: number }, paths: string[]): MediaImage {
+  return { path, width: size.width, height: size.height, variants: mediaVariants(path, paths), alt: "" };
+}

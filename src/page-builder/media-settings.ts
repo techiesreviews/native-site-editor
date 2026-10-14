@@ -1,4 +1,4 @@
-import { MEDIA_RECORDS_PATH, parseMediaRecords, type AddingSettings, type MediaRecords } from "../../shared/media-records";
+import { MEDIA_ADDING_VALUES, MEDIA_RECORDS_PATH, parseMediaRecords, type AddingSettings, type MediaRecords } from "../../shared/media-records";
 
 /** Adding settings (media-manager ticket 07): one quality choice per kind and Keep original. */
 export interface MediaAddingChoices {
@@ -15,20 +15,20 @@ export const MEDIA_ADDING_DEFAULTS: Readonly<MediaAddingChoices> = Object.freeze
 /** The choices per kind, in the order shown, with a short plain hint. AVIF is images only; Speech is audio only. */
 export const MEDIA_ADDING_CHOICES = {
   image: [
-    ["smaller", "Smaller files", "Up to 1,600 pixels wide"],
-    ["balanced", "Balanced", "Up to 2,400 pixels wide. Recommended"],
-    ["higher", "Higher quality", "Full size, gentler compression"],
-    ["smallest", "Smallest files (slower)", "Takes longer to prepare"],
+    [MEDIA_ADDING_VALUES.image[0], "Smaller files", "Up to 1,600 pixels wide"],
+    [MEDIA_ADDING_VALUES.image[1], "Balanced", "Up to 2,400 pixels wide. Recommended"],
+    [MEDIA_ADDING_VALUES.image[2], "Higher quality", "Full size, gentler compression"],
+    [MEDIA_ADDING_VALUES.image[3], "Smallest files (slower)", "Takes longer to prepare"],
   ],
   video: [
-    ["smaller", "Smaller files", "Up to 720p"],
-    ["balanced", "Balanced", "Up to 1080p. Recommended"],
-    ["higher", "Higher quality", "Full size, gentler compression"],
+    [MEDIA_ADDING_VALUES.video[0], "Smaller files", "Up to 720p"],
+    [MEDIA_ADDING_VALUES.video[1], "Balanced", "Up to 1080p. Recommended"],
+    [MEDIA_ADDING_VALUES.video[2], "Higher quality", "Full size, gentler compression"],
   ],
   audio: [
-    ["balanced", "Balanced", "About 0.7 MB a minute. Recommended"],
-    ["higher", "Higher quality", "About 1 MB a minute"],
-    ["speech", "Speech", "About 0.5 MB a minute, in mono"],
+    [MEDIA_ADDING_VALUES.audio[0], "Balanced", "About 0.7 MB a minute. Recommended"],
+    [MEDIA_ADDING_VALUES.audio[1], "Higher quality", "About 1 MB a minute"],
+    [MEDIA_ADDING_VALUES.audio[2], "Speech", "About 0.5 MB a minute, in mono"],
   ],
 } as const satisfies Record<MediaAddingKind, readonly (readonly [string, string, string])[]>;
 

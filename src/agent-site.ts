@@ -357,7 +357,7 @@ export interface AgentSiteActions {
   inspect(request: { path: string; node?: number[]; selector?: string; limit?: number }): Promise<unknown>;
   listMedia(request: { folder?: string; offset: number; limit: number }): Promise<string>;
   previewMedia(path: string): Promise<{ data: string; mimeType: string; width: number; height: number; originalWidth: number; originalHeight: number }>;
-  media(command: AgentCommand): Promise<void>;
+  media(command: AgentCommand): Promise<void | { message: string; result: { report: string } }>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
 }
@@ -597,6 +597,8 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       if (args.page) await openPage(actions, args.page, command.expectedHash);
       await actions.media(command);
       return { message: `Changed description of ${args.file}, unsaved.`, result: { hash: await hashOf(actions, args.page ?? ".editor/media.json") } };
+    case "adding_settings":
+      return (await actions.media(command))!;
     case "change_collection":
       await actions.media(command);
       return { message: `Changed collection ${args.name}, unsaved.` };

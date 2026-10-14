@@ -1,3 +1,4 @@
+import type { AddingSettings } from "./media-records";
 import type { EditorContext } from "./types";
 
 /**
@@ -27,7 +28,8 @@ export type AgentOperation =
   | "preview_media"
   | "place_media"
   | "describe_media"
-  | "change_collection";
+  | "change_collection"
+  | "adding_settings";
 
 export interface AgentCommand {
   id: string;
@@ -91,6 +93,11 @@ export interface AgentCommandArgs {
   action?: "new" | "add" | "take-out" | "rename" | "delete";
   name?: string;
   files?: string[];
+  image?: AddingSettings["image"];
+  video?: AddingSettings["video"];
+  audio?: AddingSettings["audio"];
+  keepOriginal?: boolean;
+  reset?: boolean;
   folder?: string;
   offset?: number;
 }
@@ -292,6 +299,8 @@ export function agentMediaArgsProblem(operation: AgentOperation, args: AgentComm
       if (args.element !== undefined && (!args.page || !parseOutlineId(args.element))) return "Give a page and an image element id.";
     }
   }
+  if (operation === "adding_settings" && args.reset &&
+    [args.image, args.video, args.audio, args.keepOriginal].some(value => value !== undefined)) return "Reset cannot be combined with adding choices.";
   if (operation === "change_collection") {
     if (!args.action || !["new", "add", "take-out", "rename", "delete"].includes(args.action)) return "Choose a collection action: new, add, take-out, rename or delete.";
     if (!args.name?.trim()) return "Enter a collection name.";
