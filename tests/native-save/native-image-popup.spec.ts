@@ -1,8 +1,10 @@
 // The Image button and the image popup (media-manager build slice 39, ticket 09 "Entry point and
 // popup"): one Image button with a state badge; the popup's shape menu, focus dot and Replace show
 // on the page at once but are kept only by Done (one Undo step); ✕ or Escape put everything back.
+// Trim, zoom and turn (slice 41) save a trimmed copy for this spot only.
 // Default fixture: index.html's hero image is images/placeholder.svg (no alt); images/studio-desk.svg is unused.
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft, storedDrafts } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
@@ -12,7 +14,7 @@ const picker = (page: Page) => page.getByRole("dialog", { name: "Choose image", 
 const imageButton = (page: Page) => bar(page).locator(".edit-bar__image");
 const dot = (page: Page) => popup(page).getByRole("slider", { name: "Focus dot" });
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
-const heroTag = async (page: Page) => (await source(page)).match(/<img[^>]*placeholder\.svg[^>]*>|<img[^>]*studio-desk\.svg[^>]*>/)?.[0] ?? "";
+const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*class="hero-image"[^>]*>/)?.[0] ?? "";
 
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -144,4 +146,118 @@ test("a phone shows the popup as a bottom sheet with 44 px targets", async ({ pa
   // Only the computer preview: the page itself is the phone view.
   await expect(popup(page).locator(".image-popup__device--phone")).toBeHidden();
   await expect(popup(page).locator(".image-popup__device--computer")).toBeVisible();
+});
+
+// A raster picture to trim (the fixture's are SVGs, which cannot be): four coloured quarters.
+const quarters = (page: Page) => page.evaluate(() => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800; canvas.height = 400;
+  const context = canvas.getContext("2d")!;
+  [["#d22", 0, 0], ["#2a2", 400, 0], ["#22d", 0, 200], ["#dd2", 400, 200]].forEach(([colour, x, y]) => { context.fillStyle = colour as string; context.fillRect(x as number, y as number, 400, 200); });
+  return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+});
+// A corner of the trim dragged by a share of the picture's size.
+async function dragCorner(page: Page, corner: "nw" | "se", dx: number, dy: number) {
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
+  const handle = (await popup(page).locator(`.image-popup__corner--${corner}`).boundingBox())!;
+  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + box.width * dx, y + box.height * dy, { steps: 5 });
+  await page.mouse.up();
+}
+const records = async (page: Page) => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}");
+
+test("Free trim saves a -crop copy for this spot only; re-opening shows the trim on the original; re-trimming writes a new name", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  // An SVG cannot be trimmed: no Zoom, Turn or Free.
+  await openPopup(page);
+  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeHidden();
+  await expect(popup(page).getByRole("button", { name: "Turn left", exact: true })).toBeHidden();
+  // Put a photo in the spot first.
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters\.webp"/);
+  const original = "media/images/quarters.webp";
+
+  // Free: drag the bottom-right corner in (not to the picture's own shape, which re-opens as Original zoomed in); the message turns yellow and the page shows the trim at once.
+  await openPopup(page);
+  await expect(popup(page).getByRole("status").filter({ hasText: "Only changes this spot" })).toBeVisible();
+  await chooseShape(page, "Free");
+  await expect(popup(page).getByRole("group", { name: /^Trim area/ })).toBeVisible();
+  await dragCorner(page, "se", -0.5, -0.3);
+  await expect(popup(page).getByRole("status").filter({ hasText: "Saves a new picture for this spot" })).toBeVisible();
+  await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\//);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: quarters-crop.webp is used only here.", { timeout: 30_000 });
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+  // A new file with its record; the original is unchanged and stays for other places.
+  const saved = await records(page);
+  expect(saved.files["media/images/quarters-crop.webp"].trimmedFrom.source).toBe(original);
+  expect(saved.files["media/images/quarters-crop.webp"].trimmedFrom.trim.width).toBeCloseTo(0.5, 1);
+  const paths = (await storedDrafts(page)).map(draft => draft.path);
+  expect(paths).toContain("media/images/quarters-crop.webp");
+  expect((await storedDraft(page, original))?.deleted).toBeUndefined();
+  await frame(page).locator(".hero img").click();
+  await expect(imageButton(page)).toHaveText("ImageTrimmed");
+
+  // Re-opening starts from the full original with the trim put back.
+  await imageButton(page).click();
+  await expect(popup(page)).toBeVisible();
+  await expect(popup(page).locator(".image-popup__where")).toHaveText("quarters.webp");
+  await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeVisible();
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
+  const trim = (await popup(page).locator(".image-popup__frame").boundingBox())!;
+  expect(trim.width / box.width).toBeCloseTo(0.5, 1);
+  expect(trim.height / box.height).toBeCloseTo(0.7, 1);
+  expect(trim.x - box.x).toBeLessThan(3);
+  // Re-trimming writes a fresh name; the earlier copy, used nowhere else, goes to Recently removed.
+  await dragCorner(page, "nw", 0.2, 0.2);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(() => heroTag(page), { timeout: 30_000 }).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
+  const again = await records(page);
+  expect(again.files["media/images/quarters-crop-2.webp"].trimmedFrom.source).toBe(original);
+  expect(again.files["media/images/quarters-crop.webp"]).toBeUndefined();
+  expect(again.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop.webp");
+  // Done was one Undo step: the earlier copy is back in the spot.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+});
+
+test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spot changes", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await openPopup(page);
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Turned.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Turned.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
+  const message = popup(page).locator(".image-popup__message");
+  const zoom = popup(page).getByRole("slider", { name: "Zoom" });
+  await zoom.fill("200");
+  await expect(popup(page).locator(".image-popup__zoom output")).toHaveText("200 %");
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  // Zoomed in, Original shows the dot; arrow keys move what stays in view.
+  await expect(dot(page)).toBeVisible();
+  await zoom.fill("100");
+  await expect(message).toHaveText("Only changes this spot");
+  await popup(page).getByRole("button", { name: "Turn right", exact: true }).click();
+  await expect(popup(page).locator(".image-popup__turned")).toHaveText("90°");
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  // The picture is drawn turned: tall now.
+  const turned = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
+  expect(turned.height).toBeGreaterThan(turned.width);
+  await popup(page).getByRole("button", { name: "Turn left", exact: true }).click();
+  await expect(popup(page).locator(".image-popup__turned")).toHaveText("0°");
+  await expect(message).toHaveText("Only changes this spot");
+  // ✕ keeps nothing, the replacement included.
+  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
+  await expect.poll(() => heroTag(page)).toContain("placeholder.svg");
 });

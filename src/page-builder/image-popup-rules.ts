@@ -4,10 +4,10 @@
 import type { MediaRecords } from "../../shared/media-records";
 import { readPlaceFrame, type PlaceFocus, type PlaceFrameChange, type PlaceShape } from "./place-frame";
 
-/** A place's shape as read back: one of the popup's, or a hand-written ratio it keeps. */
-export type PopupShape = PlaceShape | { kind: "other"; value: string };
+/** A place's shape as read back (one of the popup's, or a hand-written ratio it keeps), or Free trimming. */
+export type PopupShape = PlaceShape | "free" | { kind: "other"; value: string };
 
-/** The shape menu, in the prototype's order. Free trimming joins with trimmed copies (slices 40/41). */
+/** The shape menu, in the prototype's order; Free follows when the picture can be trimmed (slice 41). */
 export const POPUP_SHAPES: readonly { id: PlaceShape; label: string; ratio?: number }[] = [
   { id: "original", label: "Original" },
   { id: "square", label: "Square", ratio: 1 },
@@ -17,6 +17,7 @@ export const POPUP_SHAPES: readonly { id: PlaceShape; label: string; ratio?: num
 ];
 
 export function shapeLabel(shape: PopupShape) {
+  if (shape === "free") return "Free";
   return typeof shape === "string" ? POPUP_SHAPES.find(item => item.id === shape)?.label ?? shape : `Custom (${shape.value.trim()})`;
 }
 
@@ -79,8 +80,9 @@ export function popupMessage(state: { newPicture: boolean; recrop?: boolean }) {
 }
 
 /** The hint under the picture. */
-export function pictureHint(shape: PopupShape) {
-  return focusApplies(shape) ? "Drag the dot to what matters most." : "The whole picture shows.";
+export function pictureHint(shape: PopupShape, zoomed = false) {
+  if (shape === "free") return "Drag the corners to trim.";
+  return focusApplies(shape) || zoomed ? "Drag the dot to what matters most." : "The whole picture shows.";
 }
 
 /** What Replace says at the top of the popup: the shape stays, the picture is centred, a trim is dropped. */
@@ -90,11 +92,15 @@ export function replaceNotice(file: string, shape: PopupShape, trimmed: boolean)
   return `${name} is in. ${kept}${trimmed ? " Trimming made for the old picture was dropped." : ""}`;
 }
 
+/** The shape a place keeps: Free trimming leaves the trimmed copy its own shape, as Original. */
+export const placeShapeOf = (shape: PopupShape): PopupShape => shape === "free" ? "original" : shape;
+
 /** What Done writes to the place: only what changed; nothing when nothing did. */
 export function frameChange(start: { shape: PopupShape; focus: PlaceFocus | undefined }, now: { shape: PopupShape; focus: PlaceFocus }, replaced = false): PlaceFrameChange | undefined {
   const change: PlaceFrameChange = {};
+  now = { ...now, shape: placeShapeOf(now.shape) };
   const sameShape = typeof start.shape === "string" || typeof now.shape === "string" ? start.shape === now.shape : start.shape.value === now.shape.value;
-  if (!sameShape && typeof now.shape === "string") change.shape = now.shape;
+  if (!sameShape && typeof now.shape === "string" && now.shape !== "free") change.shape = now.shape;
   // A replacement always writes the focus: it starts in the middle for the new picture. A focus
   // the popup cannot read (lengths) started the dot in the middle and is kept unless it moved.
   const from = start.focus ?? { x: 50, y: 50 };

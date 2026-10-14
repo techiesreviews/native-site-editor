@@ -2,14 +2,21 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placeBadge, placePopup, popupMessage,
-  pictureHint, replaceNotice, shapeLabel, shapeRatio, sheetScroll, visibleArea,
+  pictureHint, placeShapeOf, replaceNotice, shapeLabel, shapeRatio, sheetScroll, visibleArea,
 } from "../src/page-builder/image-popup-rules";
 import { writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
 
-test("the shape menu lists the prototype's shapes in order; Free waits for trimmed copies", () => {
+test("the shape menu lists the prototype's shapes in order; Free follows for pictures that can be trimmed", () => {
   assert.deepEqual(POPUP_SHAPES.map(shape => shape.label), ["Original", "Square", "4:3", "16:9", "Tall 4:5"]);
   assert.equal(shapeLabel("4:5"), "Tall 4:5");
+  assert.equal(shapeLabel("free"), "Free");
+  assert.equal(shapeRatio("free"), undefined);
+  // A Free trim's copy carries its own shape: the place keeps Original.
+  assert.equal(placeShapeOf("free"), "original");
+  assert.deepEqual(frameChange({ shape: "square", focus: undefined }, { shape: "free", focus: { x: 50, y: 50 } }), { shape: "original" });
+  assert.equal(pictureHint("free"), "Drag the corners to trim.");
+  assert.equal(pictureHint("original", true), "Drag the dot to what matters most.");
   assert.equal(shapeLabel({ kind: "other", value: " 3 / 2 " }), "Custom (3 / 2)");
 });
 
