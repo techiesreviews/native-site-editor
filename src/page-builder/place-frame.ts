@@ -29,8 +29,8 @@ function declarations(style: string) {
       const end = style.indexOf("*/", i + 2), stop = end < 0 ? style.length : end + 2;
       comments += style.slice(i, stop); plain += " "; i = stop - 1; continue;
     }
-    if (c === "(" || c === "[") depth++;
-    if (c === ")" || c === "]") depth = Math.max(0, depth - 1);
+    if (c === "(" || c === "[" || c === "{") depth++;
+    if (c === ")" || c === "]" || c === "}") depth = Math.max(0, depth - 1);
     if (c === ";" && !depth) push(i + 1); else plain += c;
   }
   if (start < style.length) push(style.length);
@@ -51,13 +51,15 @@ function editStyle(style: string, changes: Record<string, string | undefined>) {
     const value = changes[name], first = !seen.has(name);
     seen.add(name);
     const prefix = part.text.match(/^\s*/)?.[0] ?? "";
-    return `${prefix}${part.comments}${first && value !== undefined ? `${name}: ${value};` : ""}`;
+    const written = first && value !== undefined ? `${name}: ${value};` : "";
+    // A removed declaration takes its leading space with it; its comments stay.
+    return `${written || part.comments ? prefix : ""}${part.comments}${written}`;
   }).join("");
   for (const name of managed) if (Object.hasOwn(changes, name) && !seen.has(name) && changes[name] !== undefined) {
     if (result.trim() && !result.trimEnd().endsWith(";")) result += ";";
     result += `${result.trim() ? " " : ""}${name}: ${changes[name]}`;
   }
-  return /^[\s;]*$/.test(result) ? undefined : result;
+  return /^[\s;]*$/.test(result) ? undefined : result.trimEnd();
 }
 
 export function writePlaceFrame(tagText: string, change: PlaceFrameChange): string {

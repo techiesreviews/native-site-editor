@@ -182,3 +182,12 @@ test("restore keeps the captured proof; navigation during measurement refuses", 
   await assert.rejects(framePlace(moved.ports, moved.target, { shape: "square" }, moved.proof), /page changed/);
   assert.equal(moved.calls.length, 0);
 });
+test("custom-property blocks keep their nested declarations; only top-level ones are the image's", () => {
+  const block = "--theme: { color: red; object-fit: contain; aspect-ratio: 1 }";
+  const tag = `<img src="/a.webp" style="${block}; color: blue">`;
+  assert.equal(readPlaceFrame(tag).shape, "original");
+  const square = writePlaceFrame(tag, { shape: "square", focus: { x: 10, y: 90 } });
+  assert.equal(style(square), `${block}; color: blue; aspect-ratio: 1 / 1; object-fit: cover; object-position: 10% 90%`);
+  assert.equal(readPlaceFrame(square).shape, "square");
+  assert.equal(style(writePlaceFrame(square, { shape: "original" })), `${block}; color: blue;`);
+});
