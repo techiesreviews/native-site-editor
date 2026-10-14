@@ -376,9 +376,8 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await expect.poll(() => source(page)).toBe(before);
 });
 
-test("a slotted component image opens on its shape; other choices and restoring it each undo once", async ({ page, baseURL }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await open(page, baseURL);
+// A component whose CSS gives its picture a fixed 4:3 shape (slice 43), with one filled instance and one showing its fallback.
+async function seedPhotoCard(page: Page, baseURL: string | undefined) {
   for (const [path, content] of [
     ["components/photo-card/photo-card.html", '<figure class="photo"><slot name="image"><img src="/images/placeholder.svg" alt=""></slot></figure>'],
     ["components/photo-card/photo-card.css", ".photo img { display:block; width:100%; aspect-ratio:4 / 3; object-fit:cover; }"],
@@ -397,6 +396,13 @@ test("a slotted component image opens on its shape; other choices and restoring 
   await expect.poll(() => source(page)).toContain("<photo-card>");
   const image = frame(page).locator("photo-card > img");
   await expect(image).toBeVisible();
+  return image;
+}
+
+test("a slotted component image opens on its shape; other choices and restoring it each undo once", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  const image = await seedPhotoCard(page, baseURL);
   const before = await source(page);
   const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
   await image.click();
@@ -435,4 +441,34 @@ test("a slotted component image opens on its shape; other choices and restoring 
   await frame(page).locator("photo-card[data-fallback] img").click();
   await expect(popup(page)).toHaveCount(0);
   await expect(imageButton(page)).toHaveCount(0);
+});
+
+test("a Free trim on a component's picture shows the trimmed copy whole, not cropped to the component's shape", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  const image = await seedPhotoCard(page, baseURL);
+  const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
+  // A photo first (SVGs cannot be trimmed); the place keeps the component's shape.
+  await image.click();
+  await imageButton(page).click();
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+  await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(tag).toMatch(/src="\/media\/images\/quarters\.webp"/);
+  expect(await tag()).not.toMatch(/aspect-ratio/);
+  // Free: the trimmed copy has its own shape, so the place undoes the component's crop.
+  await image.click();
+  await imageButton(page).click();
+  await chooseShape(page, "Free");
+  await expect(popup(page).getByRole("status").filter({ hasText: "This Photo card will look different from the others." })).toBeVisible();
+  await dragCorner(page, "se", -0.5, -0.3);
+  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
+  await expect.poll(tag).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
+  expect(await tag()).toMatch(/aspect-ratio: auto/);
+  await expect(image).toHaveCSS("aspect-ratio", "auto");
 });
