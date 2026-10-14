@@ -115,8 +115,9 @@ test("older widths use every existing copy family and prepare only eligible main
   }
   for (const [width, expected] of [[2000, [480, 960, 1600]], [800, [480]], [400, []], [undefined, []]] as const)
     assert.deepEqual(olderCopyWidths({ path: "photo.jpg", width, paths: ["photo.jpg"] }), expected);
-  for (const path of ["logo.svg", "media/originals/photo.jpg", "photo.bmp", "missing.jpg"])
-    assert.deepEqual(olderCopyWidths({ path, width: 2000, paths: ["logo.svg", "media/originals/photo.jpg", "photo.bmp"] }), []);
+  for (const path of ["logo.svg", "media/originals/photo.jpg", "photo.tiff", "missing.jpg"])
+    assert.deepEqual(olderCopyWidths({ path, width: 2000, paths: ["logo.svg", "media/originals/photo.jpg", "photo.tiff"] }), []);
+  assert.deepEqual(olderCopyWidths({ path: "scan.bmp", width: 2000, paths: ["scan.bmp"] }), [480, 960, 1600]);
 });
 
 test("older copy plans preserve the exact stem, reject taken files and folders, and preserve other families", () => {

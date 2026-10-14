@@ -363,7 +363,7 @@ test("worker squeezes final PNGs before copies gate, keeps larger or failed sque
 test("copies-only worker never encodes a main, keeps only smaller requested copies, and skips animation", async () => {
   const names = ["self", "OffscreenCanvas", "createImageBitmap"], descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
   const calls: { width: number; type: string; quality?: number }[] = [];
-  let transparent = false, decoded = 0, wrongType = false;
+  let transparent = false, decoded = 0, wrongType = false, pngSmaller = false;
   type Result = import("../src/page-builder/media-optimise").MediaOptimiseResult;
   type Message = { file: File; options: import("../src/page-builder/media-optimise").MediaOptimiseOptions; copies: import("../src/page-builder/media-optimise").MediaCopiesOptions };
   let result: Result | undefined;
@@ -376,7 +376,7 @@ test("copies-only worker never encodes a main, keeps only smaller requested copi
     getContext() { return { drawImage() {}, getImageData() { return { data: new Uint8Array([0, 0, 0, transparent ? 128 : 255]) }; } }; }
     async convertToBlob(options: { type: string; quality?: number }) {
       calls.push({ width: this.width, ...options });
-      return new Blob([new Uint8Array(this.width === 960 ? 100 : 20)], { type: wrongType ? "image/png" : options.type });
+      return new Blob([new Uint8Array(this.width === 960 ? 100 : pngSmaller && options.type === "image/png" ? 10 : 20)], { type: wrongType ? "image/png" : options.type });
     }
   }
   Object.defineProperty(globalThis, "self", { configurable: true, value: scope });
@@ -395,7 +395,13 @@ test("copies-only worker never encodes a main, keeps only smaller requested copi
     assert.ok(calls.every(call => call.type === "image/webp" && call.quality === .8));
     transparent = true;
     assert.ok((await run(undefined, mediaImageRecipe("smallest"))).outputs.every(output => output.extension === "webp"));
-    assert.ok(calls.every(call => call.type === "image/webp" && call.quality === .8));
+    // The WebP/lossless PNG choice is tried once, at the largest copy; WebP wins a tie.
+    assert.deepEqual(calls.filter(call => call.type === "image/png").map(call => call.width), [1600]);
+    assert.ok(calls.every(call => call.quality === .8));
+    pngSmaller = true;
+    const lossless = await run();
+    assert.deepEqual(lossless.outputs.map(output => [output.variantWidth, output.extension]), [[480, "png"], [1600, "png"]]);
+    pngSmaller = false;
     const forced = await run(undefined, mediaImageRecipe("smallest"), "png");
     assert.deepEqual(forced.outputs.map(output => output.variantWidth), [480, 1600]);
     assert.ok(forced.outputs.every(output => output.extension === "png"));

@@ -126,10 +126,17 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
         }
         if (copies) {
           const outputs: MediaOutput[] = [];
-          for (const width of copies.widths) {
-            if (!Number.isInteger(width) || width < 1 || width >= picture.width) continue;
+          const widths = copies.widths.filter(width => Number.isInteger(width) && width >= 1 && width < picture.width);
+          // Transparent pictures keep the recipe's WebP/lossless PNG choice, judged at the largest copy, for one copy format.
+          if (transparent && settings.format === "webp" && copies.format === options.format && widths.length) {
+            const largest = canvasAt(Math.max(...widths)).canvas;
+            const webp = await encode(largest, "image/webp", settings.quality);
+            const png = await squeeze(await encode(largest, "image/png", settings.quality));
+            if (png.type === "image/png" && mediaChooseEncoding(webp, png) === png) settings = { ...settings, format: "png" };
+          }
+          for (const width of widths) {
             const copy = canvasAt(width);
-            const encoded = await encode(copy.canvas, `image/${settings.format}`, settings.quality, settings.speed);
+            const encoded = await squeeze(await encode(copy.canvas, `image/${settings.format}`, settings.quality, settings.speed));
             if (settings.format === "avif" && encoded.type === "image/webp") settings = mediaImageRecipe();
             if (encoded.type === `image/${settings.format}` && mediaCopyIsSmaller(encoded, file)) outputs.push({
               blob: encoded, width, height: copy.height, variantWidth: width,

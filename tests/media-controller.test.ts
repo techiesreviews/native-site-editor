@@ -487,7 +487,7 @@ test("held picker files unwrap a picture through the single save transaction", a
 
 test("older placement batches copies and srcset, carries held uploads, and handles failure, cancel and drift", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
-  let fail = false, requests = 0, during: () => void = () => {};
+  let fail = false, huge = false, requests = 0, during: () => void = () => {};
   class Worker {
     onmessage?: (event: { data: { result?: import("../src/page-builder/media-optimise").MediaOptimiseResult; error?: string } }) => void;
     onerror?: () => void;
@@ -497,7 +497,7 @@ test("older placement batches copies and srcset, carries held uploads, and handl
       queueMicrotask(() => {
         during();
         this.onmessage?.({ data: fail ? { error: "decode failed" } : { result: { before: 100, after: 30,
-          outputs: message.copies.widths.map(width => ({ blob: new Blob(["copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width / 2 })) } } });
+          outputs: message.copies.widths.map(width => ({ blob: new Blob([huge && width === 1600 ? new Uint8Array(21 * 1024 * 1024) : "copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width / 2 })) } } });
       });
     }
     terminate() {}
@@ -534,6 +534,21 @@ test("older placement batches copies and srcset, carries held uploads, and handl
     assert.equal(failed.f.changes.length, 1); assert.equal(failed.batches.length, 0);
     assert.deepEqual(failed.told, ["Image replaced. Smaller copies could not be made, so the full-size picture is used."]);
     fail = false;
+    // A copy over the upload limit, or no names that join the family: full size, with the note, nothing saved.
+    huge = true;
+    const oversized = setup(); await oversized.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await oversized.f.pick()!.onPick!(image, () => false);
+    assert.equal(oversized.f.changes.length, 1); assert.equal(oversized.batches.length, 0);
+    assert.deepEqual(oversized.told, ["Image replaced. Smaller copies could not be made, so the full-size picture is used."]);
+    assert.doesNotMatch(oversized.f.changes[0], /srcset/);
+    huge = false;
+    const unnamed = setup(), shared = unnamed.f.ports.workspace();
+    unnamed.f.ports.workspace = () => ({ ...shared!, nativePaths: ["index.html", "images/old.gif", "images/old.png"] });
+    const asked = requests;
+    await unnamed.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+    await unnamed.f.pick()!.onPick!({ ...image, path: "images/old.gif" }, () => false);
+    assert.equal(requests, asked); assert.equal(unnamed.batches.length, 0); assert.equal(unnamed.f.changes.length, 1);
+    assert.deepEqual(unnamed.told, ["Image replaced. Smaller copies could not be made, so the full-size picture is used."]);
     let cancelled = false; during = () => { cancelled = true; };
     const cancel = setup(); await cancel.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
     await cancel.f.pick()!.onPick!(image, () => cancelled);

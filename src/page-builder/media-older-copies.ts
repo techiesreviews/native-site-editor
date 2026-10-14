@@ -1,12 +1,13 @@
 import { mediaFamilies, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { mediaCopyName } from "./media-storage";
+import { uploadProblem } from "../uploads";
 import { mediaAddingSettings } from "./media-settings";
 import { mediaImageRecipe, optimiseMedia, type MediaImageQuality } from "./media-optimise";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImage } from "./media-markup";
 
 export function olderCopyWidths({ path, width, paths }: { path: string; width?: number; paths: string[] }): number[] {
-  if (!/\.(?:jpe?g|png|webp|avif|gif)$/i.test(path) || /^media\/originals\//i.test(path) || !width || !Number.isFinite(width)) return [];
+  if (!/\.(?:jpe?g|png|webp|avif|gif|bmp)$/i.test(path) || /^media\/originals\//i.test(path) || !width || !Number.isFinite(width)) return [];
   const family = mediaFamilies(paths).find(family => family.main === path);
   return family && !family.copies.length ? RESPONSIVE_COPY_WIDTHS.filter(size => size < width) : [];
 }
@@ -34,7 +35,9 @@ export function olderCopyFormat(main: string, widths: number[], extension: strin
 export async function makeOlderCopies(ctx: MediaWorkspaceContext, image: MediaImage, quality: MediaImageQuality = "balanced") {
   const widths = olderCopyWidths({ path: image.path, width: image.width, paths: ctx.paths });
   const options = mediaImageRecipe(quality), extension = olderCopyFormat(image.path, widths, options.format, ctx.paths);
-  if (!widths.length || !extension) return undefined;
+  if (!widths.length) return undefined;
+  // No names that join this image's family: placed at full size, with the note.
+  if (!extension) throw new Error("No free names for the copies.");
   const version = ctx.assetVersion(image.path), blob = await ctx.blob(image.path);
   ctx.assertLive();
   const format = extension === "jpg" || extension === "jpeg" ? "jpeg" : extension as "png" | "webp" | "avif";
@@ -43,8 +46,11 @@ export async function makeOlderCopies(ctx: MediaWorkspaceContext, image: MediaIm
   const uploads: { path: string; blob: Blob }[] = [], variants: { path: string; width: number }[] = [];
   // Transparency and the AVIF fallback may choose WebP. Validate the actual output as well.
   const actual = result.outputs[0]?.extension;
-  if (actual && olderCopyPaths(image.path, widths, actual, ctx.paths).length === widths.length) {
+  if (actual && olderCopyPaths(image.path, widths, actual, ctx.paths).length !== widths.length) throw new Error("No free names for the copies.");
+  if (actual) {
     for (const output of result.outputs) {
+      const problem = uploadProblem({ name: image.path, size: output.blob.size });
+      if (problem) throw new Error(problem);
       if (!output.variantWidth || output.extension !== actual) continue;
       const path = mediaCopyName(image.path.replace(/\.[^./]+$/, "." + actual), output.variantWidth);
       uploads.push({ path, blob: output.blob }); variants.push({ path, width: output.variantWidth });
