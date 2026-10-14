@@ -1,8 +1,8 @@
 ---
 title: Bring local dev level with origin/dev
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: claude (lead)
 blocked_by: []
 builder: claude
 phase: 0
@@ -24,3 +24,11 @@ The lead's own job, before any build slice. Local `dev` in `~/Projects/native-si
 - `git -C ~/Projects/native-site-editor-dev status -sb` shows `dev...origin/dev` with nothing ahead or behind.
 - `node scripts/agents/tickets.mjs check` passes and `node scripts/agents/tickets.mjs frontier media-manager` lists slices 02, 05, 06, 32, 56 and 60.
 - `npm run check`, `npm test` and `npm run lint` pass on the merged `dev`.
+
+## Done (2026-10-14)
+
+- Lex chose to keep the 35 prototype pictures (29 Mobbin/WordPress screenshots in `prototype/references/`, 6 demo pictures of unknown origin in `prototype/demo-media/`) off the public repository. They were removed from the 149 local-only planning commits with `git filter-branch --index-filter` (no other file changed; none had ever been pushed), copied to `~/Projects/native-site-editor-private/media-manager-prototype/`, restored on disk and excluded through `.git/info/exclude`. The references README says so.
+- Merged `origin/dev` (8be9ea58, the runner tooling) into local `dev` with no conflicts, then pushed `dev`.
+- `tickets.mjs check` already passed (281 tickets); the five components-and-builder slugs needed no fix.
+- On the merged tree with Node 24.21.0: `npm run check`, `npm run lint` and `npm test` (2,292 pass, 0 fail).
+- Hooks path and the starter: runners use their own worktrees from `origin/dev`; the starter's local `dev` is left as is.
