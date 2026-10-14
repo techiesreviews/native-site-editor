@@ -1006,6 +1006,7 @@ test("agent media editing tools validate before queueing and retain their comman
     for (const name of ["describe_media", "change_collection", "adding_settings", "frame_image", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
     const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
       ["frame_image", { path: "index.html", element: "1.0" }, "index.html", { element: "1.0" }],
+      ["frame_image", { path: "index.html", element: "1.0", shape: "component" }, "index.html", { element: "1.0", shape: "component" }],
       ["frame_image", { path: "index.html", element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }, "index.html", { element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }],
       ["remove_media", { files: ["images/a.png"] }, "", { files: ["images/a.png"] }],
       ["keep_media", { files: ["images/a.png"] }, "", { files: ["images/a.png"] }],
@@ -1047,9 +1048,11 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   const file = "media/images/photo.webp";
   const text = new Map([
     ["index.html", source],
+    ["components/photo-card/photo-card.html", '<figure><slot name="media"></slot></figure>'],
+    ["components/photo-card/photo-card.css", "::slotted(img){aspect-ratio:4/3;object-fit:cover}"],
     [MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/old.png": { description: { text: "Old" } }, [file]: { description: { text: "Photo" } } } })],
   ]);
-  const paths = ["index.html", MEDIA_RECORDS_PATH, "images/old.png", file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
+  const paths = [...text.keys(), "images/old.png", file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
   const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
   const bytes = new Map(paths.filter(path => /\.(png|webp|jpg)$/.test(path)).map(path => [path, new Blob(["picture"], { type: "image/webp" })]));
   const batches: MediaWorkspaceBatch[] = [], history: (() => void)[] = [], labels: string[] = [];
@@ -1206,6 +1209,64 @@ test("agent shape and focus use exactly the popup's framing and one page-only Un
     assert.equal(agent.labels[0], change.shape !== undefined ? "Image shape changed" : "Focus point moved");
     agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
   }
+  const { componentPicture, componentFrame, componentPopupShape } = await import("../src/page-builder/component-shapes");
+  const { frameChange } = await import("../src/page-builder/image-popup-rules");
+  for (const change of [{ shape: "original" as const }, { shape: "component" as const },
+    { shape: "square" as const }, { focus: { x: 75, y: 25 } }]) {
+    const own = change.shape === "component" ? "aspect-ratio:1/1;object-fit:cover;" : "";
+    const source = `<section><photo-card><img slot="media" src="/media/images/photo.webp" alt="Photo" style="color:red;${own}object-position:10% 40%"></photo-card></section>`;
+    const popup = agentMediaFixture(source), agent = agentMediaFixture(source);
+    const target = { path: "index.html", node: [0, 0, 0] };
+    const expected = source.slice(source.indexOf("<img"), source.indexOf(">", source.indexOf("<img")) + 1);
+    const component = componentPicture(source, target.node, path => popup.ports.source(path));
+    assert.ok(component);
+    const start = componentFrame(expected, undefined, target.path, component);
+    const popupChange = frameChange(start, { component, shape: change.shape === "component" ? componentPopupShape("<img>", component)!
+      : change.shape ?? start.shape, focus: change.focus ?? start.focus! });
+    assert.ok(popupChange);
+    await framePlace(popup.ports, target, popupChange, { stamp: popup.ports.stamp(), epoch: 1, source, expected });
+    await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0.0", ...change }),
+      target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
+    assert.equal(agent.text.get("index.html"), popup.text.get("index.html"));
+    assert.deepEqual(agent.text, popup.text);
+    assert.equal(agent.batches.length, 0); assert.equal(agent.history.length, 1);
+    agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
+  }
+});
+
+test("agent reads the popup's component frame and reports available component shapes even with an own shape", async () => {
+  const { componentPicture, componentFrame } = await import("../src/page-builder/component-shapes");
+  for (const own of ["", ' style="aspect-ratio:1/1;object-fit:cover"']) {
+    const tag = `<img slot="media" src="/media/images/photo.webp" alt="Photo"${own}>`;
+    const source = `<section><photo-card>${tag}</photo-card></section>`, f = agentMediaFixture(source);
+    const target = { path: "index.html", node: [0, 0, 0] };
+    const component = componentPicture(source, target.node, path => f.ports.source(path));
+    const apply = async (args: AgentCommand["args"] = {}) => applyAgentMedia(await f.controller.workspaceContext(),
+      mediaCommand("frame_image", { element: "0.0.0", ...args }), target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target));
+    const report = JSON.parse((await apply())!.result.report);
+    assert.deepEqual(report, { ...componentFrame(tag, parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), target.path, component),
+      component: { name: "Photo card", shape: "4:3", value: "4 / 3" } });
+    assert.equal(f.history.length, 0);
+    await apply({ shape: "original" });
+    assert.equal(JSON.parse((await apply())!.result.report).shape, "original");
+    assert.match(f.text.get("index.html")!, /aspect-ratio: auto;\s*object-fit: contain/);
+    assert.equal(f.history.length, 1);
+    f.history.pop()!(); assert.equal(f.text.get("index.html"), source);
+  }
+});
+
+test("component shape without a shaped component refuses frame and trim without writing", async () => {
+  for (const source of ['<section><img src="/media/images/photo.webp"></section>',
+    '<section><photo-card><img slot="media" src="/media/images/photo.webp"></photo-card></section>']) {
+    const f = agentMediaFixture(source), node = source.includes("photo-card") ? [0, 0, 0] : [0, 0];
+    f.text.set("components/photo-card/photo-card.css", "::slotted(img){object-fit:cover}");
+    const before = new Map(f.text);
+    for (const args of [{ shape: "component" as const }, { shape: "component" as const, trim: { zoom: 2 } }]) {
+      await assert.rejects(applyAgentMedia(await f.controller.workspaceContext(), mediaCommand("frame_image", { element: node.join("."), ...args }),
+        target => f.controller.preparePlacement(target), target => f.controller.prepareFrame(target)), /no component shape/);
+      assert.deepEqual(f.text, before); assert.equal(f.history.length, 0); assert.equal(f.batches.length, 0);
+    }
+  }
 });
 
 /** Runs with a fake image worker that answers every trim with an 1800 px main and three copies. */
@@ -1226,6 +1287,32 @@ async function withTrimWorker(run: (requests: { file: File; trim: import("../sha
   try { await run(requests); }
   finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
 }
+
+test("agent trims under a component keep the popup's Original, component and unchanged framing", () => withTrimWorker(async () => {
+  const { componentPicture, componentFrame, componentPopupShape } = await import("../src/page-builder/component-shapes");
+  const { frameChange } = await import("../src/page-builder/image-popup-rules");
+  const { trimPlace } = await import("../src/page-builder/place-trim");
+  for (const shape of ["original", "component", undefined] as const) {
+    const tag = '<img slot="media" src="/media/images/photo.webp" alt="Photo" style="color:red;aspect-ratio:1/1;object-fit:cover;object-position:20% 70%">';
+    const source = `<section><photo-card>${tag}</photo-card></section>`;
+    const popup = agentMediaFixture(source), agent = agentMediaFixture(source), target = { path: "index.html", node: [0, 0, 0] };
+    const component = componentPicture(source, target.node, path => popup.ports.source(path));
+    const start = componentFrame(tag, undefined, target.path, component);
+    const frame = shape === undefined ? undefined : frameChange(start, { component,
+      shape: shape === "component" ? componentPopupShape("<img>", component)! : shape, focus: start.focus! });
+    await trimPlace(popup.ports, () => popup.controller.workspaceContext(), target,
+      { trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, frame }, { stamp: popup.ports.stamp(), epoch: 1, source, expected: tag });
+    await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0.0", shape, trim: { zoom: 2 } }),
+      target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
+    assert.deepEqual(agent.text, popup.text);
+    const page = agent.text.get("index.html")!;
+    if (shape === "original") assert.match(page, /aspect-ratio: auto;\s*object-fit: contain/);
+    else if (shape === "component") { assert.doesNotMatch(page, /aspect-ratio|object-fit/); assert.match(page, /object-position:20% 70%/); }
+    else assert.ok(page.includes('style="color:red;aspect-ratio:1/1;object-fit:cover;object-position:20% 70%"'));
+    assert.equal(agent.history.length, 1); assert.equal(agent.batches.length, 1);
+    agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source); assert.ok(!agent.bytes.has("media/images/photo-crop.webp"));
+  }
+}));
 
 test("agent trims and re-crops original bytes in one batch with copies, records and Undo; read reports provenance", () => withTrimWorker(async requests => {
   const source = '<section><picture><source srcset="/media/images/photo.webp"><img src="/media/images/photo.webp" alt="Photo" style="aspect-ratio:4/3;object-fit:cover;object-position:20% 70%"></picture><img src="/media/images/photo.webp" alt="Photo"></section>';

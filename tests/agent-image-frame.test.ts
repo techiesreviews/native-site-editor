@@ -29,7 +29,7 @@ test("agent trim refuses no-ops, outside rectangles, invalid transforms and non-
 
 test("frame validation permits reads and shapes but checks page, target and focus in the tab", () => {
   assert.equal(agentMediaArgsProblem("frame_image", { element: "1" }, "index.html"), undefined);
-  for (const shape of ["original", "square", "4:3", "16:9", "4:5"] as const)
+  for (const shape of ["original", "square", "4:3", "16:9", "4:5", "component"] as const)
     assert.equal(agentMediaArgsProblem("frame_image", { element: "1", shape, focus: { x: 0, y: 100 } }, "index.html"), undefined);
   for (const args of [{ element: "x" }, { element: "1", shape: "free" }, { element: "1", focus: { x: -1, y: 50 } }, { element: "1", focus: { x: 50, y: Infinity } }])
     assert.ok(agentMediaArgsProblem("frame_image", args as AgentCommandArgs, "index.html"));

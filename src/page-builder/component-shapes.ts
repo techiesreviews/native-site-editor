@@ -6,7 +6,7 @@ import { startTagAttributes } from "./component-model";
 import { compoundsOf, flatRulesWithLayers, hasStatePseudo, matches, type Match } from "./component-css";
 import { parseSource, readSource, tagAttribute, type SourceElement, type SourceNode } from "./source-tree";
 import { POPUP_SHAPES, type PopupShape } from "./image-popup-rules";
-import { hasPlaceShape, readPlaceFrame } from "./place-frame";
+import { hasPlaceShape, readPlaceFrame, type PlaceFrameChange } from "./place-frame";
 
 export interface ComponentPictureShape { value: string; ratio: number; label: string }
 export interface ComponentPicture { label: string; shape: ComponentPictureShape }
@@ -112,4 +112,15 @@ export function componentShapeEntry(component?: ComponentPicture) {
 }
 export function componentShapeNotice(shape: PopupShape, component?: ComponentPicture) {
   return component && (typeof shape === "string" || shape.kind !== "component") ? `This ${component.label} will look different from the others.` : undefined;
+}
+
+/** frame_image's read (slice 92): the popup's frame, and the component's shape whenever one is available. */
+export function agentComponentRead(tag: string, records: Parameters<typeof readPlaceFrame>[1], page: string, component?: ComponentPicture) {
+  return { ...componentFrame(tag, records, page, component),
+    ...(component ? { component: { name: component.label, shape: component.shape.label, value: component.shape.value } } : {}) };
+}
+/** frame_image's change as the popup's Done writes it: Original undoes the component's crop; its shape needs one. */
+export function agentComponentChange(change: PlaceFrameChange, component?: ComponentPicture): PlaceFrameChange {
+  if (change.shape === "component" && !component) throw new Error("This picture has no component shape. Choose Original or another shape.");
+  return change.shape === "original" && component ? { ...change, originalUnderComponent: true } : change;
 }

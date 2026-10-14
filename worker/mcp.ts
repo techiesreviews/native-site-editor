@@ -769,10 +769,10 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   });
 
   server.registerTool("frame_image", {
-    description: "Read an image place's shape, focus and trim, or change them. Trim makes a copy from the site's own picture for this place. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    description: "Read an image place's shape, focus and trim, including its component's shape, or change them. Original shows the whole picture even inside a shaped component; component restores the component's shape by removing the place's own. Trim makes a copy from the site's own picture for this place. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({
       path: mediaPath, element: mediaPath,
-      shape: z.enum(["original", "square", "4:3", "16:9", "4:5"]).optional(),
+      shape: z.enum(["original", "square", "4:3", "16:9", "4:5", "component"]).optional(),
       focus: z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }).optional(),
       trim: z.object({
         x: z.number().min(0).max(1).optional(), y: z.number().min(0).max(1).optional(),

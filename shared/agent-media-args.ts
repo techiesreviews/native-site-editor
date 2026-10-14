@@ -20,7 +20,7 @@ export function agentMediaArgsProblem(operation: AgentOperation, args: AgentComm
   if (operation === "frame_image") {
     if (!path || !/\.html$/i.test(path)) return "Give a page path ending in .html.";
     if (!args.element || !parseOutlineId(args.element)) return "Give an image element id from get_page or inspect_preview.";
-    if (args.shape !== undefined && !["original", "square", "4:3", "16:9", "4:5"].includes(args.shape)) return "Choose Original, Square, 4:3, 16:9 or Tall 4:5.";
+    if (args.shape !== undefined && !["original", "square", "4:3", "16:9", "4:5", "component"].includes(args.shape)) return "Choose Original, Square, 4:3, 16:9, Tall 4:5 or component (the component's own shape).";
     if (args.focus !== undefined && (!args.focus || ![args.focus.x, args.focus.y].every(value => Number.isFinite(value) && value >= 0 && value <= 100)))
       return "Focus must use percentages between 0 and 100.";
     if (args.trim !== undefined) {

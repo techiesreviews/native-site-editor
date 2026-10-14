@@ -106,7 +106,7 @@ export interface AgentCommandArgs {
   audio?: AddingSettings["audio"];
   keepOriginal?: boolean;
   reset?: boolean;
-  shape?: "original" | "square" | "4:3" | "16:9" | "4:5";
+  shape?: "original" | "square" | "4:3" | "16:9" | "4:5" | "component";
   focus?: { x: number; y: number };
   trim?: AgentImageTrim;
   folder?: string;

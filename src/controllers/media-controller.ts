@@ -326,19 +326,26 @@ export function createMediaController(ports: MediaControllerPorts) {
     const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
     if (!range || range.tag.name !== "img" || source === undefined) throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
     const expected = source.slice(range.tag.start, range.tag.end), proof = { stamp, epoch, source, expected };
+    // Under a component's own shape the agent writes and reads as the popup does (slice 92).
+    const context = async () => {
+      const shapes = await import("../page-builder/component-shapes");
+      if (!stamp.holds() || ports.viewingVersion() || ports.source(target.path) !== source) throw new Error("This image changed. Select it again.");
+      return { shapes, component: shapes.componentPicture(source, target.node, path => ports.source(path)) };
+    };
     return {
       async read(records?: import("../../shared/media-records").MediaRecords) {
-        const { readPlaceFrame } = await import("../page-builder/place-frame");
-        if (!stamp.holds() || ports.viewingVersion() || ports.source(target.path) !== source) throw new Error("This image changed. Select it again.");
-        return readPlaceFrame(expected, records, target.path);
+        const { shapes, component } = await context();
+        return shapes.agentComponentRead(expected, records, target.path, component);
       },
       async frame(change: import("../page-builder/place-frame").PlaceFrameChange) {
         const { framePlace } = await import("../page-builder/place-frame");
-        await framePlace(ports, target, change, proof);
+        const { shapes, component } = await context();
+        await framePlace(ports, target, shapes.agentComponentChange(change, component), proof);
       },
       async trim(request: import("../page-builder/place-trim").PlaceTrimRequest) {
         const { trimPlace } = await import("../page-builder/place-trim");
-        return trimPlace(ports, workspaceContext, target, request, proof);
+        const { shapes, component } = await context();
+        return trimPlace(ports, workspaceContext, target, { ...request, frame: request.frame && shapes.agentComponentChange(request.frame, component) }, proof);
       },
     };
   }
