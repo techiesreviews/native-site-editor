@@ -1,8 +1,8 @@
 ---
 title: Recently removed
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-48 runner)
 blocked_by: [47-clean-up-suggestions, 40-trimmed-copies]
 builder: sol
 phase: 4
