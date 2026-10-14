@@ -810,6 +810,22 @@ test("replace is one batch and Undo step, preserves old family SHA and record, u
   assert.ok(f.paths.has(original)); assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).removed, undefined);
 });
 
+test("replace keeps an Always keep copy's record when the copy stays at its address", async () => {
+  const f = fixture();
+  const copy = "images/a-480.png";
+  f.paths.add(copy); f.bytes.set(copy, new Blob(["old copy"])); f.versions.set(copy, "sha:" + copy);
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { [copy]: { alwaysKeep: true } } }));
+  await f.host.load();
+  await f.host.replace({ path: "images/a.png", result: { before: 10, after: 8, outputs: [
+    { blob: new Blob(["new main"], { type: "image/png" }), extension: "png", width: 800, height: 400 },
+    { blob: new Blob(["new copy"], { type: "image/png" }), extension: "png", width: 480, height: 240, variantWidth: 480 },
+  ] } });
+  const data = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  assert.equal(data.files[copy]?.alwaysKeep, true);
+  // Still protected: the library marks the family Always keep.
+  assert.ok((await f.host.load()).keep.includes("images/a.png"));
+});
+
 test("replace captures old family and trimmed revisions before preparation; stale member refuses", async () => {
   for (const member of ["images/a.png", "media/originals/a.jpg", "images/trim.png"]) {
     const f = fixture();

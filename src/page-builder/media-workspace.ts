@@ -501,9 +501,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       }
     }
     let next = await removedRecords(ctx, metadata, removed);
-    // Removal owns the old records. Copy the replacement record back from the independent plan.
+    // Removal owns the old records. Copy the new family's records back from the independent plan.
     next = { ...next, files: { ...next.files } };
-    if (plan.records.files[plan.main]) next.files[plan.main] = plan.records.files[plan.main];
+    for (const upload of plan.uploads) if (plan.records.files[upload.path]) next.files[upload.path] = plan.records.files[upload.path];
     for (const trim of plan.trims) if (next.files[trim.main]) next.files[trim.main] = plan.records.files[trim.main];
     recordsEdit(batch, metadata, next);
     batch.uploads.push(...plan.uploads);

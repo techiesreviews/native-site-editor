@@ -78,7 +78,7 @@ test("each mention keeps encoding, slash entities and escapes; external URLs are
 test("responsive widths remade, absent width dropped only from srcset, main w descriptor follows dimensions", async () => {
   const p = await plan({ "index.html": `<img src="/${gone}" srcset="/${path} 1200w, /${copy} 480w, /${gone} 960w"><link imagesrcset="/${gone} 960w, /${path} 1200w"><img data-srcset="/${gone} 960w">`, "data.json": `"/${gone}"` });
   const h = await mainHash;
-  assert.equal(p.edits.get("index.html"), `<img src="/${path}?v=${h}" srcset="/${path}?v=${h} 800w, /${copy}?v=${await copyHash} 480w"><link imagesrcset="/${path}?v=${h} 800w"><img data-srcset="">`);
+  assert.equal(p.edits.get("index.html"), `<img src="/${path}?v=${h}" srcset="/${path}?v=${h} 800w, /${copy}?v=${await copyHash} 480w"><link imagesrcset="/${path}?v=${h} 800w"><img data-srcset="/${path}?v=${h} 800w">`);
   assert.equal(p.edits.get("data.json"), `"/${path}?v=${h}"`);
   const newer = result(); newer.outputs.push({ blob: new Blob(["1600"]), extension: "jpg", variantWidth: 1600 });
   assert.ok((await plan({}, { request: { path, result: newer } })).uploads.some(upload => upload.path === "media/images/photo-1600.jpg"));
@@ -251,4 +251,25 @@ test("retained trim provenance keeps its responsive source unless that copy disa
   assert.equal((await plan()).records.files[trim].trimmedFrom?.source, copy);
   const noCopies = result(); noCopies.outputs = noCopies.outputs.slice(0, 1);
   assert.equal((await plan({}, { request: { path, result: noCopies } })).records.files[trim].trimmedFrom?.source, path);
+});
+
+test("a srcset whose only candidate's width disappears keeps the new main, so the place still shows a picture", async () => {
+  const h = await mainHash;
+  const p = await plan({ "index.html": `<img srcset="/${gone} 960w" alt="">` });
+  assert.equal(p.edits.get("index.html"), `<img srcset="/${path}?v=${h} 800w" alt="">`);
+});
+
+test("a type change forwards every old address when only a responsive copy is Always keep", async () => {
+  const copyKept = structuredClone(records); copyKept.files[path].alwaysKeep = false; copyKept.files[copy] = { alwaysKeep: true };
+  const p = await plan({}, { records: copyKept, request: { path, result: result("webp") } });
+  for (const [old, target] of [[path, p.main], [copy, "media/images/photo-480.webp"], [gone, p.main]]) assert.ok(p.edits.get("_redirects")?.includes(`/${old} /${target} 301`));
+  assert.deepEqual(p.records.files["media/images/photo-480.webp"], { alwaysKeep: true });
+  assert.equal(p.records.files[copy], undefined);
+  assert.equal((await plan({}, { records: copyKept, request: { path, result: result("webp"), keepOldAddress: false } })).edits.has("_redirects"), false);
+});
+
+test("a responsive copy that stays at its address keeps its record", async () => {
+  const copyKept = structuredClone(records); copyKept.files[copy] = { alwaysKeep: true, credit: "Copy" };
+  const p = await plan({}, { records: copyKept });
+  assert.deepEqual(p.records.files[copy], { alwaysKeep: true, credit: "Copy" });
 });

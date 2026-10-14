@@ -128,13 +128,16 @@ export function planMediaReplace(input: ReplaceInput) {
         const attr = startTagAttribute(source, tag, name);
         if (!attr || !own.some(ref => ref.attribute === name)) continue;
         const candidates = tokens.filter(token => token.attribute === name && token.start >= attr.valueStart && token.end <= attr.valueEnd);
+        let dropped: string | undefined;
         const entries = candidates.flatMap((token, index) => {
           const ref = own.find(ref => ref.start === token.start && ref.attribute === name);
-          if (ref && missing.has(ref.path)) return [];
           let entry = source.slice(token.start, candidates[index + 1]?.start ?? attr.valueEnd).trim().replace(/,$/, "").trimEnd();
           if (ref && mapping.get(ref.path) === main) entry = entry.replace(/(\s+)\d+w\s*$/, `$1${first.width}w`);
+          if (ref && missing.has(ref.path)) { dropped ??= entry; return []; }
           return [entry];
         });
+        // Never leave a place without a picture: its only candidate becomes the new main (mapped below).
+        if (!entries.length && dropped) entries.push(dropped);
         edits.push({ start: attr.valueStart, end: attr.valueEnd, text: entries.join(", ") });
       }
       if (tag.name !== "img") continue;
@@ -164,11 +167,20 @@ export function planMediaReplace(input: ReplaceInput) {
   for (const [file, source] of Object.entries(sources)) if (source !== undefined && source !== input.sources[file] && !edits.has(file)) edits.set(file, source);
   let redirects = rewriteMediaRedirects(renameInput, mapping);
   const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
+  // Always keep on any family member (a kept copy protects the family) forwards every old address.
+  const keepOld = request.keepOldAddress ?? family.some(member => Boolean(records.files[member]?.alwaysKeep));
   if (main !== path) for (const member of [old.main, ...old.copies.map(copy => copy.path)])
-    redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), (request.keepOldAddress ?? Boolean(records.files[path]?.alwaysKeep)) ? [address(member)] : [], false);
+    redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), keepOld ? [address(member)] : [], false);
   if ((redirects ?? "") !== (input.sources._redirects ?? "")) edits.set("_redirects", redirects ?? "");
   const next = structuredClone(records);
   if (main !== path) { if (next.files[path]) next.files[main] = next.files[path]; delete next.files[path]; }
+  // Copies and the kept original with a new counterpart keep their records (Always keep, notes) at its address.
+  for (const member of family) {
+    const record = next.files[member], to = mapping.get(member);
+    if (member === path || !record) continue;
+    delete next.files[member];
+    if (to && to !== main && uploads.some(upload => upload.path === to)) next.files[to] = record;
+  }
   for (const record of Object.values(next.files)) if (record.trimmedFrom && family.includes(record.trimmedFrom.source)) record.trimmedFrom.source = mapping.get(record.trimmedFrom.source)!;
   const kept = alwaysKeptFiles(paths, new Set(Object.keys(records.files).filter(file => records.files[file].alwaysKeep)));
   return { main, uploads, deletes: family.filter(member => !uploads.some(upload => upload.path === member)), edits, records: next,
