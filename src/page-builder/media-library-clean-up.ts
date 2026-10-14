@@ -41,6 +41,8 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
     return { live, badge: state?.badge, steady: live?.state === "not-checked" ? last : live };
   };
   const go = (next: Phase, focus = true) => { phase = next; draw(focus); };
+  // The listing may not know a file's size; then its line says nothing rather than "0 B".
+  const sizeKnown = (item: MediaCleanUpItem) => item.members.every(path => h.library().items.some(entry => entry.path === path && entry.size !== undefined));
 
   function draw(focus: boolean | string = true) {
     const { element } = sheet;
@@ -146,7 +148,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         const round = node("span", "media-cleanup__check"); round.append(check);
         const name = node("strong", "", basename(item.main)); name.title = item.main;
         const text = node("span", "media-cleanup__photo-text");
-        text.append(name, node("span", "media-library__muted", itemLine(item)));
+        text.append(name, node("span", "media-library__muted", itemLine(item, sizeKnown(item))));
         label.append(preview(item.main, true), round, text);
         card.append(label);
         grid.append(card);
@@ -175,7 +177,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         const row = node("li", "media-check__row"); row.dataset.path = item.main;
         const text = node("div", "media-check__text");
         const name = node("strong", "", basename(item.main)); name.title = item.main;
-        text.append(name, node("span", "media-library__muted", itemLine(item)));
+        text.append(name, node("span", "media-library__muted", itemLine(item, sizeKnown(item))));
         row.append(preview(item.main), text);
         files.append(row);
       }

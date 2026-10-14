@@ -1,5 +1,15 @@
 /* The Clean up review (slice 50), after the Tiles mockup's clean-up screens: group cards with a
  * picture collage, larger pictures each chosen on its own, and a footer with the chosen size. */
+/* Its own screen with Back, like Adding settings: the whole pane, the grid and bar hidden. */
+.media-library__body:has(> .media-library__sheet[data-mode="clean-up"]:not([hidden])) .media-library__browse,
+.media-library:has(.media-library__sheet[data-mode="clean-up"]:not([hidden])) :is(.media-library__bar, .media-library__footer),
+.media-library--pane:has(.media-library__sheet[data-mode="clean-up"]:not([hidden])) .media-library__header { display: none; }
+.media-library .media-library__sheet[data-mode="clean-up"] {
+  flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 12px;
+}
+.media-library--pane .media-library__sheet[data-mode="clean-up"] { padding: 8px 12px 20px; }
+.media-library .media-library__sheet[data-mode="clean-up"] button { align-self: auto; }
+.media-library .media-library__sheet[data-mode="clean-up"] .media-cleanup__select-all { align-self: start; }
 .media-cleanup__groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
 .media-library .media-cleanup__group {
   display: grid; gap: 0; width: 100%; padding: 0; border: 0; border-radius: 12px;
@@ -54,8 +64,8 @@
 .media-cleanup__photo-text { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 
 .media-cleanup__footer {
-  position: sticky; bottom: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px;
-  margin-top: 4px; padding: 12px 0; border-top: 1px solid var(--line); background: var(--surface-subtle);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px;
+  margin-top: 4px; padding: 12px 0; border-top: 1px solid var(--line);
 }
 .media-cleanup__sum { margin-inline-end: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
 .media-cleanup__confirm .media-check__preview { width: 72px; height: 72px; border-radius: 12px; }
@@ -68,3 +78,4 @@
   .media-cleanup__preview { height: 230px; }
   .media-library .media-cleanup__footer button { flex: 1; }
 }
+.media-cleanup__notice > button { margin-inline-start: auto; }

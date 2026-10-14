@@ -33,6 +33,7 @@ test("a reviewed file says what the check found and the copies that go with it",
   assert.equal(itemLine({ main: "media/hero.jpg", members: ["media/hero.jpg", "media/hero-480.webp"], size: 3072 }), "3 KB · No uses found · with its 1 copy");
   assert.equal(itemLine({ main: "a.jpg", members: ["a.jpg", "a-480.jpg", "a-960.jpg"], size: 10 }), "10 B · No uses found · with its 2 copies");
   assert.equal(itemLine({ main: "media/spare.svg", members: ["media/spare.svg"], size: 300 }), "300 B · No uses found");
+  assert.equal(itemLine({ main: "guide.pdf", members: ["guide.pdf"], size: 0 }, false), "No uses found");
 });
 
 test("the scope keeps checked, other-use, not-checked and Always keep files apart", () => {

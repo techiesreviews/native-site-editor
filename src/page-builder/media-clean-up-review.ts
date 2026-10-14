@@ -28,10 +28,10 @@ export function sizedSuggestions(suggestions: MediaCleanUpSuggestions, sizes: Re
 /** A group card's line: "2 files · 3 KB". */
 export const groupLine = (group: Pick<MediaCleanUpGroup, "count" | "size">) => `${filesCount(group.count)} · ${formatBytes(group.size)}`;
 
-/** Under a reviewed file: what the check found, and the copies that go with it. */
-export function itemLine(item: MediaCleanUpItem) {
+/** Under a reviewed file: its size when known, what the check found, and the copies that go with it. */
+export function itemLine(item: MediaCleanUpItem, sizeKnown = true) {
   const copies = item.members.length - 1;
-  return `${formatBytes(item.size)} · No uses found${copies ? ` · with its ${copies} ${copies === 1 ? "copy" : "copies"}` : ""}`;
+  return `${sizeKnown ? `${formatBytes(item.size)} · ` : ""}No uses found${copies ? ` · with its ${copies} ${copies === 1 ? "copy" : "copies"}` : ""}`;
 }
 
 /** What the check covered and what it kept apart, so "no uses found" is read for what it is:
