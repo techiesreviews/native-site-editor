@@ -158,11 +158,11 @@ export function rewriteMediaMentions(input: RenameInput, mapping: Map<string, st
   return edits;
 }
 
-/** Redirect sources remain request paths; only destinations follow, without version marks. */
-export function rewriteMediaRedirects(input: RenameInput, mapping: Map<string, string>): string | undefined {
+/** Redirect sources remain request paths; only destinations follow (with version marks when replacing). */
+export function rewriteMediaRedirects(input: RenameInput, mapping: Map<string, string>, options: Pick<MediaRewriteOptions, "versions"> = {}): string | undefined {
   const redirects = input.sources._redirects?.split(/(\r?\n)/).map(line => {
     const match = /^(\s*[^#\s]\S*\s+)((?:https?:)?\/\S+)/i.exec(line);
-    return match ? match[1] + rewriteText("_redirects", match[2], input, mapping, new Map()) + line.slice(match[0].length) : line;
+    return match ? match[1] + rewriteText("_redirects", match[2], input, mapping, new Map(), options) + line.slice(match[0].length) : line;
   }).join("");
   return redirects;
 }

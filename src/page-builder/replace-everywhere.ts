@@ -165,7 +165,9 @@ export function planMediaReplace(input: ReplaceInput) {
   }
   const edits = rewriteMediaMentions({ ...renameInput, sources }, mapping, { versions });
   for (const [file, source] of Object.entries(sources)) if (source !== undefined && source !== input.sources[file] && !edits.has(file)) edits.set(file, source);
-  let redirects = rewriteMediaRedirects(renameInput, mapping);
+  // Existing destinations are mentions too: a visitor forwarded to the same address must get the new bytes.
+  // New forwarding lines (type change) point at addresses no browser has cached, so they stay plain.
+  let redirects = rewriteMediaRedirects(renameInput, mapping, { versions });
   const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
   // Always keep on any family member (a kept copy protects the family) forwards every old address.
   const keepOld = request.keepOldAddress ?? family.some(member => Boolean(records.files[member]?.alwaysKeep));

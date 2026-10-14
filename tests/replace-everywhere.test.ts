@@ -64,8 +64,14 @@ test("version marks cover every file kind, query/hash, entities, escaped JSON an
   assert.ok(html.includes(`/${copy}?v=${await copyHash} 480w`));
   assert.equal(p.edits.get("app.js"), `const x="\\/media\\/images\\/photo.jpg?w=1&v=${h}#hi";`);
   assert.equal(p.edits.get("sitemap.xml"), `<loc>https://site.test/${path}?w=1&amp;q=2&amp;v=${h}#top</loc>`);
-  assert.equal(p.edits.has("_redirects"), false);
+  // A redirect destination is a mention: it gets the mark; the source (a request path) stays.
+  assert.equal(p.edits.get("_redirects"), `/ancient /${path}?v=${h} 301\n`);
   assert.equal(p.edits.has("_headers"), false);
+});
+
+test("same-format redirect destinations keep query and fragment and gain the mark; sources stay", async () => {
+  const p = await plan({ "_redirects": `/legacy /${path}?size=1#top 301\n/${path} /elsewhere 302\n` });
+  assert.equal(p.edits.get("_redirects"), `/legacy /${path}?size=1&v=${await mainHash}#top 301\n/${path} /elsewhere 302\n`);
 });
 
 test("each mention keeps encoding, slash entities and escapes; external URLs are untouched", async () => {
@@ -114,9 +120,10 @@ test("type change keeps base, records and redirect destination spelling; forward
   assert.equal(p.main, "media/images/photo.webp");
   assert.deepEqual(p.records.files[p.main], records.files[path]);
   assert.equal(p.records.files[trim].trimmedFrom?.source, "media/images/photo-480.webp");
-  assert.ok(p.edits.get("_redirects")?.includes('/ancient https://site.test/media/images/photo.webp?w=1#top 301'));
+  assert.ok(p.edits.get("_redirects")?.includes(`/ancient https://site.test/media/images/photo.webp?w=1&v=${await mainHash}#top 301`));
   for (const [old, target] of [[path, p.main], [copy, "media/images/photo-480.webp"], [gone, p.main]]) assert.ok(p.edits.get("_redirects")?.includes(`/${old} /${target} 301`));
-  assert.ok(!p.edits.get("_redirects")?.includes("?v="));
+  // New forwarding lines point at addresses no browser has cached: no mark.
+  assert.ok(!p.edits.get("_redirects")?.split("\n").some(line => line.startsWith(`/${path} /`) && line.includes("v=")));
   assert.ok(!p.edits.get("_headers")?.includes("?v="));
   assert.equal((await plan({}, { request: { path, result: result("webp"), keepOldAddress: false } })).edits.has("_redirects"), false);
   const unkept = structuredClone(records); unkept.files[path].alwaysKeep = false;

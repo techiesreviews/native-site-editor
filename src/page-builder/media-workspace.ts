@@ -469,6 +469,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (gifIsAnimated(bytes) || pngIsAnimated(bytes) || webpIsAnimated(bytes)) throw new Error("Animated pictures cannot be replaced with a prepared still picture.");
     const redirects = await ctx.read("_redirects");
     ctx.assertLive();
+    // The plan and the trims' usage scan both read `text`: a `_redirects` changed since then refuses.
+    if (batch.expectedSources.has("_redirects") ? batch.expectedSources.get("_redirects") !== redirects : redirects !== undefined)
+      throw new Error("_redirects changed while preparing image changes. No image changes were applied.");
     batch.expectedSources.set("_redirects", redirects);
     const dimensions = new Map<string, { width: number; height: number }>();
     for (const trim of affected.trims) {

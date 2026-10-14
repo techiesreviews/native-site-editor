@@ -826,6 +826,21 @@ test("replace keeps an Always keep copy's record when the copy stays at its addr
   assert.ok((await f.host.load()).keep.includes("images/a.png"));
 });
 
+test("replace refuses when _redirects changes after its text was read, keeping a trim it may now use", async () => {
+  const f = fixture();
+  f.paths.add("images/trim.png"); f.bytes.set("images/trim.png", new Blob(["trim"])); f.versions.set("images/trim.png", "trim-v1");
+  f.text.set("_redirects", "/old /elsewhere 301\n"); f.paths.add("_redirects");
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: {
+    "images/trim.png": { trimmedFrom: { source: "images/a.png", trim: { x: 0, y: 0, width: .5, height: .5 } } },
+  } }));
+  await f.host.load();
+  const blob = f.context.blob.bind(f.context);
+  f.context.blob = async path => { f.text.set("_redirects", "/old /elsewhere 301\n/x /images/trim.png 301\n"); return blob(path); };
+  await assert.rejects(f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["new"]), extension: "png", width: 800, height: 400 }] } }), /changed while preparing/);
+  assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
+  assert.ok(f.paths.has("images/trim.png")); assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
+});
+
 test("replace captures old family and trimmed revisions before preparation; stale member refuses", async () => {
   for (const member of ["images/a.png", "media/originals/a.jpg", "images/trim.png"]) {
     const f = fixture();
