@@ -189,10 +189,10 @@ test("animated PNG and WebP keep their frames without personal details, or are r
   assert.throws(() => mediaAnimatedOutput("turned.png", png([pngChunk("acTL", new Uint8Array(8)), pngChunk("eXIf", exif(6).subarray(6))])), /animated, and its hidden location and camera details could not be removed/);
 });
 
-test("worker encodes only needed fallbacks, keeps copies in the chosen format, and uses Balanced for transparent AVIF", async () => {
+test("worker encodes only needed fallbacks, keeps copies in the chosen format, and uses Balanced for transparent or failed AVIF", async () => {
   const names = ["self", "OffscreenCanvas", "createImageBitmap"];
   const descriptors = names.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
-  let transparent = false, mainSize = 80, pngSize = 40, jpegSize = 50, closed = 0;
+  let transparent = false, mainSize = 80, pngSize = 40, jpegSize = 50, closed = 0, failEncoderPixels = false, pixelReads = 0;
   const calls: { width: number; type: string; quality?: number }[] = [];
   let result: import("../src/page-builder/media-optimise").MediaOptimiseResult | undefined;
   const scope = {
@@ -205,7 +205,11 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     getContext() { return {
       setTransform(...matrix: number[]) { transforms.push(matrix); },
       drawImage: (_picture: unknown, ...args: number[]) => { draws.push({ width: this.width, height: this.height, args }); },
-      getImageData() { return { data: Uint8Array.from([0, 0, 0, transparent ? 128 : 255]) }; } }; }
+      getImageData() {
+        // The transparency check reads pixels first; a failing AVIF encoder read comes after it.
+        if (failEncoderPixels && pixelReads++ > 0) throw new Error("No pixels for the encoder.");
+        return { data: Uint8Array.from([0, 0, 0, transparent ? 128 : 255]) };
+      } }; }
     async convertToBlob(options: { type: string; quality?: number }) {
       calls.push({ width: this.width, ...options });
       const size = this.width === 2000 ? options.type === "image/png" ? pngSize : options.type === "image/jpeg" ? jpegSize : mainSize : this.width === 960 ? 200 : 20;
@@ -236,12 +240,19 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.equal(calls[0].type, "image/webp"); assert.equal(calls[0].quality, 0.8);
     assert.ok(calls.every(call => call.type !== "image/avif" && call.type !== "image/jpeg"));
     transparent = false; mainSize = 80;
+    failEncoderPixels = true; pixelReads = 0;
+    const failedAvif = await run(undefined, mediaImageRecipe("smallest"));
+    failEncoderPixels = false;
+    assert.equal(failedAvif.note, "Smallest files (slower) could not be used in this browser. Used Balanced WebP instead.");
+    assert.deepEqual(failedAvif.outputs.map(output => output.variantWidth), [undefined, 480, 1600]);
+    assert.ok(failedAvif.outputs.every(output => output.blob.type === "image/webp"));
+    assert.ok(calls.length > 0 && calls.every(call => call.type === "image/webp" && call.quality === 0.8));
     mainSize = 1000; jpegSize = 500;
     const source = await run(new File([jpeg()], "source.jpg"));
     assert.equal(source.outputs[0].extension, "jpg");
     assert.deepEqual(new Uint8Array(await source.outputs[0].blob.arrayBuffer()), stripJpegMetadata(jpeg()));
     assert.ok(source.outputs.slice(1).every(output => output.blob.type === "image/jpeg"));
-    assert.equal(closed, 4);
+    assert.equal(closed, 5);
     transforms.length = 0; draws.length = 0;
     const flipped = await run(new File([jpeg()], "source.jpg"), mediaImageRecipe(), { x: 0, y: 0, width: 1, height: 1, flipX: true });
     assert.equal(flipped.outputs[0].blob.size, 500);
@@ -255,7 +266,7 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.deepEqual(transforms[0], [0, 1, -1, 0, 750, -500]);
     assert.deepEqual(draws[0], { width: 500, height: 1000, args: [0, 0] });
     assert.ok(turned.outputs.every(output => !output.variantWidth || output.variantWidth < 500));
-    assert.equal(closed, 6);
+    assert.equal(closed, 7);
   } finally {
     names.forEach((name, index) => { const descriptor = descriptors[index]; if (descriptor) Object.defineProperty(globalThis, name, descriptor); else Reflect.deleteProperty(globalThis, name); });
   }
