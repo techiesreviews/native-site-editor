@@ -2,7 +2,7 @@
 title: Starter - the YouTube and Vimeo layer
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-61 runner)
 blocked_by: [60-starter-player]
 builder: claude
 phase: 5
