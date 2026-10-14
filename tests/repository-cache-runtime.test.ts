@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "esbuild";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 
-const repo = { id: 1, name: "site", full_name: "lex/site", private: true, default_branch: "main", owner: { login: "lex", type: "User" }, installation_id: 1 };
+const repo = { id: 1, name: "site", full_name: "lex/site", private: true, default_branch: "main", size: 488_282, owner: { login: "lex", type: "User" }, installation_id: 1 };
 
 test("session Durable Object persists TTL listings, conditional pages, and invalidation generations", async () => {
   const { outputFiles } = await build({ entryPoints: ["worker/index.ts"], bundle: true, write: false, format: "esm", platform: "browser", external: ["cloudflare:workers"], target: "es2022" });

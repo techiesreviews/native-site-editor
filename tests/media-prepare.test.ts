@@ -74,16 +74,16 @@ test("as-is kinds retain their bytes and exact sanitised names, including no ext
   }
   for (const ext of ["jpg", "jpeg", "png", "webp", "avif", "bmp"]) assert.equal(mediaNeedsPreparation(`picture.${ext}`), true);
 });
-test("cap checks stored outputs, keeps other files, and warns for heavy as-is images", async () => {
+test("cap checks stored outputs, keeps other files, and notes large downloads", async () => {
   const huge = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], "huge.pdf");
   const prepared = await prepareMedia([huge, new File(["ok"], "small.txt")], "repo", "", undefined, encode);
   assert.equal(prepared.requests.length, 1); assert.match(prepared.errors[0], /uploads are limited to 20 MB per file/);
   const tooBig: typeof optimiseMedia = async () => ({ before: 1, after: huge.size, outputs: [{ blob: huge, extension: "webp" }] });
   await assert.rejects(prepareMediaFile(new File(["picture"], "large.png"), "repo", undefined, undefined, tooBig), /uploads are limited/);
   const heavy = await prepareMediaFile(new File([new Uint8Array(3 * 1024 * 1024)], "heavy.gif"), "repo");
-  assert.match(heavy.warning!, /heavy for a web page/);
+  assert.match(heavy.warning!, /Large download: heavy.gif is 3.1 MB/);
   const failed = await prepareMedia([new File(["broken"], "broken.png"), new File(["ok"], "ok.pdf")], "repo", undefined, undefined, async () => { throw new Error("Cannot decode"); });
-  assert.deepEqual(failed.errors, ["Cannot decode"]); assert.equal(failed.requests.length, 1);
+  assert.match(failed.errors[0], /Hidden personal details/); assert.equal(failed.requests.length, 1);
 });
 test("add and place registers one history action; Undo and Redo restore both", async () => {
   const f = fixture(), source = f.text().get("index.html")!;
@@ -172,4 +172,49 @@ test("a placement decided on older records refuses newer ones", async () => {
   assert.equal(f.history.length, 0);
   await f.host.import(requests, { path: "index.html", source, records: { text: records }, apply: () => "new" });
   assert.equal(f.history.length, 1); assert.equal(f.text().get("index.html"), "new");
+});
+
+
+test("failed preparation asks before adding unchanged bytes; refusal and missing consent add nothing", async () => {
+  const file = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg");
+  const fail: typeof optimiseMedia = async () => { throw new Error("Cannot decode"); };
+  const questions: string[] = [];
+  const yes = await prepareMedia([file], "repo", undefined, undefined, fail, async question => { questions.push(question); return true; });
+  assert.equal(questions.length, 1); assert.match(questions[0], /unchanged/);
+  assert.equal(yes.requests[0].file, file); assert.equal(yes.requests[0].result, undefined);
+  const f = fixture(); await f.host.import(yes.requests);
+  assert.equal(f.batches[0].uploads[0].blob, file);
+  const no = await prepareMedia([file], "repo", undefined, undefined, fail, async () => false);
+  assert.deepEqual(no.requests, []); assert.deepEqual(no.errors, ["photo.jpg was not added."]);
+  const missing = await prepareMedia([file], "repo", undefined, undefined, fail);
+  assert.deepEqual(missing.requests, []); assert.match(missing.errors[0], /Try saving it as a new file/);
+});
+test("prepared files note only their largest output; large sources can prepare below the cap", async () => {
+  const source = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], "photo.png");
+  const large: typeof optimiseMedia = async () => ({ before: source.size, after: 1_400_000, outputs: [
+    { blob: new Blob([new Uint8Array(1_400_000)]), extension: "webp" },
+    { blob: new Blob([new Uint8Array(1_000_001)]), extension: "webp", variantWidth: 480 },
+  ] });
+  const prepared = await prepareMedia([source], "repo", undefined, undefined, large);
+  assert.equal(prepared.requests.length, 1); assert.deepEqual(prepared.errors, []);
+  assert.deepEqual(prepared.warnings, ["Large download: photo.webp is 1.4 MB, which can be slow to load on phones."]);
+  const pdf = await prepareMediaFile(new File([new Uint8Array(10_000_001)], "guide.pdf"), "repo");
+  assert.match(pdf.warning!, /guide.pdf is 10.0 MB/);
+});
+test("cancellation during failure consent never adds the unchanged file", async () => {
+  const controller = new AbortController();
+  await assert.rejects(prepareMedia([new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], "photo.jpg")], "repo", undefined,
+    controller.signal, async () => { throw new Error("Cannot decode"); }, async () => { controller.abort(); return true; }), /abort/i);
+});
+
+test("failure cannot bypass personal-detail removal, and accepted unchanged files still get notes", async () => {
+  const fail: typeof optimiseMedia = async () => { throw new Error("Cannot decode"); };
+  let asked = false;
+  const unsafe = await prepareMedia([new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe1, 0, 2, 0xff, 0xd9])], "photo.jpg")],
+    "repo", undefined, undefined, fail, async () => { asked = true; return true; });
+  assert.equal(asked, false); assert.deepEqual(unsafe.requests, []); assert.match(unsafe.errors[0], /Hidden personal details/);
+  const bytes = new Uint8Array(1_000_001);
+  bytes.set([0xff, 0xd8, 0xff, 0xda, 0, 2]); bytes.set([0xff, 0xd9], bytes.length - 2);
+  const clean = await prepareMedia([new File([bytes], "photo.jpg")], "repo", undefined, undefined, fail, async () => true);
+  assert.equal(clean.requests.length, 1); assert.equal(clean.warnings.length, 1); assert.match(clean.warnings[0], /photo.jpg is 1.0 MB/);
 });

@@ -6,6 +6,8 @@ export interface Repository {
   full_name: string;
   private: boolean;
   default_branch: string;
+  /** Repository size in KiB, as reported by GitHub. Absent for local folders. */
+  size?: number;
   owner: { login: string; type: string };
   /** The GitHub App installation that grants access, whose settings page adds and removes repositories. */
   installation_id?: number;

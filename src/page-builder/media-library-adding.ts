@@ -1,7 +1,7 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename, type MediaLibraryFilter } from "./media-library-filter";
-import { prepareMediaFile } from "./media-prepare";
+import { prepareMediaFile, askToAddUnchanged } from "./media-prepare";
 import type { MediaImportRequest } from "./media-picker";
 import {
   MEDIA_ADDING_FOLDER, mediaAddingPath, mediaAddingReveal, mediaAddingShown, mediaAddingStatus, type MediaAddingState,
@@ -152,7 +152,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
       const work = entry.work = new AbortController();
       set(entry, "preparing");
       try {
-        const prepared = await prepareMediaFile(entry.file, key, MEDIA_ADDING_FOLDER, work.signal);
+        const prepared = await prepareMediaFile(entry.file, key, MEDIA_ADDING_FOLDER, work.signal, undefined, askToAddUnchanged);
         // Cancelling (or Review…) aborts the work and leaves the file alone.
         if (!work.signal.aborted) {
           entry.request = { ...prepared.request, ...entry.collection ? { collection: entry.collection } : {} };

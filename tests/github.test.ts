@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GitHub, HttpError } from "../worker/github.ts";
+import { GitHub, HttpError, type RepositoryCacheStore } from "../worker/github.ts";
 import type { Repository } from "../shared/types.ts";
 import { MAX_BATCH_FILES } from "../shared/types.ts";
 
@@ -218,7 +218,7 @@ test("repository discovery paginates and excludes unselected repositories and ot
 /** A fake GitHub with a personal and an organisation installation, each listing its own repositories. */
 function withOrganisation() {
   const calls: string[] = [];
-  const mine = { ...repo, id: 1, name: "mine", full_name: "lex/mine" };
+  const mine = { ...repo, id: 1, name: "mine", full_name: "lex/mine", size: 500_000 };
   const theirs = { ...repo, id: 2, name: "site", full_name: "company/site", owner: { login: "company", type: "Organization" } };
   const github = new GitHub("secret", async (input) => {
     const url = new URL(String(input));
@@ -244,9 +244,9 @@ function withOrganisation() {
 test("the listing merges the personal account's and organisations' repositories, each with its installation", async () => {
   const { github, calls } = withOrganisation();
   const listed = await github.repositories("lex");
-  assert.deepEqual(listed.map((item) => [item.full_name, item.owner.type, item.installation_id]), [
-    ["lex/mine", "User", 11],
-    ["company/site", "Organization", 22],
+  assert.deepEqual(listed.map((item) => [item.full_name, item.owner.type, item.installation_id, item.size]), [
+    ["lex/mine", "User", 11, 500_000],
+    ["company/site", "Organization", 22, undefined],
   ]);
   assert.ok(!calls.includes("/user/installations/33/repositories"), "another personal account's installation is not read");
   assert.deepEqual(await github.ownerInstallations("lex"), [
@@ -715,4 +715,14 @@ test("a Worker subrequest limit is a 503 and any other network failure a 502", a
     () => down.get("/user"),
     (error: HttpError) => error.status === 502 && /could not be reached/.test(error.message),
   );
+});
+
+test("repository size survives the persisted listing page", async () => {
+  const store: RepositoryCacheStore = { key: "size-test", async save() {} };
+  const github = new GitHub("token", async input => reply(String(input).includes("/repositories")
+    ? { repositories: [{ ...repo, size: 488_282 }] }
+    : { installations: [{ id: 1, account: { type: "User", login: "lex" } }] }), store);
+  assert.equal((await github.repositories("lex"))[0].size, 488_282);
+  const page = store.value?.pages["/user/installations/1/repositories?per_page=100&page=1"];
+  assert.deepEqual(page?.data, { repositories: [{ ...repo, size: 488_282 }] });
 });

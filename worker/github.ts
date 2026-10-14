@@ -268,7 +268,7 @@ export class GitHub {
         if (path === "/user/installations" && Array.isArray(data.installations))
           data = { installations: data.installations.map((installation: any) => ({ id: installation.id, account: installation.account && { login: installation.account.login, type: installation.account.type } })) };
         if (path !== "/user/installations" && Array.isArray(data.repositories))
-          data = { repositories: data.repositories.map((repo: Repository) => ({ id: repo.id, name: repo.name, full_name: repo.full_name, private: repo.private, default_branch: repo.default_branch, owner: { login: repo.owner.login, type: repo.owner.type } })) };
+          data = { repositories: data.repositories.map((repo: Repository) => ({ id: repo.id, name: repo.name, full_name: repo.full_name, private: repo.private, default_branch: repo.default_branch, size: repo.size, owner: { login: repo.owner.login, type: repo.owner.type } })) };
         this.repositoryStore.value ??= { fetchedAt: 0, repositories: [], installations: [], pages: {} };
         this.repositoryStore.value.pages[pagePath] = { etag: response.status === 304 ? response.headers.get("etag") ?? cached?.etag : response.headers.get("etag") ?? undefined, data };
       } else data = await this.get<any>(pagePath);
@@ -500,6 +500,7 @@ export class GitHub {
             full_name: repo.full_name,
             private: repo.private,
             default_branch: repo.default_branch,
+            size: repo.size,
             owner: { login: repo.owner.login, type: repo.owner.type },
             installation_id: installation.id,
           });

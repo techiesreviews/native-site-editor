@@ -48,7 +48,7 @@ export function createConfirmDialog(id = "confirm-dialog") {
   return {
     root: dialog,
     /** Asks; resolves to true when confirmed. */
-    ask(question: { title: string; notes: string[]; action: string }): Promise<boolean> {
+    ask(question: { title: string; notes: string[]; action: string; cancel?: string }): Promise<boolean> {
       return this.choose({ ...question, actions: [{ label: question.action, value: "confirm" }] }).then((answer) => answer.value === "confirm");
     },
     /**
@@ -56,10 +56,11 @@ export function createConfirmDialog(id = "confirm-dialog") {
      * Cancel is primary) and, with `option`, a checkbox; resolves to the
      * action chosen (none when cancelled) and the checkbox's state.
      */
-    choose(question: { title: string; notes: string[]; actions: { label: string; value: string }[]; option?: { label: string; checked: boolean } }): Promise<{ value?: string; option: boolean }> {
+    choose(question: { title: string; notes: string[]; actions: { label: string; value: string }[]; cancel?: string; option?: { label: string; checked: boolean } }): Promise<{ value?: string; option: boolean }> {
       if (dialog.open) dialog.close("cancel");
       opener = document.activeElement;
       title.textContent = question.title;
+      cancel.textContent = question.cancel ?? "Cancel";
       notes.replaceChildren(...question.notes.map((text) => node("p", "create-dialog__result", text)));
       optionLabel.hidden = !question.option;
       option.checked = Boolean(question.option?.checked);

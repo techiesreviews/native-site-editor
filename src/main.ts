@@ -2324,12 +2324,12 @@ async function uploadFilesTo(folder: string, files: File[], place?: import("./pa
   // The repository and branch of the drop; a switch while loading or preparing adds nothing.
   const current = () => epoch === generation && key === setupScope();
   try {
-    const { addPreparedMedia } = await import("./page-builder/media-prepare");
+    const { addPreparedMedia, askToAddUnchanged } = await import("./page-builder/media-prepare");
     if (!current()) return [];
     return await addPreparedMedia(() => {
       if (!current()) throw new Error("The repository or branch changed while adding files. Nothing was added.");
       return mediaController.workspaceContext();
-    }, folder, files, place, { error: errorMessage, announce });
+    }, folder, files, place, { error: errorMessage, announce }, askToAddUnchanged);
   } catch (error) { errorMessage(error); return []; }
 }
 
