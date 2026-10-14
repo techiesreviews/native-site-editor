@@ -150,7 +150,7 @@ test("details show and edit a file's collections; a new name there must be free"
   await memberships.getByRole("checkbox", { name: "Desk", exact: true }).check();
   const fresh = library.getByLabel("New collection", { exact: true });
   await fresh.fill("desk");
-  await expect(library.locator(".media-library__problem")).toContainText("already taken");
+  await expect(library.locator(".media-library__memberships .media-library__problem")).toContainText("already taken");
   await library.getByRole("button", { name: "Save details", exact: true }).click();
   await expect(fresh).toBeFocused();
   expect(await members(page, "Desk")).toEqual([]);
