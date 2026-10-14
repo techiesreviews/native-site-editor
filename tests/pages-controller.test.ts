@@ -21,7 +21,7 @@ function fixture() {
     writeMeta: async () => undefined, ensureIndex: async () => undefined, readRedirects: async () => undefined, withMovedPageUrls: () => {}, pageLinks: () => undefined, cardsLinkingTo: () => undefined,
     confirmation: () => ({ ask: async () => true, choose: async () => ({ value: "move", option: false }) }), picker: () => ({ pick: async () => "/news/" }),
     refreshMeta: () => { refreshes.push("meta"); }, refreshLabel: () => { refreshes.push("label"); }, tree: () => undefined, pagesHidden: () => false, openFile: () => memory.openFile(), clearPendingTitles: () => {},
-    tabsMounted: () => true, paintTabs: () => {}, resetExplorer: () => {}, showImages: () => {}, siteReadForCreate: async () => undefined, createWithCard: () => undefined,
+    tabsMounted: () => true, paintTabs: () => {}, resetExplorer: () => {}, showMedia: () => {}, siteReadForCreate: async () => undefined, createWithCard: () => undefined,
     navigationTarget: (path, r) => { const source = path && r.source(path), list = source ? readNavigation(source) : undefined; return path && source && list ? { path, source, list, shared: false } : undefined; },
     restoreDeleted: () => {}, announce: message => memory.announced.push(message), refuse: message => refused.push(message), error: error => errors.push(error.message),
   } satisfies PagesPorts;

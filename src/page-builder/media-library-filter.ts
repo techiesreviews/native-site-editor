@@ -1,4 +1,5 @@
 import { uploadImageType } from "../uploads";
+import { mediaFamilies } from "./media-families";
 import type { MediaMetadataMap } from "./media-metadata";
 import type { MediaLibrary } from "./media-picker";
 
@@ -31,6 +32,13 @@ export function filterMediaLibrary(library: MediaLibrary, options: MediaLibraryF
     options.sort === "size" ? (b.size ?? 0) - (a.size ?? 0) || a.path.localeCompare(b.path)
     : options.sort === "date" ? (b.date ?? 0) - (a.date ?? 0) || a.path.localeCompare(b.path)
     : a.path.localeCompare(b.path));
+}
+
+/** One tile per Image family: each family's copies and kept originals are left out,
+ * its main stays. Files outside any family (not images) pass through. */
+export function mediaLibraryTiles<T extends { path: string }>(items: T[]): T[] {
+  const members = new Set(mediaFamilies(items.map(item => item.path)).flatMap(family => [...family.copies.map(copy => copy.path), ...family.originals]));
+  return items.filter(item => !members.has(item.path));
 }
 
 export const parent = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));

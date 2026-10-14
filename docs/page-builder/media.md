@@ -1,8 +1,8 @@
 # Media library and optimisation
 
-The Images panel browses repository files, searches filenames/default alt text/tags,
-filters folders and tags, reports page usage, and offers metadata, rename, deletion
-and optimisation. Image insertion produces ordinary `<img>` markup with escaped
+The Media tab (formerly Images) browses repository files, searches filenames/default
+alt text/tags, filters folders and tags, reports page usage, and offers metadata,
+rename, deletion and optimisation. Image insertion produces ordinary `<img>` markup with escaped
 alt text, intrinsic dimensions, lazy loading, async decoding and responsive sources
 when available. Existing classes, source keys, slots and styles survive replacing
 an image. No editor runtime enters the site's HTML, CSS or Web Components.
@@ -127,7 +127,7 @@ browser cases require the host's new atomic adapter. Use `ASE_TEST_PORT=5296` or
 ## Persistent explorer pane API
 
 `mountMediaLibrary(container, options?)` from `media-picker.ts` mounts a real
-`section` with an Images region directly into a host element. It returns
+`section` with a Media region directly into a host element. It returns
 `{ element, ready, refresh, dispose }`. Await `ready` for the initial load; call
 `refresh()` after external draft/history changes, including Undo. The host owns
 its dimensions and visibility. Set the host's `hidden` property when switching
@@ -170,8 +170,15 @@ can abort browser optimisation previews and is unavailable once
 a transaction starts. Modal Close dismisses the picker without rolling back an
 already started transaction. Uploads attempted during a mutation show feedback.
 
-The persistent Images tab uses a bounded `min(55dvh, 560px)` height and one scroll
-area for its toolbar, grid and details. Narrow details replace the grid, with Back
+The persistent Media tab uses a bounded `min(55dvh, 560px)` height and one scroll
+area for its toolbar, grid and details. The grid is Tiles (media-manager ticket 06):
+square crops, one per Image family (`mediaLibraryTiles`), 3 across below a 520 px
+browse width, 4 below 800 px and 6 above; the explorer widens to
+`min(1040px, 100vw - 32px)` while Media shows, so phones get 3, tablets 4 and wide
+screens 6. Each tile has its page count top left and its selection top right (44 px
+targets that never overlap); the name shows on hover, keyboard focus or selection,
+always on touch, over a blurred gradient. A file the browser cannot draw gets a
+clean surface with its type. Narrow details replace the grid, with Back
 to grid reachable in that same scroll area. The modal retains its two-column layout.
 
 In explorer panes narrower than 600px, opening details hides the browse-only

@@ -1,12 +1,10 @@
 import { button, node } from "../ui/dom";
-import { formatBytes, WARN_IMAGE_BYTES } from "../uploads";
 import { input } from "./media-library-fields";
-import { basename, parent, filterMediaLibrary, mediaLibraryTags } from "./media-library-filter";
+import { basename, filterMediaLibrary, mediaLibraryTags, mediaLibraryTiles } from "./media-library-filter";
 import type { MediaBytes } from "./media-byte-cache";
 import type { LibraryShell } from "./media-library-shell";
 import type { MediaLibrary } from "./media-picker";
-import { setIcon } from "../icons";
-import { rowActions } from "../components/row-actions";
+import { icon } from "../icons";
 
 /** What the grid keeps between draws; the view owns it. */
 export interface LibraryGridState {
@@ -23,7 +21,7 @@ export interface LibraryGridHost {
   restoreFocus: boolean;
 }
 
-/** Draw tag chips, the summary and the cards; returns the tag in use. */
+/** Draw tag chips, the summary and one square tile per Image family; returns the tag in use. */
 export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, state: LibraryGridState, h: LibraryGridHost): string {
   const { chips, search, folders, sort, summary, bulk, bulkCount, grid, browse, dialog } = shell;
   const { selected, observers } = state;
@@ -42,10 +40,11 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     const chip = button(value || "All images", () => h.setTag(value), "media-library__chip");
     chip.setAttribute("aria-pressed", String(tag === value)); chips.append(chip);
   }
-  const filtered = filterMediaLibrary(library, {
+  const tiles = mediaLibraryTiles(library.items);
+  const filtered = filterMediaLibrary({ ...library, items: tiles }, {
     query: search.value, folder: folders.value, tag, sort: sort.value, accept: state.accept,
   });
-  summary.textContent = `${filtered.length} of ${library.items.length} images${folders.value ? ` · ${folders.selectedOptions[0].text}` : " · All folders"}`;
+  summary.textContent = `${filtered.length} of ${tiles.length} images${folders.value ? ` · ${folders.selectedOptions[0].text}` : " · All folders"}`;
   bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
   grid.replaceChildren();
   if (!filtered.length) grid.append(node("p", "media-library__empty", library.items.length
@@ -55,43 +54,37 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     const card = node("article", "media-library__card"); card.dataset.path = item.path;
     const thumb = button("", () => h.details(item.path), "media-library__thumbnail");
     thumb.setAttribute("aria-label", `Details for ${item.path}`);
+    // The tile crops the picture to a square; the stored file is untouched.
     const image = node("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
-    thumb.append(image);
-    const format = node("span", "media-library__format", item.path.split(".").pop()?.toUpperCase() ?? "IMAGE"); thumb.append(format);
+    thumb.append(image, node("span", "media-library__name", basename(item.path)));
     const selectLabel = node("label", "media-library__select");
     const checkbox = input(`Select ${item.path}`, "checkbox"); checkbox.checked = selected.has(item.path);
     checkbox.addEventListener("change", () => {
       checkbox.checked ? selected.add(item.path) : selected.delete(item.path);
       bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
     });
-    selectLabel.append(checkbox); card.append(thumb, selectLabel);
-    const nameLine = node("div", "media-library__name-line");
-    nameLine.append(node("h3", "media-library__name", basename(item.path)));
-    card.append(nameLine, node("p", "media-library__folder", parent(item.path) || "Repository root"));
-    const meta = node("p", "media-library__stats", item.size === undefined ? "Reading image…" : formatBytes(item.size));
-    card.append(meta);
-    const tags = node("div", "media-library__tags");
-    for (const value of library.metadata[item.path]?.tags ?? []) tags.append(node("span", "media-library__tag", value));
-    if (item.draft) tags.append(node("span", "media-library__tag", "Draft")); card.append(tags);
+    selectLabel.append(checkbox);
     const usage = library.usage[item.path];
     const usageLabel = `Used on ${usage?.pages.length ?? 0} pages`;
-    card.append(node("p", "media-library__usage-count", usageLabel));
-    const used = button("", () => h.details(item.path, true), "media-library__usage");
-    setIcon(used, "dots-three");
+    const used = button(String(usage?.pages.length ?? 0), () => h.details(item.path, true), "media-library__usage");
     used.setAttribute("aria-label", usageLabel); used.title = usageLabel;
-    rowActions(nameLine, [used]);
+    card.append(node("span", "media-library__shade"), thumb, selectLabel, used);
     grid.append(card);
+    // A file the browser cannot draw gets a clean surface with its type, not a broken picture.
+    const noPreview = () => {
+      if (!h.alive() || !card.isConnected || card.classList.contains("is-file")) return;
+      card.classList.add("is-file"); image.remove();
+      thumb.prepend(icon("file", 28), node("span", "media-library__format", item.path.split(".").pop()?.toUpperCase() ?? "FILE"));
+    };
+    image.addEventListener("error", noPreview);
     // Observe thumbnails rather than downloading the whole repository on open.
     const observer = new IntersectionObserver((entries) => {
       if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
       observer.disconnect();
       void h.bytes(item.path).then((data) => {
         if (!h.alive() || !card.isConnected) return;
-        image.src = data.url;
-        item.size = data.blob.size;
-        meta.textContent = `${data.width ? `${data.width} × ${data.height} · ` : "Dimensions unavailable · "}${formatBytes(data.blob.size)}`;
-        if (data.blob.size >= WARN_IMAGE_BYTES) { meta.classList.add("media-library__heavy"); meta.append(node("span", "", " · Heavy")); }
-      }).catch(() => { if (h.alive() && card.isConnected) meta.textContent = "Image unavailable"; });
+        item.size = data.blob.size; image.src = data.url;
+      }).catch(noPreview);
     }, { root: state.modal ? browse : dialog, rootMargin: "200px" });
     observers.add(observer); observer.observe(card);
   }

@@ -15,31 +15,17 @@
 .media-library input:focus-visible, .media-library select:focus-visible { outline-offset: -1px; }
 .media-library__header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .media-library__header > div { flex: 1; min-width: 0; display: grid; gap: 5px; }
-.media-library__muted, .media-library__hint, .media-library__folder, .media-library__stats { color: var(--muted); font-size: var(--type-small); }
+.media-library__muted, .media-library__hint { color: var(--muted); font-size: var(--type-small); }
 .media-library__toolbar { display: flex; gap: 10px; padding: 16px 24px 10px; }
 .media-library input:not([type="checkbox"]), .media-library select { min-height: var(--size-control); min-width: 0; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 6px 10px; background: var(--surface-input); color: var(--text); }
 .media-library__toolbar input { flex: 1; }
 .media-library__chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 24px 14px; border-bottom: 1px solid var(--line); }
 .media-library__chip { background: none; color: var(--muted); border: 1px solid var(--control-line); padding: 0 10px; }
 .media-library__chip[aria-pressed="true"] { background: var(--current); color: var(--text); font-weight: 600; }
-.media-library__chip:hover, .media-library__usage:hover, .media-library__page:hover { background: var(--hover); }
+.media-library__chip:hover, .media-library__page:hover { background: var(--hover); }
 .media-library__body { flex: 1; display: flex; min-height: 0; }
 .media-library__browse { flex: 1; min-width: 0; overflow: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
-.media-library__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 22px 16px; align-content: start; }
-.media-library__card { position: relative; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 4px; border-radius: var(--radius-panel); }
-.media-library__card:has(input:checked) { background: var(--current); }
-.media-library__thumbnail { position: relative; aspect-ratio: 4 / 3; width: 100%; padding: 12px; border: none; background: var(--surface-subtle); overflow: hidden; }
-.media-library__thumbnail:hover { background: var(--hover); }
-.media-library__thumbnail img { width: 100%; height: 100%; object-fit: contain; }
-.media-library__format { position: absolute; right: 8px; bottom: 8px; padding: 3px 5px; border-radius: var(--radius-small); background: var(--surface); color: var(--muted); font-size: var(--type-badge); font-weight: 600; }
-.media-library__select { position: absolute; top: 8px; left: 8px; padding: 4px; border-radius: var(--radius-small); background: var(--surface); display: flex; }
 .media-library input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
-.media-library__name, .media-library__folder { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.media-library__stats { font-variant-numeric: tabular-nums; }
-.media-library__heavy { color: var(--warning-fg); }
-.media-library__tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.media-library__tag { background: var(--surface-subtle); color: var(--muted); border-radius: var(--radius-small); padding: 2px 5px; font-size: var(--type-small); }
-.media-library__usage { align-self: start; min-height: var(--size-icon) !important; background: none; color: var(--link); border: none; padding: 2px 0; font-size: var(--type-small) !important; text-align: left; }
 .media-library__sheet { width: 324px; flex-shrink: 0; overflow: auto; border-left: 1px solid var(--line); padding: 18px; background: var(--surface-subtle); display: flex; flex-direction: column; gap: 12px; }
 .media-library__sheet[hidden], .media-library__bulk[hidden] { display: none; }
 .media-library__sheet button { align-self: start; }
@@ -67,7 +53,6 @@
   .media-library__browse { padding: 12px; }
   .media-library__body:has(.media-library__sheet:not([hidden])) .media-library__browse { display: none; }
   .media-library__sheet { width: 100%; border-left: none; }
-  .media-library__grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   .media-library input:not([type="checkbox"]), .media-library select { font-size: 16px; }
   .media-library__footer { padding: 12px; }
 }
@@ -90,7 +75,6 @@
 @container (max-width: 600px) {
   .media-library--pane .media-library__body:has(.media-library__sheet:not([hidden])) .media-library__browse { display: none; }
   .media-library--pane .media-library__sheet { width: 100%; border-left: none; }
-  .media-library--pane .media-library__grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
 
 /* A persistent explorer tab uses one scroll area for browsing and details. */
@@ -104,7 +88,6 @@
 .media-library--pane .media-library__toolbar select { width: 100%; }
 .media-library--pane .media-library__body { flex: none; min-height: 0; }
 .media-library--pane .media-library__browse, .media-library--pane .media-library__sheet { overflow: visible; }
-.media-library--pane .media-library__grid { gap: 16px 12px; }
 .media-library--pane .media-library__sheet { box-sizing: border-box; gap: 14px; padding: 16px 12px; }
 .media-library--pane .media-library__preview { width: 100%; height: 150px; }
 .media-library--pane .media-library__footer { line-height: 1.5; }
@@ -125,21 +108,70 @@
   .media-library--pane .media-library__preview { height: 120px; max-height: 120px; }
 }
 
-/* Browse actions belong to the filename row, away from image and metadata. */
-.media-library__name-line { min-width: 0; min-height: var(--size-icon); display: flex; align-items: center; overflow: hidden; }
-.media-library__name-line .media-library__name { flex: 1; }
-/* In the explorer's Images pane the cards sit on the explorer's own surface, so the fade ends on it. */
-.media-library--pane .media-library__name-line { --row-action-background: var(--panel-surface); --row-action-base: var(--panel-surface); }
-.media-library__card:has(input:checked) .media-library__name-line { --row-action-background: var(--current); }
-.media-library__name-line .media-library__usage { width: var(--size-icon); height: var(--size-icon); padding: 0; display: inline-grid; place-items: center; }
-.media-library__usage-count { color: var(--muted); font-size: var(--type-small); }
-/* The whole card reveals its name-line actions. */
-.media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay > * { opacity: 1; pointer-events: auto; }
-.media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay::before,
-.media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay::after,
-.media-library__card:is(:hover, :focus-within) .media-library__name-line > .row-action-overlay > * > * { opacity: 1; transform: none; }
-/* Keyboard focus anywhere in the card (thumbnail, checkbox) shows them at once. */
-.media-library__card:focus-within .media-library__name-line > .row-action-overlay::before,
-.media-library__card:focus-within .media-library__name-line > .row-action-overlay::after,
-.media-library__card:focus-within .media-library__name-line > .row-action-overlay > *,
-.media-library__card:focus-within .media-library__name-line > .row-action-overlay > * > * { transition: none; }
+/* Tiles (media-manager ticket 06, tiles.html): square crops, one per Image family. The crop
+   is only the tile's; the stored file is untouched. Columns follow the space: 3 on phones,
+   4 on tablets, 6 wide. */
+.media-library__browse { container: media-browse / inline-size; }
+.media-library__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; align-content: start; }
+@container media-browse (min-width: 520px) { .media-library__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container media-browse (min-width: 800px) { .media-library__grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+/* Media is a picture library: the explorer widens while it shows, so 4 or 6 tiles fit with
+   room for their usage and selection controls. */
+.explorer.dropdown-panel:has(> #explorer-media:not([hidden])) { width: min(1040px, calc(100vw - 32px)); }
+
+.media-library__card { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); color: #fff; }
+.media-library .media-library__thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; }
+.media-library__thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Rings sit above the shades: the selection's, and keyboard focus on the picture. */
+.media-library__card::after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none; }
+.media-library__card:has(input:checked)::after { box-shadow: inset 0 0 0 2px var(--primary); }
+.media-library .media-library__thumbnail:focus-visible { outline: none; }
+.media-library__card:has(.media-library__thumbnail:focus-visible)::after { outline: var(--focus-ring); outline-offset: -2px; }
+
+/* A blurred backdrop under a gradient keeps the usage number, selection and name sharp
+   on any picture. */
+.media-library__shade { position: absolute; inset: 0 0 auto; z-index: 1; height: 50px; pointer-events: none; }
+.media-library__shade::before, .media-library__shade::after,
+.media-library__name::before, .media-library__name::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.media-library__shade::before { backdrop-filter: blur(8px); mask-image: linear-gradient(#000 15%, transparent); }
+.media-library__shade::after { background: linear-gradient(rgb(10 18 32 / .65), rgb(10 18 32 / .62) 72%, transparent); }
+.media-library__name {
+  position: absolute; inset: auto 0 0; z-index: 1; isolation: isolate; padding: 21px 6px 5px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left;
+  font-size: var(--type-small); font-weight: 600; line-height: 1.35; text-shadow: 0 1px 2px #0007; opacity: 0;
+}
+.media-library__name::before { backdrop-filter: blur(8px); mask-image: linear-gradient(transparent, #000 75%); }
+.media-library__name::after { background: linear-gradient(transparent, rgb(10 18 32 / .64) 55%, rgb(10 18 32 / .82)); }
+/* Names show on hover, keyboard focus or selection; touch has no hover, so always there. */
+.media-library__card:is(:hover, :focus-within, :has(input:checked)) .media-library__name { opacity: 1; }
+@media (hover: none), (any-pointer: coarse) { .media-library__name { opacity: 1; } }
+@supports not (backdrop-filter: blur(1px)) { .media-library__shade::before, .media-library__name::before { display: none; } }
+
+/* Usage number top left, selection top right: 44 px targets that never overlap. */
+.media-library .media-library__usage, .media-library__select { position: absolute; top: 0; z-index: 2; width: 44px; height: 44px; display: grid; place-items: center; isolation: isolate; }
+.media-library .media-library__usage { left: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font-size: var(--type-base); font-weight: 650; font-variant-numeric: tabular-nums; text-shadow: 0 1px 3px #0009; }
+.media-library__select { right: 0; cursor: pointer; }
+/* Hover and focus use the name's soft background. */
+.media-library__usage::before, .media-library__select::before { content: ""; position: absolute; inset: 0; z-index: -1; display: none; background: radial-gradient(ellipse, rgb(10 18 32 / .38), transparent 72%); backdrop-filter: blur(8px); mask-image: radial-gradient(ellipse, #000 45%, transparent 75%); }
+.media-library__usage:is(:hover, :focus-visible)::before, .media-library__select:is(:hover, :focus-within)::before { display: block; }
+.media-library .media-library__usage:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.media-library .media-library__select input { appearance: none; width: 22px; height: 22px; margin: 0; color: inherit; border: 1.5px solid; border-radius: 50%; background: rgb(10 18 32 / .12); box-shadow: 0 1px 3px #0006; cursor: pointer; }
+.media-library .media-library__select input:checked { border-color: #fff; background: var(--primary); }
+.media-library .media-library__select input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.media-library__select:has(input:checked)::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat; pointer-events: none; }
+
+/* A file with no picture preview: a clean surface with dark text and its type. */
+.media-library__card.is-file { color: var(--text); }
+.media-library__card.is-file .media-library__thumbnail { display: grid; place-content: center; justify-items: center; gap: 6px; color: var(--muted); }
+.media-library__format { font-size: var(--type-small); font-weight: 600; }
+.media-library__card.is-file .media-library__shade, .media-library__card.is-file .media-library__name::before, .media-library__card.is-file .media-library__name::after { display: none; }
+.media-library__card.is-file :is(.media-library__name, .media-library__usage) { color: var(--text); text-shadow: none; }
+.media-library__card.is-file .media-library__select input:not(:checked) { border-color: var(--muted); background: transparent; box-shadow: none; }
+.media-library__card.is-file :is(.media-library__usage, .media-library__select)::before { background: var(--hover); backdrop-filter: none; mask-image: none; border-radius: 50%; }
+.media-library__card.is-file .media-library__usage:focus-visible, .media-library__card.is-file .media-library__select input:focus-visible { outline-color: var(--focus); }
+
+/* With room, search and the two choices share one row. */
+@container (min-width: 560px) {
+  .media-library--pane .media-library__toolbar { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .media-library--pane .media-library__toolbar input { grid-column: auto; }
+}

@@ -21,7 +21,8 @@ export function wireMediaLibraryInput(
     const buttons = [...grid.querySelectorAll<HTMLButtonElement>(".media-library__thumbnail")];
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (at < 0) return;
-    const columns = Math.max(1, Math.round(grid.clientWidth / (buttons[at].closest("article")!.getBoundingClientRect().width + 16)));
+    // The laid-out tracks, whatever the width: 3, 4 or 6 tiles across.
+    const columns = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").length);
     const target = mediaLibraryArrowStep(event.key, at, buttons.length, columns);
     if (target !== undefined) { event.preventDefault(); buttons[target]?.focus(); }
   }, { signal });

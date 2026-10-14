@@ -6,10 +6,10 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Images", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Images", exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Media", exact: true })).toBeVisible();
 }
-const library = (page: Page) => page.getByRole("region", { name: "Images", exact: true });
+const library = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 async function closeLibrary(page: Page) { await page.getByRole("tab", { name: "Pages", exact: true }).click(); await page.keyboard.press("Escape"); }
 
 test("image library searches repository images and shows transitive page usage", async ({ page, baseURL }) => {
@@ -114,7 +114,7 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
     } });
     await openMediaPicker();
   }, { picker: "/src/page-builder/media-picker.ts", workspace: "/src/page-builder/media-workspace.ts" });
-  const panel = page.getByRole("dialog", { name: "Images", exact: true });
+  const panel = page.getByRole("dialog", { name: "Media", exact: true });
   await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();

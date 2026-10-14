@@ -81,20 +81,19 @@ test("Pages and Files overlay existing actions without shrinking names, and keep
   await expect(fileLine.locator(".file-row")).toBeFocused();
 });
 
-test("Images reveal usage actions beside the filename while thumbnails and usage metadata stay visible", async ({ page, baseURL }) => {
+test("Media tiles keep the usage number visible on the picture and it opens the usage details", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await page.locator("#explorer").getByRole("tab", { name: "Images", exact: true }).click();
+  await page.locator("#explorer").getByRole("tab", { name: "Media", exact: true }).click();
   const card = page.locator(".media-library__card").first();
-  const overlay = card.locator(".row-action-overlay");
   await page.mouse.move(1400, 900);
-  await painted(overlay, "0");
+  const usage = card.getByRole("button", { name: /^Used on \d+ pages$/ });
+  await expect(usage).toBeVisible();
+  await expect(usage).toHaveText(/^\d+$/);
   const thumbnail = await card.locator(".media-library__thumbnail").boundingBox();
-  await card.hover();
-  await painted(overlay, "1");
-  const action = await overlay.boundingBox();
-  expect(action!.y).toBeGreaterThanOrEqual(thumbnail!.y + thumbnail!.height);
-  await expect(card.locator(".media-library__usage-count")).toHaveText(/Used on \d+ pages/);
-  await overlay.getByRole("button").click();
+  const badge = await usage.boundingBox();
+  expect(badge!.y).toBeGreaterThanOrEqual(thumbnail!.y);
+  expect(badge!.y + badge!.height).toBeLessThanOrEqual(thumbnail!.y + thumbnail!.height);
+  await usage.click();
   await expect(page.locator(".media-library__sheet").getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
 });
 
@@ -162,20 +161,16 @@ test("renaming a page in place gives the field its whole row: a click near its e
   expect(JSON.stringify(await storedDrafts(page))).toBe(before);
 });
 
-test("keyboard focus on an image's checkbox shows its action at once, and it still opens the details", async ({ page, baseURL }) => {
+test("keyboard focus on a Media tile's checkbox shows its name at once, and the usage number still opens the details", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await page.locator("#explorer").getByRole("tab", { name: "Images", exact: true }).click();
+  await page.locator("#explorer").getByRole("tab", { name: "Media", exact: true }).click();
   const card = page.locator(".media-library__card").first();
-  const overlay = card.locator(".row-action-overlay");
+  const name = card.locator(".media-library__name");
   await page.mouse.move(1400, 900);
-  await painted(overlay, "0");
+  await expect(name).toHaveCSS("opacity", "0");
   await card.getByRole("checkbox").focus();
-  const action = overlay.getByRole("button");
-  await expect(action).toHaveCSS("transition-duration", "0s");
-  await expect(action).toHaveCSS("opacity", "1");
-  await expect(action).toHaveCSS("pointer-events", "auto");
-  expect(await overlay.evaluate((el) => getComputedStyle(el, "::before").transitionDuration)).toBe("0s");
-  await action.click();
+  await expect(name).toHaveCSS("opacity", "1");
+  await card.getByRole("button", { name: /^Used on \d+ pages$/ }).click();
   await expect(page.locator(".media-library__sheet").getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
 });
 
@@ -336,7 +331,7 @@ for (const scheme of ["light", "dark"] as const) {
 
     await explorer.getByRole("tab", { name: "Files", exact: true }).click();
     const lines = page.locator("#explorer .file-row-line.row-action-host:not(.is-folder)").filter({ visible: true });
-    // Fixture file and image names stop short of the actions; Pages routes run beneath them.
+    // Fixture file names stop short of the actions; Pages routes run beneath them.
     const filePath = (await lines.filter({ hasNot: page.locator(".file-row.selected") }).first().locator(".file-row").getAttribute("data-path"))!;
     const file = page.locator(`#explorer .file-row-line:has(> .file-row[data-path="${filePath}"])`);
     await file.hover();
@@ -354,14 +349,5 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(file.locator(".file-row")).toHaveClass(/selected/);
     await file.hover();
     await fadeCheck(page, file, `${scheme} files current hover`, { textBeneath: false });
-
-    await explorer.getByRole("tab", { name: "Images", exact: true }).click();
-    const card = page.locator(".media-library__card").first();
-    const name = card.locator(".media-library__name-line");
-    await card.hover();
-    await fadeCheck(page, name, `${scheme} images hover`, { textBeneath: false, tinted: false });
-    await card.getByRole("checkbox").check();
-    await card.hover();
-    await fadeCheck(page, name, `${scheme} images checked hover`, { textBeneath: false });
   });
 }

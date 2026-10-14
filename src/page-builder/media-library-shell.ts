@@ -15,11 +15,11 @@ export function createMediaLibraryShell(
   const close = () => { if (modal) modal.close(); };
   const header = node("header", "media-library__header");
   const heading = node("div");
-  const title = node("h2", "", options.onPick ? "Choose image" : "Images");
+  const title = node("h2", "", options.onPick ? "Choose image" : "Media");
   title.id = `media-library-title-${id}`;
   dialog.setAttribute("aria-labelledby", title.id);
   if (!modal) dialog.setAttribute("role", "region");
-  heading.append(title, node("p", "media-library__muted", modal ? "Repository images · Changes stay as drafts until Save." : "Changes stay as drafts until Save."));
+  heading.append(title, node("p", "media-library__muted", modal ? "Repository images · Changes stay as drafts until Publish." : "Changes stay as drafts until Publish."));
   const uploadInput = node("input");
   uploadInput.type = "file"; uploadInput.name = "media-upload"; uploadInput.accept = "image/*,.heic,.heif"; uploadInput.multiple = true; uploadInput.hidden = true;
   uploadInput.className = "media-library__upload-input";
@@ -46,7 +46,7 @@ export function createMediaLibraryShell(
   const optimiseButton = button("Optimise heavy", actions.optimiseHeavy);
   const deleteButton = button("Delete unused", actions.deleteUnused);
   bulk.append(bulkCount, bulkTags, tagButton, optimiseButton, deleteButton, button("Clear", actions.clear));
-  const grid = node("div", "media-library__grid"); grid.setAttribute("aria-label", "Image library");
+  const grid = node("div", "media-library__grid"); grid.setAttribute("aria-label", "Media library");
   const sheet = node("aside", "media-library__sheet"); sheet.hidden = true;
   browse.append(summary, bulk, grid); body.append(browse, sheet);
   const message = node("p", "media-library__message"); message.setAttribute("role", "status");

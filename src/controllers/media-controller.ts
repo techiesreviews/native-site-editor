@@ -50,7 +50,7 @@ export interface MediaControllerPorts {
   locateElement?: (source: string, node: number[]) => { tag: { name: string; start: number; end: number } } | undefined;
   galleryHost(): HTMLElement;
   galleryVisible(): boolean;
-  imagesSelected(): boolean;
+  mediaSelected(): boolean;
   gallerySignature(): string;
   observeBusy?(element: HTMLElement, changed: () => void): { disconnect(): void };
   refreshDescriptions(): void;
@@ -86,10 +86,10 @@ export function createMediaController(ports: MediaControllerPorts) {
 
   async function workspaceContext(include: (path: string) => boolean = isImagePath): Promise<MediaWorkspaceContext> {
     const workspace = ports.workspace();
-    if (!workspace) throw new Error("Choose a repository before opening Images.");
+    if (!workspace) throw new Error("Choose a repository before opening Media.");
     const { repo, scope, drafts, site } = workspace;
     const stamp = ports.stamp();
-    const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
+    const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
     const branchPaths = workspace.nativePaths ?? await ports.listPaths(workspace);
     assertLive();
     const gone = new Set(drafts.list(scope).filter((draft) => draft.deleted).map((draft) => draft.path));
@@ -262,7 +262,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     const attempt = ++opening;
     galleryScope = scope; signature = ports.gallerySignature();
     const { mountMediaLibrary } = await load();
-    if (attempt !== opening || scope !== ports.identity() || !ports.imagesSelected()) return;
+    if (attempt !== opening || scope !== ports.identity() || !ports.mediaSelected()) return;
     gallery = mountMediaLibrary(ports.galleryHost(), { refreshKey: () => ports.gallerySignature() });
   }
   function requestGalleryRefresh() {

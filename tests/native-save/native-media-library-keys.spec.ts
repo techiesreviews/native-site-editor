@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 // Default fixture group. Arrow keys move through the library's thumbnails by
 // card and by row, and Enter opens the focused image's details. The view is
 // mounted over a fake host with nine images so the grid has several rows.
-const library = (page: Page) => page.getByRole("region", { name: "Images", exact: true });
+const library = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const thumbnails = (page: Page) => library(page).locator(".media-library__thumbnail");
 const focusedIndex = (page: Page) => page.evaluate(() =>
   [...document.querySelectorAll(".media-library__thumbnail")].indexOf(document.activeElement!));

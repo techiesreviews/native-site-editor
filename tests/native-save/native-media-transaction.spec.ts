@@ -8,8 +8,8 @@ for (const file of ["styles/site.css", "missing.html"]) {
     await expect(page.locator("#status")).toContainText("Up to date with main");
     if (file === "missing.html") await expect(page.locator(".code-editor__undo")).toHaveCount(0);
     await page.locator("#explorer-toggle").click();
-    await page.getByRole("tab", { name: "Images", exact: true }).click();
-    const images = page.getByRole("region", { name: "Images", exact: true });
+    await page.getByRole("tab", { name: "Media", exact: true }).click();
+    const images = page.getByRole("region", { name: "Media", exact: true });
     await images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await images.getByLabel("Image tags", { exact: true }).fill("history-home-tag");
     await images.getByRole("button", { name: "Save metadata", exact: true }).click();

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accepts, filterMediaLibrary, mediaLibraryTags } from "../src/page-builder/media-library-filter";
+import { accepts, filterMediaLibrary, mediaLibraryTags, mediaLibraryTiles } from "../src/page-builder/media-library-filter";
 import type { MediaLibrary, MediaLibraryItem } from "../src/page-builder/media-picker";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -74,4 +74,18 @@ test("empty libraries and unmatched filters return no results", () => {
   assert.deepEqual(paths({ query: "absent" }), []);
   assert.deepEqual(paths({ folder: "missing" }), []);
   assert.deepEqual(paths({}, { key: "empty", items: [], metadata: {}, collections: [], usage: {} }), []);
+});
+
+test("tiles show one item per Image family and keep other files", () => {
+  const items = [
+    { path: "images/photo.webp" }, { path: "images/photo-480w.webp" }, { path: "images/photo-960.webp" },
+    { path: "media/originals/photo.heic" }, { path: "images/photo-2.webp" }, { path: "images/logo-480w.png" },
+    { path: "images/report-2024.png" }, { path: "docs/guide.pdf" }, { path: "images/hero-crop.jpg" },
+  ];
+  assert.deepEqual(mediaLibraryTiles(items).map(item => item.path), [
+    "images/photo.webp", "images/photo-2.webp", "images/logo-480w.png", "images/report-2024.png", "docs/guide.pdf", "images/hero-crop.jpg",
+  ]);
+  const sized = [{ path: "a.png", size: 3 }, { path: "a-480w.png", size: 1 }];
+  assert.equal(mediaLibraryTiles(sized)[0], sized[0]);
+  assert.deepEqual(mediaLibraryTiles([]), []);
 });

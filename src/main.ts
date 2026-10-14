@@ -290,13 +290,13 @@ function mountWorkspace() {
     <div id="notice" class="notice" role="alert" hidden></div>
     <div id="explorer" class="explorer" role="region" aria-label="Pages & files">
       <div class="explorer-settings"><button type="button" id="site-settings-toggle" class="icon-button" aria-label="Site settings" title="Site settings">${iconMarkup("gear")}</button></div>
-      <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages, files or images" hidden>
+      <div id="explorer-tabs" class="explorer-tabs" role="tablist" aria-label="Pages, media or files" hidden>
         <button type="button" id="explorer-tab-pages" class="explorer-tab" role="tab" aria-controls="explorer-pages" aria-selected="true">Pages</button>
+        <button type="button" id="explorer-tab-media" class="explorer-tab" role="tab" aria-controls="explorer-media" aria-selected="false" tabindex="-1">Media</button>
         <button type="button" id="explorer-tab-files" class="explorer-tab" role="tab" aria-controls="explorer-files" aria-selected="false" tabindex="-1">Files</button>
-        <button type="button" id="explorer-tab-images" class="explorer-tab" role="tab" aria-controls="explorer-images" aria-selected="false" tabindex="-1">Images</button>
       </div>
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
-      <div id="explorer-images" class="explorer-panel" aria-labelledby="explorer-tab-images" hidden></div>
+      <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
         <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
         <nav id="files" aria-label="Repository files"></nav>
@@ -332,7 +332,7 @@ function mountWorkspace() {
   });
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
-  disposeExplorerImages();
+  disposeExplorerMedia();
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   const menuPanel = element("repository-actions");
   menuPanel.addEventListener("toggle", () => {
@@ -2541,7 +2541,7 @@ const mediaController = createMediaController({
   source: (path, scope) => mediaTextSource(path, scope),
   listPaths: async () => {
     const repo = appStore.repository.value, snapshot = appStore.snapshot.value;
-    if (!repo || !snapshot) throw new Error("Choose a repository before opening Images.");
+    if (!repo || !snapshot) throw new Error("Choose a repository before opening Media.");
     return listRepositoryFiles(repo, snapshot);
   },
   findEntry,
@@ -2566,9 +2566,9 @@ const mediaController = createMediaController({
   viewingVersion: () => Boolean(versionView),
   restoreFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
   change: editOpenPage,
-  galleryHost: () => element("explorer-images"),
-  galleryVisible: () => !element("explorer-images").hidden && element("explorer").matches(":popover-open"),
-  imagesSelected: () => pagesController.explorerTab() === "images",
+  galleryHost: () => element("explorer-media"),
+  galleryVisible: () => !element("explorer-media").hidden && element("explorer").matches(":popover-open"),
+  mediaSelected: () => pagesController.explorerTab() === "media",
   gallerySignature: imagesSignature,
   announce,
   error: errorMessage,
@@ -2591,7 +2591,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   // Undo is recorded on the page open when the batch was asked for; a switch while loading refuses.
   const openAtStart = appStore.openFile.value;
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = await loadMediaWorkspace();
-  const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
+  const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
   assertLive();
   if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   const editor = editorModule;
@@ -2654,7 +2654,7 @@ function adoptNativeBaseSources(
 
 function deactivateNative() {
   pendingNativePageTitles = undefined;
-  disposeExplorerImages();
+  disposeExplorerMedia();
   mediaController.closePicker();
   nativeSite = undefined;
   updateExplorerTabs();
@@ -3695,7 +3695,7 @@ const filesTreeController = createFilesTreeController({
   snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
   openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
   state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
-  load: input => api<Directory>("tree", input), images: () => requestExplorerImagesRefresh(),
+  load: input => api<Directory>("tree", input), images: () => requestExplorerMediaRefresh(),
   clearError, error: errorMessage, status, announce, refuse, intent: recordNativeSourceIntent,
   openDraft: openNewDraft, openEntry, restore: target => restoreFileTarget(target),
   create: openCreate, actions: () => fileActions,
@@ -3705,7 +3705,7 @@ function renderFileTree() { filesTreeController.render(); }
 function renderDraftFiles() { filesTreeController.refresh(); }
 function fileRow(path: string) { return filesTreeController.row(path); }
 
-// The explorer's Pages | Files | Images tabs: tab state and tree rendering
+// The explorer's Pages | Media | Files tabs: tab state and tree rendering
 // live in the Pages controller; the host mounts the DOM and paints the tabs.
 let pagesTree: ReturnType<typeof createPagesTree> | undefined;
 
@@ -3713,26 +3713,26 @@ function imagesSignature() {
   const scope = draftScope();
   return JSON.stringify([generation, setupScope(), appStore.snapshot.value?.commit, scope ? draftStore().list(scope) : []]);
 }
-function disposeExplorerImages() { mediaController.disposeGallery(); }
-function ensureExplorerImages() { return mediaController.ensureGallery(); }
-function explorerImagesVisible() { return mediaController.galleryVisible(); }
-function requestExplorerImagesRefresh() { mediaController.requestGalleryRefresh(); }
+function disposeExplorerMedia() { mediaController.disposeGallery(); }
+function ensureExplorerMedia() { return mediaController.ensureGallery(); }
+function explorerMediaVisible() { return mediaController.galleryVisible(); }
+function requestExplorerMediaRefresh() { mediaController.requestGalleryRefresh(); }
 
 function mountExplorerTabs() {
   const explorer = element("explorer");
   explorer.addEventListener("toggle", () => {
     // Closing a popover queues its toggle; session expiry may detach it before dispatch.
     if (!explorer.isConnected) return;
-    if (explorerImagesVisible() && pagesController.explorerTab() === "images") void ensureExplorerImages().catch(errorMessage);
+    if (explorerMediaVisible() && pagesController.explorerTab() === "media") void ensureExplorerMedia().catch(errorMessage);
   });
-  const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), files: element<HTMLButtonElement>("explorer-tab-files"), images: element<HTMLButtonElement>("explorer-tab-images") };
+  const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), media: element<HTMLButtonElement>("explorer-tab-media"), files: element<HTMLButtonElement>("explorer-tab-files") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
     tab.addEventListener("click", () => selectExplorerTab(name));
     tab.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       const index = explorerTabNames.indexOf(name);
-      const next = event.key === "Home" ? "pages" : event.key === "End" ? "images" : explorerTabNames[(index + (event.key === "ArrowRight" ? 1 : -1) + 3) % 3];
+      const next = event.key === "Home" ? "pages" : event.key === "End" ? "files" : explorerTabNames[(index + (event.key === "ArrowRight" ? 1 : -1) + 3) % 3];
       selectExplorerTab(next);
       tabs[next].focus();
     });
@@ -3836,8 +3836,8 @@ const pagesController = createPagesController({
   clearPendingTitles: () => { pendingNativePageTitles = undefined; },
   tabsMounted: () => Boolean(document.getElementById("explorer-tabs")),
   paintTabs: paintExplorerTabs,
-  resetExplorer: () => { pagesTree?.reset(); disposeExplorerImages(); },
-  showImages: () => void ensureExplorerImages().catch(errorMessage),
+  resetExplorer: () => { pagesTree?.reset(); disposeExplorerMedia(); },
+  showMedia: () => void ensureExplorerMedia().catch(errorMessage),
   siteReadForCreate: nativeSiteReadForCreate,
   createWithCard: cardsController.createWithCard,
   navigationTarget: nativeNavigationTarget,
@@ -4218,7 +4218,7 @@ function afterFileChanges() {
   updateAgentContext();
   updateCurrentPageLabel();
   resyncNativeSite();
-  requestExplorerImagesRefresh();
+  requestExplorerMediaRefresh();
 }
 
 // Opens `path` after an operation, or the home page (else the folder summary)

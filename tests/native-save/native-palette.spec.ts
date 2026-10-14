@@ -346,8 +346,8 @@ test("session expiry disposes palette listeners before editor remount", async ({
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Images", exact: true }).click();
-  const images = page.getByRole("region", { name: "Images", exact: true });
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const images = page.getByRole("region", { name: "Media", exact: true });
   await expect(images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await page.route("**/api/snapshot?**", (route) => route.fulfill({
     status: 401,
@@ -374,7 +374,7 @@ test("session expiry disposes palette listeners before editor remount", async ({
   await expect(palette(page)).toHaveCount(1);
   await page.keyboard.press("Escape");
   await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
   await expect(images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(images).toBeHidden();

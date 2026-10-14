@@ -1,27 +1,29 @@
 import { test, expect, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
-const pane = (page: Page) => page.getByRole("region", { name: "Images", exact: true });
+const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
   await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
-test("Images is a real third tab with keyboard navigation and persistent query and detail state", async ({ page, baseURL }) => {
+test("Media is the tab between Pages and Files, with keyboard navigation and persistent query and detail state", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await expect(page.locator("#media-library-toggle")).toHaveCount(0);
   await expect(page.locator("dialog.media-library")).toHaveCount(0);
+  await expect(page.getByRole("tab")).toHaveText(["Pages", "Media", "Files"]);
   await pane(page).getByLabel("Search images", { exact: true }).fill("studio-desk");
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await page.getByRole("tab", { name: "Images", exact: true }).focus(); await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("tab", { name: "Pages", exact: true })).toBeFocused();
-  await page.keyboard.press("ArrowLeft"); await expect(page.getByRole("tab", { name: "Images", exact: true })).toBeFocused();
+  await page.getByRole("tab", { name: "Media", exact: true }).focus(); await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Files", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowLeft"); await expect(page.getByRole("tab", { name: "Media", exact: true })).toBeFocused();
   await expect(pane(page).getByLabel("Search images", { exact: true })).toHaveValue("studio-desk");
   await expect(pane(page).getByLabel("Default alt text", { exact: true })).toBeVisible();
   await page.keyboard.press("Home"); await expect(page.getByRole("tab", { name: "Pages", exact: true })).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("ArrowRight"); await expect(page.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("End"); await expect(page.getByRole("tab", { name: "Images", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowLeft"); await expect(page.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home"); await page.keyboard.press("ArrowRight"); await expect(page.getByRole("tab", { name: "Media", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("End"); await expect(page.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute("aria-selected", "true");
 });
 test("metadata Undo and Redo refresh open detail fields while preserving query", async ({ page, baseURL }) => {
   await open(page, baseURL);
@@ -53,7 +55,7 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
     if (model === undefined) throw new Error("Missing source model");
     editor.replaceActiveRange({path:"index.html", start:model.length, end:model.length, expected:"", text:"\n<!-- unrelated page edit -->"});
   });
-  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
   const alt = pane(page).getByLabel("Default alt text", { exact: true });
   await expect(alt).toHaveValue("Unfinished alt");
   await expect(pane(page).getByLabel("Image tags", { exact: true })).toHaveValue("unfinished, tags");
@@ -77,20 +79,20 @@ test("scope change disposes old controls and remounts clean image query state", 
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await pane(page).getByLabel("Default alt text", { exact: true }).fill("Stale scope alt");
   await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature" } });
-  await page.evaluate(() => { (window as any).oldImageSave = [...document.querySelectorAll<HTMLButtonElement>("#explorer-images button")].find(button => button.textContent === "Save metadata"); location.hash = "repo=501&branch=feature&file=index.html"; });
+  await page.evaluate(() => { (window as any).oldImageSave = [...document.querySelectorAll<HTMLButtonElement>("#explorer-media button")].find(button => button.textContent === "Save metadata"); location.hash = "repo=501&branch=feature&file=index.html"; });
   await expect(page.locator("#status")).toContainText("Up to date with feature");
   await page.evaluate(() => (window as any).oldImageSave.click());
   if (!await page.locator("#explorer").evaluate(element => element.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
   await expect(pane(page).getByLabel("Search images", { exact: true })).toHaveValue("");
   expect((await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("Stale scope alt");
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
-  test(`Images pane stays within a narrow viewport in ${colorScheme}`, async ({ page, baseURL }) => {
+  test(`Media pane stays within a narrow viewport in ${colorScheme}`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 390, height: 780 }); await page.emulateMedia({ colorScheme }); await open(page, baseURL);
     await expect.poll(() => pane(page).locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-    for (const selector of ["#explorer-images", ".media-library--pane"]) {
+    for (const selector of ["#explorer-media", ".media-library--pane"]) {
       const geometry = await page.locator(selector).evaluate(element => ({ right: element.getBoundingClientRect().right, width: element.scrollWidth, client: element.clientWidth }));
       expect(geometry.right).toBeLessThanOrEqual(390);
       expect(geometry.width).toBeLessThanOrEqual(geometry.client);
@@ -128,7 +130,7 @@ test("image slot keeps its chooser modal while manager query survives", async ({
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/studio-desk.svg"');
   await expect(chooser).toHaveCount(0);
-  await page.locator("#explorer-toggle").click(); await page.getByRole("tab", { name: "Images", exact: true }).click();
+  await page.locator("#explorer-toggle").click(); await page.getByRole("tab", { name: "Media", exact: true }).click();
   await expect(pane(page).getByLabel("Search images", { exact: true })).toHaveValue("studio-desk");
 });
 test("changed image usage rebuilds detail references while retaining unfinished fields and focus", async ({page,baseURL}) => {
@@ -136,7 +138,7 @@ test("changed image usage rebuilds detail references while retaining unfinished 
   const alt = pane(page).getByLabel("Default alt text",{exact:true});await alt.fill("Unfinished referenced portrait");await alt.focus();
   await pane(page).getByLabel("Image tags",{exact:true}).fill("unfinished usage tags");await alt.focus();
   await page.evaluate(async () => {
-    (window as any).mediaAltBeforeUsage = document.querySelector('#explorer-images input[aria-label="Default alt text"]');
+    (window as any).mediaAltBeforeUsage = document.querySelector('#explorer-media input[aria-label="Default alt text"]');
     const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html");
     if(source === undefined) throw new Error("Missing source model");
     editor.replaceActiveRange({path:"index.html",start:source.length,end:source.length,expected:"",text:'\n<img src="/images/studio-desk.svg" alt="New native page reference">'});
@@ -161,7 +163,7 @@ test("busy image action explains blocked controls and keeps Save focus after its
     });
     Object.assign(window,{busyImageProbe:{state:()=>renames,dispose:()=>{view.dispose();host.remove();}}});await view.ready;
   });
-  const library = page.getByRole("region",{name:"Images",exact:true});await library.getByRole("button",{name:"Details for images/a.svg",exact:true}).click();
+  const library = page.getByRole("region",{name:"Media",exact:true});await library.getByRole("button",{name:"Details for images/a.svg",exact:true}).click();
   await library.getByLabel("Default alt text",{exact:true}).fill("Saved pending alt");await library.getByRole("button",{name:"Save metadata",exact:true}).click();
   await expect(library).toHaveAttribute("aria-busy","true");await expect(library.getByRole("button",{name:"Rename",exact:true})).toHaveAttribute("aria-disabled","true");
   await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button=>button.textContent==="Rename")!.click());
@@ -172,7 +174,7 @@ test("busy image action explains blocked controls and keeps Save focus after its
   await expect(library.getByLabel("Default alt text",{exact:true})).toHaveValue("Saved pending alt");
   await page.evaluate(() => (window as any).busyImageProbe.dispose());
 });
-test("closed Images explorer defers repository refresh until reopened", async ({page,baseURL}) => {
+test("closed Media explorer defers repository refresh until reopened", async ({page,baseURL}) => {
   await open(page,baseURL);
   await page.evaluate(() => {(window as any).closedImageCard=document.querySelector(".media-library__card");});
   await page.keyboard.press("Escape");await expect(page.locator("#explorer")).not.toBeVisible();
@@ -227,10 +229,10 @@ test("background image loads preserve typing, folders and details", async ({ pag
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
-  test(`Images leaves canvas and code visible on desktop in ${colorScheme}`, async ({ page, baseURL }) => {
+  test(`Media leaves canvas and code visible on desktop in ${colorScheme}`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ colorScheme }); await open(page, baseURL);
     await expect.poll(() => pane(page).locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-    const box = await page.locator("#explorer-images").boundingBox();
+    const box = await page.locator("#explorer-media").boundingBox();
     await test.info().attach("pane-geometry", { body: JSON.stringify(box), contentType: "application/json" });
     expect(box?.height).toBeLessThanOrEqual(495);
     expect((box?.y ?? 900) + (box?.height ?? 900)).toBeLessThan(700);
@@ -242,7 +244,8 @@ for (const colorScheme of ["light", "dark"] as const) {
 }
 
 test("compact details reveal metadata and return to the same browse filters", async ({ page, baseURL }) => {
-  await open(page, baseURL);
+  // Details replace browsing only in a narrow pane; on wide screens they sit beside the grid.
+  await page.setViewportSize({ width: 390, height: 844 }); await open(page, baseURL);
   const library = pane(page);
   await library.getByLabel("Search images", { exact: true }).fill("studio-desk");
   await library.getByLabel("Folder", { exact: true }).selectOption("images");
@@ -375,4 +378,68 @@ test("a failed detail image clears its focus request and later refresh preserves
   await page.evaluate(() => (window as any).failedFocusProbe.refresh());
   await expect(thumb).toBeFocused();
   await page.evaluate(() => (window as any).failedFocusProbe.dispose());
+});
+
+const columns = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => getComputedStyle(grid).gridTemplateColumns.split(" ").length);
+for (const [width, across] of [[390, 3], [768, 4], [1280, 6]] as const) {
+  test(`Media shows ${across} square tiles across at ${width} px`, async ({ page, baseURL }) => {
+    await page.setViewportSize({ width, height: 900 }); await open(page, baseURL);
+    await expect.poll(() => columns(page)).toBe(across);
+    const tile = await pane(page).locator(".media-library__card").first().boundingBox();
+    expect(Math.abs(tile!.width - tile!.height)).toBeLessThan(1);
+    expect(tile!.width).toBeGreaterThanOrEqual(88);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  });
+}
+
+test("Media tiles: one per Image family, names on hover or keyboard focus, a clean surface without a preview", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await page.evaluate(async () => {
+    const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
+    document.body.append(host);
+    const paths = ["images/photo.webp", "images/photo-480w.webp", "images/photo-960w.webp", "images/scan.png"];
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#2f6d3a"/></svg>';
+    const view = createMediaLibraryView(host, {
+      async load() { return { key: "tiles", items: paths.map(path => ({ path, version: "A" })), metadata: {}, collections: [], usage: { "images/photo.webp": { pages: ["index.html", "about/index.html"], files: ["index.html", "about/index.html"], alts: [] } } }; },
+      async blob(path) { return path.endsWith(".png") ? new Blob(["not a picture"], { type: "image/png" }) : new Blob([svg], { type: "image/svg+xml" }); },
+      async metadata() {}, async collections() {}, async rename() {}, async remove() {}, async openPage() {}, async import() { return []; },
+    });
+    Object.assign(window, { tilesProbe: { dispose: () => { view.dispose(); host.remove(); } } });
+    await view.ready;
+  });
+  const library = pane(page), tiles = library.locator(".media-library__card");
+  await expect(tiles).toHaveCount(2);
+  await expect(library.getByRole("button", { name: "Details for images/photo-480w.webp", exact: true })).toHaveCount(0);
+  await expect(library.locator(".media-library__browse > [role=status]")).toContainText("2 of 2 images");
+  const photo = tiles.filter({ has: page.getByRole("button", { name: "Details for images/photo.webp", exact: true }) });
+  await expect.poll(() => photo.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(photo.getByRole("button", { name: "Used on 2 pages", exact: true })).toHaveText("2");
+  const name = photo.locator(".media-library__name");
+  await page.mouse.move(1270, 890);
+  await expect(name).toHaveCSS("opacity", "0");
+  await photo.hover(); await expect(name).toHaveCSS("opacity", "1");
+  await page.mouse.move(1270, 890); await expect(name).toHaveCSS("opacity", "0");
+  await photo.getByRole("button", { name: "Details for images/photo.webp", exact: true }).focus();
+  await expect(name).toHaveCSS("opacity", "1");
+  await photo.getByRole("checkbox", { name: "Select images/photo.webp", exact: true }).check();
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.mouse.move(1270, 890);
+  await expect(name).toHaveCSS("opacity", "1");
+  const scan = tiles.filter({ has: page.getByRole("button", { name: "Details for images/scan.png", exact: true }) });
+  await expect(scan).toHaveClass(/is-file/);
+  await expect(scan.locator("img")).toHaveCount(0);
+  await expect(scan.locator(".media-library__format")).toHaveText("PNG");
+  await page.evaluate(() => (window as any).tilesProbe.dispose());
+});
+
+test("touch shows every Media tile name without hover", async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await open(page, baseURL);
+  await expect(pane(page).locator(".media-library__name").first()).toHaveCSS("opacity", "1");
+  await context.close();
 });

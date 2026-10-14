@@ -39,7 +39,7 @@ interface State {
 
 /** Owns only the captured draft records, source steps, and newly staged bytes. */
 export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransaction<State> {
-  const assertLive = () => { if (!host.stamp.holds()) throw new Error("The repository changed. Close Images and open it again."); };
+  const assertLive = () => { if (!host.stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
   const refuse = (reason: string, history?: "undo" | "redo") => { host.announce(reason); showRefusal(reason, { history }); };
   const changedSince = "The images or pages of this change were edited since; edit them directly instead.";
   const scope = { ...host.scope };

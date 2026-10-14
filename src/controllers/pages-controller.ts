@@ -16,8 +16,8 @@ export interface PagesConfirmation {
 }
 
 /** The explorer's tabs: a native site shows all three, any other project only its files. */
-export type ExplorerTab = "pages" | "files" | "images";
-export const explorerTabNames: ExplorerTab[] = ["pages", "files", "images"];
+export type ExplorerTab = "pages" | "media" | "files";
+export const explorerTabNames: ExplorerTab[] = ["pages", "media", "files"];
 
 export const NATIVE_HOME_UNREAD = "The home page is not read yet. Try again in a moment.";
 
@@ -61,7 +61,7 @@ export interface PagesPorts {
   paintTabs(tab: ExplorerTab, native: boolean): void;
   /** Without a native site: reset the Pages tree and dispose the images gallery. */
   resetExplorer(): void;
-  showImages(): void;
+  showMedia(): void;
   /** The whole site read for the repository open now (host guards): an error message, or nothing. */
   siteReadForCreate(): Promise<string | undefined>;
   /** Creates the page with its card, when card grids are mounted; else undefined. */
@@ -430,7 +430,7 @@ export function createPagesController(ports: PagesPorts) {
     await confirmNativeMove(target, undefined, since);
   }
 
-  // ---- The explorer's Pages | Files | Images tabs and the Pages tree. ----
+  // ---- The explorer's Pages | Media | Files tabs and the Pages tree. ----
 
   let explorerTab: ExplorerTab = "pages";
 
@@ -438,7 +438,7 @@ export function createPagesController(ports: PagesPorts) {
     explorerTab = name;
     updateExplorerTabs();
     if (name === "pages") renderPagesTree();
-    if (name === "images") ports.showImages();
+    if (name === "media") ports.showMedia();
   }
 
   function updateExplorerTabs(reset = false) {

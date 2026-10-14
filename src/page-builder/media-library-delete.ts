@@ -20,7 +20,7 @@ export function confirmMediaDelete(sheet: LibrarySheet, grid: HTMLElement, c: De
     : "These images have no page usage. Check any component and CSS references below."));
   for (const path of paths) element.append(node("p", "media-library__hint",
     `${path}${usage[path]?.files.length ? ` · Referenced by ${usage[path].files.join(", ")}` : " · No source references"}`));
-  element.append(node("p", "media-library__muted", "Deletion stays a draft until Save. Restore a repository image from the Files panel."),
+  element.append(node("p", "media-library__muted", "Deletion stays a draft until Publish. Restore a repository image from the Files panel."),
     cancellation("Cancel", () => { sheet.version++; element.hidden = true; delete element.dataset.mode; }),
     button("Delete images", () => void c.task(async () => {
       if (confirmationVersion !== sheet.version || element.dataset.mode !== "delete") {

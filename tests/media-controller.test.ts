@@ -30,7 +30,7 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
     findEntry: async () => ({ sha: "sha", size: 12 }), entry: () => ({ sha: "sha", size: 12 }), readText: async () => "read text", rememberSource: (path, source) => { sources.set(path, source); },
     uploadedBlob: async () => undefined, readBlob: async () => new Blob(["image"], { type: "image/png" }), applyBatch: async () => {}, openPage: async () => {}, load: async () => module,
     openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
-    change: (_path, _source, edits) => { changes.push(edits[0].text); return true; }, galleryHost: () => element as HTMLElement, galleryVisible: () => visible, imagesSelected: () => true, gallerySignature: () => signature,
+    change: (_path, _source, edits) => { changes.push(edits[0].text); return true; }, galleryHost: () => element as HTMLElement, galleryVisible: () => visible, mediaSelected: () => true, gallerySignature: () => signature,
     locateElement: (source) => { const tag = startTags(source).find((item) => item.name === "img"); return tag && { tag }; },
     refreshDescriptions: () => {},
     observeBusy: (_element, changed) => { observerCallback = changed; return { disconnect() {} }; }, announce: () => {}, error: (error) => errors.push(error), ...overrides,
