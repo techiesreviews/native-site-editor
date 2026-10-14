@@ -2,7 +2,7 @@
 title: The Media tab badge and the Always keep mark
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-49 runner)
 blocked_by: [47-clean-up-suggestions]
 builder: claude
 phase: 4
