@@ -2,7 +2,7 @@
 title: The Social image popup
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-44 runner)
 blocked_by: [39-image-button-and-popup, 36-social-sharing-copy]
 builder: claude
 phase: 3
