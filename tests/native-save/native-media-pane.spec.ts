@@ -33,7 +33,7 @@ test("persistent pane searches, filters, shows details and retains drafts throug
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await expect(panel.getByRole("heading", { name: /Used on \d+ pages/ })).toBeVisible();
   await panel.getByLabel("Default alt text", { exact: true }).fill("Persistent studio");
-  await panel.getByLabel("Image tags", { exact: true }).fill("pane-tag");
+  await panel.getByLabel("New collection", { exact: true }).fill("pane-tag");
   await panel.getByRole("button", { name: "Save metadata", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Persistent studio");
   await page.evaluate(() => { document.querySelector<HTMLElement>("#media-pane-harness")!.hidden = true; });
@@ -115,7 +115,7 @@ test("refresh after real metadata Undo restores detail fields and cannot save un
   const panel = pane(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   const alt = panel.getByLabel("Default alt text", { exact: true });
-  const tags = panel.getByLabel("Image tags", { exact: true });
+  const tags = panel.getByLabel("New collection", { exact: true });
   const originalAlt = await alt.inputValue();
   const originalTags = await tags.inputValue();
   await alt.fill("Undone pane alt"); await tags.fill("undone-pane-tag");
@@ -143,7 +143,7 @@ for (const removed of [false, true]) {
       let loads = 0; let mutations = 0;
       const library = (fresh: boolean): import("../../src/page-builder/media-picker").MediaLibrary => ({
         key: "detail-race", items: fresh && removed ? [] : [{ path, version: "same" }],
-        metadata: { [path]: { alt: fresh ? "Restored alt" : "Stale alt", tags: [fresh ? "restored" : "stale"] } }, collections: [], usage: {},
+        metadata: { [path]: { alt: fresh ? "Restored alt" : "Stale alt", tags: [fresh ? "restored" : "stale"] } }, collections: ["restored", "stale"], usage: {},
       });
       const adapter: import("../../src/page-builder/media-picker").MediaPickerHost = {
         load: async () => { if (++loads === 1) return library(false); await new Promise<void>(resolve => { releaseLoad = resolve; }); return library(true); },
@@ -161,12 +161,12 @@ for (const removed of [false, true]) {
       releaseLoad(); await refreshing;
       const sheet = host.querySelector<HTMLElement>(".media-library__sheet")!;
       const alt = host.querySelector<HTMLInputElement>('[aria-label="Default alt text"]')?.value;
-      const tags = host.querySelector<HTMLInputElement>('[aria-label="Image tags"]')?.value;
+      const tags = [...host.querySelectorAll<HTMLInputElement>('[name="media-collection-member"]:checked')].map(box => box.getAttribute("aria-label")).join();
       const hidden = sheet.hidden;
       view.dispose(); host.remove();
       return { saveDuringLoad, alt, tags, hidden, mutations };
     }, removed);
-    expect(result).toEqual({ saveDuringLoad: false, alt: removed ? undefined : "Restored alt", tags: removed ? undefined : "restored", hidden: removed, mutations: 0 });
+    expect(result).toEqual({ saveDuringLoad: false, alt: removed ? undefined : "Restored alt", tags: removed ? "" : "restored", hidden: removed, mutations: 0 });
   });
 }
 

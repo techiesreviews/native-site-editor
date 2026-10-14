@@ -1,6 +1,7 @@
 import { button, node } from "../ui/dom";
 import { formatBytes, uploadImageType } from "../uploads";
-import { input, field } from "./media-library-fields";
+import { input, field, check } from "./media-library-fields";
+import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
 import { basename } from "./media-library-filter";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import type { MediaBytes } from "./media-byte-cache";
@@ -30,7 +31,7 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   if (!background) sheet.focus = { path, active: initiatingFocus };
   const focusRequest = sheet.focus;
   delete element.dataset.mode;
-  sheet.work?.abort();
+  sheet.work?.abort(); sheet.redraw = undefined;
   sheet.path = path;
   const version = ++sheet.version;
   element.hidden = false; element.replaceChildren(node("p", "media-library__muted", "Loading image…"));
@@ -56,7 +57,7 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
     grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"] button`)?.focus();
     if (!h.modal) dialog.scrollTop = 0;
   }));
-  renderMetadataForm(element, h, path, data, meta, () => version === sheet.version && sheet.path === path);
+  renderMetadataForm(element, h, path, data, meta, library.collections, () => version === sheet.version && sheet.path === path);
   renderUsageList(element, h, library.usage[path]);
   renderFileActions(element, h, path, data);
   if (h.pick.onPick) renderPickerInsertion(element, h, h.pick.onPick, path, data, meta, library.items.map((item) => item.path));
@@ -69,26 +70,44 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   if (sheet.focus?.path === path) sheet.focus = undefined;
 }
 
-/** Default alt text, Decorative and tags; `current` says whether this sheet is still open. */
+let fieldIds = 0;
+
+/** Default alt text, Decorative and the file's collections; `current` says whether this sheet is still open. */
 function renderMetadataForm(
   sheet: HTMLElement, { task, adapter, refresh, tell }: Pick<DetailHost, "task" | "adapter" | "refresh" | "tell">,
-  path: string, data: MediaBytes, meta: MediaMetadata, current: () => boolean,
+  path: string, data: MediaBytes, meta: MediaMetadata, collections: string[], current: () => boolean,
 ) {
   const preview = node("img", "media-library__preview"); preview.src = data.url; preview.alt = meta.alt;
   sheet.append(preview, node("h3", "media-library__detail-name", basename(path)),
     node("p", "media-library__muted", `${data.width ? `${data.width} × ${data.height} · ` : ""}${formatBytes(data.blob.size)} · ${path}`));
   const alt = input("Default alt text", "text"); alt.value = meta.alt;
-  const tags = input("Image tags", "text"); tags.value = meta.tags.join(", ");
   const decorative = input("Decorative", "checkbox"); decorative.checked = Boolean(meta.decorative);
   decorative.addEventListener("change", () => { if (decorative.checked) alt.value = ""; });
   alt.addEventListener("input", () => { if (alt.value) decorative.checked = false; });
   if (!meta.alt && !meta.decorative) sheet.append(node("p", "media-library__hint", "Not described yet"));
+  // Collections work like tags (ticket 15): tick the ones the file is in, or name a new one.
+  const group = node("fieldset", "media-library__memberships");
+  group.append(node("legend", "", "Collections"));
+  const ticks = collections.map(name => {
+    const box = input(name, "checkbox"); box.checked = meta.tags.includes(name); box.name = "media-collection-member";
+    group.append(check(name, box)); return box;
+  });
+  if (!collections.length) group.append(node("p", "media-library__muted", "No collections yet."));
+  const fresh = input("New collection", "text"); fresh.placeholder = "Name a new collection"; fresh.autocomplete = "off";
+  const problem = node("p", "media-library__problem"); problem.id = `media-detail-collection-${++fieldIds}`;
+  problem.setAttribute("aria-live", "polite"); fresh.setAttribute("aria-describedby", problem.id);
+  fresh.addEventListener("input", () => {
+    problem.textContent = fresh.value.trim() ? mediaCollectionNameMessage(collections, fresh.value) ?? "" : "";
+  });
+  group.append(field("New collection", fresh), problem);
   sheet.append(node("h3", "media-library__metadata-title", "Image metadata"), field("Default alt text", alt),
     node("p", "media-library__hint", "Places using this description are updated. Places with their own words are kept."),
-    field("Decorative", decorative), field("Tags", tags), button("Save metadata", () => void task(async () => {
+    field("Decorative", decorative), group, button("Save metadata", () => void task(async () => {
       if (!current()) return;
-      await adapter.metadata({ [path]: { alt: alt.value, tags: tags.value.split(","), decorative: decorative.checked } });
-      await refresh(); tell("Tags and default alt text saved as a draft.");
+      const chosen = detailCollections(collections, collections.filter((_, index) => ticks[index].checked), fresh.value);
+      if ("problem" in chosen) { problem.textContent = chosen.problem; fresh.focus(); return; }
+      await adapter.metadata({ [path]: { alt: alt.value, tags: chosen.tags, decorative: decorative.checked } });
+      await refresh(); tell("Description and collections saved as a draft.");
     })));
 }
 

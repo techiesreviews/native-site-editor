@@ -1,5 +1,4 @@
 import { WARN_IMAGE_BYTES, uploadImageType } from "../uploads";
-import { cleanMediaTags, type MediaMetadata } from "./media-metadata";
 import { createBusyLock } from "./media-busy-lock";
 import { createMediaByteCache } from "./media-byte-cache";
 import { createMediaLibraryShell } from "./media-library-shell";
@@ -10,7 +9,9 @@ import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
-import { createRowMenu } from "../components/row-menu";
+import { createRowMenu, type MenuItem } from "../components/row-menu";
+import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
+import { filesLabel } from "./media-collection-choices";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import {
   detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
@@ -36,32 +37,49 @@ export function createMediaLibraryView(
 ): MediaLibraryView {
   adapter.begin?.();
   const shell = createMediaLibraryShell(container, options, ++viewId, {
-    tagSelected: () => void task(async () => {
-      const changes: Record<string, Partial<MediaMetadata>> = {};
-      for (const path of selected) changes[path] = {
-        tags: cleanMediaTags([...(library.metadata[path]?.tags ?? []), ...shell.bulkTags.value.split(",")]),
-      };
-      await adapter.metadata(changes); await refresh();
+    addTo: opener => openMenu(opener, "Add to collection", [
+      ...library.collections.filter(name => name !== viewing).map(name => {
+        const all = [...selected].every(path => library.metadata[path]?.tags.includes(name));
+        return { label: name, section: "Add to", ...(all ? { disabled: "Already in it" } : {}), run: () => addTo(name) };
+      }),
+      { label: "New collection…", run: () => showCollectionName(sheet, collectionHost, {
+        paths: [...selected], done: saved => { if (saved) { selected.clear(); draw(); } closeSheet(opener); },
+      }) },
+    ]),
+    takeOut: () => void task(async () => {
+      const name = viewing, paths = [...selected].filter(path => library.metadata[path]?.tags.includes(name));
+      if (!name || !paths.length) return;
+      await adapter.collections({ kind: "take-out", name, paths });
+      selected.clear(); await refresh(); keepFocus();
+      tell(`Took ${filesLabel(paths.length)} out of "${name}". ${paths.length === 1 ? "It stays" : "They stay"} in Media under All.`);
     }),
-    optimiseHeavy: () => void task(async () => {
-      const files: File[] = [], receipts = new Map<string, string | undefined>();
-      for (const item of library.items.filter((item) => selected.has(item.path))) {
-        const version = item.version, blob = await adapter.blob(item.path);
-        if (!alive) return;
-        if (blob.size >= WARN_IMAGE_BYTES) {
-          files.push(new File([blob], item.path, { type: blob.type || uploadImageType(item.path) }));
-          receipts.set(item.path, version);
+    remove: () => remove([...selected]),
+    more: opener => openMenu(opener, "More for selected files", [
+      { label: "Select all shown", run: () => {
+        for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card")) selected.add(card.dataset.path!);
+        draw();
+      } },
+      { label: "Optimise heavy images", run: () => void task(async () => {
+        const files: File[] = [], receipts = new Map<string, string | undefined>();
+        for (const item of library.items.filter((item) => selected.has(item.path))) {
+          const version = item.version, blob = await adapter.blob(item.path);
+          if (!alive) return;
+          if (blob.size >= WARN_IMAGE_BYTES) {
+            files.push(new File([blob], item.path, { type: blob.type || uploadImageType(item.path) }));
+            receipts.set(item.path, version);
+          }
         }
-      }
-      if (!files.length) { tell("No selected images are above 2 MB."); return; }
-      optimise(files, true, receipts);
-    }),
-    deleteUnused: () => remove([...selected].filter((path) => !library.usage[path]?.files.length), true),
+        if (!files.length) { tell("No selected images are above 2 MB."); return; }
+        optimise(files, true, receipts);
+      }) },
+    ]),
     clear: () => { selected.clear(); draw(); },
   }, modal);
   const { dialog, grid, collections, summary, message } = shell;
   let alive = true, kind: MediaKindChoice = "all", layout: "grid" | "list" = "grid", refreshVersion = 0, loadingLibrary = false;
   let usageDialog: ReturnType<typeof showUsageDialog> | undefined;
+  /** The collection the grid shows; a rename it follows; empty for All collections. */
+  let viewing = "", followed: string | undefined;
   let library: MediaLibrary, refreshedKey: string | undefined;
   const sheet: LibrarySheet = { element: shell.sheet, version: 0 };
   // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
@@ -81,6 +99,32 @@ export function createMediaLibraryView(
     if (!alive) return;
     repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh();
   });
+  const collectionHost: CollectionScreensHost = {
+    ...context, close: () => closeSheet(collections),
+    follow: (from, to) => { if (viewing === from) followed = to; },
+  };
+  /** Close a collection screen and return focus to what opened it (or to Collections). */
+  function closeSheet(opener: HTMLElement) {
+    sheet.version++; sheet.redraw = undefined; shell.sheet.hidden = true; shell.sheet.replaceChildren();
+    delete shell.sheet.dataset.mode;
+    (opener.isConnected && opener.getClientRects().length ? opener : collections).focus();
+  }
+  /** The selection bar closes with the selection; focus moves to Collections rather than being lost. */
+  function keepFocus() {
+    if (alive && (document.activeElement === document.body || !document.activeElement?.isConnected || shell.bulk.contains(document.activeElement))) collections.focus();
+  }
+  function openMenu(opener: HTMLButtonElement, label: string, items: MenuItem[]) {
+    if (more.isOpen() && more.opener === opener) { more.close(true); return; }
+    more.open(opener, items, undefined, label);
+  }
+  function addTo(name: string) {
+    void task(async () => {
+      const paths = [...selected];
+      await adapter.collections({ kind: "add", name, paths });
+      selected.clear(); await refresh(); keepFocus();
+      tell(`Added ${filesLabel(paths.length)} to "${name}".`);
+    });
+  }
   function dispose() {
     if (!alive) return;
     alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); usageDialog?.close();
@@ -112,8 +156,10 @@ export function createMediaLibraryView(
     library = { ...next, usage: mediaFamilyUsage(next) };
     refreshedKey = inputKey;
     pruneLibrarySelection(library.items, selected);
-    rebuildLibraryCollections(collections, library.collections);
+    rebuildLibraryCollections(collections, library.collections, !modal, followed ?? collections.value);
+    followed = undefined;
     draw();
+    if (!shell.sheet.hidden && shell.sheet.dataset.mode === "collections") sheet.redraw?.();
     if (sheet.path) {
       if (library.items.some((item) => item.path === sheet.path)) {
         const path = sheet.path;
@@ -130,6 +176,7 @@ export function createMediaLibraryView(
   }
   function draw() {
     if (!alive || !library) return;
+    viewing = collections.value;
     drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout }, {
       alive: () => alive, bytes: path => cache.get(path), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
@@ -156,10 +203,11 @@ export function createMediaLibraryView(
     if (change.query !== undefined) shell.search.value = change.query;
     draw(); shell.search.focus();
   }
-  // More: adding first, then the kinds, then Grid or List.
+  // More: adding first, then the kinds, then Grid or List, then the viewed collection's Rename and Delete.
   const kinds: [MediaKindChoice, string][] = [["all", "All"], ["image", "Images"], ["video", "Video"], ["audio", "Audio"], ["document", "Documents"]];
   shell.more.addEventListener("click", () => {
     if (more.isOpen() && more.opener === shell.more) { more.close(true); return; }
+    const name = viewing;
     more.open(shell.more, [
       { label: "Add new file", run: () => shell.uploadInput.click() },
       ...kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
@@ -168,6 +216,11 @@ export function createMediaLibraryView(
       ...([["grid", "Grid"], ["list", "List"]] as const).map(([value, label]) => ({ label, section: "View", checked: layout === value, run: () => {
         layout = value; draw(); shell.more.focus();
       } })),
+      // While viewing a collection (ticket 15).
+      ...name ? [
+        { label: "Rename collection", section: "This collection", run: () => showCollectionName(sheet, collectionHost, { renaming: name, done: () => closeSheet(shell.more) }) },
+        { label: "Delete collection", section: "This collection", run: () => showCollectionDelete(sheet, collectionHost, name, () => closeSheet(shell.more)) },
+      ] : [],
     ], undefined, "More");
   }, { signal: listeners.signal });
   function details(path: string, background = false) {
@@ -179,6 +232,7 @@ export function createMediaLibraryView(
   }
   wireMediaLibraryInput(shell, {
     draw, busy: () => busyLock.busy, loaded: () => Boolean(library), optimise: files => optimise(files), tell,
+    viewing: () => viewing, manage: () => { if (library) showManageCollections(sheet, collectionHost); },
   }, listeners.signal);
   const ready = task(async () => {
     summary.textContent = "Reading repository images and references…";

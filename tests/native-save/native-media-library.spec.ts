@@ -31,7 +31,7 @@ test("rename updates references and metadata in one Undo", async ({ page, baseUR
   const panel = library(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await panel.getByLabel("Default alt text", { exact: true }).fill("Studio portrait");
-  await panel.getByLabel("Image tags", { exact: true }).fill("studio, portrait");
+  await panel.getByLabel("New collection", { exact: true }).fill("Studio portraits");
   await panel.getByRole("button", { name: "Save metadata", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Studio portrait");
   await panel.getByLabel("New image filename", { exact: true }).fill("garden-desk.svg");

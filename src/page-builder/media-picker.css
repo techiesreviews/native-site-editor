@@ -31,7 +31,6 @@
 .media-library__page { background: none; color: var(--link); border: none; padding: 4px 0; text-align: left; }
 .media-library__hint { line-height: 1.5; overflow-wrap: anywhere; }
 .media-library__code { margin: 0; padding: 10px; background: var(--surface-input); font-size: var(--type-small); font-family: var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--radius); }
-.media-library__bulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px; background: var(--surface-subtle); border-radius: var(--radius); }
 .media-library__results { display: grid; gap: 8px; }
 .media-library__message { padding: 0 24px 10px; color: var(--warning-fg); overflow-wrap: anywhere; }
 .media-library__message:empty { display: none; }
@@ -275,3 +274,37 @@ dialog.media-library .media-library__bar { grid-template-columns: minmax(0, 2fr)
   .media-library__grid--list .media-library__size { grid-column: 2; grid-row: 2; align-self: start; text-align: left; }
   .media-library__grid--list .media-library__usage-label { max-width: 6.5em; }
 }
+
+/* Selection bar (research 01, ticket 15): after the grid and sticky at the bottom, so its
+   actions stay in reach however far the grid scrolls. Phones put the actions on their own row. */
+.media-library__bulk {
+  position: sticky; bottom: 8px; z-index: 4; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "count actions tools"; align-items: center; gap: 8px; padding: 8px 8px 8px 14px;
+  border: 1px solid color-mix(in oklch, var(--primary) 35%, var(--line)); border-radius: 12px;
+  background: color-mix(in oklch, var(--primary) 10%, var(--surface)); box-shadow: var(--shadow-small);
+}
+.media-library__bulk-count { grid-area: count; font-weight: 600; white-space: nowrap; }
+.media-library__bulk-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.media-library__bulk-tools { grid-area: tools; display: flex; gap: 8px; }
+.media-library__bulk button { min-height: 44px; border: 1px solid var(--control-line); overflow-wrap: anywhere; }
+.media-library__bulk-actions button[hidden] { display: none; }
+.media-library .media-library__bulk-more { width: 44px; padding: 0; display: grid; place-items: center; }
+@container media-browse (max-width: 560px) {
+  .media-library__bulk { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "count tools" "actions actions"; padding-left: 12px; }
+  .media-library__bulk-actions button { flex: 1 1 auto; }
+}
+
+/* Details: a file's collections as tick boxes, and a name for a new one. */
+.media-library__memberships { display: grid; gap: 4px; min-width: 0; margin: 0; padding: 8px 12px 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.media-library__memberships legend { padding: 0 4px; font-weight: 600; }
+.media-library__memberships .media-library__check { min-height: 44px; overflow-wrap: anywhere; cursor: pointer; }
+.media-library__memberships .media-library__field { margin-top: 4px; }
+.media-library__problem { color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
+.media-library__problem:empty { display: none; }
+
+/* Manage collections and the name and delete screens. */
+.media-library__collection-list { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.media-library__collection-row { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.media-library__collection-name { flex: 1; min-width: 0; display: grid; overflow-wrap: anywhere; }
+.media-library__collection-row button, .media-library__sheet-actions button { min-height: 44px; }
+.media-library__sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }

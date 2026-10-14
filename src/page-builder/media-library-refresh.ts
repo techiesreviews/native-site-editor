@@ -2,7 +2,7 @@ import type { MediaLibrary } from "./media-picker";
 
 export const detailIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify([
   value?.metadata[path] ?? { tags: [], alt: "" }, value?.usage[path],
-  value?.items.find(item => item.path === path)?.version,
+  value?.items.find(item => item.path === path)?.version, value?.collections,
 ]);
 export const metadataIdentity = (value: MediaLibrary | undefined, path: string) => JSON.stringify(value?.metadata[path] ?? { tags: [], alt: "" });
 
@@ -10,18 +10,22 @@ export function pruneLibrarySelection(items: MediaLibrary["items"], selected: Se
   for (const path of [...selected]) if (!items.some((item) => item.path === path)) selected.delete(path);
 }
 
-/** All collections, then each collection in the library's order; a vanished choice falls back to All. */
-export function rebuildLibraryCollections(select: HTMLSelectElement, collections: string[]) {
-  const chosen = select.value;
+/** The Collections option that opens Manage collections. Collection names are trimmed, so none starts with a space. */
+export const MANAGE_COLLECTIONS = " manage";
+
+/** All collections, then each collection in the library's order, then (in the Media pane)
+ * Manage collections; a vanished choice falls back to All. */
+export function rebuildLibraryCollections(select: HTMLSelectElement, collections: string[], manage: boolean, chosen = select.value) {
   // The customizable select's button (showing the chosen option) stays first.
-  select.replaceChildren(...[...select.children].filter(child => !(child instanceof HTMLOptionElement)),
-    new Option("All collections", ""), ...collections.map(name => new Option(name, name)));
+  select.replaceChildren(...[...select.children].filter(child => child instanceof HTMLButtonElement),
+    new Option("All collections", ""), ...collections.map(name => new Option(name, name)),
+    ...manage ? [document.createElement("hr"), new Option("Manage collections…", MANAGE_COLLECTIONS)] : []);
   select.value = collections.includes(chosen) ? chosen : "";
 }
 
 export function captureDetailForm(sheet: HTMLElement, preserve: boolean) {
   const inputs = preserve ? [...sheet.querySelectorAll<HTMLInputElement>("input")].map(input => ({
-    label: input.getAttribute("aria-label"), value: input.value,
+    label: input.getAttribute("aria-label"), value: input.value, checked: input.checked,
     focused: input === document.activeElement, start: input.selectionStart, end: input.selectionEnd,
   })) : [];
   const active = document.activeElement;
@@ -38,7 +42,8 @@ export function restoreDetailForm(sheet: HTMLElement, savedForm: ReturnType<type
   for (const saved of inputs) {
     const input = [...sheet.querySelectorAll<HTMLInputElement>("input")].find(input => input.getAttribute("aria-label") === saved.label);
     if (!input) continue;
-    input.value = saved.value; input.dispatchEvent(new Event("input", { bubbles: true }));
+    if (input.type === "checkbox") input.checked = saved.checked; else input.value = saved.value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   }
   // Metadata Undo changes values, but it must not strand keyboard focus.
   // A user who focused elsewhere during the read keeps that focus.

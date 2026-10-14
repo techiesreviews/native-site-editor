@@ -12,6 +12,8 @@ export interface LibrarySheet {
   focus?: { path: string; active: Element | null };
   /** The running optimisation preview. */
   work?: AbortController;
+  /** Redraws a list screen (Manage collections) after the library refreshes. */
+  redraw?: () => void;
 }
 
 /** What the sheet screens read from the view and ask it to do; no writes. */
@@ -33,6 +35,6 @@ export interface LibrarySheetContext {
 /** Replace the sheet with a new non-detail screen. */
 export function takeSheet(sheet: LibrarySheet) {
   sheet.focus = undefined;
-  sheet.work?.abort();
+  sheet.work?.abort(); sheet.redraw = undefined;
   sheet.version++; sheet.path = undefined; sheet.element.hidden = false; sheet.element.replaceChildren();
 }

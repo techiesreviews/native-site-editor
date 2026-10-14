@@ -7,7 +7,7 @@ export type MediaCollectionChange =
   | { kind: "rename"; from: string; to: string }
   | { kind: "delete"; name: string };
 
-export function mediaCollectionNameProblem(records: MediaRecords, name: string, renaming?: string): "empty" | "taken" | undefined {
+export function mediaCollectionNameProblem(records: Pick<MediaRecords, "collections">, name: string, renaming?: string): "empty" | "taken" | undefined {
   const clean = name.trim();
   if (!clean) return "empty";
   if (records.collections.some(existing => existing !== renaming && existing.toLowerCase() === clean.toLowerCase())) return "taken";

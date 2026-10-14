@@ -2,7 +2,7 @@ import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
 import { basename, filterMediaLibrary, mediaLibraryRecovery, mediaLibraryTiles, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import type { MediaBytes } from "./media-byte-cache";
-import type { LibraryShell } from "./media-library-shell";
+import { syncSelectionBar, type LibraryShell } from "./media-library-shell";
 import type { MediaLibrary } from "./media-picker";
 import { icon } from "../icons";
 import { formatBytes } from "../uploads";
@@ -32,7 +32,7 @@ export interface LibraryGridHost {
 
 /** Draw the screen-reader count and one square tile (or list row) per Image family, or a way back when nothing matches. */
 export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, state: LibraryGridState, h: LibraryGridHost) {
-  const { search, collections, summary, bulk, bulkCount, grid, browse, dialog } = shell;
+  const { search, collections, summary, grid, browse, dialog } = shell;
   const { selected, observers } = state;
   const active = document.activeElement;
   const card = active instanceof Element ? active.closest<HTMLElement>(".media-library__card") : null;
@@ -45,7 +45,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   const filter: MediaLibraryFilter = { query: search.value, collection: collections.value, kind: state.kind, accept: state.accept };
   const filtered = filterMediaLibrary({ ...library, items: tiles }, filter);
   summary.textContent = `${filtered.length} of ${tiles.length} files${collections.value ? ` · ${collections.value}` : ""}`;
-  bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
+  syncSelectionBar(shell, selected.size, collections.value);
   grid.replaceChildren();
   const list = state.layout === "list";
   grid.classList.toggle("media-library__grid--list", list);
@@ -72,7 +72,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     const checkbox = input(`Select ${item.path}`, "checkbox"); checkbox.checked = selected.has(item.path);
     checkbox.addEventListener("change", () => {
       checkbox.checked ? selected.add(item.path) : selected.delete(item.path);
-      bulk.hidden = !selected.size; bulkCount.textContent = `${selected.size} selected`;
+      syncSelectionBar(shell, selected.size, collections.value);
     });
     selectLabel.append(checkbox);
     // The number counts distinct pages; hover and focus show its words, a tap the page names.

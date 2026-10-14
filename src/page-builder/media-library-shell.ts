@@ -1,15 +1,15 @@
 import { button, node } from "../ui/dom";
-import { input } from "./media-library-fields";
 import { setIcon } from "../icons";
 import { cancellation } from "./media-busy-lock";
+import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
 
 export type LibraryShell = ReturnType<typeof createMediaLibraryShell>;
 
-/** The library's frame: header, the One bar, bulk bar, grid, sheet and footer. */
+/** The library's frame: header, the One bar, grid, selection bar, sheet and footer. */
 export function createMediaLibraryShell(
   container: HTMLElement, options: MediaPickerOptions, id: number,
-  actions: { tagSelected: () => void; optimiseHeavy: () => void; deleteUnused: () => void; clear: () => void },
+  actions: { addTo: (opener: HTMLButtonElement) => void; takeOut: () => void; remove: () => void; more: (opener: HTMLButtonElement) => void; clear: () => void },
   modal?: HTMLDialogElement,
 ) {
   const dialog = modal ?? node("section", "media-library media-library--pane");
@@ -54,21 +54,37 @@ export function createMediaLibraryShell(
   const browse = node("section", "media-library__browse");
   // The count is for screen readers; the tiles show it.
   const summary = node("p", "sr-only"); summary.setAttribute("role", "status");
+  // The selection bar (research 01, ticket 15): after the grid and sticky, so it stays in reach.
   const bulk = node("div", "media-library__bulk"); bulk.hidden = true;
-  const bulkCount = node("span");
-  const bulkTags = input("Tags for selected images", "text"); bulkTags.placeholder = "Add tags, comma separated";
-  const tagButton = button("Tag selected", actions.tagSelected);
-  const optimiseButton = button("Optimise heavy", actions.optimiseHeavy);
-  const deleteButton = button("Delete unused", actions.deleteUnused);
-  bulk.append(bulkCount, bulkTags, tagButton, optimiseButton, deleteButton, button("Clear", actions.clear));
+  bulk.setAttribute("role", "group"); bulk.setAttribute("aria-label", "Selected files");
+  const bulkCount = node("span", "media-library__bulk-count");
+  const bulkActions = node("div", "media-library__bulk-actions");
+  const addTo: HTMLButtonElement = button("Add to collection", () => actions.addTo(addTo));
+  addTo.setAttribute("aria-haspopup", "menu"); addTo.setAttribute("aria-expanded", "false");
+  const takeOut = button("", actions.takeOut), removeFiles = button("", actions.remove);
+  bulkActions.append(addTo, takeOut, removeFiles);
+  const bulkTools = node("div", "media-library__bulk-tools");
+  const bulkMore: HTMLButtonElement = button("", () => actions.more(bulkMore), "button secondary media-library__bulk-more");
+  bulkMore.setAttribute("aria-label", "More for selected files"); bulkMore.setAttribute("aria-haspopup", "menu"); bulkMore.setAttribute("aria-expanded", "false");
+  setIcon(bulkMore, "dots-three", 20);
+  bulkTools.append(bulkMore, button("Clear", actions.clear));
+  bulk.append(bulkCount, bulkActions, bulkTools);
   const grid = node("div", "media-library__grid"); grid.setAttribute("aria-label", "Media library");
   grid.append(node("p", "media-library__empty", "Reading media…"));
   const sheet = node("aside", "media-library__sheet"); sheet.hidden = true;
-  browse.append(summary, bulk, grid); body.append(browse, sheet);
+  browse.append(summary, grid, bulk); body.append(browse, sheet);
   const message = node("p", "media-library__message"); message.setAttribute("role", "status");
   const footer = node("footer", "media-library__footer", `Drop images anywhere here · Enter opens details · Arrow keys browse${modal ? " · Esc closes" : ""}`);
   dialog.append(header, toolbar, body, message, footer);
   container.append(dialog);
   if (modal) { modal.showModal(); search.focus(); }
-  return { dialog, close, search, collections, more, browse, summary, bulk, bulkCount, bulkTags, grid, sheet, message, uploadInput };
+  return { dialog, close, search, collections, more, browse, summary, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput };
+}
+
+/** Show the selection bar while files are selected: Take out only inside a collection. */
+export function syncSelectionBar(shell: Pick<LibraryShell, "bulk" | "bulkCount" | "takeOut" | "removeFiles">, count: number, viewing: string) {
+  const labels = mediaSelectionActions(count, viewing);
+  shell.bulk.hidden = !count; shell.bulkCount.textContent = labels.count;
+  shell.takeOut.hidden = !labels.takeOut; shell.takeOut.textContent = labels.takeOut ?? "";
+  shell.removeFiles.textContent = labels.remove;
 }

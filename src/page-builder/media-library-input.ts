@@ -1,4 +1,5 @@
 import type { LibraryShell } from "./media-library-shell";
+import { MANAGE_COLLECTIONS } from "./media-library-refresh";
 
 export interface LibraryInputHost {
   draw: () => void;
@@ -7,6 +8,9 @@ export interface LibraryInputHost {
   loaded: () => boolean;
   optimise: (files: File[]) => void;
   tell: (text: string) => void;
+  /** The collection the grid shows, which Manage collections leaves chosen. */
+  viewing: () => string;
+  manage: () => void;
 }
 
 /** Filters redraw, arrow keys move through thumbnails, and uploads or drops open Optimise. */
@@ -15,7 +19,10 @@ export function wireMediaLibraryInput(
 ) {
   const { draw, tell } = h;
   search.addEventListener("input", draw, { signal });
-  collections.addEventListener("change", draw, { signal });
+  collections.addEventListener("change", () => {
+    if (collections.value !== MANAGE_COLLECTIONS) { draw(); return; }
+    collections.value = h.viewing(); h.manage();
+  }, { signal });
   // Escape in the open Collections list closes only the list, not the explorer around it.
   collections.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && selectIsOpen(collections)) event.stopPropagation();

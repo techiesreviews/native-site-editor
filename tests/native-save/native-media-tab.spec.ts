@@ -47,7 +47,7 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
   await open(page, baseURL);
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await pane(page).getByLabel("Default alt text", { exact: true }).fill("Unfinished alt");
-  await pane(page).getByLabel("Image tags", { exact: true }).fill("unfinished, tags");
+  await pane(page).getByLabel("New collection", { exact: true }).fill("unfinished, tags");
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
@@ -58,7 +58,7 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
   await page.getByRole("tab", { name: "Media", exact: true }).click();
   const alt = pane(page).getByLabel("Default alt text", { exact: true });
   await expect(alt).toHaveValue("Unfinished alt");
-  await expect(pane(page).getByLabel("Image tags", { exact: true })).toHaveValue("unfinished, tags");
+  await expect(pane(page).getByLabel("New collection", { exact: true })).toHaveValue("unfinished, tags");
   await alt.focus();
   await page.evaluate(() => { (window as any).mediaCardBeforeRefresh = document.querySelector(".media-library__card"); });
   await page.evaluate(async () => {
@@ -136,7 +136,7 @@ test("image slot keeps its chooser modal while manager query survives", async ({
 test("changed image usage rebuilds detail references while retaining unfinished fields and focus", async ({page,baseURL}) => {
   await open(page,baseURL);await pane(page).getByRole("button",{name:"Details for images/studio-desk.svg",exact:true}).click();
   const alt = pane(page).getByLabel("Default alt text",{exact:true});await alt.fill("Unfinished referenced portrait");await alt.focus();
-  await pane(page).getByLabel("Image tags",{exact:true}).fill("unfinished usage tags");await alt.focus();
+  await pane(page).getByLabel("New collection",{exact:true}).fill("unfinished usage tags");await alt.focus();
   await page.evaluate(async () => {
     (window as any).mediaAltBeforeUsage = document.querySelector('#explorer-media input[aria-label="Default alt text"]');
     const editor = await import("/src/components/code-editor.ts"), source = editor.getMountedSource("index.html");
@@ -146,7 +146,7 @@ test("changed image usage rebuilds detail references while retaining unfinished 
   await expect.poll(() => page.evaluate(() => !(window as any).mediaAltBeforeUsage.isConnected)).toBe(true);
   await expect(pane(page)).not.toHaveAttribute("aria-busy","true");
   await expect(alt).toHaveValue("Unfinished referenced portrait");await expect(alt).toBeFocused();
-  await expect(pane(page).getByLabel("Image tags",{exact:true})).toHaveValue("unfinished usage tags");
+  await expect(pane(page).getByLabel("New collection",{exact:true})).toHaveValue("unfinished usage tags");
 });
 test("busy image action explains blocked controls and keeps Save focus after its refresh", async ({page,baseURL}) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -554,7 +554,7 @@ test("Collections is a native select that works with arrows and Enter and shorte
   await mountMixedLibrary(page, baseURL);
   const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
   await expect(collections).toHaveJSProperty("tagName", "SELECT");
-  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch"]);
+  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch", "Manage collections…"]);
   await library.getByLabel("Search media", { exact: true }).focus(); await page.keyboard.press("Tab");
   await expect(collections).toBeFocused();
   // Open, move down one, choose.
@@ -581,7 +581,7 @@ test("without customizable selects, Collections stays a plain native select with
   const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
   const search = library.getByLabel("Search media", { exact: true }), more = library.getByRole("button", { name: "More", exact: true });
   await expect.poll(() => collections.evaluate(select => getComputedStyle(select).appearance)).not.toBe("base-select");
-  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch"]);
+  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch", "Manage collections…"]);
   await search.focus(); await page.keyboard.press("Tab"); await expect(collections).toBeFocused();
   await page.keyboard.press("Tab"); await expect(more).toBeFocused();
   const before = await collections.boundingBox();
