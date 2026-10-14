@@ -122,14 +122,17 @@ A folder on the user's computer opened as a project, where the browser allows it
 **Draft**:
 An unsaved file change in the editor, belonging to one project (for a GitHub repository: one account, repository, and branch).
 
+**Previous draft**:
+A read-only recovery copy of a draft removed when a local folder changed outside the editor, available until the project closes. It lets the user inspect or copy the removed content; it is not an active draft to save.
+
 **Save to GitHub**:
 Saving selected draft changes together as one commit on the selected branch, with overlapping upstream changes requiring review.
 
 **Save to folder**:
-Writing selected draft changes into a local folder's files, never committing; a file changed in the folder since it was read requires review instead of being overwritten.
+Writing selected draft changes into a local folder's files, never committing or publishing; an outside change replaces the affected draft with the folder's version. If saving stops part way, files already written are saved and the remaining changes stay drafts.
 
 **Outside change**:
-A change to a project's files made by something other than the editor (a commit on GitHub, or an agent or code editor writing into a local folder). A file without drafts follows it; a file with drafts shows a conflict.
+A change to a project's files made by something other than the editor, such as a commit on GitHub or another tool writing into a local folder. In a local folder the editor follows it and removes the affected draft; on GitHub a file without drafts follows it and a file with drafts shows a conflict.
 
 **Publish**:
 Making a saved version of the site available at its public address through the site's host.
@@ -160,7 +163,7 @@ A screen shown to a signed-in user with no repository in the editor yet who left
 A full-screen guide for a signed-in account with no repository, in three numbered steps: Connect GitHub (done for an account whose App is installed; for one that came back from GitHub's install page without installing, a retry with screenshots of what GitHub asks), Create your site (the repository, with the chosen starting point committed as its first commit), and Your site is ready (a celebration: the site's name, a live miniature of its home page, a short confetti burst, and Open the editor). Connecting an agent is done after sign-up from the Setup checklist, and putting the site online comes later, when publishing works properly. It replaces Get started for an account with no repository. The sign-in screen has one button; the Worker sends a new sign-in without the App to GitHub's install page by itself and reports what is left to do as `onboarding` in `/api/session`. The Setup checklist takes over once the editor opens.
 
 **Setup checklist**:
-A small checklist (the "Setup 2/3" pill in the top bar) that guides a new site after its starting point: Start your site, Save to GitHub, Name your site, and an optional Connect an agent (a spotlight on the project menu, where the agent connection lives). There is no Put it online item until publishing works properly. Each item is ticked from the repository's state. It shows by itself for a repository that went through Get started or Start your site, until dismissed or done, and for any repository from the project menu's Set up your site.
+A small checklist that guides a new site through Start your site, Save to GitHub or Save to folder, Name your site, and optional Connect an agent. It follows the project's state, appears after choosing a starting point until dismissed or done, and is available through Set up your site; it has no Put it online item yet.
 
 **Starting point**:
-The initial content written to an empty repository or one without a home page: either the Starter site (a small studio site downloaded from the public template techiesreviews/native-site-editor-starter, prepared for the new site) or a Blank page (one HTML page at index.html and one stylesheet at styles/site.css in the native conventions). Both are written as drafts when the user chooses them through Get started or Start your site, and saved to GitHub when the user chooses Save.
+The initial content for a new site: either the Starter site (a small studio site from the public starter template) or a Blank page (one home page and one stylesheet in the native conventions). Start your site creates either as drafts in a local folder or GitHub repository that is empty or has no home page; Save to folder or Save to GitHub saves them to the project's source.

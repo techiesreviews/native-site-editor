@@ -25,8 +25,8 @@ The editor is closer to source-neutral than its routes suggest: the preview neve
 - **One source seam.** GitHub and a folder sit behind one interface (read text, read bytes, list, stat, write a batch against expected bases, check for changes, watch) plus capabilities for what only GitHub has (history, restore, branches, publish, change status). Features without the capability are hidden or explained.
 - **The same identities.** A folder's files are identified by their git blob SHA, its state by a hash of its paths and SHAs, so the index, drafts, undo and conflict checks stay as they are.
 - **Drafts belong to a project**, not to a GitHub account, repository and branch only; existing drafts keep their keys.
-- **Saving checks before writing.** Each file's current state on disk (`lastModified` and fingerprint) must match what its draft was based on; otherwise it is a conflict, never an overwrite.
-- **Outside changes** are watched with `FileSystemObserver` where it exists, else by polling while the tab is visible. A file without drafts reloads; a file with drafts becomes a conflict.
+- **Saving checks before writing.** Each file's current state on disk must match what its draft was based on. A detected mismatch stops Save, follows the folder's version and removes the affected draft rather than offering a conflict choice; successful earlier writes remain on disk. See [Decide how saving to a folder works](../wayfinder/local-folders/tickets/06-saving-to-a-folder.md#resolution-2026-10-14).
+- **Outside changes** are watched with `FileSystemObserver` where it exists, else by polling while the tab is visible. The folder's changed version or deletion takes precedence, including over affected drafts; a read-only previous draft remains available until the project closes. This is Lex's revised rule of 2026-10-14; notice timing and large batches remain with the outside-changes ticket.
 - **One tab leads.** Of several tabs on one folder, one (elected with Web Locks) watches the disk and applies agent changes; the others follow through BroadcastChannel.
 - **Agents reach the tab**: a folder project's MCP reads come from what the tab shares, and connecting uses an editor session that does not need GitHub.
 - **Tests**: a fake folder behind the same seam drives the existing suites; one real Chromium check covers the picker.
@@ -41,6 +41,6 @@ The editor is closer to source-neutral than its routes suggest: the preview neve
 ## Consequences
 
 - `CONTEXT.md` gains *Project*, *Local folder*, *Save to folder* and *Outside change*; *Draft* and *Agent connection* speak of a project.
-- Saving several files to disk is not all-or-nothing as a commit is; what happens when one write fails is decided on the map.
+- Saving several files to disk is not all-or-nothing as a commit is: successful writes remain saved and failed/unattempted writes remain drafts, with no rollback. Related operations may be unfinished; the saving ticket records the selection, write order and recovery behavior.
 - The Worker gains a session that does not belong to a GitHub account, which needs its own limits, lifetime and abuse protection.
 - GitHub projects must behave as before, proven by the existing suites before any folder code lands.
