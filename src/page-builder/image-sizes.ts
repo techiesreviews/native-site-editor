@@ -73,9 +73,15 @@ export function imageSizes(measurements: readonly ImageWidth[]): string | undefi
   for (let end = 0; end < samples.length; end++) {
     if (end + 1 < samples.length && (samples[end + 1].viewport - samples[end].viewport > 1 || Math.abs(samples[end + 1].width - samples[end].width) <= Math.max(samples[end + 1].width, samples[end].width) * 0.01)) continue;
     if (end === start) add(samples[end].viewport, value(samples[end], samples[end]));
-    else for (let i = start; i < end; i++) {
-      if (end > start + 1 && samples[i + 1].viewport - samples[i].viewport <= 1) continue;
-      add(samples[i + 1].viewport, value(samples[i], samples[i + 1]));
+    else {
+      let added = false;
+      for (let i = start; i < end; i++) {
+        if (end > start + 1 && samples[i + 1].viewport - samples[i].viewport <= 1) continue;
+        add(samples[i + 1].viewport, value(samples[i], samples[i + 1]));
+        added = true;
+      }
+      // A run made only of one-pixel steps still needs its range.
+      if (!added) add(samples[end].viewport, value(samples[start], samples[end]));
     }
     ranges[ranges.length - 1].end = samples[end].viewport;
     start = end + 1;

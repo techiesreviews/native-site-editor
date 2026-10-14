@@ -117,3 +117,37 @@ test("preview measures range-syntax breakpoints and keeps an embed's space above
   expect(result.firstScreen).toBe(false);
   await expect(preview.locator("section.hero iframe")).toHaveCount(1);
 });
+
+test("the measuring copy places the image where the preview does, with an unfilled component above it", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const preview = page.frameLocator(".native-preview-frame");
+  const hero = preview.locator("img.hero-image");
+  await expect(hero).toBeVisible();
+  await expect.poll(() => hero.evaluate((image) => image instanceof HTMLImageElement && image.naturalWidth)).toBeGreaterThan(0);
+  // A breakpoint at the visible preview's own width makes the copy measure at that width too.
+  const shownWidth = await hero.evaluate(() => innerWidth);
+  const edit = (marker: string, text: string) => page.evaluate(async ({ marker, text }) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const source = editor.getMountedSource("index.html") ?? "";
+    const at = source.indexOf(marker);
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text });
+  }, { marker, text });
+  await edit("</body>", `\n<style>@media (min-width: ${shownWidth}px){#page{--measure:1}}</style>`);
+  const matches = async (node: number[]) => {
+    const shown = await hero.evaluate((image) => image.getBoundingClientRect().top + scrollY);
+    const report = await measure(page, { path: "index.html", node });
+    if ("error" in report) throw new Error(report.error);
+    const fact = report.facts.find((item) => item.viewport === shownWidth);
+    expect(fact).toBeDefined();
+    expect(Math.abs((fact?.top ?? 0) - shown)).toBeLessThanOrEqual(1);
+  };
+  await expect.poll(() => hero.evaluate((image) => getComputedStyle(image.closest("#page") ?? image).getPropertyValue("--measure").trim())).toBe("1");
+  await matches([1, 0, 2]);
+  // A card with every slot empty: the preview hides its empty parts, and so must the copy.
+  await edit("<h1 data-key=\"hero-title\">", "<project-card data-key=\"empty-card\"></project-card>\n    ");
+  const card = preview.locator("section.hero project-card");
+  await expect(card).toHaveCount(1);
+  await expect.poll(() => card.evaluate((el) => Boolean(el.shadowRoot?.querySelector("[data-native-empty]")))).toBe(true);
+  await matches([1, 0, 3]);
+});

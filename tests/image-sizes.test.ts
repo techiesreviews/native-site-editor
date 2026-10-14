@@ -91,3 +91,10 @@ test("host result uses cover widths for sizes and first-screen facts for loading
     sizes: "800px", widths: [390, 768, 1280].map((viewport) => ({ viewport, width: 800 })), firstScreen: true,
   });
 });
+
+test("a run of one-pixel steps still yields a sizes list", () => {
+  const viewports = imageViewports([391, 392, 393]);
+  const widths = viewports.map((viewport) => ({ viewport, width: viewport < 393 ? 100 : 0 }));
+  assert.equal(imageSizes(widths), "100px");
+  assert.equal(imageSizes(measurements([[390, 100], [391, 100], [392, 100]])), "100px");
+});

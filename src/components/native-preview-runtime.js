@@ -3457,11 +3457,12 @@ import { domView } from "../page-builder/rules/tree.ts";
       var sources = [];
       function adopted(root) {
         var index = sources.length;
-        sources.push(Array.prototype.filter.call(root.adoptedStyleSheets || [], function (item) {
+        // The editor's own sheet stays out, except its rule hiding unfilled slots (they take no space).
+        sources.push(["[data-native-empty]{display:none !important}"].concat(Array.prototype.filter.call(root.adoptedStyleSheets || [], function (item) {
           return item !== runtimeSheet && item !== viewportScrollbarSheet;
         }).map(function (item) {
           return Array.prototype.map.call(item.cssRules, function (rule) { return rule.cssText; }).join("\n");
-        }));
+        })));
         return index;
       }
       adopted(document);
