@@ -32,6 +32,7 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
     openFile: () => "index.html", viewingVersion: () => false, restoreFile: async () => {},
     change: (_path, _source, edits) => { changes.push(edits[0].text); return true; }, galleryHost: () => element as HTMLElement, galleryVisible: () => visible, imagesSelected: () => true, gallerySignature: () => signature,
     locateElement: (source) => { const tag = startTags(source).find((item) => item.name === "img"); return tag && { tag }; },
+    refreshDescriptions: () => {},
     observeBusy: (_element, changed) => { observerCallback = changed; return { disconnect() {} }; }, announce: () => {}, error: (error) => errors.push(error), ...overrides,
   };
   return { ports, controller: createMediaController(ports), sources, records, scope, module, errors, changes,
@@ -139,4 +140,69 @@ test("image picker survives page changes but refuses a new repository generation
   f.bump();
   await assert.rejects(async () => f.pick()!.onPick!({ path: "images/new.png", alt: "New" }), /repository changed/);
   assert.equal(f.changes.length, 0);
+});
+
+test("place Decorative writes page and records atomically; unmark leaves empty alt and undo shows the gap", async () => {
+  const f = fixture();
+  f.ports.findEntry = async () => undefined;
+  const original = f.sources.get("index.html")!;
+  const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [];
+  f.ports.applyBatch = async (_scope, _stamp, batch) => {
+    batches.push(batch);
+    for (const [path, source] of batch.edits) f.sources.set(path, source);
+  };
+  await f.controller.changePlace("index.html", [0, 0], true);
+  assert.deepEqual(f.errors, []);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].expectedSources.get("index.html"), original);
+  assert.equal(batches[0].expectedSources.get(".editor/media.json"), undefined);
+  assert.equal(batches[0].edits.size, 2);
+  assert.match(f.sources.get("index.html")!, /alt=""/);
+  assert.equal(JSON.parse(f.sources.get(".editor/media.json")!).files["images/old.png"].places["index.html"].decorative, true);
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "decorative");
+  const marked = f.sources.get("index.html");
+  await f.controller.changePlace("index.html", [0, 0], false);
+  assert.equal(f.sources.get("index.html"), marked);
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
+  // Simulate Undo of both batches, including removal of newly created metadata.
+  f.sources.delete(".editor/media.json"); f.sources.set("index.html", original);
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "missing");
+});
+
+test("place by-agent confirmation keeps description, Decorative mark and unknown metadata", async () => {
+  const f = fixture();
+  f.sources.set(".editor/media.json", JSON.stringify({ version: 2, collections: [], files: { "images/old.png": {
+    description: { text: "Shared & familiar", byAgent: true }, places: { "index.html": { byAgent: true, decorative: true, future: "keep" } },
+  } } }));
+  f.ports.applyBatch = async (_scope, _stamp, batch) => {
+    assert.equal(batch.edits.size, 1);
+    assert.equal(batch.expectedSources.get("index.html"), f.sources.get("index.html"));
+    for (const [path, source] of batch.edits) f.sources.set(path, source);
+  };
+  await f.controller.changePlace("index.html", [0, 0]);
+  const record = JSON.parse(f.sources.get(".editor/media.json")!).files["images/old.png"];
+  assert.deepEqual(record.places["index.html"], { decorative: true, future: "keep" });
+  assert.equal(record.description.byAgent, true);
+  assert.equal(f.controller.placeState("index.html", "/images/old.png", "Shared &amp; familiar")?.own, false);
+  assert.deepEqual(f.errors, []);
+});
+
+test("place marking refuses unreadable records, page drift during reads and repository changes", async () => {
+  for (const fault of ["malformed", "unreadable", "page", "repository"]) {
+    const f = fixture();
+    const original = f.sources.get("index.html");
+    let writes = 0;
+    f.ports.applyBatch = async () => { writes++; };
+    if (fault === "malformed") f.sources.set(".editor/media.json", "bad JSON");
+    else f.ports.readText = async () => {
+      if (fault === "unreadable") throw new Error("Cannot read records");
+      if (fault === "page") f.sources.set("index.html", "New source");
+      if (fault === "repository") f.navigate();
+      return '{"version":2,"collections":[],"files":{}}';
+    };
+    await f.controller.changePlace("index.html", [0, 0], true);
+    assert.equal(writes, 0);
+    assert.equal(f.errors.length, 1);
+    if (fault !== "page") assert.equal(f.sources.get("index.html"), original);
+  }
 });

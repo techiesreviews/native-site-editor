@@ -19,8 +19,8 @@ export function mediaSrcset(image: MediaImage): string | undefined {
 }
 
 /**
- * The alt text an existing `<img>` start tag holds, decoded ("" for a
- * decorative image), or undefined when it has no alt attribute. A picker
+ * The alt text an existing `<img>` start tag holds, decoded (including an empty
+ * value), or undefined when it has no alt attribute. A picker
  * replacing that image offers it first, so a written alt survives.
  */
 export function mediaExistingAlt(existing: string): string | undefined {

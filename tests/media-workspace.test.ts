@@ -222,3 +222,27 @@ test("every family member's record follows the rename, and Undo restores the old
   assert.equal(f.history.length, 1); f.history.pop()!();
   assert.deepEqual(JSON.parse(f.text.get(MEDIA_RECORDS_PATH)!), before);
 });
+
+test("description metadata rewrites shared and missing page alts with records in one undoable batch", async () => {
+  const f = fixture(); await f.host.load();
+  const original = '<img src="/images/a.png" alt="Default"><img src="/images/a.png" alt=""><img src="/images/a.png"><img src="/images/a.png" alt="Own words">';
+  f.text.set("index.html", original);
+  const css = f.text.get("styles/site.css");
+  await f.host.metadata({ "images/a.png": { alt: "New description" } });
+  assert.equal(f.batches.length, 1);
+  assert.equal(f.batches[0].expectedSources.get("index.html"), original);
+  assert.equal(f.batches[0].edits.size, 2);
+  assert.equal((f.text.get("index.html")!.match(/alt="New description"/g) ?? []).length, 3);
+  assert.ok(f.text.get("index.html")!.includes('alt="Own words"'));
+  assert.equal(f.text.get("styles/site.css"), css);
+  f.history.pop()!();
+  assert.equal(f.text.get("index.html"), original);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description?.text, "Default");
+  await f.host.metadata({ "images/a.png": { decorative: true } });
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].decorative, true);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"].description, undefined);
+  assert.equal((f.text.get("index.html")!.match(/alt=""/g) ?? []).length, 3);
+  const decorated = f.text.get("index.html");
+  await f.host.metadata({ "images/a.png": { decorative: false } });
+  assert.equal(f.text.get("index.html"), decorated);
+});

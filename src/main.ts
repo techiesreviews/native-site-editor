@@ -1621,6 +1621,8 @@ const pageStructureController = createPageStructureController({
   get nativeEffectiveSource() { return nativeEffectiveSource; },
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   get chooseMediaForImage() { return chooseMediaForImage; },
+  mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
+  changeMediaPlace: (page, node, decorative) => mediaController.changePlace(page, node, decorative),
   get nativePictureSources() { return nativePictureSources; },
   // cardsController is declared later in this module: read it at call time.
   cardControls: (selection, source) => cardsController.controls(selection, source),
@@ -2500,6 +2502,7 @@ const mediaController = createMediaController({
   uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
   readBlob,
   applyBatch: applyMediaBatch,
+  refreshDescriptions: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
   openPage: openAfter,
   load: loadMedia,
   openFile: () => appStore.openFile.value,
@@ -2535,7 +2538,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
     modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost.isCurrent,
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
     history: (undo, redo) => editor.recordHistoryAction(historyPath, undo, redo),
-    refresh: () => { afterFileChanges(); updateNativePreviewSources(); },
+    refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
     announce,
   }));
 }

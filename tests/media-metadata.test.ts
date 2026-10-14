@@ -28,3 +28,19 @@ test("boolean media attributes keep adjacent attributes separated; incomplete ta
   assert.equal(next.includes("<imgalt"), false);
   assert.throws(() => mediaImageMarkup({ path: "a.png", alt: "" }, '<img src="broken'), /incomplete/);
 });
+
+test("Decorative metadata writes only changed fields and remains exclusive with a description", async () => {
+  const { applyMediaMetadata, mediaMetadataView } = await import("../src/page-builder/media-metadata");
+  const { parseMediaRecords, setMediaDescription } = await import("../shared/media-records");
+  const original = setMediaDescription(parseMediaRecords(undefined), "a.png", "Agent words", true);
+  const unchanged = applyMediaMetadata(original, { "a.png": { alt: "Agent words", tags: [], decorative: false } });
+  assert.equal(unchanged, original);
+  const decorative = applyMediaMetadata(original, { "a.png": { decorative: true } });
+  assert.deepEqual(mediaMetadataView(decorative)["a.png"], { tags: [], alt: "", decorative: true });
+  assert.equal(decorative.files["a.png"].description, undefined);
+  assert.equal(applyMediaMetadata(decorative, { "a.png": { decorative: true, alt: "", tags: [] } }), decorative);
+  const undescribed = applyMediaMetadata(decorative, { "a.png": { decorative: false } });
+  assert.deepEqual(mediaMetadataView(undescribed)["a.png"], { tags: [], alt: "" });
+  const text = applyMediaMetadata(decorative, { "a.png": { alt: "Lex words", decorative: false } });
+  assert.deepEqual(mediaMetadataView(text)["a.png"], { tags: [], alt: "Lex words" });
+});

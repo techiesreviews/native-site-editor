@@ -1,3 +1,4 @@
+import { descriptionPlaceEdits } from "./media-descriptions";
 import { MAX_UPLOAD_BYTES, uploadPath, uploadFileName, uploadImageType } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
@@ -179,8 +180,19 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     async blob(path) { return active().blob(path); },
     async metadata(changes) {
       const ctx = active();
-      const { batch, metadata } = await prepare(ctx, "Edit image metadata");
-      metadataEdit(batch, metadata, changes);
+      const { batch, metadata, text } = await prepare(ctx, "Edit image metadata", true);
+      const next = applyMediaMetadata(metadata, changes);
+      for (const file of Object.keys(changes)) {
+        const before = metadata.files[file], after = next.files[file];
+        for (const [page, source] of Object.entries(text)) {
+          const original = batch.edits.get(page) ?? source;
+          const edited = descriptionPlaceEdits(metadata, file, page, original,
+            { text: before?.description?.text ?? "", decorative: Boolean(before?.decorative) },
+            { text: after?.description?.text ?? "", decorative: Boolean(after?.decorative) });
+          if (edited !== original) batch.edits.set(page, edited);
+        }
+      }
+      recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
     },
     import: importMedia,

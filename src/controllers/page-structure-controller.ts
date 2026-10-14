@@ -48,6 +48,8 @@ export interface PageStructurePorts {
   readonly versionView: unknown;
   readonly nativeEffectiveSource: (path: string, scope?: { account: string; repoId: number; repo: string; branch: string; } | undefined) => string | undefined;
   readonly nativeNamedDescendant: (source: string, range: { start: number; end: number; }) => boolean;
+  readonly mediaPlaceState?: (page: string, src: string, alt: string | undefined) => { state: "described" | "decorative" | "missing"; fileDecorative?: boolean } | undefined;
+  readonly changeMediaPlace?: (page: string, node: number[], decorative?: boolean) => Promise<void>;
   readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
   readonly nativePictureSources: (source: string, node: readonly number[]) => boolean;
   /** The card grid controls for a selection, move arrows already left out (cards controller). */
@@ -515,19 +517,27 @@ export function createPageStructureController(ports: PageStructurePorts) {
       const src = attribute("src");
       const alt = attribute("alt");
       controls.push({ kind: "button", label: "Choose image…", onPress: () => { if (node) void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } });
-      // Alt text applies as typed; opening with no alt written applies the
-      // file's name at once; emptied, the image is decorative (alt="").
+      const description = ports.mediaPlaceState?.(path, src?.value ?? "", alt?.value);
       controls.push({
         kind: "address",
         label: "Alt text",
         // No file at all comes first; only an image that shows something needs its alt text.
-        warning: !src?.value.trim() && !attribute("srcset")?.value.trim() && !(node && ports.nativePictureSources(source, node)) ? "No image" : alt ? undefined : "Alt text missing",
+        warning: !src?.value.trim() && !attribute("srcset")?.value.trim() && !(node && ports.nativePictureSources(source, node)) ? "No image" : !alt ? "Alt text missing" : !alt.value && description?.state !== "decorative" ? "Not described yet" : undefined,
         value: alt?.value ?? "",
         initial: alt ? undefined : altFromPath(src?.value ?? ""),
-        placeholder: "What the image shows; empty for decorative",
-        onInput: (value) => { if (node) live(node, "img", (latest, tag) => [setAttributeEdit(latest, tag, "alt", value)], value ? "Alt text updated" : "Image marked decorative"); },
-        onClose: () => editor.closeActiveEditGroup(path),
+        placeholder: "What the image shows",
+        onInput: (value) => { if (node) live(node, "img", (latest, tag) => [setAttributeEdit(latest, tag, "alt", value)], value ? "Alt text updated" : "Alt text removed"); },
+        onClose: () => {
+          editor.closeActiveEditGroup(path);
+          const latest = ports.nativeEffectiveSource(path);
+          const current = latest !== undefined && node ? ports.locateNativeElementRange(latest, node) : undefined;
+          if (latest !== undefined && current && ports.startTagAttribute(latest, current.tag, "alt")?.value !== alt?.value && node) void ports.changeMediaPlace?.(path, node);
+        },
       });
+      controls.push({ kind: "button", label: "Decorative", pressed: description?.state === "decorative",
+        disabled: description?.fileDecorative && description.state === "decorative",
+        title: description?.fileDecorative ? "This file is Decorative. Change it in the image library." : undefined,
+        onPress: () => { if (node) { editor.closeActiveEditGroup(path); void ports.changeMediaPlace?.(path, node, description?.state !== "decorative"); } } });
     }
     // Empty links need an accessible name. Buttons expose the native accessible
     // label field above, alongside their separate form submission name.

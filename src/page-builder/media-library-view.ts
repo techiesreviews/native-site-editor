@@ -341,9 +341,13 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
     sheet.append(preview, node("h3", "media-library__detail-name", basename(path)), node("p", "media-library__muted", `${data.width ? `${data.width} × ${data.height} · ` : ""}${formatBytes(data.blob.size)} · ${path}`));
     const alt = input("Default alt text", "text"); alt.value = meta.alt;
     const tags = input("Image tags", "text"); tags.value = meta.tags.join(", ");
-    sheet.append(node("h3", "media-library__metadata-title", "Image metadata"), field("Default alt text", alt), node("p", "media-library__hint", "Offered on insertion. Empty alt text marks a decorative image. Existing page alt text stays independent."), field("Tags", tags), button("Save metadata", () => void task(async () => {
+    const decorative = input("Decorative", "checkbox"); decorative.checked = Boolean(meta.decorative);
+    decorative.addEventListener("change", () => { if (decorative.checked) alt.value = ""; });
+    alt.addEventListener("input", () => { if (alt.value) decorative.checked = false; });
+    if (!meta.alt && !meta.decorative) sheet.append(node("p", "media-library__hint", "Not described yet"));
+    sheet.append(node("h3", "media-library__metadata-title", "Image metadata"), field("Default alt text", alt), node("p", "media-library__hint", "Places using this description are updated. Places with their own words are kept."), field("Decorative", decorative), field("Tags", tags), button("Save metadata", () => void task(async () => {
       if (version !== detailVersion || detailPath !== path) return;
-      await adapter.metadata({ [path]: { alt: alt.value, tags: tags.value.split(",") } }); await refresh(); tell("Tags and default alt text saved as a draft.");
+      await adapter.metadata({ [path]: { alt: alt.value, tags: tags.value.split(","), decorative: decorative.checked } }); await refresh(); tell("Tags and default alt text saved as a draft.");
     })));
     const usage = library.usage[path];
     const usageTitle = node("h3", "", `Used on ${usage?.pages.length ?? 0} pages`); usageTitle.tabIndex = -1;
@@ -359,7 +363,7 @@ export function createMediaLibraryView(container: HTMLElement, adapter: MediaPic
       await adapter.rename(path, name.value); assets.clear(); await refresh(); sheet.hidden = true; tell("Image renamed and references updated as drafts.");
     })), button("Copy path", () => void task(async () => { await navigator.clipboard.writeText(`/${path}`); tell("Image path copied."); })), button("Optimise image…", () => showOptimise([new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]))), button("Delete image…", () => confirmDelete([path])));
     if (options.onPick) {
-      const insertionAlt = input("Alt text for insertion", "text"); insertionAlt.value = options.initialAlt ?? (meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
+      const insertionAlt = input("Alt text for insertion", "text"); insertionAlt.value = options.initialAlt ?? (meta.decorative ? "" : meta.alt || basename(path).replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
       const image: MediaImage = { path, width: data.width, height: data.height, alt: insertionAlt.value, variants: mediaVariants(path, library.items.map((item) => item.path)) };
       const code = node("pre", "media-library__code", mediaImageMarkup(image));
       insertionAlt.addEventListener("input", () => { image.alt = insertionAlt.value; code.textContent = mediaImageMarkup(image); });

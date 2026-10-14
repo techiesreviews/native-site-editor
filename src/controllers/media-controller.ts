@@ -50,6 +50,7 @@ export interface MediaControllerPorts {
   imagesSelected(): boolean;
   gallerySignature(): string;
   observeBusy?(element: HTMLElement, changed: () => void): { disconnect(): void };
+  refreshDescriptions(): void;
   announce(message: string): void;
   error(error: unknown): void;
 }
@@ -110,6 +111,84 @@ export function createMediaController(ports: MediaControllerPorts) {
       applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch); },
       openPage: async (path) => { assertLive(); await ports.openPage(path); },
     };
+  }
+
+  // Keep record parsing and description rules in the lazy media chunk.
+  let descriptions: typeof import("../page-builder/media-descriptions") | undefined;
+  let recordIO: typeof import("../../shared/media-records") | undefined;
+  let recordsScope = "";
+  let warming: Promise<void> | undefined;
+  async function warmDescriptions() {
+    const identity = ports.identity(), stamp = ports.stamp();
+    const [rules, io, references, entities, ctx] = await Promise.all([
+      import("../page-builder/media-descriptions"), import("../../shared/media-records"),
+      import("../page-builder/media-references"), import("../page-builder/html-entities"), workspaceContext(),
+    ]);
+    if (!stamp.holds() || identity !== ports.identity()) return;
+    const source = await ctx.read(io.MEDIA_RECORDS_PATH);
+    ctx.assertLive();
+    if (!stamp.holds() || identity !== ports.identity()) return;
+    io.parseMediaRecords(source);
+    resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page);
+    decodeAlt = value => entities.decodeHtmlEntities(value, true);
+    descriptions = rules; recordIO = io; recordsScope = identity;
+    ports.refreshDescriptions();
+  }
+  function placeState(page: string, src: string, alt: string | undefined) {
+    if (!descriptions || !recordIO || recordsScope !== ports.identity()) {
+      if (!warming) warming = warmDescriptions().catch(() => {}).finally(() => { warming = undefined; });
+      return undefined;
+    }
+    try {
+      const records = recordIO.parseMediaRecords(ports.source(recordIO.MEDIA_RECORDS_PATH));
+      const file = resolveFile(page, src);
+      return file ? { ...descriptions.placeDescriptionState(records, file, page, alt === undefined ? undefined : decodeAlt(alt)), fileDecorative: Boolean(records.files[file]?.decorative) } : undefined;
+    } catch { return undefined; }
+  }
+  // Resolve through the same URL rules used by media references, loaded with the rules.
+  let decodeAlt = (value: string) => value;
+  let resolveFile = (_page: string, _src: string): string | undefined => undefined;
+  async function changePlace(page: string, node: number[], decorative?: boolean) {
+    const stamp = ports.stamp(), source = ports.source(page);
+    if (source === undefined || ports.viewingVersion()) return;
+    try {
+      const [rules, io, references, html, entities, ctx] = await Promise.all([
+        import("../page-builder/media-descriptions"), import("../../shared/media-records"),
+        import("../page-builder/media-references"), import("../../shared/html-source"),
+        import("../page-builder/html-entities"), workspaceContext(),
+      ]);
+      if (!stamp.holds() || ports.source(page) !== source) throw new Error("This image changed. Select it again.");
+      const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
+      ctx.assertLive();
+      if (!stamp.holds() || ports.source(page) !== source) throw new Error("This image changed. Select it again.");
+      const records = io.parseMediaRecords(metadata);
+      const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
+      if (!range || range.tag.name !== "img") return;
+      const tag = html.startTags(source).find(tag => tag.start === range.tag.start);
+      if (!tag) return;
+      const src = html.startTagAttribute(source, tag, "src");
+      const file = src && references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), page);
+      if (!file) throw new Error("Choose an image stored in this repository before marking it Decorative.");
+      const next = decorative === undefined ? rules.confirmMediaDescription(records, file, page) :
+        rules.setMediaPlaceDecorative(records, file, page, decorative);
+      const edits = new Map<string, string>();
+      if (next !== records) edits.set(io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(next));
+      if (decorative) {
+        const alt = html.startTagAttribute(source, tag, "alt");
+        const updated = source.slice(0, alt?.start ?? tag.nameEnd) + ' alt=""' + source.slice(alt?.end ?? tag.nameEnd);
+        if (updated !== source) edits.set(page, updated);
+      }
+      if (!edits.size) return;
+      await ctx.applyBatch({ label: decorative === undefined ? "Confirm image description" : "Change Decorative image",
+        expectedPaths: ctx.paths, expectedSources: new Map([[page, source], [io.MEDIA_RECORDS_PATH, metadata]]),
+        expectedAssets: new Map(), edits, moves: [], deletes: [], uploads: [] });
+      ctx.assertLive();
+      decodeAlt = value => entities.decodeHtmlEntities(value, true);
+      descriptions = rules; recordIO = io;
+      recordsScope = ports.identity();
+      resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page);
+      ports.refreshDescriptions();
+    } catch (error) { ports.error(error); }
   }
 
   async function chooseImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
@@ -186,6 +265,6 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (view.refreshedKey === ports.gallerySignature()) return;
     void view.refresh();
   }
-  return { workspaceContext, chooseImage, ensureGallery, requestGalleryRefresh, disposeGallery,
+  return { workspaceContext, chooseImage, placeState, changePlace, ensureGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

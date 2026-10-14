@@ -7,7 +7,7 @@ import { createMediaWorkspace, type MediaWorkspaceContext } from "../src/page-bu
 const source = {
   version: 2, collections: ["First", "Second"],
   files: {
-    "z.png": { collections: ["First", "Second"], description: { text: "A picture", byAgent: true }, decorative: true, alwaysKeep: true,
+    "z.png": { collections: ["First", "Second"], description: { text: "A picture", byAgent: true }, decorative: true, alwaysKeep: true, places: { "index.html": { decorative: true, byAgent: true, future: "kept" } },
       trimmedFrom: { source: "a.png", trim: { x: 1, y: 2, width: 300, height: 200, turn: 90, straighten: -2.5, flipX: true, flipY: true, future: { mode: "crop" } } },
       still: "a.png", subtitles: "captions.vtt", credit: { name: "Artist" } },
     "a.png": { description: { text: "Source" } },

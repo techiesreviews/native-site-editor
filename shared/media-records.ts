@@ -5,7 +5,12 @@ export interface MediaTrim {
   turn?: 0 | 90 | 180 | 270; straighten?: number; flipX?: true; flipY?: true;
   [key: string]: unknown;
 }
+export interface MediaPlaceRecord {
+  decorative?: true; byAgent?: true;
+  [key: string]: unknown;
+}
 export interface MediaFileRecord {
+  places?: Record<string, MediaPlaceRecord>;
   collections?: string[];
   description?: { text: string; byAgent?: true; [key: string]: unknown };
   decorative?: true; alwaysKeep?: true;
@@ -91,6 +96,15 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     flags(description, ["byAgent"], `${field}.description`);
     // An empty description is dropped unless it carries unknown keys, which are kept.
     if (description.text || hasUnknown(description)) out.description = description; else delete out.description;
+  }
+  if (out.places !== undefined) {
+    const places: Record<string, MediaPlaceRecord> = Object.create(null);
+    for (const [page, value] of Object.entries(object(out.places, `${field}.places`))) {
+      const place = { ...object(value, `${field}.places[${page}]`) };
+      flags(place, ["decorative", "byAgent"], `${field}.places[${page}]`);
+      if (Object.keys(place).length) places[page] = place as MediaPlaceRecord;
+    }
+    if (Object.keys(places).length) out.places = places; else delete out.places;
   }
   flags(out, ["decorative", "alwaysKeep"], field);
   optionalStrings(out, ["still", "subtitles"], field);
@@ -188,9 +202,12 @@ export function parseMediaRecords(source: string | undefined): MediaRecords {
   return { version: 2, collections: [...collections].sort((a, b) => a.localeCompare(b)), files };
 }
 
+function sortedPlaces(record: MediaFileRecord): MediaFileRecord {
+  return record.places ? { ...record, places: Object.fromEntries(Object.entries(record.places).sort(([a], [b]) => a.localeCompare(b))) } : record;
+}
 export function serializeMediaRecords(records: MediaRecords): string {
   const { version, collections, files, onlineVideos, removed, adding, ...unknown } = records;
-  return `${JSON.stringify({ version, collections, files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))), onlineVideos, removed, adding, ...unknown }, null, 2)}\n`;
+  return `${JSON.stringify({ version, collections, files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)).map(([path, record]) => [path, sortedPlaces(record)])), onlineVideos, removed: removed?.map(item => item.record ? { ...item, record: sortedPlaces(item.record) } : item), adding, ...unknown }, null, 2)}\n`;
 }
 
 export function renameMediaRecord(records: MediaRecords, from: string, to: string): MediaRecords {
@@ -230,5 +247,6 @@ export function setMediaDescription(records: MediaRecords, path: string, text: s
   if (text || (record.description && hasUnknown(record.description))) record.description = { ...record.description, text, ...(byAgent ? { byAgent: true as const } : {}) };
   else delete record.description;
   if (!byAgent && record.description) delete record.description.byAgent;
+  if (text) delete record.decorative;
   return { ...records, files: Object.assign(Object.create(null), records.files, { [path]: record }) };
 }
