@@ -1,8 +1,8 @@
 ---
 title: Agents cannot write .editor/media.json directly
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-07 runner)
 blocked_by: [05-media-records]
 builder: sol
 phase: 0
