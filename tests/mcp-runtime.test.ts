@@ -1333,6 +1333,16 @@ test("a component's files changed while framing or trimming refuse the agent's c
     assert.equal(f.text.get("index.html"), before); assert.equal(f.text.get(MEDIA_RECORDS_PATH), records);
     assert.equal(f.history.length, 0); assert.equal(f.batches.length, 0);
   }
+  // Changed between preparing the place and its first await: captured at prepareFrame, so every use refuses.
+  for (const use of ["read", "frame", "trim"] as const) {
+    const source = '<section><photo-card><img slot="media" src="/media/images/photo.webp" alt="Photo"></photo-card></section>';
+    const f = agentMediaFixture(source), place = f.controller.prepareFrame({ path: "index.html", node: [0, 0, 0] });
+    f.text.set("components/photo-card/photo-card.html", '<figure><slot name="other"></slot></figure>');
+    const before = new Map(f.text);
+    await assert.rejects(use === "read" ? place.read() : use === "frame" ? place.frame({ shape: "original" })
+      : place.trim({ trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, frame: { shape: "component" } }), /changed/);
+    assert.deepEqual(f.text, before); assert.equal(f.history.length, 0); assert.equal(f.batches.length, 0);
+  }
 }));
 
 test("agent trims and re-crops original bytes in one batch with copies, records and Undo; read reports provenance", () => withTrimWorker(async requests => {
