@@ -188,13 +188,13 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
     { name: "Logo.PNG", mimeType: "image/png", buffer: png },
     { name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\nÿþ") },
   ]);
-  await expect(status(page)).toHaveText("Added images/logo.webp, images/notes.pdf.");
-  const logo = explorer(page).locator(".file-row[data-path='images/logo.webp']");
+  await expect(status(page)).toHaveText("Added images/logo.png, images/notes.pdf.");
+  const logo = explorer(page).locator(".file-row[data-path='images/logo.png']");
   await expect(logo).toHaveAttribute("aria-description", "added, not saved to GitHub yet");
 
   // One Undo removes the whole folder addition, one Redo restores it.
   await page.locator(".code-editor__undo").first().click();
-  await expect(explorer(page).locator(".file-row[data-path='images/logo.webp']")).toHaveCount(0);
+  await expect(explorer(page).locator(".file-row[data-path='images/logo.png']")).toHaveCount(0);
   await expect(explorer(page).locator(".file-row[data-path='images/notes.pdf']")).toHaveCount(0);
   await page.locator(".code-editor__redo").first().click();
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
@@ -202,13 +202,13 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
 
   // Opened, an uploaded image shows itself, with Discard.
   await logo.click();
-  await expect(page.locator(".upload-summary__image")).toHaveAttribute("src", /^data:image\/webp;base64,/);
-  await expect(page.getByRole("button", { name: "Discard images/logo.webp" })).toBeVisible();
+  await expect(page.locator(".upload-summary__image")).toHaveAttribute("src", /^data:image\/png;base64,/);
+  await expect(page.getByRole("button", { name: "Discard images/logo.png" })).toBeVisible();
 
   // Dropped from the desktop on a folder row: uploaded into that folder.
   if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
   await dropFiles(page, "#explorer .file-row[data-path='about']", [{ name: "Photo.png", type: "image/png", base64: png.toString("base64") }]);
-  await expect(status(page)).toHaveText("Added about/photo.webp.");
+  await expect(status(page)).toHaveText("Added about/photo.png.");
 
   // Over 20 MB: refused, with nothing added.
   await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "huge.pdf", type: "application/pdf", size: 20 * 1024 * 1024 + 1 }]);
@@ -227,7 +227,8 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
-  expect((await committed(page, "images/logo.webp"))?.subarray(0, 4).toString()).toBe("RIFF");
-  expect((await committed(page, "about/photo.webp"))?.subarray(0, 4).toString()).toBe("RIFF");
+  // A tiny flat PNG stays the smaller lossless PNG (never larger than needed, slice 25).
+  expect((await committed(page, "images/logo.png"))?.subarray(1, 4).toString()).toBe("PNG");
+  expect((await committed(page, "about/photo.png"))?.subarray(1, 4).toString()).toBe("PNG");
   expect((await committed(page, "images/notes.pdf"))?.equals(Buffer.from("%PDF-1.4\nÿþ"))).toBe(true);
 });

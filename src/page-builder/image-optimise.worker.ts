@@ -1,4 +1,4 @@
-import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallestEligible, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
+import { mediaChooseEncoding, mediaCopyIsSmaller, mediaSmallerMain, mediaTransparentOptions, mediaImageRecipe, mediaDimensions, mediaResponsiveWidths, mediaUntouched, validateMediaOptimiseOptions, type MediaOptimiseOptions, type MediaOptimiseResult, type MediaOutput } from "./media-optimise";
 
 import { strippedImageSource } from "./media-image-bytes";
 
@@ -55,15 +55,11 @@ self.onmessage = async (event: MessageEvent<{ file: File; options: MediaOptimise
       // Slice 28 handles browsers returning PNG when WebP was requested.
       const png = transparent ? await encode(canvas, "image/png", settings.quality) : undefined;
       if (png) blob = mediaChooseEncoding(blob, png);
-      if (blob.size > file.size) {
-        const stripped = strippedImageSource(bytes, sourceType(file, bytes), bitmap.width === size.width && bitmap.height === height);
-        const source = stripped ? new Blob([new Uint8Array(stripped)], { type: sourceType(file, bytes) }) : undefined;
-        const fallback = transparent ? png! : await encode(canvas, "image/jpeg", settings.quality);
-        blob = mediaSmallestEligible({ blob, size: blob.size, eligible: true }, [
-          { blob: source ?? blob, size: source?.size ?? Infinity, eligible: !!source },
-          { blob: fallback, size: fallback.size, eligible: true },
-        ]).blob;
-      }
+      // Transparent pictures already compared WebP with lossless PNG above.
+      const type = sourceType(file, bytes);
+      const stripped = strippedImageSource(bytes, type, bitmap.width === size.width && bitmap.height === height);
+      blob = await mediaSmallerMain(blob, { size: file.size, stripped: stripped && new Blob([new Uint8Array(stripped)], { type }),
+        transparent, lossless: /^image\/(?:png|gif|bmp)$/.test(type) || /\.(?:png|gif|bmp)$/i.test(file.name) }, type => encode(canvas, type, settings.quality));
       const output = (blob: Blob, width: number, height: number): MediaOutput => ({ blob, width, height,
         extension: blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1] });
       const primary = output(blob, size.width, height), outputs = [primary];

@@ -17,8 +17,16 @@ export function mediaImageRecipe(quality: MediaImageQuality = "balanced"): Media
 export function mediaTransparentOptions(options: MediaOptimiseOptions) {
   return options.format === "avif" ? mediaImageRecipe() : { ...options, format: "webp" as const };
 }
-export function mediaSmallestEligible<T extends { size: number; eligible: boolean }>(main: T, candidates: T[]): T {
-  return candidates.reduce((chosen, candidate) => candidate.eligible && candidate.size < chosen.size ? candidate : chosen, main);
+/** A main image never grows past a smaller suitable version at the chosen size: the source with personal details
+ * removed (`stripped`, only when eligible), a JPEG for opaque pictures, a lossless PNG for lossless sources.
+ * The source compared against is the stripped one when eligible; extra encodes run only when the main is larger. */
+export async function mediaSmallerMain(main: Blob, source: { size: number; stripped?: Blob; transparent: boolean; lossless: boolean },
+  encode: (type: "image/jpeg" | "image/png") => Promise<Blob>): Promise<Blob> {
+  if (main.size <= (source.stripped?.size ?? source.size)) return main;
+  const candidates = [source.stripped];
+  if (!source.transparent) candidates.push(await encode("image/jpeg"));
+  if (source.lossless && !source.transparent) candidates.push(await encode("image/png"));
+  return candidates.reduce<Blob>((chosen, candidate) => candidate && candidate.size < chosen.size ? candidate : chosen, main);
 }
 export function mediaCopyIsSmaller(copy: Blob, main: Blob) { return copy.size < main.size; }
 export interface MediaOutput { blob: Blob; width?: number; height?: number; extension: string; variantWidth?: number }

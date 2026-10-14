@@ -123,12 +123,59 @@ test("real optimisation worker resizes images and retains SVG and explicit origi
     const summary = async (value: typeof kept) => ({ outputs: value.outputs.length, extension: value.outputs[0].extension, bytes: await value.outputs[0].blob.text(), before: value.before, after: value.after, note: value.note });
     return { width: resized.outputs[0].width, height: resized.outputs[0].height, type: resized.outputs[0].blob.type, svg: await untouched.outputs[0].blob.text(), svgNote: untouched.note, kept: await summary(kept), keptSvg: await summary(keptSvg) };
   }, "/src/page-builder/media-optimise.ts");
-  expect(result.width).toBe(64); expect(result.height).toBe(32); expect(result.type).toBe("image/webp");
+  expect(result.width).toBe(64); expect(result.height).toBe(32); expect(result.type).toBe("image/png"); // A flat graphic keeps the smaller lossless PNG.
   expect(result.svg).toContain('<svg xmlns="http://www.w3.org/2000/svg"'); expect(result.svgNote).toBe("SVG and animated GIF are kept untouched, including their metadata.");
   // Keep original returns the file as is and takes precedence over the SVG/GIF untouched case.
   const keptNote = "Original bytes and metadata are kept. Unsupported formats may not display on the web.";
   expect(result.kept).toEqual({ outputs: 1, extension: "heic", bytes: "original unsupported bytes", before: 26, after: 26, note: keptNote });
   expect(result.keptSvg).toMatchObject({ outputs: 1, extension: "svg", note: keptNote }); expect(result.keptSvg.bytes).toBe(result.svg);
+});
+
+test("real worker keeps a smaller source only without its personal details, with identical pixels", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const result = await page.evaluate(async (modulePath) => {
+    const { optimiseMedia, mediaImageRecipe } = await import(modulePath) as typeof import("../../src/page-builder/media-optimise");
+    const latin = (text: string) => Uint8Array.from(text, char => char.charCodeAt(0));
+    const join = (...parts: Uint8Array[]) => { const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0)); let at = 0; for (const part of parts) { out.set(part, at); at += part.length; } return out; };
+    const crc = (bytes: Uint8Array) => { let c = ~0; for (const byte of bytes) { c ^= byte; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; } return ~c >>> 0; };
+    const draw = (paint: (ctx: CanvasRenderingContext2D) => void, type: string, quality?: number) => {
+      const canvas = document.createElement("canvas"); canvas.width = 400; canvas.height = 300; paint(canvas.getContext("2d")!);
+      return new Promise<Uint8Array>(resolve => canvas.toBlob(async blob => resolve(new Uint8Array(await blob!.arrayBuffer())), type, quality));
+    };
+    const pixels = async (blob: Blob) => {
+      const bitmap = await createImageBitmap(blob), canvas = new OffscreenCanvas(bitmap.width, bitmap.height), ctx = canvas.getContext("2d")!;
+      ctx.drawImage(bitmap, 0, 0); const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      return { width: bitmap.width, height: bitmap.height, hash: crc(new Uint8Array(data.buffer)) };
+    };
+    // A coarse JPEG with an EXIF segment carrying a location note (orientation absent).
+    const tiff = join(latin("Exif\0\0II*\0"), new Uint8Array([8, 0, 0, 0, 0, 0, 0, 0, 0, 0]), latin("GPS 51.5N 0.1W camera serial"));
+    const app1 = join(new Uint8Array([255, 225, (tiff.length + 2) >> 8, (tiff.length + 2) & 255]), tiff);
+    const coarse = await draw(ctx => { for (let x = 0; x < 400; x += 8) for (let y = 0; y < 300; y += 8) { ctx.fillStyle = `hsl(${(x * 7 + y * 13) % 360} 70% 50%)`; ctx.fillRect(x, y, 8, 8); } }, "image/jpeg", 0.2);
+    const jpeg = join(coarse.subarray(0, 2), app1, coarse.subarray(2));
+    // A tight 1-bit noise PNG: far smaller than lossy WebP of the same pixels; a tEXt chunk carries a location note.
+    const chunk = (type: string, data: Uint8Array) => {
+      const typed = join(latin(type), data), out = new Uint8Array(12 + data.length), view = new DataView(out.buffer);
+      view.setUint32(0, data.length); out.set(typed, 4); view.setUint32(8 + data.length, crc(typed)); return out;
+    };
+    const rows = new Uint8Array(300 * 51); let seed = 7;
+    for (let i = 0; i < rows.length; i++) if (i % 51) { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; rows[i] = seed >>> 24; }
+    const idat = new Uint8Array(await new Response(new Blob([rows]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer());
+    const header = new Uint8Array(13); new DataView(header.buffer).setUint32(0, 400); new DataView(header.buffer).setUint32(4, 300); header[8] = 1;
+    const stripes = join(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", idat), chunk("IEND", new Uint8Array()));
+    const png = join(stripes.subarray(0, 33), chunk("tEXt", latin("Comment\0GPS 51.5N 0.1W")), stripes.subarray(33));
+    const run = async (bytes: Uint8Array, name: string, type: string) => {
+      const file = new File([bytes], name, { type }), out = await optimiseMedia(file, { ...mediaImageRecipe(), responsive: false });
+      const kept = new Uint8Array(await out.outputs[0].blob.arrayBuffer());
+      return { before: bytes.length, after: kept.length, extension: out.outputs[0].extension, gps: new TextDecoder("latin1").decode(kept).includes("GPS"),
+        source: await pixels(file), output: await pixels(out.outputs[0].blob) };
+    };
+    return { jpeg: await run(jpeg, "coarse.jpg", "image/jpeg"), png: await run(png, "stripes.png", "image/png") };
+  }, "/src/page-builder/media-optimise.ts");
+  for (const [kind, extension] of [["jpeg", "jpg"], ["png", "png"]] as const) {
+    const value = result[kind];
+    expect(value.extension, `${kind} ${value.before} -> ${value.after}`).toBe(extension); expect(value.gps, kind).toBe(false);
+    expect(value.after, kind).toBeLessThan(value.before); expect(value.output, kind).toEqual(value.source);
+  }
 });
 
 test("optimisation preview cannot replace a newer binary revision", async ({ page, baseURL }) => {
