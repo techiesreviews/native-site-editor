@@ -2,7 +2,7 @@
 title: Place every kind; Add panel Image becomes Media
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-63 runner)
 blocked_by: [59-every-kind-in-media, 62-player-markup, 18-media-picker]
 builder: claude
 phase: 5
