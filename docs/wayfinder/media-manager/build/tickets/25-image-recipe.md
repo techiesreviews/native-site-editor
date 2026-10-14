@@ -2,7 +2,7 @@
 title: The image recipe - presets, copies, never larger
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-25 runner)
 blocked_by: [23-one-preparation-path]
 builder: sol
 phase: 2
