@@ -142,6 +142,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [73 GIFs and YouTube or Vimeo players](tickets/73-improve-gifs-and-players.md) | sol | 70, 57, 67 |
 | [74 The Improve images screen](tickets/74-improve-images-screen.md) | claude | 71, 72, 73, 49 |
 | [75 Agents run Improve images](tickets/75-agents-improve-images.md) | sol | 74, 69 |
+| [95 Sharing pictures follow the lighter file, as a JPEG](tickets/95-avif-sharing-copy.md) | sol | 72 |
 
 ### Phase 7: Sites in sub-folders (site-wide)
 
