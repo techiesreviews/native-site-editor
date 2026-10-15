@@ -439,6 +439,31 @@ test("cursor undo and existing editing actions stay available", async ({ page, b
   }
 });
 
+test("a Files row dragged out of the explorer and let go where nothing takes it brings the explorer back", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, baseURL, "robots.txt");
+  await setSource(page, "end");
+  const explorer = page.locator("#explorer");
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  const file = explorer.getByRole("button", { name: "index.html", exact: true });
+  const box = (await explorer.boundingBox())!;
+  await file.hover();
+  await page.mouse.down();
+  await page.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.move(box.x - 30, box.y + box.height / 2, { steps: 4 });
+  await expect(explorer).toHaveClass(/is-stepping-aside/);
+  // Let go beside the box, over the structure panel, which takes no file drop: nothing moves.
+  await page.mouse.up();
+  await expect(explorer).not.toHaveClass(/is-stepping-aside/);
+  await expect(explorer).toHaveCSS("pointer-events", "auto");
+  await expect(explorer).toHaveCSS("opacity", "1");
+  await expect.poll(() => source(page)).toBe("end");
+  // The explorer answers again.
+  await explorer.getByRole("tab", { name: "Pages", exact: true }).click();
+  await expect(explorer.getByRole("tab", { name: "Pages", exact: true })).toHaveAttribute("aria-selected", "true");
+});
+
 test("dropping a Files row inserts its plain path into editable source", async ({ page, baseURL }) => {
   // At 1280 the explorer (one centred 1040px box, slice 104) covers the code. Once the drag
   // leaves the box it steps aside, so the code under it takes the drop (slice 111).
