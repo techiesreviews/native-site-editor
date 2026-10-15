@@ -25,13 +25,10 @@ import { chooseShape, editKey, type PopupEdit } from "./image-large-rules";
 import { trimGeometry } from "./trim-geometry";
 import { componentFrame, componentPicture } from "./component-shapes";
 import { loadPicture, mountImagePopupView, trimmedPreview, type ImagePopupState } from "./image-popup-view";
+import type { MediaPopupHost } from "./media-popup-frame";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
-export interface ImagePopupHost {
-  /** The selected image's box in the window, while the edit bar shows it. */
-  image(): PopupRect | undefined;
-  /** The edit bar (the popup stands level with it and follows it). */
-  bar(): HTMLElement | null;
+export interface ImagePopupHost extends MediaPopupHost {
   /** The preview frame's box in the window. */
   frame(): PopupRect | undefined;
   /** Shows the popup's shape, focus or picture on the page before Done; no look puts the image back. */
@@ -40,8 +37,6 @@ export interface ImagePopupHost {
   scroll(dy: number): void;
   /** A picture's bytes as an address the editor can show, also handed to the canvas. */
   picture(path: string): Promise<string | undefined>;
-  /** The button that opened a popup outside the edit bar (Settings' Social image): it stands under it. */
-  button?(): HTMLElement | null;
 }
 
 export interface ImagePopupOptions {

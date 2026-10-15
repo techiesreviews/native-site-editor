@@ -42,9 +42,13 @@ textarea.site-settings__input { resize: vertical; min-height: 88px; line-height:
 .site-settings__close, .site-settings__link, .site-settings__grip { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; border: 0; border-radius: var(--radius); background: transparent; color: var(--link); padding: 6px 10px; font: inherit; cursor: pointer; }
 .site-settings__close { flex: 0 0 auto; color: var(--text); width: 36px; }
 .site-settings__close:hover, .site-settings__link:hover, .site-settings__grip:hover { background: var(--hover); }
-/* The Social image's Image button (it opens the sharing frame popup). */
-.site-settings__image { gap: 6px; align-self: flex-start; }
-.site-settings__image .icon { margin-inline: 0; }
+/* The Social image: its picture, 64 px, and Change… (it opens the sharing frame popup), as Klaviyo's image well. */
+.site-settings__image-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.site-settings__thumb { position: relative; display: grid; place-items: center; flex: none; width: 64px; height: 64px; overflow: clip; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-subtle); color: var(--muted); cursor: pointer; }
+.site-settings__thumb .icon { margin-inline: 0; }
+.site-settings__thumb-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.site-settings__thumb-image[hidden] { display: none; }
+.site-settings__image { border: 1px solid var(--control-line); }
 .site-settings__image[aria-expanded="true"] { background: var(--pressed); color: var(--on-pressed); }
 .site-settings :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .site-settings__footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; background: var(--surface); }

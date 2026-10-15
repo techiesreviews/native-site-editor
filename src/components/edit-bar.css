@@ -37,6 +37,13 @@
   font-weight: 600;
   white-space: nowrap;
 }
+/* No label (the first button names the selection): the panel is rounded all round. */
+.edit-bar__label[hidden] {
+  display: none;
+}
+.edit-bar__label[hidden] + .edit-bar__controls {
+  border-radius: var(--radius-panel);
+}
 /* A label alone (no controls) is rounded all round. */
 .edit-bar__label:last-child {
   border-radius: var(--radius);
@@ -404,6 +411,11 @@
 }
 .edit-bar__handle .edit-bar__kind {
   padding: 0;
+}
+/* The grip that stands for a hidden name at the panel's start (media slice 109). */
+.edit-bar__controls .edit-bar__handle {
+  padding-inline: 2px;
+  color: var(--muted);
 }
 .edit-bar__handle.is-dragging {
   cursor: grabbing;

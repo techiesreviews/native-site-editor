@@ -670,9 +670,8 @@
 .media-library .media-detail__confirm button { border: 1px solid var(--line); border-radius: 22px; padding: 0 14px; }
 .media-library .media-detail__confirm button.primary { border-color: transparent; }
 
-/* A picture with see-through parts (marked by media-transparency.ts) sits on a light checkerboard in
-   tiles, details and the picker, in both themes: the dark theme's surfaces would hide dark lettering.
-   8 px squares, as Squarespace and Figma show transparent assets (slice 106). */
+/* A picture with see-through parts (marked by media-transparency.ts) sits on the light checkerboard in
+   tiles, details and the picker, in both themes (slice 106). */
 .media-library img[data-transparent] {
-  background: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
+  background: var(--checkerboard);
 }

@@ -120,9 +120,11 @@ test("arrow keys move the dot; ✕ closes without changes", async ({ page, baseU
   await expect(popup(page)).toHaveCount(0);
   await expect(frame(page).locator(".hero img")).not.toHaveAttribute("style", /aspect-ratio/);
   expect(await source(page)).toBe(before);
-  // Done after the keys writes them.
+  // Done after the keys writes them. The hint seen last time is now only the dot's description (slice 109).
   await openPopup(page);
   await chooseShape(page, "Tall 4:5");
+  await expect(popup(page).locator(".image-popup__hint")).toHaveClass(/sr-only/);
+  await expect(dot(page)).toHaveAccessibleDescription("Drag the dot to what matters most.");
   await dot(page).focus();
   await page.keyboard.press("ArrowRight");
   await popup(page).getByRole("button", { name: "Done", exact: true }).click();
@@ -137,7 +139,7 @@ test("a phone shows the popup as a bottom sheet with 44 px targets", async ({ pa
   expect(sheet.x).toBe(0);
   expect(sheet.width).toBe(390);
   expect(Math.round(sheet.y + sheet.height)).toBe(844);
-  expect(sheet.height).toBeLessThanOrEqual(844 * 0.56 + 1);
+  expect(sheet.height).toBeLessThanOrEqual(844 * 0.85 + 1);
   for (const target of [popup(page).getByRole("button", { name: /^Shape:/ }), popup(page).getByRole("button", { name: "Replace", exact: true }),
     popup(page).getByRole("button", { name: "Done", exact: true }), popup(page).getByRole("button", { name: "Close without changes", exact: true })]) {
     const size = (await target.boundingBox())!;
@@ -147,6 +149,16 @@ test("a phone shows the popup as a bottom sheet with 44 px targets", async ({ pa
   // Only the computer preview: the page itself is the phone view.
   await expect(popup(page).locator(".image-popup__device--phone")).toBeHidden();
   await expect(popup(page).locator(".image-popup__device--computer")).toBeVisible();
+  // Slice 109: labels sit above their controls, the picture takes the full width, and the previews
+  // and Done show without scrolling; the message line sits above the buttons.
+  const rows = (await popup(page).locator(".image-popup__rows").boundingBox())!, preview = (await popup(page).locator(".image-popup__device--computer").boundingBox())!;
+  expect(preview.y + preview.height).toBeLessThanOrEqual(rows.y + rows.height + 0.5);
+  expect(await popup(page).locator(".image-popup__rows").evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true);
+  const well = (await popup(page).locator(".image-popup__well").boundingBox())!, label = (await popup(page).locator(".image-popup__row--picture > .image-popup__label").boundingBox())!;
+  expect(well.width).toBeGreaterThanOrEqual(390 - 2 * 14 - 1);
+  expect(label.y + label.height).toBeLessThanOrEqual(well.y + 0.5);
+  const message = (await popup(page).locator(".image-popup__message").boundingBox())!, done = (await popup(page).getByRole("button", { name: "Done", exact: true }).boundingBox())!;
+  expect(message.y + message.height).toBeLessThanOrEqual(done.y + 0.5);
 });
 
 // A raster picture to trim (the fixture's are SVGs, which cannot be): four coloured quarters.
@@ -415,6 +427,7 @@ test("Undo of a re-trim keeps the unsaved picture available to trim again", asyn
 });
 
 test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spot changes", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, baseURL);
   await openPopup(page);
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
@@ -422,6 +435,19 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   await expect(picker(page).getByRole("button", { name: "Choose Turned.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
+  // Slice 109: Turn ends the Zoom row; the message shares Done's line; Open large editor is in the head.
+  await chooseShape(page, "Square");
+  const zoomRow = popup(page).locator(".image-popup__row", { has: page.getByRole("slider", { name: "Zoom" }) });
+  for (const name of ["Turn left", "Turn right"]) await expect(zoomRow.getByRole("button", { name, exact: true })).toBeVisible();
+  const line = (await popup(page).locator(".image-popup__message").boundingBox())!, done = (await popup(page).getByRole("button", { name: "Done", exact: true }).boundingBox())!;
+  expect(Math.abs(line.y + line.height / 2 - (done.y + done.height / 2))).toBeLessThanOrEqual(2);
+  await expect(popup(page).locator(".image-popup__head").getByRole("button", { name: "Open large editor", exact: true })).toBeVisible();
+  // The hint shows the first time; it stays as the dot's description.
+  const hint = popup(page).locator(".image-popup__hint");
+  await expect(hint).toHaveText("Drag the dot to what matters most.");
+  await expect(hint).not.toHaveClass(/sr-only/);
+  await expect(dot(page)).toHaveAccessibleDescription("Drag the dot to what matters most.");
+  await chooseShape(page, "Original");
   const message = popup(page).locator(".image-popup__message");
   const zoom = popup(page).getByRole("slider", { name: "Zoom" });
   await zoom.fill("200");
@@ -432,13 +458,13 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   await zoom.fill("100");
   await expect(message).toHaveText("Only changes this spot");
   await popup(page).getByRole("button", { name: "Turn right", exact: true }).click();
-  await expect(popup(page).locator(".image-popup__turned")).toHaveText("90°");
+  await expect(popup(page).locator(".image-popup__turn")).toHaveAttribute("aria-label", "Turn, now 90°");
   await expect(message).toHaveText("Saves a new picture for this spot");
   // The picture is drawn turned: tall now.
   const turned = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
   expect(turned.height).toBeGreaterThan(turned.width);
   await popup(page).getByRole("button", { name: "Turn left", exact: true }).click();
-  await expect(popup(page).locator(".image-popup__turned")).toHaveText("0°");
+  await expect(popup(page).locator(".image-popup__turn")).toHaveAttribute("aria-label", "Turn, now 0°");
   await expect(message).toHaveText("Only changes this spot");
   // Turned and zoomed in, Done saves one trimmed copy with the picture: one Undo step puts the SVG back.
   const before = await source(page);
@@ -453,11 +479,20 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   const saved = (await records(page)).files["media/images/turned-crop.webp"].trimmedFrom;
   expect(saved.source).toBe("media/images/turned.webp");
   expect(saved.trim).toMatchObject({ x: 0.25, y: 0.25, width: 0.5, height: 0.5, turn: 90 });
+  // Slice 109: about Brizy's height. Opened again (no Replace note, its hints seen), a fixed shape at
+  // 1280 is at most 450 px tall.
+  await openPopup(page);
+  await chooseShape(page, "Square");
+  await expect(popup(page).locator(".image-popup__notice")).toBeHidden();
+  expect((await popup(page).boundingBox())!.height).toBeLessThanOrEqual(450);
+  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
 
 const large = (page: Page) => page.getByRole("dialog", { name: "Edit image", exact: true });
+// The large editor's own Undo (the editor toast, slice 105, can stand in the dialog with its Undo).
+const largeUndo = (page: Page) => large(page).getByRole("button", { name: "Undo", exact: true }).and(page.locator(":not(.editor-toast *)"));
 
 test("the large editor carries the popup's state; Cancel returns to the popup unchanged; straighten and flip save a trimmed copy", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -490,7 +525,7 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   for (const index of [0, 1]) await expect(previews.nth(index)).not.toHaveAttribute("src", unflipped);
   // Undo, Redo and Reset (the whole original in the place's own shape, Original).
   const shape = large(page).getByRole("combobox", { name: "Shape" });
-  await large(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await largeUndo(page).click();
   await expect(message).toHaveText("Only changes this spot");
   await expect(previews.first()).toHaveAttribute("src", unflipped);
   await large(page).getByRole("button", { name: "Redo", exact: true }).click();
@@ -498,14 +533,14 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await large(page).getByRole("button", { name: "Reset", exact: true }).click();
   await expect(message).toHaveText("Only changes this spot");
   await expect(shape).toHaveValue("original");
-  await large(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await largeUndo(page).click();
   await expect(shape).toHaveValue("16:9");
   await expect(message).toHaveText("Saves a new picture for this spot");
   await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(large(page)).toHaveCount(0);
   await expect(popup(page)).toBeVisible();
   await expect(popup(page).getByRole("button", { name: "Shape: 16:9", exact: true })).toBeVisible();
-  await expect(popup(page).locator(".image-popup__turned")).toHaveText("0°");
+  await expect(popup(page).locator(".image-popup__turn")).toHaveAttribute("aria-label", "Turn, now 0°");
   await expect(popup(page).locator(".image-popup__message")).toHaveText("Only changes this spot");
   await expect(popup(page).getByRole("button", { name: "Open large editor", exact: true })).toBeFocused();
 
@@ -667,7 +702,7 @@ test("zoom on a component's own shape saves a copy the component still crops; Re
   await expect(largeShape).toHaveValue("square");
   await expect(largeNote).toHaveText("This Photo card will look different from the others.");
   // Undo and Redo keep the component's shape through the editor's history; Reset returns to it.
-  await large(page).getByRole("button", { name: "Undo", exact: true }).click();
+  await largeUndo(page).click();
   await expect(largeShape).toHaveValue("component");
   await expect(largeNote).toHaveCount(0);
   await large(page).getByRole("button", { name: "Redo", exact: true }).click();

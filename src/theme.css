@@ -120,6 +120,9 @@
   --panel-surface: var(--surface-raised);
   /* A card, tray or bar on a panel: one step lighter than the panel in both themes. */
   --surface-card: var(--surface);
+  /* Behind a see-through picture, in both themes (dark surfaces would hide dark lettering):
+     8 px squares, as Squarespace and Figma show transparent assets (slice 106). */
+  --checkerboard: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
   --panel-padding: 6px;
   --panel-padding-roomy: 12px;
 }

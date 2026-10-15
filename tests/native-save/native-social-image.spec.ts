@@ -36,7 +36,7 @@ async function chooseDefault(page: Page) {
   await page.getByRole("button", { name: "Site settings", exact: true }).click();
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   // An empty Social image: its Image button opens the picker for still pictures.
-  await panel(page).getByRole("button", { name: "Image", exact: true }).click();
+  await panel(page).getByRole("button", { name: "Choose default social image", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker.getByRole("button", { name: "Choose images/sharing-source.png", exact: true })).toBeVisible();
   await expect(picker.getByRole("button", { name: /^Choose .*\.svg$/ })).toHaveCount(0);
@@ -165,7 +165,7 @@ test("choosing the picture a page already links still makes its sharing copy", a
   await settings.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(settings.getByLabel("Social image", { exact: true })).toHaveValue("/images/sharing-source.png");
   // A still picture opens the popup; Done with the frame left in the middle still makes its copy.
-  await settings.getByRole("button", { name: "Image", exact: true }).click();
+  await settings.getByRole("button", { name: "Change social image", exact: true }).click();
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });
   await expect(popup).toContainText("sharing-source.png");
   await expect(popup.locator(".image-popup__card b")).toHaveText("Native Studio");
@@ -193,7 +193,12 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await panel(page).getByRole("tab", { name: "Social", exact: true }).click();
   const field = panel(page).getByLabel("Default social image", { exact: true });
   await expect(field).toHaveValue(first);
-  const image = panel(page).getByRole("button", { name: "Image", exact: true });
+  const image = panel(page).getByRole("button", { name: "Change default social image", exact: true });
+  // Slice 109: the trigger is the picture, 64 px, and a secondary Change… button.
+  await expect(image).toHaveText("Change…");
+  const thumb = panel(page).locator(".site-settings__thumb");
+  await expect(thumb.locator("img")).toBeVisible();
+  expect((await thumb.boundingBox())!.width).toBe(64);
   await image.click();
   // The copy re-opens on its picture, fixed to the sharing shape: no shape menu, Turn or large editor.
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });
@@ -204,6 +209,12 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await expect(popup.getByRole("group", { name: "Turn" })).toHaveCount(0);
   await expect(popup.locator(".image-popup__card-site")).toHaveText("sharing.example");
   await expect(popup).toContainText("Saves a sharing copy of this frame");
+  // Its own centred layer above the dialog, on the dialog's surface; the form stays whole under it.
+  const box = (await popup.locator(".image-popup").boundingBox())!, view = page.viewportSize()!;
+  expect(Math.abs(box.x + box.width / 2 - view.width / 2)).toBeLessThanOrEqual(2);
+  expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height).toBeLessThanOrEqual(view.height);
+  expect(await popup.locator(".image-popup").evaluate(element => getComputedStyle(element).backgroundColor))
+    .toBe(await panel(page).evaluate(element => getComputedStyle(element).backgroundColor));
   const dot = popup.getByRole("slider", { name: "Focus dot" });
   await expect(dot).toBeFocused();
   await expect(dot).toHaveAttribute("aria-valuetext", /^50% across, 50% down/);
@@ -272,7 +283,7 @@ test("on a phone the Social image popup shows its fixed label and keeps Done on 
   await page.setViewportSize({ width: 390, height: 844 });
   await fixture(page, baseURL, true);
   await chooseDefault(page);
-  await panel(page).getByRole("button", { name: "Image", exact: true }).click();
+  await panel(page).getByRole("button", { name: "Change default social image", exact: true }).click();
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });
   await expect(popup.locator(".image-popup__shape")).toHaveText("Sharing 1200 × 630");
   for (const [width, height] of [[390, 844], [320, 568]]) {
@@ -296,7 +307,7 @@ test("an animated picture is not framed: the Image button says so and offers the
   const settings = page.getByRole("dialog", { name: "Page settings", exact: true });
   await settings.getByRole("tab", { name: "Social", exact: true }).click();
   await settings.getByLabel("Social image", { exact: true }).fill("/images/moving.gif");
-  await settings.getByRole("button", { name: "Image", exact: true }).click();
+  await settings.getByRole("button", { name: "Change social image", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await expect(picker).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Social image", exact: true })).toHaveCount(0);

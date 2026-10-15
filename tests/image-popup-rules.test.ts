@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placeBadge, placePopup, popupMessage,
-  pictureHint, placeShapeOf, replaceNotice, shapeLabel, shapeRatio, sheetScroll, visibleArea,
+  pictureHint, placeShapeOf, replaceNotice, seenHints, shapeLabel, shapeRatio, sheetScroll, visibleArea,
 } from "../src/page-builder/image-popup-rules";
 import { writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
@@ -146,4 +146,11 @@ test("component shape opens first, crops at its ratio, names the badge and notes
   // An inline cover alone repeats the component's own fit: the component's shape still shows.
   assert.deepEqual(componentFrame('<img style="object-fit: cover">', undefined, "index.html", component).shape, entry.id);
   assert.notDeepEqual(componentFrame('<img style="object-fit: contain">', undefined, "index.html", component).shape, entry.id);
+});
+
+test("each hint under the picture shows only the first time: the stored list is read safely", () => {
+  assert.deepEqual([...seenHints(null)], []);
+  assert.deepEqual([...seenHints(JSON.stringify(["Drag the dot to what matters most.", 3, null]))], ["Drag the dot to what matters most."]);
+  assert.deepEqual([...seenHints("{not json")], []);
+  assert.deepEqual([...seenHints(JSON.stringify({ hint: "x" }))], []);
 });

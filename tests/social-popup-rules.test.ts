@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SOCIAL_SHAPE, SOCIAL_SHAPE_LABEL, socialReplaceNotice, socialRestore, socialTrim } from "../src/page-builder/social-popup-rules";
 import { socialImageSize, socialImageTrim } from "../src/page-builder/social-geometry";
-import { shapeRatio, placeUnder } from "../src/page-builder/image-popup-rules";
+import { shapeRatio } from "../src/page-builder/image-popup-rules";
 import { SOCIAL_IMAGE_ACCEPT } from "../src/page-builder/social-image";
 import { accepts } from "../src/page-builder/media-library-filter";
 import { validTrim } from "../src/page-builder/trim-geometry";
@@ -67,13 +67,3 @@ test("the picker offers still raster pictures only", () => {
   for (const path of ["a.svg", "a.ico", "a.mp4", "a.pdf"]) assert.equal(accepts(path, SOCIAL_IMAGE_ACCEPT), false, path);
 });
 
-test("a popup opened from a button stands under it, else above it, else beside it, inside the window", () => {
-  const view = { width: 1280, height: 800 }, size = { width: 328, height: 420 };
-  assert.deepEqual(placeUnder({ left: 400, top: 200, right: 480, bottom: 236 }, size, view), { side: "below", left: 400, top: 246 });
-  assert.deepEqual(placeUnder({ left: 400, top: 600, right: 480, bottom: 636 }, size, view), { side: "above", left: 400, top: 170 });
-  // No room under or over it: beside it, level with it (right, else left), else under it, kept inside.
-  const short = { width: 1280, height: 700 };
-  assert.deepEqual(placeUnder({ left: 400, top: 300, right: 480, bottom: 336 }, size, short), { side: "right", left: 490, top: 272 });
-  assert.deepEqual(placeUnder({ left: 1100, top: 250, right: 1180, bottom: 286 }, size, short), { side: "left", left: 762, top: 226 });
-  assert.deepEqual(placeUnder({ left: 100, top: 300, right: 1180, bottom: 336 }, size, short), { side: "below", left: 100, top: 272 });
-});

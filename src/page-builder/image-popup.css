@@ -1,9 +1,11 @@
-/* The image popup (crop-popup.html): Brizy's compact rows in the edit bar's colours, which
-   follow the editor's light or dark look. */
+/* The media popup frame and the image popup (crop-popup.html): Brizy's compact rows in the edit
+   bar's colours, which follow the editor's light or dark look; about 450 px tall on computer for a
+   fixed shape (slice 109). A layer above Settings takes the dialog's surface. */
 .image-popup {
+  --image-popup-surface: var(--panel-surface);
   --image-popup-line: color-mix(in oklch, var(--text) 12%, transparent);
-  --image-popup-well: color-mix(in oklch, var(--text) 16%, var(--panel-surface));
-  --image-popup-wash: color-mix(in oklch, var(--panel-surface) 66%, transparent);
+  --image-popup-well: color-mix(in oklch, var(--text) 16%, var(--image-popup-surface));
+  --image-popup-wash: color-mix(in oklch, var(--image-popup-surface) 66%, transparent);
   --image-popup-tap: var(--size-control);
   position: fixed;
   z-index: 90;
@@ -13,7 +15,7 @@
   width: 328px;
   max-height: calc(100dvh - 16px);
   border-radius: 10px;
-  background: var(--panel-surface);
+  background: var(--image-popup-surface);
   color: var(--text);
   box-shadow: var(--shadow);
   font-size: var(--type-base);
@@ -36,7 +38,7 @@
   width: 14px;
   height: 14px;
   border-radius: 2px;
-  background: var(--panel-surface);
+  background: var(--image-popup-surface);
   transform: rotate(45deg);
 }
 .image-popup[data-side="left"] .image-popup__nub { right: -6px; top: var(--nub-y, 20px); }
@@ -48,14 +50,12 @@
   display: none;
 }
 .image-popup__head {
-  position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 44px;
   box-sizing: border-box;
-  padding: 12px 48px 6px 14px;
+  padding: 6px 6px 6px 14px;
   border-bottom: 1px solid var(--image-popup-line);
 }
 .image-popup__head b {
@@ -64,6 +64,7 @@
   white-space: nowrap;
 }
 .image-popup__where {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
@@ -81,12 +82,13 @@
   border-radius: var(--radius);
   background: transparent;
 }
+.image-popup__icon[hidden] { display: none; }
 .image-popup__icon:active { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .image-popup__icon:hover { background: var(--hover); } }
-.image-popup__x {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+/* Open large editor and ✕, at the head's end. */
+.image-popup__tools {
+  display: flex;
+  flex: none;
 }
 .image-popup__notice {
   margin: 10px 14px 0;
@@ -117,7 +119,7 @@
 }
 .image-popup__well {
   position: relative;
-  height: 196px;
+  height: 152px;
   border-radius: var(--radius);
   background: var(--image-popup-well);
   /* A vertical swipe on the picture scrolls the sheet; the dot, the Free frame and its corners take the finger. */
@@ -143,10 +145,17 @@
   box-shadow: 0 0 0 1px rgb(1 9 37 / 0.45), 0 0 0 999px var(--image-popup-wash);
   pointer-events: none;
 }
+/* A see-through picture on slice 106's light checkerboard, not the dark well. */
+.image-popup__picbox:has(> img[data-transparent]),
+.image-popup__spot img[data-transparent],
+.image-popup__card-image[data-transparent] {
+  background: var(--checkerboard);
+}
 .image-popup__pic[hidden],
 .image-popup__row[hidden],
 .image-popup__item[hidden] { display: none; }
-/* Free trimming: the frame is the trim, moved by dragging, sized by its four corners. */
+/* Free trimming: the frame is the trim, moved by dragging, sized by its four corners: 12 px
+   circles with a 1 px blue ring and a 44 px grab area, as the WordPress media editor's. */
 .image-popup__corner { display: none; }
 .image-popup__frame--free {
   pointer-events: auto;
@@ -158,17 +167,17 @@
   position: absolute;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
   touch-action: none;
 }
 .image-popup__frame--free .image-popup__corner::after {
   content: "";
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   box-sizing: border-box;
-  border: 1.5px solid var(--primary);
+  border: 1px solid var(--primary);
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
@@ -177,10 +186,11 @@
 .image-popup__corner--ne { left: 100%; top: 0; cursor: nesw-resize; }
 .image-popup__corner--se { left: 100%; top: 100%; cursor: nwse-resize; }
 .image-popup__corner--sw { left: 0; top: 100%; cursor: nesw-resize; }
+/* Zoom, its value, then the two Turn buttons at the row's end. */
 .image-popup__zoom {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .image-popup__range {
   --fill: 0%;
@@ -220,20 +230,12 @@
   white-space: nowrap;
 }
 .image-popup__zoom .image-popup__value {
-  min-width: 46px;
+  min-width: 40px;
   text-align: right;
 }
 .image-popup__turn {
   display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.image-popup__turned {
-  margin-right: auto;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--type-small);
-  text-overflow: ellipsis;
+  flex: none;
 }
 .image-popup__dot {
   position: absolute;
@@ -350,12 +352,11 @@
   font-weight: 600;
 }
 .image-popup__item[aria-checked="true"] .icon { visibility: visible; }
+/* The hint (the first time only) and Replace at the end of the line. */
 .image-popup__under {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 8px;
-  margin-top: 4px;
 }
 .image-popup__hint {
   min-width: 0;
@@ -367,6 +368,7 @@
 .image-popup__link {
   display: inline-flex;
   flex: none;
+  margin-left: auto;
   align-items: center;
   gap: 5px;
   min-height: 28px;
@@ -381,7 +383,7 @@
 @media (hover: hover) and (pointer: fine) { .image-popup__link:hover { background: var(--hover); } }
 .image-popup__previews {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 10px;
   min-width: 0;
 }
@@ -390,9 +392,10 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   color: var(--muted);
   font-size: var(--type-small);
+  line-height: 1.2;
 }
 .image-popup__screen {
   box-sizing: border-box;
@@ -404,8 +407,8 @@
   background: var(--surface);
 }
 .image-popup__device--phone .image-popup__screen {
-  border: 3px solid color-mix(in oklch, var(--text) 80%, transparent);
-  border-radius: 8px;
+  border: 2px solid color-mix(in oklch, var(--text) 80%, transparent);
+  border-radius: 6px;
 }
 .image-popup__spot {
   overflow: hidden;
@@ -419,7 +422,7 @@
 /* The Social image's preview: the link card a sharing service shows. */
 .image-popup__card {
   width: 100%;
-  max-width: 210px;
+  max-width: 180px;
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--image-popup-line);
@@ -448,31 +451,32 @@
 }
 .image-popup__card-site { color: var(--muted); }
 .image-popup__card-site:empty { display: none; }
-.image-popup__message {
+/* The bottom strip: one quiet line (what Done does) beside Done; no box, no stripe. A new
+   picture's icon is amber. */
+.image-popup__bottom {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 10px 14px 0;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-  font-size: var(--type-small);
-  font-weight: 600;
+  gap: 10px;
+  padding: 8px 14px 10px;
+}
+.image-popup__message {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-base);
   line-height: 1.3;
 }
-.image-popup__message--info {
-  background: color-mix(in oklch, var(--primary) 12%, var(--panel-surface));
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-.image-popup__message--new {
-  background: var(--warning-bg);
-  color: var(--warning-fg);
-  box-shadow: inset 3px 0 0 var(--color-warning);
-}
+.image-popup__message .icon { flex: none; }
+.image-popup__message--new .icon { color: var(--color-warning); }
 .image-popup__foot {
   display: flex;
+  flex: none;
   justify-content: flex-end;
   gap: 8px;
-  padding: 10px 14px 12px;
 }
 .image-popup__button {
   min-height: var(--image-popup-tap);
@@ -494,7 +498,8 @@
 /* Disabled, the main button is plain rather than a pale blue (slice 106). */
 .image-popup .image-popup__button--primary:disabled { background: var(--surface-subtle); color: var(--muted); opacity: 1; }
 
-/* Phones: a bottom sheet, its message and Done pinned while the rows scroll; 44 px targets. */
+/* Phones: a bottom sheet up to 85 % of the screen, its message and Done pinned while the rows
+   scroll; labels above their controls, so the picture takes the full width; 44 px targets. */
 @media (max-width: 700px) {
   .image-popup {
     --image-popup-tap: 44px;
@@ -502,7 +507,7 @@
     bottom: 0;
     left: 0;
     width: auto;
-    max-height: 56dvh;
+    max-height: 85dvh;
     border-radius: 14px 14px 0 0;
     box-shadow: 0 -8px 32px var(--semantic-shadow);
     padding-bottom: env(safe-area-inset-bottom);
@@ -520,18 +525,28 @@
     background: var(--image-popup-line);
     transform: translateX(-50%);
   }
-  .image-popup__head { padding: 14px 52px 6px 14px; }
-  .image-popup__x { top: 4px; right: 4px; }
-  .image-popup__row { min-height: 56px; padding: 6px 14px; }
-  .image-popup__well { height: 180px; }
+  .image-popup__head { padding: 10px 4px 2px 14px; }
+  .image-popup__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    min-height: 0;
+    padding: 8px 14px;
+  }
+  .image-popup__row--picture > .image-popup__label { padding-top: 0; }
+  .image-popup__label { font-size: var(--type-small); }
+  .image-popup__well { height: 196px; }
   .image-popup__shape { top: 4px; height: 44px; padding: 0 12px 0 14px; font-size: var(--type-base); }
   .image-popup__item,
   .image-popup__link { min-height: 44px; }
   .image-popup__range { height: 44px; }
-  .image-popup__frame--free .image-popup__corner { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
   .image-popup .image-popup__device--phone { display: none; }
-  .image-popup__bottom { border-top: 1px solid var(--image-popup-line); }
-  .image-popup__foot { padding: 10px 14px 14px; }
+  .image-popup__bottom {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--image-popup-line);
+  }
   .image-popup__button--primary { flex: 1; }
 }
 /* Short phones (a small phone on its side): 56 % is all head, note and Done, so the sheet takes
@@ -547,6 +562,32 @@
     position: sticky;
     bottom: 0;
     z-index: 6;
-    background: var(--panel-surface);
+    background: var(--image-popup-surface);
+  }
+}
+
+/* Settings' Social image: its own modal layer above the dialog, centred, on the dialog's surface,
+   with the dialog's line, shadow and backdrop (a sheet on phones). */
+.image-popup-layer {
+  width: max-content;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+.image-popup-layer::backdrop { background: var(--semantic-shadow); }
+.image-popup-layer .image-popup {
+  --image-popup-surface: var(--surface);
+  position: relative;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius-dialog);
+}
+@media (max-width: 700px) {
+  .image-popup-layer .image-popup {
+    position: fixed;
+    border-width: 1px 0 0;
+    border-radius: 14px 14px 0 0;
   }
 }

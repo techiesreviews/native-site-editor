@@ -1,11 +1,12 @@
-// The image popup's window (crop-popup.html): compact rows with a label on the left, in the
-// edit bar's colours, light or dark with the editor. Beside the picture on wide screens (below
-// the bar when there is no room), a bottom sheet with 44 px targets on phones. It does not trap
-// Tab (as Brizy's); Escape closes the shape menu (anchored to its button, above it when there is
-// no room below) first, then the popup. A picture that can be
-// trimmed gets Free (four corners), Zoom and Turn (slice 41), and Open large editor (slice 42).
-// Fixed to one shape (Settings' Social image, slice 44): its label instead of the shape menu, Zoom
-// only, a link card for the preview, under the button that opened it (inside its dialog).
+// The image popup (crop-popup.html, made shorter like Brizy's in slice 109) in the media popup
+// frame (media-popup-frame.ts): beside the picture on wide screens, a bottom sheet with 44 px
+// targets on phones, a centred layer above Settings. The picture with the shape menu on it (a dark
+// pill, its menu anchored to it) and the focus dot; a one-time hint and Replace under it; Zoom
+// with the two Turn buttons at its end; small previews; one quiet message line and Done. Escape
+// closes the shape menu first, then the popup. A picture that can be trimmed gets Free (four
+// corners), Zoom and Turn (slice 41), and Open large editor in the head (slice 42). Fixed to one
+// shape (Settings' Social image, slice 44): its label instead of the shape menu, Zoom only, and a
+// link card for the preview.
 import "./image-popup.css";
 import { node } from "../ui/dom";
 import { icon } from "../icons";
@@ -14,6 +15,7 @@ import desktopIcon from "@phosphor-icons/core/regular/desktop.svg?raw";
 import checkCircleIcon from "@phosphor-icons/core/regular/check-circle.svg?raw";
 import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
 import imageIcon from "@phosphor-icons/core/regular/image-square.svg?raw";
+import largeIcon from "@phosphor-icons/core/regular/arrows-out-simple.svg?raw";
 import turnLeftIcon from "@phosphor-icons/core/regular/arrow-counter-clockwise.svg?raw";
 import turnRightIcon from "@phosphor-icons/core/regular/arrow-clockwise.svg?raw";
 import type { MediaTrim } from "../../shared/media-records";
@@ -21,9 +23,11 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { componentShapeEntry, componentShapeNotice, type ComponentPicture } from "./component-shapes";
-import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, placePopup, placeUnder, popupMessage, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
+import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
+import { markTransparency } from "./media-transparency";
+import { actionButton, mountMediaPopupFrame, phonePopup, popupRow } from "./media-popup-frame";
 
 export interface ImagePopupState {
   component?: ComponentPicture;
@@ -68,22 +72,19 @@ const svg = (raw: string, size = 16) => {
   template.innerHTML = raw.replace("<svg ", `<svg class="icon" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
   return template.content.firstElementChild as SVGSVGElement;
 };
-const phone = () => matchMedia("(max-width: 700px)").matches;
-// The small previews: a phone and a computer screen at the widths the page is measured at.
-const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width: 58, height: 104 }, { name: "Computer", viewport: 1280, width: 150, height: 84 }];
+// The small previews: a phone and a computer screen at the widths the page is measured at, at most 72 px tall.
+const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width: 40, height: 72 }, { name: "Computer", viewport: 1280, width: 128, height: 72 }];
+const HINTS_KEY = "ase.image-popup.hints";
 
 export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents, fixed?: ImagePopupFixed) {
-  const root = node("div", fixed ? "image-popup image-popup--fixed" : "image-popup");
-  root.setAttribute("role", "dialog");
-  root.setAttribute("aria-labelledby", "image-popup-title");
-  const nub = node("span", "image-popup__nub"); nub.setAttribute("aria-hidden", "true");
-  const grab = node("span", "image-popup__grab"); grab.setAttribute("aria-hidden", "true");
-  const title = node("b", "", fixed ? "Social image" : "Image"); title.id = "image-popup-title";
-  const where = node("span", "image-popup__where");
-  const head = node("div", "image-popup__head"); head.append(title, where);
-  const close = actionButton("image-popup__icon image-popup__x", () => events.cancel());
-  close.append(icon("x", 18)); close.setAttribute("aria-label", "Close without changes"); close.title = "Close without changes (Esc)";
-  const notice = node("p", "image-popup__notice"); notice.setAttribute("role", "status");
+  let menuOpen = false;
+  const frameView = mountMediaPopupFrame(host, {
+    title: fixed ? "Social image" : "Image", opener: ".edit-bar__image", className: fixed ? "image-popup--fixed" : undefined,
+    cancel: () => events.cancel(),
+    escape: () => { if (!menuOpen) return false; toggleMenu(false); shapeButton.focus(); return true; },
+    resized: () => layoutPicture(),
+  });
+  const { root, where, notice, rows, message, foot, place } = frameView;
 
   // The picture: the shape menu over it, the place's frame and the focus dot on it.
   const shapeButton = actionButton("image-popup__shape", () => toggleMenu(!menuOpen));
@@ -118,48 +119,45 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   // A fixed shape is named where the menu would be.
   const shapeHead = fixed ? node("span", "image-popup__shape image-popup__shape--fixed", fixed.label) : shapeButton;
   const well = node("div", "image-popup__well"); well.append(shapeHead, ...fixed ? [] : [menu], picbox);
-  const hint = node("p", "image-popup__hint");
+  // The hint shows the first time it applies (in this browser), then stays as the dot's and the trim's description.
+  const hint = node("p", "image-popup__hint"); hint.id = "image-popup-hint";
+  dot.setAttribute("aria-describedby", hint.id); shapeButton.setAttribute("aria-describedby", hint.id);
+  const seen = seenHints(readHints()), shown = new Set<string>();
   const replace = actionButton("image-popup__link", () => events.replace());
   replace.append(svg(imageIcon, 14), "Replace"); replace.title = "Choose another picture for this spot";
   const under = node("div", "image-popup__under"); under.append(hint, replace);
   const pictureCell = node("div"); pictureCell.append(well, under);
-  const pictureRow = row("Picture", pictureCell, "image-popup__row--picture");
+  const pictureRow = popupRow("Picture", pictureCell, "image-popup__row--picture");
 
   const previews = fixed ? mountCard(fixed.card) : mountPreviews(DEVICES);
-  // Zoom and Turn save a trimmed copy; they show when the picture can be trimmed.
+  // Zoom, and Turn at its end, save a trimmed copy; they show when the picture can be trimmed.
   const zoom = node("input", "image-popup__range");
   Object.assign(zoom, { type: "range", min: "100", max: String(MAX_ZOOM * 100), step: "5", id: "image-popup-zoom" });
   zoom.addEventListener("input", () => events.zoom(Number(zoom.value)));
   const zoomValue = node("output", "image-popup__value"); zoomValue.htmlFor.add("image-popup-zoom");
   const zoomCell = node("div", "image-popup__zoom"); zoomCell.append(zoom, zoomValue);
-  const zoomRow = row("Zoom", zoomCell);
+  const zoomRow = popupRow("Zoom", zoomCell);
   const zoomLabel = zoomRow.firstElementChild as HTMLElement;
   zoomLabel.id = "image-popup-zoom-label"; zoom.setAttribute("aria-labelledby", zoomLabel.id);
-  const turnValue = node("span", "image-popup__value image-popup__turned");
   const turnButton = (label: string, raw: string, direction: 1 | -1) => {
     const button = actionButton("image-popup__icon", () => events.turn(direction));
     button.append(svg(raw, 18)); button.setAttribute("aria-label", label); button.title = label;
     return button;
   };
+  const turnLeft = turnButton("Turn left", turnLeftIcon, -1), turnRight = turnButton("Turn right", turnRightIcon, 1);
   const turnCell = node("div", "image-popup__turn"); turnCell.setAttribute("role", "group");
-  turnCell.append(turnValue, turnButton("Turn left", turnLeftIcon, -1), turnButton("Turn right", turnRightIcon, 1));
-  const turnRow = row("Turn", turnCell);
-  turnCell.setAttribute("aria-label", "Turn");
-  const rows = node("div", "image-popup__rows"); rows.append(pictureRow, zoomRow, ...fixed ? [] : [turnRow], row("Preview", previews.element));
+  turnCell.append(turnLeft, turnRight);
+  if (!fixed) zoomCell.append(turnCell);
+  rows.append(pictureRow, zoomRow, popupRow("Preview", previews.element));
 
-  const message = node("div", "image-popup__message"); message.setAttribute("role", "status");
   const doneButton = actionButton("image-popup__button image-popup__button--primary", () => events.done());
   doneButton.textContent = "Done";
-  const largeButton = actionButton("image-popup__button", () => events.large());
-  largeButton.textContent = "Open large editor";
-  const foot = node("div", "image-popup__foot"); foot.append(...fixed ? [] : [largeButton], doneButton);
-  const bottom = node("div", "image-popup__bottom"); bottom.append(message, foot);
-  root.append(nub, grab, head, notice, rows, bottom, close);
-  // The edit bar's Image button, or the button that opened it; inside a modal dialog it lives in it (else it is inert).
-  const imageButton = () => host.button ? host.button() : host.bar()?.querySelector<HTMLButtonElement>(".edit-bar__image") ?? null;
-  (imageButton()?.closest("dialog") ?? document.body).append(root);
+  // Open large editor: an icon in the head, so the message and Done share one line.
+  const largeButton = actionButton("image-popup__icon", () => events.large());
+  largeButton.append(svg(largeIcon, 18)); largeButton.setAttribute("aria-label", "Open large editor"); largeButton.title = "Open large editor";
+  if (!fixed) frameView.tools.prepend(largeButton);
+  foot.append(doneButton);
 
-  let menuOpen = false;
   function toggleMenu(open: boolean) {
     menuOpen = open;
     if (open !== menu.matches(":popover-open")) menu.togglePopover();
@@ -203,7 +201,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       item.setAttribute("aria-checked", String(item.dataset.shape === (typeof state.shape === "string" ? state.shape : state.shape.kind)));
       if (item.dataset.shape === "free") item.hidden = !state.trimmable;
     }
-    if (state.url && picture.getAttribute("src") !== state.url) picture.src = state.url;
+    // A see-through picture sits on 106's light checkerboard (the well is dark).
+    if (state.url && picture.getAttribute("src") !== state.url) { markTransparency(picture, state.file); picture.src = state.url; }
     const applies = dotApplies(state.shape, state.cut), free = state.shape === "free";
     dot.hidden = !applies;
     const across = Math.round(state.focus.x), down = Math.round(state.focus.y);
@@ -214,56 +213,36 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     if (free) {
       frame.tabIndex = 0; frame.setAttribute("role", "group"); frame.setAttribute("aria-roledescription", "trim area");
       frame.setAttribute("aria-label", "Trim area. Arrow keys move it. Alt and arrow keys change its size.");
+      frame.setAttribute("aria-describedby", hint.id);
       frame.removeAttribute("aria-hidden");
     } else {
-      frame.removeAttribute("tabindex"); frame.removeAttribute("role"); frame.removeAttribute("aria-roledescription"); frame.removeAttribute("aria-label");
+      for (const name of ["tabindex", "role", "aria-roledescription", "aria-label", "aria-describedby"]) frame.removeAttribute(name);
       frame.setAttribute("aria-hidden", "true");
     }
-    zoomRow.hidden = turnRow.hidden = largeButton.hidden = !state.trimmable;
+    zoomRow.hidden = largeButton.hidden = !state.trimmable;
     const percent = zoomPercent(state.shape, state.cut);
     if (Number(zoom.value) !== percent) zoom.value = String(percent);
     zoom.style.setProperty("--fill", `${(percent - 100) / (MAX_ZOOM - 1)}%`);
     zoom.setAttribute("aria-valuetext", `${percent} percent`);
     zoomValue.textContent = `${percent} %`;
-    turnValue.textContent = turnValue.title = turnText(state.cut);
-    hint.textContent = pictureHint(state.shape, state.cut.zoom > 1.001);
-    const said = fixed?.message ?? popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
-    message.className = `image-popup__message image-popup__message--${said.tone}`;
-    message.title = said.tip;
-    message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon), node("span", "", said.text));
+    // The turn shows in the buttons' tooltips and the group's name.
+    const turnNow = turnText(state.cut);
+    turnCell.setAttribute("aria-label", `Turn, now ${turnNow}`);
+    turnLeft.title = `Turn left (now ${turnNow})`; turnRight.title = `Turn right (now ${turnNow})`;
+    const said = pictureHint(state.shape, state.cut.zoom > 1.001);
+    hint.textContent = said;
+    if (!seen.has(said)) shown.add(said);
+    hint.classList.toggle("sr-only", !shown.has(said));
+    const line = fixed?.message ?? popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
+    message.className = `image-popup__message image-popup__message--${line.tone}`;
+    message.title = line.tip;
+    message.replaceChildren(svg(line.tone === "new" ? infoIcon : checkCircleIcon, 14), node("span", "", line.text));
     doneButton.disabled = largeButton.disabled = zoom.disabled = state.busy;
     root.setAttribute("aria-busy", String(state.busy));
     layoutPicture();
     drawPreviews();
     place();
     if (focusDot) (applies ? dot : free ? frame : shapeButton).focus({ preventScroll: true });
-  }
-
-  // Beside the picture, level with the edit bar, its nub towards the Image button; a sheet on phones.
-  // Opened from another button, under (or above) it.
-  function place() {
-    if (phone()) { root.style.left = root.style.top = ""; return; }
-    const opener = host.button?.();
-    if (opener) {
-      const box = opener.getBoundingClientRect(), size = { width: root.offsetWidth, height: root.offsetHeight };
-      const at = placeUnder(box, size, { width: document.documentElement.clientWidth, height: innerHeight });
-      root.dataset.side = at.side;
-      root.style.left = `${at.left}px`; root.style.top = `${at.top}px`;
-      const nub = (value: number, high: number) => `${Math.round(Math.max(12, Math.min(high, value)))}px`;
-      if (at.side === "below" || at.side === "above") root.style.setProperty("--nub-x", nub(box.left + box.width / 2 - at.left - 7, size.width - 26));
-      else root.style.setProperty("--nub-y", nub(box.top + box.height / 2 - at.top - 7, size.height - 26));
-      return;
-    }
-    const image = host.image(), bar = host.bar(), barBox = bar && !bar.hidden ? bar.getBoundingClientRect() : undefined;
-    if (!image || !barBox?.width) return;
-    const size = { width: root.offsetWidth, height: root.offsetHeight };
-    const at = placePopup(image, barBox, size, { width: document.documentElement.clientWidth, height: innerHeight });
-    root.dataset.side = at.side;
-    root.style.left = `${at.left}px`; root.style.top = `${at.top}px`;
-    const target = (imageButton() ?? bar)!.getBoundingClientRect();
-    const clamp = (value: number, high: number) => Math.round(Math.max(12, Math.min(high, value)));
-    if (at.side === "below") root.style.setProperty("--nub-x", `${clamp(target.left + target.width / 2 - at.left - 7, size.width - 26)}px`);
-    else root.style.setProperty("--nub-y", `${clamp(target.top + target.height / 2 - at.top - 7, size.height - 26)}px`);
   }
 
   // Dragging: a press on the picture puts the dot there (a finger's on release); a press on the dot keeps where it was held.
@@ -319,18 +298,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   well.addEventListener("pointerup", release);
   well.addEventListener("pointercancel", release);
 
-  // Escape with nothing focused (a press on the page left the focus nowhere) closes it too.
-  const stray = (event: KeyboardEvent) => {
-    if (event.key === "Escape" && (document.activeElement === document.body || !document.activeElement)) { event.preventDefault(); events.cancel(); }
-  };
-  document.addEventListener("keydown", stray);
   root.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      event.preventDefault(); event.stopPropagation();
-      if (menuOpen) { toggleMenu(false); shapeButton.focus(); return; }
-      events.cancel();
-      return;
-    }
     if (menuOpen && (event.target as Element).closest(".image-popup__menu")) {
       const index = items.indexOf(event.target as HTMLButtonElement);
       const next = event.key === "ArrowDown" ? (index + 1) % items.length : event.key === "ArrowUp" ? (index - 1 + items.length) % items.length
@@ -349,30 +317,12 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     }
   });
 
-  // Leaving the popup without Done changes nothing: a press elsewhere, another selection, the bar gone.
-  const outside = (event: PointerEvent) => {
-    const target = event.target as Element;
-    // Another dialog (the Media picker from Replace) keeps it; its own dialog's other controls close it.
-    const dialog = target.closest?.("dialog");
-    if (root.contains(target) || imageButton()?.contains(target) || target.closest?.(".edit-bar__image") || dialog && dialog !== root.closest("dialog")) return;
-    events.cancel();
-  };
-  document.addEventListener("pointerdown", outside, true);
-  const still = () => { if (imageButton()?.getAttribute("aria-expanded") !== "true") events.cancel(); else place(); };
-  const bar = host.button ? null : host.bar(), pane = bar?.parentElement;
-  const watch = new MutationObserver(() => queueMicrotask(still));
-  if (bar) watch.observe(bar, { childList: true });
-  pane?.addEventListener("edit-bar-layout", place);
-  const resized = () => { place(); layoutPicture(); };
-  addEventListener("resize", resized);
-  imageButton()?.setAttribute("aria-expanded", "true");
-
   draw();
   requestAnimationFrame(() => {
     if (!root.isConnected) return;
     // On a phone the page scrolls so the picture sits just above the sheet.
     const image = host.image();
-    if (phone() && image) {
+    if (phonePopup() && image) {
       const dy = sheetScroll(image, root.getBoundingClientRect().top, host.frame()?.top ?? 0);
       if (dy) host.scroll(dy);
     }
@@ -384,31 +334,14 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     /** Back from the large editor: its button has the focus again. */
     focusLarge: () => largeButton.focus({ preventScroll: true }),
     remove() {
-      document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("keydown", stray);
-      watch.disconnect();
-      pane?.removeEventListener("edit-bar-layout", place);
-      removeEventListener("resize", resized);
-      const focused = root.contains(document.activeElement);
-      root.remove();
-      const button = imageButton();
-      button?.setAttribute("aria-expanded", "false");
-      if (focused) button?.focus({ preventScroll: true });
+      if (shown.size) writeHints([...seen, ...shown]);
+      frameView.remove();
     },
   };
 }
 
-function actionButton(className: string, action: () => void) {
-  const item = node("button", className);
-  item.type = "button";
-  item.addEventListener("click", action);
-  return item;
-}
-function row(label: string, content: HTMLElement, className = "") {
-  const item = node("div", `image-popup__row ${className}`.trim());
-  item.append(node("span", "image-popup__label", label), content);
-  return item;
-}
+function readHints() { try { return localStorage.getItem(HINTS_KEY); } catch { return null; } }
+function writeHints(hints: string[]) { try { localStorage.setItem(HINTS_KEY, JSON.stringify(hints)); } catch { /* private mode: hints show again */ } }
 
 export interface PreviewDevice { name: "Phone" | "Computer"; viewport: number; width: number; height: number }
 /** The live previews: the spot in a phone's and a computer's screen at the widths the page is measured at. */
@@ -434,7 +367,7 @@ export function mountPreviews(devices: readonly PreviewDevice[]) {
       const fit = Math.min(1, (device.width - 6) / w, (device.height - 6) / h);
       w = Math.max(2, w * fit); h = Math.max(2, h * fit);
       spot.style.width = `${w}px`; spot.style.height = `${h}px`;
-      if (url && image.getAttribute("src") !== url) image.src = url;
+      if (url && image.getAttribute("src") !== url) { markTransparency(image, state.file); image.src = url; }
       image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
       image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""
         : dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
@@ -452,7 +385,7 @@ function mountCard(text: { title: string; site: string }) {
   element.append(image, caption);
   function draw(state: ImagePopupState) {
     const url = state.cutUrl ?? state.url;
-    if (url && image.getAttribute("src") !== url) image.src = url;
+    if (url && image.getAttribute("src") !== url) { markTransparency(image, state.file); image.src = url; }
   }
   return { element, draw };
 }

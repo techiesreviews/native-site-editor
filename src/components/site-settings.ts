@@ -223,6 +223,17 @@ async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: 
   }
 }
 
+// One preview load per picture at a time: the Social image's thumbnail and the share card ask together,
+// and a second load of the editor's assets would leave the first without its picture.
+const loading = new Map<string, Promise<string | undefined>>();
+function previewUrl(handlers: SiteSettingsHandlers, value: string) {
+  const key = value.trim(), now = loading.get(key);
+  if (now) return now;
+  const next = handlers.imageUrl(value).finally(() => loading.delete(key));
+  loading.set(key, next);
+  return next;
+}
+
 // The Social image popup's frame, kept with the field until Apply; typing another value drops it.
 const socialFrames = new WeakMap<HTMLInputElement | HTMLTextAreaElement, { value: string; file: string; trim: MediaTrim; preview?: string }>();
 const stagedFrame = (input: HTMLInputElement | HTMLTextAreaElement) => {
@@ -230,12 +241,14 @@ const stagedFrame = (input: HTMLInputElement | HTMLTextAreaElement) => {
   return frame && frame.value === input.value && input.dataset.chosen === input.value ? frame : undefined;
 };
 
-/** The Social image's Image button (media build slice 44): the popup fixed to the sharing shape for a
- * still picture in the site, else the picker for one. Done keeps the frame for Apply, which saves the copy. */
+/** The Social image's picture and its Change… button (media build slice 44; slice 109's image well, as
+ * Klaviyo's): the popup fixed to the sharing shape for a still picture in the site, else the picker for
+ * one. Done keeps the frame for Apply, which saves the copy. */
 function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers,
   options: { page?: string; title: () => string; refresh?: () => void }) {
   let popup: { cancel(): void } | undefined, opening = false;
-  const choose = () => chooseInto(input, place, dialog, handlers, options.refresh, SOCIAL_IMAGE_ACCEPT);
+  const refresh = () => { show(); options.refresh?.(); };
+  const choose = () => chooseInto(input, place, dialog, handlers, refresh, SOCIAL_IMAGE_ACCEPT);
   const press = async () => {
     if (popup) { popup.cancel(); return; }
     if (opening) return;
@@ -262,7 +275,7 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
           input.value = value;
           input.dataset.chosen = value;
           socialFrames.set(input, { value, ...result });
-          options.refresh?.();
+          refresh();
           dialog.status.textContent = "Sharing frame chosen. Apply to save it.";
         },
         closed: () => { popup = undefined; },
@@ -275,11 +288,34 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
       if (dialog.root.isConnected) dialog.status.textContent = error instanceof Error ? error.message : String(error);
     } finally { opening = false; }
   };
-  const control = button("", () => { void press(); }, "site-settings__link site-settings__image");
-  control.append(icon("image-square", 16), node("span", "", "Image"));
+  const control = button("", () => { void press(); }, "button secondary site-settings__image");
   control.title = "Choose the picture and the 1200 × 630 frame sharing services show";
   control.setAttribute("aria-expanded", "false");
-  return control;
+  // The current picture (its sharing frame once chosen), 64 px; a press on it does what the button does.
+  const thumb = node("img", "site-settings__thumb-image"); thumb.alt = ""; thumb.hidden = true;
+  const well = node("span", "site-settings__thumb");
+  well.append(icon("image-square", 20), thumb);
+  well.setAttribute("aria-hidden", "true");
+  well.addEventListener("click", () => { void press(); });
+  const row = node("div", "site-settings__image-row");
+  row.append(well, control);
+  let request = 0;
+  function show() {
+    const value = input.value.trim(), verb = value ? "Change" : "Choose";
+    control.textContent = `${verb}…`;
+    control.setAttribute("aria-label", `${verb} ${place.toLowerCase()}`);
+    const asked = ++request, framed = stagedFrame(input)?.preview;
+    const shown = (src?: string) => {
+      if (asked !== request || !dialog.root.isConnected) return;
+      thumb.hidden = !src;
+      if (src) thumb.src = src; else thumb.removeAttribute("src");
+    };
+    void (framed ? Promise.resolve(framed) : value ? previewUrl(handlers, value) : Promise.resolve(undefined)).then(shown, () => shown());
+  }
+  thumb.addEventListener("error", () => { thumb.hidden = true; });
+  input.addEventListener("input", show);
+  show();
+  return row;
 }
 
 export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferences = new Map<string, SiteLinkPreference>()) {
@@ -362,7 +398,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
         cardTitle.textContent = socialTitle.value || "Your page title";
         cardDescription.textContent = socialDescription.value || "Your page description";
         const request = ++imageRequest, framed = stagedFrame(image)?.preview;
-        void (framed ? Promise.resolve(framed) : handlers.imageUrl(image.value)).then((src) => {
+        void (framed ? Promise.resolve(framed) : previewUrl(handlers, image.value)).then((src) => {
           if (request !== imageRequest || !dialog.root.isConnected) return;
           photo.hidden = !src;
           placeholder.hidden = Boolean(src);

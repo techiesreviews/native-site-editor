@@ -931,6 +931,19 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       label.append(model.chip.element);
       chipCaret?.();
     }
+    // A plain name the first button already says (an image's Image button) is not repeated above
+    // the panel (media slice 109); a block that drags keeps its handle as a grip at the panel's start.
+    const first = model.controls[0];
+    label.hidden = !onEdit && !model.context && !model.chip && !model.component && first?.kind === "button" && first.label === model.kind;
+    if (label.hidden && chip) {
+      chip.replaceChildren(phosphorIcon("dots-six-vertical", 16, "edit-bar__icon"));
+      chip.setAttribute("aria-label", `Move ${model.kind.toLowerCase()}`);
+      const grip = node("span", "edit-bar__group");
+      grip.append(chip);
+      panel.append(grip);
+      // The hidden label keeps the name.
+      label.replaceChildren(kindName);
+    }
     // Controls fall into groups (name, style, content, arrange) with a thin
     // rule between neighbours, so the bar reads as a few clusters, not a row.
     let group = "name";
