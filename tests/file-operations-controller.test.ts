@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFileOperationsController, type FileOperationsPorts } from "../src/controllers/file-operations-controller";
+import { createLazyFileOperationsController } from "../src/controllers/file-operation-checks";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { DraftStore } from "../src/drafts";
@@ -536,4 +537,68 @@ test("Files delete of a video names and keeps its still and unsaved subtitles, s
   assert.deepEqual(entry.family!.map(item => item.path).sort(), ["media/videos/clip.vtt", "media/videos/clip.webp"]);
   const subtitles = entry.family!.find(item => item.path === "media/videos/clip.vtt")!;
   assert.equal(await removed.map.get(subtitles.browserKey!)!.text(), "WEBVTT\n\nunsaved");
+});
+
+
+test("lazy file actions refuse a generation change before their chunk arrives", async () => {
+  const module = await import("../src/controllers/file-operations-controller");
+  for (const action of ["moveFileTarget", "deleteFileTarget", "duplicateFileTarget", "targetFiles"] as const) {
+    const f = fixture();
+    const held = deferred<typeof module>();
+    let created = 0, reads = 0;
+    f.ports.findEntry = async () => { reads++; return undefined; };
+    const controller = createLazyFileOperationsController(f.ports, () => held.promise);
+    const target = { path: "a.txt", name: "a.txt", folder: false };
+    const pending = action === "moveFileTarget" ? controller.moveFileTarget(target, "b.txt", "rename")
+      : action === "deleteFileTarget" ? controller.deleteFileTarget(target)
+      : action === "duplicateFileTarget" ? controller.duplicateFileTarget(target)
+      : controller.targetFiles(target, true);
+    f.memory.bumpGeneration();
+    held.resolve({ ...module, createFileOperationsController: (...args) => { created++; return module.createFileOperationsController(...args); } });
+    await pending;
+    assert.equal(reads, 0, action);
+    assert.equal(f.memory.source("a.txt"), "source", action);
+    assert.equal(f.copied(), 0, action);
+    assert.equal(created, 1);
+  }
+});
+
+test("lazy file validation and Restore need no action chunk", () => {
+  const f = fixture();
+  let loads = 0;
+  const controller = createLazyFileOperationsController(f.ports, () => { loads++; throw new Error("unexpected load"); });
+  assert.match(controller.moveProblem({ path: "a.txt", name: "a.txt", folder: false }, "open.txt", "rename")!, /already exists/);
+  controller.restoreFileTarget({ path: "a.txt", name: "a.txt", folder: false });
+  assert.deepEqual(f.restored, [["a.txt"]]);
+  assert.equal(loads, 0);
+});
+
+
+test("lazy file actions retain the target draft proof from before their chunk load", async () => {
+  const module = await import("../src/controllers/file-operations-controller");
+  for (const action of ["move", "delete"] as const) {
+    const f = fixture(), held = deferred<typeof module>();
+    let asked = 0;
+    f.ports.confirmDialog = () => ({ ask: async () => { asked++; return true; }, choose: async () => undefined });
+    const controller = createLazyFileOperationsController(f.ports, () => held.promise);
+    const target = { path: "a.txt", name: "a.txt", folder: false };
+    const pending = action === "move" ? controller.moveFileTarget(target, "b.txt", "rename") : controller.deleteFileTarget(target);
+    f.memory.writeDraft("a.txt", "newer edit");
+    held.resolve(module);
+    assert.match((await pending)!, /changed meanwhile/);
+    assert.equal(asked, 0);
+    assert.equal(f.memory.source("a.txt"), "newer edit");
+    if (action === "delete") assert.match(f.errors[0], /repository or source changed meanwhile/);
+  }
+});
+
+
+test("lazy Delete keeps the source-change notice when the same branch resyncs", async () => {
+  const f = fixture(), held = deferred<typeof import("../src/controllers/file-operations-controller")>();
+  const controller = createLazyFileOperationsController(f.ports, () => held.promise);
+  const pending = controller.deleteFileTarget({ path: "a.txt", name: "a.txt", folder: false });
+  f.memory.bumpGeneration();
+  held.resolve(await import("../src/controllers/file-operations-controller"));
+  assert.equal(await pending, "The repository or source changed meanwhile. Try again.");
+  assert.deepEqual(f.errors, ["The repository or source changed meanwhile. Try again."]);
 });

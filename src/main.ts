@@ -1,5 +1,5 @@
 import { rootRoute, siteAddress } from "../shared/site-path-prefix";
-import { MEDIA_RECORDS_PATH } from "../shared/media-records";
+import { MEDIA_RECORDS_PATH } from "../shared/media-records-path";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
@@ -109,7 +109,7 @@ import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
-import { createFileOperationsController } from "./controllers/file-operations-controller";
+import { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { addSectionStep } from "./page-builder/component-plans";
 import { writeNewDrafts } from "./new-drafts";
@@ -2483,7 +2483,7 @@ const mediaController = createMediaController({
   gallerySignature: imagesSignature,
   announce,
   error: errorMessage,
-});
+}, lazyModule(() => import("./controllers/media-actions")));
 // Typing changes drafts often; the usage check waits for a pause.
 let mediaUsageTimer: ReturnType<typeof setTimeout> | undefined;
 effect(() => {
@@ -2497,45 +2497,19 @@ function chooseMediaForImage(target: { path: string; node: number[]; width?: num
   return mediaController.chooseImage(target, files);
 }
 
-// Atomic staging, source receipts, upload rollback and one Undo remain host-owned.
+// Undo stays bound to the page open before either lazy chunk loads.
+const loadMediaBatch = lazyModule(() => import("./media-batch"));
 async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch) {
-  // Undo is recorded on the page open when the batch was asked for; a switch while loading refuses.
   const openAtStart = appStore.openFile.value;
-  const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = await loadMediaWorkspace();
-  const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
-  const repo = appStore.repository.value, snapshot = appStore.snapshot.value;
-  // Without a native site (no root index.html) the batch is proved against the repository's listing.
-  const listed = nativeSite || !repo || !snapshot ? undefined : await listRepositoryFiles(repo, snapshot);
-  assertLive();
+  const module = await loadMediaBatch();
+  if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again.");
   if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
-  const editor = editorModule;
-  // With no editable file open, the step waits for the next one (mediaHistoryHome). A page that
-  // opens later is not proven over this step's text, so changes to page text still need one open.
-  const historyPath = appStore.openFile.value, historyHost = historyPath ? editor.captureHistoryHost(historyPath) : undefined;
-  if (!historyHost && [...batch.edits.keys()].some(path => path !== MEDIA_RECORDS_PATH)) throw new Error("Open a page before changing images that pages use.");
-  const identity = mediaIdentity();
-  const batchPaths = () => {
-    if (!listed) return nativeFiles(scope);
-    const drafts = draftStore().list(scope), gone = new Set(drafts.filter(draft => draft.deleted).map(draft => draft.path));
-    return [...new Set([...listed, ...drafts.filter(draft => !draft.deleted).map(draft => draft.path)])].filter(path => !gone.has(path));
-  };
-  const recordOn = (path: string, undo: () => boolean, redo: () => boolean | Promise<boolean>, dispose: () => void) => editor.recordHistoryAction(path, undo, redo, dispose);
-  await applyMediaWorkspaceBatch(batch, mediaDraftTransaction({
-    scope, store: draftStore(), bytes: uploadBytes(), stamp,
-    paths: batchPaths, source: path => mediaTextSource(path, scope),
-    assetVersion: path => { const record = draftStore().get(scope, path); return record ? JSON.stringify(record) : entryAt(path)?.sha; },
-    entry: async path => { const entry = await findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: mediaTextSource(path, scope) } : undefined; },
-    modelState: path => editor.captureFileModelState(scope, path), evictModel: (path, proof) => editor.evictDraftModel(scope, path, proof), historyCurrent: historyHost ? historyHost.isCurrent : () => stamp.holds(),
-    mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
-    history: (undo, redo, dispose) => {
-      if (historyHost && historyPath) return recordOn(historyPath, undo, redo, dispose);
-      // A file that opened while the change was prepared takes it now.
-      const opened = appStore.openFile.value;
-      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo, dispose) : mediaHistoryHome.hold(identity, undo, redo, dispose);
-    },
+  await module.applyMediaBatch({
+    appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace,
+    listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaIdentity, mediaTextSource, entryAt, findEntry,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
     announce,
-  }));
+  }, scope, stamp, batch, openAtStart);
 }
 
 // After a successful save, the committed content becomes the new clean baseline.
@@ -3924,7 +3898,7 @@ function pathNow(path: string, state = treeState()): "file" | "folder" | "delete
   return entry?.type === "tree" ? "folder" : undefined;
 }
 
-const fileOperationsController = createFileOperationsController({
+const fileOperationsController = createLazyFileOperationsController({
   edits: guardedEdits, draftScope,
   engaged: () => nativeEngaged, repository: () => appStore.repository.value,
   parentOf, treeState, pathNow, branchFilesUnder, findEntry, draftStore,
@@ -3938,7 +3912,7 @@ const fileOperationsController = createFileOperationsController({
   afterFileChanges, announce, refuse, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
   openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
   filesTabOpen: () => filesTreeController.visible(),
-});
+}, lazyModule(() => import("./controllers/file-operations-controller")));
 const { moveProblem, fileMoveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
 function pageLinks(...args: Parameters<typeof fileOperationsController.pageLinks>) { return fileOperationsController.pageLinks(...args); }
 function targetFiles(...args: Parameters<typeof fileOperationsController.targetFiles>) { return fileOperationsController.targetFiles(...args); }

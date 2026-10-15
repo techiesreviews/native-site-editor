@@ -1,4 +1,5 @@
-export const MEDIA_RECORDS_PATH = ".editor/media.json";
+import { MEDIA_RECORDS_PATH } from "./media-records-path";
+export { MEDIA_RECORDS_PATH };
 
 export interface MediaTrim {
   x: number; y: number; width: number; height: number;

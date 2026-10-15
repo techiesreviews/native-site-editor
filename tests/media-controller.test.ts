@@ -4,13 +4,13 @@ import { createMediaController, type MediaControllerPorts, type MediaModule } fr
 import type { SavedDraft } from "../src/drafts.ts";
 import type { MediaPickerOptions } from "../src/page-builder/media-picker.ts";
 import { createGuardedEdits } from "../src/guarded-edit";
-import { createMemoryWorkspace } from "./fakes/memory-workspace";
+import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { placeMediaImage } from "../src/page-builder/media-place";
 import type { MediaHeldFiles } from "../src/page-builder/media-picker";
 import { readSource, type SourceNode } from "../src/page-builder/source-tree";
 import { startTags } from "../shared/html-source.ts";
 
-function fixture(overrides: Partial<MediaControllerPorts> = {}) {
+function fixture(overrides: Partial<MediaControllerPorts> = {}, loadActions = () => import("../src/controllers/media-actions")) {
   const workspace = createMemoryWorkspace();
   const edits = createGuardedEdits(workspace.workspace);
   const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
@@ -21,9 +21,10 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
   const sources = new Map([["index.html", '<section><img src="/images/old.png" alt="Old alt"></section>']]);
   const errors: unknown[] = [], changes: string[] = [];
   let pick: MediaPickerOptions | undefined;
+  let pickerReady: (() => void) | undefined;
   const element: Partial<HTMLElement> = { getAttribute: () => busy ? "true" : "false" };
   const module: MediaModule = {
-    openMediaPicker: async (options) => { pick = options; }, closeMediaPicker: () => { closes++; },
+    openMediaPicker: async (options) => { pick = options; pickerReady?.(); }, closeMediaPicker: () => { closes++; },
     mountMediaLibrary: () => { mounts++; return { element: element as HTMLElement, ready: Promise.resolve(), refreshedKey: undefined, refresh: async () => { refreshes++; }, close: () => {}, dispose: () => { disposed++; } }; },
   };
   const ports: MediaControllerPorts = {
@@ -38,7 +39,8 @@ function fixture(overrides: Partial<MediaControllerPorts> = {}) {
     refreshDescriptions: () => {},
     observeBusy: (_element, changed) => { observerCallback = changed; return { disconnect() {} }; }, announce: () => {}, error: (error) => errors.push(error), ...overrides,
   };
-  return { ports, controller: createMediaController(ports), sources, records, scope, module, errors, changes,
+  return { ports, controller: createMediaController(ports, loadActions), sources, records, scope, module, errors, changes,
+    nextPicker: () => new Promise<void>(resolve => { pickerReady = resolve; }),
     navigate: () => { identity = "workspace:2"; workspace.setScope(identity); },
     openAnotherPage: () => { workspace.setRoute("/other/"); workspace.enterEditMode(); },
     bump: () => workspace.bumpGeneration(), signature: () => { signature = "version:2"; }, hide: () => { visible = false; }, show: () => { visible = true; },
@@ -82,14 +84,16 @@ test("swapping a Decorative place's picture moves the mark with the page change 
 
 test("a value's picker resolves to the chosen root path on Use and to nothing on Cancel", async () => {
   const f = fixture();
+  const opened = f.nextPicker();
   const used = f.controller.choosePath("Site settings · Favicon");
-  await tick(); await tick();
+  await opened;
   assert.equal(f.pick()?.place, "Site settings · Favicon");
   // The path is a URL: names with # or ? stay part of it.
   await f.pick()!.onPick!({ path: "images/a #1?.png", alt: "" }, () => false);
   assert.equal(await used, "/images/a%20%231%3F.png");
+  const reopened = f.nextPicker();
   const cancelled = f.controller.choosePath("Site settings · Favicon");
-  await tick(); await tick();
+  await reopened;
   f.pick()!.onClose!();
   assert.equal(await cancelled, undefined);
 });
@@ -131,10 +135,12 @@ test("workspace asset versions and uploads stay scoped to captured drafts", asyn
 test("Files' Review… opens the Optimise sheet only in the repository it came from", async () => {
   const f = fixture(), reviewed: string[] = [];
   let ready!: () => void;
-  f.module.mountMediaLibrary = () => ({ element: {} as HTMLElement, ready: new Promise<void>(resolve => { ready = resolve; }), refreshedKey: undefined,
-    refresh: async () => {}, dispose: () => {}, review: (files: File[], folder: string) => { reviewed.push(`${folder}:${files.map(file => file.name).join(",")}`); } });
+  const mounted = deferred<void>();
+  f.module.mountMediaLibrary = () => { mounted.resolve(); return ({ element: {} as HTMLElement, ready: new Promise<void>(resolve => { ready = resolve; }), refreshedKey: undefined,
+    refresh: async () => {}, dispose: () => {}, review: (files: File[], folder: string) => { reviewed.push(`${folder}:${files.map(file => file.name).join(",")}`); } }); };
+
   const pending = f.controller.reviewInGallery([new File(["x"], "a.png")], "about");
-  await tick(); await tick();
+  await mounted.promise;
   f.navigate();
   ready();
   await pending;
@@ -149,8 +155,10 @@ test("Files' Review… opens the Optimise sheet only in the repository it came f
 test("disposed gallery cannot mount from a pending lazy load", async () => {
   const f = fixture();
   let release!: (module: MediaModule) => void;
-  f.ports.load = () => new Promise((resolve) => { release = resolve; });
+  const loading = deferred<void>();
+  f.ports.load = () => new Promise((resolve) => { release = resolve; loading.resolve(); });
   const opening = f.controller.ensureGallery();
+  await loading.promise;
   f.controller.disposeGallery();
   release(f.module);
   await opening;
@@ -745,4 +753,54 @@ test("an address picker refuses an old prefix if the site address changes while 
   await assert.rejects(placeMediaPath(f.ports, f.ports.stamp(), undefined, image, () => false, held, () => { resolved = true; },
     () => f.controller.workspaceContext(), "/my-site"), /site address changed/);
   assert.equal(resolved, false);
+});
+
+
+test("media actions refuse a repository switch while their chunk loads", async () => {
+  const module = await import("../src/controllers/media-actions");
+  for (const action of ["workspaceContext", "chooseImage", "insertMedia", "choosePath", "changePlace"] as const) {
+    const held = deferred<typeof module>();
+    const f = fixture({}, () => held.promise);
+    const pending = action === "workspaceContext" ? f.controller.workspaceContext()
+      : action === "choosePath" ? f.controller.choosePath("Favicon")
+      : action === "changePlace" ? f.controller.changePlace("index.html", [0, 0], true)
+      : action === "chooseImage" ? f.controller.chooseImage({ path: "index.html", node: [0, 0] })
+      : f.controller.insertMedia({ path: "index.html", parent: [], index: 0 });
+    // Attach before releasing the held import so a refusal is always observed.
+    const settled = Promise.allSettled([pending]);
+    f.navigate();
+    held.resolve(module);
+    const [result] = await settled;
+    if (action === "workspaceContext") assert.equal(result.status, "rejected");
+    else assert.equal(result.status, "fulfilled");
+    assert.equal(f.pick(), undefined, action);
+    assert.deepEqual(f.changes, [], action);
+  }
+});
+
+test("concurrent media action loads share one controller", async () => {
+  const module = await import("../src/controllers/media-actions");
+  const held = deferred<typeof module>();
+  let created = 0;
+  const f = fixture({}, () => held.promise);
+  const context = f.controller.workspaceContext();
+  const image = f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  held.resolve({ ...module, createMediaActions: (...args) => { created++; return module.createMediaActions(...args); } });
+  await Promise.all([context, image]);
+  assert.equal(created, 1);
+  assert.equal(f.pick()?.place, "index.html · Old alt");
+});
+
+
+test("disposing Media while the actions chunk loads prevents a late gallery mount", async () => {
+  const module = await import("../src/controllers/media-actions");
+  const held = deferred<typeof module>();
+  const f = fixture({}, () => held.promise);
+  const opening = f.controller.ensureGallery();
+  f.controller.disposeGallery();
+  held.resolve(module);
+  await opening;
+  assert.equal(f.counts().mounts, 0);
+  await f.controller.ensureGallery();
+  assert.equal(f.counts().mounts, 1);
 });

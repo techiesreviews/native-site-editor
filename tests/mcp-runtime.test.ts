@@ -1112,7 +1112,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
     galleryHost() { throw new Error("No DOM in this source test"); }, galleryVisible: () => false, mediaSelected: () => false, gallerySignature: () => "",
     refreshDescriptions() {}, announce() {}, error(error) { throw error; },
   } satisfies MediaControllerPorts;
-  return { file, text, paths, bytes, ports, batches, history, labels, controller: createMediaController(ports), pick: () => pick };
+  return { file, text, paths, bytes, ports, batches, history, labels, controller: createMediaController(ports, () => import("../src/controllers/media-actions")), pick: () => pick };
 }
 function mediaCommand(operation: AgentCommand["operation"], args: AgentCommand["args"] = {}): AgentCommand {
   return { id: "media-test", operation, args, path: ["place_media", "frame_image", "loop_video"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
