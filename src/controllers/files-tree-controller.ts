@@ -76,6 +76,14 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       }
     }, () => { typesLoading = false; });
   }
+  // The Files tab coming into view: its icons load, and the open file is marked (it may have
+  // been opened from Pages or the page button since the tree was drawn).
+  function shown() {
+    warm();
+    const open = ports.openFile();
+    for (const row of ports.root().querySelectorAll<HTMLElement>(".file-row:not([aria-expanded])"))
+      row.classList.toggle("selected", row.dataset.path === open);
+  }
   // A plain file's type icon and, for a wide panel, its type word (before any change letter);
   // marked pending while the icons are not loaded yet.
   function showType(icon: HTMLElement, row: HTMLElement, path: string) {
@@ -344,6 +352,6 @@ export function createFilesTreeController(ports: FilesTreePorts) {
 
   return { render: renderFileTree, refresh: renderDraftFiles, row: fileRow, signature: treeSignature,
     openFolder: (path: string) => { openFolders.add(path); },
-    listings: () => folderListings, visible: () => ports.visible(), warm,
+    listings: () => folderListings, visible: () => ports.visible(), shown,
     reset: () => { openFolders.clear(); folderListings.clear(); folderReads.clear(); listingsGeneration++; } };
 }

@@ -32,6 +32,8 @@ test("the header names the tab and counts the files; rows are one height with na
   // Icons by type arrive with the explorer (the tree is drawn again then); the wide panel says the type.
   await expect(row(page, "index.html").locator(".file-icon")).toHaveAttribute("data-type", "page");
   for (const path of ["index.html", "images"]) expect((await line(page, path).boundingBox())!.height).toBe(32);
+  // The page opened at start is the marked row.
+  await expect(row(page, "index.html")).toHaveClass(/\bselected\b/);
   // A folder and a file at one level start their names at the same x; a child sits deeper.
   expect(await left(page, '.file-row[data-path="images"] .filename')).toBe(await left(page, '.file-row[data-path="index.html"] .filename'));
   await row(page, "images").click();

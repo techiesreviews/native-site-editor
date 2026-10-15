@@ -486,7 +486,7 @@ function mountWorkspace() {
   mountExplorerTabs();
   element("explorer").addEventListener("toggle", () => {
     if (explorerDropdown?.isOpen()) {
-      if (!element("explorer-files").hidden) filesTreeController.warm();
+      if (!element("explorer-files").hidden) filesTreeController.shown();
       void ensurePagesTree().then(() => renderPagesTree()).catch(errorMessage);
     } else {
       pagesTree?.reset();
@@ -3578,7 +3578,7 @@ function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
     button.setAttribute("aria-selected", String(tab === name));
     button.tabIndex = tab === name ? 0 : -1;
     panel.hidden = tab !== name;
-    if (name === "files" && tab === name && explorerDropdown?.isOpen()) filesTreeController.warm();
+    if (name === "files" && tab === name && explorerDropdown?.isOpen()) filesTreeController.shown();
     // Without tabs the files are the whole explorer, not a tab's panel.
     if (native) panel.setAttribute("role", "tabpanel");
     else panel.removeAttribute("role");
