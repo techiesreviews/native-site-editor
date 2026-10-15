@@ -45,6 +45,11 @@ async function openImprove(page: Page, baseURL: string | undefined, titles: stri
     await commit(page, baseURL, { path: `images/${slug}.jpg`, base64: await heavyJpeg(page, 35 + index) });
     await commit(page, baseURL, { path: `${slug}/index.html`, content: pageHtml(title, `images/${slug}.jpg`) });
   }
+  await showImprove(page, baseURL);
+  for (const title of titles) await expect(row(page, title)).toBeVisible();
+}
+/** The editor on the home page, then Media → More → Improve images. */
+async function showImprove(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
   await page.locator("#explorer-toggle").click();
@@ -52,7 +57,6 @@ async function openImprove(page: Page, baseURL: string | undefined, titles: stri
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Improve images/ }).click();
   await expect(pane(page).getByRole("heading", { name: "Improve images", exact: true })).toBeVisible();
-  for (const title of titles) await expect(row(page, title)).toBeVisible();
 }
 const row = (page: Page, title: string) => pane(page).locator(".media-improve__row").filter({ has: page.getByText(title, { exact: true }) });
 
@@ -95,6 +99,39 @@ test("a heavy JPEG is listed, fixed to a lighter WebP with copies, and Undo rest
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: /^Improve images/ })).toHaveText(`Improve images (${restored})`);
+});
+
+// Slice 118: "Leave alone everywhere" on one row skips the picture on every page; the editor's Undo brings it back.
+test("leave a picture used on two pages alone everywhere: both rows skip it, and Undo restores it", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  await commit(page, baseURL, { path: "images/shared.jpg", base64: await heavyJpeg(page, 71) });
+  for (const title of ["North", "South"]) await commit(page, baseURL, { path: `${title.toLowerCase()}/index.html`, content: pageHtml(title, "images/shared.jpg") });
+  await showImprove(page, baseURL);
+  const north = row(page, "North"), south = row(page, "South");
+  await north.getByRole("button", { name: /North/ }).first().click();
+  await expect(north.getByRole("checkbox", { name: "Improve shared.jpg", exact: true })).toBeChecked();
+  await north.getByRole("button", { name: "Leave shared.jpg alone everywhere", exact: true }).click();
+  // One entry with no page in the site's records; both rows show it left alone with nothing to fix.
+  await expect.poll(async () => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}").leftAsIs).toEqual([{ picture: "images/shared.jpg" }]);
+  await expect(north).toContainText("Left alone everywhere");
+  await expect(north.getByRole("checkbox", { name: "Improve shared.jpg", exact: true })).not.toBeChecked();
+  await expect(north.getByRole("button", { name: "Leave shared.jpg alone everywhere", exact: true })).toHaveCount(0);
+  await south.getByRole("button", { name: /South/ }).first().click();
+  await expect(south).toContainText("Left alone everywhere");
+  await expect(south.getByRole("checkbox", { name: "Improve shared.jpg", exact: true })).not.toBeChecked();
+  for (const title of ["North", "South"]) await expect(pane(page).getByRole("button", { name: `Fix ${title}`, exact: true })).toBeDisabled();
+
+  // The editor's Undo takes the one step back: both rows improve the picture again.
+  await page.keyboard.press("Escape");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("images/shared.jpg");
+  // The open screen reads the plan again: both rows improve the picture, still open.
+  if (!(await pane(page).isVisible())) { await page.locator("#explorer-toggle").click(); await tab(page).click(); }
+  for (const title of ["North", "South"]) {
+    await expect(pane(page).getByRole("button", { name: `Fix ${title}`, exact: true })).toBeEnabled();
+    await expect(row(page, title).getByRole("checkbox", { name: "Improve shared.jpg", exact: true })).toBeChecked();
+  }
+  await expect(pane(page)).not.toContainText("Left alone everywhere");
 });
 
 // Nightly: an unticked picture is remembered and skipped; Cancel stops with the rest listed; Undo all.

@@ -1,7 +1,7 @@
 import { MEDIA_LIST_LIMIT, textBytes } from "../shared/agent";
 import { createMediaByteCache } from "./page-builder/media-byte-cache";
 import { planWithPictureSizes } from "./page-builder/improve-images-facts";
-import { improveImagesSession, improveRow, runMaps, type ImproveRowPorts, type KnownSizes, type Measure } from "./page-builder/improve-images-run";
+import { LEFT_ALONE, improveImagesSession, improveRow, runMaps, type ImproveRowPorts, type KnownSizes, type Measure } from "./page-builder/improve-images-run";
 import type { MediaWorkspaceContext } from "./page-builder/media-workspace";
 
 export interface AgentImproveHost {
@@ -50,7 +50,9 @@ export async function agentImproveImages(host: AgentImproveHost, row?: string, p
     }
     const changed = rows.filter(item => item.changed).length, failureCount = failed.length;
     const leftForLex = rows.reduce((count, item) => count + item.left.filter(picture => picture.reason === "for-lex").length, 0);
-    const report = { rows, failed, changed, leftForLex, total: selected.length, omittedRows: 0, omittedFailures: 0 };
+    // Pictures the user left alone (everywhere or in one file) are skipped and listed, each once.
+    const leftAlone = new Set(rows.flatMap(item => item.left.filter(picture => picture.reason === LEFT_ALONE).map(picture => picture.key))).size;
+    const report = { rows, failed, changed, leftForLex, leftAlone, total: selected.length, omittedRows: 0, omittedFailures: 0 };
     const serialize = () => JSON.stringify(report);
     // Whole row reports stay intact; counts describe any details that cannot fit the command response.
     while (textBytes(serialize()) > MEDIA_LIST_LIMIT) {

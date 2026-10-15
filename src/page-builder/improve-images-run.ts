@@ -1,8 +1,8 @@
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { readMediaPrefix } from "./media-prefix";
-import { MEDIA_RECORDS_PATH, parseMediaRecords, removeMediaRecords, serializeMediaRecords, setPictureLeftAsIs, type MediaRecords, type PictureLeftAsIs } from "../../shared/media-records";
+import { MEDIA_RECORDS_PATH, parseMediaRecords, removeMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
-import { improveImagesPlan, type ImproveImagesPlan, type ImproveImagesRow } from "./improve-images";
+import { improveImagesPlan, leavePictureAlone, type ImproveImagesPlan, type ImproveImagesRow } from "./improve-images";
 import { improveHeavy, type ImprovePorts } from "./improve-heavy";
 import { improveGifsAndPlayers, type ConvertedGif, type ImproveGifsPlayersPorts, type PreparedOnlineVideo } from "./improve-gifs-players";
 import { bringInOutsidePictures, type BringInOutsidePicturesInput, type OutsidePictureRead } from "./outside-pictures";
@@ -22,6 +22,8 @@ export interface ImproveRunMaps {
 }
 export const runMaps = (): ImproveRunMaps => ({ brought: new Map(), reads: new Map(), converted: new Map(), videos: new Map() });
 export interface LeftPicture { key: string; address: string; reason: string; note?: string }
+/** The `reason` of a picture Lex left alone (in its row or everywhere). */
+export const LEFT_ALONE = "left-alone";
 /** One finished row: what its single save changed, so its own Undo can put it back later, in any order. */
 export interface RowOutcome {
   file: string; label: string; changed: boolean;
@@ -136,6 +138,12 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
   const row = plan.rows.find(item => item.file === request.row);
   const outcome: RowOutcome = { file: request.row, label: row?.label ?? request.row, changed: false, texts: [], added: [], left: [], notes: [] };
   if (!row) return outcome;
+  // Pictures Lex left alone are listed as such (agents report them), once each.
+  const listed = new Set<string>();
+  for (const picture of row.pictures) if (picture.leftAsIs && picture.changes.length && !listed.has(picture.key)) {
+    listed.add(picture.key);
+    outcome.left.push({ key: picture.key, address: picture.address, reason: LEFT_ALONE, note: picture.leftAsIs === "everywhere" ? "Left alone everywhere by the user." : "Left alone in this file by the user." });
+  }
   let pictures = row.pictures;
   const wants = (...changes: string[]) => pictures.some(p => p.ticked && p.changes.some(change => changes.includes(change)));
   const original = sources[row.file] ?? "";
@@ -261,17 +269,20 @@ export function improveImagesSession(context: () => Promise<MediaWorkspaceContex
       return (await readPlan(ctx, facts(ctx, known))).plan;
     },
     async row(request: ImproveRowRequest) { return improveRow(await context(), request); },
+    /** The records text (left-alone pictures live there), so the screen can tell an outside Undo changed them. */
+    async records() { return (await context()).read(MEDIA_RECORDS_PATH); },
     async undo(outcomes: readonly RowOutcome[], kept?: readonly string[]) { return undoRows(await context(), outcomes, kept); },
-    /** Untick (left as is) or tick a picture again; remembered in the site's records. */
-    async leftAsIs(item: PictureLeftAsIs, on: boolean) {
+    /** Untick (left as is in `row`, or everywhere without one) or tick a picture again; remembered
+     * in the site's records as one Undo step. Ticking again also lifts an "everywhere" entry. */
+    async leftAsIs(item: { picture: string; row?: string }, on: boolean) {
       const ctx = await context();
       const text = await ctx.read(MEDIA_RECORDS_PATH);
       ctx.assertLive();
-      // Ticking again also lifts an "everywhere" entry: the picture is improved here as Lex asked.
       const records = parseMediaRecords(text);
-      const next = on ? setPictureLeftAsIs(records, item, true) : setPictureLeftAsIs(setPictureLeftAsIs(records, item, false), { picture: item.picture }, false);
+      const next = leavePictureAlone(records, item.picture, item.row, on);
       if (next === records) return;
-      await ctx.applyBatch({ label: on ? "Leave a picture as it is" : "Improve a picture again", expectedPaths: [...ctx.paths],
+      const label = !on ? "Improve a picture again" : item.row === undefined ? "Leave a picture alone everywhere" : "Leave a picture as it is";
+      await ctx.applyBatch({ label, expectedPaths: [...ctx.paths],
         expectedSources: new Map([[MEDIA_RECORDS_PATH, text]]), expectedAssets: new Map(),
         edits: new Map([[MEDIA_RECORDS_PATH, serializeMediaRecords(next)]]), moves: [], deletes: [], restores: [], uploads: [] });
     },

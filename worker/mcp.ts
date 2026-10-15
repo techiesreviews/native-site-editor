@@ -804,7 +804,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return queue("place_media", context, { path, args, requestId, waitSeconds });
   });
   server.registerTool("improve_images", {
-    description: "Improve images for one page or component template (row), or all rows when omitted. Makes lighter files, responsive copies and Looping videos, leaving outside pictures and old YouTube/Vimeo players for the user. Each row is one Undo step. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    description: "Improve images for one page or component template (row), or all rows when omitted. Makes lighter files, responsive copies and Looping videos, leaving outside pictures and old YouTube/Vimeo players for the user. Pictures the user left alone (on one page or everywhere) are skipped and listed as left-alone. Each row is one Undo step. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ row: mediaPath.optional(), requestId, waitSeconds }),
     annotations: editing,
   }, async ({ row, requestId, waitSeconds }) => {

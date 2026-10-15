@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { improveImagesPlan, IMPROVE_HEAVY_BYTES } from "../src/page-builder/improve-images";
+import { improveImagesPlan, IMPROVE_HEAVY_BYTES, leavePictureAlone, pictureLeftAlone } from "../src/page-builder/improve-images";
 import { parseMediaRecords } from "../shared/media-records";
 import { gifLoopingVideo } from "../src/page-builder/looping-video";
 import { descendants, parseSource } from "../src/page-builder/source-tree";
@@ -96,6 +96,39 @@ test("remembered exclusions apply globally or per row; unticked-only rows stay v
   assert.equal(only.count, 0);
   assert.equal(only.totals["bring-in"], 0);
   assert.ok(only.rows[0].pictures[0].changes.includes("bring-in"));
+});
+
+test("leave alone everywhere (slice 118): one rule skips the picture in every row; ticking it in a row lifts it", () => {
+  const none = parseMediaRecords(undefined);
+  // A row-only untick folds into the everywhere entry, which every row reads.
+  const here = leavePictureAlone(none, "images/a.jpg", "one/index.html", true);
+  assert.equal(pictureLeftAlone(here, "images/a.jpg", "one/index.html"), "row");
+  assert.equal(pictureLeftAlone(here, "images/a.jpg", "two/index.html"), undefined);
+  const everywhere = leavePictureAlone(here, "images/a.jpg", undefined, true);
+  assert.deepEqual(everywhere.leftAsIs, [{ picture: "images/a.jpg" }]);
+  for (const row of ["one/index.html", "two/index.html", "components/x/x.html"]) assert.equal(pictureLeftAlone(everywhere, "images/a.jpg", row), "everywhere");
+  assert.equal(pictureLeftAlone(everywhere, "images/b.jpg", "one/index.html"), undefined);
+  assert.equal(leavePictureAlone(everywhere, "images/a.jpg", undefined, true), everywhere);
+  // Ticking it again in one row undoes it everywhere; other pictures' and rows' entries stay.
+  const mixed = leavePictureAlone(leavePictureAlone(everywhere, "images/b.jpg", "one/index.html", true), "images/a.jpg", "three/index.html", true);
+  const ticked = leavePictureAlone(mixed, "images/a.jpg", "two/index.html", false);
+  assert.deepEqual(ticked.leftAsIs, [{ picture: "images/b.jpg", row: "one/index.html" }, { picture: "images/a.jpg", row: "three/index.html" }]);
+  assert.deepEqual(leavePictureAlone(mixed, "images/a.jpg", undefined, false).leftAsIs, [{ picture: "images/b.jpg", row: "one/index.html" }]);
+  assert.equal(leavePictureAlone(none, "images/a.jpg", "one/index.html", false), none);
+
+  // The plan reads the same rule: a picture on two pages is skipped on both, the rows stay listed with nothing to fix.
+  const page = (title: string) => `<title>${title}</title><img src="/images/a.jpg">`;
+  const plan = (records = none) => improveImagesPlan({ sources: { "one/index.html": page("One"), "two/index.html": page("Two") }, pages: ["one/index.html", "two/index.html"],
+    components: {}, files: { "images/a.jpg": { size: 300_000, width: 3000, height: 2000 } }, records, site: { origins: ["https://own.example"] } });
+  assert.equal(plan().count, 2);
+  const left = plan(everywhere);
+  assert.equal(left.count, 0); assert.equal(left.rows.length, 2);
+  for (const row of left.rows) {
+    assert.deepEqual([row.pictures[0].ticked, row.pictures[0].leftAsIs, row.count], [false, "everywhere", 0]);
+    assert.ok(left.protectedRanges[row.file]?.length);
+  }
+  const rowOnly = plan(here);
+  assert.deepEqual(rowOnly.rows.map(row => [row.file, row.pictures[0].leftAsIs ?? null, row.count]), [["one/index.html", "row", 0], ["two/index.html", null, 1]]);
 });
 
 test("heavy threshold, recipes, BMP/TIFF, static and unknown GIF facts, missing facts and own origins", () => {

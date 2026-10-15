@@ -4,7 +4,7 @@ import { input } from "./media-library-fields";
 import { icon } from "../icons";
 import { OUTSIDE_PICTURE_LABELS } from "./outside-pictures";
 import type { ImproveImagesPlan, ImproveImagesRow, ImprovePicture } from "./improve-images";
-import { runMaps, type ImproveImagesSession, type LeftPicture, type RowOutcome } from "./improve-images-run";
+import { LEFT_ALONE, runMaps, type ImproveImagesSession, type LeftPicture, type RowOutcome } from "./improve-images-run";
 import { improvePictureLine, improvePictureName, improveProgress, improveRowLine, improveRowStatus, improveRunMessage, type ImproveRowState } from "./improve-images-words";
 import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 import type { MediaImproveEntry } from "./media-picker";
@@ -44,14 +44,25 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
   /** Still this screen: Back or another screen ends its redraws (a run or Undo still finishes). */
   const shown = () => h.alive() && sheet.element.dataset.mode === "improve";
 
+  /** The records the plan was read with: an Undo from the editor that changes them reads the plan again. */
+  let records: string | undefined;
   async function load() {
     session ??= await h.adapter.improveImages!();
+    records = await session.records();
     plan = await planWithPictureSizes(session, m.known, path => h.cache.get(path), (done, total) => {
       reading = `Reading pictures: ${done} of ${total}`; if (shown() && !plan) draw(false);
     });
     h.improve.known(m.known);
   }
   const reload = () => h.task(async () => { await load(); if (shown()) draw(false); }, false);
+  const refocus = () => {
+    const active = document.activeElement;
+    draw(active instanceof HTMLElement && sheet.element.contains(active) ? active.dataset.focusKey ?? false : false);
+  };
+  const recheck = () => h.task(async () => {
+    if (!session || !plan || running || await session.records() === records) return;
+    await load(); if (shown() && !running) refocus();
+  }, false);
 
   function draw(focus: boolean | string = true) {
     const { element } = sheet;
@@ -64,8 +75,8 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
     const version = sheet.version;
     sheet.redraw = () => {
       if (version !== sheet.version) return;
-      const active = document.activeElement;
-      draw(active instanceof HTMLElement && element.contains(active) ? active.dataset.focusKey ?? false : false);
+      refocus();
+      if (!running) void recheck();
     };
     const { title } = sheetHead(element, "Improve images", () => h.close(), plan?.rows.length ? "Open a row to choose which pictures change." : undefined);
     drawUndo();
@@ -150,8 +161,10 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         words.append(name, node("span", "media-library__muted", improvePictureLine(picture)));
         const left = m.left.get(row.file)?.get(picture.key);
         if (left && picture.ticked) words.append(drawLeft(row, picture, left));
+        const tickKey = `tick:${row.file}:${picture.key}`;
+        words.append(drawEverywhere(picture, tickKey));
         const tick = input(`Improve ${improvePictureName(picture)}`, "checkbox"); tick.checked = picture.ticked;
-        tick.dataset.focusKey = `tick:${row.file}:${picture.key}`;
+        tick.dataset.focusKey = tickKey;
         tick.addEventListener("change", () => void h.task(async () => {
           await session!.leftAsIs({ picture: picture.key, row: row.file }, !tick.checked);
           await load(); if (shown()) draw(tick.dataset.focusKey!);
@@ -163,6 +176,21 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
       box.append(list);
       if (row.leftAlone.length) box.append(node("p", "media-library__muted", row.leftAlone.length === 1 ? "1 more picture stays as it is: a script, sample code or structured data uses it." : `${row.leftAlone.length} more pictures stay as they are: scripts, sample code or structured data use them.`));
       return box;
+    }
+
+    /** "Leave alone everywhere" (Lex, audit Q4): every row and agents' runs skip the picture; its tick undoes it. */
+    function drawEverywhere(picture: ImprovePicture, tickKey: string) {
+      if (picture.leftAsIs === "everywhere") {
+        const line = node("span", "media-improve__left");
+        line.append(node("span", "media-improve__reason", "Left alone everywhere"));
+        return line;
+      }
+      const leave = button("Leave alone everywhere", () => void h.task(async () => {
+        await session!.leftAsIs({ picture: picture.key }, true);
+        await load(); if (shown()) draw(tickKey);
+      }), "text-button media-improve__everywhere");
+      leave.setAttribute("aria-label", `Leave ${improvePictureName(picture)} alone everywhere`);
+      return leave;
     }
 
     /** "website gone" or "not allowed", and Lex's own copy in its place. */
@@ -204,7 +232,8 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
             const outcome = await session!.row({ row: file, known: m.known, maps: m.maps, signal: abort.signal, own: m.own, measure, siteUrl: h.improve.url() });
             if (outcome.changed) { m.outcomes.push(outcome); changed++; }
             m.states.set(file, { state: outcome.changed ? "done" : "unchanged", ...outcome.notes.length ? { notes: [...new Set(outcome.notes)] } : {} });
-            m.left.set(file, new Map(outcome.left.map(item => [item.key, item])));
+            // Pictures left alone show by their tick, not as "not changed".
+            m.left.set(file, new Map(outcome.left.filter(item => item.reason !== LEFT_ALONE).map(item => [item.key, item])));
             for (const picture of row?.pictures ?? []) m.own.delete(picture.key);
           } catch (error) {
             if (abort.signal.aborted || error instanceof DOMException && error.name === "AbortError") break;

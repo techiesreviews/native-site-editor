@@ -1,6 +1,6 @@
 import { rootRoute } from "../../shared/site-path-prefix";
 import { parseOnlineVideoAddress } from "./online-video";
-import type { MediaRecords } from "../../shared/media-records";
+import { setPictureLeftAsIs, type MediaRecords } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaAttribute } from "./media-attributes";
@@ -20,8 +20,25 @@ export interface ImprovePicture {
   kind: "image" | "svg" | "gif" | "outside" | "youtube" | "vimeo" | "sharing";
   tag: { start: number; end: number }; link?: string; adopted?: string[]; videoId?: string;
   changes: ImproveChange[]; ticked: boolean;
+  /** Lex left it alone: everywhere, or in this row only (then `ticked` is false). */
+  leftAsIs?: PictureLeftAlone;
 }
 type Counts = Record<ImproveChange, number>;
+export type PictureLeftAlone = "everywhere" | "row";
+
+/** The skip rule the screen, the run and agents share: is this picture left alone in this row, and how? */
+export function pictureLeftAlone(records: MediaRecords, picture: string, row: string): PictureLeftAlone | undefined {
+  const entries = records.leftAsIs?.filter(item => item.picture === picture) ?? [];
+  return entries.some(item => item.row === undefined) ? "everywhere" : entries.some(item => item.row === row) ? "row" : undefined;
+}
+/** Leave a picture alone in one row, or everywhere (no `row`; its row entries fold into it), or
+ * improve it again: ticking it in a row lifts that row's entry and an "everywhere" one. */
+export function leavePictureAlone(records: MediaRecords, picture: string, row: string | undefined, on: boolean): MediaRecords {
+  if (on && row !== undefined) return setPictureLeftAsIs(records, { picture, row }, true);
+  const rows = records.leftAsIs?.filter(item => item.picture === picture && item.row !== undefined && (on || row === undefined || item.row === row)) ?? [];
+  const next = rows.reduce((out, item) => setPictureLeftAsIs(out, item, false), records);
+  return setPictureLeftAsIs(next, { picture }, on);
+}
 export interface ImproveImagesRow {
   kind: "page" | "component"; file: string; label: string; reach?: number; pages: string[];
   pictures: ImprovePicture[]; leftAlone: { address: string; reason: LeftReason }[];
@@ -193,9 +210,9 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
             if (attribute(source, node, "loading") === undefined && attribute(source, node, "sizes") === undefined) changes.push("loading");
           }
         }
-        const key = path ?? url!;
-        if (records.leftAsIs?.some(item => item.picture === key && (item.row === undefined || item.row === file))) protect(node.parent?.name === "picture" ? node.parent : node);
-        row.pictures.push({ key, address, ...(path ? { path } : { url, host: new URL(url!).host }), kind: video?.kind ?? (node.name === "meta" ? "sharing" : svg ? "svg" : path ? gif ? "gif" : "image" : "outside"), tag: { start: node.tag.start, end: node.tag.end }, link: parents.find(n => n.name === "a") ? attribute(source, parents.find(n => n.name === "a")!, "href") : undefined, ...(adopted?.length ? { adopted } : {}), ...(video ? { videoId: video.videoId } : {}), changes, ticked: !records.leftAsIs?.some(item => item.picture === key && (item.row === undefined || item.row === file)) });
+        const key = path ?? url!, left = pictureLeftAlone(records, key, file);
+        if (left) protect(node.parent?.name === "picture" ? node.parent : node);
+        row.pictures.push({ key, address, ...(path ? { path } : { url, host: new URL(url!).host }), kind: video?.kind ?? (node.name === "meta" ? "sharing" : svg ? "svg" : path ? gif ? "gif" : "image" : "outside"), tag: { start: node.tag.start, end: node.tag.end }, link: parents.find(n => n.name === "a") ? attribute(source, parents.find(n => n.name === "a")!, "href") : undefined, ...(adopted?.length ? { adopted } : {}), ...(video ? { videoId: video.videoId } : {}), changes, ticked: !left, ...(left ? { leftAsIs: left } : {}) });
       }
     }
     // Unknown facts are listed even when nothing else on the row changes yet.

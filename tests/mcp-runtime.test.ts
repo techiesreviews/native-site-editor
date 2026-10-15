@@ -2100,6 +2100,27 @@ test("agent Improve images leaves outside GIFs and players for Lex, respects unt
   await unticked.run("index.html"); assert.equal(unticked.batches.length, 0);
 });
 
+test("agent Improve images skips a picture left alone everywhere on every row and lists it as left alone (slice 118)", async () => {
+  // The heavy picture is on the home page and in the hero component: one entry leaves it alone in both.
+  const fixture = improveAgentFixture('<img src="/images/heavy.jpg">');
+  const records = JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs: [{ picture: "images/heavy.jpg" }] });
+  fixture.text.set(MEDIA_RECORDS_PATH, records);
+  const outcome = await fixture.run();
+  const report = JSON.parse(outcome!.result.report);
+  assert.equal(fixture.batches.length, 0);
+  assert.deepEqual(report.rows.map((row: { file: string; changed: boolean }) => [row.file, row.changed]), [["components/hero/hero.html", false], ["index.html", false]]);
+  for (const row of report.rows) assert.deepEqual(row.left, [{ key: "images/heavy.jpg", address: "/images/heavy.jpg", reason: "left-alone", note: "Left alone everywhere by the user." }]);
+  assert.equal(report.leftAlone, 1); assert.equal(report.changed, 0);
+  assert.match(outcome!.message, /Nothing was written/);
+  assert.equal(fixture.text.get(MEDIA_RECORDS_PATH), records);
+  // A one-row untick is listed only in that row; the other row is improved.
+  const one = improveAgentFixture('<img src="/images/heavy.jpg">');
+  one.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs: [{ picture: "images/heavy.jpg", row: "index.html" }] }));
+  const oneReport = JSON.parse((await one.run())!.result.report);
+  assert.deepEqual(oneReport.rows.map((row: { file: string; changed: boolean; left: { note?: string }[] }) => [row.file, row.changed, row.left.map(left => left.note)]),
+    [["components/hero/hero.html", true, []], ["index.html", false, ["Left alone in this file by the user."]]]);
+});
+
 test("agent Improve images stops on revision changes without saving a partial row, and continues ordinary failures", async () => {
   const fixture = improveAgentFixture();
   fixture.onEncode(fixture.stop);

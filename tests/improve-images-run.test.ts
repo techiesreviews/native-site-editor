@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { improveRow, revertJson, runMaps, stagingContext, undoRows, type ImproveRowPorts, type KnownSizes } from "../src/page-builder/improve-images-run";
+import { improveImagesSession, improveRow, revertJson, runMaps, stagingContext, undoRows, type ImproveRowPorts, type KnownSizes } from "../src/page-builder/improve-images-run";
 import { applyMediaWorkspaceBatch, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords } from "../shared/media-records";
 import { readSource } from "../src/page-builder/source-tree";
@@ -232,4 +232,25 @@ test("Undo proves every page it read for other uses", async () => {
   const count = svg.batches.length;
   await undoRows(svg.ctx, [fixed]);
   assert.ok(svg.batches[count].expectedAssets.has("images/logo.svg"));
+});
+
+test("leave alone everywhere is one Undo step on the records; the screen's rows then skip it and ticking it again lifts it (slice 118)", async () => {
+  const s = site({ "one/index.html": `<title>One</title><img src="/images/heavy.jpg">`, "two/index.html": `<title>Two</title><img src="/images/heavy.jpg">` });
+  const session = improveImagesSession(async () => s.ctx);
+  await session.leftAsIs({ picture: "images/heavy.jpg", row: "one/index.html" }, true);
+  await session.leftAsIs({ picture: "images/heavy.jpg" }, true);
+  assert.deepEqual(s.batches.map(batch => [batch.label, [...batch.edits.keys()], batch.uploads.length, batch.deletes.length]),
+    [["Leave a picture as it is", [MEDIA_RECORDS_PATH], 0, 0], ["Leave a picture alone everywhere", [MEDIA_RECORDS_PATH], 0, 0]]);
+  assert.deepEqual(parseMediaRecords(s.text.get(MEDIA_RECORDS_PATH)).leftAsIs, [{ picture: "images/heavy.jpg" }]);
+  const plan = await session.plan({ "images/heavy.jpg": { width: 3000, height: 2000 } });
+  assert.deepEqual(plan.rows.map(row => [row.file, row.count, row.pictures[0].leftAsIs]), [["one/index.html", 0, "everywhere"], ["two/index.html", 0, "everywhere"]]);
+  // Fixing a row writes nothing and lists the picture as left alone.
+  const outcome = await s.row("two/index.html");
+  assert.equal(outcome.changed, false); assert.equal(s.batches.length, 2);
+  assert.deepEqual(outcome.left.map(left => left.reason), ["left-alone"]);
+  // Ticking it again on one page undoes it everywhere, as one more step.
+  await session.leftAsIs({ picture: "images/heavy.jpg", row: "two/index.html" }, false);
+  assert.equal(s.batches.at(-1)!.label, "Improve a picture again");
+  assert.equal(parseMediaRecords(s.text.get(MEDIA_RECORDS_PATH)).leftAsIs, undefined);
+  assert.equal((await session.plan({ "images/heavy.jpg": { width: 3000, height: 2000 } })).count, 2);
 });
