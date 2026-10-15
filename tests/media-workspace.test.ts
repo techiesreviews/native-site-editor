@@ -1140,3 +1140,23 @@ test("To check lists agent-written subtitles: OK clears the mark, Edit saves Lex
   assert.equal(f.batches[1].label, "Subtitles checked"); assert.equal(f.batches[1].uploads.length, 0);
   assert.equal((await f.host.load()).toCheck!.some(entry => entry.subtitles), false);
 });
+
+test("subtitles and a moment's still are refused when another file shares the name, so nothing is left without a family", async () => {
+  const f = videoSite({});
+  for (const path of ["media/videos/clip.mp3", "media/videos/clip.pdf"]) { f.paths.add(path); f.bytes.set(path, new Blob([path])); f.versions.set(path, `${path}-v1`); }
+  f.paths.delete("media/videos/clip.webp"); f.bytes.delete("media/videos/clip.webp"); f.versions.delete("media/videos/clip.webp");
+  await f.host.load();
+  await assert.rejects(f.host.subtitles("media/videos/clip.mp4", { name: "clip.srt", text: SRT }), /Another file is named like clip.mp4/);
+  await assert.rejects(f.host.still("media/videos/clip.mp4", { blob: new Blob(["moment"], { type: "image/webp" }) }), /Another file is named like clip.mp4/);
+  assert.equal(f.batches.length, 0);
+});
+
+test("the site's own full address is a placed copy too: its poster and track change", async () => {
+  const f = videoSite(); f.context.origins = ["https://example.com"];
+  f.text.set("index.html", '<video src="https://example.com/media/videos/clip.mp4"></video><video src="https://cdn.example.org/media/videos/clip.mp4"></video>');
+  await f.host.load();
+  await f.host.still("media/videos/clip.mp4", { path: "media/photos/sky.webp" });
+  await f.host.load();
+  await f.host.subtitles("media/videos/clip.mp4", { name: "clip.srt", text: SRT });
+  assert.equal(f.text.get("index.html"), '<video src="https://example.com/media/videos/clip.mp4" poster="/media/photos/sky.webp"><track kind="subtitles" src="/media/videos/clip.vtt" label="Subtitles"></video><video src="https://cdn.example.org/media/videos/clip.mp4"></video>');
+});

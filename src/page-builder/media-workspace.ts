@@ -876,6 +876,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
           // Only the video's own still is replaced, never another picture that has its name.
           if (mediaFamilyOf(video, batch.expectedPaths)?.still !== path) throw new Error(`${path.split("/").pop()} is another picture, so the moment could not be saved beside the video.`);
           assetGuard(batch, [path]); batch.overwrites = [path];
+        } else if (mediaFamilyOf(video, [...batch.expectedPaths, path])?.still !== path) {
+          // Another file with the video's name (a PDF) would make the new picture nobody's still.
+          throw new Error(`Another file is named like ${video.split("/").pop()}, so its still picture could not join it. Rename one of them first.`);
         }
         batch.uploads.push({ path, blob: still.blob });
       } else {
@@ -883,9 +886,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         assetGuard(batch, [path]);
         if (mediaKind(path) !== "image") throw new Error("Choose a picture for the still.");
       }
+      const site = { origins: ctx.origins ?? [] };
       for (const [page, source] of Object.entries(text)) {
         if (!/\.html$/i.test(page)) continue;
-        const next = setPosterInPage(source, page, video, path);
+        const next = setPosterInPage(source, page, video, path, site);
         if (next !== source) batch.edits.set(page, next);
       }
       recordsEdit(batch, metadata, { ...metadata, files: { ...metadata.files, [video]: { ...metadata.files[video], still: path } } });
@@ -901,6 +905,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const { subtitles: before, subtitlesByAgent: _, ...record } = metadata.files[media] ?? {};
       const family = mediaFamilyOf(media, batch.expectedPaths)?.subtitles ?? [];
       const current = before && batch.expectedPaths.includes(before) ? before : family.find(path => /\.vtt$/i.test(path));
+      const site = { origins: ctx.origins ?? [] };
       const pages = (edit: (source: string, page: string) => string) => {
         for (const [page, source] of Object.entries(text)) {
           if (!/\.html$/i.test(page)) continue;
@@ -916,16 +921,19 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         if (batch.expectedPaths.includes(path)) {
           if (!family.includes(path)) throw new Error(`${path.split("/").pop()} belongs to another file, so the subtitles could not be saved beside this one.`);
           assetGuard(batch, [path]); batch.overwrites = [path]; batch.label = "Replace subtitles";
+        } else if (!mediaFamilyOf(media, [...batch.expectedPaths, path])?.subtitles.includes(path)) {
+          // A video and an audio file with one name: new subtitles would be neither file's, so none are made.
+          throw new Error(`Another file is named like ${media.split("/").pop()}, so subtitles could not join it. Rename one of them first.`);
         }
         batch.uploads.push({ path, blob: new Blob([read.vtt], { type: "text/vtt" }) });
         // Subtitles the file had under another name stop showing; that file stays.
-        if (current && current !== path) pages((source, page) => rules.removeTrackInPage(source, page, current));
-        pages((source, page) => rules.addTrackInPage(source, page, media, path));
+        if (current && current !== path) pages((source, page) => rules.removeTrackInPage(source, page, current, site));
+        pages((source, page) => rules.addTrackInPage(source, page, media, path, site));
         next = { ...metadata, files: { ...metadata.files, [media]: { ...record, subtitles: path } } };
       } else {
         if (!current) return;
         assetGuard(batch, [current]); batch.deletes.push(current);
-        pages((source, page) => rules.removeTrackInPage(source, page, current));
+        pages((source, page) => rules.removeTrackInPage(source, page, current, site));
         next = { ...metadata, files: { ...metadata.files, [media]: record } };
         if (!Object.keys(record).length) delete next.files[media];
       }

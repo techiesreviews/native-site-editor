@@ -84,3 +84,17 @@ test("tiles and details show a still picture chosen from Media while it is in th
   assert.equal(mediaTileStills(paths, { "media/videos/a.mp4": { still: "media/photos/b.webp" } }).get("media/videos/a.mp4"), "media/photos/b.webp");
   assert.equal(mediaTileStills(paths, { "media/videos/a.mp4": { still: "media/photos/gone.webp" } }).get("media/videos/a.mp4"), "media/videos/a.webp");
 });
+
+test("the site's own full addresses count as its files; other sites' files stay as they are", () => {
+  const site = { origins: ["https://example.com"] };
+  const page = '<video src="https://example.com/media/a.mp4"></video><video src="https://elsewhere.org/media/a.mp4"></video>' +
+    '<audio><source src="https://example.com/media/a.mp4"><track kind="subtitles" src="https://example.com/media/a.vtt"></audio>';
+  assert.equal(mediaPlayers(page, "index.html", "media/a.mp4").length, 0);
+  assert.equal(mediaPlayers(page, "index.html", "media/a.mp4", site).length, 2);
+  assert.equal(setPosterInPage(page, "index.html", "media/a.mp4", "media/a.webp", site),
+    page.replace('<video src="https://example.com/media/a.mp4">', '<video src="https://example.com/media/a.mp4" poster="/media/a.webp">'));
+  const tracked = addTrackInPage(page, "index.html", "media/a.mp4", "media/a.vtt", site);
+  assert.equal(tracked, page.replace('<video src="https://example.com/media/a.mp4">', '<video src="https://example.com/media/a.mp4"><track kind="subtitles" src="/media/a.vtt" label="Subtitles">'));
+  assert.equal(removeTrackInPage(tracked, "index.html", "media/a.vtt", site),
+    '<video src="https://example.com/media/a.mp4"></video><video src="https://elsewhere.org/media/a.mp4"></video><audio><source src="https://example.com/media/a.mp4"></audio>');
+});
