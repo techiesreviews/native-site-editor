@@ -313,3 +313,71 @@ test("adjacent pictures: only the replaced image's picture is unwrapped, and bot
   assert.equal(both.edits.get("index.html"), `<img src="/${path}?v=${await mainHash}">\n<img class="b" src="/${path}?v=${await mainHash}">`);
   assert.deepEqual(both.artDirected, ["index.html"]);
 });
+
+for (const extension of ["avif", "webp"]) test(`sharing tags follow a ${extension} replacement while other mentions keep the main`, async () => {
+  const social = "media/images/photo-social.jpg", sharing = "media/images/photo-sharing.jpg";
+  const oldMain = "media/images/photo.avif";
+  const ownRecords: MediaRecords = { version: 2, collections: [], files: {
+    [sharing]: { sharing: true }, [social]: { sharing: true, trimmedFrom: { source: oldMain, trim: { x: 0, y: 0, width: 1, height: 1 } } },
+  } };
+  const names = ["og:image", "og:image:url", "og:image:secure_url", "twitter:image"];
+  const source = names.map((name, index) => `<meta ${index % 2 ? "name" : "property"}="${name}" content="/${[oldMain, sharing, "media/images/photo-480.avif", social][index]}">`).join("")
+    + '<meta property="og:image" content="/' + oldMain + '"><meta property="og:image:type" content="image/avif"><meta name="og:image:width" content="1"><meta property="og:image:height" content="2">'
+    + `<meta property="og:image" content="https://outside.test/${oldMain}"><meta property="og:image:type" content="outside"><img src="/${oldMain}"><script type="application/ld+json">{"image":"/${oldMain}"}</script>`;
+  const p = await plan({ "index.html": source }, {
+    request: { path: oldMain, result: result(extension) }, records: ownRecords,
+    paths: [oldMain, sharing, "media/images/photo-480.avif", social], sharing: { blob: new Blob(["jpeg"], { type: "image/jpeg" }) },
+    siteUrl: "https://site.test/blog/", versions: new Map([[sharing, "12345678"], ["media/images/photo." + extension, "abcdef12"]]),
+  });
+  const text = p.edits.get("index.html")!;
+  assert.equal(text.split('content="https://site.test/blog/' + sharing + '?v=12345678"').length - 1, 5);
+  assert.match(text, /content="image\/jpeg"/);
+  assert.match(text, /og:image:width" content="800"/);
+  assert.match(text, /og:image:height" content="400"/);
+  assert.ok(text.includes('content="https://outside.test/' + oldMain + '"'));
+  assert.ok(text.includes('og:image:type" content="outside"'));
+  assert.ok(text.includes('<img src="/media/images/photo.' + extension + '?v=abcdef12">'));
+  assert.ok(text.includes('{"image":"/media/images/photo.' + extension + '?v=abcdef12"}'));
+  assert.equal(p.records.files[sharing].sharing, true);
+  assert.ok(p.uploads.some(upload => upload.path === sharing));
+  assert.equal(p.family.includes(sharing), true);
+});
+
+for (const extension of ["png", "jpg"]) test(`${extension} replacement updates sharing details without encoding a JPEG`, async () => {
+  const p = await plan({ "index.html": `<meta name="og:image" content="/${path}"><meta name="og:image:type" content="image/webp"><meta name="og:image:width" content="1"><meta name="og:image:height" content="2">` },
+    { request: { path, result: result(extension) } });
+  assert.equal(p.sharingNeeded, false);
+  assert.equal(p.uploads.length, 2);
+  assert.match(p.edits.get("index.html")!, new RegExp('content="image/' + (extension === "jpg" ? "jpeg" : extension) + '"'));
+  assert.match(p.edits.get("index.html")!, /og:image:height" content="400"/);
+});
+
+test("a sharing JPEG name occupied outside the old family refuses; no sharing tag needs no JPEG", async () => {
+  const sharing = "media/images/photo-sharing.jpg";
+  const extra = { request: { path, result: result("webp") }, paths: [...paths, sharing], sharing: { blob: new Blob(["jpeg"]) } };
+  await assert.rejects(plan({ "index.html": `<meta property="og:image" content="/${path}">` }, extra), /photo-sharing.jpg is taken. Nothing was replaced./);
+  const p = await plan({ "index.html": `<img src="/${path}">` }, extra);
+  assert.equal(p.sharingNeeded, false); assert.equal(p.uploads.length, 2);
+});
+
+test("sample sharing markup and another attribute on an outside meta keep ordinary rewrite rules", async () => {
+  const source = `<pre><meta property="og:image" content="/${path}"><meta property="og:image:type" content="sample"></pre><template><meta name="twitter:image" content="/${path}"></template><meta property="og:image" content="https://outside.test/photo.jpg" data-image="/${path}">`;
+  const p = await plan({ "index.html": source }, { request: { path, result: result("webp") } });
+  assert.equal(p.sharingNeeded, false);
+  assert.equal(p.uploads.length, 2);
+  assert.ok(p.edits.get("index.html")!.includes('content="/media/images/photo.webp?v=' + await mainHash + '"'));
+  assert.ok(p.edits.get("index.html")!.includes('og:image:type" content="sample"'));
+  assert.ok(p.edits.get("index.html")!.includes('content="https://outside.test/photo.jpg"'));
+});
+
+test("a PNG replacement removes the old family's sharing JPEG and repoints its tags to the main", async () => {
+  const old = "media/images/photo.webp", sharing = "media/images/photo-sharing.jpg";
+  const p = await plan({ "index.html": `<meta property="og:image" content="/${sharing}"><meta property="og:image:type" content="image/jpeg">` }, {
+    request: { path: old, result: result("png") }, paths: [old, sharing], records: { version: 2, collections: [], files: { [sharing]: { sharing: true } } },
+  });
+  assert.equal(p.sharingNeeded, false);
+  assert.ok(p.deletes.includes(sharing));
+  assert.equal(p.records.files[sharing], undefined);
+  assert.match(p.edits.get("index.html")!, /content="\/media\/images\/photo.png\?v=[a-f0-9]{8}"/);
+  assert.match(p.edits.get("index.html")!, /content="image\/png"/);
+});

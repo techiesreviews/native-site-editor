@@ -1,3 +1,4 @@
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { mediaKind } from "./media-library-filter";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
 import { startTags, startTagAttribute } from "../../shared/html-source";
@@ -491,7 +492,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (plan.removes.length) await sweep(ctx);
     return path;
   };
-  const replace = async (request: MediaReplaceRequest, agent = false) => {
+  const replace = async (request: MediaReplaceRequest, agent = false, ports: { encode?: typeof import("./media-optimise").optimiseMedia } = {}) => {
     const ctx = active();
     if (!ctx.items.some(item => item.path === request.path)) throw new Error("Choose an image Media file to replace.");
     // Capture every binary proof before the first read, including trims discovered in records later.
@@ -515,6 +516,14 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (batch.expectedSources.has("_redirects") ? batch.expectedSources.get("_redirects") !== redirects : redirects !== undefined)
       throw new Error("_redirects changed while preparing image changes. No image changes were applied.");
     batch.expectedSources.set("_redirects", redirects);
+    const config = await ctx.read(NATIVE_CONFIG_PATH);
+    ctx.assertLive();
+    if (batch.expectedSources.has(NATIVE_CONFIG_PATH) && batch.expectedSources.get(NATIVE_CONFIG_PATH) !== config)
+      throw new Error("Site settings changed while preparing image changes. Nothing was replaced.");
+    batch.expectedSources.set(NATIVE_CONFIG_PATH, config);
+    const siteUrl = nativeSiteSettings(config).url;
+    const { mediaOwnOrigins } = await import("./media-origins");
+    ctx.assertLive();
     const dimensions = new Map<string, { width: number; height: number }>();
     for (const trim of affected.trims) {
       const size = replacementImageSize(new Uint8Array(await (await ctx.blob(trim)).arrayBuffer()));
@@ -523,8 +532,25 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     }
     // A provisional pure plan validates names and outputs before hashing or preserving browser bytes.
     const input = { request, paths: batch.expectedPaths, sources: { ...text, _redirects: redirects }, records: metadata,
-      dimensions, site: { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components } };
-    const provisional = planMediaReplace({ ...input, versions: new Map() });
+      dimensions, siteUrl, site: { origins: [...ctx.origins ?? [], ...mediaOwnOrigins(siteUrl)], pages: ctx.pages, components: ctx.components } };
+    let provisional = planMediaReplace({ ...input, versions: new Map() });
+    let sharing: { blob: Blob } | undefined;
+    if (provisional.sharingNeeded) {
+      const { encodeSharingJpeg } = await import("./sharing-jpeg");
+      const encode = ports.encode ?? (await import("./media-optimise")).optimiseMedia;
+      ctx.assertLive();
+      const main = request.result.outputs[0];
+      const original = request.original;
+      const guard = () => {
+        ctx.assertLive();
+        if (request.live?.() === false) throw new Error("Cancelled. Nothing was replaced.");
+      };
+      sharing = await encodeSharingJpeg({ blob: original?.blob ?? main.blob,
+        source: original ? "original." + original.extension : provisional.main,
+        width: main.width!, height: main.height!, maxWidth: main.width!, encode, guard,
+        error: "The sharing picture could not be prepared as a JPEG at the new picture's size. Nothing was replaced." });
+      provisional = planMediaReplace({ ...input, sharing, versions: new Map() });
+    }
     const hashes = new Map<string, string>();
     for (const upload of provisional.uploads) {
       if (request.original && upload.blob === request.original.blob) {
@@ -535,7 +561,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       hashes.set(upload.path, (await gitBlobSha(new Uint8Array(await upload.blob.arrayBuffer()))).slice(0, 8));
       ctx.assertLive();
     }
-    const plan = planMediaReplace({ ...input, versions: hashes });
+    const plan = planMediaReplace({ ...input, sharing, versions: hashes });
     for (const [file, source] of plan.edits) batch.edits.set(file, source);
     const edited = { ...text, ...Object.fromEntries(plan.edits) };
     const removed = [...plan.family];
@@ -556,6 +582,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     batch.overwrites = plan.uploads.filter(upload => batch.expectedPaths.includes(upload.path)).map(upload => upload.path);
     for (const upload of plan.uploads) if (!batch.expectedAssets.has(upload.path)) batch.expectedAssets.set(upload.path, versions.get(upload.path));
     await commit(ctx, batch);
+    for (const note of plan.notes) request.notice?.(note);
     if (plan.artDirected.length) request.notice?.("The new picture is now used on all screens.");
     await sweep(ctx);
     return plan.main;
@@ -1006,5 +1033,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean, ports?: { encode?: typeof import("./media-optimise").optimiseMedia }): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }

@@ -1,3 +1,5 @@
+import { isSharingImage, sharingJpegPath, sharingMetaName, sharingImageDetail } from "./sharing-jpeg";
+import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
 import { mediaPictureUnwrap, mediaEscape } from "./media-markup";
 import { readSource } from "./source-tree";
 import { startTags, startTagAttribute } from "../../shared/html-source";
@@ -64,10 +66,20 @@ export function replacementImageSize(bytes: Uint8Array): { width: number; height
 interface ReplaceInput {
   request: MediaReplaceRequest; paths: string[]; sources: Record<string, string | undefined>; records: MediaRecords;
   versions: ReadonlyMap<string, string>; dimensions?: ReadonlyMap<string, { width: number; height: number }>;
-  site?: RenameInput["site"];
+  site?: RenameInput["site"]; siteUrl?: string; sharing?: { blob: Blob };
 }
 interface Edit { start: number; end: number; text: string }
 const apply = (source: string, edits: Edit[]) => edits.sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+
+/** Sample markup and inert template content keep the ordinary mention-rewrite rules. */
+function replacementMetaTags(source: string) {
+  return readSource(source).elements().flatMap(element => {
+    if (element.type !== "element" || element.name !== "meta") return [];
+    for (let parent = element.parent; parent; parent = parent.parent)
+      if (["pre", "code", "samp", "kbd", "xmp", "textarea", "noscript", "template"].includes(parent.name)) return [];
+    return [element.tag];
+  });
+}
 
 /** Pure plan: pixels and proofs are supplied by the workspace; this never mutates records or storage. */
 export function planMediaReplace(input: ReplaceInput) {
@@ -91,15 +103,6 @@ export function planMediaReplace(input: ReplaceInput) {
     if (!/^[a-z0-9]+$/i.test(original.extension)) throw new Error("The original must use a supported file extension.");
     uploads.push({ path: mediaOriginalPath(main, original.extension), blob: original.blob });
   }
-  for (const upload of uploads) {
-    const problem = uploadProblem({ name: upload.path, size: upload.blob.size });
-    if (problem) throw new Error(problem);
-    if (paths.some(file => file.startsWith(upload.path + "/")) || paths.includes(upload.path) && !family.includes(upload.path)) throw new Error(`${upload.path} is taken. Nothing was replaced.`);
-    for (let folder = upload.path.slice(0, upload.path.lastIndexOf("/")); folder; folder = folder.slice(0, folder.lastIndexOf("/"))) {
-      if (paths.includes(folder)) throw new Error(`${folder} is a file, so it cannot contain uploaded files.`);
-      if (!folder.includes("/")) break;
-    }
-  }
   const mapping = new Map<string, string>([[path, main]]), missing = new Set<string>(), trimmed = new Map<string, string>();
   const mapFamily = (source: string, isTrim: boolean) => {
     const f = mediaFamilyOf(source, paths);
@@ -120,6 +123,29 @@ export function planMediaReplace(input: ReplaceInput) {
   rewriteMediaMentions(renameInput, mapping, { reference(file, start, end, path, attribute) {
     const list = refs.get(file) ?? []; list.push({ start, end, path, attribute }); refs.set(file, list);
   } });
+  const sharingTags = new Map<string, number[]>();
+  for (const [file, references] of refs) {
+    if (!/\.html?$/i.test(file)) continue;
+    const source = input.sources[file]!;
+    const indices = replacementMetaTags(source).flatMap((tag, index) => {
+      const content = startTagAttribute(source, tag, "content");
+      return isSharingImage(sharingMetaName(source, tag)) && content
+        && references.some(ref => ref.start >= content.valueStart && ref.end <= content.valueEnd) ? [index] : [];
+    });
+    if (indices.length) sharingTags.set(file, indices);
+  }
+  const sharingNeeded = sharingTags.size > 0 && /\.(?:avif|webp)$/i.test(main);
+  const sharingPath = sharingJpegPath(main);
+  if (sharingNeeded && input.sharing) uploads.push({ path: sharingPath, blob: input.sharing.blob });
+  for (const upload of uploads) {
+    const problem = uploadProblem({ name: upload.path, size: upload.blob.size });
+    if (problem) throw new Error(problem);
+    if (paths.some(file => file.startsWith(upload.path + "/")) || paths.includes(upload.path) && !family.includes(upload.path)) throw new Error(`${upload.path} is taken. Nothing was replaced.`);
+    for (let folder = upload.path.slice(0, upload.path.lastIndexOf("/")); folder; folder = folder.slice(0, folder.lastIndexOf("/"))) {
+      if (paths.includes(folder)) throw new Error(`${folder} is a file, so it cannot contain uploaded files.`);
+      if (!folder.includes("/")) break;
+    }
+  }
   const sources = { ...input.sources }, artDirected: string[] = [];
   for (const [file, references] of refs) {
     if (!/\.html?$/i.test(file)) continue;
@@ -186,6 +212,31 @@ export function planMediaReplace(input: ReplaceInput) {
   }
   const edits = rewriteMediaMentions({ ...renameInput, sources }, mapping, { versions });
   for (const [file, source] of Object.entries(sources)) if (source !== undefined && source !== input.sources[file] && !edits.has(file)) edits.set(file, source);
+  // Meta ordinals survive picture unwrapping; use the original reference proof to exclude outside tags.
+  for (const [file, indices] of sharingTags) {
+    const source = edits.get(file) ?? sources[file]!;
+    const changes: Edit[] = [];
+    let og: { width: number; height: number; type: string } | undefined;
+    for (const [index, tag] of replacementMetaTags(source).entries()) {
+      const name = sharingMetaName(source, tag);
+      let content: string | undefined;
+      if (isSharingImage(name)) {
+        if (name.startsWith("og:")) og = undefined;
+        if (indices.includes(index)) {
+          const type = sharingNeeded ? "image/jpeg" : /^jpe?g$/i.test(first.extension) ? "image/jpeg" : "image/" + first.extension.toLowerCase();
+          if (name.startsWith("og:")) og = { width: first.width!, height: first.height!, type };
+          if (sharingNeeded) {
+            content = socialImageAddress(input.siteUrl, sharingPath).address;
+            const version = versions.get(sharingPath);
+            if (version) content += "?v=" + version;
+          }
+        }
+      } else if (og) content = sharingImageDetail(name, og);
+      const attr = startTagAttribute(source, tag, "content");
+      if (content !== undefined && attr) changes.push({ start: attr.valueStart, end: attr.valueEnd, text: mediaEscape(content) });
+    }
+    if (changes.length) edits.set(file, apply(source, changes));
+  }
   // Existing destinations are mentions too: a visitor forwarded to the same address must get the new bytes.
   // New forwarding lines (type change) point at addresses no browser has cached, so they stay plain.
   let redirects = rewriteMediaRedirects(renameInput, mapping, { versions });
@@ -205,8 +256,9 @@ export function planMediaReplace(input: ReplaceInput) {
     if (to && to !== main && uploads.some(upload => upload.path === to)) next.files[to] = record;
   }
   for (const record of Object.values(next.files)) if (record.trimmedFrom && family.includes(record.trimmedFrom.source)) record.trimmedFrom.source = mapping.get(record.trimmedFrom.source)!;
+  if (sharingNeeded && input.sharing) next.files[sharingPath] = { ...records.files[sharingPath], sharing: true };
   const kept = alwaysKeptFiles(paths, new Set(Object.keys(records.files).filter(file => records.files[file].alwaysKeep)));
-  return { main, uploads, artDirected, deletes: family.filter(member => !uploads.some(upload => upload.path === member)), edits, records: next,
+  return { main, uploads, sharingNeeded, sharingPath, notes: sharingNeeded && socialImageAddress(input.siteUrl, sharingPath).missingAddress ? [SOCIAL_IMAGE_NOTE] : [], artDirected, deletes: family.filter(member => !uploads.some(upload => upload.path === member)), edits, records: next,
     family, trims: trims.map(main => ({ main, members: members(main), kept: kept.has(main) })) };
 }
 

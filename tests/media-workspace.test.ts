@@ -1160,3 +1160,68 @@ test("the site's own full address is a placed copy too: its poster and track cha
   await f.host.subtitles("media/videos/clip.mp4", { name: "clip.srt", text: SRT });
   assert.equal(f.text.get("index.html"), '<video src="https://example.com/media/videos/clip.mp4" poster="/media/photos/sky.webp"><track kind="subtitles" src="/media/videos/clip.vtt" label="Subtitles"></video><video src="https://cdn.example.org/media/videos/clip.mp4"></video>');
 });
+
+for (const extension of ["avif", "webp"]) for (const kept of [false, true]) test(`replace makes sharing JPEG from ${kept ? "kept original" : "new main"} for ${extension}, one batch and Undo`, async () => {
+  const f = fixture(), sharing = "images/a-sharing.jpg", old = extension === "avif" ? "images/a.avif" : "images/a.png";
+  if (old !== "images/a.png") {
+    f.paths.delete("images/a.png"); f.bytes.delete("images/a.png"); f.versions.delete("images/a.png");
+    f.paths.add(old); f.bytes.set(old, new Blob(["old avif"])); f.versions.set(old, "old-avif");
+    f.paths.add(sharing); f.bytes.set(sharing, new Blob(["old jpeg"])); f.versions.set(sharing, "old-jpeg");
+  }
+  f.text.set("index.html", `<meta property="og:image" content="/${old}"><meta property="og:image:type" content="image/png"><img src="/${old}">`);
+  const before = f.text.get("index.html");
+  const config = JSON.stringify({ site: { url: "https://site.test/blog/" } });
+  f.paths.add(".editor/config.json"); f.text.set(".editor/config.json", config);
+  const original = new Uint8Array([255, 216, 255, 218, 0, 2, 255, 217]);
+  const main = new Blob(["new main"], { type: "image/" + extension }), originalBlob = new Blob([original], { type: "image/jpeg" });
+  const jpeg = new Blob(["a larger sharing jpeg"], { type: "image/jpeg" });
+  let calls = 0;
+  await f.host.load();
+  await f.host.replace({ path: old, result: { before: 1, after: 1, outputs: [{ blob: main, extension, width: 800, height: 400 }] },
+    original: kept ? { blob: originalBlob, extension: "jpg" } : undefined }, false, {
+    async encode(file, options) {
+      calls++;
+      assert.deepEqual(new Uint8Array(await file.arrayBuffer()), new Uint8Array(await (kept ? originalBlob : main).arrayBuffer()));
+      assert.deepEqual(options, { maxWidth: 800, quality: 82, format: "jpeg", plainJpeg: true, responsive: false, keepOriginal: false });
+      return { before: 1, after: jpeg.size, outputs: [{ blob: jpeg, extension: "jpg", width: 800, height: 400 }] };
+    },
+  });
+  assert.equal(calls, 1); assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
+  assert.equal(f.batches[0].expectedSources.get(".editor/config.json"), config);
+  const hash = (await gitBlobSha(new Uint8Array(await jpeg.arrayBuffer()))).slice(0, 8);
+  assert.ok(f.text.get("index.html")!.includes('content="https://site.test/blog/images/a-sharing.jpg?v=' + hash + '"'));
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[sharing].sharing, true);
+  const loaded = await f.host.load();
+  const { mediaFamilyOf } = await import("../src/page-builder/media-families");
+  assert.equal(mediaFamilyOf("images/a." + extension, [...f.paths])?.sharing, sharing);
+  const entry = loaded.removed!.find(entry => entry.path === old)!;
+  if (old.endsWith(".avif")) {
+    assert.ok(f.batches[0].overwrites!.includes(sharing));
+    assert.ok(entry.family!.some(member => member.path === sharing));
+  }
+  f.history.pop()!();
+  assert.equal(f.text.get("index.html"), before);
+  assert.equal(f.paths.has(sharing), old.endsWith(".avif"));
+  if (old.endsWith(".avif")) assert.equal(await f.bytes.get(sharing)!.text(), "old jpeg");
+});
+
+test("replace without site address reports sharing note and refuses a config changed during encoding", async () => {
+  for (const race of [false, true]) {
+    const f = fixture(); await f.host.load();
+    f.text.set("index.html", '<meta name="twitter:image" content="/images/a.png">');
+    const notes: string[] = [];
+    const work = f.host.replace({ path: "images/a.png", result: { before: 1, after: 1, outputs: [{ blob: new Blob(["main"]), extension: "webp", width: 800, height: 400 }] }, notice: text => notes.push(text) }, false, {
+      async encode() {
+        if (race) f.text.set(".editor/config.json", '{"site":{"url":"https://changed.test"}}');
+        return { before: 1, after: 1, outputs: [{ blob: new Blob(["jpeg"], { type: "image/jpeg" }), extension: "jpg", width: 800, height: 400 }] };
+      },
+    });
+    if (race) { await assert.rejects(work, /changed while preparing/); assert.equal(f.history.length, 0); }
+    else {
+      await work;
+      assert.match(f.text.get("index.html")!, /content="\/images\/a-sharing.jpg\?v=[a-f0-9]{8}"/);
+      const { SOCIAL_IMAGE_NOTE } = await import("../src/page-builder/social-image");
+      assert.deepEqual(notes, [SOCIAL_IMAGE_NOTE]);
+    }
+  }
+});

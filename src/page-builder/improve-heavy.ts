@@ -1,4 +1,5 @@
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { encodeSharingJpeg, isSharingImage, sharingJpegPath, sharingImageDetail, sharingMetaName } from "./sharing-jpeg";
 import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
 import { improveImagesPlan } from "./improve-images";
 import { isMediaTextFile } from "./media-mentions";
@@ -198,14 +199,14 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
     let og: { path: string; width: number; height: number } | undefined;
     for (const [index, tag] of tags.entries()) if (tag.name === "meta") {
       if (skip.some(range => tag.start < range.end && tag.end > range.start)) continue;
-      const name = (startTagAttribute(source, tag, "property")?.value ?? startTagAttribute(source, tag, "name")?.value ?? "").toLowerCase();
+      const name = sharingMetaName(source, tag);
       const address = startTagAttribute(source, tag, "content")?.value;
       const old = address && mediaResolvePath(decodeHtmlEntities(address, true), file, site);
       const mapped = old && mapping.get(old);
       const lighter = mapped ? [...images].find(([, image]) => image.path === mapped || image.variants?.some(copy => copy.path === mapped)) : undefined;
       const main = lighter ? lighter[1].path : mapped;
       let content: string | undefined;
-      if (/^(?:og:image(?::url|:secure_url)?|twitter:image)$/.test(name)) {
+      if (isSharingImage(name)) {
         if (name === "og:image") og = undefined;
         if (old && main && /\.(?:avif|webp)$/i.test(main)) {
           skip.push(tag);
@@ -219,14 +220,13 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
               next.files[existing] = { ...next.files[existing], sharing: true };
             } else {
               const blob = await ctx.blob(original); guard();
-              const encoded = await (ports.encode ?? optimiseMedia)(new File([blob], original.split("/").at(-1)!, { type: blob.type || uploadImageType(original) }),
-                { maxWidth: reused.has(original) ? image.width! : mediaImageRecipe(quality).maxWidth, quality: 82, format: "jpeg", plainJpeg: true, responsive: false, keepOriginal: false }, request.signal); guard();
-              const jpeg = encoded.outputs.find(output => output.variantWidth === undefined);
-              if (!jpeg || jpeg.extension !== "jpg" || jpeg.blob.type !== "image/jpeg" || jpeg.width !== image.width || jpeg.height !== image.height)
-                throw new Error(`${old}'s sharing picture could not be prepared as a JPEG at the lighter picture's size. Nothing was improved.`);
+              const jpeg = await encodeSharingJpeg({ blob, source: original, width: image.width!, height: image.height!,
+                maxWidth: reused.has(original) ? image.width! : mediaImageRecipe(quality).maxWidth,
+                encode: ports.encode ?? optimiseMedia, signal: request.signal, guard,
+                error: `${old}'s sharing picture could not be prepared as a JPEG at the lighter picture's size. Nothing was improved.` });
               if (jpeg.blob.size >= blob.size) result.notes.push(`Sharing pictures keep ${old} because the JPEG was not lighter.`);
               else {
-                const path = main.replace(/\.[^./]+$/, "-sharing.jpg");
+                const path = sharingJpegPath(main);
                 if (paths.some(taken => taken.toLowerCase() === path.toLowerCase() || taken.toLowerCase().startsWith(path.toLowerCase() + "/") || path.toLowerCase().startsWith(taken.toLowerCase() + "/")))
                   throw new Error(`${path} is taken. Nothing was improved.`);
                 const problem = uploadProblem({ name: path, size: jpeg.blob.size });
@@ -246,7 +246,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
           }
         } else if (name.startsWith("og:")) og = undefined;
       } else if (og && /^og:image:(?:type|width|height)$/.test(name)) {
-        content = name.endsWith(":type") ? "image/jpeg" : String(name.endsWith(":width") ? og.width : og.height);
+        content = sharingImageDetail(name, og);
         skip.push(tag);
       }
       if (content !== undefined) sharingEdits.set(index, mediaAttributes(source.slice(tag.start, tag.end), { content }));
