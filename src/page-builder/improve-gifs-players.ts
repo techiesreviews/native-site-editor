@@ -180,7 +180,8 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
         }
         const { width, height, ...stored } = record;
         records = upsertOnlineVideo(records, stored);
-        const written = onlineVideoMarkup({ video, title: record.title || attribute("title"),
+        // Slice 67's saved "Show Vimeo's own bar" choice follows every placement.
+        const written = onlineVideoMarkup({ video, title: record.title || attribute("title"), serviceBar: record.serviceBar,
           still: record.still ? { path: record.still, width: width ?? files[record.still]?.width, height: height ?? files[record.still]?.height } : undefined });
         written.notes.forEach(note);
         let markup = written.markup;

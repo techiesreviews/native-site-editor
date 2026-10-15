@@ -194,3 +194,11 @@ test("cancellation during preparation never calls applyBatch; dynamic workspace 
   const g = fixture(); const workspace = createMediaWorkspace(async () => g.ctx);
   assert.equal((await workspace.improveGifsAndPlayers({ row: "index.html", files: g.facts, by: "lex" }, g.ports)).changed, true);
 });
+
+test("a recorded video's saved service bar choice is kept on the switched player", async () => {
+  const vimeo = '<iframe src="https://player.vimeo.com/video/123456?h=a1b2c3d4e5"></iframe>';
+  const f = fixture(vimeo); f.assets.set("media/videos/talk.webp", blob("image/webp"));
+  f.text.set(MEDIA_RECORDS_PATH, serializeMediaRecords({ ...parseMediaRecords(undefined), onlineVideos: [{ service: "vimeo", id: "123456", hash: "a1b2c3d4e5", title: "Talk", still: "media/videos/talk.webp", stillCopied: true, serviceBar: true }] }));
+  await f.run(); assert.equal(f.reads, 0);
+  assert.match(f.text.get("index.html")!, /<a class="online-video" href="https:\/\/vimeo.com\/123456\/a1b2c3d4e5" data-controls="service"><img src="\/media\/videos\/talk.webp" alt="Talk"/);
+});
