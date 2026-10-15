@@ -35,7 +35,8 @@ function stepAsideWhenOut(explorer: HTMLElement) {
     if (!explorer.contains(event.target as Node)) explorer.classList.add("is-stepping-aside");
   }, options);
   const back = () => { explorer.classList.remove("is-stepping-aside"); done.abort(); };
-  document.addEventListener("drop", back, options);
+  // After the drop is handled: the code finds its drop position by what lies under the pointer.
+  document.addEventListener("drop", () => setTimeout(back), options);
   document.addEventListener("dragend", back, options);
 }
 

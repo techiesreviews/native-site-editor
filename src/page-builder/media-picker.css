@@ -470,8 +470,9 @@
 }
 .media-library--pane .media-library__sheet[data-mode] { padding: 8px 12px 20px; }
 .media-library .media-library__sheet[data-mode] button { align-self: auto; }
-/* A sub-screen's secondary buttons keep an edge on any surface (cards are the surface's colour). */
-.media-library__sheet .secondary { border: 1px solid var(--control-line); }
+/* A sub-screen's secondary buttons keep an edge on any surface (cards are the surface's colour),
+   and sit on the card surface, so in dark mode they are a step lighter than the panel, never darker. */
+.media-library__sheet .secondary { --surface: var(--surface-card); border: 1px solid var(--control-line); }
 /* Row actions: 36 px secondary or text buttons at the row's end, each a 44 px target. */
 .media-library :is(.media-check__actions > button, .media-improve__top > .secondary) {
   position: relative; min-height: 36px; padding-block: 0; padding-inline: 14px; border-radius: 18px;
