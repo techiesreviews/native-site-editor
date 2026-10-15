@@ -42,7 +42,9 @@ function fixture(initial: Record<string, string> = { "index.html": '<img src="/i
   return { host: createMediaWorkspace(async () => ctx), batches, history, reads, text: () => text, paths: () => paths, bytes: () => bytes };
 }
 
-test("all entrances share requests, uploads and records in one addition", async () => {
+test("all entrances share requests, uploads and records in one addition", async t => {
+  // Media dates added files (slice 103): a frozen clock keeps every entrance's records equal.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-15T08:00:00Z") });
   const files = [new File(["picture"], "Picture.PNG"), new File(["pdf bytes"], "Notes.PDF")];
   let expected: unknown;
   for (const entrance of ["Media", "picker", "Structure", "component", "address", "settings", "Files", "canvas"]) {
@@ -284,7 +286,9 @@ test("video quality routes lazily and saves a numbered still with its record in 
   const f = fixture({ "media/videos/holiday.webp": "existing" });
   assert.deepEqual(await f.host.import([prepared.request]), ["media/videos/holiday-2.mp4"]);
   assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["media/videos/holiday-2.mp4", "media/videos/holiday-2.webp"]);
-  assert.deepEqual(parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/videos/holiday-2.mp4"], { still: "media/videos/holiday-2.webp", fromGif: true, duration: 12.35 });
+  const { added, ...record } = parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/videos/holiday-2.mp4"];
+  assert.deepEqual(record, { still: "media/videos/holiday-2.webp", fromGif: true, duration: 12.35 });
+  assert.ok(Number.isFinite(Date.parse(added!)), "the new video is dated (slice 103)");
   assert.equal(f.history.length, 1); f.history[0].undo();
   assert.equal(f.paths().has("media/videos/holiday-2.mp4"), false); assert.equal(f.paths().has("media/videos/holiday-2.webp"), false);
   assert.equal(f.text().has(MEDIA_RECORDS_PATH), false);

@@ -176,7 +176,7 @@ test("upload families, copied metadata and reference replacement share one trans
   assert.equal(f.bytes.has("images/a-2.webp"), false); assert.equal(f.paths.has("images/a-2-480.webp"), false);
   assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
 });
-test("new files join the viewed collection in the same batch; without one the records stay as they were", async () => {
+test("new files join the viewed collection in the same batch; without one they only gain their date", async () => {
   const f = fixture(); await f.host.load();
   await f.host.collections({ kind: "new", name: "Studio picks" });
   const before = f.text.get(MEDIA_RECORDS_PATH);
@@ -184,9 +184,10 @@ test("new files join the viewed collection in the same batch; without one the re
     file: new File(["bytes"], name), result: { outputs: [{ blob: new Blob([name], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 },
     folder: "images", ...collection ? { collection } : {},
   });
-  // Under All collections: the same upload as before, records untouched.
+  // Under All collections: no membership; the record holds only when it was added (slice 103).
   assert.deepEqual(await f.host.import([request("plain.png")]), ["images/plain.webp"]);
-  assert.equal(f.text.get(MEDIA_RECORDS_PATH), before);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).collections, parseMediaRecords(before).collections);
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/plain.webp"], { added: "2026-10-14T12:00:00.000Z" });
   // Viewing a collection: both files and their memberships in one batch, one Undo step.
   const batches = f.batches.length, steps = f.history.length;
   assert.deepEqual(await f.host.import([request("one.png", "Studio picks"), request("two.png", "Studio picks")]), ["images/one.webp", "images/two.webp"]);
@@ -194,7 +195,8 @@ test("new files join the viewed collection in the same batch; without one the re
   const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
   assert.deepEqual(records.files["images/one.webp"].collections, ["Studio picks"]);
   assert.deepEqual(records.files["images/two.webp"].collections, ["Studio picks"]);
-  assert.equal(records.files["images/plain.webp"], undefined);
+  // One addition, one time: files added together sort by name.
+  assert.equal(records.files["images/one.webp"].added, records.files["images/two.webp"].added);
   f.history.pop()!();
   assert.equal(f.bytes.has("images/one.webp"), false);
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/one.webp"], undefined);
@@ -687,7 +689,7 @@ test("trim uploads, page swap, records and unused family deletion share one Undo
   assert.ok(!batch.uploads.some(upload => upload.path === "images/a.png"));
   assert.ok(!batch.deletes.includes("images/a.png")); assert.ok(!batch.edits.has("images/a.png"));
   const next = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
-  assert.deepEqual(next.files[path], { description: { text: "Trim", byAgent: true }, trimmedFrom: { source: "images/a.png", trim: rectangle } });
+  assert.deepEqual(next.files[path], { description: { text: "Trim", byAgent: true }, trimmedFrom: { source: "images/a.png", trim: rectangle }, added: "2026-10-14T12:00:00.000Z" });
   assert.equal(next.files[oldTrim], undefined); assert.equal(next.files[oldSmall], undefined);
   assert.equal(next.removed?.[0].path, oldTrim);
   assert.deepEqual(next.removed?.[0].record?.trimmedFrom, { source: "images/a.png", trim: rectangle });
@@ -807,7 +809,8 @@ test("replace is one batch and Undo step, preserves old family SHA and record, u
   const data = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), entry = data.removed![0];
   assert.equal(entry.path, next); assert.equal(entry.sha, "a-v1");
   assert.deepEqual(entry.family?.map(member => [member.path, member.sha]), [[copy, "sha:" + copy], [original, "sha:" + original]]);
-  assert.deepEqual(data.files[next], oldRecord); assert.deepEqual(entry.record, oldRecord);
+  // The new picture is dated now (slice 103); the old record otherwise carries over.
+  assert.deepEqual(data.files[next], { ...oldRecord, added: "2026-10-14T12:00:00.000Z" }); assert.deepEqual(entry.record, oldRecord);
   await assert.rejects(f.host.restore([{ path: entry.path, id: entry.sha! }]), /already exists/);
   assert.equal(f.history.length, 1);
   f.history.pop()!();

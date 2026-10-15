@@ -206,7 +206,8 @@ test("unused trimmed family goes to Recently removed with old family; main recor
   const p = await workspace();
   assert.ok(p.batch.deletes.includes(trim)); assert.ok(p.batch.deletes.includes(trimCopy));
   assert.deepEqual(p.records.removed?.map(entry => entry.path).sort(), [path, trim].sort());
-  assert.deepEqual(JSON.parse(JSON.stringify(p.records.files["media/images/photo.webp"])), records.files[path]);
+  // The new picture is dated now (slice 103); the main's record otherwise survives.
+  assert.deepEqual(JSON.parse(JSON.stringify(p.records.files["media/images/photo.webp"])), { ...records.files[path], added: "2026-10-14T00:00:00.000Z" });
   assert.equal(p.records.files[trim], undefined);
   assert.ok(p.batch.deletes.every(path => !p.batch.uploads.some(upload => upload.path === path)));
 });

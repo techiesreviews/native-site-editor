@@ -25,6 +25,8 @@ import {
 import "./media-picker.css";
 import type { MediaCleanUpMount, MediaHeldFiles, MediaImportRequest, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 const CANCELLED = "This file was cancelled. Choose another image.";
+/** How long a just-added tile wears its ring (the CSS animation's length). */
+const FRESH_RING_MS = 2400;
 
 export interface MediaLibraryView {
   element: HTMLElement;
@@ -122,6 +124,19 @@ export function createMediaLibraryView(
   // Dropped and chosen files are added at once (slice 17). The pane saves them; the picker holds the
   // ready ones and chooses the first of each addition, so Use saves and places them in one Undo step.
   let chooseNext = false;
+  /** Files just saved (slice 103): newest first puts them on top; once the grid shows them (at
+   * once, or after Show new files) they come into view and wear a brief ring, kept through redraws. */
+  let fresh: { paths: string[]; at?: number } | undefined;
+  function showFresh() {
+    if (!fresh) return;
+    const cards = [...grid.querySelectorAll<HTMLElement>(".media-library__card")].filter(card => fresh!.paths.includes(card.dataset.path ?? ""));
+    // Hidden by the search, kind or collection: the tray's Show new files brings them back.
+    if (!cards.length) return;
+    if (fresh.at === undefined) { fresh.at = performance.now(); cards[0].scrollIntoView({ block: "nearest" }); }
+    const age = performance.now() - fresh.at;
+    if (age > FRESH_RING_MS) { fresh = undefined; return; }
+    for (const card of cards) { card.classList.add("is-new"); card.style.setProperty("--new-delay", `-${Math.round(age)}ms`); }
+  }
   const adding = createMediaAdding(grid, shell.adding, {
     hold: Boolean(modal),
     select: (id, request) => { if (!fitsRequest(request)) { tell("This file does not fit this spot. Close to save it without placing."); return; } chosen = id; paintChoice(); },
@@ -139,7 +154,8 @@ export function createMediaLibraryView(
     added: paths => {
       const fits = paths.find(path => library.items.some(item => item.path === path) && filterMediaLibrary(
         { ...library, items: [{ path }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length);
-      if (modal && fits) { chosen = fits; draw(); }
+      fresh = { paths };
+      if (modal && fits) { chosen = fits; draw(); } else showFresh();
     },
   });
   const collectionHost: CollectionScreensHost = {
@@ -240,6 +256,7 @@ export function createMediaLibraryView(
     });
     adding.paint();
     paintChoice();
+    showFresh();
   }
   /** The picker's status: the chosen file's picture and name, or what to do. Use waits for a choice. */
   function paintChoice() {

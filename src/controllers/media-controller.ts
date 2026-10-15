@@ -171,7 +171,8 @@ export function createMediaController(ports: MediaControllerPorts) {
       removedCopies: removedCopies(),
       items: paths.filter(include).map((path) => {
         const draft = drafts.get(scope, path), entry = ports.entry(path);
-        return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.updatedAt, draft: Boolean(draft) };
+        // An unsaved upload's time dates it until its record's `added` does (slice 103).
+        return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.upload ? draft.updatedAt : undefined, draft: Boolean(draft) };
       }),
       pages: site ? Object.values(site.routes) : paths.filter((path) => /(?:^|\/)index\.html$/i.test(path) && !path.startsWith("components/")),
       components: site?.components ?? {}, get origins() { return ports.origins?.() ?? []; }, assertLive, read,

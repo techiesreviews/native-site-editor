@@ -168,7 +168,7 @@ function renderInformation(
   if (!isRenamableMedia(path)) name.disabled = true;
   const naming = renameField(name, path, library.items.map(entry => entry.path));
   const facts = node("dl", "media-detail__facts");
-  for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width, height: data.height, duration: meta.duration }), ...mediaMadeFrom(meta)]) {
+  for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, date: item?.date, width: data.width, height: data.height, duration: meta.duration }), ...mediaMadeFrom(meta)]) {
     const row = node("div"); row.append(node("dt", "", fact.label), node("dd", "", fact.value)); facts.append(row);
   }
   form.append(field("File name", name), naming.element, facts);

@@ -1302,7 +1302,10 @@ async function withTrimWorker(run: (requests: { file: File; trim: import("../sha
   finally { descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker"); }
 }
 
-test("agent trims under a component keep the popup's Original, component and unchanged framing", () => withTrimWorker(async () => {
+test("agent trims under a component keep the popup's Original, component and unchanged framing", t => {
+  // Media dates added files (slice 103): a frozen clock keeps the two runs' records equal.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-15T08:00:00Z") });
+  return withTrimWorker(async () => {
   const { componentPicture, componentFrame, componentPopupShape } = await import("../src/page-builder/component-shapes");
   const { frameChange } = await import("../src/page-builder/image-popup-rules");
   const { trimPlace } = await import("../src/page-builder/place-trim");
@@ -1326,9 +1329,12 @@ test("agent trims under a component keep the popup's Original, component and unc
     assert.equal(agent.history.length, 1); assert.equal(agent.batches.length, 1);
     agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source); assert.ok(!agent.bytes.has("media/images/photo-crop.webp"));
   }
-}));
+  });
+});
 
-test("agent trim focus and page text equal popup Done for matching shapes, around shapes and explicit focus", async () => {
+test("agent trim focus and page text equal popup Done for matching shapes, around shapes and explicit focus", async t => {
+  // Media dates added files (slice 103): a frozen clock keeps the two runs' records equal.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-15T08:00:00Z") });
   const { trimPlace } = await import("../src/page-builder/place-trim");
   const { inlineStyle, writePlaceFrame } = await import("../src/page-builder/place-frame");
   const centred = { x: 50, y: 50 }, moved = { x: 20, y: 80 };
@@ -1371,7 +1377,10 @@ test("agent trim focus and page text equal popup Done for matching shapes, aroun
   }, row.size);
 });
 
-test("an agent trim's explicit focus is written on a place without a shape", () => withTrimWorker(async () => {
+test("an agent trim's explicit focus is written on a place without a shape", t => {
+  // Media dates added files (slice 103): a frozen clock keeps the two runs' records equal.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-15T08:00:00Z") });
+  return withTrimWorker(async () => {
   const { trimPlace } = await import("../src/page-builder/place-trim");
   const tag = '<img src="/media/images/photo.webp" alt="Photo" style="color:red">', source = `<section>${tag}</section>`;
   const target = { path: "index.html", node: [0, 0] }, focus = { x: 30, y: 60 };
@@ -1385,7 +1394,8 @@ test("an agent trim's explicit focus is written on a place without a shape", () 
   assert.deepEqual((await agent.controller.prepareFrame(target).read()).focus, focus);
   assert.equal(agent.history.length, 1);
   agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
-}));
+  });
+});
 
 test("a component's files changed while framing or trimming refuse the agent's change without writing", () => withTrimWorker(async () => {
   for (const [args, change] of [

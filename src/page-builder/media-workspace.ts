@@ -1,7 +1,7 @@
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { readMediaPrefix } from "./media-prefix";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativeSitePrefix } from "../../shared/native-project";
-import { mediaKind } from "./media-library-filter";
+import { mediaAddedTime, mediaKind } from "./media-library-filter";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import { locateNativeElementRange } from "../native-source-location";
@@ -206,6 +206,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     // Refresh belongs to the transaction host, so no fallible second mutation follows it.
   };
   const today = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString().slice(0, 10);
+  /** When a file is added now (slice 103): Media lists the newest first. */
+  const addedNow = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString();
   /** The Git blob SHA of the present bytes of every path Recently removed names, to see which are back. */
   const currentBlobs = async (ctx: MediaWorkspaceContext, records: MediaRecords) => {
     const out = new Map<string, string>();
@@ -335,6 +337,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const previews: MediaRecords["files"] = {};
     const inherited: MediaRecords["files"] = {};
     const paths: string[] = [], joins = new Map<string, string[]>();
+    // One addition shares one time, so files added together follow each other by name.
+    const added = addedNow(ctx);
     for (const request of requests) {
       const { file, result, folder, replaceFrom } = request;
       if (folder.split("/").some((part) => part === "." || part === "..") || /[\\\u0000-\u001f]/.test(folder)) throw new Error("Choose a repository folder without . or .. segments.");
@@ -374,6 +378,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         previews[primary] = { still: path };
       }
       if (result?.fromGif) previews[primary] = { ...previews[primary], fromGif: true };
+      // A new file's date; a lighter version (Optimise) keeps the date it inherits below.
+      if (!replaceFrom) previews[primary] = { ...previews[primary], added };
       if (result?.duration && Number.isFinite(result.duration) && result.duration > 0 && /^(?:video|audio)$/.test(mediaKind(primary)))
         previews[primary] = { ...previews[primary], duration: Math.round(result.duration * 100) / 100 };
       if (request.original) {
@@ -501,6 +507,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const plan = planTrimmedCopy({ records: metadata, source, trim, path, previous, previousStillUsed, paths: batch.expectedPaths });
     batch.deletes.push(...plan.removes);
     next = plan.removes.length ? await removedRecords(ctx, next, plan.removes) : next;
+    next = { ...next, files: { ...next.files, [path]: { ...next.files[path], added: addedNow(ctx) } } };
     recordsEdit(batch, metadata, next);
     for (const output of outputs) batch.uploads.push({
       path: output.variantWidth ? mediaCopyName(path, output.variantWidth) : path, blob: output.blob,
@@ -593,6 +600,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     next = { ...next, files: { ...next.files } };
     for (const upload of plan.uploads) if (plan.records.files[upload.path]) next.files[upload.path] = plan.records.files[upload.path];
     for (const trim of plan.trims) if (next.files[trim.main]) next.files[trim.main] = plan.records.files[trim.main];
+    // The new picture is dated now, so it leads Media like a new file.
+    next.files[plan.main] = { ...next.files[plan.main], added: addedNow(ctx) };
     recordsEdit(batch, metadata, next);
     batch.uploads.push(...plan.uploads);
     batch.deletes.push(...plan.deletes);
@@ -729,7 +738,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const online = records.onlineVideos?.length ? (await import("./online-video")).mediaOnlineVideos(records, text, ctx.paths) : undefined;
       const prefix = await readMediaPrefix(ctx, new Map());
       ctx.assertLive();
-      return { key: ctx.key, prefix, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx, prefix),
+      return { key: ctx.key, prefix, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, date: mediaAddedTime(records.files[item.path]) ?? item.date, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx, prefix),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
         toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text, prefix),

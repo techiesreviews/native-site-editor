@@ -21,6 +21,9 @@ export interface MediaFileRecord {
   subtitlesByAgent?: true;
   /** A video's or audio file's length in seconds, recorded when it was added. */
   duration?: number;
+  /** When the editor added the file (or Replace gave it a new picture): an ISO time. Media lists the
+   * newest first; read leniently, so a wrong value only leaves the file undated. */
+  added?: string;
   [key: string]: unknown;
 }
 export interface OnlineVideoRecord {

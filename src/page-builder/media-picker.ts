@@ -19,7 +19,12 @@ export { isMediaLibraryPath } from "./media-library-filter";
 export interface MediaOnlineVideo {
   key: string; service: "youtube" | "vimeo"; id: string; hash?: string; title?: string; still?: string; stillCopied?: boolean; serviceBar?: boolean; uses: string[];
 }
-export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
+export interface MediaLibraryItem {
+  path: string; size?: number;
+  /** When the file was added, in milliseconds: its record's `added`, else an unsaved upload's time. */
+  date?: number;
+  draft?: boolean; version?: string;
+}
 export interface MediaLibrary {
   prefix?: string;
   key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;

@@ -11,11 +11,16 @@ const KIND_NAMES = { image: "Image", video: "Video", audio: "Audio", document: "
 
 export interface MediaDetailFact { label: string; value: string }
 
-/** Kind, size, length (a video's or audio file's, when recorded), dimensions (when the picture was
- * read) and folder, in that order. */
-export function mediaDetailFacts(file: { path: string; size?: number; width?: number; height?: number; duration?: number }): MediaDetailFact[] {
+/** When a file was added, as the reader's calendar and clock say it: "15 Oct 2026, 10:23". */
+export const formatMediaDate = (time: number, locale?: string, timeZone?: string) =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(time);
+
+/** Kind, size, when it was added (when known), length (a video's or audio file's, when recorded),
+ * dimensions (when the picture was read) and folder, in that order. */
+export function mediaDetailFacts(file: { path: string; size?: number; date?: number; width?: number; height?: number; duration?: number }, locale?: string): MediaDetailFact[] {
   const kind = mediaKind(file.path), facts: MediaDetailFact[] = [{ label: "Kind", value: KIND_NAMES[kind] }];
   if (file.size !== undefined) facts.push({ label: "Size", value: formatBytes(file.size) });
+  if (file.date !== undefined) facts.push({ label: "Added", value: formatMediaDate(file.date, locale) });
   if ((kind === "video" || kind === "audio") && file.duration && file.duration > 0) facts.push({ label: "Length", value: formatMediaLength(file.duration) });
   if (file.width && file.height) facts.push({ label: "Dimensions", value: `${file.width} × ${file.height}` });
   facts.push({ label: "Folder", value: parent(file.path) || "Site root" });

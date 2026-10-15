@@ -218,7 +218,10 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
         return entry;
       });
       run = h.hold ? { entries: [...previous, ...mine.entries], collection: mine.collection } : mine;
-      paint(); void prepare(mine);
+      paint();
+      // The new tiles lead the grid (slice 103): bring them into view, even from far down.
+      mine.entries.find(entry => entry.tile.isConnected)?.tile.scrollIntoView({ block: "nearest" });
+      void prepare(mine);
     },
     reviewed(requests: MediaImportRequest[]) {
       const entries = requests.map(request => {

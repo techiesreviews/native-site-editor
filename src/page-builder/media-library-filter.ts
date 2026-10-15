@@ -50,7 +50,21 @@ export interface MediaLibraryFilter {
   accept?: string;
 }
 
-/** Search respects the kind and the collection; results are in name order. */
+/** A record's `added` time in milliseconds; undefined when it is missing or unreadable. */
+export function mediaAddedTime(record?: { added?: unknown }): number | undefined {
+  const time = typeof record?.added === "string" ? Date.parse(record.added) : NaN;
+  return Number.isFinite(time) ? time : undefined;
+}
+
+/** Media's order everywhere (slice 103): newest first; files without a date after the dated ones,
+ * by name (numbers in order, "photo-2" before "photo-10"), then by folder. */
+export function mediaNewestFirst(a: { path: string; date?: number }, b: { path: string; date?: number }): number {
+  if (a.date !== undefined && b.date !== undefined && a.date !== b.date) return b.date - a.date;
+  if ((a.date === undefined) !== (b.date === undefined)) return a.date === undefined ? 1 : -1;
+  return basename(a.path).localeCompare(basename(b.path), undefined, { numeric: true, sensitivity: "base" }) || a.path.localeCompare(b.path);
+}
+
+/** Search respects the kind and the collection; results are newest first. */
 export function filterMediaLibrary(library: MediaLibrary, options: MediaLibraryFilter) {
   const query = options.query.trim().toLowerCase();
   return library.items.filter((item) => {
@@ -58,7 +72,7 @@ export function filterMediaLibrary(library: MediaLibrary, options: MediaLibraryF
     return accepts(item.path, options.accept) && (options.kind === "all" || mediaKind(item.path) === options.kind) &&
       (!options.collection || meta?.tags.includes(options.collection)) &&
       `${item.path} ${meta?.alt ?? ""} ${meta?.tags.join(" ") ?? ""} ${library.usage[item.path]?.alts.join(" ") ?? ""}`.toLowerCase().includes(query);
-  }).sort((a, b) => a.path.localeCompare(b.path));
+  }).sort(mediaNewestFirst);
 }
 
 export const onlineServiceName = (service: "youtube" | "vimeo") => service === "youtube" ? "YouTube" : "Vimeo";

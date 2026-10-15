@@ -28,7 +28,7 @@ test("search trims and ignores case across path, default alt, tags and usage alt
   assert.deepEqual(paths({ query: "  PORTRAIT  " }), ["images/B.jpg"]);
   assert.deepEqual(paths({ query: "pEoPlE" }), ["images/B.jpg"]);
   assert.deepEqual(paths({ query: "  sunset  " }), ["images/a.webp"]);
-  assert.deepEqual(paths({ query: "SUMMER" }), ["images/B.jpg", "root.PNG"]);
+  assert.deepEqual(paths({ query: "SUMMER" }), ["root.PNG", "images/B.jpg"]);
   assert.equal(paths({ query: "  " }).length, 4);
 });
 
@@ -43,13 +43,13 @@ test("accept supports extensions, image wildcard, MIME and comma separated choic
 });
 
 test("a collection is exact and combines with search, kind and accept", () => {
-  assert.deepEqual(paths({ collection: "summer" }), ["images/B.jpg", "root.PNG"]);
+  assert.deepEqual(paths({ collection: "summer" }), ["root.PNG", "images/B.jpg"]);
   assert.deepEqual(paths({ collection: "people" }), []);
   assert.deepEqual(paths({ collection: "summer", query: "portrait", accept: ".jpg" }), ["images/B.jpg"]);
   assert.deepEqual(paths({ collection: "summer", kind: "video" }), []);
 });
 
-test("results are in name order and the library is left as it was", () => {
+test("results are newest first, then by name, and the library is left as it was", () => {
   const items: MediaLibraryItem[] = [{ path: "z.jpg" }, { path: "b.jpg", size: 30 }, { path: "a.jpg", date: 40 }];
   const source = { key: "order", items, metadata: {}, collections: [], usage: {} } satisfies MediaLibrary;
   assert.deepEqual(paths({}, source), ["a.jpg", "b.jpg", "z.jpg"]);
@@ -210,4 +210,29 @@ test("online copied still families have no tile; own stills and unrelated pictur
   assert.deepEqual(mediaLibraryTiles(items, onlineVideos).map(item => item.path), ["media/own.webp", "media/other.jpg"]);
   assert.deepEqual(mediaLibraryTiles(items).map(item => item.path), ["media/videos/film.webp", "media/own.webp", "media/other.jpg"]);
   assert.deepEqual(mediaLibraryTiles(items, []), mediaLibraryTiles(items));
+});
+
+test("Media lists the newest first; undated files follow by name, numbers in order, then by folder (slice 103)", async () => {
+  const { mediaNewestFirst } = await import("../src/page-builder/media-library-filter");
+  const items = [
+    { path: "images/photo-10.jpg" }, { path: "media/images/old.webp", date: 1_000 }, { path: "images/Photo-2.jpg" },
+    { path: "media/images/new.webp", date: 3_000 }, { path: "a/photo-2.jpg" }, { path: "media/images/mid.webp", date: 2_000 },
+  ];
+  assert.deepEqual([...items].sort(mediaNewestFirst).map(item => item.path), [
+    "media/images/new.webp", "media/images/mid.webp", "media/images/old.webp",
+    "a/photo-2.jpg", "images/Photo-2.jpg", "images/photo-10.jpg",
+  ]);
+  // Same moment: by name.
+  assert.ok(mediaNewestFirst({ path: "z/a.png", date: 5 }, { path: "a/b.png", date: 5 }) < 0);
+});
+
+test("search results keep the newest-first order, and a just-added file leads them", () => {
+  const added = { ...library, items: [...library.items, { path: "media/images/zebra.webp", date: 99 }] };
+  assert.deepEqual(filterMediaLibrary(added, { query: "", collection: "", kind: "all" }).map(item => item.path), ["media/images/zebra.webp", "root.PNG", "images/a.webp", "images/B.jpg", "images/sub/c.svg"]);
+});
+
+test("a record's added time is read leniently: missing or unreadable values leave the file undated", async () => {
+  const { mediaAddedTime } = await import("../src/page-builder/media-library-filter");
+  assert.equal(mediaAddedTime({ added: "2026-10-15T08:30:00.000Z" }), Date.UTC(2026, 9, 15, 8, 30));
+  for (const record of [undefined, {}, { added: "soon" }, { added: 12 }]) assert.equal(mediaAddedTime(record), undefined);
 });

@@ -11,6 +11,17 @@ const mediaRenameTarget = (path: string, name: string) => {
 import { applyMediaMetadata, mediaMetadataView } from "../src/page-builder/media-metadata";
 import { parseMediaRecords, serializeMediaRecords } from "../shared/media-records";
 
+test("facts say when a file was added, after its size, in the reader's calendar and clock (slice 103)", async () => {
+  const { formatMediaDate } = await import("../src/page-builder/media-file-details");
+  const time = Date.UTC(2026, 9, 15, 8, 30);
+  assert.equal(formatMediaDate(time, "en-GB", "UTC"), "15 Oct 2026, 08:30");
+  assert.match(formatMediaDate(time, "en-US", "America/New_York"), /^Oct 15, 2026, 4:30\sAM$/);
+  const facts = mediaDetailFacts({ path: "media/images/a.webp", size: 2048, date: time });
+  assert.deepEqual(facts.map(fact => fact.label), ["Kind", "Size", "Added", "Folder"]);
+  assert.equal(facts[2].value, formatMediaDate(time));
+  assert.equal(mediaDetailFacts({ path: "images/a.webp" }).some(fact => fact.label === "Added"), false);
+});
+
 test("facts give kind, size, dimensions when read and folder", () => {
   assert.deepEqual(mediaDetailFacts({ path: "images/team/photo.webp", size: 438_272, width: 2400, height: 1345 }), [
     { label: "Kind", value: "Image" }, { label: "Size", value: "428 KB" },

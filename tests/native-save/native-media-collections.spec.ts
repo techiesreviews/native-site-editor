@@ -344,14 +344,14 @@ test("cancelling one file mid-way keeps the other; the grid stays usable while f
   await expect(slow).toHaveCount(0);
   hold.free();
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
-  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "media/images/quick.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/quick.svg", "images/placeholder.svg", "images/studio-desk.svg"]);
   for (const path of ["media/images/slow.webp", "media/images/slow.png"]) expect(await storedDraft(page, path)).toBeUndefined();
   // Dismiss closes the tray.
   await tray(page).getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(tray(page)).toBeHidden();
 });
 
-test("files added while a search hides them offer Show new files; Add new file follows the same path and under All stores no records", async ({ page, baseURL }) => {
+test("files added while a search hides them offer Show new files; Add new file follows the same path and under All joins no collection", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const library = pane(page), search = library.getByLabel("Search media", { exact: true });
   const recordsBefore = await storedDraft(page, ".editor/media.json");
@@ -364,11 +364,14 @@ test("files added while a search hides them offer Show new files; Add new file f
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
   await tray(page).getByRole("button", { name: "Show new files", exact: true }).click();
   await expect(search).toHaveValue("");
-  await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg", "media/images/zebra.svg"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/images/zebra.svg", "images/placeholder.svg", "images/studio-desk.svg"]);
   await expect(tray(page).getByRole("button", { name: "Show new files", exact: true })).toBeHidden();
   expect((await storedDraft(page, "media/images/zebra.svg"))?.deleted).toBeUndefined();
-  // Under All collections, nothing joins a collection: the records are as before.
-  expect(await storedDraft(page, ".editor/media.json")).toEqual(recordsBefore);
+  // Under All collections, nothing joins a collection: the records only gain the new file's date (slice 103).
+  const after = await records(page) as { collections?: string[]; files?: Record<string, { collections?: string[]; added?: string }> };
+  expect(after.collections ?? []).toEqual(recordsBefore ? JSON.parse(recordsBefore.content).collections ?? [] : []);
+  expect(Object.keys(after.files ?? {})).toEqual(["media/images/zebra.svg"]);
+  expect(Object.keys(after.files!["media/images/zebra.svg"])).toEqual(["added"]);
 });
 
 test("renaming the collection while its files are prepared: they join it under its new name", async ({ page, baseURL }) => {
