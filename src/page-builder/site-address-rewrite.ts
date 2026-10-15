@@ -8,8 +8,9 @@
 // `_headers` path lines, every root address moves, whether or not it names a file
 // yet. Anywhere else (inline scripts, JS, JSON, XML, plain text) only an address
 // that names one of the site's pages or files moves, and a bare root path only as a
-// quoted string or a Markdown link, so `split("/")`, a regular expression or prose
-// about paths is never mistaken for a link. A full address moves when it
+// quoted string, an address field's value or a Markdown link (GitHub Pages publishes
+// Markdown), so `split("/")`, a regular expression or prose about paths is never
+// mistaken for a link. A full address moves when it
 // is on the old address's host inside its folder: another project site on the same
 // host and outside links stay. `.editor/` (route keys, records) is not addresses.
 import { sitePathPrefix } from "../../shared/site-path-prefix";
@@ -37,12 +38,9 @@ export function siteFolderChanges(from: string, to: string): boolean {
   return decoded(sitePathPrefix(from)) !== decoded(sitePathPrefix(to));
 }
 
-/**
- * The text files a folder change reads: the site's own, without `.editor/`, `CNAME` and Markdown
- * (README, AGENTS: notes about the repository, which a static server never shows as pages).
- */
+/** The text files a folder change reads: the site's own, without `.editor/` and `CNAME`. */
 export function siteAddressFiles(paths: Iterable<string>): string[] {
-  return [...paths].filter(path => isMediaTextFile(path) && !path.startsWith(".editor/") && path !== "CNAME" && !/\.(?:md|markdown)$/i.test(path));
+  return [...paths].filter(path => isMediaTextFile(path) && !path.startsWith(".editor/") && path !== "CNAME");
 }
 
 /** The raw root-path segments of `path` that spell `prefix` (any percent case), or undefined. */
@@ -99,7 +97,7 @@ const ADDRESS_FIELD = /(?:^|[^\w-])[\w:-]*(?:url|href|src|action|scope|link|path
 /** One text file with its addresses moved; `count` addresses changed. */
 export function rewriteSiteAddressText(file: string, source: string, context: Context): { text: string; count: number } {
   const edits: Edit[] = [];
-  const markup = /\.(?:html?|xml|rss|atom|svg)$/i.test(file);
+  const markup = /\.(?:html?|xml|rss|atom|svg)$/i.test(file), markdown = /\.(?:md|markdown)$/i.test(file);
   const taken: { start: number; end: number }[] = [];
   const overlaps = (start: number, end: number) => taken.some(range => start < range.end && end > range.start);
   // `start`/`end`: the value's raw range; `value`: its decoded text.
@@ -146,10 +144,15 @@ export function rewriteSiteAddressText(file: string, source: string, context: Co
       if (start === undefined || end === undefined || overlaps(start, end)) continue;
       // A bare root path counts only as a string, a Markdown link or a header link (`"/about/"`, `(/about/)`, `</a.css>`): in prose,
       // `work/<slug>/index.html` or a table of routes is not a link.
-      const opener = text.text[match.index! - 1] ?? "";
-      if (!/^https?:/i.test(value) && !/["'`(<]/.test(opener)) continue;
-      // The home page (`/`) only as an address field's value: `"start_url": "/"`, `action="/"`, not `split("/")`.
-      const field = /["']/.test(opener) && ADDRESS_FIELD.test(text.text.slice(Math.max(0, match.index! - 41), match.index! - 1));
+      const opener = text.text[match.index! - 1] ?? "", before = text.text.slice(Math.max(0, match.index! - 41), match.index!);
+      // An address field's value (`"start_url": "/"`, `action="/"`, `action=/about/`, a Markdown link's target)
+      // may be the home page too; `split("/")` is not one.
+      let field = false;
+      if (!/^https?:/i.test(value)) {
+        field = opener === "=" ? ADDRESS_FIELD.test(before) : /["']/.test(opener) ? ADDRESS_FIELD.test(before.slice(0, -1)) : markdown && before.endsWith("](");
+        // In Markdown, prose and `code` spans stay: only links, images and quoted attribute values move.
+        if (opener === "=" ? !field : markdown ? !field && !/["']/.test(opener) : !/["'`(<]/.test(opener)) continue;
+      }
       add(value, start, end, field ? "field" : true);
     }
   }

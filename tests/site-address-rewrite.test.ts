@@ -35,7 +35,7 @@ test("the folder changes only when the decoded path part differs", () => {
   assert.equal(siteFolderChanges(PROJECT, "https://www.example.com/my-site"), false);
   assert.equal(siteFolderChanges("https://x.test/caf%C3%A9/", "https://y.test/café/index.html"), false);
   assert.equal(siteFolderChanges("", OWN), false);
-  assert.deepEqual(siteAddressFiles([".editor/config.json", "CNAME", "index.html", "media/a.webp", "_redirects", "a.js", "README.md", "docs/notes.markdown"]), ["index.html", "_redirects", "a.js"]);
+  assert.deepEqual(siteAddressFiles([".editor/config.json", "CNAME", "index.html", "media/a.webp", "_redirects", "a.js", "README.md"]), ["index.html", "_redirects", "a.js", "README.md"]);
 });
 
 test("adding a folder prefixes every root address and full own address", () => {
@@ -201,4 +201,21 @@ test("settings applied with a nested folder change move every address exactly on
   const kept = siteSettingsWithMove({ ...input, plan, values: { ...input.before, url: to } });
   assert.equal(kept.edits.get("index.html"), head("/my-site/new/favicon.svg", "https://user.github.io/my-site/new/media/share.jpg") + `<a href="/my-site/new/about/">About</a>`);
   assert.match(kept.config, /"socialImage": "https:\/\/user\.github\.io\/my-site\/new\/media\/share\.jpg"/);
+});
+
+test("Markdown links and images move; its prose and code spans stay", () => {
+  const md = (prefix: string) => `# Notes\nSee [About](${prefix}/about/), [Home](${prefix}/) and ![Hero](${prefix}/media/hero.webp "Hero").\n<a href="${prefix}/about/">About</a>\nPages: work/<slug>/index.html is /work/<slug>/; about/index.html   /about/; code \`/about/\` stays.\n`;
+  const extra = ["about/index.html", "media/hero.webp"];
+  for (const [from, to, a, b] of [[OWN, PROJECT, "", "/my-site"], [PROJECT, "https://user.github.io/new/", "/my-site", "/new"], [PROJECT, OWN, "/my-site", ""]]) {
+    const result = plan(from, to, { "notes.md": md(a) }, extra);
+    assert.equal(result.edits.get("notes.md"), md(b), `${from} → ${to}`);
+    assert.equal(result.count, 4);
+  }
+});
+
+test("unquoted address attributes move, the home page too", () => {
+  const html = (prefix: string) => `<form action=${prefix}/about/><button formaction=${prefix || ""}/>Go</button></form><script>let x=/about/; y = a/b;</script>`;
+  const result = plan(OWN, PROJECT, { "index.html": html("") }, ["about/index.html"]);
+  assert.equal(result.edits.get("index.html"), `<form action=/my-site/about/><button formaction=/my-site/>Go</button></form><script>let x=/about/; y = a/b;</script>`);
+  assert.equal(plan(PROJECT, OWN, { "index.html": result.edits.get("index.html")! }, ["about/index.html"]).edits.get("index.html"), html(""));
 });

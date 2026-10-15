@@ -70,15 +70,16 @@ export function createNativeSettings(ports: SettingsPorts) {
     };
     // `depends`: every file the edits were planned from (Site settings: config and every page), proved through preparation.
     // `siteUrl`: the address being applied with it (Site settings), else the config's.
-    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim, siteUrl?: string, note?: () => string | undefined) => {
-      if (stale() || sourcesChanged()) throw new Error(changed);
+    // `holds`: a further proof kept until the copy is written (a new address's file list).
+    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim, siteUrl?: string, note?: () => string | undefined, holds = () => true) => {
+      if (stale() || sourcesChanged() || !holds()) throw new Error(changed);
       const stamp = since, repository = ports.guardedEdits.stamp("repository");
       const expected = new Map([...baseline, ...[NATIVE_CONFIG_PATH, ...depends].map(path => [path, ports.guardedEdits.peek.source(path)] as const)]);
       const result = await ports.shareImage({ value, previous, page, ...trim ? { trim } : {}, ...note ? { note } : {},
         siteUrl: siteUrl ?? nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
         canonical: readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical,
         expectedSources: expected,
-        live: () => stamp.holds() && [...expected].every(([path, source]) => ports.guardedEdits.peek.source(path) === source), edits });
+        live: () => stamp.holds() && holds() && [...expected].every(([path, source]) => ports.guardedEdits.peek.source(path) === source), edits });
       // A repository switched while the old one finished: never adopt the new one's proof.
       if (!repository.holds()) throw new Error(changed);
       // A framed picture is never linked in place of its copy (an animated one cannot be copied).
@@ -187,7 +188,7 @@ export function createNativeSettings(ports: SettingsPorts) {
                 if (text !== source) edits.set(path, { source, text });
               }
               return edits;
-            }, [...expected.keys()], values.socialImageTrim, values.url, () => updated);
+            }, [...expected.keys()], values.socialImageTrim, values.url, () => updated, () => !move || ports.nativeFiles().join("\n") === move.list);
             if (shared) values.socialImage = shared.address;
             if (shared && !shared.reused) return undefined;
             reused = shared?.path;
