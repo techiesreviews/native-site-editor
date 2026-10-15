@@ -2,7 +2,7 @@
 title: The sub-screens share one layout
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-111 runner)
 blocked_by: [104-media-panel-size, 105-editor-toast]
 builder: claude
 phase: 8
