@@ -1,8 +1,8 @@
 ---
 title: Change URL and redirects keep the sub-folder
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-79 runner)
 blocked_by: [78-prefix-every-writer]
 builder: sol
 phase: 7
