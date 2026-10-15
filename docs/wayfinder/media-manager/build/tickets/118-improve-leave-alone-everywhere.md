@@ -2,7 +2,7 @@
 title: "Improve images: leave a picture alone everywhere"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-118 runner)
 blocked_by: [111-sub-screens-one-layout]
 builder: claude
 phase: 8
