@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 
 // Default fixture group: native-subfolder (532).
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -63,4 +64,21 @@ test("Text size offers the size variables a prefixed import defines", async ({ p
   const bar = page.getByRole("toolbar", { name: "Edit bar" });
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect.poll(() => bar.getByRole("combobox", { name: "Text size" }).locator("option").allTextContents()).toEqual(["Default", "S", "M", "L"]);
+});
+
+// Slice 78: what the editor writes on a sub-folder site carries the prefix.
+test("a new page joins the navigation with the site's sub-folder in its link", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "+ New page", exact: true }).click();
+  await page.getByRole("textbox", { name: "New page title", exact: true }).fill("Videos");
+  await page.getByLabel("Add to navigation", { exact: true }).check();
+  await page.getByRole("textbox", { name: "New page title", exact: true }).press("Enter");
+  await expect(page.locator("#status")).toHaveText("Created Videos and added it to navigation as drafts.");
+  const header = "components/site-header/site-header.html";
+  await expect.poll(async () => (await storedDraft(page, header))?.content).toContain('href="/my-site/videos/"');
+  const nav = (await storedDraft(page, header))!.content.match(/<nav[\s\S]*<\/nav>/)![0];
+  expect(nav.match(/href="[^"]*"/g)).toEqual(['href="/my-site/notes/first-note/"', 'href="/my-site/videos/"']);
+  await expect(frame(page).locator("site-header nav a")).toHaveText(["Notes", "Videos"]);
 });
