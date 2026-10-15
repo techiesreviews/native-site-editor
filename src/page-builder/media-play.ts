@@ -64,6 +64,8 @@ export interface MediaPlayPorts {
   host: MediaPlayHost;
   locate(source: string, node: number[]): ElementRange | undefined;
   site?(): MediaSite | undefined;
+  /** The page's source now. */
+  source(path: string): string | undefined;
   /** A file's bytes (drafts first, then the branch). */
   blob(path: string): Promise<Blob>;
   /** Draws the edit bar again, so Play reads Stop and back. */
@@ -87,6 +89,20 @@ export function createMediaPlay(ports: MediaPlayPorts) {
     if (playing(path, node)) { stop(); return; }
     stop(false);
     const range = ports.locate(source, node);
+    // The element the bar was drawn for, still at its place in the page now: checked again after every
+    // wait, and while it plays (a removed element's sibling may take its place, or its address change).
+    const tag = range && source.slice(range.tag.start, range.tag.end);
+    let seen: string | undefined, still = false;
+    const same = () => {
+      const now = ports.source(path);
+      if (now !== seen) {
+        seen = now;
+        const at = now === undefined ? undefined : ports.locate(now, node);
+        still = Boolean(tag && at && now!.slice(at.tag.start, at.tag.end) === tag);
+      }
+      return still;
+    };
+    if (!same()) { ports.refresh(); return; }
     const what: Playable = range ? playable(source, range, path, ports.site?.()) : { kind: "none", reason: "Choose a video or audio." };
     if (what.kind === "none") { ports.refresh(); throw new Error(what.reason); }
     const id = ++ids;
@@ -94,13 +110,14 @@ export function createMediaPlay(ports: MediaPlayPorts) {
     current = at;
     // Playback belongs to the selection: choosing something else stops it.
     at.unwatch = ports.host.watch(selected => {
-      if (current === at && (selected?.path !== path || selected.node?.join() !== at.node)) stop();
+      if (current === at && (selected?.path !== path || selected.node?.join() !== at.node || !same())) stop();
     });
     ports.refresh();
     if (current !== at) return;
-    if (what.kind === "online") { overlay(at, what.address); return; }
+    if (what.kind === "online") { overlay(at, what.address, same); return; }
     try {
       const bytes = await ports.blob(what.path);
+      if (current === at && !same()) stop();
       if (current === at) ports.host.send(id, { path, node }, bytes.type === what.type ? bytes : new Blob([bytes], { type: what.type }));
     } catch (error) {
       if (current === at) stop();
@@ -108,7 +125,7 @@ export function createMediaPlay(ports: MediaPlayPorts) {
     }
   }
   /** The Online video's own player over its place, clipped to the canvas. */
-  function overlay(at: NonNullable<typeof current>, address: string) {
+  function overlay(at: NonNullable<typeof current>, address: string, same: () => boolean) {
     const layer = document.createElement("div");
     layer.className = "media-play-layer";
     // Under the edit bar (z-index 30), over the canvas.
@@ -126,6 +143,7 @@ export function createMediaPlay(ports: MediaPlayPorts) {
     let last = "";
     const follow = () => {
       if (current !== at) return;
+      if (!same()) { stop(); return; }
       const clip = ports.host.frame(), box = ports.host.box();
       const key = clip && box ? [clip.left, clip.top, clip.width, clip.height, box.left, box.top, box.right, box.bottom].join() : "";
       if (key !== last) {

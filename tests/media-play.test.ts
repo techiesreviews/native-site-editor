@@ -60,7 +60,7 @@ test("nothing plays without a site file or a YouTube or Vimeo address, with the 
     { kind: "online", address: "https://player.vimeo.com/video/76979871?autoplay=1&playsinline=1&dnt=1&title=0&byline=0&portrait=0" });
 });
 
-function harness(bytes: Blob | Error = new Blob(["clip"], { type: "application/octet-stream" })) {
+function harness(bytes: Blob | Error = new Blob(["clip"], { type: "application/octet-stream" }), page?: string) {
   const sent: { id: number; request: { path: string; node: number[] } | null; blob?: Blob }[] = [];
   const listeners = new Set<(at: { path?: string; node?: number[] } | undefined) => void>();
   let selected: { path?: string; node?: number[] } | undefined = { path: "index.html", node: [0] };
@@ -72,15 +72,15 @@ function harness(bytes: Blob | Error = new Blob(["clip"], { type: "application/o
   };
   const gate = new Promise<void>(resolve => { release = resolve; });
   const play = createMediaPlay({
-    host, locate: text => range(text, /<audio/.test(text) ? "audio" : "video"), refresh: () => { refreshed++; },
+    host, locate: text => range(text, /<audio/.test(text) ? "audio" : "video"), refresh: () => { refreshed++; }, source: () => page,
     blob: async () => { await gate; if (bytes instanceof Error) throw bytes; return bytes; },
   });
-  return { play, sent, release, refreshed: () => refreshed, listeners,
+  return { play, sent, release, refreshed: () => refreshed, listeners, edit(next: string) { page = next; },
     select(at: typeof selected) { selected = at; for (const listener of [...listeners]) listener(at); } };
 }
 
 test("Play posts the file's bytes, typed, to the canvas; a second press stops and writes nothing else", async () => {
-  const h = harness();
+  const h = harness(undefined, '<video src="/media/clip.webm"></video>');
   const pending = h.play.toggle("index.html", [0], '<video src="/media/clip.webm"></video>');
   // The bar reads Stop at once, while the bytes load.
   assert.equal(h.play.playing("index.html", [0]), true);
@@ -97,14 +97,14 @@ test("Play posts the file's bytes, typed, to the canvas; a second press stops an
 
 test("choosing something else, the canvas's end or a press while loading stops it", async () => {
   const source = '<audio src="/media/talk.mp3"></audio>';
-  const a = harness();
+  const a = harness(undefined, source);
   a.release();
   await a.play.toggle("index.html", [0], source);
   a.select({ path: "index.html", node: [1] });
   assert.equal(a.play.playing("index.html", [0]), false);
   assert.equal(a.sent.at(-1)?.request, null);
   // Same element chosen again (a redraw of the selection) keeps playing.
-  const b = harness(); b.release();
+  const b = harness(undefined, source); b.release();
   await b.play.toggle("index.html", [0], source);
   b.select({ path: "index.html", node: [0] });
   assert.equal(b.play.playing("index.html", [0]), true);
@@ -113,7 +113,7 @@ test("choosing something else, the canvas's end or a press while loading stops i
   b.play.ended(b.sent[0].id);
   assert.equal(b.play.playing("index.html", [0]), false);
   // Stopped before the bytes arrived: nothing is posted to play.
-  const c = harness();
+  const c = harness(undefined, source);
   const pending = c.play.toggle("index.html", [0], source);
   await c.play.toggle("index.html", [0], source);
   c.release(); await pending;
@@ -121,10 +121,33 @@ test("choosing something else, the canvas's end or a press while loading stops i
 });
 
 test("a file that cannot be read stops and reports; a video without a file refuses with the reason", async () => {
-  const h = harness(new Error("media/gone.mp4 is unavailable."));
+  const h = harness(new Error("media/gone.mp4 is unavailable."), '<video src="/media/gone.mp4"></video>');
   h.release();
   await assert.rejects(h.play.toggle("index.html", [0], '<video src="/media/gone.mp4"></video>'), /unavailable/);
   assert.equal(h.play.playing("index.html", [0]), false);
+  h.edit("<video></video>");
   await assert.rejects(h.play.toggle("index.html", [0], "<video></video>"), /no file to play/);
   assert.equal(h.play.playing("index.html", [0]), false);
+});
+
+test("a video changed while its bytes load never plays the old bytes; another element in its place stops it", async () => {
+  const before = '<video src="/media/clip.mp4"></video>';
+  const a = harness(undefined, before);
+  const pending = a.play.toggle("index.html", [0], before);
+  a.edit('<video src="/media/other.mp4"></video>');
+  a.release(); await pending;
+  assert.equal(a.sent.some(message => message.blob), false);
+  assert.equal(a.play.playing("index.html", [0]), false);
+  // Playing, then the element at its place is another (the first removed, a sibling moved up): it stops.
+  const b = harness(undefined, before); b.release();
+  await b.play.toggle("index.html", [0], before);
+  b.edit('<video src="/media/sibling.mp4"></video>');
+  b.select({ path: "index.html", node: [0] });
+  assert.equal(b.play.playing("index.html", [0]), false);
+  assert.equal(b.sent.at(-1)?.request, null);
+  // The bar's source already stale when pressed: nothing plays.
+  const c = harness(undefined, '<video src="/media/newer.mp4"></video>'); c.release();
+  await c.play.toggle("index.html", [0], before);
+  assert.equal(c.play.playing("index.html", [0]), false);
+  assert.equal(c.sent.length, 0);
 });

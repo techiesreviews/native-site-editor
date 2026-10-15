@@ -142,4 +142,10 @@ test("Play on an Online video lays YouTube's own player over its place; Stop rem
   expect(Math.abs(shown!.width - place!.width)).toBeLessThan(2);
   await bar(page).getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.locator(".media-play-layer")).toHaveCount(0);
+  // Removed while it plays: its player goes with it, never left over another element.
+  await bar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await expect(player).toBeVisible();
+  await bar(page).getByRole("button", { name: "Remove", exact: true }).click();
+  await expect.poll(() => mounted(page)).not.toContain("online-video");
+  await expect(page.locator(".media-play-layer")).toHaveCount(0);
 });

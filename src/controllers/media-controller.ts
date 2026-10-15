@@ -403,7 +403,7 @@ export function createMediaController(ports: MediaControllerPorts) {
   let playerLoading: Promise<void> | undefined;
   const loadPlayer = (host: import("../page-builder/media-play").MediaPlayHost) => playerLoading ??= import("../page-builder/media-play").then(module => {
     player = module.createMediaPlay({ host, locate: (source, node) => locateNativeElementRange(source, node), site: () => ({ origins: ports.origins?.() ?? [] }),
-      blob: async path => (await workspaceContext(() => true)).blob(path), refresh: () => ports.refreshDescriptions() });
+      source: path => ports.source(path), blob: async path => (await workspaceContext(() => true)).blob(path), refresh: () => ports.refreshDescriptions() });
   }, error => { playerLoading = undefined; throw error; });
   function playControl(path: string, node: number[], source: string): EditBarControl[] {
     const host = ports.mediaPlay;
