@@ -300,7 +300,8 @@ function withAssetUrls(css: string, path: string, assets: Record<string, string>
 }
 
 /** The stylesheets the page at `route` links (the home page's for a component shown alone). */
-export function routeStylesheets(site: NativeSite, sources: Record<string, string>, route: string, prefix = sourcePrefix(sources)) {
+// `prefix`: the site's sub-folder (none at a domain root); the caller's sources may not carry the config.
+export function routeStylesheets(site: NativeSite, sources: Record<string, string>, route: string, prefix: string) {
   const file = site.routes[route] ?? site.routes[nativeDefaultRoute(site)];
   return file ? nativePageStylesheets(sources[file] ?? "", file, prefix) : [];
 }
@@ -330,7 +331,7 @@ function composeStyles(
   // The page's linked stylesheets with their `@import`s expanded: one sheet
   // per file, each import before the sheet that imports it (see
   // shared/css-imports.ts).
-  const linked = routeStylesheets(site, sources, alone ? "/" : route);
+  const linked = routeStylesheets(site, sources, alone ? "/" : route, sourcePrefix(sources));
   const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path], (path) => unreadable.has(path), prefix);
   const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets, prefix), wrappers, importer, kind }));
   const page = site.routes[alone ? "/" : route] ?? "";
@@ -707,7 +708,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       ...(site ? nativeSitePaths(site) : []),
       ...Object.values(componentStyles),
       ...(site ? (() => {
-        const linked = routeStylesheets(site, sources, alone ? "/" : route);
+        const linked = routeStylesheets(site, sources, alone ? "/" : route, sourcePrefix(sources));
         return [...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, sourcePrefix(sources)).imported];
       })() : []),
     ]);

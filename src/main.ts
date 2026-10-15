@@ -1976,7 +1976,7 @@ function nativePageStyles() {
   if (!nativeSite) return [];
   const sources = nativeSources();
   const route = nativeRouteForPath(appStore.openFile.value) ?? nativeDefaultRoute(nativeSite);
-  const linked = routeStylesheets(nativeSite, sources, route);
+  const linked = routeStylesheets(nativeSite, sources, route, nativePrefix());
   return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, nativePrefix()).imported])];
 }
 

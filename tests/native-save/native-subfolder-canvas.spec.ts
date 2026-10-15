@@ -54,3 +54,13 @@ test("changing the Site address updates the canvas without reloading", async ({ 
   await expect(frame(page).getByRole("img", { name: "Green square" })).toHaveAttribute("src", /^data:image\/svg\+xml/);
   await expect(page.locator(".native-preview-error")).toBeHidden();
 });
+
+test("Text size offers the size variables a prefixed import defines", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  // The imported layer file has loaded.
+  await expect(frame(page).locator("h1")).toHaveCSS("color", "rgb(47, 109, 58)");
+  await frame(page).locator("p[data-key=lead]").click();
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect.poll(() => bar.getByRole("combobox", { name: "Text size" }).locator("option").allTextContents()).toEqual(["Default", "S", "M", "L"]);
+});
