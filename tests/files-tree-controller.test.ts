@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createFilesTreeController, type FilesTreePorts } from "../src/controllers/files-tree-controller";
+import { createFilesTreeController, fileCount, type FilesTreePorts } from "../src/controllers/files-tree-controller";
 import type { FileOperationsTreeState } from "../src/controllers/file-operations-controller";
 import type { TreeEntry } from "../shared/types";
 
@@ -144,4 +144,34 @@ test("failed folder load reports only current epoch and always enables row", asy
     h.controller.render(); const row = h.row("folder"); await row.click();
     assert.equal(row.disabled, false); assert.equal(h.calls.includes("error"), !stale);
   }
+});
+
+test("the header counts the branch's files with the drafts applied, when the whole tree is known", () => {
+  const removed = { version: 1 as const, account: "a", repoId: 1, repo: "a/r", branch: "main", path: "b.txt", baseSha: "sha", original: "", content: "", updatedAt: 0, deleted: true as const };
+  const tree = [entry("a.txt"), entry("b.txt"), entry("folder", "tree"), entry("folder/c.txt")];
+  assert.equal(fileCount(undefined, { deleted: new Map(), drafted: [] }), undefined);
+  assert.equal(fileCount(tree, { deleted: new Map(), drafted: [] }), 3);
+  // b.txt deleted, new.txt added, a renamed file counted once at its new path.
+  assert.equal(fileCount(tree, { deleted: new Map([["b.txt", removed]]), drafted: ["new.txt", "folder/c.txt", "new.txt"] }), 3);
+  const counts: (number | undefined)[] = [];
+  const h = harness();
+  h.ports.count = (total) => counts.push(total);
+  h.snapshot({ entries: [entry("a.txt")], tree: [entry("a.txt")] }); h.controller.render();
+  assert.deepEqual(counts, [1]);
+});
+test("an empty repository says so instead of an empty list", () => {
+  const h = harness([]); h.controller.render();
+  const empty = h.root.querySelectorAll(".file-list__empty");
+  assert.equal(empty.length, 1);
+  assert.deepEqual(empty[0].children.map(child => child.textContent), ["No files yet", "Drop files here, or use + to add one."]);
+});
+test("a tree drawn again while a folder loads opens that folder from the same read", async () => {
+  const h = harness([entry("folder", "tree")]); let reads = 0, release = () => {};
+  h.load(() => { reads++; return new Promise(resolve => { release = () => resolve({ entries: [entry("child.txt")] }); }); });
+  h.controller.render(); const clicked = h.row("folder").click();
+  while (!reads) await Promise.resolve();
+  h.controller.render(); release(); await clicked; await Promise.resolve();
+  assert.equal(reads, 1);
+  assert.equal(h.row("folder").attributes.get("aria-expanded"), "true");
+  assert.ok(h.row("folder/child.txt"));
 });

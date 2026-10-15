@@ -50,7 +50,8 @@
 
 /* Renaming in the row. */
 .file-row-line.is-renaming { align-items: flex-start; }
-.file-rename { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 3px 4px 3px 26px; }
+/* The field's text starts where the name did (files-tree.css: 4 + 16 + 6 + 16 + 6 px). */
+.file-rename { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 3px 4px 3px 39px; }
 .file-rename__input {
   box-sizing: border-box;
   width: 100%;

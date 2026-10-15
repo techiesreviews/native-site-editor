@@ -83,14 +83,24 @@ export type IconName = keyof typeof icons;
 
 /** An icon's markup, sized in px and hidden from assistive technology (the control around it carries the name). */
 export function iconMarkup(name: IconName, size = 16, className = "") {
-  return icons[name].replace("<svg ", `<svg class="${`icon ${className}`.trim()}" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
+  return sizedSvg(icons[name], size, className);
+}
+
+/** Phosphor SVG markup (bundled here or in a lazy chunk), sized and hidden like iconMarkup. */
+export function sizedSvg(svg: string, size = 16, className = "") {
+  return svg.replace("<svg ", `<svg class="${`icon ${className}`.trim()}" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
+}
+
+/** SVG markup as an element. */
+export function svgElement(markup: string) {
+  const template = document.createElement("template");
+  template.innerHTML = markup;
+  return template.content.firstElementChild as SVGSVGElement;
 }
 
 /** An icon as an element, drawn in the text colour. */
 export function icon(name: IconName, size = 16, className?: string) {
-  const template = document.createElement("template");
-  template.innerHTML = iconMarkup(name, size, className);
-  return template.content.firstElementChild as SVGSVGElement;
+  return svgElement(iconMarkup(name, size, className));
 }
 
 /** Replaces an element's content with an icon. */

@@ -60,6 +60,7 @@ import type { createPagesTree, NativeNewRequest, NativePagesTarget } from "./com
 import "./components/pages-tree.css";
 import "./components/phone-sheet.css";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
+import "./components/files-tree.css";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import type { FilesResult, OwnerInstallation } from "../shared/types";
 import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "./boot-memory";
@@ -327,7 +328,7 @@ function mountWorkspace() {
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
       <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
-        <div class="files-heading"><span>FILES</span><span class="files-heading__end"><span id="revision">—</span><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
+        <div class="files-heading explorer-heading"><h2 class="explorer-heading__title">Files</h2><span id="files-count" class="explorer-heading__count"></span><span id="revision" hidden>—</span><span class="files-heading__end"><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
         <nav id="files" aria-label="Repository files"></nav>
       </div>
     </div>
@@ -484,8 +485,10 @@ function mountWorkspace() {
   pagesTreeMount = undefined;
   mountExplorerTabs();
   element("explorer").addEventListener("toggle", () => {
-    if (explorerDropdown?.isOpen()) void ensurePagesTree().then(() => renderPagesTree()).catch(errorMessage);
-    else {
+    if (explorerDropdown?.isOpen()) {
+      if (!element("explorer-files").hidden) filesTreeController.warm();
+      void ensurePagesTree().then(() => renderPagesTree()).catch(errorMessage);
+    } else {
       pagesTree?.reset();
       fileActions?.close();
       confirmDialog?.close();
@@ -3472,6 +3475,11 @@ const filesTreeController = createFilesTreeController({
   openDraft: openNewDraft, openEntry, restore: target => restoreFileTarget(target),
   create: openCreate, actions: () => fileActions,
   visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
+  count: (total) => {
+    const count = element("files-count"), version = element("revision").textContent ?? "";
+    count.textContent = total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`;
+    count.title = /^[0-9a-f]{7}$/.test(version) ? `Version ${version}` : "";
+  },
 });
 function renderFileTree() { filesTreeController.render(); }
 function renderDraftFiles() { filesTreeController.refresh(); }
@@ -3568,6 +3576,7 @@ function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
     button.setAttribute("aria-selected", String(tab === name));
     button.tabIndex = tab === name ? 0 : -1;
     panel.hidden = tab !== name;
+    if (name === "files" && tab === name && explorerDropdown?.isOpen()) filesTreeController.warm();
     // Without tabs the files are the whole explorer, not a tab's panel.
     if (native) panel.setAttribute("role", "tabpanel");
     else panel.removeAttribute("role");

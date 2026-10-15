@@ -1,0 +1,172 @@
+/* The explorer's Files tab (slice 124 design note): a calm header, one row height, a chevron
+   on every folder, icons by file type, a quiet type column when the panel is wide. */
+
+/* A tab's header: its name in title case and a quiet count; the Pages tab can share it. */
+.explorer-heading {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  min-block-size: var(--size-control);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.explorer-heading__title {
+  margin: 0;
+  font-size: var(--type-title);
+  font-weight: 600;
+  color: var(--text);
+}
+.explorer-heading__count {
+  font-size: var(--type-small);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.files-heading__end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+.explorer-heading .file-add {
+  inline-size: var(--size-control);
+  block-size: var(--size-control);
+}
+
+#files { container-type: inline-size; }
+.file-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+/* Rows in every list and menu stand 2px apart. */
+.file-list > li + li,
+.file-list .file-list { margin-block-start: 2px; }
+/* A level is a chevron and its gap deeper, so a child's chevron sits under its parent's icon;
+   a guide runs down an open folder's children under its chevron. */
+.file-list .file-list {
+  margin-inline-start: 12px;
+  padding-inline-start: 9px;
+  border-inline-start: 1px solid var(--control-line);
+}
+
+/* The whole line is the row, so a hover or the open file's tint runs under its + and ⋯ too. */
+.file-row-line {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius);
+}
+.file-row-line > .file-row { flex: 1; min-inline-size: 0; }
+.file-row-line:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) {
+  .file-row-line:hover { background: var(--hover); }
+}
+.file-row-line:has(> .file-row.selected) { background: var(--current); }
+
+.file-row {
+  display: flex;
+  inline-size: 100%;
+  gap: 6px;
+  align-items: center;
+  min-block-size: var(--size-control);
+  padding-block: 0;
+  padding-inline: 4px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--type-base);
+  text-align: start;
+  white-space: nowrap;
+}
+.file-row.selected { font-weight: 500; }
+
+/* The chevron's slot: empty for a file, so names at one level line up. */
+.file-row::before {
+  content: "";
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+}
+.file-row[aria-expanded]::before {
+  background: var(--muted);
+  mask: var(--icon-caret-right) center / 12px no-repeat;
+}
+.file-row[aria-expanded="true"]::before { rotate: 90deg; }
+@media (prefers-reduced-motion: no-preference) {
+  .file-row[aria-expanded]::before { transition: rotate 150ms ease-out; }
+}
+
+.file-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 16px;
+  color: var(--muted);
+}
+.file-icon.folder { color: var(--link); }
+/* A type's hue, mixed toward the text colour so it reads on light and dark panels. */
+.file-icon[data-type] { color: color-mix(in oklch, var(--file-tint, var(--muted)) 72%, var(--text)); }
+.file-icon:is([data-type="text"], [data-type="font"], [data-type="archive"], [data-type="other"]) { color: var(--muted); }
+.file-icon[data-type="page"] { --file-tint: oklch(66% 0.17 45); }
+.file-icon[data-type="style"] { --file-tint: oklch(62% 0.15 255); }
+.file-icon[data-type="script"] { --file-tint: oklch(74% 0.15 95); }
+.file-icon[data-type="data"] { --file-tint: oklch(64% 0.11 190); }
+.file-icon[data-type="picture"] { --file-tint: oklch(64% 0.15 150); }
+.file-icon[data-type="video"] { --file-tint: oklch(62% 0.17 340); }
+.file-icon[data-type="sound"] { --file-tint: oklch(62% 0.15 300); }
+.file-icon[data-type="pdf"] { --file-tint: oklch(60% 0.18 25); }
+.file-icon[data-type="document"] { --file-tint: oklch(60% 0.14 255); }
+
+.filename {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* What the file is, in a fixed column; only when the panel is wide. */
+.file-type { display: none; }
+@container (min-width: 640px) {
+  /* The row's end stays free for the + and ⋯ that fade in there. */
+  .file-row { padding-inline-end: 64px; }
+  .file-type {
+    display: block;
+    flex: none;
+    inline-size: 8ch;
+    margin-inline-start: auto;
+    padding-inline-start: 16px;
+    font-size: var(--type-small);
+    font-weight: 400;
+    color: var(--muted);
+  }
+}
+
+/* Change letters as code editors show them: coloured, no pill. */
+.file-row > .file-status { background: transparent; }
+.file-row > .file-type + .file-status { margin-inline-start: 8px; }
+
+/* An empty folder speaks at its children's name column; an empty repository in the middle. */
+.empty-folder {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--size-control);
+  padding-inline-start: 48px;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.file-list__empty {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.file-list__empty strong { font-size: var(--type-base); font-weight: 600; color: var(--text); }
+
+@media (hover: none), (pointer: coarse) {
+  /* One action per row on touch: a folder's ⋯ has New file, New folder and Upload files. */
+  .file-row-line > .row-action-overlay > .file-add { display: none; }
+  .explorer-heading .file-add { inline-size: 44px; block-size: 44px; }
+  .empty-folder { min-block-size: 44px; }
+}

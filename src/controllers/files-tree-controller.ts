@@ -32,6 +32,20 @@ export interface FilesTreePorts {
   create(path: string, opener: HTMLElement): void;
   actions(): ReturnType<typeof createFileRowActions> | undefined;
   visible(): boolean;
+  /** The header's count: the files on the branch with the drafts applied, when the whole tree is known. */
+  count?(files: number | undefined): void;
+}
+
+type FileTypeIcons = typeof import("../components/file-type-icons");
+
+/** The files the branch has with the drafts applied: its files less deleted ones, plus new and renamed ones. */
+export function fileCount(tree: TreeEntry[] | undefined, state: Pick<TreeState, "deleted" | "drafted">): number | undefined {
+  if (!tree) return undefined;
+  const branch = new Set(tree.filter((entry) => entry.type === "blob").map((entry) => entry.path));
+  let count = 0;
+  for (const path of branch) if (!state.deleted.has(path)) count++;
+  for (const path of new Set(state.drafted)) if (!branch.has(path)) count++;
+  return count;
 }
 
 export function createFilesTreeController(ports: FilesTreePorts) {
@@ -41,8 +55,18 @@ export function createFilesTreeController(ports: FilesTreePorts) {
   // read, by tree sha.
   const openFolders = new Set<string>();
   const folderListings = new Map<string, TreeEntry[]>();
+  // Listings being read, by tree sha: a row drawn again while its folder loads waits for the same read.
+  const folderReads = new Map<string, Promise<TreeEntry[] | undefined>>();
   // The changes the tree was last drawn with.
   let drawnNewFiles = "";
+  // Icons by file type, loaded once the tree is shown; until then files show the plain icon.
+  let types: FileTypeIcons | undefined;
+  let typesLoading = false;
+  function warm() {
+    if (types || typesLoading) return;
+    typesLoading = true;
+    void import("../components/file-type-icons").then((loaded) => { types = loaded; renderFileTree(); }, () => { typesLoading = false; });
+  }
 
   const treeSignature = (state: TreeState) => [...state.changes.values()].map((change) => `${change.kind} ${change.from ?? ""} ${change.path}`).join("\n");
   // A file renamed or moved away in the drafts: its new path shows it.
@@ -96,10 +120,18 @@ export function createFilesTreeController(ports: FilesTreePorts) {
     if (!snapshot) return;
     const state = ports.state();
     drawnNewFiles = treeSignature(state);
+    if (ports.visible()) warm();
+    ports.count?.(fileCount(snapshot.tree, state));
     const focused = document.activeElement instanceof HTMLElement && ports.root().contains(document.activeElement)
       ? document.activeElement.closest<HTMLElement>(".file-row")?.dataset.path
       : undefined;
-    ports.root().replaceChildren(renderEntries(snapshot.entries, "", ports.epoch(), state));
+    const list = renderEntries(snapshot.entries, "", ports.epoch(), state);
+    if (!list.children.length) {
+      const empty = node("li", "file-list__empty");
+      empty.append(node("strong", "", "No files yet"), node("span", "", "Drop files here, or use + to add one."));
+      list.append(empty);
+    }
+    ports.root().replaceChildren(list);
     if (focused) fileRow(focused)?.focus();
   }
 
@@ -143,9 +175,21 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       const item = node("li");
       const row = button("", () => {}, "file-row");
       const icon = node("span", `file-icon ${directory ? "folder" : ""}`);
-      setIcon(icon, directory ? "folder" : entry.type === "commit" ? "package" : entry.mode === "120000" ? "link-simple" : "file", 14);
+      const plain = entry.type === "blob" && entry.mode !== "120000";
+      const type = plain && types ? types.fileType(entry.path) : undefined;
+      if (type) {
+        icon.dataset.type = type;
+        icon.replaceChildren(types!.fileTypeIcon(type));
+      } else setIcon(icon, directory ? "folder" : entry.type === "commit" ? "package" : entry.mode === "120000" ? "link-simple" : "file", 16);
       icon.setAttribute("aria-hidden", "true");
       row.append(icon, node("span", "filename", entry.path));
+      // A wide panel says what the file is, quietly, after its name.
+      const label = type ? types!.fileTypeLabel(type) : "";
+      if (label) {
+        const kind = node("span", "file-type", label);
+        kind.setAttribute("aria-hidden", "true");
+        row.append(kind);
+      }
       // A new file, or a folder only new files are in, is not on GitHub yet;
       // a renamed, edited or deleted one is marked as git marks it.
       const change = directory ? undefined : state.changes.get(path);
@@ -166,15 +210,15 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       const show = (children: TreeEntry[]) => {
         childList = renderEntries(children, path, epoch, state);
         if (!childList.children.length)
-          childList.append(node("li", "muted empty-folder", "Empty folder"));
+          childList.append(node("li", "empty-folder", "Empty folder"));
         item.append(childList);
-        setIcon(icon, "folder-open", 14);
+        setIcon(icon, "folder-open", 16);
         row.setAttribute("aria-expanded", "true");
         openFolders.add(path);
       };
       // A folder's listing: none for a folder only new files are in, else read once.
       const cached = () => (entry.sha ? folderListings.get(entry.sha) : []);
-      const load = async () => {
+      const read = async () => {
         const repo = ports.repo();
         if (!repo) return undefined;
         const result = await ports.load({
@@ -184,6 +228,14 @@ export function createFilesTreeController(ports: FilesTreePorts) {
         folderListings.set(entry.sha, result.entries);
         return result.entries;
       };
+      const load = () => {
+        let reading = folderReads.get(entry.sha);
+        if (!reading) {
+          reading = read().finally(() => folderReads.delete(entry.sha));
+          folderReads.set(entry.sha, reading);
+        }
+        return reading;
+      };
       row.addEventListener("click", async () => {
         if (epoch !== ports.epoch() || !ports.repo()) return;
         ports.clearError();
@@ -192,7 +244,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
         if (directory) {
           if (childList) {
             childList.hidden = !childList.hidden;
-            setIcon(icon, childList.hidden ? "folder" : "folder-open", 14);
+            setIcon(icon, childList.hidden ? "folder" : "folder-open", 16);
             row.setAttribute("aria-expanded", String(!childList.hidden));
             if (childList.hidden) openFolders.delete(path);
             else openFolders.add(path);
@@ -206,12 +258,16 @@ export function createFilesTreeController(ports: FilesTreePorts) {
           }
           row.disabled = true;
           ports.status(`Loading ${path}…`);
+          // Open from the click: a tree drawn again meanwhile (a save, the type icons
+          // arriving) opens its row for this folder from the same read.
+          openFolders.add(path);
           try {
             const children = await load();
-            if (epoch !== ports.epoch() || !children) return;
-            show(children);
+            if (epoch !== ports.epoch() || !children) { openFolders.delete(path); return; }
+            if (row.isConnected) show(children);
             ports.status(`Opened ${path}.`);
           } catch (error) {
+            openFolders.delete(path);
             if (epoch === ports.epoch()) ports.error(error);
           } finally {
             row.disabled = false;
@@ -268,6 +324,6 @@ export function createFilesTreeController(ports: FilesTreePorts) {
 
   return { render: renderFileTree, refresh: renderDraftFiles, row: fileRow, signature: treeSignature,
     openFolder: (path: string) => { openFolders.add(path); },
-    listings: () => folderListings, visible: () => ports.visible(),
-    reset: () => { openFolders.clear(); folderListings.clear(); } };
+    listings: () => folderListings, visible: () => ports.visible(), warm,
+    reset: () => { openFolders.clear(); folderListings.clear(); folderReads.clear(); } };
 }
