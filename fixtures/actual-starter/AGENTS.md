@@ -225,6 +225,12 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 - restore_media with no files reads Recently removed (dates, days left, family members and browser-only copies). Give main paths to restore the newest entries and whole families; taken addresses or missing browser copies refuse.
 - Each action is an ordinary unsaved change through the open editor, one Undo step, with no extra Yes/No or dialog. With the editor closed there is no media work.
 
+### Improve images
+- improve_images runs for one page or component template with row, or for all rows when row is omitted (components first).
+- It makes lighter files and responsive copies for heavy pictures already in the site, turns GIFs into Looping videos, and adds missing copies and size details. Each page or component is one unsaved Undo step.
+- Pictures from other websites stay as they are and are listed for the user. Switching old YouTube/Vimeo players to a picture until tapped stays with the user too.
+- Unticked pictures (left as is) stay as they are. No extra Yes/No is needed.
+
 ### Renaming and Replace everywhere
 - move_file renames or moves a media file's whole Image family and rewrites every mention. A same-folder rename keeps its folder and type and tidies the name as at adding. A taken name is refused with the next numbered suggestion. keepOldUrl keeps the old address working and defaults to Always keep for media.
 - replace_media uses a picture already in Media, never outside files or the file's own family. Replace the main picture, not a responsive copy, kept original, Trimmed copy or SVG.

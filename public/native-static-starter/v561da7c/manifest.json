@@ -1,6 +1,6 @@
 {
-  "version": "8f55ecc",
-  "source": "techiesreviews/native-site-editor-starter@8f55ecc",
+  "version": "561da7c",
+  "source": "techiesreviews/native-site-editor-starter@561da7c",
   "files": [
     {
       "path": "404.html",
@@ -9,8 +9,8 @@
     },
     {
       "path": "AGENTS.md",
-      "size": 37051,
-      "sha256": "49d340bb7a37209138091433ce4d07e4a862909d25768844bbd4549c024e20bc"
+      "size": 37646,
+      "sha256": "d747d7fa9b44c2cb53bb26cd09af70c4f30199fdaa54fc02136934ea58de8c81"
     },
     {
       "path": "about/index.html",
