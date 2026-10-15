@@ -700,3 +700,23 @@ test("agent Improve images refuses a busy Media screen and keeps its original re
   f.bump();
   await assert.rejects(run.context(), /changed branch or revision/);
 });
+
+test("agent Improve images refuses a revision change during a held workspace read and writes nothing", async () => {
+  let release!: (text: string) => void, started!: () => void;
+  const reading = new Promise<void>(resolve => { started = resolve; });
+  let batches = 0;
+  const f = fixture({
+    readText: () => { started(); return new Promise<string>(resolve => { release = resolve; }); },
+    applyBatch: async () => { batches++; },
+  });
+  const held = f.ports.workspace()!;
+  f.ports.workspace = () => ({ ...held, nativePaths: ["index.html", "styles/site.css", "images/old.png"] });
+  const { agentImproveImages } = await import("../src/agent-improve-images.ts");
+  const run = agentImproveImages(f.controller.prepareImprove());
+  await reading;
+  f.bump();
+  release("body { color: red; }");
+  await assert.rejects(run, /changed/);
+  assert.equal(batches, 0);
+  assert.equal(f.changes.length, 0);
+});
