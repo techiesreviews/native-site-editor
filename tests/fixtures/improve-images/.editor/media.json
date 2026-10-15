@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "collections": [],
+  "files": {},
+  "leftAsIs": [
+    { "picture": "https://shop.greenshiftwp.com/banner.jpg" },
+    { "picture": "images/icon.svg", "row": "articles/notch-menu/index.html" }
+  ]
+}

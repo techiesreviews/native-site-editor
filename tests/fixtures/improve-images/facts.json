@@ -1,0 +1,16 @@
+{
+  "images/brand.jpg": {"size": 100000, "width": 1200, "height": 800},
+  "images/uploads/panel.jpg": {"size": 100000, "width": 1200, "height": 800},
+  "images/uploads/panel-400.webp": {"size": 10000, "width": 400, "height": 267},
+  "images/uploads/panel-800.webp": {"size": 20000, "width": 800, "height": 533},
+  "images/uploads/panel-1200.webp": {"size": 30000, "width": 1200, "height": 800},
+  "images/heavy.jpg": {"size": 300000, "width": 1200, "height": 800},
+  "images/header.jpg": {"size": 300000, "width": 1200, "height": 800},
+  "images/footer.jpg": {"size": 300000, "width": 1200, "height": 800},
+  "images/animation.gif": {"size": 132000, "width": 800, "height": 600, "animated": true},
+  "images/wide.png": {"size": 150000, "width": 2560, "height": 1440},
+  "images/small.jpg": {"size": 204800, "width": 1200, "height": 800},
+  "images/icon.svg": {}, "images/logo.svg": {}, "images/fallback.jpg": {},
+  "images/placed.jpg": {"size": 100000, "width": 1200, "height": 800},
+  "images/placed-480.webp": {"size": 10000, "width": 480, "height": 320}
+}

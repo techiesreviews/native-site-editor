@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, renameMediaRecord, removeMediaRecords, setMediaCollections, setMediaDescription } from "../shared/media-records";
+import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, renameMediaRecord, removeMediaRecords, setMediaCollections, setMediaDescription, setPictureLeftAsIs } from "../shared/media-records";
 import { applyMediaMetadata, cleanMediaTags, mediaMetadataView } from "../src/page-builder/media-metadata";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 
@@ -236,4 +236,28 @@ test("removed online-video records validate hash and serviceBar too", () => {
   assert.deepEqual(parseMediaRecords(serializeMediaRecords(parsed)), parsed);
   assert.equal(parsed.removed?.[0].onlineVideo?.future, 42);
   assert.throws(() => parseMediaRecords(JSON.stringify({ ...records, removed: [{ ...records.removed[0], onlineVideo: { ...records.removed[0].onlineVideo, hash: 12 } }] })), /removed\[0\].onlineVideo.hash/);
+});
+
+test("leftAsIs validates, deduplicates, retains unknown keys and serializes after adding", () => {
+  const records = parseMediaRecords(JSON.stringify({ ...source, leftAsIs: [{ picture: "a.jpg", future: true }, { picture: "a.jpg" }, { picture: "a.jpg", row: "index.html" }] }));
+  assert.deepEqual(records.leftAsIs, [{ picture: "a.jpg", future: true }, { picture: "a.jpg", row: "index.html" }]);
+  const written = serializeMediaRecords(records);
+  assert.deepEqual(parseMediaRecords(written), records);
+  assert.deepEqual(Object.keys(JSON.parse(written)).slice(-3), ["adding", "leftAsIs", "future"]);
+  assert.equal(parseMediaRecords(JSON.stringify({ ...source, leftAsIs: [] })).leftAsIs, undefined);
+  for (const value of [null, {}, [null], ["a"], [{}], [{ picture: "" }], [{ picture: " " }], [{ picture: 1 }], [{ picture: "a", row: "" }], [{ picture: "a", row: 1 }]]) assert.throws(() => parseMediaRecords(JSON.stringify({ ...source, leftAsIs: value })), /leftAsIs/);
+});
+
+test("setPictureLeftAsIs adds/removes exact scope immutably, no-ops reuse records; rename moves picture keys", () => {
+  const records = parseMediaRecords(undefined);
+  assert.equal(setPictureLeftAsIs(records, { picture: "a.jpg" }, false), records);
+  const global = setPictureLeftAsIs(records, { picture: "a.jpg" }, true);
+  assert.equal(setPictureLeftAsIs(global, { picture: "a.jpg" }, true), global);
+  const scoped = setPictureLeftAsIs(global, { picture: "a.jpg", row: "index.html" }, true);
+  assert.deepEqual(scoped.leftAsIs, [{ picture: "a.jpg" }, { picture: "a.jpg", row: "index.html" }]);
+  const removed = setPictureLeftAsIs(scoped, { picture: "a.jpg" }, false);
+  assert.deepEqual(removed.leftAsIs, [{ picture: "a.jpg", row: "index.html" }]);
+  assert.equal(setPictureLeftAsIs(removed, { picture: "a.jpg", row: "index.html" }, false).leftAsIs, undefined);
+  assert.deepEqual(renameMediaRecord(scoped, "a.jpg", "b.jpg").leftAsIs, [{ picture: "b.jpg" }, { picture: "b.jpg", row: "index.html" }]);
+  assert.equal(records.leftAsIs, undefined);
 });

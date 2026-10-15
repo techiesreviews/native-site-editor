@@ -47,9 +47,14 @@ export interface AddingSettings {
   keepOriginal?: boolean;
   [key: string]: unknown;
 }
+export interface PictureLeftAsIs {
+  picture: string; row?: string;
+  [key: string]: unknown;
+}
 export interface MediaRecords {
   version: 2; collections: string[]; files: Record<string, MediaFileRecord>;
   onlineVideos?: OnlineVideoRecord[]; removed?: RemovedMedia[]; adding?: AddingSettings;
+  leftAsIs?: PictureLeftAsIs[];
   [key: string]: unknown;
 }
 
@@ -187,6 +192,22 @@ function readRecords(value: Record<string, unknown>): MediaRecords {
     flags(adding, ["keepOriginal"], "adding");
     if (Object.keys(adding).length) out.adding = adding as AddingSettings; else delete out.adding;
   }
+  if (value.leftAsIs !== undefined) {
+    const seen = new Set<string>();
+    const entries = array(value.leftAsIs, "leftAsIs").map((entry, index) => {
+      const field = `leftAsIs[${index}]`, item = { ...object(entry, field) };
+      for (const key of ["picture", "row"]) {
+        if (key === "row" && item[key] === undefined) continue;
+        if (!string(item[key], `${field}.${key}`).trim()) invalid(`${field}.${key}`, "must not be empty");
+      }
+      return item as PictureLeftAsIs;
+    }).filter(item => {
+      const key = JSON.stringify([item.picture, item.row]);
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    if (entries.length) out.leftAsIs = entries; else delete out.leftAsIs;
+  }
   return out;
 }
 
@@ -224,8 +245,8 @@ function sortedPlaces(record: MediaFileRecord): MediaFileRecord {
   return record.places ? { ...record, places: Object.fromEntries(Object.entries(record.places).sort(([a], [b]) => a.localeCompare(b))) } : record;
 }
 export function serializeMediaRecords(records: MediaRecords): string {
-  const { version, collections, files, onlineVideos, removed, adding, ...unknown } = records;
-  return `${JSON.stringify({ version, collections, files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)).map(([path, record]) => [path, sortedPlaces(record)])), onlineVideos, removed: removed?.map(item => item.record ? { ...item, record: sortedPlaces(item.record) } : item), adding, ...unknown }, null, 2)}\n`;
+  const { version, collections, files, onlineVideos, removed, adding, leftAsIs, ...unknown } = records;
+  return `${JSON.stringify({ version, collections, files: Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)).map(([path, record]) => [path, sortedPlaces(record)])), onlineVideos, removed: removed?.map(item => item.record ? { ...item, record: sortedPlaces(item.record) } : item), adding, leftAsIs, ...unknown }, null, 2)}\n`;
 }
 
 export function renameMediaRecord(records: MediaRecords, from: string, to: string): MediaRecords {
@@ -245,7 +266,11 @@ export function renameMediaRecord(records: MediaRecords, from: string, to: strin
     if (video.still !== from) return video;
     changed = true; return { ...video, still: to };
   });
-  return changed ? { ...records, files, ...(onlineVideos ? { onlineVideos } : {}) } : records;
+  const leftAsIs = records.leftAsIs?.map(item => {
+    if (item.picture !== from) return item;
+    changed = true; return { ...item, picture: to };
+  });
+  return changed ? { ...records, files, ...(onlineVideos ? { onlineVideos } : {}), ...(leftAsIs ? { leftAsIs } : {}) } : records;
 }
 export function removeMediaRecords(records: MediaRecords, paths: string[]): MediaRecords {
   const removed = new Set(paths);
@@ -273,4 +298,13 @@ export function setMediaDescription(records: MediaRecords, path: string, text: s
   if (!byAgent && record.description) delete record.description.byAgent;
   if (text) delete record.decorative;
   return { ...records, files: Object.assign(Object.create(null), records.files, { [path]: record }) };
+}
+
+/** Remember a picture globally or only in the file where it is written. */
+export function setPictureLeftAsIs(records: MediaRecords, item: PictureLeftAsIs, leftAsIs: boolean): MediaRecords {
+  const matches = (entry: PictureLeftAsIs) => entry.picture === item.picture && entry.row === item.row;
+  if ((records.leftAsIs?.some(matches) ?? false) === leftAsIs) return records;
+  const entries = leftAsIs ? [...records.leftAsIs ?? [], item] : records.leftAsIs!.filter(entry => !matches(entry));
+  const { leftAsIs: _old, ...rest } = records;
+  return entries.length ? { ...rest, leftAsIs: entries } : rest as MediaRecords;
 }
