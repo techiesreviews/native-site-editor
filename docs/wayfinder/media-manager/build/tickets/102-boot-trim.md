@@ -1,7 +1,7 @@
 ---
 title: Trim the boot bundle again
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-102 runner)
 blocked_by: [78-prefix-every-writer]
 builder: sol
