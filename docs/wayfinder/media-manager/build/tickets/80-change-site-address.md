@@ -1,8 +1,8 @@
 ---
 title: Changing the site address rewrites every address
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-80 runner)
 blocked_by: [78-prefix-every-writer, 79-prefix-change-url]
 builder: claude
 phase: 7
