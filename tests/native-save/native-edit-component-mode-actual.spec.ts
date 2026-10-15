@@ -115,12 +115,12 @@ test("template roots have no move, duplicate or remove actions; children keep th
   await toolbar(page).locator(".edit-bar__label").evaluate(label => { label.tabIndex = -1; label.focus(); });
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(() => source(TEMPLATE)).not.toBe(start);
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(TEMPLATE)).toBe(start);
   await child.locator(".page-structure__label").click();
   await toolbar(page).getByRole("button", { name: "Duplicate", exact: true }).click();
   await expect.poll(nested).toBe(2);
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect.poll(nested).toBe(1);
 
   // Opening the nested card protects its article root too.

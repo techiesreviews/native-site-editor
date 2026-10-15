@@ -46,7 +46,7 @@ test("New component drafts files, places a section, opens Edit component mode an
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(frame(page).locator('section-services h2[slot="title"]')).toHaveText("New section");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(frame(page).locator("section-services")).toHaveCount(0);
   await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
   for (const path of [templatePath, cssPath]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
@@ -103,7 +103,7 @@ test("Redo of New component refuses whole when a file is at its path again; plai
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", templatePath);
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(frame(page).locator("section-services")).toHaveCount(0);
   for (const path of [templatePath, cssPath]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
 

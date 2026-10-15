@@ -56,7 +56,7 @@ test("Make component makes a section a component at once, named from its heading
 
   await done(page).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(frame(page).locator(tag)).toHaveCount(0);
   await expect.poll(() => effectiveSource(page, baseURL, indexPath)).toBe(before);
   for (const path of [templatePath, cssPath]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();

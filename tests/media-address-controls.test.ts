@@ -31,7 +31,7 @@ test("media details Copy path copies the encoded site address under the current 
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (text: string) => { copied.push(text); } } } });
   try {
     for (const prefix of ["", "/my-site"]) {
-      const preview = renderPreview({ library: () => ({ prefix }), task: (work: () => Promise<void>) => work(), tell() {}, cache: {} }, "media/a b.webp", { url: "blob:picture" }, { alt: "" }, undefined, () => true);
+      const preview = renderPreview({ library: () => ({ prefix }), task: (work: () => Promise<void>) => work(), tell() {}, done() {}, cache: {} }, "media/a b.webp", { url: "blob:picture" }, { alt: "" }, undefined, () => true);
       await preview.children.at(-1).children.find((button: { label: string }) => button.label === "Copy path").click();
       assert.equal(copied.at(-1), `${prefix}/media/a%20b.webp`);
     }

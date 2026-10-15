@@ -129,7 +129,7 @@ test("the component's tag is renamed in place everywhere as one undo step", { ta
   if (shots) await page.screenshot({ path: `${shots}/2-renamed.png` });
 
   // One Undo restores everything, the mode still on; Redo applies it again.
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect.poll(files).toEqual(before);
   await expect(tag(page)).toHaveText("<section-work>");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", OLD.html);

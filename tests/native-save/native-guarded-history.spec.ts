@@ -30,7 +30,7 @@ test("Undo of a block from the rail selects what was selected before and says so
   await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Paragraph", exact: true }).click();
   await expect(status(page)).toHaveText(/^Paragraph added\./);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(status(page)).toHaveText("Undid adding the Paragraph.");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(tree(page).getByRole("treeitem", { selected: true })).toHaveAccessibleName(/^Heading/);
@@ -60,7 +60,7 @@ test("a plain repository renames a file in the Files tab with no file open; Undo
   await expect(page.locator("#primary-title")).toHaveText("NOTES.md");
   await expect.poll(async () => (await storedDraft(page, "NOTES.md"))?.movedFrom).toBe("README.md");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(status(page)).toHaveText("Undid renaming README.md to NOTES.md.");
   await expect.poll(() => storedDraft(page, "NOTES.md")).toBeUndefined();
   await expect.poll(() => storedDraft(page, "README.md")).toBeUndefined();
@@ -82,7 +82,7 @@ test("Undo of Make component closes the new component's stylesheet pane", async 
   // Back on the page, the new component's stylesheet still shows beside it.
   await expect(page.locator("#secondary-pane")).toBeVisible();
   await expect(page.locator("#secondary-title")).toContainText(cssPath);
-  await page.getByRole("button", { name: "Undo", exact: true }).first().click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(frame(page).locator(tag)).toHaveCount(0);
   await expect.poll(() => storedDraft(page, cssPath)).toBeUndefined();
   await expect(page.locator("#secondary-pane")).toBeHidden();

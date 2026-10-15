@@ -276,7 +276,7 @@ test("renaming a single-file page changes its URL, updates its links and keeps i
 
   // Undo right after takes the rename, the link and the redirect back.
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/notes.html");
   await expect(status(page)).toHaveText("Undid renaming work/notes.html to work/journal.html.");
   for (const path of ["work/journal.html", "work/notes.html", "work/index.html", "_redirects"])

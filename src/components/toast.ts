@@ -42,12 +42,15 @@ function build() {
   });
   toast.addEventListener("focusout", (event) => { if (!toast!.contains(event.relatedTarget as Node | null)) release(); });
   toast.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.stopPropagation(); dismissToast(); } });
-  // A layer that held the toast closed: it moves to the next one down.
-  const closed = (event: Event) => {
-    if (event.target instanceof Element && event.target !== toast && toast!.parentElement === event.target && toast!.matches(":popover-open")) place();
+  // A layer opened over the toast takes it in (else it sits under it, and a click on it would
+  // close it); a layer that held it closed hands it to the next one down.
+  const moved = (event: Event) => {
+    const target = event.target, host = toast!.parentElement;
+    if (!(target instanceof HTMLElement) || target === toast || !host || !toast!.matches(":popover-open")) return;
+    if (target.matches(":popover-open, dialog:modal") ? !host.contains(target) : target.contains(host)) place();
   };
-  document.addEventListener("toggle", closed, true);
-  document.addEventListener("close", closed, true);
+  document.addEventListener("toggle", moved, true);
+  document.addEventListener("close", moved, true);
   const status = document.getElementById("status");
   if (status) new MutationObserver(() => { if (status.textContent !== shown) dismissToast(); }).observe(status, { childList: true, characterData: true, subtree: true });
 }

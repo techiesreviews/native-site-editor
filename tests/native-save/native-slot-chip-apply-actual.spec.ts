@@ -74,7 +74,7 @@ test("slot chip toggles and renames the template in one undo step without reload
     expect(await frame(page).locator("html").evaluate(() => (window as typeof window & { slotMark?: string }).slotMark)).toBe("slice-44");
     expect(await page.locator(".native-preview-frame").getAttribute("srcdoc")).toBe(srcdoc);
   };
-  const undo = () => page.getByRole("button", { name: "Undo", exact: true }).click();
+  const undo = () => page.locator(".code-editor__undo").first().click();
   const redo = () => page.getByRole("button", { name: "Redo", exact: true }).click();
   const rename = async (value: string) => {
     await chip(page).dblclick();

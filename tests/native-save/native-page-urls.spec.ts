@@ -153,7 +153,7 @@ test("Page settings URL changes a page's URL: links in pages and the header nav 
   expect((await draft(page, "notes/hello/index.html")).movedFrom).toBe(notePath);
 
   // Undo takes every file back.
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(status(page)).toHaveText("Undid changing the URL of The first note to /notes/hello/.");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", notePath);
   await readSetting(page, "URL", "/notes/first-note/");

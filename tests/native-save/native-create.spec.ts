@@ -366,7 +366,7 @@ test("undo or discard of a new page takes it back; undoing a subpage leaves its 
 
   // Undo right after creating takes back the page and its title.
   await create("Draft page");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(page.locator("#status")).toHaveText("Undid creating the page Draft page.");
   await gone("Draft page");
 

@@ -77,7 +77,7 @@ test("Structure frames template parts and mirrors slot chip edits in both themes
   const lede = row(LEDE);
   const badge = (text: string) => row(text).locator(":scope > .slot-chip");
   const source = () => effectiveSource(page, baseURL, TEMPLATE);
-  const undo = () => page.getByRole("button", { name: "Undo", exact: true }).click();
+  const undo = () => page.locator(".code-editor__undo").first().click();
   await expect(outline).toBeVisible();
   // Placeholders showing, the page's elements still report the slots they fill (never the runtime's stand-in name).
   expect(JSON.stringify(await page.evaluate(() => (window as typeof window & { reportedStructures: unknown[] }).reportedStructures))).not.toContain("ase-placeholder");

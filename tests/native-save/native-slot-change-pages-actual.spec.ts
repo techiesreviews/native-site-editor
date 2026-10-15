@@ -80,7 +80,7 @@ test("slot changes rewrite the template and both pages as one undo step", { tag:
   const work = frame(page).locator("section-work");
   const home = homeWithWork(), about = aboutWithWork();
   const files = () => Promise.all([TEMPLATE, "index.html", ABOUT].map((path) => effectiveSource(page, baseURL, path)));
-  const undo = () => page.getByRole("button", { name: "Undo", exact: true }).click();
+  const undo = () => page.locator(".code-editor__undo").first().click();
   const status = page.locator("#status");
 
   // Made fixed: both pages lose their title; the template's heading shows instead. One undo restores all three.

@@ -58,7 +58,7 @@ for (const entry of ["Structure button", "Structure right-click", "preview right
     await frame(page).locator(`${tag} section`).click({ button: "right", position: { x: 8, y: 8 } });
     await expect(menu(page)).toHaveCount(0);
     await page.getByRole("button", { name: "Done editing component", exact: true }).click();
-    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await page.locator(".code-editor__undo").first().click();
     await expect.poll(() => effectiveSource(page, baseURL, "index.html")).toBe(before);
     await expect.poll(() => storedDraft(page, `components/${tag}/${tag}.html`)).toBeUndefined();
   });

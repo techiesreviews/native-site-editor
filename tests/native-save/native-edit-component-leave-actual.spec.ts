@@ -86,7 +86,7 @@ test("Undo before mode entry moves the instance and clears the mode bar and fram
   await insertAbove(page);
   await enter(page);
   await expect(row(page, /^Section mode/)).toHaveAttribute("aria-expanded", "true");
-  await page.getByRole("button", { name: "Undo", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
   await expect(frame(page).getByText("Before instance", { exact: true })).toHaveCount(0);
   await expect(title(page)).toHaveCount(0);
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']:visible, [data-native-selection-box='edit-shade']:visible")).toHaveCount(0);

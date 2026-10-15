@@ -70,7 +70,7 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
   test(`${entry} offers slot actions and renames in a visible chip, each one undo step`, { tag: "@actual" }, async ({ page, baseURL }) => {
     await openMode(page, baseURL);
     const source = () => effectiveSource(page, baseURL, TEMPLATE);
-    const undo = () => page.getByRole("button", { name: "Undo", exact: true }).click();
+    const undo = () => page.locator(".code-editor__undo").first().click();
     const open = async () => {
       if (entry === "canvas") {
         await expect(async () => {

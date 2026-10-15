@@ -64,7 +64,7 @@ async function undoRedo(page: Page, tag: string, before: Map<string, string>, in
     await expect(page.locator("#secondary-title")).toHaveText(`components/${tag}/${tag}.css`);
     await expect(page.locator("#secondary-pane")).toBeVisible();
   }
-  await page.getByRole("button", { name: "Undo", exact: true }).first().click();
+  await page.locator(".code-editor__undo").first().click();
   for (const [path, text] of before) await expect.poll(async () => (await storedDraft(page, path))?.content).toBe(text);
   for (const path of [COMPONENT_LOADER_PATH, `components/${tag}/${tag}.html`, `components/${tag}/${tag}.css`]) await expect.poll(() => storedDraft(page, path)).toBeUndefined();
   await expect(frame(page).locator(tag)).toHaveCount(0);
@@ -155,7 +155,7 @@ for (const entry of ["Add panel", "add_section"])
       await checkLoader(page);
       await expect(frame(page).locator(`${tag} h2`)).toHaveText("Seeded section");
       await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Section seeded");
-      await page.getByRole("button", { name: "Undo", exact: true }).first().click();
+      await page.locator(".code-editor__undo").first().click();
       for (const [path, text] of before) await expect.poll(async () => (await storedDraft(page, path))?.content).toBe(text);
       await expect.poll(() => storedDraft(page, COMPONENT_LOADER_PATH)).toBeUndefined();
       expect((await storedDraft(page, templatePath))?.content).toContain("Seeded section");

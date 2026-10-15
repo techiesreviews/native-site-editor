@@ -376,7 +376,7 @@ test("a description saved in File details shows on the placed image, and usage n
   await expect(library.getByText("Not described yet", { exact: true })).toBeVisible();
   await library.getByLabel("Description", { exact: true }).fill("A quiet green placeholder");
   await library.getByRole("button", { name: "Save details", exact: true }).click();
-  await expect(library.getByRole("status").last()).toContainText("Details saved as a draft");
+  await expect(page.locator(".editor-toast__text")).toContainText("Details saved as a draft");
   await expect(page.frameLocator(".native-preview-frame").locator(".hero-image")).toHaveAttribute("alt", "A quiet green placeholder");
   await expect.poll(() => records(page)).toContain("A quiet green placeholder");
   await expect(library.getByLabel("Description", { exact: true })).toHaveValue("A quiet green placeholder");
