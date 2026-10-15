@@ -1,8 +1,8 @@
 ---
 title: Touch, disabled and dark-mode fixes
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-106 runner)
 blocked_by: [89-ux-ui-audit]
 builder: claude
 phase: 8
