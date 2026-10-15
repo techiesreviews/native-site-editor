@@ -32,8 +32,8 @@ export interface MediaControllerPorts {
   /** `slot`: `node` is a component instance; measure its fallback image in that slot (a first fill). */
   measureImage?(path: string, node: number[], image: { width?: number; height?: number }, slot?: string, style?: string): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
   usage?: MediaUsageCheckPorts;
-  /** The clean-up count: where it is remembered (repository and branch) and the controls that show it. */
-  cleanUp?: { place(): string; marks(): HTMLElement[] };
+  /** Clean up's and Improve images' counts in More: the place (repository and branch) they count. */
+  cleanUp?: { place(): string };
   /** Opens a page in the canvas and waits until it is shown (Improve images measures each page there). */
   showPage?(path: string): Promise<void>;
   origins?(): string[];
@@ -86,11 +86,8 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
   const usageListeners = new Set<(records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void>();
   // Clean up's count rides in the usage chunk: no clean-up code runs at boot.
   let cleanUp: ReturnType<typeof import("./media-clean-up-controller")["createMediaCleanUpController"]> | undefined;
-  let cleanUpView: typeof import("../page-builder/media-clean-up-view") | undefined;
   const cleanUpListeners = new Set<() => void>();
   function drawCleanUp() {
-    if (!cleanUp || !cleanUpView || !ports.cleanUp) return;
-    cleanUpView.drawMediaCount(ports.cleanUp.marks(), cleanUp.state().badge);
     for (const listener of cleanUpListeners) listener();
   }
   // More's Clean up item carries the count; the pane's review (slice 50) reads the suggestions.
@@ -98,7 +95,6 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     return {
       item: () => cleanUp?.item() ?? { label: "Clean up", disabled: "Still checking which files are used." },
       state: () => cleanUp?.state(),
-      dismiss: () => cleanUp?.dismiss(),
       improve: { item: () => cleanUp?.improveItem() ?? { label: "Improve images" }, known: (sizes: Record<string, { width?: number; height?: number }>) => cleanUp?.known(sizes),
         measure: (path: string, node: number[], size: { width?: number; height?: number }) => ports.measureImage?.(path, node, size) ?? Promise.resolve(undefined),
         show: (path: string) => ports.showPage?.(path), url: () => ports.usage?.url() },
@@ -114,13 +110,11 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     // Even the scanner's chunk waits for the deferred text index and first paint.
     void check.settled().then(() => {
       if (key !== check.key()) return;
-      const marks = ports.cleanUp;
-      usageLoading ??= Promise.all([import("./media-usage-controller"),
-        marks && import("./media-clean-up-controller"), marks && import("../page-builder/media-clean-up-view"),
-      ]).then(([{ createMediaUsageController }, cleanUpModule, view]) => {
-        if (marks && cleanUpModule && view) {
-          cleanUpView = view;
-          cleanUp = cleanUpModule.createMediaCleanUpController({ ...check, place: () => marks.place(), storage: () => localStorage, changed: drawCleanUp,
+      const counts = ports.cleanUp;
+      usageLoading ??= Promise.all([import("./media-usage-controller"), counts && import("./media-clean-up-controller"),
+      ]).then(([{ createMediaUsageController }, cleanUpModule]) => {
+        if (counts && cleanUpModule) {
+          cleanUp = cleanUpModule.createMediaCleanUpController({ ...check, place: () => counts.place(), changed: drawCleanUp,
             blob: async path => (await workspaceContext()).blob(path),
             version: path => { const at = ports.workspace(), draft = at?.drafts.get(at.scope, path); return draft ? draft.deleted ? undefined : draft.sourceSha : ports.entry(path)?.sha; },
             size: path => { const at = ports.workspace(), draft = at?.drafts.get(at.scope, path); return draft ? draft.upload?.size : ports.entry(path)?.size; } });

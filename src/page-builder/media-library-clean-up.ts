@@ -1,7 +1,7 @@
 import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
 import { icon } from "../icons";
-import { cleanUpMenuItem } from "./media-badge";
+import { cleanUpMenuItem } from "./media-clean-up-menu";
 import type { MediaCleanUpKind } from "./media-clean-up";
 import {
   bytesText, cleanedMessage, cleanUpGroupNames, cleanUpLimit, cleanUpTitle, groupLine, itemLine, keepSelected,
@@ -42,7 +42,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
     const sizes = Object.fromEntries(h.library().items.map(item => [item.path, item.size]));
     const live = state && sizedSuggestions(state.suggestions, sizes);
     if (live?.state === "ready") last = live;
-    return { live, badge: state?.badge, steady: live?.state === "not-checked" ? last : live };
+    return { live, steady: live?.state === "not-checked" ? last : live };
   };
   const go = (next: Phase, focus = true) => { phase = next; draw(focus); };
 
@@ -56,7 +56,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
       const active = document.activeElement;
       draw(active instanceof HTMLElement && element.contains(active) ? active.dataset.focusKey ?? false : false);
     };
-    const { live, badge, steady } = current();
+    const { live, steady } = current();
     // While the site is checked again the open review stays, but nothing can be removed until it is done.
     const actionable = live?.state === "ready";
     const { title } = sheetHead(element, "", () => phase.at === "groups" ? h.close() : go(phase.at === "confirm" ? { at: "review", kind: phase.kind } : { at: "groups" }));
@@ -113,12 +113,6 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
           list.append(item);
         }
         element.append(list);
-      }
-      if (ready && badge?.show) {
-        const dismiss = button("Dismiss", () => { h.cleanUp.dismiss(); draw(); }, "button secondary");
-        const row = node("div", "media-cleanup__dismiss");
-        row.append(dismiss, node("span", "media-library__muted", "Hides the count on the Media tab until other files turn up."));
-        element.append(row);
       }
     }
 

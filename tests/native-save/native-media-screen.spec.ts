@@ -293,12 +293,12 @@ test("in the list a tap on a phone leaves no row lit, and a mouse lights only th
   await page.close();
 });
 
-/** What a tile shows beyond its picture: open usage words, selection rings, and names not fully shown. */
+/** What a tile shows beyond its picture: open usage words, selection rings, and names shown (slice 122). */
 const tileMarks = (page: Page) => pane(page).locator(".media-library__grid").evaluate(grid => [...grid.querySelectorAll<HTMLElement>(".media-library__card")].flatMap(card => {
   const path = card.dataset.path, marks: string[] = [];
   if (getComputedStyle(card.querySelector(".media-library__usage-label")!).display !== "none") marks.push(`${path} words`);
   if (getComputedStyle(card, "::after").boxShadow !== "none") marks.push(`${path} ring`);
-  if (getComputedStyle(card.querySelector(".media-library__name")!).opacity !== "1") marks.push(`${path} name hidden`);
+  if (getComputedStyle(card.querySelector(".media-library__name")!).opacity === "1") marks.push(`${path} name`);
   return marks;
 }));
 
@@ -322,7 +322,7 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   expect(await tileMarks(phone)).toEqual(["images/placeholder.svg ring"]);
   await select.tap();
   await expect(select.getByRole("checkbox")).not.toBeChecked();
-  // Unticked: nothing stays lit, and names stay visible on touch screens.
+  // Unticked: nothing stays lit, and touch screens show no names (slice 122).
   expect(await lit(phone)).toEqual([]);
   expect(await tileMarks(phone)).toEqual([]);
   await context.close();
@@ -334,7 +334,7 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   expect(await lit(page)).toEqual([]);
   await card.locator(".media-library__usage").hover();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
-  expect(await tileMarks(page)).toEqual(["images/placeholder.svg name hidden", "images/studio-desk.svg words"]);
+  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg words", "images/studio-desk.svg name"]);
   await card.locator(".media-library__select").hover();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
   await page.mouse.move(1270, 890);
@@ -344,10 +344,10 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
   await expect(card.locator(".media-library__usage")).toBeFocused();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg usage"]);
-  expect(await tileMarks(page)).toEqual(["images/placeholder.svg name hidden", "images/studio-desk.svg words"]);
+  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg words", "images/studio-desk.svg name"]);
   await card.getByRole("checkbox").focus();
   await expect.poll(() => lit(page)).toEqual(["images/studio-desk.svg select"]);
-  expect(await tileMarks(page)).toEqual(["images/placeholder.svg name hidden"]);
+  expect(await tileMarks(page)).toEqual(["images/studio-desk.svg name"]);
   // A click leaves focus behind, but once the mouse leaves the tile nothing stays lit.
   await card.locator(".media-library__usage").click();
   const words = page.getByRole("dialog", { name: "studio-desk.svg", exact: true });
@@ -356,7 +356,7 @@ test("on tiles a tap on a touch screen leaves nothing lit, and a mouse or keyboa
   await expect(card.locator(".media-library__usage")).toBeFocused();
   await page.mouse.move(1270, 890);
   await expect.poll(() => lit(page)).toEqual([]);
-  expect(await tileMarks(page)).toEqual(["images/placeholder.svg name hidden", "images/studio-desk.svg name hidden"]);
+  expect(await tileMarks(page)).toEqual([]);
   await page.close();
 });
 

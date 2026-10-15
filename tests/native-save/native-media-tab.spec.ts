@@ -448,29 +448,41 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
   await expect.poll(() => photo.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   // The copy's page counts for its family, and a page both use counts once.
   await expect(photo.getByRole("button", { name: "Used on 3 pages", exact: true }).locator(".media-library__count")).toHaveText("3");
-  const name = photo.locator(".media-library__name");
+  // With a mouse a tile is just the picture (Lex, slice 122): its band, number, circle and name come in on
+  // hover, keyboard focus or selection, and on every tile while any is selected.
+  const scan = tiles.filter({ has: page.getByRole("button", { name: "Details for images/scan.png", exact: true }) });
+  const chrome = (card: typeof photo) => card.evaluate(element => [".media-library__shade", ".media-library__usage", ".media-library__select", ".media-library__name"]
+    .map(selector => getComputedStyle(element.querySelector(selector)!).opacity).join(" "));
   await page.mouse.move(1270, 890);
-  await expect(name).toHaveCSS("opacity", "0");
-  await photo.hover(); await expect(name).toHaveCSS("opacity", "1");
-  await page.mouse.move(1270, 890); await expect(name).toHaveCSS("opacity", "0");
+  await expect.poll(() => chrome(photo)).toBe("0 0 0 0");
+  await photo.hover(); await expect.poll(() => chrome(photo)).toBe("1 1 1 1");
+  await expect.poll(() => chrome(scan)).toBe("0 0 0 0");
+  await page.mouse.move(1270, 890); await expect.poll(() => chrome(photo)).toBe("0 0 0 0");
   await photo.getByRole("button", { name: "Details for images/photo.webp", exact: true }).focus();
-  await expect(name).toHaveCSS("opacity", "1");
+  await expect.poll(() => chrome(photo)).toBe("1 1 1 1");
   await photo.getByRole("checkbox", { name: "Select images/photo.webp", exact: true }).check();
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
   await page.mouse.move(1270, 890);
-  await expect(name).toHaveCSS("opacity", "1");
-  const scan = tiles.filter({ has: page.getByRole("button", { name: "Details for images/scan.png", exact: true }) });
+  await expect.poll(() => chrome(photo)).toBe("1 1 1 1");
+  // While any file is selected every tile shows its circle, so more can be added at a glance.
+  await expect.poll(() => chrome(scan)).toBe("1 1 1 1");
+  await photo.getByRole("checkbox", { name: "Select images/photo.webp", exact: true }).uncheck();
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.mouse.move(1270, 890);
+  await expect.poll(() => chrome(scan)).toBe("0 0 0 0");
   await expect(scan).toHaveClass(/is-file/);
   await expect(scan.locator("img")).toHaveCount(0);
   await expect(scan.locator(".media-library__format")).toHaveText("PNG");
   await page.evaluate(() => (window as any).tilesProbe.dispose());
 });
 
-test("touch shows every Media tile name without hover", async ({ browser, baseURL }) => {
+test("touch keeps each tile's number and circle without hover, and drops the name band", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();
   await open(page, baseURL);
-  await expect(pane(page).locator(".media-library__name").first()).toHaveCSS("opacity", "1");
+  const first = pane(page).locator(".media-library__card").first();
+  for (const [selector, opacity] of [[".media-library__usage", "1"], [".media-library__select", "1"], [".media-library__name", "0"]])
+    await expect(first.locator(selector), selector).toHaveCSS("opacity", opacity);
   await context.close();
 });
 
@@ -490,11 +502,24 @@ test("One bar: search, then Filter, + and More as one 44 px group at every width
         Math.round(f.x - a.x - a.width), Math.round(p.x - f.x - f.width), Math.round(m.x - p.x - p.width), m.x + m.width <= width];
     }, `width ${width}`).toEqual([44, 44, 44, 44, 44, 44, 0, 0, 8, -1, -1, true]);
   }
-  // Phones show the funnel alone; wider screens its words too.
+  // Filter reads as a label and its value (Lex, slice 122): phones show the funnel and the choice,
+  // wider screens a muted "Filter" between them; the choice is in the text colour, not bold.
   await page.setViewportSize({ width: 390, height: 900 });
-  await expect(filter.locator(".media-library__filter-label")).toBeHidden();
-  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
+  await expect(filter.locator(".media-library__filter-name")).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(filter.locator(".media-library__filter-name")).toHaveText("Filter");
+  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
+  const looks = await filter.evaluate(button => {
+    const look = (selector: string) => { const style = getComputedStyle(button.querySelector(selector)!); return { color: style.color, weight: Number(style.fontWeight) }; };
+    const probe = document.createElement("span"); probe.style.color = "var(--muted)"; button.append(probe);
+    const muted = getComputedStyle(probe).color; probe.remove();
+    return { name: look(".media-library__filter-name"), value: look(".media-library__filter-label"), muted, text: getComputedStyle(button).color };
+  });
+  expect(looks.name.color).toBe(looks.muted);
+  expect(looks.value.color).toBe(looks.text);
+  expect(looks.value.color).not.toBe(looks.name.color);
+  expect(looks.value.weight).toBeLessThanOrEqual(500);
   await search.focus(); await page.keyboard.press("Tab"); await expect(filter).toBeFocused();
   await page.keyboard.press("Enter");
   const choices = page.getByRole("menu", { name: "Filter", exact: true });

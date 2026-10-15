@@ -2442,7 +2442,7 @@ const mediaController = createMediaController({
     url: () => nativeSiteSettings(mediaTextSource(NATIVE_CONFIG_PATH)).url,
     settled: () => nativeTextIndexing ?? Promise.resolve(), changed: () => {},
   },
-  cleanUp: { place: setupScope, marks: () => ["explorer-tab-media", "explorer-toggle"].flatMap(id => document.getElementById(id) ?? []) },
+  cleanUp: { place: setupScope },
   // Improve images opens each page so its pictures are measured; the canvas draws it a moment later (at most 5 s).
   showPage: async path => {
     if (appStore.openFile.value !== path) await openAfter(path, true, true);

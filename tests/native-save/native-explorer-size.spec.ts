@@ -96,11 +96,8 @@ test.describe("on a computer", () => {
 
     await expectActionsInView(page);
 
-    // The page button shows a dot for Media's work; the count stays on the Media tab.
-    const dot = page.locator("#explorer-toggle > .media-count");
-    await expect(dot).toBeVisible();
-    expect(await dot.evaluate(element => [element.getBoundingClientRect().width, element.getBoundingClientRect().height])).toEqual([8, 8]);
-    await expect(page.getByRole("tab", { name: "Media", exact: true }).locator(".media-count")).toHaveText(/^\d+$/);
+    // Neither the page button nor the Media tab carries a count (Lex, slice 122); More has Clean up's.
+    await expect(page.locator(".media-count")).toHaveCount(0);
   });
 });
 

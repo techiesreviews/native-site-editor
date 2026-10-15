@@ -145,9 +145,8 @@ export interface MediaImportRequest {
  * suggestions, whether the badge shows, and Dismiss. */
 export interface MediaCleanUpEntry {
   item(): { label: string; disabled?: string };
-  state(): { suggestions: MediaCleanUpSuggestions; badge: { show: boolean } } | undefined;
-  dismiss(): void;
-  /** Improve images in More (ticket 11), counted with Clean up on the Media tab. */
+  state(): { suggestions: MediaCleanUpSuggestions } | undefined;
+  /** Improve images in More (ticket 11), with its own count beside Clean up's. */
   improve?: MediaImproveEntry;
   /** Called after each newer state; returns the unsubscribe. */
   onChange(listener: () => void): () => void;

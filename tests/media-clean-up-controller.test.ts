@@ -11,25 +11,28 @@ const unused = (media: string[], pending: string[] = []) => ({
 });
 function fixture(records?: string) {
   let place = "lex:1:main";
-  const stored = new Map<string, string>(), states: MediaCleanUpState[] = [];
+  const states: MediaCleanUpState[] = [];
   const sources: Record<string, string | undefined> = {};
   let files = ["index.html", ...(records === undefined ? [] : [MEDIA_RECORDS_PATH])];
   let reads = 0;
   const ports: MediaCleanUpPorts = {
     place: () => place, files: () => files, source: path => sources[path],
     read: async path => { reads++; return path === MEDIA_RECORDS_PATH ? records : undefined; },
-    storage: () => ({ getItem: key => stored.get(key) ?? null, setItem: (key, value) => { stored.set(key, value); }, removeItem: key => { stored.delete(key); } }),
     changed: state => { states.push(state); },
   };
-  return { ports, stored, states, sources, reads: () => reads, setPlace: (value: string) => { place = value; }, setFiles: (value: string[]) => { files = value; } };
+  return { ports, states, sources, reads: () => reads, setPlace: (value: string) => { place = value; }, setFiles: (value: string[]) => { files = value; } };
 }
-const badge = (states: MediaCleanUpState[]) => states.at(-1)?.badge;
+/** More's two counts after the last published state (the Media tab shows none, slice 122). */
+const counts = (states: MediaCleanUpState[]) => {
+  const last = states.at(-1);
+  return { clean: last?.counted?.state === "ready" ? last.counted.count : 0, improve: last?.improve?.length ?? 0 };
+};
 
 test("counts what Clean up suggests and leaves Always keep files out", async () => {
   const f = fixture(JSON.stringify({ version: 2, collections: [], files: { "images/kept.png": { alwaysKeep: true } } }));
   const controller = createMediaCleanUpController(f.ports);
   await controller.update(unused(["images/a.png", "images/kept.png", "files/guide.pdf"]));
-  assert.deepEqual(badge(f.states), { count: 2, show: true });
+  assert.deepEqual(counts(f.states), { clean: 2, improve: 0 });
   assert.deepEqual(controller.state().suggestions.groups[0].items.map(item => item.main), ["files/guide.pdf", "images/a.png"]);
   assert.equal(f.reads(), 1);
 });
@@ -39,11 +42,11 @@ test("a held records draft wins over the branch file, and no records file means 
   f.sources[MEDIA_RECORDS_PATH] = JSON.stringify({ version: 2, collections: [], files: { "a.png": { alwaysKeep: true } } });
   const controller = createMediaCleanUpController(f.ports);
   await controller.update(unused(["a.png"]));
-  assert.deepEqual(badge(f.states), { count: 0, show: false });
+  assert.deepEqual(counts(f.states), { clean: 0, improve: 0 });
   assert.equal(f.reads(), 0);
   const plain = fixture();
   await createMediaCleanUpController(plain.ports).update(unused(["a.png"]));
-  assert.deepEqual(badge(plain.states), { count: 1, show: true });
+  assert.deepEqual(counts(plain.states), { clean: 1, improve: 0 });
 });
 
 test("unreadable or malformed records hide the count", async () => {
@@ -51,7 +54,7 @@ test("unreadable or malformed records hide the count", async () => {
     const f = fixture(records);
     await createMediaCleanUpController(f.ports).update(unused(["a.png"]));
     assert.equal(f.states.at(-1)?.suggestions.state, "blocked");
-    assert.deepEqual(badge(f.states), { count: 0, show: false });
+    assert.deepEqual(counts(f.states), { clean: 0, improve: 0 });
   }
   const failing = fixture("{}");
   failing.ports.read = async () => { throw new Error("offline"); };
@@ -59,56 +62,25 @@ test("unreadable or malformed records hide the count", async () => {
   assert.equal(failing.states.at(-1)?.suggestions.state, "blocked");
 });
 
-test("dismiss hides the count until a new unused file appears, and is remembered", async () => {
-  const f = fixture();
-  const controller = createMediaCleanUpController(f.ports);
-  await controller.update(unused(["a.png", "b.png"]));
-  controller.dismiss();
-  assert.deepEqual(badge(f.states), { count: 2, show: false });
-  await controller.update(unused(["a.png"]));
-  assert.deepEqual(badge(f.states), { count: 1, show: false });
-  // A later visit reads the dismissal back.
-  const again = createMediaCleanUpController(f.ports);
-  await again.update(unused(["a.png", "b.png"]));
-  assert.deepEqual(badge(f.states), { count: 2, show: false });
-  await again.update(unused(["a.png", "b.png", "c.png"]));
-  assert.deepEqual(badge(f.states), { count: 3, show: true });
-});
-
-test("with nothing left the dismissal is forgotten, so a returning file counts as new", async () => {
-  const f = fixture();
-  const controller = createMediaCleanUpController(f.ports);
-  await controller.update(unused(["a.png"]));
-  controller.dismiss();
-  assert.equal(f.stored.size, 1);
-  await controller.update(unused([]));
-  assert.equal(f.stored.size, 0);
-  await controller.update(unused(["a.png"]));
-  assert.deepEqual(badge(f.states), { count: 1, show: true });
-});
-
-test("a check running again keeps the badge's count but offers nothing unchecked; another place starts empty with its own dismissal", async () => {
+test("a check running again keeps More's count but offers nothing unchecked; another place starts empty", async () => {
   const f = fixture();
   const controller = createMediaCleanUpController(f.ports);
   await controller.update(unused(["a.png"]));
   for (const usage of [unused(["a.png"], ["notes.txt"]), undefined]) {
     await controller.update(usage);
-    assert.deepEqual(badge(f.states), { count: 1, show: true });
+    assert.deepEqual(counts(f.states), { clean: 1, improve: 0 });
     assert.equal(controller.state().suggestions.state, "not-checked");
     assert.deepEqual(controller.state().suggestions.groups, []);
-    // The count stays the badge's (slice 121); only opening waits for the check.
+    // The count stays (slice 121); only opening waits for the check.
     assert.deepEqual(controller.item(), { label: "Clean up (1)", disabled: "Still checking which files are used." });
-    controller.dismiss();
-    assert.deepEqual(badge(f.states), { count: 1, show: true });
   }
   await controller.update(unused(["a.png"]));
   assert.deepEqual(controller.item(), { label: "Clean up (1)" });
-  controller.dismiss();
   f.setPlace("lex:1:dev");
   await controller.update(undefined);
-  assert.deepEqual(badge(f.states), { count: 0, show: false });
+  assert.deepEqual(counts(f.states), { clean: 0, improve: 0 });
   await controller.update(unused(["a.png"]));
-  assert.deepEqual(badge(f.states), { count: 1, show: true });
+  assert.deepEqual(counts(f.states), { clean: 1, improve: 0 });
 });
 
 test("an update overtaken by a newer one, or by a place change, does not publish", async () => {
@@ -133,38 +105,23 @@ test("an update overtaken by a newer one, or by a place change, does not publish
   assert.equal(moved.states.length, 0);
 });
 
-test("dismiss does nothing while the badge is hidden, and storage that refuses still dismisses for the visit", async () => {
-  const f = fixture();
-  const controller = createMediaCleanUpController(f.ports);
-  controller.dismiss();
-  assert.equal(f.states.length, 0);
-  f.ports.storage = () => { throw new Error("denied"); };
-  await controller.update(unused(["a.png"]));
-  controller.dismiss();
-  assert.deepEqual(badge(f.states), { count: 1, show: false });
-  assert.equal(f.stored.size, 0);
-});
-
-test("a draft change invalidates a records read in flight, so its old answer neither publishes nor forgets a dismissal", async () => {
+test("a draft change invalidates a records read in flight, so its old answer does not publish", async () => {
   const f = fixture("{}");
   const controller = createMediaCleanUpController(f.ports);
   await controller.update(unused(["a.png"]));
-  controller.dismiss();
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   f.ports.read = async () => { await gate; return "{}"; };
   const before = f.states.length;
-  // The old read would find a.png used (nothing to suggest) and clear the dismissal.
+  // The old read would find a.png used and drop More's count to nothing.
   const stale = controller.update(unused([]));
   controller.invalidate();
   release(); await stale;
   assert.equal(f.states.length, before);
-  assert.equal(f.stored.size, 1);
-  await controller.update(unused(["a.png"]));
-  assert.deepEqual(badge(f.states), { count: 1, show: false });
+  assert.deepEqual(controller.item(), { label: "Clean up (1)" });
 });
 
-test("pages with pictures to improve join the count; read widths sharpen it; dismiss covers them", async () => {
+test("pages with pictures to improve get their own count; read widths sharpen it", async () => {
   const f = fixture();
   f.setFiles(["index.html", "about/index.html", "images/wide.png"]);
   f.sources["index.html"] = '<img src="https://mobbin.com/og.png" width="10" height="10" loading="lazy">';
@@ -174,14 +131,12 @@ test("pages with pictures to improve join the count; read widths sharpen it; dis
   const usage = () => mediaUsageRecords({ media: ["images/wide.png"], sources: { "index.html": f.sources["index.html"]!, "about/index.html": f.sources["about/index.html"]! }, pages: ["index.html", "about/index.html"] });
   await controller.update(usage());
   assert.deepEqual(controller.state().improve, ["index.html"]);
-  assert.deepEqual(badge(f.states), { count: 1, show: true, improve: 1 });
+  assert.deepEqual(counts(f.states), { clean: 0, improve: 1 });
   assert.deepEqual(controller.improveItem(), { label: "Improve images (1)" });
   // The screen read the picture: wider than any screen needs, so it gets copies.
   controller.known({ "images/wide.png": { width: 4000, height: 3000 } });
   await controller.update(usage());
   assert.deepEqual(controller.state().improve?.sort(), ["about/index.html", "index.html"]);
-  controller.dismiss();
-  assert.equal(badge(f.states)?.show, false);
   // Another repository forgets the read widths.
   f.setPlace("lex:2:main");
   await controller.update(usage());
@@ -292,9 +247,9 @@ test("a width read while the bytes are replaced is never kept under the old vers
   assert.deepEqual(controller.improveItem(), { label: "Improve images (1)" });
 });
 
-// Slice 121: the badge said 10 (Clean up alone) on one screen and 15 (Clean up + Improve images)
-// on the next. The badge and More's two counts now come from one settled check.
-test("the badge and More's counts come from one settled check: never Clean up alone, always adding up", async t => {
+// Slice 121: the count said 10 (Clean up alone) on one screen and 15 (Clean up + Improve images)
+// on the next. More's two counts come from one settled check (the Media tab has none since slice 122).
+test("More's counts come from one settled check: never Clean up's from one check beside Improve images' from another", async t => {
   const image = Object.getOwnPropertyDescriptor(globalThis, "Image");
   Object.defineProperty(globalThis, "Image", { configurable: true, value: class { src = ""; naturalWidth = 4000; naturalHeight = 3000; async decode() {} } });
   t.after(() => { if (image) Object.defineProperty(globalThis, "Image", image); else Reflect.deleteProperty(globalThis, "Image"); });
@@ -318,36 +273,36 @@ test("the badge and More's counts come from one settled check: never Clean up al
   assert.equal(controller.state().suggestions.count, 2);
   assert.equal(controller.item().label, "Clean up");
   assert.equal(controller.item().disabled, undefined);
-  assert.ok(f.states.every(state => !state.badge.show), "no badge from half a check");
+  assert.ok(f.states.every(state => !state.counted), "no count from half a check");
   release(); await first;
-  assert.deepEqual(badge(f.states), { count: 3, show: true, improve: 1 });
+  assert.deepEqual(counts(f.states), { clean: 2, improve: 1 });
   assert.deepEqual([controller.item().label, controller.improveItem().label], ["Clean up (2)", "Improve images (1)"]);
-  assert.equal(sum(), badge(f.states)?.count);
+  assert.equal(sum(), 3);
   // A recheck (a file removed): the last pair stands until the new one has both counts.
   gate = new Promise<void>(resolve => { release = resolve; });
   const seen = f.states.length;
   const second = controller.update(usage(["images/wide.png", "a.png"]));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(controller.state().suggestions.count, 1);
-  assert.ok(f.states.slice(seen).every(state => state.badge.count === 3), "the badge holds while rows are read");
+  assert.ok(f.states.slice(seen).every(state => counts([state]).clean === 2), "More's count holds while rows are read");
   assert.equal(sum(), 3);
   release(); await second;
-  assert.deepEqual(badge(f.states), { count: 2, show: true, improve: 1 });
+  assert.deepEqual(counts(f.states), { clean: 1, improve: 1 });
   assert.equal(sum(), 2);
-  // Clean up dropping to nothing while rows are read (review): More still adds up to the badge.
+  // Clean up dropping to nothing while rows are read (review): More keeps the settled pair.
   gate = new Promise<void>(resolve => { release = resolve; });
   const third = controller.update(usage(["images/wide.png"]));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(controller.state().suggestions.count, 0);
   assert.equal(controller.item().disabled, "Nothing to clean up: every file is used or marked Always keep.");
-  assert.equal(sum(), badge(f.states)?.count);
+  assert.equal(sum(), 2);
   release(); await third;
-  assert.deepEqual(badge(f.states), { count: 1, show: true, improve: 1 });
+  assert.deepEqual(counts(f.states), { clean: 0, improve: 1 });
   assert.equal(sum(), 1);
   await controller.update(usage(["images/wide.png", "a.png"]));
   // Rows that cannot be read keep the last ones rather than dropping to Clean up alone.
   pagesFail = true;
   await controller.update(usage(["images/wide.png", "a.png", "c.png"]));
-  assert.deepEqual(badge(f.states), { count: 3, show: true, improve: 1 });
+  assert.deepEqual(counts(f.states), { clean: 2, improve: 1 });
   assert.equal(sum(), 3);
 });

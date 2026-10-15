@@ -124,9 +124,9 @@
    their usage and selection controls. */
 
 /* The pane scrolls under its One bar, which stays put (audit C1). The bar's own bottom padding
-   keeps the browse area's 12px start. */
+   and the browse area's 4px start leave 16px between search and the tiles, as in the picker (slice 122). */
 .media-library--pane .media-library__bar {
-  position: sticky; inset-block-start: 0; z-index: 5; padding-block-end: 8px; background: var(--panel-surface);
+  position: sticky; inset-block-start: 0; z-index: 5; background: var(--panel-surface);
 }
 .media-library--pane .media-library__bar + .media-library__body .media-library__browse { padding-block-start: 4px; }
 /* Every sub-screen's last action row stays at the pane's bottom, above a 1px line, so it is
@@ -165,15 +165,27 @@
 .media-library__name {
   position: absolute; inset: auto 0 0; z-index: 1; isolation: isolate; padding: 21px 6px 5px;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left;
-  font-size: var(--type-small); font-weight: 600; line-height: 1.35; text-shadow: 0 1px 2px #0007; opacity: 0;
+  font-size: var(--type-small); font-weight: 600; line-height: 1.35; text-shadow: 0 1px 2px #0007;
 }
 .media-library__name::before { backdrop-filter: blur(8px); mask-image: linear-gradient(transparent, #000 75%); }
 .media-library__name::after { background: linear-gradient(transparent, rgb(10 18 32 / .64) 55%, rgb(10 18 32 / .82)); }
-/* Names show on a mouse hover, keyboard focus or selection; touch has no hover, so always there.
-   Hover only counts for a real mouse: a touch screen keeps :hover on the last tap. */
-.media-library__card:is(:has(:focus-visible), :has(input:checked)) .media-library__name { opacity: 1; }
-@media (hover: hover) and (pointer: fine) { .media-library__card:hover .media-library__name { opacity: 1; } }
-@media (hover: none), (any-pointer: coarse) { .media-library__name { opacity: 1; } }
+/* A tile is just the picture (Lex, slice 122). With a mouse, its top band, usage number, select
+   circle and name come in on hover, keyboard focus or selection, and on every tile while any is
+   selected (Google Photos). Touch has no hover: the number and circle stay, the name goes (details
+   has it); keyboard focus still shows it. --chrome drives the top controls, --label the name. */
+.media-library__card { --chrome: 1; --label: 0; }
+.media-library__card:has(:focus-visible) { --label: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .media-library__card { --label: var(--chrome); }
+  .media-library__browse > .media-library__grid:not(.media-library__grid--list, :has(.media-library__select input:checked))
+    > .media-library__card:not(:hover, :has(:focus-visible), .is-chosen) { --chrome: 0; }
+}
+.media-library__card > :is(.media-library__shade, .media-library__usage, .media-library__select) { opacity: var(--chrome); }
+.media-library__card > .media-library__usage:disabled { opacity: calc(var(--chrome) * .55); }
+.media-library__name { opacity: var(--label); }
+@media (prefers-reduced-motion: no-preference) {
+  :is(.media-library__shade, .media-library__usage, .media-library__select, .media-library__name) { transition: opacity 150ms var(--ease-out, ease-out); }
+}
 @supports not (backdrop-filter: blur(1px)) { .media-library__shade::before, .media-library__name::before { display: none; } }
 
 /* Usage number top left, selection top right: 44 px targets that never overlap. */
@@ -203,7 +215,7 @@
 /* One bar (media-manager ticket 06, slice 116): search, then Filter, + and More as one group;
    44 px high, 8 px apart. Search takes the room the group leaves. */
 .media-library__bar { display: grid; grid-template-columns: minmax(0, 1fr) fit-content(45%); gap: 8px; align-items: center; padding: 16px 24px 4px; }
-.media-library--pane .media-library__bar { padding: 12px 12px 0; }
+.media-library--pane .media-library__bar { padding: 12px; }
 .media-library .media-library__bar > * { height: 44px; min-height: 44px; box-sizing: border-box; }
 .media-library__search { position: relative; min-width: 0; }
 .media-library__search::before {
@@ -224,19 +236,20 @@
 .media-library .media-library__tools > button:focus-visible { position: relative; z-index: 1; }
 .media-library .media-library__tools > button:is(:active, [aria-expanded="true"]) { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .media-library .media-library__tools > button:hover { background: var(--hover); } }
-.media-library .media-library__tools > .media-library__filter { flex: 0 1 auto; width: auto; min-width: 44px; padding: 0 14px 0 12px; }
+/* Filter reads as a label and its value (Dropbox's "Sort by: Most relevant"; Lex, slice 122): the funnel
+   and "Filter" muted, then the choice ("All", "Garden · Video") in the text colour at normal weight. */
+.media-library .media-library__tools > .media-library__filter { flex: 0 1 auto; width: auto; min-width: 44px; gap: 6px; padding: 0 14px 0 12px; font-weight: 500; }
 /* While it narrows the view, Filter wears the chosen colour, as an active filter does in Apple Photos. */
 .media-library .media-library__tools > .media-library__filter[data-narrowed] { background: var(--current); }
-.media-library__filter::before { content: ""; flex: none; width: 1.25em; height: 1.25em; background: currentColor; mask: url("@phosphor-icons/core/regular/funnel-simple.svg") center / contain no-repeat; }
+.media-library__filter::before { content: ""; flex: none; width: 1.25em; height: 1.25em; background: var(--muted); mask: url("@phosphor-icons/core/regular/funnel-simple.svg") center / contain no-repeat; }
+.media-library__filter-name { flex: none; color: var(--muted); font-weight: 400; }
 .media-library__filter-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Phones: Filter is the funnel alone until it narrows, so search keeps most of the bar; then its words
-   ("Garden · Video") replace the funnel, in at most 55 % with + and More. */
+/* Phones: the funnel stands for the word, so search keeps most of the bar; the choice always shows,
+   in at most 55 % with + and More. */
 @container (max-width: 540px) {
   .media-library--pane .media-library__bar { grid-template-columns: minmax(0, 1fr) fit-content(55%); }
-  .media-library--pane .media-library__tools > .media-library__filter:not([data-narrowed]) { padding: 0; }
-  .media-library--pane .media-library__tools > .media-library__filter[data-narrowed] { padding: 0 8px; }
-  .media-library--pane .media-library__filter:not([data-narrowed]) .media-library__filter-label,
-  .media-library--pane .media-library__filter[data-narrowed]::before { display: none; }
+  .media-library--pane .media-library__tools > .media-library__filter { gap: 4px; padding: 0 10px 0 8px; }
+  .media-library--pane .media-library__filter-name { display: none; }
 }
 /* Filter's and More's menu: long collection names wrap, and many collections scroll, inside the window. */
 .media-library__menu { max-width: min(320px, 100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
@@ -357,32 +370,32 @@
 .media-library__name-tail { flex: none; }
 
 /* Selection bar (research 01, ticket 15): after the grid and sticky at the bottom, so its
-   actions stay in reach however far the grid scrolls. One row at every width: phones keep
-   "✕ 3", Add to collection and ⋯, which then holds Take out and Remove files (slice 107). */
+   actions stay in reach however far the grid scrolls. Slim and quiet (Lex, slice 122; Savee, Krea):
+   one row at every width on the panel's surface, its actions text buttons with 44 px targets,
+   Remove files last, apart and in the danger colour. Phones keep "✕ 3", Add to collection and ⋯,
+   which then holds Take out and Remove files (slice 107). */
 .media-library__bulk {
   position: sticky; bottom: 8px; z-index: 4; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: "count actions tools"; align-items: center; gap: 8px; padding: 8px 8px 8px 14px;
-  border: 1px solid color-mix(in oklch, var(--primary) 35%, var(--line)); border-radius: 12px;
-  background: color-mix(in oklch, var(--primary) 10%, var(--surface-card)); box-shadow: var(--shadow-small);
+  grid-template-areas: "count actions tools"; align-items: center; gap: 4px; padding: 4px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel-surface); box-shadow: var(--shadow-small);
 }
-.media-library .media-library__bulk-count {
-  grid-area: count; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px 0 10px;
-  border-color: transparent; border-radius: 22px; background: none; color: var(--text); font-weight: 600; white-space: nowrap;
+.media-library .media-library__bulk button {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px;
+  border: 0; border-radius: 18px; background: none; color: var(--text); font-weight: 500; white-space: nowrap;
 }
-.media-library .media-library__bulk-count:active { background: var(--hover); }
-@media (hover: hover) and (pointer: fine) { .media-library .media-library__bulk-count:hover { background: var(--hover); } }
-.media-library__bulk-clear { flex: none; width: 18px; height: 18px; background: currentColor; mask: url("@phosphor-icons/core/regular/x.svg") center / contain no-repeat; }
-.media-library__bulk-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
-.media-library__bulk-tools { grid-area: tools; display: flex; gap: 8px; }
-.media-library__bulk button { min-height: 44px; border: 1px solid var(--control-line); overflow-wrap: anywhere; }
-.media-library__bulk-actions button[hidden] { display: none; }
-.media-library .media-library__bulk-more { width: 44px; padding: 0; display: grid; place-items: center; }
+.media-library .media-library__bulk button::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; }
+.media-library .media-library__bulk button:is(:active, [aria-expanded="true"]) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__bulk button:hover { background: var(--hover); } }
+.media-library .media-library__bulk .media-library__bulk-count { grid-area: count; font-weight: 600; }
+.media-library__bulk-clear { flex: none; width: 16px; height: 16px; background: currentColor; mask: url("@phosphor-icons/core/regular/x.svg") center / contain no-repeat; }
+.media-library__bulk-actions { grid-area: actions; display: flex; gap: 4px; min-width: 0; }
+.media-library__bulk-tools { grid-area: tools; display: flex; }
+.media-library .media-library__bulk [hidden] { display: none; }
+.media-library .media-library__bulk .media-library__bulk-remove { margin-inline-start: auto; color: var(--danger-fg); }
+.media-library .media-library__bulk .media-library__bulk-more { width: 36px; padding: 0; justify-content: center; }
+.media-library .media-library__bulk .media-library__bulk-more::after { inset: min(0px, (100% - 44px) / 2); }
 @container media-browse (max-width: 560px) {
-  .media-library__bulk { min-block-size: 56px; box-sizing: border-box; padding: 5px; }
-  .media-library__bulk-actions { flex-wrap: nowrap; }
-  .media-library__bulk-actions button { flex: 1 1 auto; }
-  .media-library .media-library__bulk-count { padding-inline: 10px 12px; }
-  .media-library__bulk :is(.media-library__bulk-word, .media-library__bulk-wide) { display: none; }
+  .media-library .media-library__bulk :is(.media-library__bulk-word, .media-library__bulk-wide) { display: none; }
 }
 
 /* Details: a file's collections as tick boxes, and a name for a new one. */
@@ -600,10 +613,8 @@
   .media-library--picker { width: 100%; height: 100%; max-width: 100%; max-height: 100%; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
   .media-library--picker .media-library__header { padding: 8px 4px 4px 16px; }
   .media-library--picker .media-library__bar { grid-template-columns: minmax(0, 1fr) fit-content(55%); padding: 4px 12px; }
-  .media-library--picker .media-library__tools > .media-library__filter:not([data-narrowed]) { padding: 0; }
-  .media-library--picker .media-library__tools > .media-library__filter[data-narrowed] { padding: 0 8px; }
-  .media-library--picker .media-library__filter:not([data-narrowed]) .media-library__filter-label,
-  .media-library--picker .media-library__filter[data-narrowed]::before { display: none; }
+  .media-library--picker .media-library__tools > .media-library__filter { gap: 4px; padding: 0 10px 0 8px; }
+  .media-library--picker .media-library__filter-name { display: none; }
   .media-library--picker .media-library__browse { padding: 8px 12px; }
   .media-library--picker .media-library__bar:has(> .media-library__paste) { grid-template-columns: minmax(0, 1fr) fit-content(55%); }
   .media-library .media-library__paste { grid-column: 1 / -1; grid-row: 2; justify-self: start; }

@@ -48,11 +48,12 @@ export function createMediaLibraryShell(
   const search = node("input"); search.type = "search"; search.name = "media-search";
   search.placeholder = "Search"; search.setAttribute("aria-label", "Search media");
   searchField.append(search);
-  // Filter: collections, then Show and View; its button names the choice in short ("Garden · Video").
+  // Filter: collections, then Show and View; its button names the choice in short ("Garden · Video"),
+  // after a muted "Filter" so it reads as a filter and its value (Lex, slice 122).
   const filter = node("button", "media-library__filter"); filter.type = "button";
   filter.setAttribute("aria-haspopup", "menu"); filter.setAttribute("aria-expanded", "false");
   const filterLabel = node("span", "media-library__filter-label");
-  filter.append(filterLabel);
+  filter.append(node("span", "media-library__filter-name", "Filter"), filterLabel);
   // + opens the file chooser; dropping files anywhere adds them too.
   const add = button("", () => uploadInput.click(), "media-library__add");
   add.setAttribute("aria-label", "Add files"); setIcon(add, "plus", 22);
@@ -103,7 +104,7 @@ export function createMediaLibraryShell(
   const bulkActions = node("div", "media-library__bulk-actions");
   const addTo: HTMLButtonElement = button("Add to collection", () => actions.addTo(addTo));
   addTo.setAttribute("aria-haspopup", "menu"); addTo.setAttribute("aria-expanded", "false");
-  const takeOut = button("", actions.takeOut, "media-library__bulk-wide"), removeFiles = button("", actions.remove, "media-library__bulk-wide");
+  const takeOut = button("", actions.takeOut, "media-library__bulk-wide"), removeFiles = button("", actions.remove, "media-library__bulk-wide media-library__bulk-remove");
   bulkActions.append(addTo, takeOut, removeFiles);
   const bulkTools = node("div", "media-library__bulk-tools");
   const bulkMore: HTMLButtonElement = button("", () => actions.more(bulkMore), "button secondary media-library__bulk-more");

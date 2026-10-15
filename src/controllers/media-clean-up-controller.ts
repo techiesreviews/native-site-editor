@@ -1,22 +1,20 @@
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { mediaCleanUpSuggestions, type MediaCleanUpSuggestions } from "../page-builder/media-clean-up";
-import { badgeKeys, cleanUpMenuItem, improveMenuItem, mediaBadge, readDismissed, type MediaBadge } from "../page-builder/media-badge";
+import { cleanUpMenuItem, improveMenuItem } from "../page-builder/media-clean-up-menu";
 import type { MediaUsageRecords } from "../page-builder/media-usage";
 
 /** `suggestions`: the newest check, which Clean up's screen reads. `counted` and `improve`: the last
  * check whose Clean up suggestions and Improve images rows (the pages and components it would
- * change) were both known. The badge and More's two counts come only from that pair, so they
- * always add up (ticket 11: badge = Clean up + Improve images) and never show half a check. */
-export interface MediaCleanUpState { place: string; suggestions: MediaCleanUpSuggestions; badge: MediaBadge; counted?: MediaCleanUpSuggestions; improve?: string[] }
+ * change) were both known. More's two counts come only from that pair, so they never show half a
+ * check (slice 121). The Media tab shows no count (Lex, slice 122). */
+export interface MediaCleanUpState { place: string; suggestions: MediaCleanUpSuggestions; counted?: MediaCleanUpSuggestions; improve?: string[] }
 export interface MediaCleanUpPorts {
-  /** The repository and branch, "" when none is open; a dismiss is remembered per place. */
+  /** The repository and branch, "" when none is open: another place starts its counts afresh. */
   place(): string;
   files(): string[];
   source(path: string): string | undefined;
   read(path: string): Promise<string | undefined>;
-  /** Where a dismiss is kept between visits; the browser may refuse it. */
-  storage?(): Pick<Storage, "getItem" | "setItem" | "removeItem"> | undefined;
   changed(state: MediaCleanUpState): void;
   /** For Improve images' count: the site's pages, components, address and file sizes. */
   pages?(): string[];
@@ -29,30 +27,15 @@ export interface MediaCleanUpPorts {
 }
 
 const notChecked = (): MediaCleanUpSuggestions => ({ state: "not-checked", blockedBy: [], groups: [], count: 0, size: 0 });
-const storageKey = (place: string) => `ase.media-clean-up.dismissed:${place}`;
 
-/** Turns each wide use check into Clean up's suggestions and the Media tab's count. Lives in
+/** Turns each wide use check into Clean up's suggestions and More's counts. Lives in
  * the lazy usage chunk; the host draws `changed` states. */
 export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
   let epoch = 0, disposed = false;
-  let current: MediaCleanUpState = { place: "", suggestions: notChecked(), badge: { count: 0, show: false } };
-  // The browser may refuse storage; a dismiss still holds for this visit.
-  const memory = new Map<string, string[] | undefined>();
-  const storage = <T>(use: (store: Pick<Storage, "getItem" | "setItem" | "removeItem">) => T) => {
-    try { const store = ports.storage?.(); return store ? use(store) : undefined; } catch { return undefined; }
-  };
-  function dismissed(place: string) {
-    return memory.has(place) ? memory.get(place) : readDismissed(storage(store => store.getItem(storageKey(place))));
-  }
-  function remember(place: string, files: string[] | undefined) {
-    memory.set(place, files);
-    storage(store => files ? store.setItem(storageKey(place), JSON.stringify(files)) : store.removeItem(storageKey(place)));
-  }
-  /** One settled check: the badge and More's counts move together, once. */
+  let current: MediaCleanUpState = { place: "", suggestions: notChecked() };
+  /** One settled check: More's two counts move together, once. */
   function publish(place: string, counted: MediaCleanUpSuggestions, improve: string[] | undefined) {
-    // With nothing left, a later suggestion is new even if it was dismissed before.
-    if (place && counted.state === "ready" && !counted.count && !improve?.length && dismissed(place)) remember(place, undefined);
-    current = { place, suggestions: current.suggestions, counted, badge: mediaBadge(counted, dismissed(place), improve), ...improve ? { improve } : {} };
+    current = { place, suggestions: current.suggestions, counted, ...improve ? { improve } : {} };
     ports.changed(current);
   }
   /** Picture widths Improve images read from the bytes, so the count matches its screen. */
@@ -103,7 +86,7 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     const read = usage && await records();
     const suggestions = usage ? mediaCleanUpSuggestions({ usage, records: read ?? null }) : notChecked();
     if (disposed || request !== epoch || place !== ports.place()) return;
-    // While the same site is checked again, the badge and More keep their last counts (no flicker),
+    // While the same site is checked again, More keeps its last counts (no flicker),
     // but nothing unchecked is offered: Clean up waits until the check is done.
     if (suggestions.state === "not-checked" && place === current.place) {
       current = { ...current, suggestions };
@@ -111,23 +94,16 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
       return;
     }
     // Clean up's screen opens on these at once; the counts wait for Improve images' rows below,
-    // so the badge never shows Clean up's count alone (slice 121: 10, then 15 a moment later).
-    current = place === current.place ? { ...current, suggestions } : { place, suggestions, badge: { count: 0, show: false } };
+    // so More never shows Clean up's count from one check beside Improve images' from another (slice 121).
+    current = place === current.place ? { ...current, suggestions } : { place, suggestions };
     ports.changed(current);
     const improve = await improveRows(read ?? null, () => !disposed && request === epoch && place === ports.place()).catch(() => undefined);
     if (disposed || request !== epoch || place !== ports.place()) return;
     // Rows that could not be read keep the last ones: a failed read is not "nothing to improve".
     publish(place, suggestions, improve ?? current.improve);
   }
-  /** Hides the count until a file not suggested now is suggested. */
-  function dismiss() {
-    const { place, counted, improve } = current;
-    if (disposed || !place || current.suggestions.state !== "ready" || counted?.state !== "ready" || !current.badge.show) return;
-    remember(place, badgeKeys(counted, improve));
-    publish(place, counted, improve);
-  }
   return {
-    update, dismiss, state: () => current, item: () => cleanUpMenuItem(current.suggestions, current.counted ?? null),
+    update, state: () => current, item: () => cleanUpMenuItem(current.suggestions, current.counted ?? null),
     improveItem: () => improveMenuItem(current.improve?.length),
     /** Widths read by the Improve images screen; the next check counts with them. */
     known(sizes: Readonly<Record<string, { width?: number; height?: number }>>) { for (const [path, size] of Object.entries(sizes)) known.set(path, size); },

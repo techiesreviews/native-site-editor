@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { publishButton } from "./publish";
 
-// Clean up: the Media tab's count, Dismiss, and the Always keep mark (slice 49); the review (slice 50);
-// removing a used file and restoring it from Recently removed (slice 51).
+// Clean up: its count in More and the Always keep mark (slice 49; the Media tab's count and Dismiss went
+// in slice 122); the review (slice 50); removing a used file and restoring it from Recently removed (slice 51).
 // The starter's images/studio-desk.svg is used nowhere, so it is always counted.
 test.beforeEach(({ page }) => page.setDefaultTimeout(10_000));
 
@@ -13,8 +13,20 @@ const leftAsIs = [{ picture: "images/placeholder.svg" }];
 const quiet = JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs });
 const records = JSON.stringify({ version: 2, collections: [], files: { "images/kept.svg": { alwaysKeep: true } }, leftAsIs });
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
-const toggleCount = (page: Page) => page.locator("#explorer-toggle > .media-count");
 const tab = (page: Page) => page.getByRole("tab", { name: "Media", exact: true });
+
+/** Clean up's count in More, opening Media first when it is not shown; 0 when there is none. */
+async function cleanUpCount(page: Page) {
+  if (!await pane(page).isVisible()) {
+    if (!await tab(page).isVisible()) await page.locator("#explorer-toggle").click();
+    await tab(page).click();
+  }
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  const label = await page.getByRole("menuitem", { name: /^Clean up/ }).textContent();
+  await page.keyboard.press("Escape");
+  return Number(/\((\d+)\)/.exec(label ?? "")?.[1] ?? 0);
+}
+const expectCount = (page: Page, count: number) => expect.poll(() => cleanUpCount(page), { timeout: 15_000 }).toBe(count);
 
 async function commit(page: Page, baseURL: string | undefined, files: [string, string][]) {
   for (const [path, content] of files)
@@ -30,17 +42,16 @@ async function reopen(page: Page) {
   await expect(page.locator("#status")).toContainText("Up to date with main");
 }
 
-test("the Media tab counts unused files from anywhere; Dismiss hides the count until a new unused file appears", async ({ page, baseURL }) => {
+test("Clean up in More counts unused files; neither the Media tab nor the page button shows a count", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   await commit(page, baseURL, [["images/spare.svg", svg("Spare")], ["images/kept.svg", svg("Kept")], [".editor/media.json", records]]);
   await open(page, baseURL);
-  // Before Media ever opens, the button that opens it shows the count.
-  await expect(toggleCount(page)).toHaveText("2");
-  await expect(page.locator("#explorer-toggle")).toHaveAccessibleDescription("2 files to clean up");
-  await page.locator("#explorer-toggle").click();
-  await expect(tab(page)).toHaveAccessibleDescription("2 files to clean up");
-  await expect(tab(page).locator(".media-count")).toHaveText("2");
-  await tab(page).click();
+  await expectCount(page, 2);
+  // Lex (slice 122): no number on the Media tab, no dot on the page button, nothing for screen readers either.
+  await expect(page.locator(".media-count")).toHaveCount(0);
+  await expect(tab(page)).toHaveAccessibleName("Media");
+  await expect(tab(page)).not.toHaveAttribute("aria-describedby");
+  await expect(page.locator("#explorer-toggle")).not.toHaveAttribute("aria-describedby");
 
   // The Always keep file shows its mark on its tile and in details.
   const kept = pane(page).locator('.media-library__card[data-path="images/kept.svg"]');
@@ -76,36 +87,24 @@ test("the Media tab counts unused files from anywhere; Dismiss hides the count u
   await expect(sum).toHaveText(/^2 selected · /);
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
 
-  // Dismiss hides the count everywhere, also after a reload; Clean up keeps its count.
-  await pane(page).getByRole("button", { name: "Dismiss", exact: true }).click();
-  await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toBeFocused();
-  await expect(tab(page).locator(".media-count")).toBeHidden();
-  await expect(toggleCount(page)).toBeHidden();
-  await expect(tab(page)).toHaveAccessibleDescription("");
+  // Clean up offers no Dismiss: there is no count on the tab to hide.
   await expect(pane(page).getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0);
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toHaveCount(0);
   await expect(pane(page).getByRole("button", { name: "More", exact: true })).toBeFocused();
-  await reopen(page);
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
-  await pane(page).getByRole("button", { name: "More", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "Clean up (2)", exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(toggleCount(page)).toBeHidden();
 
-  // A new unused file brings the count back, counting everything Clean up suggests.
+  // A new unused file raises the count, counting everything Clean up suggests.
   await commit(page, baseURL, [["images/another.svg", svg("Another")]]);
   await reopen(page);
-  await expect(toggleCount(page)).toHaveText("3");
-  await expect(page.locator("#explorer-toggle")).toHaveAccessibleDescription("3 files to clean up");
+  await expectCount(page, 3);
+  await expect(page.locator(".media-count")).toHaveCount(0);
 });
 
 test("using the unused file on a page takes it out of the count", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
   await commit(page, baseURL, [["images/spare.svg", svg("Spare")], [".editor/media.json", quiet]]);
   await open(page, baseURL);
-  await expect(toggleCount(page)).toHaveText("2");
+  await expectCount(page, 2);
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const model = editor.getMountedSource("index.html");
@@ -113,7 +112,7 @@ test("using the unused file on a page takes it out of the count", async ({ page,
     const at = model.indexOf("</main>");
     editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/spare.svg" alt="Spare" width="40" height="40">' });
   });
-  await expect(toggleCount(page)).toHaveText("1");
+  await expectCount(page, 1);
   // With nothing to suggest, Clean up in More says why.
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
@@ -121,9 +120,7 @@ test("using the unused file on a page takes it out of the count", async ({ page,
     const at = model.indexOf("</main>");
     editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/studio-desk.svg" alt="Desk" width="40" height="40">' });
   });
-  await expect(toggleCount(page)).toBeHidden();
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await expectCount(page, 0);
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   const item = page.getByRole("menuitem", { name: /^Clean up/ });
   await expect(item).toHaveAttribute("aria-disabled", "true");
@@ -187,9 +184,7 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await page.goto(baseURL!);
   await commit(page, baseURL, [["images/spare.svg", svg("Spare")], [".editor/media.json", quiet]]);
   await open(page, baseURL);
-  await expect(toggleCount(page)).toHaveText("2");
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await expectCount(page, 2);
   const more = async (item: string | RegExp) => {
     await pane(page).getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("menuitem", { name: item, exact: typeof item === "string" }).click();
@@ -224,7 +219,6 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await expect(pane(page).locator(".media-cleanup__notice")).toHaveText("Removed 2 files.Undo");
   await expect(page.locator(".editor-toast__text")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toHaveCount(0);
-  await expect(toggleCount(page)).toBeHidden();
 
   // It waits in Recently removed.
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
@@ -237,8 +231,8 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await pane(page).getByRole("button", { name: "Undo", exact: true }).click();
   await expect(page.locator(".editor-toast__text")).toContainText("Brought back 2 files to their addresses.");
   await expect(pane(page).getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
-  await expect(toggleCount(page)).toHaveText("2");
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
+  await expectCount(page, 2);
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toBeVisible();
   await more("Recently removed");
   await expect(pane(page).getByText(/^Nothing removed in the last 30 days\./)).toBeVisible();

@@ -128,7 +128,7 @@ scripts/agents/review.sh "$PWD" .scratch/review-brief.md .scratch/review
 ### Phase 4: Clean-up, renaming, Replace everywhere
 
 - **Wide use scanner** ([10](../tickets/10-safe-clean-up.md#resolution-2026-10-13)): every text file, full addresses on the site's own domain, `_redirects`/`_headers`, sitemap, feeds, JSON, JS, `AGENTS.md`; checked on open; Not checked yet never suggested; an unreadable file blocks all suggestions.
-- **Always keep** mark; the Media tab count badge; Clean up review (groups, collages, file-level choice, confirm, Undo); **Recently removed** for 30 days (GitHub history; a browser copy for local folders); families removed and restored together; removing a used file warns, then allows.
+- **Always keep** mark; the counts in More (the Media tab's count badge was removed by Lex on 2026-10-15, [slice 122](tickets/122-gallery-polish.md)); Clean up review (groups, collages, file-level choice, confirm, Undo); **Recently removed** for 30 days (GitHub history; a browser copy for local folders); families removed and restored together; removing a used file warns, then allows.
 - **Rename** ([15](../tickets/15-collections-and-file-names.md#resolution-2026-10-14)): the whole family and every mention, numbered suggestion, "Keep the old address working" (`_redirects`, as `src/native-page-moves.ts:201-236`).
 - **Replace everywhere** with the "new version" mark.
 - **Agents**: remove unused files, remove used ones only after swapping them out, add (never remove) Always keep, restore, rename, Replace everywhere with files already in Media.
@@ -143,7 +143,7 @@ scripts/agents/review.sh "$PWD" .scratch/review-brief.md .scratch/review
 
 ### Phase 6: Improve images
 
-- **More → Improve images** ([11](../tickets/11-fix-all-existing-images.md#resolution-2026-10-13)): rows per page and component with reach; fix one or all; untick pictures (remembered); progress and Cancel; Undo per page and Undo all; the badge counts it.
+- **More → Improve images** ([11](../tickets/11-fix-all-existing-images.md#resolution-2026-10-13)): rows per page and component with reach; fix one or all; untick pictures (remembered); progress and Cancel; Undo per page and Undo all; More shows its count.
 - **Outside pictures** fetched by the browser (policy widened for images only), named source site first, unfetchable ones listed as "website gone" or "not allowed".
 - **Heavy files** become new lighter files, every mention repointed, the old to Clean up; GIFs on pages become Looping videos; YouTube/Vimeo players become "picture until tapped"; the left-alone list from tickets 11 and 05.
 - **Agents** may run it, except outside pictures and YouTube/Vimeo switch-overs.
@@ -195,10 +195,10 @@ Once per stage (decision 4), when the whole phase is on preview: one set on the 
 
 | Stage | Screenshot set | Lex's iPhone list |
 | --- | --- | --- |
-| 1 Media screen | All grid, a collection, search with no results, usage badge open, details, Manage collections, the picker, To check | Media shows 3 across with names; tap a usage badge; open details and Back; Filter opens and picks (slice 116; was the Collections dropdown); + opens the photo library (slice 116; was Add new file in More); the picker is full-screen with Cancel/Use reachable |
+| 1 Media screen | All grid, a collection, search with no results, usage badge open, details, Manage collections, the picker, To check | Media shows 3 across with usage numbers and select circles (names only in details and the list, slice 122); tap a usage badge; open details and Back; Filter opens and picks (slice 116; was the Collections dropdown); + opens the photo library (slice 116; was Add new file in More); the picker is full-screen with Cancel/Use reachable |
 | 2 Adding | Adding progress, Adding settings in More, a Large download note, a placed image's details | Add a HEIC photo from the camera roll; check it arrives as `.webp` and is small (Safari WebP); add 5 photos at once and cancel one; a page with a big photo loads quickly on the phone |
 | 3 Image popup | Popup with each shape, focus dot, yellow message, large editor, the component shape note, Social image popup | Open the popup by touch; it is a bottom sheet; drag the focus dot; pinch to zoom; swipe down to close; large editor's icon row |
-| 4 Clean-up | Media tab badge, Clean up review, Recently removed, the used-file warning, Rename with taken name, Replace everywhere | Run Clean up and Undo; restore a file from Recently removed; rename a file with the phone keyboard |
+| 4 Clean-up | More's Clean up count, Clean up review, Recently removed, the used-file warning, Rename with taken name, Replace everywhere | Run Clean up and Undo; restore a file from Recently removed; rename a file with the phone keyboard |
 | 5 Video | Video tile, player bar, audio player, PDF card, Looping video corner button, Online video in the picker | Add a video from the camera roll; play full screen; picture-in-picture; scrub the bar by touch; a YouTube video's still then play (what YouTube shows over the bar); Reduce Motion on: a Looping video stays paused; Low Data Mode: a background video shows its still |
 | 6 Improve images | Rows, an opened row with unticked pictures, progress, Undo list | none ★ |
 | 7 Sub-folder sites | Site settings with a project-site address, the rewrite note, the canvas of a sub-folder site | none ★ |

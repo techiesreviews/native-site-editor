@@ -116,10 +116,13 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
     const [search, whole] = await Promise.all([library.locator(".media-library__search").boundingBox(), bar.boundingBox()]);
     return search!.width / (whole!.width - 24);
   };
-  expect(await share()).toBeGreaterThanOrEqual(0.55);
-  // Filter (slice 116) is the funnel alone while it shows everything; + and More sit beside it.
+  // Filter shows its choice on phones too (slice 122); search keeps at least half the bar.
+  expect(await share()).toBeGreaterThanOrEqual(0.5);
+  // Filter (slices 116, 122) is the funnel and its choice; the word "Filter" is for wider screens.
   await expect(filterButton(library)).toHaveAccessibleName("Filter: All");
-  await expect(filterButton(library).locator(".media-library__filter-label")).toBeHidden();
+  await expect(filterButton(library).locator(".media-library__filter-label")).toHaveText("All");
+  await expect(filterButton(library).locator(".media-library__filter-label")).toBeVisible();
+  await expect(filterButton(library).locator(".media-library__filter-name")).toBeHidden();
   await expect(library.getByRole("button", { name: "Add files", exact: true })).toBeVisible();
   // Typed words stay whole.
   await library.getByLabel("Search media", { exact: true }).fill("studio desk");
@@ -130,8 +133,9 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
   const selection = library.getByRole("group", { name: "Selected files", exact: true });
   const clear = selection.getByRole("button", { name: "2 selected. Clear selection", exact: true });
   expect(await clear.innerText()).toBe("2");
+  // Slim (Lex, slice 122): about 46 px, on touch too.
   const box = await selection.boundingBox();
-  expect(box!.height).toBeLessThanOrEqual(56.5);
+  expect(box!.height).toBeLessThanOrEqual(48);
   const controls = await selection.getByRole("button").evaluateAll(buttons => buttons.filter(b => b.checkVisibility()).map(b => ({ label: b.getAttribute("aria-label") ?? b.textContent, top: Math.round(b.getBoundingClientRect().top) })));
   expect(controls.map(control => control.label)).toEqual(["2 selected. Clear selection", "Add to collection", "More for selected files"]);
   expect(new Set(controls.map(control => control.top)).size).toBe(1);
@@ -174,7 +178,7 @@ test("phones: with 30 collections Filter scrolls inside the window, and a collec
   await expect.poll(() => library.locator(".media-library__card").count()).toBe(1);
   await filterTo(library, "All collections");
   await expect(filter).not.toHaveAttribute("data-narrowed", "");
-  await expect(filter.locator(".media-library__filter-label")).toBeHidden();
+  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
 });
 
 test("phones: inside a collection, ⋯ offers Take out before Remove, and Take out keeps the file", async ({ page, baseURL }) => {
@@ -184,7 +188,7 @@ test("phones: inside a collection, ⋯ offers Take out before Remove, and Take o
   await open(page, baseURL);
   const library = pane(page);
   await filterTo(library, "Picks");
-  // Narrowed, Filter shows its words whole in place of the funnel; search keeps at least 40 %.
+  // Narrowed, Filter shows its words whole beside the funnel; search keeps at least 40 %.
   const label = filterButton(library).locator(".media-library__filter-label");
   await expect(label).toHaveText("Picks");
   expect(await label.evaluate(words => words.scrollWidth <= words.clientWidth)).toBe(true);
@@ -202,7 +206,7 @@ test("phones: inside a collection, ⋯ offers Take out before Remove, and Take o
   await expect(tile(page, "images/studio-desk.svg")).toBeVisible();
 });
 
-test("wider screens keep one selection row with every action in view", async ({ page, baseURL }) => {
+test("wider screens keep one slim, quiet selection row with every action in view and Remove last", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   const library = pane(page);
@@ -210,6 +214,20 @@ test("wider screens keep one selection row with every action in view", async ({ 
   const selection = library.getByRole("group", { name: "Selected files", exact: true });
   await expect(selection.getByRole("button", { name: "1 selected. Clear selection", exact: true })).toHaveText("1 selected");
   await expect(selection.getByRole("button", { name: "Remove file", exact: true })).toBeVisible();
+  // Lex (slice 122): about 46 px on the panel's surface; text actions with 44 px targets; Remove in the danger colour, at the end.
+  const look = await selection.evaluate(bar => {
+    const probe = document.createElement("span"); probe.style.cssText = "color: var(--danger-fg); background: var(--panel-surface)"; bar.append(probe);
+    const wanted = getComputedStyle(probe); const danger = wanted.color, surface = wanted.backgroundColor; probe.remove();
+    const buttons = [...bar.querySelectorAll<HTMLButtonElement>("button")].filter(button => button.checkVisibility());
+    const remove = buttons.find(button => button.textContent === "Remove file")!;
+    return { height: bar.getBoundingClientRect().height, surface: getComputedStyle(bar).backgroundColor === surface,
+      tops: new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size,
+      plain: buttons.every(button => getComputedStyle(button).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(button).borderTopWidth === "0px"),
+      targets: buttons.every(button => button.getBoundingClientRect().height + 2 * Math.max(0, -parseFloat(getComputedStyle(button, "::after").top)) >= 44),
+      danger: getComputedStyle(remove).color === danger, last: buttons.at(-2) === remove };
+  });
+  expect(look).toEqual({ height: look.height, surface: true, tops: 1, plain: true, targets: true, danger: true, last: true });
+  expect(look.height).toBeLessThanOrEqual(48);
   await selection.getByRole("button", { name: "More for selected files", exact: true }).click();
   await expect(page.getByRole("menu", { name: "More for selected files", exact: true }).getByRole("menuitem")).toHaveText(["Select all shown", "Optimise heavy images"]);
 });

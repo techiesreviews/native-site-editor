@@ -1,16 +1,14 @@
-// Default fixture group. Slice 121: the Media tab's count is Clean up's count plus Improve images'
-// (ticket 11, slice 74). It read 10 on one screen and 15 on the next, because the badge showed Clean
-// up's count first and the sum a moment later. Now it shows only the sum, and More's two counts add up
-// to it on every Media screen.
+// Default fixture group. Slice 121: More's two counts (Clean up, Improve images) come from one settled
+// check, so they never show Clean up's count alone and stay the same on every Media screen. Slice 122
+// (Lex): the Media tab shows no count and the page button no dot; More is the one place they live.
 import { test, expect, type Page } from "@playwright/test";
 import { filterTo } from "./media-filter";
 
-declare global { interface Window { __badge?: string[] } }
+declare global { interface Window { __marks?: number } }
 
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
-/** Every value the Media tab's count has shown since the page loaded. */
-const shown = (page: Page) => page.evaluate(() => window.__badge ?? []);
-const badge = (page: Page) => page.locator(".media-count:not([hidden])").first();
+/** How many count marks (the old .media-count) were ever added since the page loaded. */
+const marks = (page: Page) => page.evaluate(() => window.__marks ?? 0);
 
 async function moreCounts(page: Page) {
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
@@ -20,14 +18,12 @@ async function moreCounts(page: Page) {
   return { clean: count("Clean up"), improve: count("Improve images") };
 }
 
-test("the Media tab's count is Clean up plus Improve images on every Media screen, from the first time it shows", async ({ page, baseURL }) => {
+test("More's counts hold on every Media screen; the Media tab and page button never show a count", async ({ page, baseURL }) => {
   await page.addInitScript(() => {
-    const seen: string[] = [];
-    window.__badge = seen;
+    window.__marks = 0;
     new MutationObserver(() => {
-      const count = document.querySelector<HTMLElement>(".media-count");
-      if (count && !count.hidden && seen.at(-1) !== count.textContent) seen.push(count.textContent ?? "");
-    }).observe(document, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+      if (document.querySelector(".media-count, #media-count-note")) window.__marks = (window.__marks ?? 0) + 1;
+    }).observe(document, { subtree: true, childList: true });
   });
   await page.goto(baseURL!);
   const picture = await page.evaluate(() => {
@@ -47,30 +43,26 @@ test("the Media tab's count is Clean up plus Improve images on every Media scree
   await expect(page.locator("#status")).toContainText("Up to date with main");
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Media", exact: true }).click();
-  await expect(badge(page)).toBeVisible({ timeout: 30_000 });
-  // More shows both parts once the counts are in; the badge is their sum.
+  // More shows both counts once they are in.
   await expect.poll(async () => (await moreCounts(page)).improve, { timeout: 30_000 }).toBe(1);
-  const { clean } = await moreCounts(page), sum = String(clean + 1);
+  const { clean } = await moreCounts(page);
   expect(clean).toBeGreaterThanOrEqual(2);
-  await expect(badge(page)).toHaveText(sum);
-  // Never Clean up's count alone, before or after.
-  expect(await shown(page)).toEqual([sum]);
-  const said = `${clean} files to clean up and 1 page with pictures to improve`;
-  await expect(page.locator("#media-count-note")).toHaveText(said);
-  await expect(badge(page)).toHaveAttribute("title", said);
+  const tab = page.getByRole("tab", { name: "Media", exact: true });
+  await expect(tab).toHaveText("Media");
+  await expect(tab).not.toHaveAttribute("aria-describedby");
+  await expect(page.locator("#explorer-toggle")).not.toHaveAttribute("aria-describedby");
 
   const back = () => pane(page).getByRole("button", { name: /^(Back|Back to grid)$/ }).first().click();
   await filterTo(pane(page), "Manage collections…");
   await expect(pane(page).getByRole("heading", { name: "Manage collections", exact: true })).toBeVisible();
-  await expect(badge(page)).toHaveText(sum);
   await back();
+  expect(await moreCounts(page)).toEqual({ clean, improve: 1 });
   for (const item of [/^To check/, /^Recently removed/, /^Adding settings/, /^Improve images/, /^Clean up/]) {
     await pane(page).getByRole("button", { name: "More", exact: true }).click();
     await page.getByRole("menuitem", { name: item }).click();
     await expect(pane(page).getByRole("button", { name: /^(Back|Back to grid)$/ }).first()).toBeVisible();
-    await expect(badge(page), String(item)).toHaveText(sum);
     await back();
+    expect(await moreCounts(page), String(item)).toEqual({ clean, improve: 1 });
   }
-  expect(await moreCounts(page)).toEqual({ clean, improve: 1 });
-  expect(await shown(page)).toEqual([sum]);
+  expect(await marks(page)).toBe(0);
 });
