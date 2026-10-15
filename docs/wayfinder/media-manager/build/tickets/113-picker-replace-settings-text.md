@@ -2,7 +2,7 @@
 title: Picker, Replace everywhere and Site settings: less text, pages named
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-113 runner)
 blocked_by: [104-media-panel-size, 105-editor-toast]
 builder: claude
 phase: 8
