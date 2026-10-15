@@ -37,8 +37,6 @@ export function pickerNoun(accept?: string): string {
   if (parts.every(video)) return "video";
   return parts.every(part => image(part) || video(part)) ? "image or video" : "media";
 }
-/** One file of a picker's kind before anything is chosen: "image", "video" or "file". */
-export const pickerFileWord = (accept?: string) => { const noun = pickerNoun(accept); return noun === "image" || noun === "video" ? noun : "file"; };
 /** Use's word for a chosen file: "Use image", "Use video", "Use audio", "Use file". */
 export const chosenNoun = (path: string) => ({ image: "image", video: "video", audio: "audio", document: "file" } as const)[mediaKind(path)];
 

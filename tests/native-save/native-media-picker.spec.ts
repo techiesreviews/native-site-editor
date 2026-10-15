@@ -41,9 +41,10 @@ test("from a double-click on the image: search, choose, Use places the new image
   expect(await source(page)).toBe(before);
   // Search, choose, Use.
   await openPicker(page);
+  // "Use" until a pick, with no "Choose one image" line (slice 113); then "Use image".
+  await expect(picker(page).getByRole("button", { name: "Use", exact: true })).toBeDisabled();
+  await expect(picker(page).locator(".media-library__chosen-text")).toHaveText("");
   const use = picker(page).getByRole("button", { name: "Use image", exact: true });
-  await expect(use).toBeDisabled();
-  await expect(picker(page).locator(".media-library__chosen-text")).toHaveText("Choose one image");
   await picker(page).getByLabel("Search media", { exact: true }).fill("studio");
   await expect(picker(page).locator(".media-library__card")).toHaveCount(1);
   const tile = picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true });
@@ -63,6 +64,8 @@ test("a phone shows the picker full-screen, its status above one row of Cancel a
   await openPicker(page);
   const box = (await picker(page).boundingBox())!;
   expect(box).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+  // Before a pick, the footer is one 56 px row of Cancel and Use (slice 113).
+  expect((await picker(page).locator(".media-library__choice").boundingBox())!.height).toBe(56);
   await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   const cancel = picker(page).getByRole("button", { name: "Cancel", exact: true });
   const use = picker(page).getByRole("button", { name: "Use image", exact: true });
@@ -194,4 +197,28 @@ test("Site settings' Choose favicon… opens the picker over the settings and fi
   await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(favicon).toHaveValue("/images/studio-desk.svg");
+  // Slice 113: the favicon's 32 px preview sits before the field, and Choose favicon… is a button in the field's column.
+  const preview = settings.locator(".site-settings__favicon-preview");
+  await expect(preview.locator("img")).toBeVisible();
+  await expect.poll(() => preview.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  const [frame32, field, choose] = [(await preview.boundingBox())!, (await favicon.boundingBox())!, (await settings.getByRole("button", { name: "Choose favicon…", exact: true }).boundingBox())!];
+  expect([frame32.width, frame32.height]).toEqual([32, 32]);
+  expect(frame32.x + frame32.width).toBeLessThanOrEqual(field.x);
+  expect(Math.abs(choose.x - frame32.x)).toBeLessThan(1);
+  expect(choose.y).toBeGreaterThan(field.y + field.height);
+});
+
+test("the picker's height follows its content between 480 and 850 px, the grid scrolling inside", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 1200 });
+  await open(page, baseURL);
+  await openPicker(page);
+  await expect(picker(page).locator(".media-library__card").first()).toBeVisible();
+  // A few files: shorter than 850 px, but never under 480.
+  const few = (await picker(page).boundingBox())!.height;
+  expect(few).toBeGreaterThanOrEqual(480); expect(few).toBeLessThan(850);
+  const grid = picker(page).locator(".media-library__browse");
+  expect(await grid.evaluate(element => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
+  // A short window: the box fits it with 24 px to spare on each side, and the grid scrolls inside.
+  await page.setViewportSize({ width: 1280, height: 520 });
+  await expect.poll(async () => (await picker(page).boundingBox())!.height).toBe(520 - 48);
 });

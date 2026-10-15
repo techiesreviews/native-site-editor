@@ -158,9 +158,15 @@ test("Replace everywhere with a picture in Media changes it on two pages with th
   await expect(picker(page)).toBeHidden();
   // What will happen, then confirm.
   await expect(media.getByRole("heading", { name: "Replace tram.webp everywhere?", exact: true })).toBeFocused();
-  await expect(media.getByText(/^2 pages show tram\.webp\. They will show the new picture instead/)).toBeVisible();
-  await expect(media.getByText("It keeps the name and address /images/tram.webp. Visitors' browsers fetch the new picture at once.", { exact: true })).toBeVisible();
-  await expect(media.getByText("next.png also stays in Media as it is.", { exact: true })).toBeVisible();
+  // Slice 113: the box names the pages as links, then the address line, focus points and where the old picture goes.
+  await expect(media.locator(".media-replace__shows")).toHaveText("Shows on: Home, About this project");
+  await expect(media.locator(".media-replace__shows").getByRole("button")).toHaveCount(2);
+  await expect(media.locator(".media-replace__line")).toHaveText([
+    "Same name and address, so links from other sites show it too.",
+    "Focus points go back to the middle.",
+    "The old picture goes to Recently removed for 30 days.",
+  ]);
+  await expect(media.getByText("next.png also stays in Media as it is.", { exact: true })).toHaveCount(0);
   await expect(media.getByRole("checkbox", { name: "Keep the old address working", exact: true })).toHaveCount(0);
   // Cancel goes back to details; nothing changed.
   await media.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -168,7 +174,8 @@ test("Replace everywhere with a picture in Media changes it on two pages with th
   expect(await storedDraft(page, "index.html")).toBeUndefined();
   await media.getByRole("button", { name: "Back", exact: true }).click();
   await replaceWithNext(page);
-  await expect(page.locator(".editor-toast__text")).toContainText("Replaced tram.webp everywhere on 2 pages, as a draft. The old picture is in More → Recently removed.");
+  await expect(page.locator(".editor-toast__text")).toHaveText("tram.webp now shows the next picture on Home and About this project.");
+  await expect(page.locator(".editor-toast").getByRole("button", { name: "Undo", exact: true })).toBeVisible();
   // The same mark on both pages; the prepared picture brought its own 480 px copy.
   await expect.poll(async () => marked.exec((await text(page, "index.html")) ?? "")?.[1]).toBeTruthy();
   const version = marked.exec((await text(page, "index.html"))!)![1];
@@ -228,7 +235,7 @@ test("Replace everywhere with a picture added in the picker: prepared, a new for
   await expect(use).toBeEnabled({ timeout: 30_000 });
   await use.click();
   await expect(media.getByRole("heading", { name: "Replace old.png everywhere?", exact: true })).toBeVisible();
-  await expect(media.getByText("The new picture is a WebP picture, so its address becomes /images/old.webp. Every mention on the site is updated.", { exact: true })).toBeVisible();
+  await expect(media.locator(".media-replace__line").first()).toHaveText("It's a WebP, so its address becomes /images/old.webp. Every mention is updated.");
   const forward = media.getByRole("checkbox", { name: "Keep the old address working", exact: true });
   await expect(forward).not.toBeChecked();
   await forward.check();
@@ -240,4 +247,40 @@ test("Replace everywhere with a picture added in the picker: prepared, a new for
   await media.getByRole("button", { name: "Back", exact: true }).click();
   await expect(media.locator('.media-library__card[data-path="images/photo.webp"]')).toHaveCount(0);
   await expect(media.locator('.media-library__card[data-path="images/old.png"]')).toHaveCount(0);
+});
+
+test("the toast's Undo takes Replace everywhere back, and a page named in the confirm opens it", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  const media = pane(page);
+  await replaceWithNext(page);
+  await expect.poll(async () => (await text(page, "index.html")) ?? "").toMatch(/src="\/images\/tram\.webp\?v=/);
+  await page.locator(".editor-toast").getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/tram.webp"');
+  await expect.poll(async () => marked.test((await text(page, "about/index.html")) ?? "")).toBe(false);
+  // The confirm's page names are links: About this project opens that page and closes the explorer.
+  await media.getByRole("button", { name: "Back", exact: true }).click().catch(() => undefined);
+  await media.getByRole("button", { name: "Details for images/tram.webp", exact: true }).click();
+  await media.getByRole("button", { name: "Replace everywhere…", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Choose images/next.png", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await media.locator(".media-replace__shows").getByRole("button", { name: "About this project", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  expect(await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))).toBe(false);
+});
+
+test("a new format with Keep the old address working off writes no forwarding, and the focus line shows", async ({ page, baseURL }) => {
+  await seed(page, baseURL);
+  const media = pane(page);
+  await media.getByRole("button", { name: "Details for images/old.png", exact: true }).click();
+  await media.getByRole("button", { name: "Replace everywhere…", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Choose images/next.png", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(media.getByRole("heading", { name: "Replace old.png everywhere?", exact: true })).toBeVisible();
+  await expect(media.locator(".media-replace__line").first()).toHaveText("It's a WebP, so its address becomes /images/old.webp. Every mention is updated.");
+  await expect(media.getByText("Focus points go back to the middle.", { exact: true })).toBeVisible();
+  await expect(media.getByRole("checkbox", { name: "Keep the old address working", exact: true })).not.toBeChecked();
+  await media.getByRole("button", { name: "Replace everywhere", exact: true }).click();
+  await expect(media.getByLabel("File name", { exact: true })).toHaveValue("old.webp");
+  await expect.poll(async () => (await text(page, "about/index.html")) ?? "").toMatch(/src="\/images\/old\.webp\?v=[0-9a-f]{8}"/);
+  expect(await storedDraft(page, "_redirects")).toBeUndefined();
 });

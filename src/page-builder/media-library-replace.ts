@@ -5,7 +5,7 @@ import { basename } from "./media-library-filter";
 import { check, input } from "./media-library-fields";
 import { openMediaPicker } from "./media-picker";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
-import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "./media-replace-rules";
+import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, shownPages, trimsOf } from "./media-replace-rules";
 import { askToAddUnchanged } from "./media-prepare";
 import { prepareMediaReplacement } from "./media-replace-prepare";
 import type { MediaReplaceRequest } from "./media-workspace";
@@ -19,12 +19,12 @@ export type ReplaceContext = LibrarySheetContext & {
   dialog: HTMLElement;
   /** File details of `path`: Cancel and Back return there; after replacing it opens on the new picture. */
   details(path: string): Promise<void>;
+  /** Closes the explorer (a page named in the confirm opens). */
+  close(): void;
 };
 
 interface NewPicture extends Pick<MediaReplaceRequest, "result" | "original"> {
   name: string; url: string; width?: number; height?: number;
-  /** The picture is a file already in Media (it stays there too). */
-  inMedia: boolean;
   release(): void;
 }
 
@@ -44,7 +44,7 @@ export async function replaceEverywhere(sheet: LibrarySheet, c: ReplaceContext, 
         chosen.take();
         const url = URL.createObjectURL(main.blob);
         next = { result: request.result, ...request.original ? { original: request.original } : {}, name: request.file.name,
-          url, width: main.width, height: main.height, inMedia: false, release: () => URL.revokeObjectURL(url) };
+          url, width: main.width, height: main.height, release: () => URL.revokeObjectURL(url) };
       } else {
         const library = c.library(), paths = library.items.map(item => item.path);
         const problem = replaceChoiceProblem(path, image.path, paths);
@@ -58,7 +58,7 @@ export async function replaceEverywhere(sheet: LibrarySheet, c: ReplaceContext, 
         });
         const url = URL.createObjectURL(main.blob);
         next = { result, ...original ? { original } : {}, name: basename(image.path), url,
-          width: main.width, height: main.height, inMedia: true, release: () => URL.revokeObjectURL(url) };
+          width: main.width, height: main.height, release: () => URL.revokeObjectURL(url) };
       }
       if (cancelled()) { next.release(); return; }
       // The picker closes once Use resolves; the confirmation then takes the pane's sheet.
@@ -73,9 +73,10 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
   const { element } = sheet, version = sheet.version;
   element.dataset.mode = "replace";
   const library = c.library(), paths = library.items.map(item => item.path);
-  const pages = library.usage[path]?.pages.length ?? 0;
+  const used = library.usage[path]?.pages ?? [], pages = used.length;
+  const label = (page: string) => c.adapter.usage?.pageLabel?.(page)?.trim() || page;
   const notice = replaceNotice({ path, pages, trims: trimsOf(path, paths, library.metadata), kept: Boolean(library.keep?.includes(path)),
-    next: { name: next.name, extension: next.result!.outputs[0].extension, inMedia: next.inMedia } });
+    next: { extension: next.result!.outputs[0].extension } });
   const leave = () => { next.release(); void c.details(path); };
   const head = node("header", "media-detail__head");
   const back = button("", leave, "media-detail__back");
@@ -95,7 +96,19 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
     row("Now", basename(path), pages ? `Used on ${pages} ${pages === 1 ? "page" : "pages"}` : "No page uses it", c.cache.get(path).then(data => data.url)),
     row("New", next.name, next.width && next.height ? `${next.width} × ${next.height}` : "", next.url),
   );
-  element.append(head, files, ...notice.lines.map(line => node("p", "media-replace__line", line)));
+  // The box names the pages as links (slice 113): "Shows on: Home, About", up to 5, then "and 3 more".
+  const shows = node("p", "media-replace__shows");
+  if (pages) {
+    const { shown, more } = shownPages(used);
+    shows.append("Shows on: ");
+    shown.forEach((page, index) => {
+      if (index) shows.append(", ");
+      const link = button(label(page), () => void c.task(async () => { next.release(); await c.adapter.openPage(page); c.close(); }), "media-library__page media-replace__page");
+      link.dataset.page = page; shows.append(link);
+    });
+    if (more) shows.append(` and ${more} more`);
+  } else shows.textContent = `No page shows ${basename(path)} yet.`;
+  element.append(head, files, shows, ...notice.lines.map(line => node("p", "media-replace__line", line)));
   let keep: HTMLInputElement | undefined;
   if (notice.forward) {
     keep = input(notice.forward.label, "checkbox"); keep.checked = notice.forward.checked;
@@ -111,7 +124,8 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
     next.release(); c.cache.clear(); await c.refresh();
     if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }
-    c.done([replacedMessage(to, pages), ...notices].join(" "));
+    // The toast names the pages and carries Undo for this step (slice 113).
+    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), true);
   }), "button primary"));
   element.append(actions);
   title.focus();

@@ -81,6 +81,8 @@ export interface MediaPickerHost {
   /** Improve images (ticket 11): its plan, row fixes, their Undo and left-as-is pictures. */
   improveImages?(): Promise<import("./improve-images-run").ImproveImagesSession>;
   openPage(path: string): Promise<void>;
+  /** A result said and shown as the editor's toast, with Undo for the step just made (slice 113). */
+  undoable?(text: string): void;
   /** The site's usage check (checked on open); without it every file is Not checked yet. */
   usage?: MediaUsageSource;
 }

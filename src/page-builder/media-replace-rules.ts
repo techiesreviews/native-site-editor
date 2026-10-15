@@ -22,8 +22,8 @@ export function replaceChoiceProblem(path: string, chosen: string, paths: string
 
 export interface ReplaceNoticeInput {
   path: string;
-  /** The new picture: its name and the format it arrives in (after preparation). */
-  next: { name: string; extension: string; inMedia?: boolean };
+  /** The format the new picture arrives in (after preparation). */
+  next: { extension: string };
   pages: number;
   /** Places that show a Trimmed copy of the old picture. */
   trims: number;
@@ -33,6 +33,7 @@ export interface ReplaceNoticeInput {
 
 export interface ReplaceNotice {
   title: string;
+  /** Under the box naming the pages (slice 113): the address line, then focus points, trimmed copies and where the old picture goes. */
   lines: string[];
   /** The address after replacing: the same, or the same name in the new format. */
   address: string;
@@ -46,19 +47,13 @@ export function replaceNotice({ path, next, pages, trims, kept }: ReplaceNoticeI
   // As the engine decides: any other extension (even .jpg for .jpeg) is a new address.
   const same = extension === format(path);
   const address = same ? path : path.replace(/\.[^./]+$/, `.${extension}`);
-  const name = basename(path);
-  const lines = [
-    pages ? `${pages === 1 ? "1 page shows" : `${pages} pages show`} ${name}. ${pages === 1 ? "It" : "They"} will show the new picture instead, as will links to it from other sites.`
-      : `No page shows ${name} yet. Links to it will show the new picture.`,
-    same ? `It keeps the name and address /${path}. Visitors' browsers fetch the new picture at once.`
-      : `The new picture is ${FORMATS[extension] ?? `a ${extension.toUpperCase()}`} picture, so its address becomes /${address}. Every mention on the site is updated.`,
-  ];
-  if (pages) lines.push("Each place keeps its shape; its focus point goes back to the middle.");
+  const lines = [same ? "Same name and address, so links from other sites show it too."
+    : `It's ${FORMATS[extension] ?? `a ${extension.toUpperCase()}`}, so its address becomes /${address}. Every mention is updated.`];
+  if (pages) lines.push("Focus points go back to the middle.");
   if (trims) lines.push(`${trims === 1 ? "1 trimmed copy of it is" : `${trims} trimmed copies of it are`} replaced by the new picture in the same shape.`);
-  if (next.inMedia) lines.push(`${next.name} also stays in Media as it is.`);
   lines.push("The old picture goes to Recently removed for 30 days.");
   return {
-    title: `Replace ${name} everywhere?`, lines, address,
+    title: `Replace ${basename(path)} everywhere?`, lines, address,
     ...same ? {} : { forward: {
       label: "Keep the old address working",
       hint: `Links from other sites to /${path} forward to the new address, on hosts that read the site's _redirects file.`,
@@ -67,10 +62,21 @@ export function replaceNotice({ path, next, pages, trims, kept }: ReplaceNoticeI
   };
 }
 
-/** After replacing: what changed, and where the old picture went. */
-export function replacedMessage(path: string, pages: number): string {
-  const where = pages ? ` on ${pages === 1 ? "1 page" : `${pages} pages`}` : "";
-  return `Replaced ${basename(path)} everywhere${where}, as a draft. The old picture is in More → Recently removed.`;
+/** The confirm's box (slice 113): the pages named, up to `limit`, then how many more ("Shows on: Home, About and 3 more"). */
+export function shownPages<T>(pages: T[], limit = 5): { shown: T[]; more: number } {
+  return { shown: pages.slice(0, limit), more: Math.max(0, pages.length - limit) };
+}
+
+/** "Home", "Home and About", "Home, About and Work"; past three, "Home, About, Work and 2 more pages". */
+export function pageList(names: string[]): string {
+  if (names.length > 3) return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more ${names.length === 4 ? "page" : "pages"}`;
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
+}
+
+/** After replacing, the toast (slice 113): "red-acer.webp now shows the bluebells picture on Home and About." */
+export function replacedMessage(path: string, newName: string, pages: string[]): string {
+  const picture = basename(newName).replace(/\.[^.]+$/, "");
+  return `${basename(path)} now shows the ${picture} picture${pages.length ? ` on ${pageList(pages)}` : ""}.`;
 }
 
 /** How many Trimmed copies were made from the old picture's family. */

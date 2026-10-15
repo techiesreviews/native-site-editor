@@ -73,7 +73,8 @@ export interface MediaControllerPorts {
   imagePopup?: import("../page-builder/image-popup").ImagePopupHost;
   /** The canvas and selection the edit bar's Play uses. */
   mediaPlay?: import("../page-builder/media-play").MediaPlayHost;
-  announce(message: string): void;
+  /** `as.undo`: the toast offers Undo for the step just recorded in that file's history. */
+  announce(message: string, as?: import("../components/toast-rules").AnnounceAs): void;
   error(error: unknown): void;
 }
 

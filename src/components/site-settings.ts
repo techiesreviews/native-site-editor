@@ -124,9 +124,9 @@ function settingsDialog(title: string, scope: string) {
   } };
 }
 
-function textField(parent: HTMLElement, label: string, value: string, hint?: string) {
+function textField(parent: HTMLElement, label: string, value: string, hint?: string, multiline = label.toLowerCase().includes("description")) {
   const wrap = node("label", "site-settings__field");
-  const input = label.toLowerCase().includes("description") ? node("textarea", "site-settings__input") : node("input", "site-settings__input");
+  const input = multiline ? node("textarea", "site-settings__input") : node("input", "site-settings__input");
   if (input instanceof HTMLInputElement) input.type = "text";
   else input.rows = 3;
   input.value = value;
@@ -450,11 +450,14 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const pagesPanel = dialog.category("Pages", "file");
       const general = section(generalPanel, "Site identity");
       const name = textField(general, "Site name", options.values.name, "Used for new page details and the site's social identity.");
-      const address = textField(general, "Site address", options.values.url, "Where your site lives, like https://name.github.io/my-site/");
-      Object.assign(address, { inputMode: "url", autocomplete: "off", spellcheck: false, autocapitalize: "off" });
-      const favicon = textField(general, "Favicon", options.values.favicon, "Choose an image or paste its URL. Applied to every page's head.");
+      // One line that grows to show a long address whole (slice 113); Enter and pasted line breaks add nothing.
+      const address = textField(general, "Site address", options.values.url, "Like https://name.github.io/my-site/", true);
+      Object.assign(address, { rows: 1, inputMode: "url", autocomplete: "off", spellcheck: false, autocapitalize: "off" });
+      address.classList.add("site-settings__address");
+      address.addEventListener("keydown", event => { if (event instanceof KeyboardEvent && event.key === "Enter") event.preventDefault(); });
+      address.addEventListener("input", () => { if (/[\r\n]/.test(address.value)) address.value = address.value.replace(/[\r\n]+/g, ""); });
+      const favicon = faviconField(general, options.values.favicon, dialog, handlers);
       addImageChoices(favicon, options.images, handlers.prefix());
-      general.append(button("Choose favicon…", () => chooseInto(favicon, "Favicon", dialog, handlers), "site-settings__link"));
       const social = section(socialPanel, "Default share image");
       const note = handlers.socialNote?.();
       if (note) social.append(node("p", "site-settings__hint", note));
@@ -545,6 +548,31 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       dialog.show();
     },
   };
+}
+
+/** The Favicon (slice 113): its 32 px preview before the field, and Choose favicon… under it in the field's column. */
+function faviconField(parent: HTMLElement, value: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers) {
+  const wrap = node("div", "site-settings__field"), row = node("div", "site-settings__favicon");
+  const preview = node("span", "site-settings__favicon-preview"), image = node("img");
+  image.alt = ""; image.hidden = true; preview.append(image);
+  const input = node("input", "site-settings__input");
+  input.type = "text"; input.value = value; input.setAttribute("aria-label", "Favicon");
+  let request = 0;
+  const refresh = () => {
+    const ask = ++request;
+    const show = (src?: string) => { if (ask !== request || !dialog.root.isConnected) return; image.hidden = !src; if (src) image.src = src; else image.removeAttribute("src"); };
+    if (!input.value.trim()) { show(); return; }
+    void handlers.imageUrl(input.value.trim()).then(show, () => show());
+  };
+  image.addEventListener("error", () => { image.hidden = true; });
+  input.addEventListener("input", refresh);
+  row.append(preview, input);
+  wrap.append(node("span", "site-settings__label", "Favicon"), row,
+    button("Choose favicon…", () => chooseInto(input, "Favicon", dialog, handlers, refresh), "button secondary site-settings__choose"),
+    node("span", "site-settings__hint", "Choose an image or paste its URL. Applied to every page's head."));
+  parent.append(wrap);
+  refresh();
+  return input;
 }
 
 function addImageChoices(input: HTMLInputElement | HTMLTextAreaElement, images: string[], prefix: string) {

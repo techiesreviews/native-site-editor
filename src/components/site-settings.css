@@ -35,6 +35,13 @@
 .site-settings__input { min-width: 0; width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font: inherit; box-sizing: border-box; }
 textarea.site-settings__input { resize: vertical; min-height: 88px; line-height: 1.5; }
 .site-settings__input[readonly] { color: var(--muted); background: var(--surface-subtle); }
+/* The Site address grows to show a long address whole, wrapping on a phone (slice 113). */
+textarea.site-settings__address { field-sizing: content; min-height: 36px; resize: none; overflow-wrap: anywhere; }
+/* Favicon: its 32 px preview before the field, and Choose favicon… under it in the field's column. */
+.site-settings__favicon { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.site-settings__favicon-preview { flex: none; inline-size: 32px; block-size: 32px; display: grid; place-items: center; overflow: clip; border: 1px solid var(--control-line); border-radius: var(--radius-small); background: var(--surface-input); }
+.site-settings__favicon-preview img { inline-size: 100%; block-size: 100%; object-fit: contain; }
+.site-settings__field .site-settings__choose { grid-column: -2 / -1; justify-self: start; border: 1px solid var(--control-line); }
 .site-settings__hint { color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .site-settings__field .site-settings__hint { grid-column: 2; }
 .site-settings__check { display: flex; align-items: center; gap: 9px; margin: 12px 0; min-height: 36px; font-size: 14px; }

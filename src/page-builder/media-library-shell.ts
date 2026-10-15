@@ -2,7 +2,7 @@ import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
-import { pickerFileWord, pickerNoun } from "./media-library-filter";
+import { pickerNoun } from "./media-library-filter";
 import { allCollectionsOption } from "./media-library-refresh";
 
 export type LibraryShell = ReturnType<typeof createMediaLibraryShell>;
@@ -56,24 +56,37 @@ export function createMediaLibraryShell(
   chosen.append(document.createElement("selectedcontent"));
   collections.append(chosen, allCollectionsOption());
   toolbar.append(searchField, collections);
+  // Add → Media (slices 68, 113): a quiet text button in the One bar reveals the link field (Notion's Link tab).
+  const paste = modal && actions.address ? button("Paste a YouTube or Vimeo link", () => revealOnline(), "text-button media-library__paste") : undefined;
+  if (paste) { paste.setAttribute("aria-expanded", "false"); toolbar.append(paste); }
   const more = node("button", "media-library__more"); more.type = "button";
   more.setAttribute("aria-label", "More"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", "false");
   setIcon(more, "dots-three", 24);
   toolbar.append(more);
-  // Add → Media (slice 68): one field for a YouTube or Vimeo address, placed by its own Use.
+  // Revealed: one field, its own Use and one helper line; a problem shows inline under the field.
   let online: { form: HTMLFormElement; field: HTMLInputElement; note: HTMLElement } | undefined;
-  if (modal && actions.address) {
+  if (paste) {
     const form = node("form", "media-library__online"), field = node("input"), note = node("p", "media-library__online-note");
+    const hint = node("p", "media-library__online-hint", "Works with YouTube and Vimeo");
+    form.id = `media-library-online-form-${id}`; form.hidden = true; paste.setAttribute("aria-controls", form.id);
     form.setAttribute("aria-label", "YouTube or Vimeo video");
     field.type = "url"; field.name = "media-online-address"; field.autocomplete = "off"; field.spellcheck = false;
-    field.placeholder = "YouTube or Vimeo address"; field.setAttribute("aria-label", "YouTube or Vimeo address");
-    note.id = `media-library-online-${id}`; note.setAttribute("role", "status"); field.setAttribute("aria-describedby", note.id);
+    field.placeholder = "Paste the video link"; field.setAttribute("aria-label", "YouTube or Vimeo link");
+    hint.id = `media-library-online-hint-${id}`; note.id = `media-library-online-${id}`; note.setAttribute("role", "status");
+    field.setAttribute("aria-describedby", `${note.id} ${hint.id}`);
     const submit = node("button", "", "Use"); submit.type = "submit";
     form.noValidate = true;
     form.addEventListener("submit", event => { event.preventDefault(); actions.address!(field.value); });
     field.addEventListener("input", () => { note.textContent = ""; field.removeAttribute("aria-invalid"); });
-    form.append(field, submit, note);
+    form.append(field, submit, note, hint);
     online = { form, field, note };
+  }
+  /** The paste button opens the field and moves into it; pressed again, it folds it away. */
+  function revealOnline() {
+    if (!online || !paste) return;
+    const open = online.form.hidden;
+    online.form.hidden = !open; paste.setAttribute("aria-expanded", String(open));
+    if (open) online.field.focus();
   }
   const body = node("div", "media-library__body");
   const browse = node("section", "media-library__browse");
@@ -106,11 +119,12 @@ export function createMediaLibraryShell(
   const footer = modal ? node("footer", "media-library__choice") : node("footer", "media-library__footer", "Drop files anywhere here");
   // Keyboard hints only where there is likely a keyboard: touch screens hide them (media-picker.css).
   if (!modal) footer.append(node("span", "media-library__keys", " · Enter opens details · Arrow keys browse"));
-  // The picker's status above one row of Cancel and Use (phones), beside it on wider screens.
+  // The chosen file's status above one 56 px row of Cancel and Use (phones), beside it on wider screens.
   const choice = node("div", "media-library__chosen"), chosenName = node("span", "media-library__chosen-name");
   const chosenThumb = node("span", "media-library__chosen-thumb");
   const detailsButton = button("File details", actions.details, "media-library__chosen-details");
-  const use = button(`Use ${pickerFileWord(options.accept)}`, actions.use, "button primary media-library__use");
+  // "Use" until a pick, then what it places ("Use image"); no "Choose one file" line (slice 113).
+  const use = button("Use", actions.use, "button primary media-library__use");
   if (modal) {
     const status = node("div", "media-library__chosen-text"); status.setAttribute("role", "status");
     status.append(chosenName);

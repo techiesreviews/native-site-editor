@@ -99,6 +99,8 @@ export interface MediaWorkspaceContext {
   assetVersion(path: string): string | undefined;
   applyBatch(batch: MediaWorkspaceBatch): Promise<void>;
   openPage(path: string): Promise<void>;
+  /** A result as the editor's toast, with Undo for the step just made. */
+  undoable?(text: string): void;
 }
 
 // The site's prefix as `prepare` captured it through the batch's reader (media-prefix.ts).
@@ -1074,5 +1076,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
+    undoable(text) { session?.undoable?.(text); },
   } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean, ports?: { encode?: typeof import("./media-optimise").optimiseMedia }): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }

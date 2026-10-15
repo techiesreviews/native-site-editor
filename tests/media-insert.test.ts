@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { insertAtPlace, insertedImagePage, insertedNode, locatePageElement, playerMediaMarkup, spotVideoPage } from "../src/page-builder/media-insert";
 import { parseMediaRecords } from "../shared/media-records";
-import { pickerFileWord, pickerNoun, chosenNoun } from "../src/page-builder/media-library-filter";
+import { pickerNoun, chosenNoun } from "../src/page-builder/media-library-filter";
 import type { MediaWorkspaceBatch, MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 
 const page = (body: string) => `<!doctype html>\n<html lang="en">\n<head><title>T</title></head>\n<body>\n<main>\n<section class="flow"><h1>Hi</h1></section>\n</main>${body}\n</body>\n</html>`;
@@ -77,8 +77,6 @@ test("the picker's words follow what it lists and what is chosen", () => {
   assert.equal(pickerNoun(".mp4,.m4v,.webm,.mov,.ogv"), "video");
   assert.equal(pickerNoun("image/*,.mp4,.webm"), "image or video");
   assert.equal(pickerNoun(undefined), "media");
-  assert.equal(pickerFileWord("image/*"), "image");
-  assert.equal(pickerFileWord("image/*,.mp4"), "file");
   assert.deepEqual(["a.webp", "a.mp4", "a.mp3", "a.pdf", "a.zip"].map(chosenNoun), ["image", "video", "audio", "file", "file"]);
 });
 

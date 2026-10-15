@@ -697,7 +697,7 @@ test("converted GIF cannot be chosen or used in an image picker; Close saves vid
   await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Loop.gif", mimeType: "image/gif", buffer: animatedGif() });
   const choice = picker.getByRole("button", { name: "Choose Loop.gif", exact: true });
   await expect(choice).toBeEnabled(); await expect(choice).toHaveAttribute("aria-pressed", "false");
-  await choice.click(); await expect(picker.getByRole("button", { name: "Use image", exact: true })).toBeDisabled();
+  await choice.click(); await expect(picker.getByRole("button", { name: "Use", exact: true })).toBeDisabled();
   await expect(picker).toContainText("This file does not fit this spot");
   await picker.getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(() => storedDraft(page, "media/videos/loop.mp4")).toBeDefined();

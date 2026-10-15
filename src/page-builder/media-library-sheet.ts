@@ -27,8 +27,8 @@ export interface LibrarySheetContext {
   loading: () => boolean;
   /** A warning or refusal, inline under the screen. */
   tell: (text: string) => void;
-  /** A result: the editor's toast. */
-  done: (text: string) => void;
+  /** A result: the editor's toast; `undo` adds Undo for the step just made (slice 113). */
+  done: (text: string, undo?: boolean) => void;
   task: (work: () => Promise<void>, lock?: boolean, canCancel?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   adapter: MediaPickerHost;

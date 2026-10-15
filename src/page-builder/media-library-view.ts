@@ -10,7 +10,7 @@ import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
-import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, onlineServiceName, onlineVideoName, pickerFileWord, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, onlineServiceName, onlineVideoName, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaImageForPlacement, mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
 import { markTransparency } from "./media-transparency";
@@ -221,7 +221,10 @@ export function createMediaLibraryView(
   /** A warning or refusal, inline under the screen it is about. */
   function tell(text: string) { if (alive) message.textContent = text; }
   /** A result: said and shown as the editor's toast, which outlasts the screen. */
-  function done(text: string) { message.textContent = ""; say(text); }
+  function done(text: string, undo = false) {
+    message.textContent = "";
+    if (undo && adapter.undoable) adapter.undoable(text); else say(text);
+  }
   function task(work: () => Promise<void>, lock = true, canCancel = false) {
     return busyLock.task(work, lock, canCancel);
   }
@@ -302,9 +305,9 @@ export function createMediaLibraryView(
       return;
     }
     const file = held ? held.request.file.name : chosen, note = file && options.chosenNote?.(file);
-    name.textContent = file ? `${basename(file)}${note ? ` · ${note}` : ""}` : `Choose one ${pickerFileWord(options.accept)}`;
-    // Use says what it places: "Use image", "Use video", "Use audio" or "Use file".
-    use.textContent = `Use ${file ? chosenNoun(file) : pickerFileWord(options.accept)}`;
+    name.textContent = file ? `${basename(file)}${note ? ` · ${note}` : ""}` : "";
+    // Use says what it places: "Use image", "Use video", "Use audio" or "Use file"; plain "Use" until a pick (slice 113).
+    use.textContent = file ? `Use ${chosenNoun(file)}` : "Use";
     thumb.replaceChildren(); details.hidden = !chosen || Boolean(held);
     use.disabled = !chosen;
     if (!chosen) return;

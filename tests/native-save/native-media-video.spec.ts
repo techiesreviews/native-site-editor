@@ -260,6 +260,34 @@ test("video details: a moment becomes the still, an .srt adds a track, a picture
   expect((await still.body()).subarray(8, 12).toString()).toBe("WEBP");
   expect(JSON.parse(await saved(page, baseURL, ".editor/media.json")).files["media/clip.mp4"]).toMatchObject({ still: "images/studio-desk.svg", subtitles: "media/clip.vtt" });
 });
+/** Add → Media's link field is behind a quiet text button in the One bar (slice 113); it opens with focus in the field. */
+async function revealPaste(picker: Locator) {
+  const reveal = picker.getByRole("button", { name: "Paste a YouTube or Vimeo link", exact: true });
+  const address = picker.getByRole("textbox", { name: "YouTube or Vimeo link", exact: true });
+  await expect(address).toBeHidden();
+  await expect(reveal).toHaveAttribute("aria-expanded", "false");
+  await reveal.click();
+  await expect(reveal).toHaveAttribute("aria-expanded", "true");
+  await expect(address).toBeFocused();
+  await expect(picker.getByText("Works with YouTube and Vimeo", { exact: true })).toBeVisible();
+  return address;
+}
+test("the paste field opens from its button and places a pasted Vimeo link; the footer says Use until a pick", async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  // Vimeo answers nothing here: the video is placed without its picture.
+  await page.route("https://vimeo.com/api/**", route => route.fulfill({ status: 404, body: "" }));
+  await frame(page).locator("#scene p").click();
+  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  // No "Choose one file" line: an empty status and a disabled "Use".
+  await expect(picker.locator(".media-library__chosen-text")).toHaveText("");
+  await expect(picker.locator(".media-library__choice").getByRole("button", { name: "Use", exact: true })).toBeDisabled();
+  const address = await revealPaste(picker);
+  await address.fill("https://vimeo.com/76979871");
+  await address.press("Enter");
+  await expect(picker).toHaveCount(0, { timeout: 20_000 });
+  await expect.poll(() => mounted(page)).toContain('href="https://vimeo.com/76979871"');
+});
 // Online videos in the picker and Media (slice 68). YouTube's oEmbed and still are answered here.
 test("Add → Media places a pasted YouTube address with its still and play button; Media lists it with the mark; placing again calls no service", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -273,13 +301,15 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   const blocks = page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true });
   await blocks.click();
   const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
-  const address = picker.getByRole("textbox", { name: "YouTube or Vimeo address", exact: true });
-  // An address of another site gets a short plain message and places nothing.
+  const address = await revealPaste(picker);
+  const useLink = picker.locator(".media-library__online").getByRole("button", { name: "Use", exact: true });
+  // An address of another site gets a short plain message inline, in place of the helper, and places nothing.
   await address.fill("https://example.com/watch?v=aqz-KE-bpKQ");
-  await picker.getByRole("button", { name: "Use", exact: true }).click();
+  await useLink.click();
   await expect(picker.locator(".media-library__online-note")).toHaveText("Only YouTube and Vimeo videos can be placed. Paste a YouTube or Vimeo address.");
+  await expect(picker.getByText("Works with YouTube and Vimeo", { exact: true })).toBeHidden();
   await address.fill("https://youtu.be/aqz-KE-bpKQ");
-  await picker.getByRole("button", { name: "Use", exact: true }).click();
+  await useLink.click();
   await expect(picker).toHaveCount(0, { timeout: 20_000 });
   await expect.poll(() => mounted(page)).toMatch(/<a class="online-video" href="https:\/\/www\.youtube\.com\/watch\?v=aqz-KE-bpKQ"><img src="\/media\/videos\/stub-film\.webp" alt="Stub film" width="640" height="360"><\/a>/);
   expect(await mounted(page)).toContain('<script type="module" src="/scripts/media-player.js"></script>');

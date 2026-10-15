@@ -86,13 +86,27 @@ test("site settings list pages, apply favicon and defaults together, and open 40
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "404.html");
 });
 
+test("on a phone a long site address wraps whole in its field, and Enter adds no line break", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, baseURL);
+  await openSite(page);
+  const address = dialog(page, "Site settings").getByLabel("Site address", { exact: true });
+  const one = (await address.boundingBox())!.height;
+  await address.fill("https://larkspur-studio.github.io/larkspur-studio-portfolio-site/");
+  await address.press("End"); await address.press("Enter");
+  await expect(address).toHaveValue("https://larkspur-studio.github.io/larkspur-studio-portfolio-site/");
+  // It grew to show every character: nothing hidden sideways or below.
+  expect((await address.boundingBox())!.height).toBeGreaterThan(one * 1.5);
+  expect(await address.evaluate(field => field.scrollWidth <= field.clientWidth && field.scrollHeight <= field.clientHeight + 1)).toBe(true);
+});
+
 test("site settings set, check and undo the site address, which the Social note points to", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openSite(page);
   let panel = dialog(page, "Site settings");
   const address = panel.getByLabel("Site address", { exact: true });
   await expect(address).toHaveValue("");
-  await expect(panel).toContainText("Where your site lives, like https://name.github.io/my-site/");
+  await expect(panel).toContainText("Like https://name.github.io/my-site/");
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
   await expect(panel).toContainText("Add it in Site settings, General, Site address");
   await panel.getByRole("tab", { name: "General", exact: true }).click();

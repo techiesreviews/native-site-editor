@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, trimsOf } from "../src/page-builder/media-replace-rules";
+import { REPLACE_ACCEPT, pageList, replaceChoiceProblem, replaceNotice, replacedMessage, shownPages, trimsOf } from "../src/page-builder/media-replace-rules";
 import { accepts } from "../src/page-builder/media-library-filter";
 
 const paths = ["images/tram.webp", "images/tram-480.webp", "media/originals/tram.jpg", "images/new.jpg", "images/new-960.jpg", "logo.svg", "a.gif"];
@@ -17,42 +17,59 @@ test("the chosen picture must not be the one being replaced, or one of its copie
   assert.equal(replaceChoiceProblem("images/tram.webp", "images/new.jpg", paths), undefined);
 });
 
-test("the confirmation says where it shows, that the address stays, and where the old picture goes", () => {
-  const notice = replaceNotice({ path: "images/tram.webp", next: { name: "photo.jpg", extension: "webp" }, pages: 2, trims: 0, kept: false });
+test("the confirmation keeps the same address in one line, then focus points and where the old picture goes", () => {
+  const notice = replaceNotice({ path: "images/tram.webp", next: { extension: "webp" }, pages: 2, trims: 0, kept: false });
   assert.equal(notice.title, "Replace tram.webp everywhere?");
   assert.equal(notice.address, "images/tram.webp");
   assert.equal(notice.forward, undefined);
   assert.deepEqual(notice.lines, [
-    "2 pages show tram.webp. They will show the new picture instead, as will links to it from other sites.",
-    "It keeps the name and address /images/tram.webp. Visitors' browsers fetch the new picture at once.",
-    "Each place keeps its shape; its focus point goes back to the middle.",
+    "Same name and address, so links from other sites show it too.",
+    "Focus points go back to the middle.",
     "The old picture goes to Recently removed for 30 days.",
   ]);
-  const one = replaceNotice({ path: "a.png", next: { name: "new.png", extension: "png", inMedia: true }, pages: 1, trims: 2, kept: false });
-  assert.deepEqual(one.lines, [
-    "1 page shows a.png. It will show the new picture instead, as will links to it from other sites.",
-    "It keeps the name and address /a.png. Visitors' browsers fetch the new picture at once.",
-    "Each place keeps its shape; its focus point goes back to the middle.",
+  // The trimmed-copies line stays when it applies; "… also stays in Media as it is." is gone (slice 113).
+  assert.deepEqual(replaceNotice({ path: "a.png", next: { extension: "png" }, pages: 1, trims: 2, kept: false }).lines, [
+    "Same name and address, so links from other sites show it too.",
+    "Focus points go back to the middle.",
     "2 trimmed copies of it are replaced by the new picture in the same shape.",
-    "new.png also stays in Media as it is.",
     "The old picture goes to Recently removed for 30 days.",
   ]);
-  assert.equal(replaceNotice({ path: "a.png", next: { name: "b", extension: "png" }, pages: 0, trims: 0, kept: false }).lines[0],
-    "No page shows a.png yet. Links to it will show the new picture.");
+  // No page uses it: no focus points line.
+  assert.deepEqual(replaceNotice({ path: "a.png", next: { extension: "png" }, pages: 0, trims: 0, kept: false }).lines, [
+    "Same name and address, so links from other sites show it too.",
+    "The old picture goes to Recently removed for 30 days.",
+  ]);
 });
 
 test("a new format changes the address and offers Keep the old address working, ticked for Always keep", () => {
-  const notice = replaceNotice({ path: "images/tram.jpg", next: { name: "photo.heic", extension: "webp" }, pages: 1, trims: 0, kept: true });
+  const notice = replaceNotice({ path: "images/tram.jpg", next: { extension: "webp" }, pages: 1, trims: 0, kept: true });
   assert.equal(notice.address, "images/tram.webp");
-  assert.equal(notice.lines[1], "The new picture is a WebP picture, so its address becomes /images/tram.webp. Every mention on the site is updated.");
+  assert.equal(notice.lines[0], "It's a WebP, so its address becomes /images/tram.webp. Every mention is updated.");
   assert.deepEqual(notice.forward, { label: "Keep the old address working", checked: true,
     hint: "Links from other sites to /images/tram.jpg forward to the new address, on hosts that read the site's _redirects file." });
-  assert.equal(replaceNotice({ path: "a.JPG", next: { name: "b", extension: "jpg" }, pages: 0, trims: 0, kept: false }).forward, undefined);
+  assert.equal(replaceNotice({ path: "a.JPG", next: { extension: "jpg" }, pages: 0, trims: 0, kept: false }).forward, undefined);
   // As the engine decides, .jpeg for a .jpg is a new address.
-  assert.equal(replaceNotice({ path: "a.jpg", next: { name: "b", extension: "jpeg" }, pages: 0, trims: 0, kept: false }).forward?.checked, false);
+  assert.equal(replaceNotice({ path: "a.jpg", next: { extension: "jpeg" }, pages: 0, trims: 0, kept: false }).forward?.checked, false);
+  assert.equal(replaceNotice({ path: "a.png", next: { extension: "avif" }, pages: 0, trims: 0, kept: false }).lines[0],
+    "It's an AVIF, so its address becomes /a.avif. Every mention is updated.");
 });
 
-test("trimmed copies made from any member of the family are counted, and the message names the pages", () => {
+test("the box names up to five pages, then how many more", () => {
+  assert.deepEqual(shownPages(["a", "b"]), { shown: ["a", "b"], more: 0 });
+  assert.deepEqual(shownPages(["a", "b", "c", "d", "e", "f", "g", "h"]), { shown: ["a", "b", "c", "d", "e"], more: 3 });
+  assert.deepEqual(shownPages([]), { shown: [], more: 0 });
+});
+
+test("the result names the old file, the new picture and the pages", () => {
+  assert.equal(replacedMessage("media/images/red-acer.webp", "bluebells.webp", ["Home", "About"]), "red-acer.webp now shows the bluebells picture on Home and About.");
+  assert.equal(replacedMessage("a.png", "Photo.HEIC", []), "a.png now shows the Photo picture.");
+  assert.equal(pageList(["Home"]), "Home");
+  assert.equal(pageList(["Home", "About", "Work"]), "Home, About and Work");
+  assert.equal(pageList(["Home", "About", "Work", "Contact"]), "Home, About, Work and 1 more page");
+  assert.equal(pageList(["Home", "About", "Work", "Contact", "Blog"]), "Home, About, Work and 2 more pages");
+});
+
+test("trimmed copies made from any member of the family are counted", () => {
   const trim = { x: 0, y: 0, width: 1, height: 1 };
   const metadata = {
     "images/t1.webp": { tags: [], alt: "", trimmedFrom: { source: "images/tram.webp", trim } },
@@ -60,6 +77,4 @@ test("trimmed copies made from any member of the family are counted, and the mes
     "images/t3.webp": { tags: [], alt: "", trimmedFrom: { source: "images/new.jpg", trim } },
   };
   assert.equal(trimsOf("images/tram.webp", paths, metadata), 2);
-  assert.equal(replacedMessage("images/tram.webp", 2), "Replaced tram.webp everywhere on 2 pages, as a draft. The old picture is in More → Recently removed.");
-  assert.equal(replacedMessage("a.png", 0), "Replaced a.png everywhere, as a draft. The old picture is in More → Recently removed.");
 });
