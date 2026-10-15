@@ -45,7 +45,10 @@ export function showManageCollections(sheet: LibrarySheet, h: CollectionScreensH
       }
       element.append(list);
     } else element.append(node("p", "media-library__muted", "No collections yet."));
-    element.append(button("New collection", () => showCollectionName(sheet, h, { done: () => draw("New collection") }), "button primary"));
+    // The screen's last action row, pinned at the bottom like every media sub-screen's (audit C1).
+    const actions = node("div", "media-library__sheet-actions");
+    actions.append(button("New collection", () => showCollectionName(sheet, h, { done: () => draw("New collection") }), "button primary"));
+    element.append(actions);
     h.sync();
     if (focus === null) return;
     const target = focus && [...element.querySelectorAll<HTMLElement>("button")]

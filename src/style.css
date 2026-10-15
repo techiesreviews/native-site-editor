@@ -69,6 +69,8 @@ select {
 .topbar {
   min-height: 72px;
   background: var(--surface);
+  /* The explorer opens from this bar's real bottom edge, however many rows it takes. */
+  anchor-name: --topbar;
 
   display: grid;
   /* Equal outer columns keep the page picker at the centre of the screen. */
@@ -681,8 +683,14 @@ dd {
   .steps {
     gap: 12px;
   }
+  /* Tablets: the side columns take what they need, so Publish never wraps to a second
+     row; the page button gets the rest and shortens its name first. */
   .topbar {
     padding: 0 20px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .topbar > .explorer-toggle {
+    min-width: 0;
   }
 }
 @media (max-width: 650px) {
@@ -883,11 +891,30 @@ dd {
 }
 .explorer.dropdown-panel {
   padding: var(--panel-padding-roomy);
-  width: min(480px, calc(100vw - 32px));
+  /* One box for Pages, Media and Files (media audit C1): Media's width, from under the top
+     bar to 16px above the window's bottom, so switching tabs never resizes it. */
+  width: min(1040px, calc(100vw - 32px));
+  inset-block-end: 16px;
+  block-size: auto;
+  max-height: none;
+  flex-direction: column;
+  overflow: clip;
+}
+.explorer.dropdown-panel:popover-open {
+  display: flex;
+}
+/* The shown tab fills the box; its own list scrolls inside. */
+.explorer-panel:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .explorer #files {
-  max-height: 40dvh;
+  flex: 1;
+  max-height: none;
   min-height: 80px;
+  overflow: auto;
 }
 @media (max-width: 650px) {
   .login-card {
@@ -938,4 +965,6 @@ dd {
   text-decoration: none;
 }
 
-.explorer-settings { display: flex; justify-content: flex-end; padding: 4px 8px; }
+.explorer-head { display: flex; align-items: stretch; gap: 4px; margin-block-end: 4px; border-block-end: 1px solid var(--control-line); }
+.explorer-head:has(> .explorer-tabs[hidden]) { display: none; }
+.explorer .explorer-settings { flex: none; inline-size: 44px; block-size: 44px; align-self: center; }

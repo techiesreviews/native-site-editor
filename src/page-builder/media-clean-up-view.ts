@@ -4,7 +4,7 @@ import "./media-clean-up.css";
 
 const NOTE_ID = "media-count-note";
 
-/** The count on the Media tab and on the button that opens it, so it shows from anywhere.
+/** The count on the Media tab, and a dot (CSS) on the button that opens it, so it shows from anywhere.
  * The tab keeps its name; the count is its description. */
 export function drawMediaCount(marks: HTMLElement[], badge: MediaBadge) {
   let note = document.getElementById(NOTE_ID);

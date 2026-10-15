@@ -98,9 +98,24 @@
 @container media-browse (max-width: 269px) { .media-library__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container media-browse (min-width: 520px) { .media-library__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container media-browse (min-width: 800px) { .media-library__grid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
-/* Media is a picture library: the explorer widens while it shows, so 4 or 6 tiles fit with
-   room for their usage and selection controls. */
-.explorer.dropdown-panel:has(> #explorer-media:not([hidden])) { width: min(1040px, calc(100vw - 32px)); }
+/* The explorer is Media's size for every tab (style.css), so 4 or 6 tiles fit with room for
+   their usage and selection controls. */
+
+/* The pane scrolls under its One bar, which stays put (audit C1). The bar's own bottom padding
+   keeps the browse area's 12px start. */
+.media-library--pane .media-library__bar {
+  position: sticky; inset-block-start: 0; z-index: 5; padding-block-end: 8px; background: var(--panel-surface);
+}
+.media-library--pane .media-library__bar + .media-library__body .media-library__browse { padding-block-start: 4px; }
+/* Every sub-screen's last action row stays at the pane's bottom, above a 1px line, so it is
+   never cut off however long the screen. */
+.media-library--pane :is(.media-cleanup__footer, .media-detail__foot,
+  .media-library__sheet > :is(.media-remove__actions, .media-library__sheet-actions)) {
+  position: sticky; inset-block-end: 0; z-index: 4; margin-block-start: 4px; padding-block: 12px;
+  border-block-start: 1px solid var(--line); background: var(--panel-surface);
+}
+/* The collection screens keep the side sheet's own surface. */
+.media-library--pane .media-library__sheet > .media-library__sheet-actions { background: var(--surface-subtle); }
 
 .media-library__card { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); color: #fff; }
 .media-library .media-library__thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; }

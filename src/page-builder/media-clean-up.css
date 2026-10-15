@@ -1,4 +1,4 @@
-/* The clean-up count: on the Media tab, on the page picker that opens it, and on Clean up. */
+/* The clean-up count: on the Media tab and on Clean up; a dot on the page picker that opens it. */
 .media-count {
   display: inline-grid; place-items: center; box-sizing: border-box;
   min-width: 18px; height: 18px; padding: 0 5px; margin-inline-start: 6px; vertical-align: 1px;
@@ -6,5 +6,7 @@
   font-size: 11px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
 }
 .media-count[hidden] { display: none; }
-.explorer-toggle > .media-count { margin-inline-start: -4px; }
+/* The page button only hints that Media has work: an 8px dot, since "Home 12" reads like a page
+   count. The number stays on the Media tab (map ticket 10); screen readers hear it from the note. */
+.explorer-toggle > .media-count { inline-size: 8px; min-width: 8px; block-size: 8px; padding: 0; margin-inline-start: -4px; font-size: 0; }
 

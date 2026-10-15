@@ -1,5 +1,5 @@
 /* The explorer's Pages tab: the site by URL. */
-.pages { display: flex; flex-direction: column; min-height: 0; }
+.pages { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 /* Pages and Files open the same way under their tabs. */
 .pages-heading, .explorer .files-heading { margin: 12px 0 8px; }
 .pages-new {
@@ -23,7 +23,7 @@
 .pages-new:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .pages-tree, .pages-group { list-style: none; margin: 0; padding: 0; }
 .pages-tree > li + li, .pages-group > li + li, .pages-group { margin-top: 2px; }
-.pages-tree { max-height: 46dvh; min-height: 60px; overflow: auto; margin: 0 -8px; padding: 2px; }
+.pages-tree { flex: 1; min-height: 60px; overflow: auto; margin: 0 -8px; padding: 2px; }
 .pages-group[hidden] { display: none; }
 .pages-item { outline: none; }
 .pages-row {
@@ -160,8 +160,8 @@
 .pages-edit__action--primary:hover { background: var(--primary-hover); }
 .pages-edit__action:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
-/* Pages | Media | Files. */
-.explorer-tabs { display: flex; gap: 2px; margin: 0 0 4px; border-bottom: 1px solid var(--control-line); }
+/* Pages | Media | Files, sharing the head row with the gear (.explorer-head). */
+.explorer-tabs { flex: 1; display: flex; gap: 2px; }
 .explorer-tabs[hidden] { display: none; }
 .explorer-tab {
   min-height: var(--size-control);
@@ -197,7 +197,7 @@
   font-size: var(--type-base);
 }
 .pages-rename:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-#explorer-media { min-width: 0; min-height: 0; block-size: min(55dvh, 560px); overflow: hidden; }
+#explorer-media { min-width: 0; overflow: hidden; }
 .explorer-tabs { min-width: 0; }
 .explorer-tab { flex: 1; min-width: 0; padding-inline: 8px; }
 

@@ -19,8 +19,12 @@
     justify-self: start;
     margin-top: 6px;
   }
+  /* The explorer hangs from the top bar's bottom edge (not the page button's), so a
+     top bar of two rows never puts it over Publish; centred, 16px above the bottom. */
   .explorer.dropdown-panel {
-    position-area: bottom;
-    justify-self: anchor-center;
+    position-area: none;
+    inset: anchor(--topbar bottom) 0 16px;
+    margin: 0 auto;
+    justify-self: center;
   }
 }
